@@ -1,51 +1,34 @@
 react-dom_client.js?v=5d683dc1:20103 Download the React DevTools for a better development experience: https://react.dev/link/react-devtools
-content.js:8 🚀 AI Chat Sidebar content script loaded
-db.ts:213 ✅ 后端 API 已连接 - 使用数据库存储 (PostgreSQL/SQLite)
-ImageEditView.tsx:170 ========== [ImageEditView] handleSend 开始 ==========
-ImageEditView.tsx:171 [handleSend] 用户输入: 姿势很性感妖娆
-ImageEditView.tsx:172 [handleSend] 用户上传的附件数量: 0
-ImageEditView.tsx:173 [handleSend] 当前 sessionId: 92770ad2-befc-434c-9a3d-7faa2d14606c
-ImageEditView.tsx:174 [handleSend] 当前 activeImageUrl: https://img.dicry.com/2025/12/16/6940db7b6be20.png...
-ImageEditView.tsx:180 [handleSend] activeImageUrl 类型: 云存储 URL
-ImageEditView.tsx:187 [handleSend] ✅ 触发 CONTINUITY LOGIC（用户未上传新图，使用画布图片）
-ImageEditView.tsx:126 [findAttachmentFromHistory] ✅ 找到匹配的附件: {id: '15899201-c674-4178-9198-a22a05f244d1', messageId: 'a8f24658-f1ab-4e47-be03-218b2a2f3678', url: 'https://img.dicry.com/2025/12/16/6940db7b6be20.png', uploadStatus: 'completed'}
-ImageEditView.tsx:195 [handleSend] 复用历史附件模式, messageId: a8f24658-f1ab-4e47-be03-218b2a2f3678
-ImageEditView.tsx:201 [handleSend] 检查是否需要查询后端: {finalUploadStatus: 'completed', currentSessionId: '92770ad2-befc-434c-9a3d-7faa2d14606c', attachmentId: '15899201-c674-4178-9198-a22a05f244d1'}
-ImageEditView.tsx:228 [handleSend] 附件已上传到云存储，下载转 Base64
-ImageEditView.tsx:244 [handleSend] ✅ 复用历史附件完成，uploadStatus: completed url 类型: 云存储
-ImageEditView.tsx:312 [handleSend] 最终附件数量: 1
-ImageEditView.tsx:314 [handleSend] 最终附件详情: [{…}]
-ImageEditView.tsx:324 ========== [ImageEditView] handleSend 结束，调用 onSend ==========
-image-edit.ts:99 [GoogleMedia] Editing image with model: gemini-3-pro-image-preview
-image-edit.ts:100 [GoogleMedia] Parts count: 2 (images: 1)
-useChat.ts:277 [useChat] 上传结果图到云存储: edited-1765858265629-1.png
-useChat.ts:52 [useChat] 提交异步上传任务: Base64 Data URL
-useChat.ts:65 [useChat] Base64 已转换为 File: edited-1765858265629-1.png image/jpeg 8587837
-storageUpload.ts:424 [StorageUpload] 异步上传任务已创建: dcd71d6c-516c-45c9-9bd7-89a53926d48d
-useChat.ts:77 [useChat] 异步上传任务已提交: dcd71d6c-516c-45c9-9bd7-89a53926d48d
-ImageEditView.tsx:170 ========== [ImageEditView] handleSend 开始 ==========
-ImageEditView.tsx:171 [handleSend] 用户输入: V领，细微可见的乳沟
-ImageEditView.tsx:172 [handleSend] 用户上传的附件数量: 0
-ImageEditView.tsx:173 [handleSend] 当前 sessionId: 92770ad2-befc-434c-9a3d-7faa2d14606c
-ImageEditView.tsx:174 [handleSend] 当前 activeImageUrl: data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/6/36SlAAAQAAAAEABHtLanVtYgAAAB5qdW1kYzJwYQARABCAA...
-ImageEditView.tsx:180 [handleSend] activeImageUrl 类型: Base64
-ImageEditView.tsx:187 [handleSend] ✅ 触发 CONTINUITY LOGIC（用户未上传新图，使用画布图片）
-ImageEditView.tsx:126 [findAttachmentFromHistory] ✅ 找到匹配的附件: {id: '0412499d-dff6-41e8-a37a-0cf8006c7faa', messageId: '933c2258-a513-4227-a482-fc1fb855c23e', url: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/6/36SlAAA', uploadStatus: 'pending'}
-ImageEditView.tsx:195 [handleSend] 复用历史附件模式, messageId: 933c2258-a513-4227-a482-fc1fb855c23e
-ImageEditView.tsx:201 [handleSend] 检查是否需要查询后端: {finalUploadStatus: 'pending', currentSessionId: '92770ad2-befc-434c-9a3d-7faa2d14606c', attachmentId: '0412499d-dff6-41e8-a37a-0cf8006c7faa'}
-ImageEditView.tsx:207 [handleSend] 附件状态为 pending，查询后端获取最新 URL
-ImageEditView.tsx:150 [fetchAttachmentFromBackend] 查询附件: 0412499d-dff6-41e8-a37a-0cf8006c7faa
-ImageEditView.tsx:157 [fetchAttachmentFromBackend] 查询结果: {url: 'https://img.dicry.com/2025/12/16/6940dbeb0d206.png', uploadStatus: 'completed', taskId: 'dcd71d6c-516c-45c9-9bd7-89a53926d48d'}
-ImageEditView.tsx:210 [handleSend] ✅ 从后端获取到云存储 URL: https://img.dicry.com/2025/12/16/6940dbeb0d206.png
-ImageEditView.tsx:228 [handleSend] 附件已上传到云存储，下载转 Base64
-ImageEditView.tsx:244 [handleSend] ✅ 复用历史附件完成，uploadStatus: completed url 类型: 云存储
-ImageEditView.tsx:312 [handleSend] 最终附件数量: 1
-ImageEditView.tsx:314 [handleSend] 最终附件详情: [{…}]
-ImageEditView.tsx:324 ========== [ImageEditView] handleSend 结束，调用 onSend ==========
-image-edit.ts:99 [GoogleMedia] Editing image with model: gemini-3-pro-image-preview
-image-edit.ts:100 [GoogleMedia] Parts count: 2 (images: 1)
-useChat.ts:277 [useChat] 上传结果图到云存储: edited-1765858356327-1.png
-useChat.ts:52 [useChat] 提交异步上传任务: Base64 Data URL
-useChat.ts:65 [useChat] Base64 已转换为 File: edited-1765858356327-1.png image/jpeg 8015252
-storageUpload.ts:424 [StorageUpload] 异步上传任务已创建: dda86d4e-4419-4f3e-84ce-9146a6ddf35e
-useChat.ts:77 [useChat] 异步上传任务已提交: dda86d4e-4419-4f3e-84ce-9146a6ddf35e
+db.ts:248 ✅ 后端 API 已连接 - 使用数据库存储 (PostgreSQL/SQLite)
+ImageExpandView.tsx:165 ========== [ImageExpandView] handleSend 开始 ==========
+ImageExpandView.tsx:166 [handleSend] 用户上传的附件数量: 1
+ImageExpandView.tsx:167 [handleSend] 当前 sessionId: 8f8b222d-669e-4535-b113-9865f83e9009
+ImageExpandView.tsx:168 [handleSend] 当前 activeImageUrl: blob:http://192.168.50.22:5173/8e9dcf9b-2cc2-4daa-8f6c-0c487a1fea8d...
+ImageExpandView.tsx:174 [handleSend] activeImageUrl 类型: Blob URL
+ImageExpandView.tsx:305 [handleSend] 未触发 CONTINUITY LOGIC，原因: 用户已上传新图片
+ImageExpandView.tsx:310 [handleSend] 最终附件数量: 1
+ImageExpandView.tsx:312 [handleSend] 最终附件详情: [{…}]
+ImageExpandView.tsx:322 ========== [ImageExpandView] handleSend 结束，调用 onSend ==========
+useChat.ts:247 [useChat] image-outpainting 原图 URL: blob:http://192.168.50.22:5173/8e9dcf9b-2cc2-4daa-8f6c-0c487
+useChat.ts:248 [useChat] 原图是否已是云存储 URL: false
+image-utils.ts:44 [ensureRemoteUrl] 上传文件到 DashScope OSS: image-1765850514661.png
+api.ts:79 [DashScope Upload] Starting upload process...
+api.ts:80 [DashScope Upload] File: image-1765850514661.png Size: 695960 bytes
+api.ts:86 [DashScope Upload] Using backend proxy...
+api.ts:87 [DashScope Upload] Proxy URL: /api/dashscope/api/v1/files
+api.ts:117 [DashScope Upload] ✅ Upload successful!
+api.ts:118 [DashScope Upload] OSS URL: oss://dashscope-instant/f0bc24a7418605c14b93d14042dba644/2025-12-16/9a110038-440a-46d1-9182-8272db3edbfd/image-1765850514661.png
+image-utils.ts:46 [ensureRemoteUrl] 上传完成: oss://dashscope-instant/f0bc24a7418605c14b93d14042dba644/202
+image-expand.ts:59 [OutPainting] 调用后端扩图服务: oss://dashscope-instant/f0bc24a7418605c14b93d14042dba644/202
+image-expand.ts:60 [OutPainting] 参数: {image_url: 'oss://dashscope-instant/f0bc24a7418605c14b93d14042…0a-46d1-9182-8272db3edbfd/image-1765850514661.png', api_key: 'sk-19e01649859646c1904ee21fa08dc3ef', mode: 'scale', x_scale: 2, y_scale: 2}api_key: "sk-19e01649859646c1904ee21fa08dc3ef"image_url: "oss://dashscope-instant/f0bc24a7418605c14b93d14042dba644/2025-12-16/9a110038-440a-46d1-9182-8272db3edbfd/image-1765850514661.png"mode: "scale"x_scale: 2y_scale: 2[[Prototype]]: Object
+image-expand.ts:91 [OutPainting] 扩图成功: https://vigen-invi.oss-cn-shanghai.aliyuncs.com/service_dash
+useChat.ts:269 [useChat] 结果图显示 URL: blob:http://192.168.50.22:5173/56b50c30-dd08-4e4d-
+useChat.ts:276 [useChat] 上传原图到云存储...
+attachmentUtils.ts:75 [uploadToCloudStorageSync] 开始同步上传: {type: 'File', filename: 'image-1765850514661.png'}filename: "image-1765850514661.png"type: "File"[[Prototype]]: Object
+storageUpload.ts:52 ✅ [StorageUpload] 后端 API 可用 - 使用后端上传
+attachmentUtils.ts:101 [uploadToCloudStorageSync] 上传成功: https://img.dicry.com/2025/12/16/6940bda010548.png
+useChat.ts:281 [useChat] 原图云存储 URL: https://img.dicry.com/2025/12/16/6940bda010548.png
+useChat.ts:286 [useChat] 上传结果图到云存储...
+attachmentUtils.ts:75 [uploadToCloudStorageSync] 开始同步上传: {type: 'File', filename: 'expanded-1765892883447.png'}
+attachmentUtils.ts:101 [uploadToCloudStorageSync] 上传成功: https://img.dicry.com/2025/12/16/694163274c0cd.png
+useChat.ts:289 [useChat] 结果图云存储 URL: https://img.dicry.com/2025/12/16/694163274c0cd.png

@@ -314,10 +314,37 @@ const App: React.FC = () => {
 
   const handleExpandImage = (url: string) => {
       setAppMode('image-outpainting');
+      
+      // 根据 URL 类型推断 MIME 类型和扩展名
+      let mimeType = 'image/png';
+      let extension = 'png';
+      
+      if (url.startsWith('data:')) {
+          // 从 Base64 Data URL 中提取 MIME 类型
+          const match = url.match(/^data:([^;]+);/);
+          if (match) {
+              mimeType = match[1];
+              // 根据 MIME 类型确定扩展名
+              if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
+                  extension = 'jpg';
+              } else if (mimeType === 'image/webp') {
+                  extension = 'webp';
+              } else if (mimeType === 'image/gif') {
+                  extension = 'gif';
+              }
+          }
+      } else if (url.includes('.jpg') || url.includes('.jpeg')) {
+          mimeType = 'image/jpeg';
+          extension = 'jpg';
+      } else if (url.includes('.webp')) {
+          mimeType = 'image/webp';
+          extension = 'webp';
+      }
+      
       const newAttachment: Attachment = {
           id: uuidv4(),
-          mimeType: 'image/png',
-          name: 'Reference Image',
+          mimeType: mimeType,
+          name: `expand-source-${Date.now()}.${extension}`,  // ✅ 添加正确的扩展名
           url: url
       };
       setInitialAttachments([newAttachment]);

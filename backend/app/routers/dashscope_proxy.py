@@ -128,13 +128,35 @@ async def proxy_dashscope(path: str, request: Request):
     target_url = f"{DASHSCOPE_BASE_URL}/{path}"
     
     # 构建转发的请求头
-    # 注意：必须保持原始的大小写格式，特别是 X-DashScope-* 头
+    # 只转发必要的头，避免额外的头（如 origin, referer, cookie）干扰 DashScope API
     headers = {}
-    headers_to_skip = ['host', 'content-length', 'connection']
+    
+    # 只允许转发的头（白名单）
+    headers_to_forward = [
+        'authorization',
+        'content-type',
+        'x-dashscope-async',
+        'x-dashscope-ossresourceresolve',
+    ]
+    
+    # DashScope 特殊头的正确大小写映射
+    dashscope_header_map = {
+        'authorization': 'Authorization',
+        'content-type': 'Content-Type',
+        'x-dashscope-async': 'X-DashScope-Async',
+        'x-dashscope-ossresourceresolve': 'X-DashScope-OssResourceResolve',
+    }
     
     for key, value in request.headers.items():
-        if key.lower() not in headers_to_skip:
-            headers[key] = value
+        key_lower = key.lower()
+        if key_lower in headers_to_forward:
+            # 使用正确的大小写格式
+            correct_key = dashscope_header_map.get(key_lower, key)
+            headers[correct_key] = value
+    
+    # 调试日志：打印转发的头信息
+    print(f"[DashScope Proxy] 转发请求到: {target_url}")
+    print(f"[DashScope Proxy] 转发的头信息: {headers}")
     
     # 获取查询参数
     query_params = dict(request.query_params)

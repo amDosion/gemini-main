@@ -1,11 +1,14 @@
 
 import { ImageGenerationResult } from "../interfaces";
 import { Attachment, ChatOptions } from "../../../../types";
-import { resolveDashUrl } from "./api";
 import { ensureRemoteUrl } from "./image-utils";
 
 /**
  * Implementation of DashScope Out-Painting (Expansion).
+ * 
+ * ✅ 优化：通过后端服务调用 DashScope API
+ * 解决了前端代理转发时 X-DashScope-OssResourceResolve 头无法正确传递的问题
+ * 
  * Supports modes: 'pixel' (offset), 'scale', and 'ratio'.
  */
 export async function outPaintWanxImage(
@@ -15,10 +18,11 @@ export async function outPaintWanxImage(
     baseUrl?: string
 ): Promise<ImageGenerationResult> {
     
-    // 1. Ensure we have a valid remote URL (uploading if necessary)
+    // 1. 获取图片 URL
+    // 如果是云存储 URL，直接使用；如果是 Base64/Blob，上传到 DashScope OSS
     const imageUrl = await ensureRemoteUrl(referenceImage, apiKey, baseUrl);
 
-    // 2. Prepare Parameters
+    // 2. 准备参数
     const opts = options.outPainting || {
         mode: 'scale',
         xScale: 2.0,
@@ -27,63 +31,41 @@ export async function outPaintWanxImage(
         limitImageSize: true
     };
 
-    const parameters: any = {
-        best_quality: opts.bestQuality !== false,
-        limit_image_size: opts.limitImageSize !== false,
-        add_watermark: false
+    // 3. 构建后端请求参数
+    // 注意：best_quality、limit_image_size、add_watermark 由后端硬编码，前端不传递
+    const requestBody: any = {
+        image_url: imageUrl,
+        api_key: apiKey,
+        mode: opts.mode || 'scale'
     };
 
-    // Map UI modes to API parameters
+    // 根据模式添加对应参数
     if (opts.mode === 'offset' || (opts.mode as string) === 'pixel') {
-        // Pixel Offset Mode
-        parameters.left_offset = opts.leftOffset || 0;
-        parameters.right_offset = opts.rightOffset || 0;
-        parameters.top_offset = opts.topOffset || 0;
-        parameters.bottom_offset = opts.bottomOffset || 0;
-        
-        // Safety Fallback: if all offsets are 0, default to a right expansion to avoid errors
-        if (!parameters.left_offset && !parameters.right_offset && !parameters.top_offset && !parameters.bottom_offset) {
-             parameters.right_offset = 512;
-        }
+        requestBody.mode = 'offset';
+        requestBody.left_offset = opts.leftOffset || 0;
+        requestBody.right_offset = opts.rightOffset || 0;
+        requestBody.top_offset = opts.topOffset || 0;
+        requestBody.bottom_offset = opts.bottomOffset || 0;
     } else if (opts.mode === 'ratio') {
-        // Output Ratio Mode
-        parameters.angle = opts.angle || 0;
-        parameters.output_ratio = opts.outputRatio || "16:9"; 
+        requestBody.mode = 'ratio';
+        requestBody.angle = opts.angle || 0;
+        requestBody.output_ratio = opts.outputRatio || "16:9";
     } else {
-        // Scale Mode (Default)
-        parameters.x_scale = opts.xScale || 2.0;
-        parameters.y_scale = opts.yScale || 2.0;
+        requestBody.mode = 'scale';
+        requestBody.x_scale = opts.xScale || 2.0;
+        requestBody.y_scale = opts.yScale || 2.0;
     }
 
-    const payload = {
-        model: "image-out-painting",
-        input: {
-            image_url: imageUrl
-        },
-        parameters: parameters
-    };
+    console.log('[OutPainting] 调用后端扩图服务:', imageUrl.substring(0, 60));
+    console.log('[OutPainting] 参数:', requestBody);
 
-    console.log('[DashScope] Submitting Out-Painting Task:', JSON.stringify(payload));
-
-    // 3. Submit Task (Async)
-    const submitUrl = resolveDashUrl(baseUrl || '', 'out-painting');
-    
-    // ✅ Critical Headers for OSS Resolution and Async Processing
-    // These headers are REQUIRED for the task to work correctly
-    const headers = {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'X-DashScope-Async': 'enable',  // Enable async processing
-        'X-DashScope-OssResourceResolve': 'enable'  // ✅ CRITICAL: Enable OSS URL resolution
-    };
-
-    console.log('[DashScope] Request headers:', headers);
-    console.log('[DashScope] Submit URL:', submitUrl);
-
-    const response = await fetch(submitUrl, {
+    // 4. 调用后端扩图接口
+    const response = await fetch('/api/image/out-painting', {
         method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
@@ -91,45 +73,25 @@ export async function outPaintWanxImage(
         let errorDetail = errText;
         try {
             const errJson = JSON.parse(errText);
-            errorDetail = errJson.message || errText;
+            errorDetail = errJson.detail || errJson.error || errText;
         } catch {}
-        throw new Error(`DashScope Out-Painting Error (${response.status}): ${errorDetail}`);
+        throw new Error(`扩图服务错误 (${response.status}): ${errorDetail}`);
     }
 
-    const submitData = await response.json();
-    const taskId = submitData.output?.task_id;
-    if (!taskId) throw new Error("No task_id returned from DashScope.");
+    const result = await response.json();
 
-    // 4. Poll for Result
-    const taskUrlBase = resolveDashUrl(baseUrl || '', 'task');
-    const maxRetries = 100; // ~5 minutes (3s interval)
-    
-    for (let i = 0; i < maxRetries; i++) {
-        await new Promise(r => setTimeout(r, 3000));
-        
-        const checkRes = await fetch(`${taskUrlBase}/${taskId}`, {
-            headers: { 'Authorization': `Bearer ${apiKey}` }
-        });
-        
-        if (!checkRes.ok) continue;
-        
-        const checkData = await checkRes.json();
-        const status = checkData.output?.task_status;
-        
-        if (status === 'SUCCEEDED') {
-            const resultUrl = checkData.output?.output_image_url || checkData.output?.url;
-            if (!resultUrl) throw new Error("Task succeeded but no output image URL found.");
-            
-            return {
-                url: resultUrl,
-                mimeType: 'image/png'
-            };
-        } else if (status === 'FAILED') {
-            const errMsg = checkData.output?.message || checkData.output?.code || 'Unknown error';
-            throw new Error(`Out-Painting Task Failed: ${errMsg}`);
-        }
-        // If PENDING or RUNNING, continue polling
+    if (!result.success) {
+        throw new Error(`扩图失败: ${result.error || '未知错误'}`);
     }
 
-    throw new Error("Out-Painting task timed out.");
+    if (!result.output_url) {
+        throw new Error("扩图成功但未返回结果图片 URL");
+    }
+
+    console.log('[OutPainting] 扩图成功:', result.output_url.substring(0, 60));
+
+    return {
+        url: result.output_url,
+        mimeType: 'image/png'
+    };
 }

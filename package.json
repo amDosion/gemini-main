@@ -4,7 +4,7 @@
   "version": "1.2.1",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm run server\" \"vite\"",
+    "dev": "node --no-deprecation ./node_modules/concurrently/dist/bin/concurrently.js \"npm run server\" \"vite\"",
     "server": "cd backend && uvicorn app.main:app --reload --reload-dir app --port 8000",
     "install:backend": "pip install -r backend/requirements.txt",
     "build": "tsc && vite build",

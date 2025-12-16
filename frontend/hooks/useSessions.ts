@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { ChatSession, Message, Role } from '../../types';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../services/db';
+import { cleanAttachmentsForDb } from './handlers/attachmentUtils';
 
 export const useSessions = () => {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -93,7 +94,26 @@ export const useSessions = () => {
           const lastMsgWithMode = [...newMessages].reverse().find(m => m.mode);
           const currentMode = lastMsgWithMode?.mode || s.mode || 'chat';
 
-          const updatedSession = { ...s, title, messages: newMessages, mode: currentMode };
+          // ✅ 根据会话模式判断是否需要清理附件
+          // 图片模式（image-outpainting、image-edit、image-gen）需要清理 Blob URL 和 Base64 URL
+          // 因为这些模式都有异步上传任务，清理后 URL 为空，等待后端上传完成后更新
+          const needsCleanSession = currentMode === 'image-outpainting' || 
+                                    currentMode === 'image-edit' || 
+                                    currentMode === 'image-gen';
+          
+          const cleanedMessages = needsCleanSession 
+            ? newMessages.map(msg => {
+                if (msg.attachments) {
+                  return {
+                    ...msg,
+                    attachments: cleanAttachmentsForDb(msg.attachments, false)
+                  };
+                }
+                return msg;
+              })
+            : newMessages;
+
+          const updatedSession = { ...s, title, messages: cleanedMessages, mode: currentMode };
           
           // Save to database (async, non-blocking)
           saveSessionToDb(updatedSession);

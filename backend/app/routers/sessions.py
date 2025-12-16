@@ -36,6 +36,7 @@ async def create_or_update_session(session_data: dict, db: Session = Depends(get
     注意：更新消息时会保留已上传完成的附件 URL，避免前端覆盖后端的上传结果
     """
     from sqlalchemy.orm.attributes import flag_modified
+    from ..models.db_models import UploadTask
     import copy
     
     session_id = session_data.get("id")
@@ -49,30 +50,54 @@ async def create_or_update_session(session_data: dict, db: Session = Depends(get
         session.persona_id = session_data.get("personaId", session.persona_id)
         session.mode = session_data.get("mode", session.mode)
         
-        # ✅ 智能合并消息：保留已上传完成的附件 URL
+        # ✅ 智能合并消息：只处理当前活动的附件，保留已上传完成的 URL
         new_messages = session_data.get("messages", [])
         old_messages = session.messages or []
         
-        # 构建旧消息的附件 URL 映射（包含已完成上传的永久 URL）
+        # 1. 收集当前消息中需要处理的附件 ID（只关注当前活动的附件）
+        current_attachment_keys = set()  # (msg_id, att_id)
+        for msg in new_messages:
+            msg_id = msg.get('id')
+            for att in msg.get('attachments', []):
+                att_id = att.get('id')
+                if att_id:
+                    current_attachment_keys.add((msg_id, att_id))
+        
+        # 2. 只从旧消息中提取当前活动附件的 URL（而不是所有历史附件）
         old_attachment_urls = {}
         for msg in old_messages:
             msg_id = msg.get('id')
             for att in msg.get('attachments', []):
                 att_id = att.get('id')
-                att_url = att.get('url', '')
-                att_status = att.get('uploadStatus', '')
-                # ✅ 修复：只要 URL 以 http 开头就保留（不管 uploadStatus）
-                # 因为后端更新时已经设置了 completed 状态
-                if att_url and att_url.startswith('http'):
-                    old_attachment_urls[(msg_id, att_id)] = {
-                        'url': att_url,
-                        'status': att_status
+                key = (msg_id, att_id)
+                # ✅ 只处理当前消息中存在的附件
+                if key in current_attachment_keys:
+                    att_url = att.get('url', '')
+                    if att_url and att_url.startswith('http'):
+                        old_attachment_urls[key] = {
+                            'url': att_url,
+                            'status': att.get('uploadStatus', 'completed')
+                        }
+        
+        # 3. 从 UploadTask 补充新上传的 URL（只查询当前活动的附件）
+        current_attachment_ids = [key[1] for key in current_attachment_keys]
+        if current_attachment_ids:
+            completed_tasks = db.query(UploadTask).filter(
+                UploadTask.session_id == session_id,
+                UploadTask.attachment_id.in_(current_attachment_ids),
+                UploadTask.status == 'completed',
+                UploadTask.target_url.isnot(None)
+            ).all()
+            
+            for task in completed_tasks:
+                key = (task.message_id, task.attachment_id)
+                if key not in old_attachment_urls:
+                    old_attachment_urls[key] = {
+                        'url': task.target_url,
+                        'status': 'completed'
                     }
         
-        if old_attachment_urls:
-            print(f"[Sessions] 发现 {len(old_attachment_urls)} 个已上传的附件 URL")
-        
-        # 合并新消息，保留已上传的 URL
+        # 4. 合并新消息，保留已上传的 URL
         merged_messages = []
         merge_count = 0
         for msg in new_messages:
@@ -83,7 +108,6 @@ async def create_or_update_session(session_data: dict, db: Session = Depends(get
                 att_id = att.get('id')
                 key = (msg_id, att_id)
                 
-                # 如果旧数据有已完成的 URL，而新数据没有或是临时 URL，则保留旧的
                 if key in old_attachment_urls:
                     new_url = att.get('url', '')
                     old_data = old_attachment_urls[key]
@@ -92,12 +116,11 @@ async def create_or_update_session(session_data: dict, db: Session = Depends(get
                         att['url'] = old_data['url']
                         att['uploadStatus'] = 'completed'
                         merge_count += 1
-                        print(f"[Sessions] 保留已上传 URL: {att_id[:8]}... -> {old_data['url'][:50]}...")
             
             merged_messages.append(msg_copy)
         
         if merge_count > 0:
-            print(f"[Sessions] 智能合并完成，保留了 {merge_count} 个已上传的附件 URL")
+            print(f"[Sessions] 合并完成，保留了 {merge_count} 个已上传的附件 URL")
         
         session.messages = merged_messages
         flag_modified(session, 'messages')

@@ -38,12 +38,12 @@ interface AppLayoutProps {
     onModelSelect: (id: string) => void;
     onOpenSettings: (tab?: any) => void;
     appMode: AppMode;
-    
+
     // Updated Profile Props
     profiles: ConfigProfile[];
     activeProfileId: string | null;
     onActivateProfile: (id: string) => void;
-    
+
     // New Props for Settings Injection
     settings?: React.ReactNode;
 }
@@ -51,8 +51,8 @@ interface AppLayoutProps {
 export const AppLayout: React.FC<AppLayoutProps> = (props) => {
     return (
         <div className="flex h-screen w-screen bg-background text-slate-100 overflow-hidden font-sans">
-            <Sidebar 
-                isOpen={props.isSidebarOpen} 
+            <Sidebar
+                isOpen={props.isSidebarOpen}
                 setIsOpen={props.setIsSidebarOpen}
                 sessions={props.sessions}
                 currentSessionId={props.currentSessionId}
@@ -61,13 +61,15 @@ export const AppLayout: React.FC<AppLayoutProps> = (props) => {
                 onDeleteSession={props.onDeleteSession}
                 onUpdateSessionTitle={props.onUpdateSessionTitle}
                 onOpenSettings={() => props.onOpenSettings('profiles')}
+                isRightSidebarOpen={props.isRightSidebarOpen}
+                setIsRightSidebarOpen={props.setIsRightSidebarOpen}
             />
 
             {/* Main Content Container (Right Side) */}
             <div className="flex-1 flex flex-col h-full relative min-w-0 bg-slate-950">
-                
+
                 {/* Header is kept outside so it remains visible when settings is open */}
-                <Header 
+                <Header
                     isSidebarOpen={props.isSidebarOpen}
                     setIsSidebarOpen={props.setIsSidebarOpen}
                     isRightSidebarOpen={props.isRightSidebarOpen}
@@ -95,7 +97,7 @@ export const AppLayout: React.FC<AppLayoutProps> = (props) => {
                         {props.settings}
                     </div>
 
-                    <RightSidebar 
+                    <RightSidebar
                         isOpen={props.isRightSidebarOpen}
                         setIsOpen={props.setIsRightSidebarOpen}
                         personas={props.personas}

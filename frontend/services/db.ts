@@ -20,7 +20,7 @@ export interface ConfigProfile {
 }
 
 const API_BASE = '/api';
-const API_TIMEOUT = 5000; // 5秒超时（给后端足够时间处理大型会话数据）
+const API_TIMEOUT = 15000; // 15秒超时（给后端足够时间处理大型会话数据，包含大量附件时需要更长时间）
 
 // --- Local Storage Adapter (Cloud Mode) ---
 class LocalStorageDB {
@@ -32,7 +32,42 @@ class LocalStorageDB {
     }
 
     private set(key: string, val: any) {
-        localStorage.setItem(key, JSON.stringify(val));
+        try {
+            localStorage.setItem(key, JSON.stringify(val));
+        } catch (e: any) {
+            // ✅ 如果是配额超出错误，尝试清理旧数据
+            if (e.name === 'QuotaExceededError') {
+                console.warn('[LocalStorageDB] 存储配额已满，尝试清理旧会话数据...');
+                this.cleanupOldSessions();
+                // 重试一次
+                try {
+                    localStorage.setItem(key, JSON.stringify(val));
+                } catch {
+                    console.error('[LocalStorageDB] 清理后仍无法保存，放弃');
+                }
+            } else {
+                throw e;
+            }
+        }
+    }
+
+    /**
+     * 清理旧会话数据以释放 LocalStorage 空间
+     * 保留最近 10 个会话，删除其余的
+     */
+    private cleanupOldSessions() {
+        try {
+            const sessions = this.get<any[]>('flux_sessions', []);
+            if (sessions.length > 10) {
+                // 按创建时间排序，保留最新的 10 个
+                const sorted = sessions.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+                const kept = sorted.slice(0, 10);
+                localStorage.setItem('flux_sessions', JSON.stringify(kept));
+                console.log(`[LocalStorageDB] 已清理 ${sessions.length - 10} 个旧会话`);
+            }
+        } catch (e) {
+            console.error('[LocalStorageDB] 清理失败:', e);
+        }
     }
 
     async getSessions(): Promise<ChatSession[]> {
@@ -234,10 +269,13 @@ class HybridDB {
     /**
      * 混合执行：根据后端可用性选择使用 API 或 LocalStorage
      * 
-     * 自动降级机制：
+     * 策略：
      * 1. 首次调用时检测后端
-     * 2. 如果检测结果为"可用"，尝试调用 API
-     * 3. 如果 API 调用失败，自动降级到 LocalStorage，并更新检测结果
+     * 2. 如果后端可用，始终使用 API（不降级到 LocalStorage）
+     * 3. 只有在后端完全不可用时才使用 LocalStorage
+     * 
+     * ⚠️ 注意：当后端可用但 API 调用失败时，直接抛出错误，不降级到 LocalStorage
+     * 这样可以避免 LocalStorage 配额问题，并让用户知道真正的错误原因
      */
     private async exec<T>(
         apiCall: () => Promise<T>,
@@ -251,19 +289,9 @@ class HybridDB {
             return localCall();
         }
         
-        // 如果检测结果为"可用"，尝试调用 API
-        try {
-            return await apiCall();
-        } catch (e) {
-            // ✅ API 调用失败，自动降级到 LocalStorage
-            console.warn("⚠️ API 调用失败，自动降级到 LocalStorage", e);
-            
-            // ✅ 更新检测结果，避免后续调用继续尝试 API
-            this.useApi = false;
-            
-            // ✅ 使用 LocalStorage
-            return localCall();
-        }
+        // 如果检测结果为"可用"，使用 API（不降级）
+        // API 调用失败时直接抛出错误，让上层处理
+        return await apiCall();
     }
 
     getSessions() { return this.exec(() => this.api.getSessions(), () => this.local.getSessions()); }

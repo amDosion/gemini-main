@@ -107,6 +107,81 @@ async def set_active_storage(storage_id: str, db: Session = Depends(get_db)):
 
 # ==================== 文件上传 ====================
 
+def upload_to_active_storage(content: bytes, filename: str, content_type: str) -> dict:
+    """
+    同步上传文件到当前激活的存储配置
+    
+    供其他模块（如 image_expand）调用
+    
+    Args:
+        content: 文件内容（字节）
+        filename: 文件名
+        content_type: MIME 类型
+    
+    Returns:
+        {"success": True, "url": "https://..."} 或 {"success": False, "error": "..."}
+    """
+    db = SessionLocal()
+    try:
+        # 获取当前激活的存储配置
+        active = db.query(ActiveStorage).filter(ActiveStorage.user_id == "default").first()
+        if not active or not active.storage_id:
+            return {"success": False, "error": "未设置存储配置"}
+        
+        config = db.query(StorageConfig).filter(StorageConfig.id == active.storage_id).first()
+        if not config:
+            return {"success": False, "error": "存储配置不存在"}
+        
+        if not config.enabled:
+            return {"success": False, "error": "存储配置已禁用"}
+        
+        # 根据提供商类型上传
+        if config.provider == "lsky":
+            return upload_to_lsky_sync(filename, content, content_type, config.config)
+        else:
+            return {"success": False, "error": f"不支持的存储类型: {config.provider}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    finally:
+        db.close()
+
+
+def upload_to_lsky_sync(filename: str, content: bytes, content_type: str, config: dict) -> dict:
+    """
+    同步上传到兰空图床
+    """
+    import requests
+    
+    domain = config.get("domain")
+    token = config.get("token")
+    strategy_id = config.get("strategyId")
+    
+    if not domain or not token:
+        return {"success": False, "error": "兰空图床配置不完整"}
+    
+    auth_token = token if token.startswith("Bearer ") else f"Bearer {token}"
+    upload_url = f"{domain.rstrip('/')}/api/v1/upload"
+    
+    files = {"file": (filename, content, content_type)}
+    headers = {"Authorization": auth_token, "Accept": "application/json"}
+    data = {"strategy_id": strategy_id} if strategy_id else {}
+    
+    try:
+        response = requests.post(upload_url, files=files, headers=headers, data=data, timeout=60)
+        result = response.json()
+        
+        if result.get("status") and result.get("data", {}).get("links", {}).get("url"):
+            return {
+                "success": True,
+                "url": result["data"]["links"]["url"],
+                "provider": "lsky"
+            }
+        else:
+            return {"success": False, "error": result.get("message", "上传失败")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @router.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
@@ -149,7 +224,7 @@ async def upload_file(
 
 from ..models.db_models import ChatSession
 
-async def process_upload_task(task_id: str, db: Session):
+async def process_upload_task(task_id: str, _db: Session = None):
     """
     后台处理上传任务
     
@@ -158,17 +233,27 @@ async def process_upload_task(task_id: str, db: Session):
     2. 从 URL 下载后上传（source_url 存在）
     
     上传完成后自动更新数据库中的会话消息
-    """
-    task = db.query(UploadTask).filter(UploadTask.id == task_id).first()
-    if not task:
-        print(f"[UploadTask] 任务不存在: {task_id}")
-        return
     
+    注意：此函数创建独立的数据库会话，避免与请求处理器共享会话导致的竞态条件
+    """
+    # ✅ 创建独立的数据库会话，避免与其他后台任务共享
+    db = SessionLocal()
     try:
+        task = db.query(UploadTask).filter(UploadTask.id == task_id).first()
+        if not task:
+            print(f"[UploadTask] 任务不存在: {task_id}")
+            return
+        
+        # ✅ 详细日志：确认任务数据
+        print(f"[UploadTask] 开始处理任务: {task_id}")
+        print(f"  - 文件名: {task.filename}")
+        print(f"  - session_id: {task.session_id[:8] if task.session_id else 'None'}...")
+        print(f"  - message_id: {task.message_id[:8] if task.message_id else 'None'}...")
+        print(f"  - attachment_id: {task.attachment_id[:8] if task.attachment_id else 'None'}...")
+        
         # 1. 更新状态为 uploading
         task.status = 'uploading'
         db.commit()
-        print(f"[UploadTask] 开始处理任务: {task_id}")
         
         # 2. 获取存储配置
         if task.storage_id:
@@ -232,78 +317,124 @@ async def process_upload_task(task_id: str, db: Session):
             task.status = 'completed'
             task.target_url = result.get('url')
             task.completed_at = int(datetime.now().timestamp() * 1000)
+            db.commit()  # ✅ 先提交任务状态，确保上传成功被记录
             print(f"[UploadTask] 上传成功: {task.target_url}")
             
-            # 7. 更新数据库中的会话消息
+            # 7. 更新数据库中的会话消息（即使失败也不影响任务状态）
             if task.session_id and task.message_id and task.attachment_id:
-                await update_session_attachment_url(
-                    db, 
-                    task.session_id, 
-                    task.message_id, 
-                    task.attachment_id, 
-                    task.target_url
-                )
+                try:
+                    await update_session_attachment_url(
+                        db, 
+                        task.session_id, 
+                        task.message_id, 
+                        task.attachment_id, 
+                        task.target_url
+                    )
+                except Exception as e:
+                    print(f"[UploadTask] ⚠️ 更新会话附件 URL 失败（任务已完成）: {e}")
         else:
             task.status = 'failed'
             task.error_message = result.get('error', '上传失败')
+            db.commit()
             print(f"[UploadTask] 上传失败: {task.error_message}")
-        
-        db.commit()
         
     except Exception as e:
         print(f"[UploadTask] 任务失败: {str(e)}")
-        task.status = 'failed'
-        task.error_message = str(e)
-        db.commit()
+        try:
+            task.status = 'failed'
+            task.error_message = str(e)
+            db.commit()
+        except:
+            pass
+    finally:
+        # ✅ 确保关闭独立的数据库会话
+        db.close()
 
 
-async def update_session_attachment_url(db: Session, session_id: str, message_id: str, attachment_id: str, url: str):
+async def update_session_attachment_url(
+    db: Session, 
+    session_id: str, 
+    message_id: str, 
+    attachment_id: str, 
+    url: str,
+    max_retries: int = 10,
+    retry_delay: float = 2.0
+):
     """
-    更新会话中指定附件的 URL
+    更新会话中指定附件的 URL（带重试机制）
     
     注意：SQLAlchemy 的 JSON 字段在原地修改时不会自动检测变化，
     需要使用 flag_modified() 或重新赋值来触发更新
+    
+    由于前端保存消息和提交上传任务是并行的，可能存在竞争条件，
+    所以需要重试机制来等待消息保存完成
+    
+    参数：
+    - max_retries: 最大重试次数（默认10次）
+    - retry_delay: 每次重试间隔（默认2秒，总等待时间最长20秒）
     """
     from sqlalchemy.orm.attributes import flag_modified
     import copy
+    import asyncio
     
-    try:
-        session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
-        if not session:
-            print(f"[UploadTask] 会话不存在: {session_id}")
-            return
-        
-        # ✅ 深拷贝消息列表，避免原地修改检测问题
-        messages = copy.deepcopy(session.messages or [])
-        updated = False
-        
-        for msg in messages:
-            if msg.get('id') == message_id and msg.get('attachments'):
-                for att in msg['attachments']:
-                    if att.get('id') == attachment_id:
-                        att['url'] = url
-                        att['uploadStatus'] = 'completed'
-                        att.pop('tempUrl', None)
-                        att.pop('file', None)
-                        updated = True
-                        print(f"[UploadTask] 找到附件，更新 URL: {url}")
-                        break
-            if updated:
-                break
-        
-        if updated:
-            # ✅ 重新赋值并标记字段已修改
-            session.messages = messages
-            flag_modified(session, 'messages')
-            db.commit()
-            print(f"[UploadTask] 会话已更新: {session_id}, 附件: {attachment_id}")
-        else:
-            print(f"[UploadTask] 未找到附件: {attachment_id} (消息ID: {message_id})")
+    print(f"[UploadTask] 开始更新附件 URL: session={session_id[:8]}..., msg={message_id[:8]}..., att={attachment_id[:8]}...")
+    
+    for attempt in range(max_retries):
+        try:
+            # 刷新数据库连接，获取最新数据
+            db.expire_all()
             
-    except Exception as e:
-        print(f"[UploadTask] 更新会话失败: {str(e)}")
-        import traceback
-        traceback.print_exc()
+            session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
+            if not session:
+                print(f"[UploadTask] 会话不存在: {session_id}")
+                return
+            
+            # ✅ 深拷贝消息列表，避免原地修改检测问题
+            messages = copy.deepcopy(session.messages or [])
+            updated = False
+            
+            # 调试：打印当前消息数量和 ID
+            msg_ids = [m.get('id', '')[:8] for m in messages]
+            if attempt == 0:
+                print(f"[UploadTask] 当前会话消息数: {len(messages)}, IDs: {msg_ids}")
+            
+            for msg in messages:
+                if msg.get('id') == message_id and msg.get('attachments'):
+                    for att in msg['attachments']:
+                        if att.get('id') == attachment_id:
+                            att['url'] = url
+                            att['uploadStatus'] = 'completed'
+                            att.pop('tempUrl', None)
+                            att.pop('file', None)
+                            updated = True
+                            print(f"[UploadTask] ✅ 找到附件，更新 URL: {url[:60]}...")
+                            break
+                if updated:
+                    break
+            
+            if updated:
+                # ✅ 重新赋值并标记字段已修改
+                session.messages = messages
+                flag_modified(session, 'messages')
+                db.commit()
+                print(f"[UploadTask] ✅ 会话已更新: {session_id[:8]}..., 附件: {attachment_id[:8]}...")
+                return  # 成功，退出
+            else:
+                # 未找到附件，可能是消息还没保存到数据库，等待后重试
+                if attempt < max_retries - 1:
+                    print(f"[UploadTask] ⏳ 未找到附件，等待重试 ({attempt + 1}/{max_retries}): {attachment_id[:8]}...")
+                    await asyncio.sleep(retry_delay)
+                else:
+                    print(f"[UploadTask] ❌ 重试 {max_retries} 次后仍未找到附件: {attachment_id[:8]}... (消息ID: {message_id[:8]}...)")
+                    print(f"[UploadTask] ❌ 请检查前端是否正确保存了消息到数据库")
+                
+        except Exception as e:
+            print(f"[UploadTask] ❌ 更新会话失败: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay)
+            # ✅ 不再抛出异常，让调用者决定如何处理
 
 
 @router.post("/upload-async")
@@ -335,6 +466,13 @@ async def upload_file_async(
         "message": "上传任务已创建"
     }
     """
+    # ✅ 详细日志：记录接收到的所有参数
+    print(f"[UploadAsync] 接收到上传请求:")
+    print(f"  - 文件名: {file.filename}")
+    print(f"  - session_id: {session_id[:8] if session_id else 'None'}...")
+    print(f"  - message_id: {message_id[:8] if message_id else 'None'}...")
+    print(f"  - attachment_id: {attachment_id[:8] if attachment_id else 'None'}...")
+    
     # 保存文件到临时目录
     temp_dir = tempfile.gettempdir()
     task_id = str(uuid.uuid4())
@@ -345,6 +483,7 @@ async def upload_file_async(
         f.write(file_content)
     
     print(f"[UploadAsync] 文件已保存到临时目录: {temp_path}")
+    print(f"[UploadAsync] 创建任务 ID: {task_id[:8]}...")
     
     # 创建上传任务
     task = UploadTask(

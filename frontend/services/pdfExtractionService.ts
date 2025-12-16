@@ -1,4 +1,3 @@
-
 /**
  * PDF Extraction Service
  *
@@ -7,7 +6,7 @@
 
 import { PdfExtractionResult, PdfExtractionTemplate } from '../../types';
 
-const BACKEND_URL = ''; // Use relative path to leverage Vite proxy
+const BACKEND_URL = 'http://localhost:8000';
 
 // Default templates for local mode (when backend is unavailable)
 const DEFAULT_TEMPLATES: PdfExtractionTemplate[] = [
@@ -43,32 +42,22 @@ export class PdfExtractionService {
   /**
    * Check if backend PDF extraction is available
    */
-  static async checkAvailability(force = false): Promise<boolean> {
-    // Return cached result if we already checked and not forcing refresh
-    if (!force && this.backendAvailable !== null) {
+  static async checkAvailability(): Promise<boolean> {
+    // Return cached result if we already checked
+    if (this.backendAvailable !== null) {
       return this.backendAvailable;
     }
 
     try {
-      // Short timeout to avoid blocking UI
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-
       const response = await fetch(`${BACKEND_URL}/health`, {
         method: 'GET',
-        signal: controller.signal
+        signal: AbortSignal.timeout(3000) // 3 second timeout
       });
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) throw new Error("Health check failed");
-      
       const data = await response.json();
-      // Ensure backend explicitly says pdf_extraction is enabled, or fallback to true if key missing but health ok
-      this.backendAvailable = data.pdf_extraction !== false; 
+      this.backendAvailable = data.pdf_extraction === true;
       return this.backendAvailable;
     } catch (error) {
-      console.warn('Backend PDF extraction unavailable (using local mode):', error);
+      console.log('Backend PDF extraction unavailable, using local mode');
       this.backendAvailable = false;
       return false;
     }
@@ -82,6 +71,7 @@ export class PdfExtractionService {
     const isAvailable = await this.checkAvailability();
 
     if (!isAvailable) {
+      console.log('Using default PDF templates (backend unavailable)');
       return DEFAULT_TEMPLATES;
     }
 
@@ -107,23 +97,15 @@ export class PdfExtractionService {
    * @param templateType - Template to use for extraction
    * @param apiKey - API key for backend extraction
    * @param additionalInstructions - Optional additional instructions
-   * @param modelId - Model ID to use for extraction (required)
    * @returns Extraction result or error
    */
   static async extractFromPdf(
     file: File,
     templateType: string,
     apiKey: string,
-    additionalInstructions: string = '',
-    modelId: string
+    additionalInstructions: string = ''
   ): Promise<PdfExtractionResult> {
-    // Check availability again but allow retry if previously failed
-    let isAvailable = await this.checkAvailability();
-    
-    if (!isAvailable) {
-        // Try one more time forcing a check, just in case server woke up
-        isAvailable = await this.checkAvailability(true);
-    }
+    const isAvailable = await this.checkAvailability();
 
     if (!isAvailable) {
       // Backend unavailable - return error result
@@ -138,56 +120,31 @@ export class PdfExtractionService {
       };
     }
 
-    // Sanitize Model ID
-    // 1. Remove 'models/' prefix if present (backend might double add it or SDK mismatch)
-    // 2. Map known problematic aliases to stable versions
-    let safeModelId = modelId || 'gemini-1.5-flash';
-    
-    if (safeModelId.startsWith('models/')) {
-        safeModelId = safeModelId.replace('models/', '');
-    }
-
-    // Explicitly fix the broken alias that causes backend 500s
-    if (safeModelId.includes('gemini-1.5-pro-latest')) {
-        safeModelId = 'gemini-1.5-pro';
-    } else if (safeModelId.includes('gemini-1.5-flash-latest')) {
-        safeModelId = 'gemini-1.5-flash';
-    }
-
     // Backend available - use API
     const formData = new FormData();
     formData.append('file', file);
     formData.append('template_type', templateType);
     formData.append('api_key', apiKey);
     formData.append('additional_instructions', additionalInstructions);
-    
-    // Add to body
-    formData.append('model_id', safeModelId);
-    formData.append('model', safeModelId); // Legacy support
-    formData.append('model_name', safeModelId); // Alternative
 
     try {
-      // Robustness: Add model_id to URL as well, just in case Body parsing fails on backend
-      const url = new URL(`${BACKEND_URL}/api/pdf/extract`, window.location.origin);
-      url.searchParams.append('model_id', safeModelId);
-
-      const response = await fetch(url.toString(), {
+      const response = await fetch(`${BACKEND_URL}/api/pdf/extract`, {
         method: 'POST',
         body: formData,
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: response.statusText }));
-        throw new Error(errorData.detail || `Server Error: ${response.status}`);
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to extract PDF data');
       }
 
       const result: PdfExtractionResult = await response.json();
       return result;
-    } catch (error: any) {
+    } catch (error) {
       console.error('PDF extraction error:', error);
       return {
         success: false,
-        error: error.message || 'Unknown error occurred',
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
         template_type: templateType,
         template_name: templateType,
         data: {},
