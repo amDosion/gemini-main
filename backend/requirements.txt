@@ -1,0 +1,29 @@
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.6.0
+python-multipart>=0.0.9
+httpx>=0.26.0
+aiofiles>=23.2.0
+selenium>=4.18.0
+webdriver-manager>=4.0.1
+markdownify>=0.11.6
+beautifulsoup4>=4.12.3
+requests>=2.31.0
+Pillow>=10.2.0
+
+# Database
+sqlalchemy[asyncio]>=2.0.0
+
+# PDF Processing & AI
+pypdf>=5.0.0
+google-generativeai>=0.8.0
+
+# Document Embedding / RAG
+numpy>=1.24.0
+scikit-learn>=1.3.0
+
+# .env file support
+python-dotenv>=1.0.0
+
+# PostgreSQL driver (optional, uncomment to use PostgreSQL)
+psycopg2-binary

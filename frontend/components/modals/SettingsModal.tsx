@@ -1,0 +1,201 @@
+
+import React, { useState, useEffect } from 'react';
+import { X, Database, Edit3, Cloud } from 'lucide-react';
+import { ConfigProfile } from '../../services/db';
+import { StorageConfig } from '../../types/storage';
+import { ProfilesTab } from './settings/ProfilesTab';
+import { EditorTab } from './settings/EditorTab';
+import { StorageTab } from './settings/StorageTab';
+import { StorageEditorTab } from './settings/StorageEditorTab';
+
+interface SettingsModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  profiles: ConfigProfile[];
+  activeProfileId: string | null;
+  onSaveProfile: (profile: ConfigProfile) => Promise<void>;
+  onDeleteProfile: (id: string) => Promise<void>;
+  onActivateProfile: (id: string) => Promise<void>;
+
+  // 云存储相关
+  storageConfigs: StorageConfig[];
+  activeStorageId: string | null;
+  onSaveStorage: (config: StorageConfig) => Promise<void>;
+  onDeleteStorage: (id: string) => Promise<void>;
+  onActivateStorage: (id: string) => Promise<void>;
+
+  initialApiKey: string;
+  initialBaseUrl: string;
+  hiddenModelIds: string[];
+  initialTab?: 'profiles' | 'editor' | 'storage' | 'storage-editor';
+}
+
+type SettingsTab = 'profiles' | 'editor' | 'storage' | 'storage-editor';
+
+export const SettingsModal: React.FC<SettingsModalProps> = ({
+  isOpen,
+  onClose,
+  profiles,
+  activeProfileId,
+  onSaveProfile,
+  onDeleteProfile,
+  onActivateProfile,
+  storageConfigs,
+  activeStorageId,
+  onSaveStorage,
+  onDeleteStorage,
+  onActivateStorage,
+  hiddenModelIds,
+  initialTab = 'profiles'
+}) => {
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
+
+  // Track which profile is being edited. Null means "Create New".
+  const [editingProfile, setEditingProfile] = useState<ConfigProfile | null>(null);
+  const [editingStorage, setEditingStorage] = useState<StorageConfig | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab);
+      // Reset editing state when opening
+      if (initialTab !== 'editor') {
+        setEditingProfile(null);
+      }
+      if (initialTab !== 'storage-editor') {
+        setEditingStorage(null);
+      }
+    }
+  }, [isOpen, initialTab]);
+
+  const handleStartCreate = () => {
+    setEditingProfile(null);
+    setActiveTab('editor');
+  };
+
+  const handleStartEdit = (profile: ConfigProfile) => {
+    setEditingProfile(profile);
+    setActiveTab('editor');
+  };
+
+  const handleSave = async (profile: ConfigProfile) => {
+    await onSaveProfile(profile);
+    // Auto-activate the new profile for convenience
+    await onActivateProfile(profile.id);
+
+    onClose();
+  };
+
+  // 云存储相关
+  const handleStartCreateStorage = () => {
+    setEditingStorage(null);
+    setActiveTab('storage-editor');
+  };
+
+  const handleStartEditStorage = (storage: StorageConfig) => {
+    setEditingStorage(storage);
+    setActiveTab('storage-editor');
+  };
+
+  const handleSaveStorage = async (storage: StorageConfig) => {
+    await onSaveStorage(storage);
+    // Auto-activate the new storage for convenience
+    await onActivateStorage(storage.id);
+
+    setActiveTab('storage');
+  };
+
+  const TabButton = ({ id, icon: Icon, label }: { id: SettingsTab, icon: any, label: string }) => (
+    <button
+      type="button"
+      onClick={() => setActiveTab(id)}
+      className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-xl transition-all ${activeTab === id
+        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20'
+        : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+        }`}
+    >
+      <Icon size={18} />
+      {label}
+    </button>
+  );
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="absolute inset-0 z-50 bg-slate-950 flex overflow-hidden animate-[fadeIn_0.2s_ease-out]">
+
+      {/* Sidebar */}
+      <div className="w-64 bg-slate-900/50 border-r border-slate-800 p-4 flex flex-col shrink-0">
+        <div className="px-4 py-4 mb-4">
+          <h2 className="text-xl font-bold text-white tracking-tight">Settings</h2>
+          <p className="text-xs text-slate-500 mt-1">Configure Providers & Keys</p>
+        </div>
+        <nav className="space-y-1 flex-1">
+          <TabButton id="profiles" icon={Database} label="Saved Configs" />
+          <TabButton id="storage" icon={Cloud} label="Cloud Storage" />
+          <TabButton id="editor" icon={Edit3} label="Editor" />
+        </nav>
+      </div>
+
+      {/* Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 bg-slate-950 relative">
+        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar relative">
+
+          {activeTab === 'profiles' && (
+            <ProfilesTab
+              profiles={profiles}
+              activeProfileId={activeProfileId}
+              onActivateProfile={onActivateProfile}
+              onDeleteProfile={onDeleteProfile}
+              onSaveProfile={onSaveProfile} // For duplication updates
+              onEditProfile={handleStartEdit}
+              onCreateNew={handleStartCreate}
+            />
+          )}
+
+          {activeTab === 'editor' && (
+            <EditorTab
+              initialData={editingProfile}
+              existingProfiles={profiles}
+              onSave={handleSave}
+              onClose={onClose}
+            />
+          )}
+
+          {activeTab === 'storage' && (
+            <StorageTab
+              storageConfigs={storageConfigs}
+              activeStorageId={activeStorageId}
+              onSaveStorage={onSaveStorage}
+              onDeleteStorage={onDeleteStorage}
+              onActivateStorage={onActivateStorage}
+              onCreateNew={handleStartCreateStorage}
+              onEditStorage={handleStartEditStorage}
+            />
+          )}
+
+          {activeTab === 'storage-editor' && (
+            <StorageEditorTab
+              initialData={editingStorage}
+              existingConfigs={storageConfigs}
+              onSave={handleSaveStorage}
+              onClose={() => setActiveTab('storage')}
+            />
+          )}
+
+        </div>
+
+        {/* Footer logic is now inside tabs for better context (especially Editor) */}
+        {(activeTab === 'profiles' || activeTab === 'storage') && (
+          <div className="p-6 border-t border-slate-800 bg-slate-900 flex justify-end gap-3 z-10 sticky bottom-0">
+            <button
+              onClick={onClose}
+              className="px-5 py-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-900 transition-colors text-sm font-medium"
+            >
+              Close
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};

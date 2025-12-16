@@ -1,0 +1,19 @@
+# IDEs and editors
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+
+# Environment variables
+backend/.env
+.env.local
+*.env.local
+
+# Databases
+backend/test.db
+node_modules
+
+# IDE specific
+.idx/
