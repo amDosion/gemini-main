@@ -13,6 +13,10 @@ from typing import Optional, Dict, Any, List
 import asyncio
 import uuid
 import json
+import subprocess
+import sys
+import atexit
+import platform
 
 # Import logger and progress tracker
 try:
@@ -125,16 +129,18 @@ try:
     from .routers.personas import router as personas_router
     from .routers.image_expand import router as image_expand_router
     API_ROUTES_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     try:
-        from routers import health, storage, browse, pdf, embedding, dashscope_proxy
-        from routers.profiles import router as profiles_router
-        from routers.sessions import router as sessions_router
-        from routers.personas import router as personas_router
-        from routers.image_expand import router as image_expand_router
+        # Fallback: try importing from app.routers
+        from app.routers import health, storage, browse, pdf, embedding, dashscope_proxy
+        from app.routers.profiles import router as profiles_router
+        from app.routers.sessions import router as sessions_router
+        from app.routers.personas import router as personas_router
+        from app.routers.image_expand import router as image_expand_router
         API_ROUTES_AVAILABLE = True
-    except ImportError as e:
-        logger.warning(f"{LOG_PREFIXES['warning']} Could not import API routes module: {e}")
+    except ImportError as e2:
+        logger.warning(f"{LOG_PREFIXES['warning']} Could not import API routes module: {e2}")
+        logger.info(f"{LOG_PREFIXES['info']} Original error was: {e}")
         API_ROUTES_AVAILABLE = False
 
 # Create FastAPI app
@@ -143,6 +149,157 @@ app = FastAPI(
     description="Backend API for browser automation and web scraping",
     version="1.0.0"
 )
+
+# ============================================================================
+# Celery Worker 自动启动/关闭管理
+# ============================================================================
+
+# 全局变量：存储 Celery Worker 进程
+celery_worker_process = None
+
+@app.on_event("startup")
+async def startup_celery_worker():
+    """
+    FastAPI 启动时自动启动 Celery Worker
+    """
+    global celery_worker_process
+
+    try:
+        logger.info("=" * 60)
+        logger.info(f"{LOG_PREFIXES['info']} 正在启动 Celery Worker...")
+        logger.info("=" * 60)
+
+        # 检测操作系统并选择合适的 pool 模式
+        is_windows = platform.system() == 'Windows'
+        pool_mode = 'solo' if is_windows else 'prefork'
+
+        logger.info(f"{LOG_PREFIXES['info']} 检测到操作系统: {platform.system()}")
+        logger.info(f"{LOG_PREFIXES['info']} 使用 pool 模式: {pool_mode}")
+
+        # 构建 Celery 启动命令
+        celery_cmd = [
+            sys.executable,  # 使用当前 Python 解释器
+            "-m", "celery",
+            "-A", "app.core.celery_app",
+            "worker",
+            "--loglevel=info",
+            f"--pool={pool_mode}",
+            "--queues=upload_queue"  # 明确指定队列
+        ]
+
+        if not is_windows:
+            celery_cmd.append("--concurrency=3")
+
+        # 设置正确的工作目录和环境变量
+        import os
+        current_dir = os.getcwd()
+        backend_dir = os.path.join(current_dir, 'backend') if 'backend' not in current_dir else current_dir
+        
+        # 设置 PYTHONPATH 确保模块可以被找到
+        env = os.environ.copy()
+        env['PYTHONPATH'] = backend_dir
+        
+        logger.info(f"{LOG_PREFIXES['info']} Celery 工作目录: {backend_dir}")
+        logger.info(f"{LOG_PREFIXES['info']} Celery 命令: {' '.join(celery_cmd)}")
+
+        # 启动 Celery Worker 进程
+        celery_worker_process = subprocess.Popen(
+            celery_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,  # 行缓冲
+            cwd=backend_dir,  # 设置正确的工作目录
+            env=env  # 设置环境变量
+        )
+
+        # 等待一小段时间检查进程是否正常启动
+        import time
+        time.sleep(2)
+        
+        if celery_worker_process.poll() is None:
+            logger.info(f"{LOG_PREFIXES['success']} ✅ Celery Worker 已启动 (PID: {celery_worker_process.pid})")
+            logger.info(f"{LOG_PREFIXES['info']} 并发数: 3, 队列: upload_queue")
+            
+            # 读取一些初始输出来检查启动状态
+            try:
+                # 非阻塞读取输出
+                import select
+                if hasattr(select, 'select'):  # Unix系统
+                    ready, _, _ = select.select([celery_worker_process.stdout], [], [], 1)
+                    if ready:
+                        output = celery_worker_process.stdout.readline()
+                        if output:
+                            logger.info(f"{LOG_PREFIXES['info']} Celery Worker 输出: {output.strip()}")
+                else:  # Windows系统
+                    # Windows下简单检查进程状态
+                    pass
+            except Exception as e:
+                logger.warning(f"{LOG_PREFIXES['warning']} 无法读取 Celery Worker 输出: {e}")
+                
+        else:
+            # 进程已经退出，读取错误信息
+            stdout, stderr = celery_worker_process.communicate()
+            logger.error(f"{LOG_PREFIXES['error']} ❌ Celery Worker 启动失败")
+            logger.error(f"{LOG_PREFIXES['error']} 标准输出: {stdout}")
+            logger.error(f"{LOG_PREFIXES['error']} 错误输出: {stderr}")
+            celery_worker_process = None
+
+        logger.info("=" * 60)
+
+    except Exception as e:
+        logger.error(f"{LOG_PREFIXES['error']} ❌ Celery Worker 启动失败: {e}")
+        logger.warning(f"{LOG_PREFIXES['warning']} 文件上传任务将无法处理，请手动启动 Celery Worker")
+        import traceback
+        logger.error(f"{LOG_PREFIXES['error']} 详细错误: {traceback.format_exc()}")
+
+
+@app.on_event("shutdown")
+async def shutdown_celery_worker():
+    """
+    FastAPI 关闭时优雅停止 Celery Worker
+    """
+    global celery_worker_process
+
+    if celery_worker_process:
+        try:
+            logger.info("=" * 60)
+            logger.info(f"{LOG_PREFIXES['info']} 正在停止 Celery Worker...")
+            logger.info("=" * 60)
+
+            # 发送终止信号
+            celery_worker_process.terminate()
+
+            # 等待进程结束（最多10秒）
+            try:
+                celery_worker_process.wait(timeout=10)
+                logger.info(f"{LOG_PREFIXES['success']} ✅ Celery Worker 已优雅停止")
+            except subprocess.TimeoutExpired:
+                # 如果超时，强制杀死进程
+                logger.warning(f"{LOG_PREFIXES['warning']} Celery Worker 未能及时停止，强制终止...")
+                celery_worker_process.kill()
+                celery_worker_process.wait()
+                logger.info(f"{LOG_PREFIXES['info']} Celery Worker 已强制终止")
+
+            logger.info("=" * 60)
+
+        except Exception as e:
+            logger.error(f"{LOG_PREFIXES['error']} ❌ 停止 Celery Worker 时出错: {e}")
+
+
+# 注册退出处理器（作为备份机制）
+def cleanup_celery():
+    """确保程序异常退出时也能停止 Celery Worker"""
+    global celery_worker_process
+    if celery_worker_process and celery_worker_process.poll() is None:
+        logger.info(f"{LOG_PREFIXES['info']} [退出处理器] 停止 Celery Worker...")
+        celery_worker_process.terminate()
+        try:
+            celery_worker_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            celery_worker_process.kill()
+
+atexit.register(cleanup_celery)
 
 # Register API routes
 if API_ROUTES_AVAILABLE:

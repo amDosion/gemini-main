@@ -15,6 +15,9 @@ from ..core.database import SessionLocal
 from ..models.db_models import StorageConfig, ActiveStorage, UploadTask
 from ..services.storage_service import StorageService
 
+# 导入 Celery 任务
+from app.tasks.upload_tasks import process_upload
+
 router = APIRouter(prefix="/api/storage", tags=["storage"])
 
 
@@ -220,226 +223,15 @@ async def upload_file(
     )
 
 
-# ==================== 异步上传任务处理 ====================
+# ==================== 异步上传任务处理（已迁移到 Celery）====================
+# 所有上传任务处理逻辑已迁移到 app/tasks/upload_tasks.py
+# 使用 Celery + Redis 队列管理，支持并发控制和失败重试
 
 from ..models.db_models import ChatSession
-
-async def process_upload_task(task_id: str, _db: Session = None):
-    """
-    后台处理上传任务
-    
-    支持两种模式：
-    1. 从本地文件上传（source_file_path 存在）
-    2. 从 URL 下载后上传（source_url 存在）
-    
-    上传完成后自动更新数据库中的会话消息
-    
-    注意：此函数创建独立的数据库会话，避免与请求处理器共享会话导致的竞态条件
-    """
-    # ✅ 创建独立的数据库会话，避免与其他后台任务共享
-    db = SessionLocal()
-    try:
-        task = db.query(UploadTask).filter(UploadTask.id == task_id).first()
-        if not task:
-            print(f"[UploadTask] 任务不存在: {task_id}")
-            return
-        
-        # ✅ 详细日志：确认任务数据
-        print(f"[UploadTask] 开始处理任务: {task_id}")
-        print(f"  - 文件名: {task.filename}")
-        print(f"  - session_id: {task.session_id[:8] if task.session_id else 'None'}...")
-        print(f"  - message_id: {task.message_id[:8] if task.message_id else 'None'}...")
-        print(f"  - attachment_id: {task.attachment_id[:8] if task.attachment_id else 'None'}...")
-        
-        # 1. 更新状态为 uploading
-        task.status = 'uploading'
-        db.commit()
-        
-        # 2. 获取存储配置
-        if task.storage_id:
-            config = db.query(StorageConfig).filter(StorageConfig.id == task.storage_id).first()
-        else:
-            active = db.query(ActiveStorage).filter(ActiveStorage.user_id == "default").first()
-            if not active or not active.storage_id:
-                raise Exception("未设置存储配置")
-            config = db.query(StorageConfig).filter(StorageConfig.id == active.storage_id).first()
-        
-        if not config or not config.enabled:
-            raise Exception("存储配置不可用")
-        
-        # 3. 获取图片内容
-        image_content = None
-        temp_path = None
-        
-        if task.source_file_path and os.path.exists(task.source_file_path):
-            # 模式 1: 从本地文件读取
-            print(f"[UploadTask] 读取本地文件: {task.source_file_path}")
-            with open(task.source_file_path, 'rb') as f:
-                image_content = f.read()
-            temp_path = task.source_file_path
-        elif task.source_url:
-            # 模式 2: 从 URL 下载
-            print(f"[UploadTask] 下载图片: {task.source_url}")
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(task.source_url)
-                response.raise_for_status()
-                image_content = response.content
-            
-            # 保存到临时文件
-            temp_dir = tempfile.gettempdir()
-            temp_path = os.path.join(temp_dir, f"upload_{task_id}_{task.filename}")
-            with open(temp_path, 'wb') as f:
-                f.write(image_content)
-            print(f"[UploadTask] 临时文件: {temp_path}")
-        else:
-            raise Exception("没有可用的图片来源")
-        
-        # 4. 上传到云存储
-        print(f"[UploadTask] 上传到云存储: {config.provider}")
-        result = await StorageService.upload_file(
-            filename=task.filename,
-            content=image_content,
-            content_type='image/png',
-            provider=config.provider,
-            config=config.config
-        )
-        
-        # 5. 删除临时文件
-        if temp_path and os.path.exists(temp_path):
-            try:
-                os.remove(temp_path)
-                print(f"[UploadTask] 临时文件已删除: {temp_path}")
-            except Exception as e:
-                print(f"[UploadTask] 删除临时文件失败: {e}")
-        
-        # 6. 更新任务状态
-        if result.get('success'):
-            task.status = 'completed'
-            task.target_url = result.get('url')
-            task.completed_at = int(datetime.now().timestamp() * 1000)
-            db.commit()  # ✅ 先提交任务状态，确保上传成功被记录
-            print(f"[UploadTask] 上传成功: {task.target_url}")
-            
-            # 7. 更新数据库中的会话消息（即使失败也不影响任务状态）
-            if task.session_id and task.message_id and task.attachment_id:
-                try:
-                    await update_session_attachment_url(
-                        db, 
-                        task.session_id, 
-                        task.message_id, 
-                        task.attachment_id, 
-                        task.target_url
-                    )
-                except Exception as e:
-                    print(f"[UploadTask] ⚠️ 更新会话附件 URL 失败（任务已完成）: {e}")
-        else:
-            task.status = 'failed'
-            task.error_message = result.get('error', '上传失败')
-            db.commit()
-            print(f"[UploadTask] 上传失败: {task.error_message}")
-        
-    except Exception as e:
-        print(f"[UploadTask] 任务失败: {str(e)}")
-        try:
-            task.status = 'failed'
-            task.error_message = str(e)
-            db.commit()
-        except:
-            pass
-    finally:
-        # ✅ 确保关闭独立的数据库会话
-        db.close()
-
-
-async def update_session_attachment_url(
-    db: Session, 
-    session_id: str, 
-    message_id: str, 
-    attachment_id: str, 
-    url: str,
-    max_retries: int = 10,
-    retry_delay: float = 2.0
-):
-    """
-    更新会话中指定附件的 URL（带重试机制）
-    
-    注意：SQLAlchemy 的 JSON 字段在原地修改时不会自动检测变化，
-    需要使用 flag_modified() 或重新赋值来触发更新
-    
-    由于前端保存消息和提交上传任务是并行的，可能存在竞争条件，
-    所以需要重试机制来等待消息保存完成
-    
-    参数：
-    - max_retries: 最大重试次数（默认10次）
-    - retry_delay: 每次重试间隔（默认2秒，总等待时间最长20秒）
-    """
-    from sqlalchemy.orm.attributes import flag_modified
-    import copy
-    import asyncio
-    
-    print(f"[UploadTask] 开始更新附件 URL: session={session_id[:8]}..., msg={message_id[:8]}..., att={attachment_id[:8]}...")
-    
-    for attempt in range(max_retries):
-        try:
-            # 刷新数据库连接，获取最新数据
-            db.expire_all()
-            
-            session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
-            if not session:
-                print(f"[UploadTask] 会话不存在: {session_id}")
-                return
-            
-            # ✅ 深拷贝消息列表，避免原地修改检测问题
-            messages = copy.deepcopy(session.messages or [])
-            updated = False
-            
-            # 调试：打印当前消息数量和 ID
-            msg_ids = [m.get('id', '')[:8] for m in messages]
-            if attempt == 0:
-                print(f"[UploadTask] 当前会话消息数: {len(messages)}, IDs: {msg_ids}")
-            
-            for msg in messages:
-                if msg.get('id') == message_id and msg.get('attachments'):
-                    for att in msg['attachments']:
-                        if att.get('id') == attachment_id:
-                            att['url'] = url
-                            att['uploadStatus'] = 'completed'
-                            att.pop('tempUrl', None)
-                            att.pop('file', None)
-                            updated = True
-                            print(f"[UploadTask] ✅ 找到附件，更新 URL: {url[:60]}...")
-                            break
-                if updated:
-                    break
-            
-            if updated:
-                # ✅ 重新赋值并标记字段已修改
-                session.messages = messages
-                flag_modified(session, 'messages')
-                db.commit()
-                print(f"[UploadTask] ✅ 会话已更新: {session_id[:8]}..., 附件: {attachment_id[:8]}...")
-                return  # 成功，退出
-            else:
-                # 未找到附件，可能是消息还没保存到数据库，等待后重试
-                if attempt < max_retries - 1:
-                    print(f"[UploadTask] ⏳ 未找到附件，等待重试 ({attempt + 1}/{max_retries}): {attachment_id[:8]}...")
-                    await asyncio.sleep(retry_delay)
-                else:
-                    print(f"[UploadTask] ❌ 重试 {max_retries} 次后仍未找到附件: {attachment_id[:8]}... (消息ID: {message_id[:8]}...)")
-                    print(f"[UploadTask] ❌ 请检查前端是否正确保存了消息到数据库")
-                
-        except Exception as e:
-            print(f"[UploadTask] ❌ 更新会话失败: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            if attempt < max_retries - 1:
-                await asyncio.sleep(retry_delay)
-            # ✅ 不再抛出异常，让调用者决定如何处理
 
 
 @router.post("/upload-async")
 async def upload_file_async(
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     session_id: Optional[str] = None,
     message_id: Optional[str] = None,
@@ -449,77 +241,147 @@ async def upload_file_async(
 ):
     """
     异步上传文件到云存储（不阻塞前端）
-    
-    前端提交文件后立即返回，后端在后台处理上传并更新数据库
-    
+    使用 Celery + Redis 任务队列
+
+    前端提交文件后立即返回，后端 Celery Worker 在后台处理上传并更新数据库
+
     请求参数（multipart/form-data）：
     - file: 要上传的文件
     - session_id: 会话 ID（用于更新数据库）
     - message_id: 消息 ID
     - attachment_id: 附件 ID
     - storage_id: 云存储配置 ID（可选）
-    
+
     返回：
     {
         "task_id": "task-xxx",
+        "celery_task_id": "celery-task-xxx",
         "status": "pending",
         "message": "上传任务已创建"
     }
     """
-    # ✅ 详细日志：记录接收到的所有参数
+    # 详细日志
     print(f"[UploadAsync] 接收到上传请求:")
     print(f"  - 文件名: {file.filename}")
+    print(f"  - 文件大小: {file.size if hasattr(file, 'size') else 'Unknown'}")
     print(f"  - session_id: {session_id[:8] if session_id else 'None'}...")
     print(f"  - message_id: {message_id[:8] if message_id else 'None'}...")
     print(f"  - attachment_id: {attachment_id[:8] if attachment_id else 'None'}...")
-    
+
     # 保存文件到临时目录
     temp_dir = tempfile.gettempdir()
     task_id = str(uuid.uuid4())
     temp_path = os.path.join(temp_dir, f"upload_{task_id}_{file.filename}")
-    
-    file_content = await file.read()
-    with open(temp_path, 'wb') as f:
-        f.write(file_content)
-    
-    print(f"[UploadAsync] 文件已保存到临时目录: {temp_path}")
+
+    try:
+        file_content = await file.read()
+        print(f"[UploadAsync] 读取文件内容: {len(file_content)} 字节")
+        
+        with open(temp_path, 'wb') as f:
+            f.write(file_content)
+        print(f"[UploadAsync] 文件已保存到临时目录: {temp_path}")
+        
+        # 验证文件是否正确保存
+        if os.path.exists(temp_path):
+            file_size = os.path.getsize(temp_path)
+            print(f"[UploadAsync] 临时文件验证成功，大小: {file_size} 字节")
+        else:
+            raise Exception("临时文件保存失败")
+            
+    except Exception as e:
+        print(f"[UploadAsync] ❌ 文件保存失败: {e}")
+        raise HTTPException(status_code=500, detail=f"文件保存失败: {str(e)}")
+
     print(f"[UploadAsync] 创建任务 ID: {task_id[:8]}...")
-    
-    # 创建上传任务
-    task = UploadTask(
-        id=task_id,
-        session_id=session_id,
-        message_id=message_id,
-        attachment_id=attachment_id,
-        source_file_path=temp_path,
-        filename=file.filename,
-        storage_id=storage_id,
-        status='pending',
-        created_at=int(datetime.now().timestamp() * 1000)
-    )
-    
-    db.add(task)
-    db.commit()
-    
-    # 添加后台任务
-    background_tasks.add_task(process_upload_task, task_id, db)
-    
+
+    # 创建上传任务记录
+    try:
+        task = UploadTask(
+            id=task_id,
+            session_id=session_id,
+            message_id=message_id,
+            attachment_id=attachment_id,
+            source_file_path=temp_path,
+            filename=file.filename,
+            storage_id=storage_id,
+            status='pending',
+            created_at=int(datetime.now().timestamp() * 1000)
+        )
+
+        db.add(task)
+        db.commit()
+        print(f"[UploadAsync] ✅ 任务记录已保存到数据库: {task_id[:8]}...")
+        
+    except Exception as e:
+        print(f"[UploadAsync] ❌ 数据库保存失败: {e}")
+        # 清理临时文件
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        raise HTTPException(status_code=500, detail=f"数据库保存失败: {str(e)}")
+
+    # ✅ 使用 Celery 提交任务到 Redis 队列
+    try:
+        print(f"[UploadAsync] 提交任务到 Celery 队列: {task_id[:8]}...")
+        print(f"[UploadAsync] 使用任务函数: {process_upload}")
+        print(f"[UploadAsync] 任务参数: task_id={task_id}")
+        
+        # 检查 Celery 应用状态
+        from app.core.celery_app import celery_app
+        print(f"[UploadAsync] Celery 应用状态: {celery_app}")
+        print(f"[UploadAsync] Celery broker: {celery_app.conf.broker_url}")
+        print(f"[UploadAsync] Celery backend: {celery_app.conf.result_backend}")
+        
+        celery_task = process_upload.delay(task_id)
+        print(f"[UploadAsync] ✅ Celery 任务已提交，Celery Task ID: {celery_task.id}")
+        print(f"[UploadAsync] 任务状态: {celery_task.status}")
+        
+        # 尝试获取任务信息
+        try:
+            task_info = celery_task.info
+            print(f"[UploadAsync] 任务信息: {task_info}")
+        except Exception as info_error:
+            print(f"[UploadAsync] ⚠️ 无法获取任务信息: {info_error}")
+
+        return {
+            "task_id": task_id,
+            "celery_task_id": celery_task.id,
+            "status": "pending",
+            "message": "上传任务已提交到队列"
+        }
+        
+    except Exception as e:
+        print(f"[UploadAsync] ❌ Celery 任务提交失败: {e}")
+        import traceback
+        print(f"[UploadAsync] 详细错误: {traceback.format_exc()}")
+        
+        # 清理数据库记录和临时文件
+        try:
+            db.delete(task)
+            db.commit()
+        except:
+            pass
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+            
+        raise HTTPException(status_code=500, detail=f"任务提交失败: {str(e)}")
+
     return {
         "task_id": task_id,
+        "celery_task_id": celery_task.id,
         "status": "pending",
-        "message": "上传任务已创建"
+        "message": "上传任务已提交到队列"
     }
 
 
 @router.post("/upload-from-url")
 async def upload_from_url(
     data: dict,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
     从 URL 下载图片并上传到云存储（异步）
-    
+    使用 Celery + Redis 任务队列
+
     请求参数：
     {
         "url": "https://dashscope.aliyuncs.com/...",  # DashScope 临时 URL
@@ -529,15 +391,24 @@ async def upload_from_url(
         "attachment_id": "att-xxx",                    # 附件 ID
         "storage_id": "storage-xxx"                    # 云存储配置 ID（可选）
     }
-    
+
     返回：
     {
         "task_id": "task-xxx",
+        "celery_task_id": "celery-task-xxx",
         "status": "pending",
         "message": "上传任务已创建"
     }
     """
-    # 创建上传任务
+    # 详细日志
+    print(f"[UploadFromUrl] 接收到上传请求:")
+    print(f"  - URL: {data.get('url', '')[:60]}...")
+    print(f"  - filename: {data.get('filename')}")
+    print(f"  - session_id: {data.get('session_id', '')[:8] if data.get('session_id') else 'None'}...")
+    print(f"  - message_id: {data.get('message_id', '')[:8] if data.get('message_id') else 'None'}...")
+    print(f"  - attachment_id: {data.get('attachment_id', '')[:8] if data.get('attachment_id') else 'None'}...")
+
+    # 创建上传任务记录
     task_id = str(uuid.uuid4())
     task = UploadTask(
         id=task_id,
@@ -550,17 +421,20 @@ async def upload_from_url(
         status='pending',
         created_at=int(datetime.now().timestamp() * 1000)
     )
-    
+
     db.add(task)
     db.commit()
-    
-    # 添加后台任务
-    background_tasks.add_task(process_upload_task, task_id, db)
-    
+
+    # ✅ 使用 Celery 提交任务到 Redis 队列
+    print(f"[UploadFromUrl] 提交任务到 Celery 队列: {task_id[:8]}...")
+    celery_task = process_upload.delay(task_id)
+    print(f"[UploadFromUrl] ✅ Celery 任务已提交，Celery Task ID: {celery_task.id}")
+
     return {
         "task_id": task_id,
+        "celery_task_id": celery_task.id,
         "status": "pending",
-        "message": "上传任务已创建"
+        "message": "上传任务已提交到队列"
     }
 
 
@@ -590,41 +464,45 @@ async def get_upload_status(task_id: str, db: Session = Depends(get_db)):
 @router.post("/retry-upload/{task_id}")
 async def retry_upload(
     task_id: str,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
     重试失败的上传任务
-    
+    使用 Celery + Redis 任务队列
+
     返回：
     {
         "task_id": "task-xxx",
+        "celery_task_id": "celery-task-xxx",
         "status": "pending",
         "message": "重试任务已创建"
     }
     """
     task = db.query(UploadTask).filter(UploadTask.id == task_id).first()
-    
+
     if not task:
         raise HTTPException(status_code=404, detail="上传任务不存在")
-    
+
     if task.status not in ['failed', 'completed']:
         raise HTTPException(status_code=400, detail="只能重试失败的任务")
-    
+
     # 重置任务状态
     task.status = 'pending'
     task.error_message = None
     task.target_url = None
     task.completed_at = None
     db.commit()
-    
-    # 添加后台任务
-    background_tasks.add_task(process_upload_task, task_id, db)
-    
+
+    # ✅ 使用 Celery 提交任务到 Redis 队列
+    print(f"[RetryUpload] 重新提交任务到 Celery 队列: {task_id[:8]}...")
+    celery_task = process_upload.delay(task_id)
+    print(f"[RetryUpload] ✅ Celery 任务已提交，Celery Task ID: {celery_task.id}")
+
     return {
         "task_id": task_id,
+        "celery_task_id": celery_task.id,
         "status": "pending",
-        "message": "重试任务已创建"
+        "message": "重试任务已提交到队列"
     }
 
 
