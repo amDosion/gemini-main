@@ -45,39 +45,39 @@ export const handleImageExpand = async (
     uploadStatus: 'pending'
   }];
   
-  // 后台异步上传原图到云存储（不阻塞前端显示）
+  // 异步上传原图到云存储（仅当原图不是云存储 URL 时）
   if (!isOriginalCloudUrl && originalAttachment.file) {
-    console.log('[imageExpandHandler] 后台上传原图到云存储:', {
+    console.log('[imageExpandHandler] 上传原图到云存储:', {
       file: originalAttachment.file.name,
       userMessageId: context.userMessageId.substring(0, 8) + '...',
       originalAttachmentId: originalAttachmentId.substring(0, 8) + '...'
     });
-    // 不等待，后台异步上传
-    uploadToCloudStorage(
+    // ✅ 使用 await 确保原图任务先创建完成
+    await uploadToCloudStorage(
       originalAttachment.file, 
       context.userMessageId, 
       originalAttachmentId, 
       context.sessionId,
       originalAttachment.name
-    ).catch(e => console.error('[imageExpandHandler] 原图上传失败:', e));
+    );
   } else if (isOriginalCloudUrl) {
     console.log('[imageExpandHandler] 原图已是云存储 URL，跳过上传');
   }
   
-  // 后台异步上传结果图到云存储（不阻塞前端显示）
-  console.log('[imageExpandHandler] 后台上传结果图到云存储:', {
+  // 异步上传结果图到云存储（传 File 对象，不传 URL）
+  console.log('[imageExpandHandler] 上传结果图到云存储:', {
     file: resultFilename,
     modelMessageId: context.modelMessageId.substring(0, 8) + '...',
     resultAttachmentId: resultAttachmentId.substring(0, 8) + '...'
   });
-  // 不等待，后台异步上传
-  uploadToCloudStorage(
+  // ✅ 使用 await 确保结果图任务创建完成
+  await uploadToCloudStorage(
     resultFile,
     context.modelMessageId, 
     resultAttachmentId, 
     context.sessionId,
     resultFilename
-  ).catch(e => console.error('[imageExpandHandler] 结果图上传失败:', e));
+  );
 
   return {
     content: '扩展后的图片',

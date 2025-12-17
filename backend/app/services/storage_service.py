@@ -113,7 +113,7 @@ class StorageService:
     ) -> Dict[str, Any]:
         """
         上传文件到阿里云 OSS
-        
+
         Args:
             filename: 文件名
             content: 文件内容（字节）
@@ -125,7 +125,7 @@ class StorageService:
                 - endpoint: OSS 访问端点（如 oss-cn-hangzhou.aliyuncs.com）
                 - customDomain: 自定义 CDN 域名（可选，用于生成公开访问 URL）
                 - secure: 是否使用 HTTPS（默认 True）
-        
+
         Returns:
             {
                 "success": True,
@@ -140,7 +140,7 @@ class StorageService:
         endpoint = config.get("endpoint")
         custom_domain = config.get("customDomain")
         secure = config.get("secure", True)
-        
+
         if not all([access_key_id, access_key_secret, bucket_name, endpoint]):
             raise HTTPException(
                 status_code=400,
