@@ -69,7 +69,14 @@ export async function editImage(
         } else if (refImg.url && !refImg.url.startsWith('blob:')) {
             // 方式 3: 远程 URL - 需要先下载转换为 Base64
             try {
-                const response = await fetch(refImg.url);
+                // 使用 no-cors 模式或通过后端代理下载
+                const response = await fetch(refImg.url, { 
+                    mode: 'cors',
+                    credentials: 'omit'
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
                 const blob = await response.blob();
                 const base64 = await blobToBase64(blob);
                 const match = base64.match(/^data:(.*?);base64,(.*)$/);
@@ -82,7 +89,23 @@ export async function editImage(
                     });
                 }
             } catch (e) {
-                console.warn('[editImage] Failed to fetch reference image:', refImg.url, e);
+                console.error('[editImage] Failed to fetch reference image:', refImg.url, e);
+                // 如果 fetch 失败，尝试使用 img 标签 + canvas 方式获取图片数据
+                try {
+                    const base64 = await fetchImageViaCanvas(refImg.url);
+                    const match = base64.match(/^data:(.*?);base64,(.*)$/);
+                    if (match) {
+                        parts.push({ 
+                            inlineData: { 
+                                mimeType: match[1], 
+                                data: match[2] 
+                            } 
+                        });
+                        console.log('[editImage] Successfully loaded image via canvas fallback');
+                    }
+                } catch (canvasError) {
+                    console.error('[editImage] Canvas fallback also failed:', canvasError);
+                }
             }
         }
     }
@@ -132,5 +155,35 @@ function blobToBase64(blob: Blob): Promise<string> {
         reader.onload = () => resolve(reader.result as string);
         reader.onerror = reject;
         reader.readAsDataURL(blob);
+    });
+}
+
+/**
+ * 通过 img 标签 + canvas 方式获取跨域图片的 Base64 数据
+ * 这种方式可以绕过某些 CORS 限制（如果图片服务器允许跨域显示）
+ */
+function fetchImageViaCanvas(url: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth;
+                canvas.height = img.naturalHeight;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    reject(new Error('Failed to get canvas context'));
+                    return;
+                }
+                ctx.drawImage(img, 0, 0);
+                const base64 = canvas.toDataURL('image/png');
+                resolve(base64);
+            } catch (e) {
+                reject(e);
+            }
+        };
+        img.onerror = () => reject(new Error('Failed to load image'));
+        img.src = url;
     });
 }

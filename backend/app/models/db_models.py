@@ -155,6 +155,8 @@ class UploadTask(Base):
     target_url = Column(String, nullable=True)  # 目标URL（云存储永久URL）
     filename = Column(String, nullable=False)  # 文件名
     storage_id = Column(String, nullable=True)  # 使用的存储配置ID
+    priority = Column(String, nullable=True, default='normal')  # 优先级：high/normal/low
+    retry_count = Column(Integer, nullable=True, default=0)  # 重试次数
     status = Column(String, nullable=False, default='pending')  # pending/uploading/completed/failed
     error_message = Column(String, nullable=True)  # 错误信息
     created_at = Column(BigInteger, nullable=False)  # 创建时间戳（毫秒）
@@ -172,6 +174,8 @@ class UploadTask(Base):
             "targetUrl": self.target_url,
             "filename": self.filename,
             "storageId": self.storage_id,
+            "priority": self.priority,
+            "retryCount": self.retry_count,
             "status": self.status,
             "errorMessage": self.error_message,
             "createdAt": self.created_at,

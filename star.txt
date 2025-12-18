@@ -1,3 +1,9 @@
-pip install -r backend/requirements.txt && uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+纯后端：pip install -r backend/requirements.txt && uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+纯前端：npx vite
+一键启动前后端：pnpm run dev
+
+
+
+pip install -r backend/requirements.txt && uvicorn backend.app.main:app --host 0.0.0.0 --port 7788 --reload
 
 pnpm run dev

@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "mcp__sequential-thinking__sequentialthinking",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(npx tsc:*)",
+      "Bash(find:*)",
+      "Bash(uvicorn:*)",
+      "Bash(set PYTHONUNBUFFERED=1)",
+      "Bash(timeout /t 5 /nobreak)",
+      "Bash(timeout 10 uvicorn:*)"
     ]
   }
 }

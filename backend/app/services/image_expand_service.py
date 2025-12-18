@@ -13,8 +13,8 @@ from dataclasses import dataclass
 import requests
 import time
 
-# 导入独立的上传服务
-from app.services.dashscope_file_upload import upload_bytes_to_dashscope
+# 导入独立的上传服务（使用相对导入确保跨环境兼容）
+from .dashscope_file_upload import upload_bytes_to_dashscope
 
 # DashScope API 配置
 DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com"

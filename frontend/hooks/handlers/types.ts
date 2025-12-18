@@ -21,7 +21,9 @@ export interface HandlerContext {
  */
 export interface HandlerResult {
   content: string;
-  attachments: Attachment[];
+  attachments: Attachment[];           // 前端显示用附件（本地 URL）
+  dbAttachments?: Attachment[];        // 数据库保存用附件（云存储 URL）
+  dbUserAttachments?: Attachment[];    // 用户消息的数据库附件（仅 image-edit 等需要原图上传的模式）
   groundingMetadata?: any;
   urlContextMetadata?: any;
   browserOperationId?: string;

@@ -1,86 +1,149 @@
 /**
  * 图片扩展模式处理器
  * 处理 image-outpainting 模式
+ * 
+ * 优化策略（Redis 队列异步上传）：
+ * 1. 调用 DashScope API 扩图（内部会上传到 DashScope OSS，不修改）
+ * 2. 下载结果图创建本地 Blob URL（用于立即显示）
+ * 3. 立即返回显示用附件，不阻塞 UI
+ * 4. 提交上传任务到 Redis 队列（不等待上传完成）
+ * 5. Worker 池在后台处理上传，完成后自动更新数据库
  */
 import { v4 as uuidv4 } from 'uuid';
 import { Attachment } from '../../../types';
 import { llmService } from '../../services/llmService';
-import { HandlerContext, HandlerResult, UploadToCloudStorageFn } from './types';
-import { isCloudStorageUrl } from './attachmentUtils';
+import { HandlerContext, HandlerResult } from './types';
+import { isUploadedToCloud } from './attachmentUtils';
+import { storageUpload } from '../../services/storage/storageUpload';
+
+/**
+ * 扩展结果类型
+ */
+export interface ImageExpandResult extends HandlerResult {
+  dbAttachments?: Attachment[];
+  dbUserAttachments?: Attachment[];
+  /** 上传任务 Promise，调用方可选择 await 或让其后台执行 */
+  uploadTask?: Promise<{ dbAttachments: Attachment[]; dbUserAttachments: Attachment[] }>;
+}
 
 /**
  * 处理图片扩展模式
+ * 
+ * @param attachments - 附件列表（需包含原图）
+ * @param context - 处理器上下文
+ * @returns 生成结果，包含显示用附件和异步上传任务
  */
 export const handleImageExpand = async (
   attachments: Attachment[],
-  context: HandlerContext,
-  uploadToCloudStorage: UploadToCloudStorageFn
-): Promise<HandlerResult> => {
-  // 获取原图信息
+  context: HandlerContext
+): Promise<ImageExpandResult> => {
+  // 1. 获取原图信息
   const originalAttachment = attachments[0];
-  const originalAttachmentId = originalAttachment.id;
+  if (!originalAttachment) {
+    throw new Error('No image provided for expansion');
+  }
+
   const originalUrl = originalAttachment.url || '';
-  const isOriginalCloudUrl = isCloudStorageUrl(originalUrl);
-  
-  console.log('[imageExpandHandler] 原图 URL:', originalUrl.substring(0, 60));
-  console.log('[imageExpandHandler] 原图是否已是云存储 URL:', isOriginalCloudUrl);
-  
-  // 调用扩图 API
+  const isOriginalUploaded = isUploadedToCloud(originalAttachment);
+
+  console.log('[imageExpandHandler] 开始图片扩展:', {
+    originalName: originalAttachment.name,
+    isOriginalUploaded,
+    uploadStatus: originalAttachment.uploadStatus
+  });
+
+  // 2. 调用扩图 API（内部会上传到 DashScope OSS，这部分不修改）
   const result = await llmService.outPaintImage(originalAttachment);
   
-  // 下载结果图创建 Blob（用于立即显示 + 上传）
-  // 只下载一次，避免后端重复下载
-  const imageBlob = await fetch(result.url).then(r => r.blob());
-  const blobUrl = URL.createObjectURL(imageBlob);
+  // 3. 下载结果图创建 Blob（用于显示和上传）
   const resultFilename = `expanded-${Date.now()}.png`;
-  const resultFile = new File([imageBlob], resultFilename, { type: 'image/png' });
+  const imageBlob = await fetch(result.url).then(r => r.blob());
+  const displayBlobUrl = URL.createObjectURL(imageBlob);
   
   const resultAttachmentId = uuidv4();
-  const resultArray: Attachment[] = [{ 
+  
+  console.log('[imageExpandHandler] 结果图已下载, blobSize:', imageBlob.size);
+
+  // 4. 构建显示用附件（本地 Blob URL）- 立即返回给 UI
+  const displayAttachment: Attachment = {
     id: resultAttachmentId,
     mimeType: result.mimeType,
     name: resultFilename,
-    url: blobUrl,      // Blob URL（用于显示）
-    tempUrl: blobUrl,
+    url: displayBlobUrl,
     uploadStatus: 'pending'
-  }];
-  
-  // 异步上传原图到云存储（仅当原图不是云存储 URL 时）
-  if (!isOriginalCloudUrl && originalAttachment.file) {
-    console.log('[imageExpandHandler] 上传原图到云存储:', {
-      file: originalAttachment.file.name,
-      userMessageId: context.userMessageId.substring(0, 8) + '...',
-      originalAttachmentId: originalAttachmentId.substring(0, 8) + '...'
-    });
-    // ✅ 使用 await 确保原图任务先创建完成
-    await uploadToCloudStorage(
-      originalAttachment.file, 
-      context.userMessageId, 
-      originalAttachmentId, 
-      context.sessionId,
-      originalAttachment.name
-    );
-  } else if (isOriginalCloudUrl) {
-    console.log('[imageExpandHandler] 原图已是云存储 URL，跳过上传');
-  }
-  
-  // 异步上传结果图到云存储（传 File 对象，不传 URL）
-  console.log('[imageExpandHandler] 上传结果图到云存储:', {
-    file: resultFilename,
-    modelMessageId: context.modelMessageId.substring(0, 8) + '...',
-    resultAttachmentId: resultAttachmentId.substring(0, 8) + '...'
-  });
-  // ✅ 使用 await 确保结果图任务创建完成
-  await uploadToCloudStorage(
-    resultFile,
-    context.modelMessageId, 
-    resultAttachmentId, 
-    context.sessionId,
-    resultFilename
-  );
+  };
 
+  // 5. 提交上传任务到 Redis 队列（不阻塞，不等待）
+  const uploadTask = async (): Promise<{ dbAttachments: Attachment[]; dbUserAttachments: Attachment[] }> => {
+    console.log('[imageExpandHandler] 提交上传任务到 Redis 队列');
+
+    // ========== 结果图：提交到 Redis 队列 ==========
+    let resultTaskId: string | null = null;
+    try {
+      const resultFile = new File([imageBlob], resultFilename, { type: 'image/png' });
+      const uploadResult = await storageUpload.uploadFileAsync(resultFile, {
+        sessionId: context.sessionId,
+        messageId: context.modelMessageId,
+        attachmentId: resultAttachmentId
+      });
+      resultTaskId = uploadResult.taskId;
+      console.log(`[imageExpandHandler] 结果图已提交到队列，任务ID: ${resultTaskId}`);
+    } catch (error) {
+      console.error('[imageExpandHandler] 提交结果图上传任务失败:', error);
+    }
+
+    // ========== 原图：复用云 URL 或提交到 Redis 队列 ==========
+    let originalTaskId: string | null = null;
+    let originalCloudUrl = '';
+
+    if (isOriginalUploaded) {
+      // 原图已上传，复用云存储 URL
+      originalCloudUrl = originalUrl;
+      console.log('[imageExpandHandler] 原图已上传，复用云存储 URL');
+    } else {
+      // 原图未上传，提交到 Redis 队列
+      const uploadSource = originalAttachment.file;
+      if (uploadSource) {
+        try {
+          const uploadResult = await storageUpload.uploadFileAsync(uploadSource, {
+            sessionId: context.sessionId,
+            messageId: context.userMessageId,
+            attachmentId: originalAttachment.id
+          });
+          originalTaskId = uploadResult.taskId;
+          console.log(`[imageExpandHandler] 原图已提交到队列，任务ID: ${originalTaskId}`);
+        } catch (error) {
+          console.error('[imageExpandHandler] 提交原图上传任务失败:', error);
+        }
+      } else {
+        console.warn('[imageExpandHandler] 原图无可用上传源，跳过');
+      }
+    }
+
+    console.log('[imageExpandHandler] 所有上传任务已提交，Worker 池将在后台处理');
+
+    return {
+      dbAttachments: [{
+        id: resultAttachmentId,
+        mimeType: result.mimeType,
+        name: resultFilename,
+        url: '', // URL 将由 Worker 池上传完成后更新
+        uploadStatus: resultTaskId ? 'pending' : 'failed',
+        uploadTaskId: resultTaskId || undefined
+      }],
+      dbUserAttachments: [{
+        ...originalAttachment,
+        url: originalCloudUrl || '', // 已上传则有 URL，否则为空
+        uploadStatus: isOriginalUploaded ? 'completed' : (originalTaskId ? 'pending' : 'failed'),
+        uploadTaskId: originalTaskId || undefined
+      }]
+    };
+  };
+
+  // 6. 立即返回显示用附件，上传任务在后台通过 Redis 队列处理
   return {
-    content: '扩展后的图片',
-    attachments: resultArray
+    content: 'Expanded image canvas.',
+    attachments: [displayAttachment],
+    uploadTask: uploadTask()  // 启动提交任务但不阻塞返回
   };
 };

@@ -2,20 +2,38 @@
 云存储配置和上传路由
 支持兰空图床和阿里云 OSS
 """
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, BackgroundTasks, Response
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime
 import uuid
 import httpx
 import os
-import tempfile
+from pathlib import Path
+import logging
 
 from ..core.database import SessionLocal
+from ..core.config import settings
 from ..models.db_models import StorageConfig, ActiveStorage, UploadTask
 from ..services.storage_service import StorageService
+from ..services.redis_queue_service import redis_queue
 
 router = APIRouter(prefix="/api/storage", tags=["storage"])
+logger = logging.getLogger(__name__)
+
+# 项目内临时文件目录
+# 获取当前文件所在目录，然后定位到 backend/temp/
+TEMP_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "temp")
+
+# 确保临时目录存在
+os.makedirs(TEMP_DIR, exist_ok=True)
+
+# Startup log to verify TEMP_DIR
+print(f"[Storage Router] TEMP_DIR initialized: {TEMP_DIR}")
+import sys
+sys.stderr.write(f"[Storage Router] TEMP_DIR initialized: {TEMP_DIR}\n")
+sys.stderr.flush()
 
 
 def get_db():
@@ -24,6 +42,82 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def _mask_url(url: str) -> str:
+    try:
+        if "://" not in url:
+            return url
+        scheme, rest = url.split("://", 1)
+        if "@" not in rest:
+            return url
+        creds, tail = rest.split("@", 1)
+        if ":" not in creds:
+            return url
+        user = creds.split(":", 1)[0]
+        return f"{scheme}://{user}:***@{tail}"
+    except Exception:
+        return url
+
+
+@router.get("/debug")
+async def storage_debug():
+    """返回后端运行态信息（用于排查是否命中最新代码/路由）。"""
+    backend_env = Path(__file__).resolve().parents[2] / ".env"
+    return {
+        "module_file": __file__,
+        "cwd": os.getcwd(),
+        "temp_dir": TEMP_DIR,
+        "backend_env_exists": backend_env.exists(),
+        "database_url": _mask_url(settings.database_url),
+        "redis_url": _mask_url(settings.redis_url),
+        "features": {
+            "upload_logs": True,
+            "upload_status": True,
+            "upload_async": True,
+        },
+    }
+
+
+@router.get("/worker-status")
+async def get_worker_status():
+    """查看 WorkerPool/Redis 状态（用于定位“排队后不处理，重启才成功”）。"""
+    try:
+        from ..services.upload_worker_pool import worker_pool
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"WorkerPool 不可用: {e}")
+
+    redis_error: str | None = None
+    stats = None
+    try:
+        if redis_queue._redis is None:
+            await redis_queue.connect()
+        stats = await redis_queue.get_stats()
+    except Exception as e:
+        redis_error = str(e)
+
+    workers_total = len(worker_pool._workers)
+    workers_alive = sum(1 for t in worker_pool._workers if not t.done())
+
+    return {
+        "worker_pool": {
+            "running": bool(worker_pool._running),
+            "workers_total": workers_total,
+            "workers_alive": workers_alive,
+            "reconcile_interval_s": getattr(worker_pool, "_reconcile_interval_s", None),
+            "reconcile_limit": getattr(worker_pool, "_reconcile_limit", None),
+        },
+        "redis": {
+            "connected": redis_queue._redis is not None,
+            "error": redis_error,
+            "stats": stats,
+        },
+        "server": {
+            "pid": os.getpid(),
+            "cwd": os.getcwd(),
+            "module_file": __file__,
+        },
+    }
 
 
 # ==================== 配置管理 ====================
@@ -285,9 +379,8 @@ async def process_upload_task(task_id: str, _db: Session = None):
                 response.raise_for_status()
                 image_content = response.content
             
-            # 保存到临时文件
-            temp_dir = tempfile.gettempdir()
-            temp_path = os.path.join(temp_dir, f"upload_{task_id}_{task.filename}")
+            # 保存到项目内临时目录 (backend/temp/)
+            temp_path = os.path.join(TEMP_DIR, f"upload_{task_id}_{task.filename}")
             with open(temp_path, 'wb') as f:
                 f.write(image_content)
             print(f"[UploadTask] 临时文件: {temp_path}")
@@ -439,8 +532,8 @@ async def update_session_attachment_url(
 
 @router.post("/upload-async")
 async def upload_file_async(
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    priority: str = "normal",
     session_id: Optional[str] = None,
     message_id: Optional[str] = None,
     attachment_id: Optional[str] = None,
@@ -448,73 +541,159 @@ async def upload_file_async(
     db: Session = Depends(get_db)
 ):
     """
-    异步上传文件到云存储（不阻塞前端）
-    
-    前端提交文件后立即返回，后端在后台处理上传并更新数据库
-    
+    异步上传文件到云存储（Redis + 数据库队列）
+
+    使用 Redis 队列 + Worker 池架构：
+    1. 保存文件到临时目录
+    2. 创建数据库记录（持久化）
+    3. 任务 ID 入队 Redis（调度）
+    4. 立即返回 task_id（不阻塞）
+
     请求参数（multipart/form-data）：
     - file: 要上传的文件
+    - priority: 优先级 (high/normal/low，默认 normal)
     - session_id: 会话 ID（用于更新数据库）
     - message_id: 消息 ID
     - attachment_id: 附件 ID
     - storage_id: 云存储配置 ID（可选）
-    
+
     返回：
     {
         "task_id": "task-xxx",
         "status": "pending",
-        "message": "上传任务已创建"
+        "priority": "normal",
+        "queue_position": 5
     }
     """
-    # ✅ 详细日志：记录接收到的所有参数
-    print(f"[UploadAsync] 接收到上传请求:")
-    print(f"  - 文件名: {file.filename}")
-    print(f"  - session_id: {session_id[:8] if session_id else 'None'}...")
-    print(f"  - message_id: {message_id[:8] if message_id else 'None'}...")
-    print(f"  - attachment_id: {attachment_id[:8] if attachment_id else 'None'}...")
-    
-    # 保存文件到临时目录
-    temp_dir = tempfile.gettempdir()
+    def log(msg: str, level: str = "info"):
+        print(msg, flush=True)
+        try:
+            sys.stderr.write(msg + "\n")
+            sys.stderr.flush()
+        except Exception:
+            pass
+        getattr(logger, level, logger.info)(msg)
+
     task_id = str(uuid.uuid4())
-    temp_path = os.path.join(temp_dir, f"upload_{task_id}_{file.filename}")
-    
+
+    # ✅ 详细日志：记录接收到的所有参数
+    log(f"[UploadAsync] 接收到上传请求: {task_id[:8]}...")
+    log(f"  - 文件名: {file.filename}")
+    log(f"  - 优先级: {priority}")
+    log(f"  - session_id: {session_id[:8] if session_id else 'None'}...")
+    log(f"  - message_id: {message_id[:8] if message_id else 'None'}...")
+    log(f"  - attachment_id: {attachment_id[:8] if attachment_id else 'None'}...")
+
+    await redis_queue.append_task_log(
+        task_id,
+        level="info",
+        message="upload request received",
+        source="api",
+        extra={
+            "filename": file.filename,
+            "priority": priority,
+            "session_id": session_id,
+            "message_id": message_id,
+            "attachment_id": attachment_id,
+        },
+    )
+
+    # 1. Save file to project temp directory (backend/temp/)
+    filename_with_id = f"upload_{task_id}_{file.filename}"
+
+    # Absolute path for file system operations
+    temp_path_abs = os.path.join(TEMP_DIR, filename_with_id)
+
+    # Relative path for database storage (cross-platform, use forward slashes)
+    temp_path_rel = f"backend/temp/{filename_with_id}"
+
     file_content = await file.read()
-    with open(temp_path, 'wb') as f:
+    with open(temp_path_abs, 'wb') as f:
         f.write(file_content)
-    
-    print(f"[UploadAsync] 文件已保存到临时目录: {temp_path}")
-    print(f"[UploadAsync] 创建任务 ID: {task_id[:8]}...")
-    
-    # 创建上传任务
+
+    log(f"[UploadAsync] File saved: {temp_path_abs}")
+    log(f"[UploadAsync] DB path (relative): {temp_path_rel}")
+    await redis_queue.append_task_log(
+        task_id,
+        level="info",
+        message="temp file saved",
+        source="api",
+        extra={"temp_path": temp_path_abs, "db_path": temp_path_rel, "size_bytes": len(file_content)},
+    )
+
+    # 2. Create database record (use RELATIVE path)
     task = UploadTask(
         id=task_id,
         session_id=session_id,
         message_id=message_id,
         attachment_id=attachment_id,
-        source_file_path=temp_path,
+        source_file_path=temp_path_rel,  # Use relative path
         filename=file.filename,
         storage_id=storage_id,
+        priority=priority,
+        retry_count=0,
         status='pending',
         created_at=int(datetime.now().timestamp() * 1000)
     )
-    
+
     db.add(task)
     db.commit()
-    
-    # 添加后台任务
-    background_tasks.add_task(process_upload_task, task_id, db)
-    
+
+    log(f"[UploadAsync] 任务已创建: {task_id[:8]}...")
+    await redis_queue.append_task_log(
+        task_id,
+        level="info",
+        message="db record created (upload_tasks)",
+        source="api",
+    )
+
+    # 3. 入队 Redis（调度）
+    enqueue_error: str | None = None
+    try:
+        # 确保 Redis 连接已建立
+        if redis_queue._redis is None:
+            log("[UploadAsync] Redis 连接未初始化，尝试连接...")
+            await redis_queue.connect()
+
+        queue_position = await redis_queue.enqueue(task_id, priority)
+        log(f"[UploadAsync] 已入队 Redis，位置: {queue_position}")
+        await redis_queue.append_task_log(
+            task_id,
+            level="info",
+            message=f"enqueued to redis (position={queue_position})",
+            source="api",
+        )
+    except Exception as e:
+        enqueue_error = f"Redis 入队失败: {e}"
+        log(f"[UploadAsync] ❌ {enqueue_error}", "error")
+        # 即使 Redis 入队失败，任务也已保存到数据库
+        # Worker 池会在启动时恢复这些任务
+        queue_position = -1
+        try:
+            task.error_message = enqueue_error
+            db.commit()
+        except Exception:
+            db.rollback()
+        await redis_queue.append_task_log(
+            task_id,
+            level="error",
+            message=enqueue_error,
+            source="api",
+        )
+
     return {
         "task_id": task_id,
         "status": "pending",
-        "message": "上传任务已创建"
+        "priority": priority,
+        "queue_position": queue_position,
+        "enqueued": queue_position != -1,
+        "enqueue_error": enqueue_error
     }
 
 
 @router.post("/upload-from-url")
 async def upload_from_url(
     data: dict,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
@@ -539,6 +718,8 @@ async def upload_from_url(
     """
     # 创建上传任务
     task_id = str(uuid.uuid4())
+    priority = data.get("priority", "normal")
+
     task = UploadTask(
         id=task_id,
         session_id=data.get('session_id'),
@@ -547,20 +728,43 @@ async def upload_from_url(
         source_url=data['url'],
         filename=data['filename'],
         storage_id=data.get('storage_id'),
+        priority=priority,
+        retry_count=0,
         status='pending',
         created_at=int(datetime.now().timestamp() * 1000)
     )
-    
+
     db.add(task)
     db.commit()
-    
-    # 添加后台任务
-    background_tasks.add_task(process_upload_task, task_id, db)
-    
+
+    # 入队 Redis
+    enqueue_error: str | None = None
+    try:
+        if redis_queue._redis is None:
+            await redis_queue.connect()
+        queue_position = await redis_queue.enqueue(task_id, priority)
+        await redis_queue.append_task_log(
+            task_id,
+            level="info",
+            message=f"enqueued to redis (position={queue_position})",
+            source="api",
+        )
+    except Exception as e:
+        enqueue_error = f"Redis 入队失败: {e}"
+        try:
+            task.error_message = enqueue_error
+            db.commit()
+        except Exception:
+            db.rollback()
+        queue_position = -1
+
     return {
         "task_id": task_id,
         "status": "pending",
-        "message": "上传任务已创建"
+        "priority": priority,
+        "queue_position": queue_position,
+        "enqueued": queue_position != -1,
+        "enqueue_error": enqueue_error
     }
 
 
@@ -568,7 +772,7 @@ async def upload_from_url(
 async def get_upload_status(task_id: str, db: Session = Depends(get_db)):
     """
     查询上传任务状态
-    
+
     返回：
     {
         "id": "task-xxx",
@@ -580,51 +784,174 @@ async def get_upload_status(task_id: str, db: Session = Depends(get_db)):
     }
     """
     task = db.query(UploadTask).filter(UploadTask.id == task_id).first()
-    
+
     if not task:
         raise HTTPException(status_code=404, detail="上传任务不存在")
-    
+
     return task.to_dict()
+
+
+@router.get("/worker-pool/health")
+async def get_worker_pool_health(db: Session = Depends(get_db)):
+    """
+    获取 Worker 池健康状态
+
+    返回：
+    {
+        "available": true,
+        "running": true,
+        "num_workers": 5,
+        "redis_connected": true,
+        "pending_tasks_count": 3,
+        "redis_queue_length": 3
+    }
+    """
+    try:
+        from ..services.upload_worker_pool import worker_pool, WORKER_POOL_AVAILABLE
+        from ..services.redis_queue_service import redis_queue
+    except ImportError:
+        return {
+            "available": False,
+            "running": False,
+            "num_workers": 0,
+            "redis_connected": False,
+            "pending_tasks_count": 0,
+            "redis_queue_length": 0,
+            "error": "Worker pool module not available"
+        }
+
+    health = {
+        "available": WORKER_POOL_AVAILABLE,
+        "running": False,
+        "num_workers": 0,
+        "redis_connected": False,
+        "pending_tasks_count": 0,
+        "redis_queue_length": 0
+    }
+
+    if WORKER_POOL_AVAILABLE:
+        health["running"] = worker_pool._running
+        health["num_workers"] = len(worker_pool._workers)
+
+        # 检查 Redis 连接
+        try:
+            health["redis_connected"] = redis_queue._redis is not None
+            if health["redis_connected"]:
+                # 获取队列长度
+                stats = await redis_queue.get_stats()
+                health["redis_queue_length"] = stats.get("total_enqueued", 0) - stats.get("total_dequeued", 0)
+        except Exception:
+            health["redis_connected"] = False
+
+        # 获取 pending 任务数量
+        try:
+            health["pending_tasks_count"] = db.query(UploadTask).filter(
+                UploadTask.status == 'pending'
+            ).count()
+        except Exception:
+            pass
+
+    return health
+
+
+@router.get("/upload-task-db/{task_id}")
+async def get_upload_task_db(task_id: str, response: Response, db: Session = Depends(get_db)):
+    """
+    直接从数据库读取 upload_tasks 行（用于排查“看不到更新/必须重启才刷新”）。
+
+    - 不经过 ORM 对象缓存（使用 SQL 读取）
+    - 返回 server 信息用于确认命中的是哪个后端进程
+    """
+    response.headers["Cache-Control"] = "no-store"
+
+    row = (
+        db.execute(
+            text(
+                """
+                SELECT
+                  id,
+                  status,
+                  filename,
+                  priority,
+                  retry_count,
+                  source_url,
+                  source_file_path,
+                  target_url,
+                  error_message,
+                  created_at,
+                  completed_at
+                FROM upload_tasks
+                WHERE id = :id
+                """
+            ),
+            {"id": task_id},
+        )
+        .mappings()
+        .first()
+    )
+
+    if not row:
+        raise HTTPException(status_code=404, detail="上传任务不存在")
+
+    return {
+        "task": dict(row),
+        "server": {
+            "pid": os.getpid(),
+            "cwd": os.getcwd(),
+            "module_file": __file__,
+        },
+    }
+
+
+@router.get("/upload-logs/{task_id}")
+async def get_upload_logs(task_id: str, tail: int = 200):
+    """获取上传任务日志（来自 Redis）。"""
+    try:
+        if redis_queue._redis is None:
+            await redis_queue.connect()
+        logs = await redis_queue.get_task_logs(task_id, tail=tail)
+        return {"task_id": task_id, "logs": logs}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"获取任务日志失败: {e}")
 
 
 @router.post("/retry-upload/{task_id}")
 async def retry_upload(
     task_id: str,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
-    重试失败的上传任务
-    
+    重试失败的上传任务（Redis 队列）
+
     返回：
     {
         "task_id": "task-xxx",
         "status": "pending",
-        "message": "重试任务已创建"
+        "queue_position": 5
     }
     """
     task = db.query(UploadTask).filter(UploadTask.id == task_id).first()
-    
+
     if not task:
         raise HTTPException(status_code=404, detail="上传任务不存在")
-    
+
     if task.status not in ['failed', 'completed']:
         raise HTTPException(status_code=400, detail="只能重试失败的任务")
-    
+
     # 重置任务状态
     task.status = 'pending'
     task.error_message = None
     task.target_url = None
     task.completed_at = None
     db.commit()
-    
-    # 添加后台任务
-    background_tasks.add_task(process_upload_task, task_id, db)
-    
+
+    # 重新入队 Redis（低优先级）
+    queue_position = await redis_queue.enqueue(task_id, 'low')
+
     return {
         "task_id": task_id,
         "status": "pending",
-        "message": "重试任务已创建"
+        "queue_position": queue_position
     }
 
 

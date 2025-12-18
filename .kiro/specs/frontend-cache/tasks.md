@@ -1,0 +1,162 @@
+# Implementation Plan
+
+- [x] 1. 创建 IndexedDB 缓存适配器
+  - [x] 1.1 创建 `frontend/services/idbCacheAdapter.ts` 文件
+
+
+
+    - 实现 IndexedDB 数据库初始化（数据库名: `flux_cache`，版本: 1）
+    - 创建 `cache_entries` Object Store，Key Path 为 `key`
+    - 添加 `timestamp` 和 `lastAccess` 索引
+    - _Requirements: 3.1, 3.2_
+  - [x] 1.2 实现基础 CRUD 操作
+    - `get<T>(key: string): Promise<CacheEntry<T> | null>`
+    - `set<T>(key: string, entry: CacheEntry<T>): Promise<void>`
+    - `delete(key: string): Promise<void>`
+    - `clear(): Promise<void>`
+    - _Requirements: 1.4, 2.1, 2.3_
+  - [x] 1.3 实现批量操作和清理方法
+    - `getAll(): Promise<Map<string, CacheEntry<any>>>`
+    - `deleteOldest(count: number): Promise<void>`
+    - `getStorageUsage(): Promise<{ used: number; quota: number }>`
+    - _Requirements: 6.1, 6.2_
+  - [ ]* 1.4 编写 IndexedDB 适配器单元测试
+    - 使用 `fake-indexeddb` 模拟 IndexedDB
+    - 测试 CRUD 操作
+    - 测试存储配额处理
+    - _Requirements: 3.1, 3.2, 6.1_
+
+- [x] 2. 创建核心缓存服务
+  - [x] 2.1 创建 `frontend/services/cacheService.ts` 文件
+    - 定义 `CacheEntry`, `CacheConfig`, `CacheResult` 接口
+    - 实现 `CacheService` 类基础结构
+    - 初始化内存缓存 Map 和配置
+    - _Requirements: 1.1, 5.1_
+  - [x] 2.2 实现缓存读取逻辑
+    - `get<T>(key, fetcher, ttl?)` 方法
+    - TTL 过期检测逻辑
+    - 缓存命中/未命中处理
+    - _Requirements: 1.1, 1.2, 1.3, 1.4_
+  - [ ]* 2.3 编写属性测试：缓存命中不调用 API
+    - **Property 1: Cache Hit Returns Data Without API Call**
+    - **Validates: Requirements 1.1, 1.2**
+  - [x] 2.4 实现缓存写入和失效逻辑
+    - `set<T>(key, data)` 方法
+    - `invalidate(key)` 方法
+    - `invalidatePattern(pattern)` 方法
+    - _Requirements: 2.1, 2.2, 2.3, 2.4_
+  - [ ]* 2.5 编写属性测试：写操作更新缓存
+    - **Property 3: Write-Through Cache Consistency**
+    - **Validates: Requirements 2.1, 2.2, 2.4**
+  - [ ]* 2.6 编写属性测试：删除移除缓存
+    - **Property 4: Delete Removes From Cache**
+    - **Validates: Requirements 2.3**
+  - [x] 2.7 实现强制刷新逻辑
+    - `refresh<T>(key, fetcher)` 方法
+    - 绕过缓存直接调用 fetcher
+    - 更新缓存并重置 TTL
+    - _Requirements: 4.1, 4.2_
+  - [ ]* 2.8 编写属性测试：强制刷新绕过缓存
+    - **Property 6: Force Refresh Bypasses Cache**
+    - **Validates: Requirements 4.1, 4.2**
+  - [x] 2.9 实现 TTL 配置管理
+    - `setTTL(dataType, ttl)` 方法
+    - `getTTL(dataType)` 方法
+    - 默认 12 小时 TTL
+    - _Requirements: 5.1, 5.2, 5.3_
+  - [ ]* 2.10 编写属性测试：默认 TTL 回退
+    - **Property 7: Default TTL Fallback**
+    - **Validates: Requirements 5.2**
+
+- [ ] 3. Checkpoint - 确保所有测试通过
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 4. 实现 LRU 清理和存储管理
+  - [x] 4.1 实现 LRU 清理算法
+    - 基于 `accessCount` 和 `lastAccess` 排序
+    - 删除访问频率最低的条目
+    - _Requirements: 6.1, 6.2_
+  - [ ]* 4.2 编写属性测试：LRU 保留高频访问
+    - **Property 8: LRU Cleanup Preserves Frequently Accessed**
+    - **Validates: Requirements 6.2**
+  - [x] 4.3 实现存储配额处理
+    - 捕获 `QuotaExceededError`
+    - 自动触发 LRU 清理
+    - 清理失败时降级到内存模式
+    - _Requirements: 6.1, 6.3_
+  - [x] 4.4 实现缓存统计和状态方法
+    - `getCacheStatus(key)` 方法
+    - `getStats()` 方法
+    - _Requirements: 7.1, 7.2, 7.3_
+
+- [x] 5. 创建 CachedDB 包装器
+  - [x] 5.1 创建 `frontend/services/cachedDb.ts` 文件
+    - 包装现有 `HybridDB`
+    - 注入 `CacheService` 依赖
+    - _Requirements: 1.1_
+  - [x] 5.2 实现会话操作缓存
+    - `getSessions()` - 带缓存的会话列表获取
+    - `saveSession(session)` - 写穿透保存
+    - `deleteSession(id)` - 删除并失效缓存
+    - `refreshSessions()` - 强制刷新
+    - _Requirements: 1.2, 2.1, 2.2, 2.3, 4.1_
+  - [x] 5.3 实现配置和角色操作缓存
+    - `getProfiles()` / `saveProfile()` / `deleteProfile()`
+    - `getPersonas()` / `savePersonas()`
+    - `refreshProfiles()` / `refreshPersonas()`
+    - _Requirements: 1.2, 2.1, 2.2, 2.3, 4.1_
+  - [ ]* 5.4 编写 CachedDB 集成测试
+    - 测试缓存命中场景
+    - 测试缓存过期场景
+    - 测试写操作缓存更新
+    - _Requirements: 1.2, 1.3, 2.1_
+
+- [ ] 6. Checkpoint - 确保所有测试通过
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 7. 创建缓存状态 Hook 和 UI 组件
+  - [x] 7.1 创建 `frontend/hooks/useCacheStatus.ts`
+    - 实现 `useCacheStatus(key)` Hook
+    - 返回 `isFromCache`, `isStale`, `isRefreshing`, `lastUpdated`, `error`
+    - _Requirements: 7.1, 7.2, 7.3_
+  - [x] 7.2 创建 `frontend/components/common/CacheIndicator.tsx`
+    - 显示缓存状态图标（缓存/刷新中/过期）
+    - 可选显示最后更新时间
+    - 提供手动刷新按钮
+    - _Requirements: 7.1, 7.2, 7.3_
+  - [ ]* 7.3 编写 UI 组件测试
+    - 测试不同状态下的渲染
+    - 测试刷新按钮点击
+    - _Requirements: 7.1, 7.2, 7.3_
+
+- [x] 8. 集成到现有 Hooks
+  - [x] 8.1 修改 `frontend/hooks/useSessions.ts`
+    - 替换 `db` 为 `cachedDb`
+    - 添加缓存状态暴露
+    - 添加手动刷新方法
+    - _Requirements: 1.1, 1.2, 4.1_
+  - [x] 8.2 修改 `frontend/services/db.ts`
+    - 导出 `cachedDb` 实例
+    - 保持向后兼容
+    - _Requirements: 1.1_
+  - [x] 8.3 在 UI 中添加缓存状态指示器
+    - 在会话列表区域添加 `CacheIndicator`
+    - 在设置页面添加缓存管理选项
+    - _Requirements: 7.1, 7.2, 7.3_
+
+- [x] 9. 实现持久化恢复和 TTL 验证
+  - [x] 9.1 实现应用启动时的缓存恢复
+    - 从 IndexedDB 加载缓存到内存
+    - 验证每个条目的 TTL
+    - 清理过期条目
+    - _Requirements: 3.1, 3.3_
+  - [ ]* 9.2 编写属性测试：恢复时 TTL 验证
+    - **Property 5: TTL Validation on Restore**
+    - **Validates: Requirements 3.3**
+  - [ ]* 9.3 编写属性测试：过期缓存触发刷新
+    - **Property 2: Expired Cache Triggers Refresh**
+    - **Validates: Requirements 1.3**
+
+- [ ] 10. Final Checkpoint - 确保所有测试通过
+  - Ensure all tests pass, ask the user if questions arise.
+

@@ -1,5 +1,16 @@
 /**
  * 附件处理工具函数
+ * 
+ * 附件状态说明：
+ * - uploadStatus: 'completed' - 已上传到云存储，url 是云存储 URL
+ * - uploadStatus: 'pending' - 待上传，url 可能是 Base64/Blob/临时 URL
+ * - uploadStatus: 'failed' - 上传失败
+ * 
+ * URL 类型说明：
+ * - 云存储 URL: 我们上传后返回的永久 URL（uploadStatus === 'completed'）
+ * - Base64 URL: 内嵌数据 URL（data:image/png;base64,xxx）
+ * - Blob URL: 浏览器本地 URL（blob:xxx，页面关闭后失效）
+ * - 远程临时 URL: API 返回的临时 URL（会过期）
  */
 import { Attachment } from '../../../types';
 import { storageUpload } from '../../services/storage/storageUpload';
@@ -14,13 +25,63 @@ export const base64ToFile = async (base64: string, filename: string): Promise<Fi
 };
 
 /**
+ * 检查附件是否已上传到云存储
+ *
+ * 判断依据：uploadStatus === 'completed'
+ *
+ * @param att 附件对象
+ * @returns 是否已上传到云存储
+ */
+export const isUploadedToCloud = (att: Attachment): boolean => {
+  return att.uploadStatus === 'completed' && !!att.url && isHttpUrl(att.url);
+};
+
+/**
+ * 检查 URL 是否是 HTTP/HTTPS URL
+ */
+export const isHttpUrl = (url: string | undefined): boolean => {
+  if (!url) return false;
+  return url.startsWith('http://') || url.startsWith('https://');
+};
+
+/**
+ * 检查 URL 是否是 Blob URL
+ */
+export const isBlobUrl = (url: string | undefined): boolean => {
+  if (!url) return false;
+  return url.startsWith('blob:');
+};
+
+/**
+ * 检查 URL 是否是 Base64 Data URL
+ */
+export const isBase64Url = (url: string | undefined): boolean => {
+  if (!url) return false;
+  return url.startsWith('data:');
+};
+
+/**
+ * 检查 URL 是否是云存储 URL（基于 uploadStatus）
+ *
+ * @deprecated 此函数已过时且易出错！请使用以下替代方案：
+ * - 检查是否已上传：使用 isUploadedToCloud(att)
+ * - 检查 URL 格式：使用 isHttpUrl(url)
+ *
+ * 此函数只检查 URL 格式，无法区分临时 URL 和云存储 URL。
+ * 对于完整的云存储判断，应该使用 isUploadedToCloud(attachment)，
+ * 因为它会同时检查 uploadStatus 和 URL 格式。
+ */
+export const isCloudStorageUrl = (url: string | undefined): boolean => {
+  // 保持向后兼容：只检查是否是 HTTP URL
+  // 真正的云存储判断应该结合 uploadStatus
+  return isHttpUrl(url);
+};
+
+/**
  * 清理附件用于数据库存储
- * - 保留云存储 URL（http/https）
+ * - 保留已上传的云存储 URL（uploadStatus === 'completed'）
  * - 清空 Blob URL 和 Base64 URL（这些是临时 URL，不应保存到数据库）
  * - 清除 File 对象和临时数据（不能序列化）
- * 
- * 注意：正常情况下，附件应该在保存前已经上传到云存储并获得云 URL。
- * 这个函数是最后的安全网，确保不会将临时 URL 保存到数据库。
  * 
  * @param atts 附件数组
  * @param verbose 是否输出详细日志（默认 false）
@@ -28,21 +89,27 @@ export const base64ToFile = async (base64: string, filename: string): Promise<Fi
 export const cleanAttachmentsForDb = (atts: Attachment[], verbose: boolean = false): Attachment[] => {
   return atts.map(att => {
     const cleaned = { ...att };
+    const url = cleaned.url || '';
     
-    // 如果是云存储 URL，保持不变
-    if (cleaned.url && (cleaned.url.startsWith('http://') || cleaned.url.startsWith('https://'))) {
-      cleaned.uploadStatus = 'completed';
+    // 如果已上传到云存储，保持不变
+    if (cleaned.uploadStatus === 'completed' && isHttpUrl(url)) {
+      // 已上传，保持不变
     }
-    // 如果 url 是 Blob URL，设置为空字符串（不应该发生，但作为安全网）
-    else if (cleaned.url && cleaned.url.startsWith('blob:')) {
-      if (verbose) console.log('[cleanAttachmentsForDb] ⚠️ 发现 Blob URL，清空:', cleaned.url.substring(0, 50));
+    // 如果是 Blob URL，清空（不能持久化）
+    else if (isBlobUrl(url)) {
+      if (verbose) console.log('[cleanAttachmentsForDb] ⚠️ 发现 Blob URL，清空');
       cleaned.url = '';
       cleaned.uploadStatus = 'pending';
     }
-    // 如果 url 是 Base64 Data URL，也设置为空字符串（避免数据库存储过大）
-    else if (cleaned.url && cleaned.url.startsWith('data:')) {
+    // 如果是 Base64 URL，清空（避免数据库存储过大）
+    else if (isBase64Url(url)) {
       if (verbose) console.log('[cleanAttachmentsForDb] ⚠️ 发现 Base64 URL，清空');
       cleaned.url = '';
+      cleaned.uploadStatus = 'pending';
+    }
+    // 其他 HTTP URL（可能是临时 URL），保留但标记为 pending
+    else if (isHttpUrl(url) && cleaned.uploadStatus !== 'completed') {
+      if (verbose) console.log('[cleanAttachmentsForDb] ⚠️ 发现未完成上传的 HTTP URL');
       cleaned.uploadStatus = 'pending';
     }
     
@@ -52,6 +119,7 @@ export const cleanAttachmentsForDb = (atts: Attachment[], verbose: boolean = fal
     delete cleaned.tempUrl;
     // 清除 base64Data（仅用于 API 调用，不需要持久化到数据库）
     delete (cleaned as any).base64Data;
+    
     return cleaned;
   });
 };
@@ -59,7 +127,15 @@ export const cleanAttachmentsForDb = (atts: Attachment[], verbose: boolean = fal
 /**
  * 同步上传图片到云存储（等待完成后返回 URL）
  * 
- * @param imageSource 图片来源（File 对象、Base64 URL 或 Blob URL）
+ * 支持的输入类型：
+ * - File 对象：直接上传
+ * - Base64 URL：转换为 File 后上传
+ * - Blob URL：fetch 后转换为 File 上传
+ * - HTTP URL（临时 URL）：下载后上传
+ * 
+ * 注意：调用方应该先检查 uploadStatus，如果已经是 'completed' 则无需调用此函数
+ * 
+ * @param imageSource 图片来源
  * @param filename 文件名（可选）
  * @returns 云存储 URL，上传失败返回空字符串
  */
@@ -68,33 +144,54 @@ export const uploadToCloudStorageSync = async (
   filename?: string
 ): Promise<string> => {
   try {
+    // 1. 判断输入类型
     const isFile = imageSource instanceof File;
-    const isBase64 = typeof imageSource === 'string' && imageSource.startsWith('data:');
-    const isBlobUrl = typeof imageSource === 'string' && imageSource.startsWith('blob:');
+    const sourceUrl = typeof imageSource === 'string' ? imageSource : '';
     
-    console.log('[uploadToCloudStorageSync] 开始同步上传:', {
-      type: isFile ? 'File' : isBase64 ? 'Base64' : isBlobUrl ? 'Blob URL' : 'Unknown',
+    const urlType = isFile ? 'File' : 
+                    isBase64Url(sourceUrl) ? 'Base64' :
+                    isBlobUrl(sourceUrl) ? 'Blob URL' :
+                    isHttpUrl(sourceUrl) ? 'HTTP URL' : 'Unknown';
+    
+    console.log('[uploadToCloudStorageSync] 开始处理:', {
+      type: urlType,
       filename: isFile ? (imageSource as File).name : filename
     });
 
+    // 2. 转换为 File 对象
     let file: File;
 
     if (isFile) {
       file = imageSource as File;
-    } else if (isBase64) {
-      file = await base64ToFile(imageSource as string, filename || `image-${Date.now()}.png`);
+    } 
+    else if (isBase64Url(sourceUrl)) {
+      file = await base64ToFile(sourceUrl, filename || `image-${Date.now()}.png`);
       console.log('[uploadToCloudStorageSync] Base64 已转换为 File:', file.name, file.size);
-    } else if (isBlobUrl) {
-      // Blob URL 需要先 fetch 再转换
-      const response = await fetch(imageSource as string);
+    } 
+    else if (isBlobUrl(sourceUrl)) {
+      const response = await fetch(sourceUrl);
       const blob = await response.blob();
       file = new File([blob], filename || `image-${Date.now()}.png`, { type: blob.type });
       console.log('[uploadToCloudStorageSync] Blob URL 已转换为 File:', file.name, file.size);
-    } else {
-      throw new Error(`不支持的图片来源格式`);
+    } 
+    else if (isHttpUrl(sourceUrl)) {
+      // HTTP URL（包括临时 URL 和云存储 URL）- 下载后上传
+      console.log('[uploadToCloudStorageSync] 下载远程图片...');
+      // 使用后端代理下载图片（解决 CORS 问题）
+      const proxyUrl = `/api/storage/download?url=${encodeURIComponent(sourceUrl)}`;
+      const response = await fetch(proxyUrl);
+      if (!response.ok) {
+        throw new Error(`下载远程图片失败: HTTP ${response.status}`);
+      }
+      const blob = await response.blob();
+      file = new File([blob], filename || `image-${Date.now()}.png`, { type: blob.type || 'image/png' });
+      console.log('[uploadToCloudStorageSync] 远程图片已下载（通过后端代理）:', file.name, file.size);
+    } 
+    else {
+      throw new Error(`不支持的图片来源格式: ${sourceUrl.substring(0, 30)}...`);
     }
 
-    // 同步上传，等待完成
+    // 3. 上传到云存储
     const result = await storageUpload.uploadFile(file);
     
     if (result.success && result.url) {
@@ -124,10 +221,10 @@ export const uploadToCloudStorage = async (
 ): Promise<void> => {
   try {
     const isFile = imageSource instanceof File;
-    const isBase64 = typeof imageSource === 'string' && imageSource.startsWith('data:');
+    const sourceUrl = typeof imageSource === 'string' ? imageSource : '';
     
     console.log('[uploadToCloudStorage] 提交异步上传任务:', {
-      file: isFile ? (imageSource as File).name : isBase64 ? 'Base64' : 'Unknown',
+      type: isFile ? 'File' : isBase64Url(sourceUrl) ? 'Base64' : isBlobUrl(sourceUrl) ? 'Blob URL' : 'Unknown',
       messageId: messageId.substring(0, 8) + '...',
       attachmentId: attachmentId.substring(0, 8) + '...',
       sessionId: sessionId.substring(0, 8) + '...'
@@ -137,9 +234,14 @@ export const uploadToCloudStorage = async (
 
     if (isFile) {
       file = imageSource as File;
-    } else if (isBase64) {
-      file = await base64ToFile(imageSource as string, filename || `image-${Date.now()}.png`);
+    } else if (isBase64Url(sourceUrl)) {
+      file = await base64ToFile(sourceUrl, filename || `image-${Date.now()}.png`);
       console.log('[uploadToCloudStorage] Base64 已转换为 File:', file.name, file.type, file.size);
+    } else if (isBlobUrl(sourceUrl)) {
+      const response = await fetch(sourceUrl);
+      const blob = await response.blob();
+      file = new File([blob], filename || `image-${Date.now()}.png`, { type: blob.type });
+      console.log('[uploadToCloudStorage] Blob URL 已转换为 File:', file.name, file.size);
     } else {
       throw new Error(`不支持的图片来源格式`);
     }
@@ -156,12 +258,4 @@ export const uploadToCloudStorage = async (
   } catch (error) {
     console.error('[uploadToCloudStorage] 提交上传任务失败:', error);
   }
-};
-
-/**
- * 检查 URL 是否是云存储 URL
- */
-export const isCloudStorageUrl = (url: string | undefined): boolean => {
-  if (!url) return false;
-  return url.startsWith('http://') || url.startsWith('https://');
 };

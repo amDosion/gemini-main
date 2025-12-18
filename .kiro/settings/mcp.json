@@ -1,0 +1,187 @@
+{
+    "mcpServers": {
+        "serena": {
+            "command": "C:\\Users\\12180\\tools\\uv\\uv.exe",
+            "args": [
+                "run",
+                "--directory",
+                "C:\\Users\\12180\\tools\\serena",
+                "serena",
+                "start-mcp-server",
+                "--context",
+                "ide-assistant",
+                "--project",
+                "D:\\vue-admin"
+            ],
+            "description": "语义代码分析、安全重构、符号查找和引用追踪"
+        },
+        "desktop-commander-mcp": {
+            "command": "node",
+            "args": [
+                "C:\\Users\\12180\\tools\\DesktopCommanderMCP\\dist\\index.js"
+            ],
+            "description": "系统操作和文件管理"
+        },
+        "sequential-thinking": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-sequential-thinking"
+            ],
+            "description": "顺序思维辅助工具,帮助 AI 进行逐步推理"
+        },
+        "postgres-mcp": {
+            "command": "cmd",
+            "args": [
+                "/c",
+                "C:\\Users\\12180\\AppData\\Roaming\\Python\\Python314\\Scripts\\postgres-mcp.exe",
+                "postgresql://tools:DAe%5E%40kV%25%2A8yR@192.168.50.116:5432/vue_admin",
+                "--access-mode=unrestricted"
+            ],
+            "description": "PostgreSQL 数据库访问和查询(完整权限)"
+        },
+        "redis": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-redis",
+                "redis://:941378@192.168.50.175:6379"
+            ],
+            "description": "Redis 缓存数据库操作"
+        },
+        "github": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-github"
+            ],
+            "env": {
+                "GITHUB_PERSONAL_ACCESS_TOKEN": "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"
+            },
+            "description": "GitHub 仓库管理、PR、Issue 操作"
+        },
+        "vue-analyzer-mcp": {
+            "command": "node",
+            "args": [
+                "C:\\Users\\12180\\tools\\vue-analyzer-mcp.js"
+            ],
+            "description": "Vue.js 项目结构分析"
+        },
+        "vuesage-mcp": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "vuesage-mcp"
+            ],
+            "env": {
+                "PROJECT_ROOT": "D:/vue-admin/frontend"
+            },
+            "description": "Vue 组件质量分析、自动问题检测、批量分析"
+        },
+        "eslint-mcp": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@eslint/mcp@latest",
+                "--config",
+                "D:\\vue-admin\\frontend\\eslint.config.mjs"
+            ],
+            "description": "ESLint 代码质量检查、自动修复"
+        },
+        "fastapi-mcp-server": {
+            "command": "python",
+            "args": [
+                "C:\\Users\\12180\\tools\\fastapi_mcp_server.py"
+            ],
+            "description": "FastAPI 后端分析器"
+        },
+        "openapi-mcp-server": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@percent-tech/openapi-mcp-server@latest",
+                "http://localhost:8000/openapi.json"
+            ],
+            "description": "OpenAPI/Swagger 文档服务器(需要后端运行)"
+        },
+        "swagger-mcp": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@johnneerdael/swagger-mcp"
+            ],
+            "description": "Swagger/OpenAPI API 文档查询和探索"
+        },
+        "playwright": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@playwright/mcp@latest",
+                "--headless"
+            ],
+            "description": "浏览器自动化测试、E2E 测试、页面截图"
+        },
+        "chrome-devtools": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "chrome-devtools-mcp@latest"
+            ],
+            "description": "Chrome 浏览器控制、调试、网络监控"
+        },
+        "swiftcode-mcp": {
+            "command": "node",
+            "args": [
+                "C:\\Users\\12180\\tools\\swiftcode-mcp-server\\dist\\index.js"
+            ],
+            "description": "Swagger/OpenAPI → TypeScript 客户端生成、Vue 列表页脚手架"
+        },
+        "context7": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@upstash/context7-mcp"
+            ],
+            "description": "编程库文档查询、代码示例、最佳实践"
+        },
+        "codex": {
+            "command": "uvx",
+            "args": [
+                "--from",
+                "git+https://github.com/GuDaStudio/codexmcp.git",
+                "codexmcp"
+            ],
+            "description": "Codex MCP 服务 - AI 代码辅助"
+        },
+        "gemini": {
+            "command": "uvx",
+            "args": [
+                "--from",
+                "git+https://github.com/GuDaStudio/geminimcp.git",
+                "geminimcp"
+            ],
+            "description": "Gemini MCP 服务 - Google AI 集成"
+        },
+        "claude-code": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@anthropic-ai/claude-code@latest",
+                "--mcp"
+            ],
+            "env": {
+                "ANTHROPIC_API_KEY": "sk-yVQcnMc7lnHkAEuOEsMZV6Ys2Wl1dPzq2gIDmFqKQeWap0By",
+                "ANTHROPIC_BASE_URL": "https://api.yourapi.cn"
+            },
+            "description": "Claude Code MCP - 通过 MCP 协议调用 Claude Code 编码能力"
+        },
+        "claude-code-mcp": {
+            "command": "node",
+            "args": [
+                "C:\\Users\\12180\\tools\\claude-code-mcp\\dist\\index.js"
+            ],
+            "description": "Claude Code MCP (auchenberg) - 文件操作、Shell命令、代码分析"
+        }
+    }
+  }
+  

@@ -108,12 +108,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     <button
       type="button"
       onClick={() => setActiveTab(id)}
-      className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-xl transition-all ${activeTab === id
+      className={`flex-1 md:flex-none md:w-full flex items-center justify-center md:justify-start gap-2 md:gap-3 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium rounded-lg md:rounded-xl transition-all whitespace-nowrap ${activeTab === id
         ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20'
         : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
         }`}
     >
-      <Icon size={18} />
+      <Icon size={16} className="md:w-[18px] md:h-[18px]" />
       {label}
     </button>
   );
@@ -121,17 +121,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="absolute inset-0 z-50 bg-slate-950 flex overflow-hidden animate-[fadeIn_0.2s_ease-out]">
+    <div className="absolute inset-0 z-50 bg-slate-950 flex flex-col md:flex-row overflow-hidden animate-[fadeIn_0.2s_ease-out]">
 
-      {/* Sidebar */}
-      <div className="w-64 bg-slate-900/50 border-r border-slate-800 p-4 flex flex-col shrink-0">
-        <div className="px-4 py-4 mb-4">
-          <h2 className="text-xl font-bold text-white tracking-tight">Settings</h2>
-          <p className="text-xs text-slate-500 mt-1">Configure Providers & Keys</p>
+      {/* Sidebar / Top Nav */}
+      <div className="w-full md:w-64 bg-slate-900/50 border-b md:border-b-0 md:border-r border-slate-800 p-2 md:p-4 flex flex-col shrink-0">
+        <div className="px-2 md:px-4 py-2 md:py-4 mb-2 md:mb-4 flex items-center justify-between md:block">
+          <div>
+            <h2 className="text-lg md:text-xl font-bold text-white tracking-tight">Settings</h2>
+            <p className="text-[10px] md:text-xs text-slate-500 mt-1 hidden md:block">Configure Providers & Keys</p>
+          </div>
+          {/* Mobile Close Button (Optional if we want one here, but we have footer close) */}
+          <button onClick={onClose} className="md:hidden p-2 text-slate-400 hover:text-white">
+            <X size={20} />
+          </button>
         </div>
-        <nav className="space-y-1 flex-1">
-          <TabButton id="profiles" icon={Database} label="Saved Configs" />
-          <TabButton id="storage" icon={Cloud} label="Cloud Storage" />
+        <nav className="flex flex-row md:flex-col gap-2 overflow-x-auto scrollbar-hide">
+          <TabButton id="profiles" icon={Database} label="Configs" />
+          <TabButton id="storage" icon={Cloud} label="Storage" />
           <TabButton id="editor" icon={Edit3} label="Editor" />
         </nav>
       </div>

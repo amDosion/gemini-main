@@ -3,24 +3,52 @@ import { useState, useEffect, useCallback } from 'react';
 import { ChatSession, Message, Role } from '../../types';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../services/db';
+import { cachedDb } from '../services/cachedDb';
 import { cleanAttachmentsForDb } from './handlers/attachmentUtils';
+import { useCacheStatus, CacheStatusInfo } from './useCacheStatus';
 
 export const useSessions = () => {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load sessions from database on mount
+  // 缓存状态 Hook
+  const cacheStatus = useCacheStatus('sessions', async () => {
+    await refreshSessions();
+  });
+
+  // 刷新会话列表（强制从后端获取）
+  const refreshSessions = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const result = await cachedDb.refreshSessions();
+      const sortedSessions = result.data.sort((a, b) => b.createdAt - a.createdAt);
+      setSessions(sortedSessions);
+      cacheStatus.updateStatus(result.fromCache, result.isStale, result.timestamp);
+    } catch (error) {
+      console.error('Failed to refresh sessions:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [cacheStatus]);
+
+  // Load sessions from database on mount (with cache)
   useEffect(() => {
     const loadSessions = async () => {
       try {
         setIsLoading(true);
-        const loadedSessions = await db.getSessions();
+        // 初始化缓存服务
+        await cachedDb.init();
+        // 使用带缓存的获取方法
+        const result = await cachedDb.getSessions();
         
         // Sort by createdAt descending (newest first)
-        const sortedSessions = loadedSessions.sort((a, b) => b.createdAt - a.createdAt);
+        const sortedSessions = result.data.sort((a, b) => b.createdAt - a.createdAt);
         
         setSessions(sortedSessions);
+        
+        // 更新缓存状态
+        cacheStatus.updateStatus(result.fromCache, result.isStale, result.timestamp);
         
         // Restore the most recent session if available
         if (sortedSessions.length > 0) {
@@ -39,9 +67,10 @@ export const useSessions = () => {
   }, []);
 
   // Save session to database (with error handling for offline mode)
+  // 使用 cachedDb 实现写穿透
   const saveSessionToDb = useCallback(async (session: ChatSession) => {
     try {
-      await db.saveSession(session);
+      await cachedDb.saveSession(session);
     } catch (error) {
       // Silently fail - we're in memory-only mode (backend unavailable)
       // Sessions will still work in memory, just won't persist
@@ -50,9 +79,10 @@ export const useSessions = () => {
   }, []);
 
   // Delete session from database
+  // 使用 cachedDb 实现删除并失效缓存
   const deleteSessionFromDb = useCallback(async (sessionId: string) => {
     try {
-      await db.deleteSession(sessionId);
+      await cachedDb.deleteSession(sessionId);
     } catch (error) {
       console.warn('Failed to delete session from database:', error);
     }
@@ -194,6 +224,9 @@ export const useSessions = () => {
     updateSessionTitle,
     deleteSession,
     getSession,
-    isLoading
+    isLoading,
+    // 缓存相关
+    cacheStatus,
+    refreshSessions,
   };
 };

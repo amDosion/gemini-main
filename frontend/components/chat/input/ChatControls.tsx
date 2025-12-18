@@ -59,28 +59,28 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
   };
 
   return (
-    <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide max-w-full sm:max-w-none pb-1 sm:pb-0">
+    <div className="flex items-center gap-1 bg-slate-900/60 p-1 rounded-full border border-slate-700/50 backdrop-blur-md overflow-x-auto max-w-full custom-scrollbar shadow-sm">
       <button
         onClick={() => canSearch && setEnableSearch(!enableSearch)}
         disabled={!canSearch}
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border shrink-0 ${!canSearch ? 'bg-slate-800/20 text-slate-600 cursor-not-allowed opacity-50'
-            : enableSearch ? 'bg-blue-600/20 text-blue-300 border-blue-500/50'
-              : 'bg-slate-800/50 text-slate-400 border-transparent'
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border shrink-0 ${!canSearch ? 'bg-transparent text-slate-600 cursor-not-allowed opacity-40 border-transparent'
+          : enableSearch ? 'bg-blue-600 text-blue-50 border-transparent shadow-sm'
+            : 'bg-transparent text-slate-400 border-transparent hover:bg-slate-800/50 hover:text-slate-200'
           }`}
         title="Google Search Grounding"
       >
-        <Globe size={14} /> Search
+        <Globe size={13} strokeWidth={2.5} /> Search
       </button>
 
       {canBrowse && (
         <button
           onClick={() => setEnableBrowser && setEnableBrowser(!enableBrowser)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border shrink-0 ${enableBrowser ? 'bg-orange-600/20 text-orange-300 border-orange-500/50'
-              : 'bg-slate-800/50 text-slate-400 border-transparent'
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border shrink-0 ${enableBrowser ? 'bg-orange-600 text-orange-50 border-transparent shadow-sm'
+            : 'bg-transparent text-slate-400 border-transparent hover:bg-slate-800/50 hover:text-slate-200'
             }`}
           title="Real-time Web Browser (Needs Backend)"
         >
-          <MonitorDot size={14} /> Browse
+          <MonitorDot size={13} strokeWidth={2.5} /> Browse
         </button>
       )}
 
@@ -88,30 +88,29 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
         <button
           onClick={() => {
             if (onOpenDocuments && !enableRAG) {
-              // If RAG is disabled and we have the open documents callback, open the modal
               onOpenDocuments();
             }
             setEnableRAG && setEnableRAG(!enableRAG);
           }}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border shrink-0 ${enableRAG ? 'bg-teal-600/20 text-teal-300 border-teal-500/50'
-              : 'bg-slate-800/50 text-slate-400 border-transparent'
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border shrink-0 ${enableRAG ? 'bg-teal-600 text-teal-50 border-transparent shadow-sm'
+            : 'bg-transparent text-slate-400 border-transparent hover:bg-slate-800/50 hover:text-slate-200'
             }`}
           title="RAG: Talk to Your Documents"
         >
-          <Database size={14} /> RAG
+          <Database size={13} strokeWidth={2.5} /> RAG
         </button>
       )}
 
       {canCache && (
         <button
           onClick={cycleCacheMode}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border shrink-0 ${googleCacheMode === 'exact' ? 'bg-blue-600/20 text-blue-300 border-blue-500/50'
-              : googleCacheMode === 'semantic' ? 'bg-purple-600/20 text-purple-300 border-purple-500/50'
-                : 'bg-slate-800/50 text-slate-400 border-transparent'
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border shrink-0 ${googleCacheMode === 'exact' ? 'bg-blue-600 text-blue-50 border-transparent shadow-sm'
+            : googleCacheMode === 'semantic' ? 'bg-purple-600 text-purple-50 border-transparent shadow-sm'
+              : 'bg-transparent text-slate-400 border-transparent hover:bg-slate-800/50 hover:text-slate-200'
             }`}
           title="Implicit Context Caching (Reduce latency/cost)"
         >
-          <Zap size={14} className={googleCacheMode !== 'none' ? 'fill-current' : ''} />
+          <Zap size={13} strokeWidth={2.5} className={googleCacheMode !== 'none' ? 'fill-current' : ''} />
           {getCacheLabel()}
         </button>
       )}
@@ -119,37 +118,37 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
       <button
         onClick={() => canThink && setEnableThinking(!enableThinking)}
         disabled={!canThink}
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border shrink-0 ${!canThink ? 'bg-slate-800/20 text-slate-600 cursor-not-allowed opacity-50'
-            : enableThinking ? 'bg-purple-600/20 text-purple-300 border-purple-500/50'
-              : 'bg-slate-800/50 text-slate-400 border-transparent'
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border shrink-0 ${!canThink ? 'bg-transparent text-slate-600 cursor-not-allowed opacity-40 border-transparent'
+          : enableThinking ? 'bg-purple-600 text-purple-50 border-transparent shadow-sm'
+            : 'bg-transparent text-slate-400 border-transparent hover:bg-slate-800/50 hover:text-slate-200'
           }`}
         title="Reasoning / Thinking"
       >
-        <Brain size={14} /> Reasoning
+        <Brain size={13} strokeWidth={2.5} /> Reasoning
       </button>
 
       <button
         onClick={() => canUrlContext && setEnableUrlContext(!enableUrlContext)}
         disabled={!canUrlContext}
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border shrink-0 ${!canUrlContext ? 'bg-slate-800/20 text-slate-600 cursor-not-allowed opacity-50'
-            : enableUrlContext ? 'bg-emerald-600/20 text-emerald-300 border-emerald-500/50'
-              : 'bg-slate-800/50 text-slate-400 border-transparent'
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border shrink-0 ${!canUrlContext ? 'bg-transparent text-slate-600 cursor-not-allowed opacity-40 border-transparent'
+          : enableUrlContext ? 'bg-emerald-600 text-emerald-50 border-transparent shadow-sm'
+            : 'bg-transparent text-slate-400 border-transparent hover:bg-slate-800/50 hover:text-slate-200'
           }`}
         title="Read content from URLs in prompt"
       >
-        <Link2 size={14} /> URL Context
+        <Link2 size={13} strokeWidth={2.5} /> URL Context
       </button>
 
       <button
         onClick={() => canCode && setEnableCodeExecution(!enableCodeExecution)}
         disabled={!canCode}
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border shrink-0 ${!canCode ? 'bg-slate-800/20 text-slate-600 cursor-not-allowed opacity-50'
-            : enableCodeExecution ? 'bg-amber-600/20 text-amber-300 border-amber-500/50'
-              : 'bg-slate-800/50 text-slate-400 border-transparent'
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border shrink-0 ${!canCode ? 'bg-transparent text-slate-600 cursor-not-allowed opacity-40 border-transparent'
+          : enableCodeExecution ? 'bg-amber-600 text-amber-50 border-transparent shadow-sm'
+            : 'bg-transparent text-slate-400 border-transparent hover:bg-slate-800/50 hover:text-slate-200'
           }`}
         title="Code Execution"
       >
-        <Code2 size={14} /> Code
+        <Code2 size={13} strokeWidth={2.5} /> Code
       </button>
     </div>
   );

@@ -2,6 +2,8 @@
 import React, { useState } from 'react';
 import { Plus, MessageSquare, X, Settings, Wand2, Crop, Expand, Video, Mic, Trash2, Edit2, Check, UserCircle2 } from 'lucide-react';
 import { ChatSession, AppMode } from '../../../types';
+import { CacheIndicator } from '../common/CacheIndicator';
+import { CacheStatusInfo } from '../../hooks/useCacheStatus';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -15,6 +17,9 @@ interface SidebarProps {
   onOpenSettings: () => void;
   isRightSidebarOpen: boolean;
   setIsRightSidebarOpen: (v: boolean) => void;
+  // 缓存相关（可选）
+  cacheStatus?: CacheStatusInfo;
+  onRefreshSessions?: () => void;
 }
 
 const getModeIcon = (mode?: AppMode) => {
@@ -41,6 +46,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   onOpenSettings,
   isRightSidebarOpen,
   setIsRightSidebarOpen,
+  cacheStatus,
+  onRefreshSessions,
 }) => {
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -114,7 +121,16 @@ const Sidebar: React.FC<SidebarProps> = ({
 
           {/* Session List */}
           <div className="flex-1 overflow-y-auto px-3 space-y-1 scrollbar-thin scrollbar-thumb-slate-700">
-            <h3 className="text-xs font-semibold text-slate-500 px-4 mb-2 uppercase tracking-wider">History</h3>
+            <div className="flex items-center justify-between px-4 mb-2">
+              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">History</h3>
+              {cacheStatus && (
+                <CacheIndicator 
+                  status={cacheStatus} 
+                  onRefresh={onRefreshSessions}
+                  showTimestamp={false}
+                />
+              )}
+            </div>
             {sessions.map((session) => {
               const ModeIcon = getModeIcon(session.mode);
               const isHovered = hoveredSessionId === session.id;

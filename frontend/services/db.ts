@@ -317,3 +317,6 @@ class HybridDB {
 }
 
 export const db = new HybridDB();
+
+// 导出 HybridDB 类型供 cachedDb 使用
+export type { ConfigProfile };

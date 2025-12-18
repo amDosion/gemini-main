@@ -106,7 +106,7 @@ export const Header: React.FC<HeaderProps> = ({
     );
 
     return (
-        <header className="h-14 flex items-center justify-between px-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md z-30 shrink-0 sticky top-0">
+        <header className="h-14 flex items-center justify-between px-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md z-50 shrink-0 sticky top-0">
             <div className="flex items-center gap-2">
                 <button
                     type="button"
@@ -167,8 +167,8 @@ export const Header: React.FC<HeaderProps> = ({
                                                 setIsProfileMenuOpen(false);
                                             }}
                                             className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm group transition-all ${activeProfileId === p.id
-                                                    ? 'bg-indigo-600 text-white'
-                                                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                                                ? 'bg-indigo-600 text-white'
+                                                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
                                                 }`}
                                         >
                                             <div className="flex items-center gap-3 overflow-hidden">
@@ -258,8 +258,8 @@ export const Header: React.FC<HeaderProps> = ({
                                                     onModelSelect(model.id);
                                                 }}
                                                 className={`flex items-start gap-3 p-3 rounded-lg transition-colors text-left ${isSelected
-                                                        ? 'bg-slate-800 border border-slate-700'
-                                                        : 'hover:bg-slate-800/50 border border-transparent'
+                                                    ? 'bg-slate-800 border border-slate-700'
+                                                    : 'hover:bg-slate-800/50 border border-transparent'
                                                     }`}
                                             >
                                                 <div className={`mt-0.5 p-2 rounded-lg ${isSelected ? 'bg-indigo-500 text-white' : 'bg-slate-800 text-slate-400'}`}>

@@ -20,6 +20,7 @@ const API_BASE = '/api';
  */
 export class StorageUploadService {
   private useBackend: boolean | null = null; // null = 未知, true = 可用, false = 不可用
+  private uploadLogsSupported: boolean | null = null; // null = 未知, true = 支持, false = 不支持（404）
 
   /**
    * 检测后端 API 是否可用
@@ -42,11 +43,11 @@ export class StorageUploadService {
     try {
       const response = await fetch(`${API_BASE}/storage/configs`, {
         method: 'GET',
-        signal: AbortSignal.timeout(5000), // 5秒超时（增加容错）
+        signal: AbortSignal.timeout(10000), // 10秒超时（增加容错，适应并发场景）
       });
-      
+
       const available = response.ok;
-      
+
       if (this.useBackend !== available) {
         if (available) {
           console.log('✅ [StorageUpload] 后端 API 可用 - 使用后端上传');
@@ -55,10 +56,10 @@ export class StorageUploadService {
         }
         this.useBackend = available;
       }
-      
+
       // 记录检测时间
       this.lastCheckTime = Date.now();
-      
+
       return available;
     } catch (error) {
       // 检测超时或失败时，不永久标记后端不可用
@@ -397,6 +398,9 @@ export class StorageUploadService {
     taskId: string;
     status: 'pending' | 'uploading' | 'completed' | 'failed';
     message?: string;
+    enqueued?: boolean;
+    enqueueError?: string | null;
+    queuePosition?: number;
   }> {
     try {
       const formData = new FormData();
@@ -422,11 +426,17 @@ export class StorageUploadService {
 
       const result = await response.json();
       console.log('[StorageUpload] 异步上传任务已创建:', result.task_id);
+      if (result.enqueued === false) {
+        console.warn('[StorageUpload] 任务创建成功但 Redis 入队失败，将依赖后端启动补偿/手动补偿:', result.enqueue_error);
+      }
       
       return {
         taskId: result.task_id,
         status: result.status,
-        message: result.message
+        message: result.message,
+        enqueued: result.enqueued,
+        enqueueError: result.enqueue_error,
+        queuePosition: result.queue_position
       };
     } catch (error) {
       console.error('[StorageUpload] 创建异步上传任务失败:', error);
@@ -456,6 +466,9 @@ export class StorageUploadService {
     taskId: string;
     status: 'pending' | 'uploading' | 'completed' | 'failed';
     message?: string;
+    enqueued?: boolean;
+    enqueueError?: string | null;
+    queuePosition?: number;
   }> {
     try {
       const response = await fetch(`${API_BASE}/storage/upload-from-url`, {
@@ -478,11 +491,17 @@ export class StorageUploadService {
 
       const result = await response.json();
       console.log('[StorageUpload] 上传任务已创建:', result.task_id);
-      
+      if (result.enqueued === false) {
+        console.warn('[StorageUpload] 任务创建成功但 Redis 入队失败，将依赖后端启动补偿/手动补偿:', result.enqueue_error);
+      }
+
       return {
         taskId: result.task_id,
         status: result.status,
-        message: result.message
+        message: result.message,
+        enqueued: result.enqueued,
+        enqueueError: result.enqueue_error,
+        queuePosition: result.queue_position
       };
     } catch (error) {
       console.error('[StorageUpload] 创建上传任务失败:', error);
@@ -525,6 +544,28 @@ export class StorageUploadService {
       console.error('[StorageUpload] 查询上传状态失败:', error);
       throw error;
     }
+  }
+
+  /**
+   * 获取上传任务日志（后端写入 Redis）
+   */
+  async getUploadTaskLogs(taskId: string, tail: number = 200): Promise<any[]> {
+    if (this.uploadLogsSupported === false) {
+      return [];
+    }
+    const response = await fetch(`${API_BASE}/storage/upload-logs/${taskId}?tail=${tail}`);
+    if (response.status === 404) {
+      // 后端未更新/路由未注册：避免在轮询里刷屏
+      this.uploadLogsSupported = false;
+      console.warn('[StorageUpload] /storage/upload-logs 返回 404：后端可能仍是旧版本，已停止拉取任务日志');
+      return [];
+    }
+    if (!response.ok) {
+      throw new Error(`获取上传日志失败: HTTP ${response.status}`);
+    }
+    const result = await response.json();
+    this.uploadLogsSupported = true;
+    return Array.isArray(result.logs) ? result.logs : [];
   }
 
   /**

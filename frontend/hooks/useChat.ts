@@ -3,9 +3,8 @@ import { useState, useCallback } from 'react';
 import { Message, Role, LoadingState, ChatOptions, Attachment, AppMode, ModelConfig } from '../../types';
 import { v4 as uuidv4 } from 'uuid';
 import { llmService } from '../services/llmService';
-import { addCitations } from '../utils/groundingUtils';
-import { PdfExtractionService } from '../services/pdfExtractionService';
-import { uploadToCloudStorageSync, isCloudStorageUrl } from './handlers/attachmentUtils';
+import { handleChat, handlePdfExtract, handleVideoGen, handleAudioGen, handleImageExpand, handleImageGen, handleImageEdit, HandlerContext } from './handlers';
+import { storageUpload } from '../services/storage/storageUpload';
 
 export const useChat = (
   currentSessionId: string | null,
@@ -93,42 +92,46 @@ export const useChat = (
     // 5. Execution Pipeline
     try {
       if (mode === 'chat') {
-        const stream = llmService.sendMessageStream(text, processedAttachments);
-        let accumulatedText = '';
-        const accumulatedAttachments: Attachment[] = [];
-        let lastGroundingMetadata: any = undefined;
-        let lastUrlContextMetadata: any = undefined; // Track URL Context Metadata
+        // 构建 Handler 上下文
+        const handlerContext: HandlerContext = {
+          sessionId: currentSessionId,
+          userMessageId: userMessage.id,
+          modelMessageId: modelMessageId,
+          apiKey,
+          currentModel,
+          options,
+          protocol
+        };
 
-        for await (const chunk of stream) {
-          if (chunk.text) accumulatedText += chunk.text;
-          if (chunk.attachments && chunk.attachments.length > 0) accumulatedAttachments.push(...chunk.attachments);
-          if (chunk.groundingMetadata) lastGroundingMetadata = chunk.groundingMetadata;
-          if (chunk.urlContextMetadata) lastUrlContextMetadata = chunk.urlContextMetadata; // Capture URL metadata
-
+        // 流式更新回调
+        const onStreamUpdate = (partial: Partial<{ content: string; attachments: Attachment[]; groundingMetadata: any; urlContextMetadata: any; browserOperationId: string }>) => {
           setMessages(prev =>
             prev.map(msg =>
               msg.id === modelMessageId
                 ? {
                   ...msg,
-                  content: accumulatedText,
-                  attachments: [...accumulatedAttachments],
-                  groundingMetadata: lastGroundingMetadata,
-                  urlContextMetadata: lastUrlContextMetadata // Update message state
+                  content: partial.content || '',
+                  attachments: partial.attachments || [],
+                  groundingMetadata: partial.groundingMetadata,
+                  urlContextMetadata: partial.urlContextMetadata,
+                  browserOperationId: partial.browserOperationId
                 }
                 : msg
             )
           );
-        }
+        };
 
-        let finalText = accumulatedText;
-        if (lastGroundingMetadata) finalText = addCitations(finalText, lastGroundingMetadata);
+        // 调用 Chat 处理器
+        const result = await handleChat(text, processedAttachments, handlerContext, onStreamUpdate);
 
+        // 保存最终消息到数据库
         const finalMessages = [...updatedMessages, {
           ...initialModelMessage,
-          content: finalText,
-          attachments: accumulatedAttachments,
-          groundingMetadata: lastGroundingMetadata,
-          urlContextMetadata: lastUrlContextMetadata
+          content: result.content,
+          attachments: result.attachments,
+          groundingMetadata: result.groundingMetadata,
+          urlContextMetadata: result.urlContextMetadata,
+          browserOperationId: result.browserOperationId
         }];
         updateSessionMessages(currentSessionId, finalMessages);
 
@@ -137,208 +140,387 @@ export const useChat = (
         let finalContent = "";
         let resultArray: Attachment[] = [];
 
-        // ========== image-gen / image-edit 模式 ==========
-        if (mode === 'image-gen' || mode === 'image-edit') {
-          // 调用 API 生成/编辑图片
-          const results = await llmService.generateImage(text, processedAttachments);
-          
-          // 用于前端显示的附件（保持原始 URL，显示快）
-          const displayAttachments: Attachment[] = [];
-          // 用于数据库保存的附件（云存储 URL）
-          const dbAttachments: Attachment[] = [];
-          
-          // 处理结果图
-          for (let index = 0; index < results.length; index++) {
-            const res = results[index];
-            const resultAttachmentId = uuidv4();
-            const resultFilename = mode === 'image-edit' 
-              ? `edited-${Date.now()}-${index + 1}.png` 
-              : `generated-${Date.now()}-${index + 1}.png`;
-            
-            let displayUrl = res.url; // 前端显示用原始 URL
-            let cloudUrl = '';
-            
-            // 上传结果图到云存储
-            if (res.url.startsWith('data:') || res.url.startsWith('blob:')) {
-              console.log(`[useChat] ${mode} 结果图上传到云存储...`);
-              cloudUrl = await uploadToCloudStorageSync(res.url, resultFilename);
-            } else if (res.url.startsWith('http://') || res.url.startsWith('https://')) {
-              // 远程 URL（如 DashScope 临时 URL）→ 下载后上传
-              console.log(`[useChat] ${mode} 结果图是远程 URL，下载后上传`);
-              try {
-                const response = await fetch(res.url);
-                const blob = await response.blob();
-                displayUrl = URL.createObjectURL(blob); // 创建本地 Blob URL 用于显示
-                const file = new File([blob], resultFilename, { type: blob.type || 'image/png' });
-                cloudUrl = await uploadToCloudStorageSync(file, resultFilename);
-              } catch (e) {
-                console.error(`[useChat] 下载远程结果图失败:`, e);
+        // ========== image-gen 模式 ==========
+        if (mode === 'image-gen') {
+          // 构建 Handler 上下文
+          const handlerContext: HandlerContext = {
+            sessionId: currentSessionId,
+            userMessageId: userMessage.id,
+            modelMessageId: modelMessageId,
+            apiKey,
+            currentModel,
+            options,
+            protocol
+          };
+
+          // 调用图片生成处理器（立即返回显示用附件）
+          const result = await handleImageGen(text, processedAttachments, handlerContext);
+          finalContent = result.content;
+          resultArray = result.attachments;
+
+          // 先更新 UI 显示（不等待上传）
+          const displayModelMessage = { ...initialModelMessage, content: finalContent, attachments: resultArray };
+          setMessages(prev => prev.map(msg => msg.id === modelMessageId ? displayModelMessage : msg));
+
+          // 等待上传任务完成后保存到数据库
+          if (result.uploadTask) {
+            result.uploadTask.then(({ dbAttachments }) => {
+              // 先保存到数据库（此时通常还是 pending，URL 由后台 Worker/轮询更新）
+              const dbModelMessage: Message = {
+                ...initialModelMessage,
+                content: finalContent,
+                attachments: dbAttachments
+              };
+              const dbMessages = [...messages.filter(m => m.id !== userMessage.id), userMessage, dbModelMessage];
+              updateSessionMessages(currentSessionId, dbMessages);
+              console.log('[useChat] image-gen 上传任务已提交，已保存到数据库（pending）');
+
+              // 后台轮询：输出后端上传日志，并在完成后把最终 URL 写回会话（确保“真的上传完成/真的写入DB”可验证）
+              const upsertAttachment = (attachmentId: string, partial: Partial<Attachment>) => {
+                setMessages(prev => {
+                  const next = prev.map(msg => {
+                    if (msg.id !== modelMessageId) return msg;
+                    const atts = msg.attachments || [];
+                    const nextAtts = atts.map(att => att.id === attachmentId ? { ...att, ...partial } : att);
+                    return { ...msg, attachments: nextAtts };
+                  });
+                  updateSessionMessages(currentSessionId, next);
+                  return next;
+                });
+              };
+
+              const monitorOne = async (attachmentId: string, uploadTaskId: string) => {
+                const prefix = `[upload:${uploadTaskId.slice(0, 8)}]`;
+                let lastLogTs = 0;
+                const maxLoops = 120; // ~4min (2s interval)
+
+                for (let i = 0; i < maxLoops; i++) {
+                  try {
+                    const logs = await storageUpload.getUploadTaskLogs(uploadTaskId, 200);
+                    for (const entry of logs) {
+                      const ts = typeof entry?.ts === 'number' ? entry.ts : 0;
+                      if (ts && ts <= lastLogTs) continue;
+                      if (ts) lastLogTs = Math.max(lastLogTs, ts);
+                      const level = entry?.level || 'info';
+                      const message = entry?.message || JSON.stringify(entry);
+                      console.log(`${prefix} [${level}] ${message}`);
+                    }
+                  } catch (e) {
+                    // 忽略日志拉取失败（Redis 可能不可用），继续走状态轮询
+                  }
+
+                  const status = await storageUpload.getUploadTaskStatus(uploadTaskId);
+
+                  if (status.status === 'completed' && status.targetUrl) {
+                    // 【已禁用】不再将云存储 URL 写回前端会话状态
+                    // 原因：前端应保持本地 Blob URL 以加速显示，避免重复下载
+                    // 云存储 URL 仅用于数据库持久化，由后端 Worker 直接更新 DB
+                    // upsertAttachment(attachmentId, {
+                    //   url: status.targetUrl,
+                    //   uploadStatus: 'completed',
+                    //   uploadError: undefined,
+                    //   uploadTaskId
+                    // });
+                    console.log(`${prefix} ✅ 上传完成（前端保持本地URL）: ${status.targetUrl}`);
+                    return;
+                  }
+
+                  if (status.status === 'failed') {
+                    // 上传失败时仍需更新状态，让用户知道失败了
+                    upsertAttachment(attachmentId, {
+                      uploadStatus: 'failed',
+                      uploadError: status.errorMessage || '上传失败',
+                      uploadTaskId
+                    });
+                    console.error(`${prefix} ❌ 上传失败: ${status.errorMessage || '未知错误'}`);
+                    return;
+                  }
+
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+
+                console.warn(`${prefix} ⏱️ 上传状态轮询超时（仍未 completed/failed）`);
+              };
+
+              for (const att of dbAttachments) {
+                if (att.uploadTaskId) {
+                  void monitorOne(att.id, att.uploadTaskId);
+                }
               }
-            }
-            
-            // 前端显示用原始/本地 URL
-            displayAttachments.push({
-              id: resultAttachmentId,
-              mimeType: res.mimeType,
-              name: resultFilename,
-              url: displayUrl,
-              uploadStatus: cloudUrl ? 'completed' : 'pending'
+            }).catch(err => {
+              console.error('[useChat] image-gen 上传失败:', err);
             });
-            
-            // 数据库保存用云存储 URL
-            dbAttachments.push({
-              id: resultAttachmentId,
-              mimeType: res.mimeType,
-              name: resultFilename,
-              url: cloudUrl || '', // 上传失败则为空
-              uploadStatus: cloudUrl ? 'completed' : 'pending'
+          }
+
+          // 跳过后续的通用数据库保存逻辑（已在上传回调中处理）
+          setLoadingState('idle');
+          return;
+        }
+        // ========== image-edit 模式 ==========
+        else if (mode === 'image-edit') {
+          // 构建 Handler 上下文
+          const handlerContext: HandlerContext = {
+            sessionId: currentSessionId,
+            userMessageId: userMessage.id,
+            modelMessageId: modelMessageId,
+            apiKey,
+            currentModel,
+            options,
+            protocol
+          };
+
+          // 调用图片编辑处理器（立即返回显示用附件）
+          const result = await handleImageEdit(text, processedAttachments, handlerContext);
+          finalContent = result.content;
+          resultArray = result.attachments;
+
+          // 先更新 UI 显示（不等待上传）
+          const displayModelMessage = { ...initialModelMessage, content: finalContent, attachments: resultArray };
+          setMessages(prev => prev.map(msg => msg.id === modelMessageId ? displayModelMessage : msg));
+
+          // 等待上传任务提交完成后保存到数据库
+          if (result.uploadTask) {
+            result.uploadTask.then(({ dbAttachments, dbUserAttachments }) => {
+              // 先保存到数据库（此时通常还是 pending，URL 由后台 Worker/轮询更新）
+              const dbUserMessage: Message = {
+                ...userMessage,
+                attachments: dbUserAttachments || userMessage.attachments
+              };
+              const dbModelMessage: Message = {
+                ...initialModelMessage,
+                content: finalContent,
+                attachments: dbAttachments
+              };
+              const dbMessages = [...messages.filter(m => m.id !== userMessage.id), dbUserMessage, dbModelMessage];
+              updateSessionMessages(currentSessionId, dbMessages);
+              console.log('[useChat] image-edit 上传任务已提交，已保存到数据库（pending）');
+
+              // 后台轮询：输出后端上传日志（与 image-gen 保持一致）
+              const monitorOne = async (attachmentId: string, uploadTaskId: string) => {
+                const prefix = `[upload:${uploadTaskId.slice(0, 8)}]`;
+                let lastLogTs = 0;
+                const maxLoops = 120; // ~4min (2s interval)
+
+                for (let i = 0; i < maxLoops; i++) {
+                  try {
+                    const logs = await storageUpload.getUploadTaskLogs(uploadTaskId, 200);
+                    for (const entry of logs) {
+                      const ts = typeof entry?.ts === 'number' ? entry.ts : 0;
+                      if (ts && ts <= lastLogTs) continue;
+                      if (ts) lastLogTs = Math.max(lastLogTs, ts);
+                      const level = entry?.level || 'info';
+                      const message = entry?.message || JSON.stringify(entry);
+                      console.log(`${prefix} [${level}] ${message}`);
+                    }
+                  } catch (e) {
+                    // 忽略日志拉取失败
+                  }
+
+                  const status = await storageUpload.getUploadTaskStatus(uploadTaskId);
+
+                  if (status.status === 'completed' && status.targetUrl) {
+                    // 【已禁用】不再将云存储 URL 写回前端会话状态
+                    // 原因：前端应保持本地 Blob URL 以加速显示
+                    console.log(`${prefix} ✅ 上传完成（前端保持本地URL）: ${status.targetUrl}`);
+                    return;
+                  }
+
+                  if (status.status === 'failed') {
+                    console.error(`${prefix} ❌ 上传失败: ${status.errorMessage || '未知错误'}`);
+                    return;
+                  }
+
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+
+                console.warn(`${prefix} ⏱️ 上传状态轮询超时（仍未 completed/failed）`);
+              };
+
+              // 监控结果图上传
+              for (const att of dbAttachments) {
+                if (att.uploadTaskId) {
+                  void monitorOne(att.id, att.uploadTaskId);
+                }
+              }
+
+              // 监控原图上传（如果有新上传的）
+              if (dbUserAttachments) {
+                for (const att of dbUserAttachments) {
+                  if (att.uploadTaskId) {
+                    void monitorOne(att.id, att.uploadTaskId);
+                  }
+                }
+              }
+            }).catch(err => {
+              console.error('[useChat] image-edit 上传失败:', err);
             });
-            
-            console.log(`[useChat] ${mode} 结果图 - 显示URL:`, displayUrl.substring(0, 50));
-            console.log(`[useChat] ${mode} 结果图 - 云存储URL:`, cloudUrl);
           }
-          
-          // 处理原图上传（仅 image-edit 模式）
-          const dbUserAttachments: Attachment[] = [];
-          if (mode === 'image-edit' && processedAttachments.length > 0) {
-            for (const att of processedAttachments) {
-              const attUrl = att.url || '';
-              const isAttCloudUrl = isCloudStorageUrl(attUrl);
-              
-              if (isAttCloudUrl) {
-                console.log('[useChat] image-edit 原图已是云存储 URL，跳过上传');
-                dbUserAttachments.push({ ...att, uploadStatus: 'completed' });
-                continue;
-              }
-              
-              // 上传原图
-              let uploadSource: string | File | null = att.file || attUrl;
-              let cloudUrl = '';
-              if (uploadSource) {
-                console.log('[useChat] 上传原图到云存储');
-                cloudUrl = await uploadToCloudStorageSync(uploadSource, att.name || `original-${Date.now()}.png`);
-              }
-              
-              dbUserAttachments.push({
-                ...att,
-                url: cloudUrl || '',
-                uploadStatus: cloudUrl ? 'completed' : 'pending'
-              });
-              console.log('[useChat] 原图云存储URL:', cloudUrl);
-            }
-          }
-          
-          // 前端显示用原始附件
-          resultArray = displayAttachments;
-          
-          // 保存用户消息的数据库版本附件
-          (userMessage as any)._dbAttachments = dbUserAttachments.length > 0 ? dbUserAttachments : processedAttachments;
-          // 保存模型消息的数据库版本附件
-          (initialModelMessage as any)._dbAttachments = dbAttachments;
-          
-          finalContent = mode === 'image-edit' ? `Edited image with: "${text}"` : `Generated images for: "${text}"`;
+
+          // 跳过后续的通用数据库保存逻辑（已在上传回调中处理）
+          setLoadingState('idle');
+          return;
         }
         else if (mode === 'image-outpainting') {
-          // 获取原图信息
-          const originalAttachment = processedAttachments[0];
-          const originalUrl = originalAttachment.url || '';
-          const isOriginalCloudUrl = isCloudStorageUrl(originalUrl);
+          // 构建 Handler 上下文
+          const handlerContext: HandlerContext = {
+            sessionId: currentSessionId,
+            userMessageId: userMessage.id,
+            modelMessageId: modelMessageId,
+            apiKey,
+            currentModel,
+            options,
+            protocol
+          };
           
-          console.log('[useChat] image-outpainting 原图 URL:', originalUrl.substring(0, 60));
-          console.log('[useChat] 原图是否已是云存储 URL:', isOriginalCloudUrl);
+          // 调用图片扩展处理器（立即返回显示用附件）
+          const result = await handleImageExpand(processedAttachments, handlerContext);
+          finalContent = result.content;
+          resultArray = result.attachments;
           
-          // 调用扩图 API（先调用，不阻塞）
-          const result = await llmService.outPaintImage(originalAttachment);
+          // 先更新 UI 显示（不等待上传）
+          const displayModelMessage = { ...initialModelMessage, content: finalContent, attachments: resultArray };
+          setMessages(prev => prev.map(msg => msg.id === modelMessageId ? displayModelMessage : msg));
           
-          // 下载结果图创建 Blob URL（用于前端显示）
-          const resultFilename = `expanded-${Date.now()}.png`;
-          const imageBlob = await fetch(result.url).then(r => r.blob());
-          const displayBlobUrl = URL.createObjectURL(imageBlob);
-          
-          const resultAttachmentId = uuidv4();
-          
-          // 前端显示用本地 Blob URL
-          resultArray = [{ 
-            id: resultAttachmentId,
-            mimeType: result.mimeType,
-            name: resultFilename,
-            url: displayBlobUrl,
-            uploadStatus: 'pending'
-          }];
-          
-          console.log('[useChat] 结果图显示 URL:', displayBlobUrl.substring(0, 50));
-          
-          // 同步上传原图到云存储（仅当原图不是云存储 URL 时）
-          let originalCloudUrl = isOriginalCloudUrl ? originalUrl : '';
-          if (!isOriginalCloudUrl) {
-            const uploadSource = originalAttachment.file || originalUrl;
-            if (uploadSource) {
-              console.log('[useChat] 上传原图到云存储...');
-              originalCloudUrl = await uploadToCloudStorageSync(
-                uploadSource, 
-                originalAttachment.name || `original-${Date.now()}.png`
-              );
-              console.log('[useChat] 原图云存储 URL:', originalCloudUrl);
-            }
+          // 等待上传任务提交完成后保存到数据库
+          if (result.uploadTask) {
+            result.uploadTask.then(({ dbAttachments, dbUserAttachments }) => {
+              // 先保存到数据库（此时通常还是 pending，URL 由后台 Worker/轮询更新）
+              const dbUserMessage: Message = {
+                ...userMessage,
+                attachments: dbUserAttachments
+              };
+              const dbModelMessage: Message = {
+                ...initialModelMessage,
+                content: finalContent,
+                attachments: dbAttachments
+              };
+              const dbMessages = [...messages.filter(m => m.id !== userMessage.id), dbUserMessage, dbModelMessage];
+              updateSessionMessages(currentSessionId, dbMessages);
+              console.log('[useChat] image-outpainting 上传任务已提交，已保存到数据库（pending）');
+
+              // 后台轮询：输出后端上传日志（与 image-gen/image-edit 保持一致）
+              const monitorOne = async (attachmentId: string, uploadTaskId: string) => {
+                const prefix = `[upload:${uploadTaskId.slice(0, 8)}]`;
+                let lastLogTs = 0;
+                const maxLoops = 120; // ~4min (2s interval)
+
+                for (let i = 0; i < maxLoops; i++) {
+                  try {
+                    const logs = await storageUpload.getUploadTaskLogs(uploadTaskId, 200);
+                    for (const entry of logs) {
+                      const ts = typeof entry?.ts === 'number' ? entry.ts : 0;
+                      if (ts && ts <= lastLogTs) continue;
+                      if (ts) lastLogTs = Math.max(lastLogTs, ts);
+                      const level = entry?.level || 'info';
+                      const message = entry?.message || JSON.stringify(entry);
+                      console.log(`${prefix} [${level}] ${message}`);
+                    }
+                  } catch (e) {
+                    // 忽略日志拉取失败
+                  }
+
+                  const status = await storageUpload.getUploadTaskStatus(uploadTaskId);
+
+                  if (status.status === 'completed' && status.targetUrl) {
+                    // 【已禁用】不再将云存储 URL 写回前端会话状态
+                    // 原因：前端应保持本地 Blob URL 以加速显示
+                    console.log(`${prefix} ✅ 上传完成（前端保持本地URL）: ${status.targetUrl}`);
+                    return;
+                  }
+
+                  if (status.status === 'failed') {
+                    console.error(`${prefix} ❌ 上传失败: ${status.errorMessage || '未知错误'}`);
+                    return;
+                  }
+
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+
+                console.warn(`${prefix} ⏱️ 上传状态轮询超时（仍未 completed/failed）`);
+              };
+
+              // 监控结果图上传
+              for (const att of dbAttachments) {
+                if (att.uploadTaskId) {
+                  void monitorOne(att.id, att.uploadTaskId);
+                }
+              }
+
+              // 监控原图上传（如果有新上传的）
+              for (const att of dbUserAttachments) {
+                if (att.uploadTaskId) {
+                  void monitorOne(att.id, att.uploadTaskId);
+                }
+              }
+            }).catch(err => {
+              console.error('[useChat] image-outpainting 上传失败:', err);
+            });
           }
           
-          // 同步上传结果图到云存储
-          console.log('[useChat] 上传结果图到云存储...');
-          const resultFile = new File([imageBlob], resultFilename, { type: 'image/png' });
-          const resultCloudUrl = await uploadToCloudStorageSync(resultFile, resultFilename);
-          console.log('[useChat] 结果图云存储 URL:', resultCloudUrl);
-          
-          // 设置数据库保存用的附件（云存储 URL）
-          (userMessage as any)._dbAttachments = [{
-            ...originalAttachment,
-            url: originalCloudUrl || '',
-            uploadStatus: originalCloudUrl ? 'completed' : 'pending'
-          }];
-          (initialModelMessage as any)._dbAttachments = [{
-            id: resultAttachmentId,
-            mimeType: result.mimeType,
-            name: resultFilename,
-            url: resultCloudUrl || '',
-            uploadStatus: resultCloudUrl ? 'completed' : 'pending'
-          }];
-          
-          finalContent = `Expanded image canvas.`;
+          // 跳过后续的通用数据库保存逻辑（已在上传回调中处理）
+          setLoadingState('idle');
+          return;
         }
         else if (mode === 'video-gen') {
-          const result = await llmService.generateVideo(text, processedAttachments);
-          resultArray = [{ id: uuidv4(), mimeType: result.mimeType, name: 'Video.mp4', url: result.url }];
-          finalContent = `Generated video: "${text}"`;
+          // 构建 Handler 上下文
+          const handlerContext: HandlerContext = {
+            sessionId: currentSessionId,
+            userMessageId: userMessage.id,
+            modelMessageId: modelMessageId,
+            apiKey,
+            currentModel,
+            options,
+            protocol
+          };
+          
+          // 调用视频生成处理器
+          const result = await handleVideoGen(text, processedAttachments, handlerContext);
+          finalContent = result.content;
+          resultArray = result.attachments;
+          
+          // 设置数据库保存用的附件（云存储 URL）
+          if (result.dbAttachments) {
+            (initialModelMessage as any)._dbAttachments = result.dbAttachments;
+          }
         }
         else if (mode === 'audio-gen') {
-          const result = await llmService.generateSpeech(text);
-          resultArray = [{ id: uuidv4(), mimeType: result.mimeType, name: 'Audio.wav', url: result.url }];
-          finalContent = `Generated speech.`;
+          // 构建 Handler 上下文
+          const handlerContext: HandlerContext = {
+            sessionId: currentSessionId,
+            userMessageId: userMessage.id,
+            modelMessageId: modelMessageId,
+            apiKey,
+            currentModel,
+            options,
+            protocol
+          };
+          
+          // 调用音频生成处理器
+          const result = await handleAudioGen(text, handlerContext);
+          finalContent = result.content;
+          resultArray = result.attachments;
+          
+          // 设置数据库保存用的附件（云存储 URL）
+          if (result.dbAttachments) {
+            (initialModelMessage as any)._dbAttachments = result.dbAttachments;
+          }
         }
         else if (mode === 'pdf-extract') {
-          // PDF Structured Data Extraction
-          const pdfFile = processedAttachments.find(att => att.file && att.mimeType === 'application/pdf')?.file;
-
-          if (!pdfFile) {
-            throw new Error('No PDF file provided for extraction');
-          }
-
-          const templateType = options.pdfExtractTemplate || 'invoice';
-
-          // Use the API key from the hook parameter
-          if (!apiKey) {
-            throw new Error('API key is required for PDF extraction. Please configure it in Settings.');
-          }
-
-          const extractionResult = await PdfExtractionService.extractFromPdf(
-            pdfFile,
-            templateType,
+          // 构建 Handler 上下文
+          const handlerContext: HandlerContext = {
+            sessionId: currentSessionId,
+            userMessageId: userMessage.id,
+            modelMessageId: modelMessageId,
             apiKey,
-            text // Use the prompt text as additional instructions
-          );
-
-          // Format the result as JSON string for display
-          finalContent = JSON.stringify(extractionResult, null, 2);
-          resultArray = [];
+            currentModel,
+            options,
+            protocol
+          };
+          
+          // 调用 PDF 提取处理器
+          const result = await handlePdfExtract(text, processedAttachments, handlerContext);
+          finalContent = result.content;
+          resultArray = result.attachments;
         }
 
         // ========== 分离前端显示和数据库保存 ==========

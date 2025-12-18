@@ -5,6 +5,7 @@ import RightSidebar from './RightSidebar';
 import { Header } from './Header';
 import { ChatSession, Persona, ModelConfig, AppMode } from '../../../types';
 import { ConfigProfile } from '../../services/db';
+import { CacheStatusInfo } from '../../hooks/useCacheStatus';
 
 interface AppLayoutProps {
     children: React.ReactNode;
@@ -46,6 +47,10 @@ interface AppLayoutProps {
 
     // New Props for Settings Injection
     settings?: React.ReactNode;
+
+    // 缓存相关（可选）
+    cacheStatus?: CacheStatusInfo;
+    onRefreshSessions?: () => void;
 }
 
 export const AppLayout: React.FC<AppLayoutProps> = (props) => {
@@ -63,6 +68,8 @@ export const AppLayout: React.FC<AppLayoutProps> = (props) => {
                 onOpenSettings={() => props.onOpenSettings('profiles')}
                 isRightSidebarOpen={props.isRightSidebarOpen}
                 setIsRightSidebarOpen={props.setIsRightSidebarOpen}
+                cacheStatus={props.cacheStatus}
+                onRefreshSessions={props.onRefreshSessions}
             />
 
             {/* Main Content Container (Right Side) */}

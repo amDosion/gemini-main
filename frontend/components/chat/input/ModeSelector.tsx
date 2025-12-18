@@ -23,21 +23,20 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({ mode, setMode, curre
   ];
 
   return (
-    <div className="flex bg-slate-900/50 p-1 rounded-xl border border-slate-800 backdrop-blur-sm overflow-x-auto max-w-full custom-scrollbar">
+    <div className="flex items-center gap-1 bg-slate-900/60 p-1 rounded-full border border-slate-700/50 backdrop-blur-md overflow-x-auto max-w-full custom-scrollbar shadow-sm">
       {modes.map((m) => (
         <button
           key={m.id}
           onClick={() => setMode(m.id as AppMode)}
           disabled={m.disabled}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 whitespace-nowrap ${
-            m.disabled 
-              ? 'opacity-50 cursor-not-allowed text-slate-600' 
-              : mode === m.id 
-                ? `${m.color} text-white shadow-lg` 
-                : 'text-slate-400 hover:text-slate-200'
-          }`}
+          className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all flex items-center gap-1.5 whitespace-nowrap ${m.disabled
+            ? 'opacity-40 cursor-not-allowed text-slate-500'
+            : mode === m.id
+              ? `${m.color} text-white shadow-md ring-1 ring-white/10`
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+            }`}
         >
-          <m.icon size={14} /> {m.label}
+          <m.icon size={13} strokeWidth={2.5} /> {m.label}
         </button>
       ))}
     </div>

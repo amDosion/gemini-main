@@ -136,7 +136,10 @@ const App: React.FC = () => {
     updateSessionTitle, // ✅ 新增
     deleteSession,
     getSession,
-    isLoading: isLoadingSessions
+    isLoading: isLoadingSessions,
+    // 缓存相关
+    cacheStatus,
+    refreshSessions,
   } = useSessions();
 
   const {
@@ -535,6 +538,10 @@ const App: React.FC = () => {
             profiles={profiles}
             activeProfileId={activeProfileId}
             onActivateProfile={activateProfile}
+
+            // 缓存相关
+            cacheStatus={cacheStatus}
+            onRefreshSessions={refreshSessions}
 
             isRightSidebarOpen={isRightSidebarOpen}
             setIsRightSidebarOpen={setIsRightSidebarOpen}
