@@ -49,6 +49,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   initialTab = 'profiles'
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
+  const [footerNode, setFooterNode] = useState<HTMLDivElement | null>(null);
 
   // Track which profile is being edited. Null means "Create New".
   const [editingProfile, setEditingProfile] = useState<ConfigProfile | null>(null);
@@ -144,7 +145,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
       {/* Content Area */}
       <div className="flex-1 flex flex-col min-w-0 bg-slate-950 relative">
-        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar relative">
+        <div className="flex-1 relative">
 
           {activeTab === 'profiles' && (
             <ProfilesTab
@@ -164,6 +165,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               existingProfiles={profiles}
               onSave={handleSave}
               onClose={onClose}
+              footerNode={footerNode}
             />
           )}
 
@@ -185,22 +187,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               existingConfigs={storageConfigs}
               onSave={handleSaveStorage}
               onClose={() => setActiveTab('storage')}
+              footerNode={footerNode}
             />
           )}
 
         </div>
 
-        {/* Footer logic is now inside tabs for better context (especially Editor) */}
-        {(activeTab === 'profiles' || activeTab === 'storage') && (
-          <div className="p-6 border-t border-slate-800 bg-slate-900 flex justify-end gap-3 z-10 sticky bottom-0">
+        {/* Footer Area - Acts as a Portal Target */}
+        <div
+          ref={node => setFooterNode(node)}
+          className="p-4 md:p-6 border-t border-slate-800 bg-slate-900 flex justify-end gap-3 z-10 sticky bottom-0"
+        >
+          {/* Default Footer Content (Close Button) for non-editor tabs */}
+          {(activeTab === 'profiles' || activeTab === 'storage') && (
             <button
               onClick={onClose}
-              className="px-5 py-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-900 transition-colors text-sm font-medium"
+              className="px-5 py-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-900 transition-colors text-sm font-medium flex items-center gap-1"
             >
-              Close
+              <X size={16} /> Close
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
