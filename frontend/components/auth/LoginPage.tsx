@@ -1,32 +1,48 @@
-import React from 'react';
-import { Sparkles, ArrowRight, Lock, ShieldCheck, Mail, Info } from 'lucide-react';
-import { useLogin, MOCK_USERS } from '../../hooks';
+import React, { useState } from 'react';
+import { Sparkles, ArrowRight, Lock, ShieldCheck, Mail, UserPlus } from 'lucide-react';
+import { LoginData } from '../../services/auth';
 
 interface LoginPageProps {
-    onLogin: () => void;
+    onLogin: (data: LoginData) => Promise<void>;
+    onNavigateToRegister?: () => void;
+    isLoading?: boolean;
+    error?: string | null;
+    allowRegistration?: boolean;
 }
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
-    const {
-        email,
-        setEmail,
-        password,
-        setPassword,
-        error,
-        successMsg,
-        isLoading,
-        handleLogin
-    } = useLogin();
+export const LoginPage: React.FC<LoginPageProps> = ({ 
+    onLogin, 
+    onNavigateToRegister,
+    isLoading = false,
+    error = null,
+    allowRegistration = false
+}) => {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [localError, setLocalError] = useState<string | null>(null);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        await handleLogin(onLogin);
+        setLocalError(null);
+
+        if (!email || !password) {
+            setLocalError('Please enter email and password');
+            return;
+        }
+
+        try {
+            await onLogin({ email, password });
+        } catch (err) {
+            // Error is handled by parent
+        }
     };
+
+    const displayError = localError || error;
 
     return (
         <div className="min-h-screen w-full bg-slate-950 flex items-center justify-center relative overflow-hidden font-sans selection:bg-indigo-500/30">
 
-            {/* 1. Consistent Background Pattern */}
+            {/* Background Pattern */}
             <div className="absolute inset-0 pointer-events-none">
                 <div
                     className="absolute inset-0 opacity-[0.03]"
@@ -39,35 +55,28 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                 <div className="absolute bottom-[-10%] right-[-10%] w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-[100px] animate-pulse-slow" style={{ animationDelay: '2s' }} />
             </div>
 
-            {/* 2. Main Card */}
+            {/* Main Card */}
             <div className="relative z-10 w-full max-w-sm px-4">
-
-                {/* Glassmorphism Container */}
                 <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800 shadow-2xl rounded-2xl overflow-hidden p-6 relative group transition-all duration-500">
-
                     <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none" />
 
                     <div className="flex flex-col items-center text-center relative z-10">
-
                         {/* Logo */}
                         <div className="mb-5 relative">
                             <div className="absolute inset-0 bg-indigo-500 blur-2xl opacity-20 rounded-full" />
-                            <div className="relative w-14 h-14 bg-slate-900 border border-slate-700 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-900/20">
+                            <div className="relative w-14 h-14 flex items-center justify-center shadow-lg shadow-indigo-900/20">
                                 <Sparkles className="w-7 h-7 text-indigo-400" />
                             </div>
                         </div>
 
                         {/* Headings */}
-                        <h1 className="text-xl font-bold text-white mb-1.5 tracking-tight">
-                            Welcome Back
-                        </h1>
+                        <h1 className="text-xl font-bold text-white mb-1.5 tracking-tight">Welcome Back</h1>
                         <p className="text-slate-400 text-xs mb-6 leading-relaxed max-w-[260px]">
                             Enter your credentials to access your workspace.
                         </p>
 
                         {/* Form */}
                         <form onSubmit={handleSubmit} className="w-full space-y-3">
-
                             {/* Email Input */}
                             <div className="space-y-1 text-left">
                                 <label className="text-[10px] uppercase text-slate-500 font-bold tracking-wider ml-1">Email</label>
@@ -103,15 +112,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                                 </div>
                             </div>
 
-                            {/* Messages */}
-                            {error && (
+
+                            {/* Error Message */}
+                            {displayError && (
                                 <div className="text-[11px] text-red-400 text-center bg-red-500/10 py-2 rounded-md border border-red-500/20 animate-[fadeIn_0.2s_ease-out]">
-                                    {error}
-                                </div>
-                            )}
-                            {successMsg && (
-                                <div className="text-[11px] text-emerald-400 text-center bg-emerald-500/10 py-2 rounded-md border border-emerald-500/20 animate-[fadeIn_0.2s_ease-out]">
-                                    {successMsg}
+                                    {displayError}
                                 </div>
                             )}
 
@@ -132,21 +137,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                             </button>
                         </form>
 
-                        {/* Test Credentials Helper */}
-                        <div className="mt-6 pt-4 border-t border-slate-800/50 w-full">
-                            <div className="flex items-center gap-2 text-[10px] text-slate-400 bg-slate-800/30 p-3 rounded-lg border border-slate-700/50 text-left">
-                                <Info className="w-8 h-8 text-indigo-400/80 flex-shrink-0" />
-                                <div className="space-y-1">
-                                    <p className="font-semibold text-indigo-300">Test Credentials:</p>
-                                    {MOCK_USERS.map((user, idx) => (
-                                        <p key={idx} className="font-mono opacity-80 select-all cursor-text hover:text-white transition-colors">
-                                            {user.email} / {user.password}
-                                        </p>
-                                    ))}
-                                </div>
+                        {/* Register Link - Only show if registration is enabled */}
+                        {allowRegistration && onNavigateToRegister && (
+                            <div className="mt-4 pt-4 border-t border-slate-800/50 w-full">
+                                <button
+                                    onClick={onNavigateToRegister}
+                                    className="w-full flex items-center justify-center gap-2 text-sm text-slate-400 hover:text-indigo-400 transition-colors"
+                                >
+                                    <UserPlus className="w-4 h-4" />
+                                    Create an account
+                                </button>
                             </div>
-                        </div>
-
+                        )}
                     </div>
                 </div>
 
@@ -157,7 +159,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                         Secure Environment
                     </div>
                 </div>
-
             </div>
         </div>
     );

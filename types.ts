@@ -130,6 +130,7 @@ export interface ChatOptions {
   seed?: number; // Added for reproducibility
   persona?: Persona; // Added for Persona context
   pdfExtractTemplate?: string; // Added for PDF extraction template selection
+  pdfAdditionalInstructions?: string; // Added for PDF extraction additional instructions
   enableRAG?: boolean; // Added for RAG (Retrieval-Augmented Generation)
 }
 

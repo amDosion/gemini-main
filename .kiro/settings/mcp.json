@@ -145,22 +145,20 @@
             "description": "编程库文档查询、代码示例、最佳实践"
         },
         "codex": {
-            "command": "uvx",
+            "command": "python",
             "args": [
-                "--from",
-                "git+https://github.com/GuDaStudio/codexmcp.git",
-                "codexmcp"
+                "-m",
+                "codexmcp.cli"
             ],
-            "description": "Codex MCP 服务 - AI 代码辅助"
+            "description": "Codex MCP 服务 - AI 代码辅助（本地安装）"
         },
         "gemini": {
-            "command": "uvx",
+            "command": "python",
             "args": [
-                "--from",
-                "git+https://github.com/GuDaStudio/geminimcp.git",
-                "geminimcp"
+                "-m",
+                "geminimcp.cli"
             ],
-            "description": "Gemini MCP 服务 - Google AI 集成"
+            "description": "Gemini MCP 服务 - Google AI 集成（本地安装）"
         },
         "claude-code": {
             "command": "npx",

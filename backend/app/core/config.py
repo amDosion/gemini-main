@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     upload_queue_retry_delay: float = float(os.getenv("UPLOAD_QUEUE_RETRY_DELAY", "2.0"))
     upload_queue_rate_limit: int = int(os.getenv("UPLOAD_QUEUE_RATE_LIMIT", "10"))
 
+    # 认证配置
+    allow_registration: bool = os.getenv("ALLOW_REGISTRATION", "false").lower() == "true"
+    jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "your-super-secret-key-change-in-production")
+    jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+    jwt_refresh_token_expire_days: int = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+
     @property
     def redis_url(self) -> str:
         """构建 Redis URL"""

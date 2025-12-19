@@ -6,8 +6,6 @@
 
 import { DocumentMetadata, SearchResult, VectorStoreStats } from '../../types';
 
-const BACKEND_URL = 'http://localhost:8000';
-
 export class EmbeddingService {
   /**
    * Add a document to the vector store
@@ -21,7 +19,8 @@ export class EmbeddingService {
     chunkOverlap: number = 100
   ): Promise<any> {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/embedding/add-document`, {
+      // 通过 Vite 代理访问后端
+      const response = await fetch('/api/embedding/add-document', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -58,7 +57,8 @@ export class EmbeddingService {
     topK: number = 3
   ): Promise<{ success: boolean; results: SearchResult[]; count: number }> {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/embedding/search`, {
+      // 通过 Vite 代理访问后端
+      const response = await fetch('/api/embedding/search', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -90,7 +90,8 @@ export class EmbeddingService {
     userId: string
   ): Promise<{ success: boolean; documents: DocumentMetadata[]; stats: VectorStoreStats }> {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/embedding/documents/${userId}`);
+      // 通过 Vite 代理访问后端
+      const response = await fetch(`/api/embedding/documents/${userId}`);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -109,7 +110,8 @@ export class EmbeddingService {
    */
   static async deleteDocument(userId: string, documentId: string): Promise<{ success: boolean; message: string }> {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/embedding/document/${userId}/${documentId}`, {
+      // 通过 Vite 代理访问后端
+      const response = await fetch(`/api/embedding/document/${userId}/${documentId}`, {
         method: 'DELETE',
       });
 
@@ -130,7 +132,8 @@ export class EmbeddingService {
    */
   static async clearAllDocuments(userId: string): Promise<{ success: boolean; message: string }> {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/embedding/documents/${userId}`, {
+      // 通过 Vite 代理访问后端
+      const response = await fetch(`/api/embedding/documents/${userId}`, {
         method: 'DELETE',
       });
 
@@ -151,7 +154,8 @@ export class EmbeddingService {
    */
   static async checkAvailability(): Promise<boolean> {
     try {
-      const response = await fetch(`${BACKEND_URL}/health`);
+      // 通过 Vite 代理访问后端
+      const response = await fetch('/health');
       const data = await response.json();
       return data.embedding === true;
     } catch (error) {

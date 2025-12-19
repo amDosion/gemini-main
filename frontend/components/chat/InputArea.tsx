@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChatOptions, ModelConfig, Attachment, AppMode, OutPaintingOptions, LoraConfig } from '../../../types';
+import { ChatOptions, ModelConfig, Attachment, AppMode, OutPaintingOptions, LoraConfig, PdfExtractionTemplate } from '../../../types';
 import { v4 as uuidv4 } from 'uuid';
 
 // Sub-components
 import { ModeSelector } from './input/ModeSelector';
 import { ChatControls } from './input/ChatControls';
 import { GenerationControls } from './input/GenerationControls';
+import { PdfControls } from './input/PdfControls';
 import { AdvancedSettings } from './input/AdvancedSettings';
+import { PdfAdvancedSettings } from './input/PdfAdvancedSettings';
 import { AttachmentPreview } from './input/AttachmentPreview';
 import { PromptInput } from './input/PromptInput';
 
@@ -22,14 +24,21 @@ interface InputAreaProps {
   activeAttachments?: Attachment[];
   onAttachmentsChange?: (attachments: Attachment[]) => void;
   hasActiveContext?: boolean;
-  providerId?: string; 
+  providerId?: string;
+  // PDF 提取相关 props
+  pdfTemplates?: PdfExtractionTemplate[];
+  selectedPdfTemplate?: string;
+  onPdfTemplateChange?: (template: string) => void;
 }
 
 const InputArea: React.FC<InputAreaProps> = ({ 
     onSend, isLoading, onStop, currentModel, 
     mode, setMode, initialPrompt, initialAttachments,
     activeAttachments, onAttachmentsChange, hasActiveContext,
-    providerId = 'google'
+    providerId = 'google',
+    pdfTemplates = [],
+    selectedPdfTemplate,
+    onPdfTemplateChange
 }) => {
   const [input, setInput] = useState('');
   const [localAttachments, setLocalAttachments] = useState<Attachment[]>([]);
@@ -72,6 +81,20 @@ const InputArea: React.FC<InputAreaProps> = ({
   const [outPaintingMode, setOutPaintingMode] = useState<'scale' | 'offset'>('scale');
   const [scaleFactor, setScaleFactor] = useState(2.0);
   const [offsetPixels, setOffsetPixels] = useState({ left: 0, right: 0, top: 0, bottom: 0 });
+
+  // --- PDF Extraction Settings ---
+  const [localPdfTemplate, setLocalPdfTemplate] = useState<string>('invoice');
+  const [pdfAdditionalInstructions, setPdfAdditionalInstructions] = useState<string>('');
+  
+  // 使用外部传入的模板状态或本地状态
+  const currentPdfTemplate = selectedPdfTemplate ?? localPdfTemplate;
+  const handlePdfTemplateChange = (template: string) => {
+    if (onPdfTemplateChange) {
+      onPdfTemplateChange(template);
+    } else {
+      setLocalPdfTemplate(template);
+    }
+  };
 
   // --- Refs & Effects ---
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -233,7 +256,10 @@ const InputArea: React.FC<InputAreaProps> = ({
         virtualTryOnTarget: undefined, 
         negativePrompt: negativePrompt.trim(),
         seed: seed > -1 ? seed : undefined,
-        loraConfig: loraConfig.image ? loraConfig : undefined // Only pass if image is set
+        loraConfig: loraConfig.image ? loraConfig : undefined,
+        // PDF 提取参数
+        pdfExtractTemplate: mode === 'pdf-extract' ? currentPdfTemplate : undefined,
+        pdfAdditionalInstructions: mode === 'pdf-extract' ? pdfAdditionalInstructions.trim() : undefined
     }, attachments, mode);
     
     if (mode !== 'chat') {
@@ -273,7 +299,7 @@ const InputArea: React.FC<InputAreaProps> = ({
                       enableBrowser={enableBrowser} setEnableBrowser={setEnableBrowser}
                       googleCacheMode={googleCacheMode} setGoogleCacheMode={setGoogleCacheMode}
                   />
-              ) : (
+              ) : isGenMode ? (
                   <GenerationControls 
                       mode={mode}
                       showAdvanced={showAdvanced} setShowAdvanced={setShowAdvanced}
@@ -287,7 +313,15 @@ const InputArea: React.FC<InputAreaProps> = ({
                       showTryOn={showTryOn} setShowTryOn={setShowTryOn}
                       providerId={providerId}
                   />
-              )}
+              ) : mode === 'pdf-extract' ? (
+                  <PdfControls
+                      selectedTemplate={currentPdfTemplate}
+                      setSelectedTemplate={handlePdfTemplateChange}
+                      templates={pdfTemplates}
+                      showAdvanced={showAdvanced}
+                      setShowAdvanced={setShowAdvanced}
+                  />
+              ) : null}
           </div>
       </div>
 
@@ -298,6 +332,13 @@ const InputArea: React.FC<InputAreaProps> = ({
               // Only pass LoRA setters if applicable
               loraConfig={showLoraSettings ? loraConfig : undefined}
               setLoraConfig={showLoraSettings ? setLoraConfig : undefined}
+          />
+      )}
+
+      {mode === 'pdf-extract' && showAdvanced && (
+          <PdfAdvancedSettings
+              additionalInstructions={pdfAdditionalInstructions}
+              setAdditionalInstructions={setPdfAdditionalInstructions}
           />
       )}
 

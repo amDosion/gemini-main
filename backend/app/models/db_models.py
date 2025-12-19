@@ -181,3 +181,163 @@ class UploadTask(Base):
             "createdAt": self.created_at,
             "completedAt": self.completed_at
         }
+
+
+# ============================================
+# 认证系统模型 (Authentication System Models)
+# ============================================
+
+import secrets
+import string
+
+
+def generate_user_id() -> str:
+    """
+    生成 gemini2026_ 格式的唯一用户 ID
+    格式: gemini2026_ + 8位随机字母数字
+    示例: gemini2026_a1b2c3d4
+    """
+    chars = string.ascii_lowercase + string.digits
+    suffix = ''.join(secrets.choice(chars) for _ in range(8))
+    return f"gemini2026_{suffix}"
+
+
+def generate_uuid() -> str:
+    """生成通用 UUID 字符串"""
+    import uuid
+    return str(uuid.uuid4())
+
+
+class User(Base):
+    """用户表 - 存储用户认证信息"""
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True, index=True, default=generate_user_id)
+    email = Column(String, unique=True, nullable=False, index=True)
+    password_hash = Column(Text, nullable=False)
+    name = Column(String, nullable=True)
+    status = Column(String, nullable=False, default='active')  # active, suspended, banned, pending_verification
+    status_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    def to_dict(self):
+        """转换为字典格式（不包含敏感信息）"""
+        return {
+            "id": self.id,
+            "email": self.email,
+            "name": self.name,
+            "status": self.status,
+            "createdAt": self.created_at.isoformat() if self.created_at else None,
+            "updatedAt": self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
+class RefreshToken(Base):
+    """刷新令牌表 - 存储用户的刷新令牌"""
+    __tablename__ = "refresh_tokens"
+
+    id = Column(String, primary_key=True, index=True, default=generate_uuid)
+    user_id = Column(String, nullable=False, index=True)  # 关联 users.id
+    token_hash = Column(Text, nullable=False, unique=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "userId": self.user_id,
+            "expiresAt": self.expires_at.isoformat() if self.expires_at else None,
+            "createdAt": self.created_at.isoformat() if self.created_at else None,
+            "revokedAt": self.revoked_at.isoformat() if self.revoked_at else None
+        }
+
+
+
+class IPLoginHistory(Base):
+    """IP 登录历史表 - 记录用户登录的 IP 地址"""
+    __tablename__ = "ip_login_history"
+
+    id = Column(String, primary_key=True, index=True, default=generate_uuid)
+    user_id = Column(String, nullable=False, index=True)  # 关联 users.id
+    ip_address = Column(String, nullable=False, index=True)
+    action = Column(String, nullable=False)  # login, logout, failed_login, token_refresh
+    user_agent = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "userId": self.user_id,
+            "ipAddress": self.ip_address,
+            "action": self.action,
+            "userAgent": self.user_agent,
+            "createdAt": self.created_at.isoformat() if self.created_at else None
+        }
+
+
+class IPBlocklist(Base):
+    """IP 黑名单表 - 存储被封禁的 IP 地址"""
+    __tablename__ = "ip_blocklist"
+
+    id = Column(String, primary_key=True, index=True, default=generate_uuid)
+    ip_address = Column(String, unique=True, nullable=False, index=True)
+    reason = Column(Text, nullable=True)
+    blocked_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    created_by = Column(String, nullable=True)  # 管理员用户 ID
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "ipAddress": self.ip_address,
+            "reason": self.reason,
+            "blockedAt": self.blocked_at.isoformat() if self.blocked_at else None,
+            "expiresAt": self.expires_at.isoformat() if self.expires_at else None,
+            "createdBy": self.created_by
+        }
+
+
+class AccountStatusHistory(Base):
+    """账户状态历史表 - 记录账户状态变更"""
+    __tablename__ = "account_status_history"
+
+    id = Column(String, primary_key=True, index=True, default=generate_uuid)
+    user_id = Column(String, nullable=False, index=True)  # 关联 users.id
+    old_status = Column(String, nullable=True)
+    new_status = Column(String, nullable=False)
+    reason = Column(Text, nullable=True)
+    changed_by = Column(String, nullable=True)  # 管理员用户 ID
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "userId": self.user_id,
+            "oldStatus": self.old_status,
+            "newStatus": self.new_status,
+            "reason": self.reason,
+            "changedBy": self.changed_by,
+            "createdAt": self.created_at.isoformat() if self.created_at else None
+        }
+
+
+class UserOnlineStatus(Base):
+    """用户在线状态表 - 记录用户的在线状态"""
+    __tablename__ = "user_online_status"
+
+    user_id = Column(String, primary_key=True, index=True)  # 关联 users.id
+    is_online = Column(Boolean, default=False)
+    last_active = Column(DateTime(timezone=True), nullable=True)
+    last_login_ip = Column(String, nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    def to_dict(self):
+        return {
+            "userId": self.user_id,
+            "isOnline": self.is_online,
+            "lastActive": self.last_active.isoformat() if self.last_active else None,
+            "lastLoginIp": self.last_login_ip,
+            "updatedAt": self.updated_at.isoformat() if self.updated_at else None
+        }

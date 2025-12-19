@@ -37,8 +37,9 @@ export class BrowserProgressService {
     this.unsubscribe(operationId);
 
     // Create new EventSource
+    // 通过 Vite 代理访问后端 SSE 端点
     const eventSource = new EventSource(
-      `http://localhost:8000/api/browse/progress/${operationId}`
+      `/api/browse/progress/${operationId}`
     );
 
     eventSource.onmessage = (event) => {

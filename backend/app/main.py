@@ -305,12 +305,30 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Import auth router
+try:
+    from .routers.auth import router as auth_router
+    AUTH_ROUTER_AVAILABLE = True
+except ImportError:
+    try:
+        from routers.auth import router as auth_router
+        AUTH_ROUTER_AVAILABLE = True
+    except ImportError:
+        try:
+            from backend.app.routers.auth import router as auth_router
+            AUTH_ROUTER_AVAILABLE = True
+        except ImportError:
+            AUTH_ROUTER_AVAILABLE = False
+            logger.warning(f"{LOG_PREFIXES['warning']} Auth router not available")
+
 # Register API routes
 if API_ROUTES_AVAILABLE:
     app.include_router(health.router)
     app.include_router(storage.router)
-    app.include_router(browse.router)
-    app.include_router(pdf.router)
+    # 注意：browse.router 已被移除，使用 main.py 中的完整实现（包含进度追踪、截图等功能）
+    # app.include_router(browse.router)
+    # 注意：pdf.router 已被移除，使用 main.py 中的完整实现（包含 model_id 参数）
+    # app.include_router(pdf.router)
     app.include_router(embedding.router)
     app.include_router(dashscope_proxy.router)
     app.include_router(profiles_router)
@@ -318,6 +336,19 @@ if API_ROUTES_AVAILABLE:
     app.include_router(personas_router)
     app.include_router(image_expand_router)
     logger.info(f"{LOG_PREFIXES['info']} API routes registered (profiles, sessions, personas, storage, image_expand)")
+
+    # Set service availability flags for health check endpoint
+    health.set_availability(
+        selenium=SELENIUM_AVAILABLE,
+        pdf=PDF_EXTRACTION_AVAILABLE,
+        embedding=EMBEDDING_AVAILABLE
+    )
+    logger.info(f"{LOG_PREFIXES['info']} Service availability flags updated for health endpoint")
+
+# Register auth router
+if AUTH_ROUTER_AVAILABLE:
+    app.include_router(auth_router)
+    logger.info(f"{LOG_PREFIXES['info']} Auth router registered")
 else:
     logger.warning(f"{LOG_PREFIXES['warning']} API routes not available")
 
@@ -332,12 +363,15 @@ logger.info(f"Upload Worker Pool Available: {'[YES]' if WORKER_POOL_AVAILABLE el
 logger.info("=" * 60)
 
 # Configure CORS
+# 注意：使用 httpOnly Cookie 时，allow_origins 不能为 "*"
+import os
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify exact origins
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=CORS_ORIGINS,  # 生产环境必须指定具体域名
+    allow_credentials=True,  # 允许 Cookie
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "X-CSRF-Token", "Authorization"],
 )
 
 
@@ -835,6 +869,7 @@ async def extract_pdf_data(
     file: UploadFile = File(...),
     template_type: str = Form(...),
     api_key: str = Form(...),
+    model_id: str = Form(...),
     additional_instructions: str = Form("")
 ):
     """
@@ -880,6 +915,7 @@ async def extract_pdf_data(
             pdf_bytes=pdf_bytes,
             template_type=template_type,
             api_key=api_key,
+            model_id=model_id,
             additional_instructions=additional_instructions
         )
 

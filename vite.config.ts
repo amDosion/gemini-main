@@ -12,7 +12,7 @@ export default defineConfig({
     cors: true, // 启用 CORS
     hmr: {
       protocol: 'ws', // 使用 WebSocket 协议
-      host: 'localhost',
+      // host: 'localhost', // 移除固定 host，允许任意来源
       port: 5173,
       clientPort: 5173,
       timeout: 30000, // 30 秒超时

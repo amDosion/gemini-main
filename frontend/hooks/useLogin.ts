@@ -1,11 +1,13 @@
+/**
+ * @deprecated 此 Hook 已废弃，请使用 useAuth 替代
+ * 
+ * 迁移指南：
+ * - import { useAuth } from './useAuth';
+ * - const { login, isLoading, error } = useAuth();
+ * - await login({ email, password });
+ */
 import { useState } from 'react';
-
-// MOCK DATA
-// 供测试使用的模拟账号
-export const MOCK_USERS = [
-    { email: 'admin@example.com', password: 'password', name: 'Admin User' },
-    { email: 'user@test.com', password: '123', name: 'Test User' }
-];
+import { useAuth } from './useAuth';
 
 interface UseLoginReturn {
     email: string;
@@ -18,10 +20,11 @@ interface UseLoginReturn {
     handleLogin: (onLoginSuccess: () => void) => Promise<void>;
 }
 
-// 模拟 API 延迟
-const simulateApiCall = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
+/**
+ * @deprecated 使用 useAuth 替代
+ */
 export const useLogin = (): UseLoginReturn => {
+    const { login, isLoading: authLoading, error: authError } = useAuth();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState<string | null>(null);
@@ -34,31 +37,17 @@ export const useLogin = (): UseLoginReturn => {
         setIsLoading(true);
 
         try {
-            // 1. Basic Validation
             if (!email.trim() || !password.trim()) {
                 throw new Error('Please fill in all fields.');
             }
 
-            // 2. Simulate Network Request
-            await simulateApiCall(800);
-
-            // 3. Mock Logic
-            const user = MOCK_USERS.find(u => u.email === email && u.password === password);
-
-            if (user) {
-                setSuccessMsg(`Welcome back, ${user.name}!`);
-                // Wait a bit to show success message before redirecting
-                setTimeout(() => {
-                    onLoginSuccess();
-                }, 500);
-            } else {
-                throw new Error('Invalid email or password.');
-            }
+            await login({ email, password });
+            setSuccessMsg('Login successful!');
+            setTimeout(() => onLoginSuccess(), 300);
         } catch (err: any) {
-            setError(err.message || 'An error occurred.');
-            setIsLoading(false); // Stop loading on error
+            setError(err.message || authError || 'An error occurred.');
+            setIsLoading(false);
         }
-        // Note: We don't stop loading on success immediately to prevent flash before unmount/redirect
     };
 
     return {
@@ -68,7 +57,7 @@ export const useLogin = (): UseLoginReturn => {
         setPassword,
         error,
         successMsg,
-        isLoading,
+        isLoading: isLoading || authLoading,
         handleLogin
     };
 };

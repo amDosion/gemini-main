@@ -36,19 +36,28 @@ export const handlePdfExtract = async (
     throw new Error('API key is required for PDF extraction. Please configure it in Settings.');
   }
 
+  // 4. 获取模型 ID（从 context 中获取当前选择的模型）
+  const modelId = context.currentModel?.id || 'gemini-2.5-flash';
+
+  // 5. 合并额外指令（高级设置 + 用户输入）
+  const advancedInstructions = context.options.pdfAdditionalInstructions || '';
+  const combinedInstructions = [advancedInstructions, text].filter(Boolean).join('\n');
+
   console.log('[pdfExtractHandler] 开始 PDF 提取:', {
     filename: pdfFile.name,
     size: pdfFile.size,
     templateType,
-    additionalInstructions: text ? text.substring(0, 50) + '...' : '(none)'
+    modelId,
+    additionalInstructions: combinedInstructions ? combinedInstructions.substring(0, 50) + '...' : '(none)'
   });
 
-  // 4. 调用提取服务
+  // 6. 调用提取服务
   const extractionResult = await PdfExtractionService.extractFromPdf(
     pdfFile,
     templateType,
     context.apiKey,
-    text // 用户输入作为额外指令
+    modelId,
+    combinedInstructions // 合并后的额外指令
   );
 
   console.log('[pdfExtractHandler] 提取完成:', {
@@ -56,7 +65,7 @@ export const handlePdfExtract = async (
     error: extractionResult.error || null
   });
 
-  // 5. 返回结果
+  // 7. 返回结果
   return {
     content: JSON.stringify(extractionResult, null, 2),
     attachments: []

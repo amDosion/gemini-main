@@ -8,6 +8,28 @@ import { createGoogleClient } from "./utils";
 import { googleMediaStrategy } from "./media";
 import { googleFileService } from "./fileService";
 
+// 兼容性 UUID 生成函数（支持非安全上下文和旧版浏览器）
+function generateUUID(): string {
+  // 优先使用原生 crypto.randomUUID（安全上下文下可用）
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // 回退方案：使用 crypto.getRandomValues
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = crypto.getRandomValues(new Uint8Array(1))[0] % 16;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+  // 最终回退：Math.random（不推荐，但保证可用）
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 // Tool Definition for Browser
 const browserToolDeclaration: FunctionDeclaration = {
   name: "browse_webpage",
@@ -161,7 +183,7 @@ export class GoogleProvider implements ILLMProvider {
             const url = (functionCall.args as any).url;
             
             // Generate Operation ID for tracking
-            const operationId = crypto.randomUUID();
+            const operationId = generateUUID();
             
             // Yield ID to frontend immediately so indicator shows up
             yield { 
@@ -170,6 +192,7 @@ export class GoogleProvider implements ILLMProvider {
             };
 
             try {
+                // 通过 Vite 代理访问后端（避免 CORS 问题）
                 const response = await fetch('/api/browse', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -196,7 +219,7 @@ export class GoogleProvider implements ILLMProvider {
                     yield {
                         text: '',
                         attachments: [{
-                            id: crypto.randomUUID(),
+                            id: generateUUID(),
                             mimeType: 'image/jpeg',
                             name: `Screenshot - ${data.title || 'Page'}`,
                             url: `data:image/jpeg;base64,${data.screenshot}`

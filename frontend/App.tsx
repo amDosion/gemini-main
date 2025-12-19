@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 
 import { AppMode, Attachment } from '../types';
 import { llmService } from './services/llmService';
@@ -15,23 +16,35 @@ import {
     PersonaModal // Ensure this is exported if used, otherwise remove
 } from './components';
 
-// Import Login Page
-import { LoginPage } from './components/auth/LoginPage';
+// Import Auth Components
+import { LoginPage, RegisterPage } from './components/auth';
 
 import { 
     useSettings, 
     useModels, 
     useSessions, 
     useChat, 
-    usePersonas 
+    usePersonas,
+    useAuth
 } from './hooks';
 import { StorageConfig } from './types/storage';
 import { db } from './services/db';
 
 const App: React.FC = () => {
-  // --- Auth State ---
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
+  // --- Router Hooks ---
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // --- Auth State (使用真实认证) ---
+  const { 
+    isAuthenticated, 
+    isLoading: isAuthLoading, 
+    allowRegistration,
+    login,
+    register,
+    error: authError,
+    logout 
+  } = useAuth();
 
   // --- UI State ---
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -60,22 +73,14 @@ const App: React.FC = () => {
   const [storageConfigs, setStorageConfigs] = useState<StorageConfig[]>([]);
   const [activeStorageId, setActiveStorageId] = useState<string | null>(null);
   
-  // --- Auth Effect ---
+  // --- Auth 路由重定向 ---
   useEffect(() => {
-    const checkAuth = () => {
-      try {
-        const storedAuth = localStorage.getItem('flux_auth_token');
-        if (storedAuth) {
-          setIsAuthenticated(true);
-        }
-      } catch (e) {
-        console.warn("Auth storage check failed", e);
-      } finally {
-        setIsAuthChecking(false);
-      }
-    };
-    checkAuth();
-  }, []);
+    if (isAuthenticated && (location.pathname === '/login' || location.pathname === '/register')) {
+      navigate('/', { replace: true });
+    } else if (!isAuthenticated && !isAuthLoading && location.pathname !== '/login' && location.pathname !== '/register') {
+      navigate('/login', { replace: true });
+    }
+  }, [isAuthenticated, isAuthLoading, location.pathname, navigate]);
 
   // --- 加载云存储配置 ---
   useEffect(() => {
@@ -95,15 +100,6 @@ const App: React.FC = () => {
       loadStorageConfigs();
     }
   }, [isAuthenticated]);
-
-  const handleLogin = () => {
-    try {
-      localStorage.setItem('flux_auth_token', 'session-' + Date.now());
-    } catch (e) {
-      console.warn("Failed to save auth token", e);
-    }
-    setIsAuthenticated(true);
-  };
 
   // Get cached models from the active profile for instant loading
   const activeProfile = useMemo(() => profiles.find(p => p.id === activeProfileId), [profiles, activeProfileId]);
@@ -488,7 +484,7 @@ const App: React.FC = () => {
   };
 
   // --- Early Return for Auth Check ---
-  if (isAuthChecking) {
+  if (isAuthLoading) {
       return (
           <div className="fixed inset-0 bg-[#0f172a] flex items-center justify-center">
               <div className="w-10 h-10 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
@@ -496,13 +492,8 @@ const App: React.FC = () => {
       );
   }
 
-  // --- Render Login Page ---
-  if (!isAuthenticated) {
-      return <LoginPage onLogin={handleLogin} />;
-  }
-
-  // --- Render Main App ---
-  return (
+  // --- 主应用内容 ---
+  const MainApp = () => (
     <>
         <ImageModal 
             isOpen={!!previewImage}
@@ -579,6 +570,55 @@ const App: React.FC = () => {
             {renderView()}
         </AppLayout>
     </>
+  );
+
+  // --- 使用 Routes 渲染 ---
+  return (
+    <Routes>
+      <Route 
+        path="/login" 
+        element={
+          isAuthenticated ? (
+            <Navigate to="/" replace />
+          ) : (
+            <LoginPage 
+              onLogin={login}
+              isLoading={isAuthLoading}
+              error={authError}
+              allowRegistration={allowRegistration}
+              onNavigateToRegister={allowRegistration ? () => navigate('/register') : undefined}
+            />
+          )
+        } 
+      />
+      <Route 
+        path="/register" 
+        element={
+          isAuthenticated ? (
+            <Navigate to="/" replace />
+          ) : allowRegistration ? (
+            <RegisterPage 
+              onRegister={register}
+              isLoading={isAuthLoading}
+              error={authError}
+              onNavigateToLogin={() => navigate('/login')}
+            />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        } 
+      />
+      <Route 
+        path="/*" 
+        element={
+          isAuthenticated ? (
+            <MainApp />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        } 
+      />
+    </Routes>
   );
 };
 

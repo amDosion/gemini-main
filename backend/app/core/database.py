@@ -36,3 +36,16 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # 创建我们 ORM 模型将继承的基类
 Base = declarative_base()
+
+
+# 依赖注入：获取数据库会话
+def get_db():
+    """
+    FastAPI 依赖注入函数，用于获取数据库会话
+    使用 yield 确保请求结束后自动关闭会话
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

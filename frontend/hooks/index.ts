@@ -6,3 +6,4 @@ export * from './useChat';
 export * from './usePersonas';
 export * from './useMessageProcessor';
 export * from './useLogin';
+export * from './useAuth';
