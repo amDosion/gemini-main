@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { LoraConfig } from '../../../../types';
+import { LoraConfig } from '../../../types/types';
 
 interface AdvancedSettingsProps {
   negativePrompt: string;

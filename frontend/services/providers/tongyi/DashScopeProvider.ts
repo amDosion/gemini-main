@@ -1,6 +1,6 @@
 
 import { ILLMProvider, StreamUpdate, ImageGenerationResult, VideoGenerationResult, AudioGenerationResult } from "../interfaces";
-import { ModelConfig, Message, Attachment, ChatOptions } from "../../../../types";
+import { ModelConfig, Message, Attachment, ChatOptions } from "../../../types/types";
 import { OpenAIProvider } from "../openai/OpenAIProvider";
 import { getTongYiModels } from "./models";
 import { streamNativeDashScope } from "./chat";

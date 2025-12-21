@@ -1,0 +1,414 @@
+/**
+ * Virtual Try-On 模式处理器
+ * 
+ * 处理流程：
+ * 1. 预处理原图：优先使用本地数据（base64Data/file/blob）
+ * 2. 尝试调用后端 /api/tryon/edit API（支持 Vertex AI 掩码编辑）
+ * 3. 如果后端不可用，回退到 llmService.generateImage（Gemini 智能编辑）
+ * 4. 下载结果图创建本地 Blob URL（用于立即显示）
+ * 5. 提交上传任务到 Redis 队列（不等待上传完成）
+ */
+import { v4 as uuidv4 } from 'uuid';
+import { Attachment } from '../../types/types';
+import { llmService } from '../../services/llmService';
+import { HandlerContext, HandlerResult } from './types';
+import { isHttpUrl, isUploadedToCloud } from './attachmentUtils';
+import { storageUpload } from '../../services/storage/storageUpload';
+import { editWithMask } from '../../services/providers/google/media/virtual-tryon';
+
+/**
+ * 处理后的附件（内部使用）
+ */
+interface ProcessedAttachment extends Attachment {
+  originalCloudUrl?: string;
+}
+
+/**
+ * Virtual Try-On 结果类型
+ */
+export interface VirtualTryOnResult extends HandlerResult {
+  dbAttachments?: Attachment[];
+  dbUserAttachments?: Attachment[];
+  uploadTask?: Promise<{ dbAttachments: Attachment[]; dbUserAttachments?: Attachment[] }>;
+}
+
+/**
+ * 处理 Virtual Try-On 模式
+ */
+export const handleVirtualTryOn = async (
+  text: string,
+  attachments: Attachment[],
+  context: HandlerContext
+): Promise<VirtualTryOnResult> => {
+  const { options } = context;
+  const tryOnTarget = options.virtualTryOnTarget || 'upper';
+  
+  console.log(`[virtualTryOnHandler] 开始处理，目标区域: ${tryOnTarget}`);
+  console.log(`[virtualTryOnHandler] 服装描述: ${text}`);
+
+
+  // 0. 预处理原图
+  console.log(`[virtualTryOnHandler] 预处理 ${attachments.length} 张原图`);
+  const processedAttachments: ProcessedAttachment[] = await Promise.all(attachments.map(async (att) => {
+    const attUrl = att.url || '';
+    const base64Data = (att as any).base64Data as string | undefined;
+
+    // 优先级 1：已有 file 对象
+    if (att.file) {
+      console.log(`[virtualTryOnHandler] 已有 File 对象: ${att.name}`);
+      const isAlreadyUploaded = isUploadedToCloud(att);
+      return {
+        ...att,
+        originalCloudUrl: isAlreadyUploaded ? attUrl : undefined
+      };
+    }
+
+    // 优先级 2：已有 base64Data
+    if (base64Data && base64Data.startsWith('data:')) {
+      console.log(`[virtualTryOnHandler] 已有 Base64 数据，转换为 File`);
+      try {
+        const response = await fetch(base64Data);
+        const blob = await response.blob();
+        const file = new File([blob], att.name || 'reference.png', {
+          type: blob.type || 'image/png'
+        });
+        const isAlreadyUploaded = isUploadedToCloud(att);
+        return {
+          ...att,
+          file,
+          originalCloudUrl: isAlreadyUploaded ? attUrl : undefined
+        };
+      } catch (error) {
+        console.error('[virtualTryOnHandler] Base64 转 File 失败:', error);
+      }
+    }
+
+    // 优先级 3：url 是 Base64
+    if (attUrl.startsWith('data:')) {
+      console.log(`[virtualTryOnHandler] URL 是 Base64，转换为 File`);
+      try {
+        const response = await fetch(attUrl);
+        const blob = await response.blob();
+        const file = new File([blob], att.name || 'reference.png', {
+          type: blob.type || 'image/png'
+        });
+        return { ...att, file };
+      } catch (error) {
+        console.error('[virtualTryOnHandler] Base64 URL 转 File 失败:', error);
+      }
+    }
+
+    // 优先级 4：url 是 Blob URL
+    if (attUrl.startsWith('blob:')) {
+      console.log(`[virtualTryOnHandler] URL 是 Blob，转换为 File`);
+      try {
+        const response = await fetch(attUrl);
+        const blob = await response.blob();
+        const file = new File([blob], att.name || 'reference.png', {
+          type: blob.type || 'image/png'
+        });
+        return { ...att, file };
+      } catch (error) {
+        console.error('[virtualTryOnHandler] Blob URL 转 File 失败:', error);
+      }
+    }
+
+    // 优先级 5：HTTP URL，需要下载
+    if (isHttpUrl(attUrl)) {
+      const isAlreadyUploaded = isUploadedToCloud(att);
+      console.log(`[virtualTryOnHandler] 从云存储下载: ${attUrl.substring(0, 60)}`);
+      try {
+        const proxyUrl = `/api/storage/download?url=${encodeURIComponent(attUrl)}`;
+        const response = await fetch(proxyUrl);
+        const blob = await response.blob();
+        const file = new File([blob], att.name || 'reference.png', {
+          type: blob.type || 'image/png'
+        });
+        return {
+          ...att,
+          file,
+          originalCloudUrl: isAlreadyUploaded ? attUrl : undefined
+        };
+      } catch (error) {
+        console.error('[virtualTryOnHandler] 下载图片失败:', error);
+        return att;
+      }
+    }
+
+    console.warn(`[virtualTryOnHandler] 无法处理附件: ${att.name}`);
+    return att;
+  }));
+
+
+  // 1. 构建 Try-On 专用 prompt
+  // 将服装类型和描述组合成编辑指令
+  const targetMap: Record<string, string> = {
+    'upper': 'upper body clothing (shirt, jacket, top)',
+    'lower': 'lower body clothing (pants, skirt, shorts)',
+    'full': 'full body outfit'
+  };
+  const targetDesc = targetMap[tryOnTarget] || targetMap['upper'];
+  
+  // 构建编辑 prompt
+  const editPrompt = text.trim() 
+    ? `Replace the ${targetDesc} with: ${text}. Keep the person's pose, face, and background unchanged.`
+    : `Edit the ${targetDesc} area. Keep the person's pose, face, and background unchanged.`;
+  
+  console.log(`[virtualTryOnHandler] 编辑 Prompt: ${editPrompt}`);
+
+  // 2. 调用 API 进行图片编辑
+  // 优先尝试后端 API（支持 Vertex AI），失败则回退到 Gemini
+  let results: { url: string; mimeType: string }[] = [];
+  
+  try {
+    // 尝试使用后端 API
+    console.log(`[virtualTryOnHandler] 尝试调用后端 /api/tryon/edit API...`);
+    
+    // 获取第一张图片的 Base64 数据
+    const firstAtt = processedAttachments[0];
+    let imageBase64 = '';
+    
+    if (firstAtt.file) {
+      const reader = new FileReader();
+      imageBase64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(firstAtt.file!);
+      });
+    } else if ((firstAtt as any).base64Data) {
+      imageBase64 = (firstAtt as any).base64Data;
+    } else if (firstAtt.url?.startsWith('data:')) {
+      imageBase64 = firstAtt.url;
+    }
+    
+    if (imageBase64) {
+      const result = await editWithMask(
+        imageBase64,
+        null, // 不提供掩码，让后端使用智能编辑
+        editPrompt,
+        'inpainting-insert',
+        0.02,
+        context.apiKey, // 传递 API Key 用于 Gemini 备用方案
+        targetDesc
+      );
+      results = [result];
+      console.log(`[virtualTryOnHandler] 后端 API 调用成功`);
+    } else {
+      throw new Error('无法获取图片 Base64 数据');
+    }
+  } catch (backendError) {
+    // 后端 API 失败，回退到 Gemini
+    console.warn(`[virtualTryOnHandler] 后端 API 失败，回退到 Gemini:`, backendError);
+    results = await llmService.generateImage(editPrompt, processedAttachments);
+  }
+
+  // 3. 处理所有结果图
+  let processedResults = await Promise.all(results.map(async (res, index) => {
+    const attachmentId = uuidv4();
+    const filename = `tryon-${Date.now()}-${index + 1}.png`;
+
+    let displayUrl = res.url;
+    let uploadSource: string | File = res.url;
+
+    // 处理远程临时 URL
+    if (res.url.startsWith('http://') || res.url.startsWith('https://')) {
+      console.log(`[virtualTryOnHandler] 下载远程结果图...`);
+      const proxyUrl = `/api/storage/download?url=${encodeURIComponent(res.url)}`;
+      const response = await fetch(proxyUrl);
+      const blob = await response.blob();
+      displayUrl = URL.createObjectURL(blob);
+      uploadSource = new File([blob], filename, { type: blob.type || 'image/png' });
+    }
+
+    return {
+      id: attachmentId,
+      filename,
+      displayUrl,
+      uploadSource,
+      mimeType: res.mimeType
+    };
+  }));
+
+  // 3.5. 可选：Upscale 处理
+  if (options.enableUpscale && processedResults.length > 0) {
+    console.log(`[virtualTryOnHandler] 执行 Upscale: ${options.upscaleFactor}x`);
+    
+    try {
+      const { upscaleImage } = await import('../../services/providers/google/media/virtual-tryon');
+      
+      const upscaledResults = await Promise.all(processedResults.map(async (result) => {
+        try {
+          // 获取图片的 Base64 数据
+          let imageBase64 = result.displayUrl;
+          if (!imageBase64.startsWith('data:')) {
+            const response = await fetch(result.displayUrl);
+            const blob = await response.blob();
+            imageBase64 = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(blob);
+            });
+          }
+          
+          // 调用 Upscale
+          const upscaledResult = await upscaleImage(
+            imageBase64,
+            options.upscaleFactor || 2,
+            options.addWatermark || false
+          );
+          
+          // 更新结果
+          const upscaledFilename = result.filename.replace('.png', `-${options.upscaleFactor}x.png`);
+          return {
+            ...result,
+            filename: upscaledFilename,
+            displayUrl: upscaledResult.url,
+            uploadSource: upscaledResult.url,
+            mimeType: upscaledResult.mimeType
+          };
+        } catch (upscaleError) {
+          console.error(`[virtualTryOnHandler] Upscale 失败:`, upscaleError);
+          // 失败时返回原图
+          return result;
+        }
+      }));
+      
+      processedResults = upscaledResults;
+      console.log(`[virtualTryOnHandler] Upscale 完成`);
+    } catch (error) {
+      console.error(`[virtualTryOnHandler] Upscale 模块加载失败:`, error);
+    }
+  }
+
+  console.log(`[virtualTryOnHandler] ${processedResults.length} 张结果图已准备好显示`);
+
+  // 4. 构建显示用附件
+  const displayAttachments: Attachment[] = processedResults.map((r) => ({
+    id: r.id,
+    mimeType: r.mimeType,
+    name: r.filename,
+    url: r.displayUrl,
+    uploadStatus: 'pending' as const
+  }));
+
+  const finalContent = `Virtual Try-On: ${tryOnTarget} - "${text}"`;
+
+
+  // 5. 提交上传任务到 Redis 队列
+  const uploadTask = async (): Promise<{ dbAttachments: Attachment[]; dbUserAttachments?: Attachment[] }> => {
+    console.log(`[virtualTryOnHandler] 提交 ${processedResults.length} 张结果图到 Redis 上传队列`);
+
+    // 结果图上传
+    const resultUploadPromises = processedResults.map(async (r) => {
+      try {
+        let file: File;
+        if (r.uploadSource instanceof File) {
+          file = r.uploadSource;
+        } else if (typeof r.uploadSource === 'string') {
+          const response = await fetch(r.uploadSource);
+          const blob = await response.blob();
+          file = new File([blob], r.filename, { type: blob.type || 'image/png' });
+        } else {
+          throw new Error('Invalid upload source type');
+        }
+
+        const result = await storageUpload.uploadFileAsync(file, {
+          sessionId: context.sessionId,
+          messageId: context.modelMessageId,
+          attachmentId: r.id
+        });
+
+        console.log(`[virtualTryOnHandler] 结果图 ${r.filename} 已提交，任务ID: ${result.taskId}`);
+
+        return {
+          id: r.id,
+          taskId: result.taskId,
+          filename: r.filename,
+          mimeType: r.mimeType
+        };
+      } catch (error) {
+        console.error(`[virtualTryOnHandler] 提交上传任务失败 (${r.filename}):`, error);
+        return {
+          id: r.id,
+          taskId: null,
+          filename: r.filename,
+          mimeType: r.mimeType,
+          error: error instanceof Error ? error.message : '提交失败'
+        };
+      }
+    });
+
+    const resultUploadResults = await Promise.all(resultUploadPromises);
+
+    const dbAttachments: Attachment[] = resultUploadResults.map((result) => ({
+      id: result.id,
+      mimeType: result.mimeType,
+      name: result.filename,
+      url: '',
+      uploadStatus: result.taskId ? 'pending' : 'failed',
+      uploadTaskId: result.taskId || undefined,
+      uploadError: (result as any).error
+    }));
+
+    // 原图上传
+    console.log(`[virtualTryOnHandler] 处理 ${processedAttachments.length} 张原图上传`);
+
+    const userUploadPromises = processedAttachments.map(async (att) => {
+      if (att.originalCloudUrl) {
+        console.log(`[virtualTryOnHandler] 复用原始云存储 URL`);
+        return {
+          ...att,
+          url: att.originalCloudUrl,
+          uploadStatus: 'completed' as const
+        };
+      }
+
+      if (isUploadedToCloud(att)) {
+        return { ...att };
+      }
+
+      const uploadSource = att.file;
+      if (!uploadSource) {
+        console.warn(`[virtualTryOnHandler] 原图无可用上传源，跳过`);
+        return { ...att, url: '', uploadStatus: 'failed' as const };
+      }
+
+      try {
+        const result = await storageUpload.uploadFileAsync(uploadSource, {
+          sessionId: context.sessionId,
+          messageId: context.userMessageId,
+          attachmentId: att.id
+        });
+
+        console.log(`[virtualTryOnHandler] 原图 ${att.name} 已提交，任务ID: ${result.taskId}`);
+
+        return {
+          ...att,
+          url: '',
+          uploadStatus: 'pending' as const,
+          uploadTaskId: result.taskId
+        };
+      } catch (error) {
+        console.error(`[virtualTryOnHandler] 提交原图上传任务失败 (${att.name}):`, error);
+        return {
+          ...att,
+          url: '',
+          uploadStatus: 'failed' as const,
+          uploadError: error instanceof Error ? error.message : '提交失败'
+        };
+      }
+    });
+
+    const dbUserAttachments = await Promise.all(userUploadPromises);
+    console.log(`[virtualTryOnHandler] 所有上传任务已提交`);
+
+    return { dbAttachments, dbUserAttachments };
+  };
+
+  // 6. 返回结果
+  return {
+    content: finalContent,
+    attachments: displayAttachments,
+    uploadTask: uploadTask()
+  };
+};

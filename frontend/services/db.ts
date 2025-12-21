@@ -1,6 +1,6 @@
 
 
-import { ChatSession, Persona, ModelConfig } from '../../types';
+import { ChatSession, Persona, ModelConfig } from '../types/types';
 import { StorageConfig } from '../types/storage';
 import { DEFAULT_PERSONAS } from '../config/personas';
 

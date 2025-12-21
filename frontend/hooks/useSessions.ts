@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
-import { ChatSession, Message, Role } from '../../types';
+import { ChatSession, Message, Role } from '../types/types';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../services/db';
 import { cachedDb } from '../services/cachedDb';

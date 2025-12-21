@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../../types';
+import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
 import { Mic, Clock, AlertCircle, User, Bot, Download, Maximize2, Volume2 } from 'lucide-react';
 import InputArea from '../chat/InputArea';
 import { GenViewLayout } from '../common/GenViewLayout';

@@ -1,12 +1,13 @@
 
 import React from 'react';
-import { Message, AppMode, Attachment, ChatOptions, ModelConfig } from '../../../types';
+import { Message, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
 import { ImageGenView } from './ImageGenView';
 import { ImageEditView } from './ImageEditView';
 import { ImageExpandView } from './ImageExpandView';
 import { VideoGenView } from './VideoGenView';
 import { AudioGenView } from './AudioGenView';
 import { PdfExtractView } from './PdfExtractView';
+import { VirtualTryOnView } from './VirtualTryOnView';
 
 interface StudioViewProps {
   messages: Message[];
@@ -23,6 +24,8 @@ interface StudioViewProps {
   onExpandImage?: (url: string) => void; // Added prop
   providerId?: string;
   sessionId?: string | null;  // ✅ 会话 ID，用于查询附件
+  onDeleteMessage?: (messageId: string) => void;  // ✅ 删除消息回调
+  apiKey?: string;  // ✅ API Key，用于调用 API
 }
 
 export const StudioView: React.FC<StudioViewProps> = (props) => {
@@ -40,6 +43,8 @@ export const StudioView: React.FC<StudioViewProps> = (props) => {
           return <AudioGenView {...props} />;
       case 'pdf-extract':
           return <PdfExtractView {...props} />;
+      case 'virtual-try-on':
+          return <VirtualTryOnView {...props} />;
       default:
           return <ImageGenView {...props} />;
   }

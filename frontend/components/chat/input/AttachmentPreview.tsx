@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { X, FileText, Music, Video, File as FileIcon, Youtube } from 'lucide-react';
-import { Attachment } from '../../../../types';
+import { Attachment } from '../../../types/types';
 
 interface AttachmentPreviewProps {
   attachments: Attachment[];

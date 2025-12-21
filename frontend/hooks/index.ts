@@ -7,3 +7,4 @@ export * from './usePersonas';
 export * from './useMessageProcessor';
 export * from './useLogin';
 export * from './useAuth';
+export * from './useControlsState';

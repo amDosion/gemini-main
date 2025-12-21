@@ -1,7 +1,7 @@
 
 import React, { useMemo, useRef } from 'react';
-import { Message, Role, AppMode } from '../../../types';
-import { Download, Maximize2, RefreshCw, ArrowRight, Image as ImageIcon, Video as VideoIcon, Layers, AlertCircle, UploadCloud, Expand, Crop } from 'lucide-react';
+import { Message, Role, AppMode } from '../../types/types';
+import { Download, Maximize2, RefreshCw, ArrowRight, Image as ImageIcon, Video as VideoIcon, Layers, AlertCircle, Expand, Crop, Shirt } from 'lucide-react';
 
 interface GenWorkspaceProps {
   messages: Message[];
@@ -38,13 +38,14 @@ export const GenWorkspace: React.FC<GenWorkspaceProps> = ({
   // Find Reference Image (Crucial for Edit Mode)
   // We look for the latest user message with an image attachment
   const referenceImage = useMemo(() => {
-      if (mode !== 'image-edit' && mode !== 'image-outpainting') return null;
+      if (mode !== 'image-edit' && mode !== 'image-outpainting' && mode !== 'virtual-try-on') return null;
       const lastUserMsg = [...messages].reverse().find(m => m.role === Role.USER && m.attachments && m.attachments.length > 0);
       return lastUserMsg?.attachments?.[0];
   }, [messages, mode]);
 
   const isVideo = mode === 'video-gen';
-  const isEditMode = mode === 'image-edit' || mode === 'image-outpainting';
+  const isEditMode = mode === 'image-edit' || mode === 'image-outpainting' || mode === 'virtual-try-on';
+  const isTryOnMode = mode === 'virtual-try-on';
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && onUploadReference) {
@@ -52,30 +53,35 @@ export const GenWorkspace: React.FC<GenWorkspaceProps> = ({
       }
   };
 
-  // --- Layout 1: Empty State for Edit/Outpaint (Upload Zone) ---
+  // --- Layout 1: Empty State for Edit/Outpaint/TryOn (Upload Zone) ---
   if (isEditMode && !referenceImage && loadingState === 'idle') {
+      const getModeInfo = () => {
+          if (isTryOnMode) return { title: 'Virtual Try-On', desc: 'Upload a person photo to try on clothes with AI.', icon: <Shirt size={36} /> };
+          if (mode === 'image-edit') return { title: 'Image Editing', desc: 'Upload an image to start transforming it with AI.', icon: <Crop size={36} /> };
+          return { title: 'Image Out-Painting', desc: 'Upload an image to start expanding it with AI.', icon: <Expand size={36} /> };
+      };
+      const modeInfo = getModeInfo();
+
       return (
           <div className="flex-1 flex flex-col items-center justify-center p-8 animate-[fadeIn_0.5s_ease-out]">
               <div className="max-w-xl w-full text-center mb-6">
-                  <h2 className="text-3xl font-bold text-slate-100 mb-2">
-                      {mode === 'image-edit' ? 'Image Editing' : 'Image Out-Painting'}
-                  </h2>
-                  <p className="text-slate-400">
-                      Upload an image to start {mode === 'image-edit' ? 'transforming' : 'expanding'} it with AI.
-                  </p>
+                  <h2 className="text-3xl font-bold text-slate-100 mb-2">{modeInfo.title}</h2>
+                  <p className="text-slate-400">{modeInfo.desc}</p>
               </div>
               
               <div 
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full max-w-lg aspect-video rounded-3xl border-2 border-dashed border-slate-700 hover:border-indigo-500 bg-slate-900/50 hover:bg-slate-800/80 transition-all cursor-pointer flex flex-col items-center justify-center gap-4 group relative overflow-hidden"
+                className={`w-full max-w-lg aspect-video rounded-3xl border-2 border-dashed border-slate-700 ${isTryOnMode ? 'hover:border-rose-500' : 'hover:border-indigo-500'} bg-slate-900/50 hover:bg-slate-800/80 transition-all cursor-pointer flex flex-col items-center justify-center gap-4 group relative overflow-hidden`}
               >
-                  <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <div className={`absolute inset-0 ${isTryOnMode ? 'bg-gradient-to-br from-rose-500/5 to-pink-500/5' : 'bg-gradient-to-br from-indigo-500/5 to-purple-500/5'} opacity-0 group-hover:opacity-100 transition-opacity`} />
                   <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
-                  <div className="w-20 h-20 rounded-full bg-slate-800 group-hover:bg-indigo-600/20 group-hover:text-indigo-400 flex items-center justify-center text-slate-500 transition-colors z-10">
-                      {mode === 'image-edit' ? <Crop size={36} /> : <Expand size={36} />}
+                  <div className={`w-20 h-20 rounded-full bg-slate-800 ${isTryOnMode ? 'group-hover:bg-rose-600/20 group-hover:text-rose-400' : 'group-hover:bg-indigo-600/20 group-hover:text-indigo-400'} flex items-center justify-center text-slate-500 transition-colors z-10`}>
+                      {modeInfo.icon}
                   </div>
                   <div className="text-center z-10">
-                      <h3 className="text-xl font-semibold text-slate-200 group-hover:text-white">Upload Reference Image</h3>
+                      <h3 className="text-xl font-semibold text-slate-200 group-hover:text-white">
+                          {isTryOnMode ? 'Upload Person Photo' : 'Upload Reference Image'}
+                      </h3>
                       <p className="text-sm text-slate-500 mt-2">Click to browse or drag & drop here</p>
                   </div>
               </div>
@@ -132,7 +138,7 @@ export const GenWorkspace: React.FC<GenWorkspaceProps> = ({
                               </div>
                           </div>
                           <div className="text-sm text-slate-400 animate-pulse font-mono">
-                              {mode === 'image-edit' ? 'EDITING...' : mode === 'image-outpainting' ? 'EXPANDING...' : 'GENERATING...'}
+                              {mode === 'image-edit' ? 'EDITING...' : mode === 'image-outpainting' ? 'EXPANDING...' : mode === 'virtual-try-on' ? 'TRYING ON...' : 'GENERATING...'}
                           </div>
                      </div>
                  ) : latestResult ? (

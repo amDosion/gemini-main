@@ -1,13 +1,13 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../../types';
-import { Crop, Wand2, AlertCircle, Layers, User, Bot, Sparkles, Palette, PenTool, History, X } from 'lucide-react';
-import { v4 as uuidv4 } from 'uuid';
+import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
+import { Crop, Wand2, AlertCircle, Layers, User, Bot, Sparkles, Palette, PenTool } from 'lucide-react';
 import InputArea from '../chat/InputArea';
 import { useImageCanvas } from '../../hooks/useImageCanvas';
 import { ImageCanvasControls } from '../common/ImageCanvasControls';
 import { ImageCompare } from '../common/ImageCompare';
 import { GenViewLayout } from '../common/GenViewLayout';
+import { processUserAttachments } from '../../hooks/handlers/attachmentUtils';
 
 interface ImageEditViewProps {
     messages: Message[];
@@ -114,221 +114,43 @@ export const ImageEditView: React.FC<ImageEditViewProps> = ({
         }
     }, [messages, activeAttachments.length, loadingState, lastProcessedMsgId, activeImageUrl]);
 
-    /**
-     * 从历史消息中查找当前 activeImageUrl 对应的附件
-     * 用于复用已有附件信息，避免重复上传
-     * 返回附件信息和所属消息 ID
-     */
-    const findAttachmentFromHistory = (targetUrl: string): { attachment: Attachment; messageId: string } | null => {
-        for (const msg of [...messages].reverse()) {
-            for (const att of msg.attachments || []) {
-                // 匹配 url 或 tempUrl
-                if (att.url === targetUrl || att.tempUrl === targetUrl) {
-                    console.log('[findAttachmentFromHistory] ✅ 找到匹配的附件:', {
-                        id: att.id,
-                        messageId: msg.id,
-                        url: att.url?.substring(0, 60),
-                        uploadStatus: att.uploadStatus
-                    });
-                    return { attachment: att, messageId: msg.id };
-                }
-            }
-        }
-        console.log('[findAttachmentFromHistory] ❌ 未找到匹配的附件');
-        return null;
-    };
-
-    /**
-     * 从后端查询附件的最新信息（包括云存储 URL）
-     * 用于获取 Base64 对应的云存储 URL
-     */
-    const fetchAttachmentFromBackend = async (sessionId: string, attachmentId: string): Promise<{
-        url: string;
-        uploadStatus: string;
-        taskId?: string;
-    } | null> => {
-        try {
-            console.log('[fetchAttachmentFromBackend] 查询附件:', attachmentId);
-            const response = await fetch(`/api/sessions/${sessionId}/attachments/${attachmentId}`);
-            if (!response.ok) {
-                console.log('[fetchAttachmentFromBackend] 查询失败:', response.status);
-                return null;
-            }
-            const data = await response.json();
-            console.log('[fetchAttachmentFromBackend] 查询结果:', {
-                url: data.url?.substring(0, 60),
-                uploadStatus: data.uploadStatus,
-                taskId: data.taskId
-            });
-            return data;
-        } catch (e) {
-            console.error('[fetchAttachmentFromBackend] 查询异常:', e);
-            return null;
-        }
-    };
-
     const handleSend = async (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => {
         console.log('========== [ImageEditView] handleSend 开始 ==========');
         console.log('[handleSend] 用户输入:', text);
         console.log('[handleSend] 用户上传的附件数量:', attachments.length);
-        console.log('[handleSend] 当前 sessionId:', currentSessionId);  // ✅ 添加 sessionId 日志
-        console.log('[handleSend] 当前 activeImageUrl:', activeImageUrl?.substring(0, 100) + '...');
+        
+        // 详细日志：附件状态
+        attachments.forEach((att, index) => {
+            const urlType = att.url?.startsWith('blob:') ? 'Blob' : 
+                           att.url?.startsWith('data:') ? 'Base64' : 
+                           att.url?.startsWith('http') ? 'HTTP' : 'Other';
+            const tempUrlType = att.tempUrl?.startsWith('blob:') ? 'Blob' : 
+                               att.tempUrl?.startsWith('data:') ? 'Base64' : 
+                               att.tempUrl?.startsWith('http') ? 'HTTP' : 'None';
+            console.log(`[handleSend] 附件[${index}]:`, {
+                id: att.id?.substring(0, 8) + '...',
+                urlType,
+                tempUrlType,
+                uploadStatus: att.uploadStatus
+            });
+        });
+        console.log('[handleSend] activeImageUrl 类型:', 
+            activeImageUrl?.startsWith('blob:') ? 'Blob' : 
+            activeImageUrl?.startsWith('data:') ? 'Base64' : 
+            activeImageUrl?.startsWith('http') ? 'HTTP' : 'None'
+        );
 
-        // 判断 activeImageUrl 的类型
-        const isBase64 = activeImageUrl?.startsWith('data:');
-        const isBlobUrl = activeImageUrl?.startsWith('blob:');
-        const isCloudUrl = activeImageUrl?.startsWith('http://') || activeImageUrl?.startsWith('https://');
-        console.log('[handleSend] activeImageUrl 类型:', isBase64 ? 'Base64' : isBlobUrl ? 'Blob URL' : isCloudUrl ? '云存储 URL' : '未知');
-
-        let finalAttachments = [...attachments];
-
-        // CONTINUITY LOGIC
-        // 当用户没有上传新图片时，自动使用当前画布上的图片作为输入
-        if (finalAttachments.length === 0 && activeImageUrl) {
-            console.log('[handleSend] ✅ 触发 CONTINUITY LOGIC（用户未上传新图，使用画布图片）');
-
-            try {
-                // ===== 优先从历史消息中查找已有附件 =====
-                const found = findAttachmentFromHistory(activeImageUrl);
-
-                if (found) {
-                    const { attachment: existingAttachment, messageId: _messageId } = found;
-                    console.log('[handleSend] 复用历史附件模式, messageId:', _messageId);
-
-                    let finalUrl = existingAttachment.url;
-                    let finalUploadStatus = existingAttachment.uploadStatus || 'completed';
-
-                    // ✅ 如果 uploadStatus 是 pending，查询后端获取最新 URL
-                    console.log('[handleSend] 检查是否需要查询后端:', {
-                        finalUploadStatus,
-                        currentSessionId,
-                        attachmentId: existingAttachment.id
-                    });
-                    if (finalUploadStatus === 'pending' && currentSessionId) {
-                        console.log('[handleSend] 附件状态为 pending，查询后端获取最新 URL');
-                        const backendData = await fetchAttachmentFromBackend(currentSessionId, existingAttachment.id);
-                        if (backendData && backendData.url?.startsWith('http')) {
-                            console.log('[handleSend] ✅ 从后端获取到云存储 URL:', backendData.url.substring(0, 60));
-                            finalUrl = backendData.url;
-                            finalUploadStatus = 'completed';
-                        } else {
-                            console.log('[handleSend] 后端尚未完成上传，继续使用 Base64');
-                        }
-                    }
-
-                    const reusedAttachment: Attachment = {
-                        id: uuidv4(),  // 新 ID，避免冲突
-                        mimeType: existingAttachment.mimeType || 'image/png',
-                        name: existingAttachment.name || `canvas-${Date.now()}.png`,
-                        url: finalUrl,  // ✅ 使用最新的 URL（可能是云存储 URL）
-                        uploadStatus: finalUploadStatus
-                    };
-
-                    // ✅ 获取 Base64 数据供 Google API 使用
-                    // 优先使用当前 activeImageUrl（如果是 Base64），避免重复下载
-                    if (isBase64 && activeImageUrl) {
-                        // 原始 activeImageUrl 就是 Base64，直接使用
-                        console.log('[handleSend] 原始图片是 Base64，直接使用（无需下载）');
-                        (reusedAttachment as any).base64Data = activeImageUrl;
-                    } else if (finalUrl?.startsWith('http')) {
-                        // 原始图片不是 Base64，需要从云存储下载
-                        console.log('[handleSend] 从云存储下载图片转 Base64');
-                        const fetchUrl = `/api/storage/download?url=${encodeURIComponent(finalUrl)}`;
-                        const response = await fetch(fetchUrl);
-                        const blob = await response.blob();
-                        const base64Url = await new Promise<string>((resolve) => {
-                            const reader = new FileReader();
-                            reader.onloadend = () => resolve(reader.result as string);
-                            reader.readAsDataURL(blob);
-                        });
-                        (reusedAttachment as any).base64Data = base64Url;
-                    } else {
-                        // url 还是 Base64，直接使用
-                        (reusedAttachment as any).base64Data = existingAttachment.url;
-                    }
-
-                    finalAttachments = [reusedAttachment];
-                    console.log('[handleSend] ✅ 复用历史附件完成，uploadStatus:', reusedAttachment.uploadStatus, 'url 类型:', finalUrl?.startsWith('http') ? '云存储' : 'Base64');
-
-                } else if (isCloudUrl) {
-                    // ===== 情况 1：activeImageUrl 是云存储 URL（重载网页后） =====
-                    console.log('[handleSend] 云存储 URL 模式：通过后端代理下载');
-                    const fetchUrl = `/api/storage/download?url=${encodeURIComponent(activeImageUrl)}`;
-                    const response = await fetch(fetchUrl);
-                    const blob = await response.blob();
-                    console.log('[handleSend] 图片下载完成, blob 大小:', blob.size, 'bytes');
-
-                    const base64Url = await new Promise<string>((resolve) => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => resolve(reader.result as string);
-                        reader.readAsDataURL(blob);
-                    });
-
-                    const reusedAttachment: Attachment = {
-                        id: uuidv4(),
-                        mimeType: blob.type || 'image/png',
-                        name: `canvas-${Date.now()}.png`,
-                        url: activeImageUrl,  // ✅ 直接用云存储 URL
-                        uploadStatus: 'completed'
-                    };
-                    (reusedAttachment as any).base64Data = base64Url;
-
-                    finalAttachments = [reusedAttachment];
-                    console.log('[handleSend] ✅ 云存储 URL 模式完成');
-
-                } else if (isBase64 || isBlobUrl) {
-                    // ===== 情况 2：activeImageUrl 是 Base64/Blob 但未在历史中找到 =====
-                    // 这种情况理论上不应该发生，但作为兜底处理
-                    console.log('[handleSend] Base64/Blob 兜底模式');
-
-                    let base64Url: string;
-                    if (isBlobUrl) {
-                        const response = await fetch(activeImageUrl);
-                        const blob = await response.blob();
-                        base64Url = await new Promise<string>((resolve) => {
-                            const reader = new FileReader();
-                            reader.onloadend = () => resolve(reader.result as string);
-                            reader.readAsDataURL(blob);
-                        });
-                    } else {
-                        base64Url = activeImageUrl;
-                    }
-
-                    const reusedAttachment: Attachment = {
-                        id: uuidv4(),
-                        mimeType: 'image/png',
-                        name: `canvas-${Date.now()}.png`,
-                        url: base64Url,
-                        uploadStatus: 'completed'  // ✅ 不再触发上传，上一轮已处理
-                    };
-                    (reusedAttachment as any).base64Data = base64Url;
-
-                    finalAttachments = [reusedAttachment];
-                    console.log('[handleSend] ✅ Base64/Blob 兜底模式完成');
-                }
-
-            } catch (e) {
-                console.error("[handleSend] ❌ CONTINUITY LOGIC 失败:", e);
-            }
-        } else {
-            console.log('[handleSend] 未触发 CONTINUITY LOGIC，原因:',
-                finalAttachments.length > 0 ? '用户已上传新图片' : '画布无图片'
-            );
-        }
+        // 使用统一的附件处理函数
+        const finalAttachments = await processUserAttachments(
+            attachments,
+            activeImageUrl,
+            messages,
+            currentSessionId,
+            'canvas'
+        );
 
         console.log('[handleSend] 最终附件数量:', finalAttachments.length);
-        if (finalAttachments.length > 0) {
-            console.log('[handleSend] 最终附件详情:', finalAttachments.map(att => ({
-                id: att.id,
-                name: att.name,
-                urlType: att.url?.startsWith('data:') ? 'Base64' :
-                    att.url?.startsWith('blob:') ? 'Blob URL' :
-                        att.url?.startsWith('http') ? '云存储 URL' : '其他',
-                hasBase64Data: !!(att as any).base64Data,
-                uploadStatus: att.uploadStatus
-            })));
-        }
-        console.log('========== [ImageEditView] handleSend 结束，调用 onSend ==========');
+        console.log('========== [ImageEditView] handleSend 结束 ==========');
         onSend(text, options, finalAttachments, mode);
     };
 

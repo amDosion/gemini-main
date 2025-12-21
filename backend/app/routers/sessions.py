@@ -215,10 +215,16 @@ async def get_attachment(session_id: str, attachment_id: str, db: Session = Depe
     if task:
         result["taskId"] = task.id
         result["taskStatus"] = task.status
+        print(f"[Sessions] 找到上传任务: task_id={task.id[:8]}..., status={task.status}, target_url={task.target_url[:60] if task.target_url else 'None'}")
         # 如果任务已完成且有目标 URL，优先使用任务的 URL
         if task.status == 'completed' and task.target_url:
             result["url"] = task.target_url
             result["uploadStatus"] = 'completed'
+            print(f"[Sessions] ✅ 使用任务的 target_url 作为最终 URL")
+        else:
+            print(f"[Sessions] ⚠️ 任务未完成或无 target_url, 使用附件原始 URL")
+    else:
+        print(f"[Sessions] ⚠️ 未找到关联的上传任务")
     
-    print(f"[Sessions] 查询附件: {attachment_id[:8]}... -> url: {result['url'][:50] if result['url'] else 'None'}...")
+    print(f"[Sessions] 查询附件: {attachment_id[:8]}... -> url: {result['url'][:50] if result['url'] else 'None'}..., uploadStatus: {result['uploadStatus']}")
     return result

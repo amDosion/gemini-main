@@ -1,7 +1,7 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import { Paperclip, StopCircle, Send, Youtube, Link as LinkIcon, X, Check } from 'lucide-react';
-import { AppMode } from '../../../../types';
+import { AppMode } from '../../../types/types';
 
 interface PromptInputProps {
   input: string;

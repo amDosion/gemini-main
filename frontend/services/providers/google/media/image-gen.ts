@@ -1,6 +1,6 @@
 
 import { ImageGenerationResult } from "../../interfaces";
-import { ChatOptions } from "../../../../../types";
+import { ChatOptions } from "../../../../types/types";
 import { GoogleGenAI } from "@google/genai";
 
 export async function generateTextToImage(

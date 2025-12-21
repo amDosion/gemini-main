@@ -1,6 +1,6 @@
 
 import { OpenAIProvider } from "../openai/OpenAIProvider";
-import { ModelConfig, ChatOptions, Attachment } from "../../../../types";
+import { ModelConfig, ChatOptions, Attachment } from "../../../types/types";
 import { ImageGenerationResult } from "../interfaces";
 import { getZhiPuModels } from "./models";
 

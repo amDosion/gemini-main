@@ -4,7 +4,7 @@
  * Handles document vectorization and RAG functionality via backend API
  */
 
-import { DocumentMetadata, SearchResult, VectorStoreStats } from '../../types';
+import { DocumentMetadata, SearchResult, VectorStoreStats } from '../types/types';
 
 export class EmbeddingService {
   /**

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Save, Key, Shield, RefreshCw, CheckCircle2, AlertTriangle, Check, Loader2, X } from 'lucide-react';
 import { ConfigProfile } from '../../../services/db';
-import { ModelConfig, ApiProtocol } from '../../../../types';
+import { ModelConfig, ApiProtocol } from '../../../types/types';
 import { STATIC_AI_PROVIDERS } from '../../../config/aiProviders';
 import { LLMFactory } from '../../../services/LLMFactory';
 import { v4 as uuidv4 } from 'uuid';

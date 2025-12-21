@@ -1,6 +1,6 @@
 
 import { ImageGenerationResult } from "../interfaces";
-import { Attachment, ChatOptions } from "../../../../types";
+import { Attachment, ChatOptions } from "../../../types/types";
 import { ensureRemoteUrl } from "./image-utils";
 
 /**

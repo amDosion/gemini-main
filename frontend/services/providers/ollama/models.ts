@@ -1,5 +1,5 @@
 
-import { ModelConfig } from "../../../../types";
+import { ModelConfig } from "../../../types/types";
 
 export async function getOllamaModels(baseUrl: string): Promise<ModelConfig[]> {
     const defaultModels: ModelConfig[] = [

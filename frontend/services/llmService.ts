@@ -1,6 +1,6 @@
 
 import { LLMFactory } from "./LLMFactory";
-import { Message, ModelConfig, ChatOptions, Attachment, ApiProtocol } from "../../types";
+import { Message, ModelConfig, ChatOptions, Attachment, ApiProtocol } from "../types/types";
 import { StreamUpdate, ImageGenerationResult, VideoGenerationResult, AudioGenerationResult } from "./providers/interfaces";
 import { configService } from "./configurationService";
 import { messagePreparer } from "./ai_chat/MessagePreparer";

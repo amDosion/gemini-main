@@ -1,5 +1,5 @@
 
-import { ModelConfig } from "../../../../types";
+import { ModelConfig } from "../../../types/types";
 
 const MOONSHOT_MODELS: ModelConfig[] = [
     {

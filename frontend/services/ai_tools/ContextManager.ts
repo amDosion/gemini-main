@@ -1,5 +1,5 @@
 
-import { Message, Role } from "../../../types";
+import { Message, Role } from "../../types/types";
 
 export class ContextManager {
   // Conservative estimate: 1 token ~= 4 characters for English, ~1-2 chars for CJK

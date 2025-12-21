@@ -1,5 +1,5 @@
 
-import { ModelConfig, Message, Attachment, ChatOptions } from '../../../types';
+import { ModelConfig, Message, Attachment, ChatOptions } from '../../types/types';
 
 export interface StreamUpdate {
   text: string;

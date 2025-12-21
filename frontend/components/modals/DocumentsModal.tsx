@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Upload, File, Trash2, Database, AlertCircle, CheckCircle, Loader } from 'lucide-react';
-import { DocumentMetadata, VectorStoreStats } from '../../../types';
+import { DocumentMetadata, VectorStoreStats } from '../../types/types';
 import { EmbeddingService } from '../../services/embeddingService';
 
 interface DocumentsModalProps {

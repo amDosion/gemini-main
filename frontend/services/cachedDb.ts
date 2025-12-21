@@ -11,7 +11,7 @@
 
 import { db, ConfigProfile } from './db';
 import { cacheService, CacheResult } from './cacheService';
-import { ChatSession, Persona } from '../../types';
+import { ChatSession, Persona } from '../types/types';
 import { StorageConfig } from '../types/storage';
 
 // 缓存键常量

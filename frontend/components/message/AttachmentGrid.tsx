@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Attachment } from '../../../types';
+import { Attachment } from '../../types/types';
 import { Download, Maximize2, FileText, Music, Video as VideoIcon, Edit, Crop, File } from 'lucide-react';
 
 interface AttachmentGridProps {

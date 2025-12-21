@@ -1,10 +1,21 @@
+/**
+ * useChat Hook - 重构版本
+ * 
+ * 使用策略模式替代巨大的 if-else 链
+ * 修复问题1：创建全局 pollingManager 实例
+ * 修复问题2：使用 PreprocessorRegistry 处理文件上传
+ */
 
-import { useState, useCallback } from 'react';
-import { Message, Role, LoadingState, ChatOptions, Attachment, AppMode, ModelConfig } from '../../types';
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import { Message, Role, LoadingState, ChatOptions, Attachment, AppMode, ModelConfig } from '../types/types';
 import { v4 as uuidv4 } from 'uuid';
 import { llmService } from '../services/llmService';
-import { handleChat, handlePdfExtract, handleVideoGen, handleAudioGen, handleImageExpand, handleImageGen, handleImageEdit, HandlerContext } from './handlers';
 import { storageUpload } from '../services/storage/storageUpload';
+
+// 导入新的策略模式组件
+import { strategyRegistry, preprocessorRegistry } from './handlers/strategyConfig';
+import { PollingManager } from './handlers/PollingManager';
+import { ExecutionContext, StreamUpdate } from './handlers/types';
 
 export const useChat = (
   currentSessionId: string | null,
@@ -13,6 +24,16 @@ export const useChat = (
 ) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingState, setLoadingState] = useState<LoadingState>('idle');
+
+  // 创建全局 pollingManager 实例（修复问题1）
+  const pollingManager = useMemo(() => new PollingManager(), []);
+
+  // 组件卸载时清理轮询任务
+  useEffect(() => {
+    return () => {
+      pollingManager.cleanup();
+    };
+  }, [pollingManager]);
 
   const stopGeneration = useCallback(() => {
       llmService.cancelCurrentStream();
@@ -29,586 +50,151 @@ export const useChat = (
   ) => {
     if (!currentSessionId) return;
 
-    // 1. Initialize Service Context
-    const contextHistory = messages.filter(m => m.mode === mode || (!m.mode && mode === 'chat'));
-    llmService.startNewChat(contextHistory, currentModel, options);
-
-    // 2. Upload Handling (Google Specific)
-    let processedAttachments: Attachment[] = [...attachments];
-    if (protocol === 'google' && mode === 'chat') {
-      const filesToUpload = attachments.filter(a => a.file);
-      if (filesToUpload.length > 0) {
-        setLoadingState('uploading');
-        try {
-          const uploaded = await Promise.all(filesToUpload.map(async (att) => {
-            if (att.file) {
-              const uri = await llmService.uploadFile(att.file);
-              return { ...att, fileUri: uri, file: undefined };
-            }
-            return att;
-          }));
-          processedAttachments = attachments.map(att => {
-            const uploadedAtt = uploaded.find(u => u.id === att.id);
-            return uploadedAtt || att;
-          });
-        } catch (error) {
-          console.error("Upload failed", error);
-          // Don't stop execution here, try to proceed or let the main error handler catch downstream issues
-          // But actually, if upload fails, generation usually fails.
-          // Let's rethrow to be caught by main block for consistent UI error
-          throw error;
-        }
-      }
-    }
-
-    // 3. Optimistic User Message
-    const userMessage: Message = {
-      id: uuidv4(),
-      role: Role.USER,
-      content: text,
-      attachments: processedAttachments,
-      timestamp: Date.now(),
-      mode: mode, 
-    };
-
-    const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
-    updateSessionMessages(currentSessionId, updatedMessages);
-    setLoadingState(mode === 'chat' ? 'streaming' : 'loading');
-
-    // 4. Model Placeholder
-    const modelMessageId = uuidv4();
-    const initialModelMessage: Message = {
-      id: modelMessageId,
-      role: Role.MODEL,
-      content: '',
-      attachments: [],
-      timestamp: Date.now(),
-      mode: mode, 
-    };
-
-    setMessages(prev => [...prev, initialModelMessage]);
-
-    // 5. Execution Pipeline
     try {
-      if (mode === 'chat') {
-        // 构建 Handler 上下文
-        const handlerContext: HandlerContext = {
-          sessionId: currentSessionId,
-          userMessageId: userMessage.id,
-          modelMessageId: modelMessageId,
-          apiKey,
-          currentModel,
-          options,
-          protocol
-        };
+      // 1. Initialize Service Context
+      const contextHistory = messages.filter(m => m.mode === mode || (!m.mode && mode === 'chat'));
+      llmService.startNewChat(contextHistory, currentModel, options);
 
-        // 流式更新回调
-        const onStreamUpdate = (partial: Partial<{ content: string; attachments: Attachment[]; groundingMetadata: any; urlContextMetadata: any; browserOperationId: string }>) => {
-          setMessages(prev =>
-            prev.map(msg =>
-              msg.id === modelMessageId
-                ? {
+      // 2. Create User Message (before preprocessing)
+      const userMessageId = uuidv4();
+      const modelMessageId = uuidv4();
+
+      // 3. Create ExecutionContext
+      let context: ExecutionContext = {
+        sessionId: currentSessionId,
+        userMessageId,
+        modelMessageId,
+        mode,
+        text,
+        attachments: [...attachments],
+        currentModel,
+        options,
+        protocol,
+        apiKey,
+        llmService,
+        storageService: storageUpload,
+        pollingManager, // 全局单例（修复问题1）
+        onStreamUpdate: undefined, // 稍后设置
+        onProgressUpdate: undefined // 稍后设置
+      };
+
+      // 4. Preprocess (文件上传等)（修复问题2）
+      setLoadingState('uploading');
+      context = await preprocessorRegistry.process(context);
+
+      // 5. Create Optimistic User Message (使用处理后的 attachments)
+      const userMessage: Message = {
+        id: userMessageId,
+        role: Role.USER,
+        content: text,
+        attachments: context.attachments,
+        timestamp: Date.now(),
+        mode: mode,
+      };
+
+      const updatedMessages = [...messages, userMessage];
+      setMessages(updatedMessages);
+      updateSessionMessages(currentSessionId, updatedMessages);
+      setLoadingState(mode === 'chat' ? 'streaming' : 'loading');
+
+      // 6. Create Model Placeholder
+      const initialModelMessage: Message = {
+        id: modelMessageId,
+        role: Role.MODEL,
+        content: '',
+        attachments: [],
+        timestamp: Date.now(),
+        mode: mode,
+      };
+
+      setMessages(prev => [...prev, initialModelMessage]);
+
+      // 7. Set up callbacks
+      const onStreamUpdate = (update: StreamUpdate) => {
+        setMessages(prev =>
+          prev.map(msg =>
+            msg.id === modelMessageId
+              ? {
                   ...msg,
-                  content: partial.content || '',
-                  attachments: partial.attachments || [],
-                  groundingMetadata: partial.groundingMetadata,
-                  urlContextMetadata: partial.urlContextMetadata,
-                  browserOperationId: partial.browserOperationId
+                  content: update.content || msg.content,
+                  attachments: update.attachments || msg.attachments,
+                  groundingMetadata: update.groundingMetadata,
+                  urlContextMetadata: update.urlContextMetadata,
+                  browserOperationId: update.browserOperationId
                 }
-                : msg
-            )
-          );
-        };
+              : msg
+          )
+        );
+      };
 
-        // 调用 Chat 处理器
-        const result = await handleChat(text, processedAttachments, handlerContext, onStreamUpdate);
+      context.onStreamUpdate = onStreamUpdate;
 
-        // 保存最终消息到数据库
-        const finalMessages = [...updatedMessages, {
-          ...initialModelMessage,
-          content: result.content,
-          attachments: result.attachments,
-          groundingMetadata: result.groundingMetadata,
-          urlContextMetadata: result.urlContextMetadata,
-          browserOperationId: result.browserOperationId
-        }];
-        updateSessionMessages(currentSessionId, finalMessages);
+      // 8. Execute Handler (策略模式，替代巨大的 if-else 链)
+      const handler = strategyRegistry.getHandler(mode);
+      const result = await handler.execute(context);
 
+      // 9. Update UI with result
+      const displayModelMessage: Message = {
+        ...initialModelMessage,
+        content: result.content,
+        attachments: result.attachments as Attachment[],
+        groundingMetadata: result.groundingMetadata,
+        urlContextMetadata: result.urlContextMetadata,
+        browserOperationId: result.browserOperationId
+      };
+
+      setMessages(prev => prev.map(msg => msg.id === modelMessageId ? displayModelMessage : msg));
+
+      // 10. Handle upload task (if any)
+      if (result.uploadTask) {
+        result.uploadTask.then(({ dbAttachments, dbUserAttachments }) => {
+          // 保存到数据库（使用 dbAttachments，带 uploadTaskId）
+          const dbUserMessage: Message = dbUserAttachments
+            ? { ...userMessage, attachments: dbUserAttachments as Attachment[] }
+            : userMessage;
+
+          const dbModelMessage: Message = {
+            ...initialModelMessage,
+            content: result.content,
+            attachments: dbAttachments as Attachment[]
+          };
+
+          const dbMessages = [
+            ...messages.filter(m => m.id !== userMessage.id),
+            dbUserMessage,
+            dbModelMessage
+          ];
+
+          updateSessionMessages(currentSessionId, dbMessages);
+          console.log('[useChat] 上传任务已提交，已保存到数据库（pending）');
+        }).catch(err => {
+          console.error('[useChat] 上传任务失败:', err);
+        });
       } else {
-        // Specialized Modes (Gen/Edit)
-        let finalContent = "";
-        let resultArray: Attachment[] = [];
-
-        // ========== image-gen 模式 ==========
-        if (mode === 'image-gen') {
-          // 构建 Handler 上下文
-          const handlerContext: HandlerContext = {
-            sessionId: currentSessionId,
-            userMessageId: userMessage.id,
-            modelMessageId: modelMessageId,
-            apiKey,
-            currentModel,
-            options,
-            protocol
-          };
-
-          // 调用图片生成处理器（立即返回显示用附件）
-          const result = await handleImageGen(text, processedAttachments, handlerContext);
-          finalContent = result.content;
-          resultArray = result.attachments;
-
-          // 先更新 UI 显示（不等待上传）
-          const displayModelMessage = { ...initialModelMessage, content: finalContent, attachments: resultArray };
-          setMessages(prev => prev.map(msg => msg.id === modelMessageId ? displayModelMessage : msg));
-
-          // 等待上传任务完成后保存到数据库
-          if (result.uploadTask) {
-            result.uploadTask.then(({ dbAttachments }) => {
-              // 先保存到数据库（此时通常还是 pending，URL 由后台 Worker/轮询更新）
-              const dbModelMessage: Message = {
-                ...initialModelMessage,
-                content: finalContent,
-                attachments: dbAttachments
-              };
-              const dbMessages = [...messages.filter(m => m.id !== userMessage.id), userMessage, dbModelMessage];
-              updateSessionMessages(currentSessionId, dbMessages);
-              console.log('[useChat] image-gen 上传任务已提交，已保存到数据库（pending）');
-
-              // 后台轮询：输出后端上传日志，并在完成后把最终 URL 写回会话（确保“真的上传完成/真的写入DB”可验证）
-              const upsertAttachment = (attachmentId: string, partial: Partial<Attachment>) => {
-                setMessages(prev => {
-                  const next = prev.map(msg => {
-                    if (msg.id !== modelMessageId) return msg;
-                    const atts = msg.attachments || [];
-                    const nextAtts = atts.map(att => att.id === attachmentId ? { ...att, ...partial } : att);
-                    return { ...msg, attachments: nextAtts };
-                  });
-                  updateSessionMessages(currentSessionId, next);
-                  return next;
-                });
-              };
-
-              const monitorOne = async (attachmentId: string, uploadTaskId: string) => {
-                const prefix = `[upload:${uploadTaskId.slice(0, 8)}]`;
-                let lastLogTs = 0;
-                const maxLoops = 120; // ~4min (2s interval)
-
-                for (let i = 0; i < maxLoops; i++) {
-                  try {
-                    const logs = await storageUpload.getUploadTaskLogs(uploadTaskId, 200);
-                    for (const entry of logs) {
-                      const ts = typeof entry?.ts === 'number' ? entry.ts : 0;
-                      if (ts && ts <= lastLogTs) continue;
-                      if (ts) lastLogTs = Math.max(lastLogTs, ts);
-                      const level = entry?.level || 'info';
-                      const message = entry?.message || JSON.stringify(entry);
-                      console.log(`${prefix} [${level}] ${message}`);
-                    }
-                  } catch (e) {
-                    // 忽略日志拉取失败（Redis 可能不可用），继续走状态轮询
-                  }
-
-                  const status = await storageUpload.getUploadTaskStatus(uploadTaskId);
-
-                  if (status.status === 'completed' && status.targetUrl) {
-                    // 【已禁用】不再将云存储 URL 写回前端会话状态
-                    // 原因：前端应保持本地 Blob URL 以加速显示，避免重复下载
-                    // 云存储 URL 仅用于数据库持久化，由后端 Worker 直接更新 DB
-                    // upsertAttachment(attachmentId, {
-                    //   url: status.targetUrl,
-                    //   uploadStatus: 'completed',
-                    //   uploadError: undefined,
-                    //   uploadTaskId
-                    // });
-                    console.log(`${prefix} ✅ 上传完成（前端保持本地URL）: ${status.targetUrl}`);
-                    return;
-                  }
-
-                  if (status.status === 'failed') {
-                    // 上传失败时仍需更新状态，让用户知道失败了
-                    upsertAttachment(attachmentId, {
-                      uploadStatus: 'failed',
-                      uploadError: status.errorMessage || '上传失败',
-                      uploadTaskId
-                    });
-                    console.error(`${prefix} ❌ 上传失败: ${status.errorMessage || '未知错误'}`);
-                    return;
-                  }
-
-                  await new Promise(resolve => setTimeout(resolve, 2000));
-                }
-
-                console.warn(`${prefix} ⏱️ 上传状态轮询超时（仍未 completed/failed）`);
-              };
-
-              for (const att of dbAttachments) {
-                if (att.uploadTaskId) {
-                  void monitorOne(att.id, att.uploadTaskId);
-                }
-              }
-            }).catch(err => {
-              console.error('[useChat] image-gen 上传失败:', err);
-            });
-          }
-
-          // 跳过后续的通用数据库保存逻辑（已在上传回调中处理）
-          setLoadingState('idle');
-          return;
-        }
-        // ========== image-edit 模式 ==========
-        else if (mode === 'image-edit') {
-          // 构建 Handler 上下文
-          const handlerContext: HandlerContext = {
-            sessionId: currentSessionId,
-            userMessageId: userMessage.id,
-            modelMessageId: modelMessageId,
-            apiKey,
-            currentModel,
-            options,
-            protocol
-          };
-
-          // 调用图片编辑处理器（立即返回显示用附件）
-          const result = await handleImageEdit(text, processedAttachments, handlerContext);
-          finalContent = result.content;
-          resultArray = result.attachments;
-
-          // 先更新 UI 显示（不等待上传）
-          const displayModelMessage = { ...initialModelMessage, content: finalContent, attachments: resultArray };
-          setMessages(prev => prev.map(msg => msg.id === modelMessageId ? displayModelMessage : msg));
-
-          // 等待上传任务提交完成后保存到数据库
-          if (result.uploadTask) {
-            result.uploadTask.then(({ dbAttachments, dbUserAttachments }) => {
-              // 先保存到数据库（此时通常还是 pending，URL 由后台 Worker/轮询更新）
-              const dbUserMessage: Message = {
-                ...userMessage,
-                attachments: dbUserAttachments || userMessage.attachments
-              };
-              const dbModelMessage: Message = {
-                ...initialModelMessage,
-                content: finalContent,
-                attachments: dbAttachments
-              };
-              const dbMessages = [...messages.filter(m => m.id !== userMessage.id), dbUserMessage, dbModelMessage];
-              updateSessionMessages(currentSessionId, dbMessages);
-              console.log('[useChat] image-edit 上传任务已提交，已保存到数据库（pending）');
-
-              // 后台轮询：输出后端上传日志（与 image-gen 保持一致）
-              const monitorOne = async (attachmentId: string, uploadTaskId: string) => {
-                const prefix = `[upload:${uploadTaskId.slice(0, 8)}]`;
-                let lastLogTs = 0;
-                const maxLoops = 120; // ~4min (2s interval)
-
-                for (let i = 0; i < maxLoops; i++) {
-                  try {
-                    const logs = await storageUpload.getUploadTaskLogs(uploadTaskId, 200);
-                    for (const entry of logs) {
-                      const ts = typeof entry?.ts === 'number' ? entry.ts : 0;
-                      if (ts && ts <= lastLogTs) continue;
-                      if (ts) lastLogTs = Math.max(lastLogTs, ts);
-                      const level = entry?.level || 'info';
-                      const message = entry?.message || JSON.stringify(entry);
-                      console.log(`${prefix} [${level}] ${message}`);
-                    }
-                  } catch (e) {
-                    // 忽略日志拉取失败
-                  }
-
-                  const status = await storageUpload.getUploadTaskStatus(uploadTaskId);
-
-                  if (status.status === 'completed' && status.targetUrl) {
-                    // 【已禁用】不再将云存储 URL 写回前端会话状态
-                    // 原因：前端应保持本地 Blob URL 以加速显示
-                    console.log(`${prefix} ✅ 上传完成（前端保持本地URL）: ${status.targetUrl}`);
-                    return;
-                  }
-
-                  if (status.status === 'failed') {
-                    console.error(`${prefix} ❌ 上传失败: ${status.errorMessage || '未知错误'}`);
-                    return;
-                  }
-
-                  await new Promise(resolve => setTimeout(resolve, 2000));
-                }
-
-                console.warn(`${prefix} ⏱️ 上传状态轮询超时（仍未 completed/failed）`);
-              };
-
-              // 监控结果图上传
-              for (const att of dbAttachments) {
-                if (att.uploadTaskId) {
-                  void monitorOne(att.id, att.uploadTaskId);
-                }
-              }
-
-              // 监控原图上传（如果有新上传的）
-              if (dbUserAttachments) {
-                for (const att of dbUserAttachments) {
-                  if (att.uploadTaskId) {
-                    void monitorOne(att.id, att.uploadTaskId);
-                  }
-                }
-              }
-            }).catch(err => {
-              console.error('[useChat] image-edit 上传失败:', err);
-            });
-          }
-
-          // 跳过后续的通用数据库保存逻辑（已在上传回调中处理）
-          setLoadingState('idle');
-          return;
-        }
-        else if (mode === 'image-outpainting') {
-          // 构建 Handler 上下文
-          const handlerContext: HandlerContext = {
-            sessionId: currentSessionId,
-            userMessageId: userMessage.id,
-            modelMessageId: modelMessageId,
-            apiKey,
-            currentModel,
-            options,
-            protocol
-          };
-          
-          // 调用图片扩展处理器（立即返回显示用附件）
-          const result = await handleImageExpand(processedAttachments, handlerContext);
-          finalContent = result.content;
-          resultArray = result.attachments;
-          
-          // 先更新 UI 显示（不等待上传）
-          const displayModelMessage = { ...initialModelMessage, content: finalContent, attachments: resultArray };
-          setMessages(prev => prev.map(msg => msg.id === modelMessageId ? displayModelMessage : msg));
-          
-          // 等待上传任务提交完成后保存到数据库
-          if (result.uploadTask) {
-            result.uploadTask.then(({ dbAttachments, dbUserAttachments }) => {
-              // 先保存到数据库（此时通常还是 pending，URL 由后台 Worker/轮询更新）
-              const dbUserMessage: Message = {
-                ...userMessage,
-                attachments: dbUserAttachments
-              };
-              const dbModelMessage: Message = {
-                ...initialModelMessage,
-                content: finalContent,
-                attachments: dbAttachments
-              };
-              const dbMessages = [...messages.filter(m => m.id !== userMessage.id), dbUserMessage, dbModelMessage];
-              updateSessionMessages(currentSessionId, dbMessages);
-              console.log('[useChat] image-outpainting 上传任务已提交，已保存到数据库（pending）');
-
-              // 后台轮询：输出后端上传日志（与 image-gen/image-edit 保持一致）
-              const monitorOne = async (attachmentId: string, uploadTaskId: string) => {
-                const prefix = `[upload:${uploadTaskId.slice(0, 8)}]`;
-                let lastLogTs = 0;
-                const maxLoops = 120; // ~4min (2s interval)
-
-                for (let i = 0; i < maxLoops; i++) {
-                  try {
-                    const logs = await storageUpload.getUploadTaskLogs(uploadTaskId, 200);
-                    for (const entry of logs) {
-                      const ts = typeof entry?.ts === 'number' ? entry.ts : 0;
-                      if (ts && ts <= lastLogTs) continue;
-                      if (ts) lastLogTs = Math.max(lastLogTs, ts);
-                      const level = entry?.level || 'info';
-                      const message = entry?.message || JSON.stringify(entry);
-                      console.log(`${prefix} [${level}] ${message}`);
-                    }
-                  } catch (e) {
-                    // 忽略日志拉取失败
-                  }
-
-                  const status = await storageUpload.getUploadTaskStatus(uploadTaskId);
-
-                  if (status.status === 'completed' && status.targetUrl) {
-                    // 【已禁用】不再将云存储 URL 写回前端会话状态
-                    // 原因：前端应保持本地 Blob URL 以加速显示
-                    console.log(`${prefix} ✅ 上传完成（前端保持本地URL）: ${status.targetUrl}`);
-                    return;
-                  }
-
-                  if (status.status === 'failed') {
-                    console.error(`${prefix} ❌ 上传失败: ${status.errorMessage || '未知错误'}`);
-                    return;
-                  }
-
-                  await new Promise(resolve => setTimeout(resolve, 2000));
-                }
-
-                console.warn(`${prefix} ⏱️ 上传状态轮询超时（仍未 completed/failed）`);
-              };
-
-              // 监控结果图上传
-              for (const att of dbAttachments) {
-                if (att.uploadTaskId) {
-                  void monitorOne(att.id, att.uploadTaskId);
-                }
-              }
-
-              // 监控原图上传（如果有新上传的）
-              for (const att of dbUserAttachments) {
-                if (att.uploadTaskId) {
-                  void monitorOne(att.id, att.uploadTaskId);
-                }
-              }
-            }).catch(err => {
-              console.error('[useChat] image-outpainting 上传失败:', err);
-            });
-          }
-          
-          // 跳过后续的通用数据库保存逻辑（已在上传回调中处理）
-          setLoadingState('idle');
-          return;
-        }
-        else if (mode === 'video-gen') {
-          // 构建 Handler 上下文
-          const handlerContext: HandlerContext = {
-            sessionId: currentSessionId,
-            userMessageId: userMessage.id,
-            modelMessageId: modelMessageId,
-            apiKey,
-            currentModel,
-            options,
-            protocol
-          };
-          
-          // 调用视频生成处理器
-          const result = await handleVideoGen(text, processedAttachments, handlerContext);
-          finalContent = result.content;
-          resultArray = result.attachments;
-          
-          // 设置数据库保存用的附件（云存储 URL）
-          if (result.dbAttachments) {
-            (initialModelMessage as any)._dbAttachments = result.dbAttachments;
-          }
-        }
-        else if (mode === 'audio-gen') {
-          // 构建 Handler 上下文
-          const handlerContext: HandlerContext = {
-            sessionId: currentSessionId,
-            userMessageId: userMessage.id,
-            modelMessageId: modelMessageId,
-            apiKey,
-            currentModel,
-            options,
-            protocol
-          };
-          
-          // 调用音频生成处理器
-          const result = await handleAudioGen(text, handlerContext);
-          finalContent = result.content;
-          resultArray = result.attachments;
-          
-          // 设置数据库保存用的附件（云存储 URL）
-          if (result.dbAttachments) {
-            (initialModelMessage as any)._dbAttachments = result.dbAttachments;
-          }
-        }
-        else if (mode === 'pdf-extract') {
-          // 构建 Handler 上下文
-          const handlerContext: HandlerContext = {
-            sessionId: currentSessionId,
-            userMessageId: userMessage.id,
-            modelMessageId: modelMessageId,
-            apiKey,
-            currentModel,
-            options,
-            protocol
-          };
-          
-          // 调用 PDF 提取处理器
-          const result = await handlePdfExtract(text, processedAttachments, handlerContext);
-          finalContent = result.content;
-          resultArray = result.attachments;
-        }
-
-        // ========== 分离前端显示和数据库保存 ==========
-        
-        // 前端显示用的消息（使用本地 URL，显示快）
-        const displayModelMessage = { ...initialModelMessage, content: finalContent, attachments: resultArray };
-        
-        // 更新前端 UI（使用本地 URL）
-        setMessages(prev => prev.map(msg => msg.id === modelMessageId ? displayModelMessage : msg));
-        
-        // 数据库保存用的消息（使用云存储 URL）
-        // 检查是否有 _dbAttachments（image-gen/image-edit 模式会设置）
-        const dbUserAttachments = (userMessage as any)._dbAttachments || userMessage.attachments;
-        const dbModelAttachments = (initialModelMessage as any)._dbAttachments || resultArray;
-        
-        const dbUserMessage: Message = {
-          ...userMessage,
-          attachments: dbUserAttachments
-        };
-        const dbModelMessage: Message = {
-          ...initialModelMessage,
-          content: finalContent,
-          attachments: dbModelAttachments
-        };
-        
-        // 清理临时字段
-        delete (dbUserMessage as any)._dbAttachments;
-        delete (dbModelMessage as any)._dbAttachments;
-        
-        // 保存到数据库（使用云存储 URL）
-        const dbMessages = [...messages.filter(m => m.id !== userMessage.id), dbUserMessage, dbModelMessage];
-        updateSessionMessages(currentSessionId, dbMessages);
+        // 没有上传任务，直接保存到数据库
+        const finalMessages = [...updatedMessages, displayModelMessage];
+        updateSessionMessages(currentSessionId, finalMessages);
       }
+
+      setLoadingState('idle');
 
     } catch (error: any) {
-      if (error.message === 'Stream aborted by user') {
-          console.log('Generation stopped by user');
-          setMessages(prev => prev.map(msg => msg.id === modelMessageId ? { ...msg, content: msg.content + " [Stopped]" } : msg));
-      } else {
-          console.error("Action error", error);
-          
-          // Enhanced Error Parsing
-          let extractedMessage = error.message || "Could not process request.";
-          let extractedCode = error.status || error.code;
-          let extractedStatus = "";
+      console.error('[useChat] 执行失败:', error);
+      
+      // 清理轮询任务
+      pollingManager.cleanup();
 
-          // Check for structured { error: { code, message, status } }
-          if (error.error) {
-              extractedMessage = error.error.message || extractedMessage;
-              extractedCode = error.error.code || extractedCode;
-              extractedStatus = error.error.status || "";
-          }
+      // 显示错误消息
+      const errorMessage: Message = {
+        id: uuidv4(),
+        role: Role.MODEL,
+        content: `错误: ${error.message || '未知错误'}`,
+        attachments: [],
+        timestamp: Date.now(),
+        mode: mode,
+      };
 
-          const strError = JSON.stringify(error);
-          
-          // Robust check for Quota/429
-          const isQuotaError = 
-              extractedCode === 429 || 
-              extractedStatus === 'RESOURCE_EXHAUSTED' ||
-              (typeof extractedMessage === 'string' && (extractedMessage.includes("429") || extractedMessage.includes("RESOURCE_EXHAUSTED") || extractedMessage.includes("quota"))) ||
-              strError.includes("RESOURCE_EXHAUSTED") ||
-              strError.includes("429");
-
-          // Robust check for 400/Invalid Argument
-          const isBadRequest = 
-              extractedCode === 400 || 
-              extractedStatus === 'INVALID_ARGUMENT' ||
-              (typeof extractedMessage === 'string' && (extractedMessage.includes("400") || extractedMessage.includes("INVALID_ARGUMENT"))) ||
-              strError.includes("INVALID_ARGUMENT");
-
-          let finalErrorMessage = extractedMessage;
-
-          if (isQuotaError) {
-              finalErrorMessage = "⚠️ **Quota Exceeded (429)**\n\nYou have reached the API rate limit for this model. This is common with free or low-tier keys.\n\n**Suggestions:**\n1. Wait a minute and try again.\n2. Switch to a lighter model like `gemini-2.5-flash`.\n3. Check your API key quota in Google AI Studio.";
-          } 
-          else if (isBadRequest) {
-              finalErrorMessage = "⚠️ **Invalid Request (400)**\n\nThe model rejected the request. This might be due to safety filters, unsupported file types, or prompt complexity.";
-              if (extractedMessage && extractedMessage !== "Request contains an invalid argument." && typeof extractedMessage === 'string') {
-                  finalErrorMessage += `\n\n*Details: ${extractedMessage}*`;
-              }
-          }
-          else if (typeof finalErrorMessage === 'string' && (finalErrorMessage.includes("503") || finalErrorMessage.includes("500") || finalErrorMessage.includes("Overloaded"))) {
-              finalErrorMessage = "⚠️ **Service Overloaded (503)**\n\nThe AI provider is currently experiencing high traffic. Please try again in a few moments.";
-          }
-
-          setMessages(prev => prev.map(msg => msg.id === modelMessageId ? { ...msg, content: finalErrorMessage, isError: true } : msg));
-      }
-    } finally {
+      setMessages(prev => [...prev.slice(0, -1), errorMessage]);
       setLoadingState('idle');
     }
   };
@@ -619,6 +205,6 @@ export const useChat = (
     loadingState,
     setLoadingState,
     sendMessage,
-    stopGeneration
+    stopGeneration,
   };
 };

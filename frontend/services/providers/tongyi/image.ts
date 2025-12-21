@@ -1,6 +1,6 @@
 
 import { ImageGenerationResult } from "../interfaces";
-import { Attachment, ChatOptions } from "../../../../types";
+import { Attachment, ChatOptions } from "../../../types/types";
 import { resolveDashUrl, uploadDashScopeFile, submitAndPoll } from "./api";
 
 // --- Helper: Process Reference Image ---

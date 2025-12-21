@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Menu, MonitorUp, ChevronDown, Check, Loader2, Settings, Globe, Brain, Image as ImageIcon, Zap, BrainCircuit, Video, Mic, Server, Cpu, Sparkles, PlusCircle, FileText } from 'lucide-react';
-import { ModelConfig, AppMode } from '../../../types';
+import { ModelConfig, AppMode } from '../../types/types';
 import { ConfigProfile } from '../../services/db';
 
 interface HeaderProps {

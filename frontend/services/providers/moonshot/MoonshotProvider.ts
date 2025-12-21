@@ -1,6 +1,6 @@
 
 import { OpenAIProvider } from "../openai/OpenAIProvider";
-import { ModelConfig } from "../../../../types";
+import { ModelConfig } from "../../../types/types";
 import { getMoonshotModels } from "./models";
 
 export class MoonshotProvider extends OpenAIProvider {

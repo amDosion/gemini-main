@@ -1,5 +1,5 @@
 
-import { Attachment } from "../../../types";
+import { Attachment } from "../../types/types";
 
 // Helper to read File to Base64
 export async function fileToBase64(file: File): Promise<string> {

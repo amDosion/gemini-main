@@ -1,6 +1,6 @@
 
 import { ILLMProvider, StreamUpdate, ImageGenerationResult, VideoGenerationResult, AudioGenerationResult } from "../interfaces";
-import { ModelConfig, Message, Attachment, ChatOptions, Role } from "../../../../types";
+import { ModelConfig, Message, Attachment, ChatOptions, Role } from "../../../types/types";
 import { contextManager } from "../../ai_tools/ContextManager";
 
 export class OpenAIProvider implements ILLMProvider {

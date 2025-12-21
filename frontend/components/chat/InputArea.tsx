@@ -1,16 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChatOptions, ModelConfig, Attachment, AppMode, OutPaintingOptions, LoraConfig, PdfExtractionTemplate } from '../../../types';
+import { ChatOptions, ModelConfig, Attachment, AppMode, OutPaintingOptions, PdfExtractionTemplate } from '../../types/types';
 import { v4 as uuidv4 } from 'uuid';
 
 // Sub-components
 import { ModeSelector } from './input/ModeSelector';
-import { ChatControls } from './input/ChatControls';
-import { GenerationControls } from './input/GenerationControls';
-import { PdfControls } from './input/PdfControls';
 import { AdvancedSettings } from './input/AdvancedSettings';
 import { PdfAdvancedSettings } from './input/PdfAdvancedSettings';
 import { AttachmentPreview } from './input/AttachmentPreview';
 import { PromptInput } from './input/PromptInput';
+
+// New refactored components
+import { ModeControlsCoordinator } from '../../coordinators';
+import { useControlsState } from '../../hooks/useControlsState';
 
 interface InputAreaProps {
   onSend: (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => void;
@@ -25,7 +26,6 @@ interface InputAreaProps {
   onAttachmentsChange?: (attachments: Attachment[]) => void;
   hasActiveContext?: boolean;
   providerId?: string;
-  // PDF 提取相关 props
   pdfTemplates?: PdfExtractionTemplate[];
   selectedPdfTemplate?: string;
   onPdfTemplateChange?: (template: string) => void;
@@ -53,40 +53,12 @@ const InputArea: React.FC<InputAreaProps> = ({
       }
   };
 
-  // --- Quick Settings State ---
-  const [enableSearch, setEnableSearch] = useState(false);
-  const [enableThinking, setEnableThinking] = useState(false);
-  const [enableCodeExecution, setEnableCodeExecution] = useState(false);
-  const [enableUrlContext, setEnableUrlContext] = useState(false);
-  const [enableBrowser, setEnableBrowser] = useState(false); 
-  const [googleCacheMode, setGoogleCacheMode] = useState<'none' | 'exact' | 'semantic'>('none');
-  
-  // --- Generation Settings ---
-  const [aspectRatio, setAspectRatio] = useState("1:1");
-  const [resolution, setResolution] = useState("1K");
-  const [numberOfImages, setNumberOfImages] = useState(1);
-  const [style, setStyle] = useState("None");
-  const [voice, setVoice] = useState("Puck");
+  // Use centralized controls state hook
+  const controls = useControlsState(mode, currentModel);
 
-  // --- Virtual Try-On Settings ---
-  const [showTryOn, setShowTryOn] = useState(false);
 
-  // --- Advanced Settings ---
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [negativePrompt, setNegativePrompt] = useState("");
-  const [seed, setSeed] = useState<number>(-1);
-  const [loraConfig, setLoraConfig] = useState<LoraConfig>({ alpha: 0.6 });
-
-  // --- Out-Painting Settings ---
-  const [outPaintingMode, setOutPaintingMode] = useState<'scale' | 'offset'>('scale');
-  const [scaleFactor, setScaleFactor] = useState(2.0);
-  const [offsetPixels, setOffsetPixels] = useState({ left: 0, right: 0, top: 0, bottom: 0 });
-
-  // --- PDF Extraction Settings ---
+  // PDF template state (external or local)
   const [localPdfTemplate, setLocalPdfTemplate] = useState<string>('invoice');
-  const [pdfAdditionalInstructions, setPdfAdditionalInstructions] = useState<string>('');
-  
-  // 使用外部传入的模板状态或本地状态
   const currentPdfTemplate = selectedPdfTemplate ?? localPdfTemplate;
   const handlePdfTemplateChange = (template: string) => {
     if (onPdfTemplateChange) {
@@ -96,10 +68,7 @@ const InputArea: React.FC<InputAreaProps> = ({
     }
   };
 
-  // --- Refs & Effects ---
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // ✅ 使用 ref 保存最新的 attachments 值，避免闭包问题
+  // Refs & Effects
   const attachmentsRef = useRef<Attachment[]>(attachments);
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -110,46 +79,16 @@ const InputArea: React.FC<InputAreaProps> = ({
   }, [initialPrompt]);
 
   useEffect(() => {
-      // 只有当 initialAttachments 明确传入时才更新
-      // 避免在用户手动上传图片时被覆盖
       if (initialAttachments !== undefined) {
           updateAttachments(initialAttachments);
       }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialAttachments]); // ✅ 只依赖 initialAttachments，避免循环更新
+  }, [initialAttachments]);
 
-  useEffect(() => {
-    if (currentModel) {
-        if (!currentModel.capabilities.search && enableSearch) setEnableSearch(false);
-        if (!currentModel.capabilities.reasoning && enableThinking) setEnableThinking(false);
-    }
-  }, [currentModel, enableSearch, enableThinking]);
+  // Note: Mode-specific parameter adjustments are handled in useControlsState hook
 
-  useEffect(() => {
-      // ❌ 移除自动清空 attachments 的逻辑
-      // 用户上传的图片不应该在切换模式时被清除
-      
-      if (mode === 'video-gen') {
-          if (aspectRatio !== '16:9' && aspectRatio !== '9:16') setAspectRatio('16:9');
-      } else if (mode === 'image-gen') {
-          if (providerId === 'openai') {
-             setNumberOfImages(1);
-          }
-      }
 
-      setShowAdvanced(false); 
-      setShowTryOn(false);
-  }, [mode, providerId, aspectRatio]);
-
-  // --- Handlers ---
-  /**
-   * 处理文件选择
-   * 
-   * 只创建 Blob URL 用于 UI 预览，不触发任何上传
-   * 上传逻辑在点击发送后由 useChat.ts 统一处理：
-   * - DashScope 上传：用于扩图 API 调用
-   * - 云存储上传：用于持久化保存
-   */
+  // File handling
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
@@ -161,25 +100,19 @@ const InputArea: React.FC<InputAreaProps> = ({
     }
 
     const newAttachments: Attachment[] = [];
-    
-    // 处理每个文件：只创建 Blob URL 用于预览，保留 File 对象用于后续上传
     for (const file of Array.from(files)) {
         const blobUrl = URL.createObjectURL(file);
         const attachmentId = uuidv4();
-        
-        // 创建附件（使用 Blob URL 预览，保留 File 对象）
         const attachment: Attachment = {
             id: attachmentId,
-            file: file,  // 保留 File 对象，发送时上传
+            file: file,
             mimeType: file.type,
             name: file.name,
-            url: blobUrl,  // Blob URL 用于 UI 预览
+            url: blobUrl,
             tempUrl: blobUrl,
-            uploadStatus: 'pending'  // 等待发送时上传
+            uploadStatus: 'pending'
         };
-        
         newAttachments.push(attachment);
-        // ✅ 不再自动上传，等待用户点击发送
     }
     
     updateAttachments([...attachments, ...newAttachments]);
@@ -188,10 +121,7 @@ const InputArea: React.FC<InputAreaProps> = ({
 
   const handleAddLink = (url: string) => {
     if (url) {
-        // Validation for YouTube or other links
         const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
-        
-        // Treat as a special attachment
         const newAttachment: Attachment = {
             id: uuidv4(),
             mimeType: isYouTube ? 'video/external' : 'text/link',
@@ -201,9 +131,8 @@ const InputArea: React.FC<InputAreaProps> = ({
         };
         updateAttachments([...attachments, newAttachment]);
         
-        // Auto-enable URL context if it's a generic link
-        if (!isYouTube && !enableUrlContext && mode === 'chat') {
-            setEnableUrlContext(true);
+        if (!isYouTube && !controls.enableUrlContext && mode === 'chat') {
+            controls.setEnableUrlContext(true);
         }
     }
   };
@@ -212,73 +141,63 @@ const InputArea: React.FC<InputAreaProps> = ({
     updateAttachments(attachments.filter(att => att.id !== id));
   };
 
+
   const handleSend = () => {
-    // 如果正在加载且没有停止按钮，直接返回
     if (isLoading && !onStop) return;
     
-    // 对于 image-outpainting 模式，只需要有附件即可发送
     if (mode === 'image-outpainting') {
         if (attachments.length === 0 && !hasActiveContext) {
             alert("Please attach an image to expand (Out-Painting).");
             return;
         }
-        // ✅ 有附件就可以发送，不需要输入文本
     } else {
-        // 其他模式需要有输入文本或附件或活动上下文
         if (!input.trim() && attachments.length === 0 && !hasActiveContext) return;
     }
 
     const outPaintingOptions: OutPaintingOptions = {
-        mode: outPaintingMode,
-        xScale: scaleFactor,
-        yScale: scaleFactor,
-        leftOffset: offsetPixels.left,
-        rightOffset: offsetPixels.right,
-        topOffset: offsetPixels.top,
-        bottomOffset: offsetPixels.bottom,
+        mode: controls.outPaintingMode,
+        xScale: controls.scaleFactor,
+        yScale: controls.scaleFactor,
+        leftOffset: controls.offsetPixels.left,
+        rightOffset: controls.offsetPixels.right,
+        topOffset: controls.offsetPixels.top,
+        bottomOffset: controls.offsetPixels.bottom,
         bestQuality: true,
         limitImageSize: false
     };
 
     onSend(input, {
-        enableSearch,
-        enableThinking,
-        enableCodeExecution,
-        enableUrlContext, 
-        enableBrowser, 
-        googleCacheMode, 
-        imageAspectRatio: aspectRatio,
-        imageResolution: resolution,
-        numberOfImages: numberOfImages, 
-        imageStyle: style,
-        voiceName: voice,
+        enableSearch: controls.enableSearch,
+        enableThinking: controls.enableThinking,
+        enableCodeExecution: controls.enableCodeExecution,
+        enableUrlContext: controls.enableUrlContext, 
+        enableBrowser: controls.enableBrowser, 
+        googleCacheMode: controls.googleCacheMode, 
+        imageAspectRatio: controls.aspectRatio,
+        imageResolution: controls.resolution,
+        numberOfImages: controls.numberOfImages, 
+        imageStyle: controls.style,
+        voiceName: controls.voice,
         outPainting: outPaintingOptions,
-        virtualTryOnTarget: undefined, 
-        negativePrompt: negativePrompt.trim(),
-        seed: seed > -1 ? seed : undefined,
-        loraConfig: loraConfig.image ? loraConfig : undefined,
-        // PDF 提取参数
+        virtualTryOnTarget: mode === 'virtual-try-on' ? controls.tryOnTarget : undefined,
+        negativePrompt: controls.negativePrompt.trim(),
+        seed: controls.seed > -1 ? controls.seed : undefined,
+        loraConfig: controls.loraConfig.image ? controls.loraConfig : undefined,
         pdfExtractTemplate: mode === 'pdf-extract' ? currentPdfTemplate : undefined,
-        pdfAdditionalInstructions: mode === 'pdf-extract' ? pdfAdditionalInstructions.trim() : undefined
+        pdfAdditionalInstructions: mode === 'pdf-extract' ? controls.pdfAdditionalInstructions.trim() : undefined
     }, attachments, mode);
     
-    if (mode !== 'chat') {
-        setInput('');
-        updateAttachments([]);
-    } else {
-        setInput('');
-        updateAttachments([]);
-    }
+    setInput('');
+    updateAttachments([]);
   };
 
   const isGenMode = mode === 'image-gen' || mode === 'image-edit' || mode === 'video-gen' || mode === 'image-outpainting';
   const isMissingImage = (mode === 'image-edit' || mode === 'image-outpainting') && attachments.length === 0 && !hasActiveContext;
-  
-  // Only show LoRA settings if provider is TongYi and mode is Edit
   const showLoraSettings = providerId === 'tongyi' && mode === 'image-edit';
 
+
   return (
-    <div className="w-full max-w-[98%] 2xl:max-w-[1800px] mx-auto px-4 pb-6 pt-2 transition-all duration-300">
+    <div className="w-full max-w-4xl mx-auto px-4 pb-6 pt-2 transition-all duration-300">
       
       {/* 1. Toolbar Row */}
       <div className="flex flex-wrap items-center gap-3 mb-2 px-1">
@@ -289,56 +208,73 @@ const InputArea: React.FC<InputAreaProps> = ({
           />
 
           <div className="flex items-center gap-2 flex-wrap justify-end">
-              {mode === 'chat' ? (
-                  <ChatControls 
-                      currentModel={currentModel}
-                      enableSearch={enableSearch} setEnableSearch={setEnableSearch}
-                      enableThinking={enableThinking} setEnableThinking={setEnableThinking}
-                      enableCodeExecution={enableCodeExecution} setEnableCodeExecution={setEnableCodeExecution}
-                      enableUrlContext={enableUrlContext} setEnableUrlContext={setEnableUrlContext}
-                      enableBrowser={enableBrowser} setEnableBrowser={setEnableBrowser}
-                      googleCacheMode={googleCacheMode} setGoogleCacheMode={setGoogleCacheMode}
-                  />
-              ) : isGenMode ? (
-                  <GenerationControls 
-                      mode={mode}
-                      showAdvanced={showAdvanced} setShowAdvanced={setShowAdvanced}
-                      style={style} setStyle={setStyle}
-                      numberOfImages={numberOfImages} setNumberOfImages={setNumberOfImages}
-                      aspectRatio={aspectRatio} setAspectRatio={setAspectRatio}
-                      resolution={resolution} setResolution={setResolution}
-                      outPaintingMode={outPaintingMode} setOutPaintingMode={setOutPaintingMode}
-                      scaleFactor={scaleFactor} setScaleFactor={setScaleFactor}
-                      offsetPixels={offsetPixels} setOffsetPixels={setOffsetPixels}
-                      showTryOn={showTryOn} setShowTryOn={setShowTryOn}
-                      providerId={providerId}
-                  />
-              ) : mode === 'pdf-extract' ? (
-                  <PdfControls
-                      selectedTemplate={currentPdfTemplate}
-                      setSelectedTemplate={handlePdfTemplateChange}
-                      templates={pdfTemplates}
-                      showAdvanced={showAdvanced}
-                      setShowAdvanced={setShowAdvanced}
-                  />
-              ) : null}
+              <ModeControlsCoordinator
+                  mode={mode}
+                  providerId={providerId}
+                  currentModel={currentModel}
+                  // Chat controls
+                  enableSearch={controls.enableSearch}
+                  setEnableSearch={controls.setEnableSearch}
+                  enableThinking={controls.enableThinking}
+                  setEnableThinking={controls.setEnableThinking}
+                  enableCodeExecution={controls.enableCodeExecution}
+                  setEnableCodeExecution={controls.setEnableCodeExecution}
+                  enableUrlContext={controls.enableUrlContext}
+                  setEnableUrlContext={controls.setEnableUrlContext}
+                  enableBrowser={controls.enableBrowser}
+                  setEnableBrowser={controls.setEnableBrowser}
+                  enableRAG={controls.enableRAG}
+                  setEnableRAG={controls.setEnableRAG}
+                  googleCacheMode={controls.googleCacheMode}
+                  setGoogleCacheMode={controls.setGoogleCacheMode}
+                  // Generation controls
+                  style={controls.style}
+                  setStyle={controls.setStyle}
+                  numberOfImages={controls.numberOfImages}
+                  setNumberOfImages={controls.setNumberOfImages}
+                  aspectRatio={controls.aspectRatio}
+                  setAspectRatio={controls.setAspectRatio}
+                  resolution={controls.resolution}
+                  setResolution={controls.setResolution}
+                  showAdvanced={controls.showAdvanced}
+                  setShowAdvanced={controls.setShowAdvanced}
+                  // Out-painting controls
+                  outPaintingMode={controls.outPaintingMode}
+                  setOutPaintingMode={controls.setOutPaintingMode}
+                  scaleFactor={controls.scaleFactor}
+                  setScaleFactor={controls.setScaleFactor}
+                  offsetPixels={controls.offsetPixels}
+                  setOffsetPixels={controls.setOffsetPixels}
+                  // Try-on controls
+                  tryOnTarget={controls.tryOnTarget}
+                  setTryOnTarget={controls.setTryOnTarget}
+                  // Audio controls
+                  voice={controls.voice}
+                  setVoice={controls.setVoice}
+                  // PDF controls
+                  selectedTemplate={currentPdfTemplate}
+                  setSelectedTemplate={handlePdfTemplateChange}
+                  templates={pdfTemplates}
+              />
           </div>
       </div>
 
-      {isGenMode && showAdvanced && (
+
+      {isGenMode && controls.showAdvanced && (
           <AdvancedSettings 
-              negativePrompt={negativePrompt} setNegativePrompt={setNegativePrompt}
-              seed={seed} setSeed={setSeed}
-              // Only pass LoRA setters if applicable
-              loraConfig={showLoraSettings ? loraConfig : undefined}
-              setLoraConfig={showLoraSettings ? setLoraConfig : undefined}
+              negativePrompt={controls.negativePrompt}
+              setNegativePrompt={controls.setNegativePrompt}
+              seed={controls.seed}
+              setSeed={controls.setSeed}
+              loraConfig={showLoraSettings ? controls.loraConfig : undefined}
+              setLoraConfig={showLoraSettings ? controls.setLoraConfig : undefined}
           />
       )}
 
-      {mode === 'pdf-extract' && showAdvanced && (
+      {mode === 'pdf-extract' && controls.showAdvanced && (
           <PdfAdvancedSettings
-              additionalInstructions={pdfAdditionalInstructions}
-              setAdditionalInstructions={setPdfAdditionalInstructions}
+              additionalInstructions={controls.pdfAdditionalInstructions}
+              setAdditionalInstructions={controls.setPdfAdditionalInstructions}
           />
       )}
 

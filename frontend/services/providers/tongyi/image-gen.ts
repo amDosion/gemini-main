@@ -1,6 +1,6 @@
 
 import { ImageGenerationResult } from "../interfaces";
-import { ChatOptions } from "../../../../types";
+import { ChatOptions } from "../../../types/types";
 import { resolveDashUrl, submitAndPoll } from "./api";
 
 // --- RESOLUTION MAPPING LOGIC ---

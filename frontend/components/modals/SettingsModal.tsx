@@ -13,7 +13,7 @@ interface SettingsModalProps {
   onClose: () => void;
   profiles: ConfigProfile[];
   activeProfileId: string | null;
-  onSaveProfile: (profile: ConfigProfile) => Promise<void>;
+  onSaveProfile: (profile: ConfigProfile, autoActivate?: boolean) => Promise<void>;
   onDeleteProfile: (id: string) => Promise<void>;
   onActivateProfile: (id: string) => Promise<void>;
 
@@ -79,10 +79,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleSave = async (profile: ConfigProfile) => {
-    await onSaveProfile(profile);
-    // Auto-activate the new profile for convenience
-    await onActivateProfile(profile.id);
-
+    // 保存并激活配置（内部只刷新一次）
+    await onSaveProfile(profile, true);
     onClose();
   };
 

@@ -3,7 +3,7 @@ import React from 'react';
 import Sidebar from './Sidebar';
 import RightSidebar from './RightSidebar';
 import { Header } from './Header';
-import { ChatSession, Persona, ModelConfig, AppMode } from '../../../types';
+import { ChatSession, Persona, ModelConfig, AppMode } from '../../types/types';
 import { ConfigProfile } from '../../services/db';
 import { CacheStatusInfo } from '../../hooks/useCacheStatus';
 

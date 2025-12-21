@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 
-import { AppMode, Attachment } from '../types';
+import { AppMode, Attachment, Role } from './types/types';
 import { llmService } from './services/llmService';
 
 // Cleaner Imports via Barrel Files
@@ -27,8 +27,13 @@ import {
     usePersonas,
     useAuth
 } from './hooks';
+import { findAttachmentByUrl, tryFetchCloudUrl } from './hooks/handlers/attachmentUtils';
 import { StorageConfig } from './types/storage';
 import { db } from './services/db';
+import { PdfExtractionService } from './services/pdfExtractionService';
+
+// 应用启动时预加载 PDF 模板数据（避免组件渲染时闪烁）
+PdfExtractionService.preload();
 
 const App: React.FC = () => {
   // --- Router Hooks ---
@@ -295,14 +300,62 @@ const App: React.FC = () => {
     setInitialPrompt(undefined);
   };
 
-  const handleEditImage = (url: string) => {
+  const handleEditImage = async (url: string) => {
       setAppMode('image-edit');
-      const newAttachment: Attachment = {
-          id: uuidv4(),
-          mimeType: 'image/png',
-          name: 'Reference Image',
-          url: url
-      };
+      
+      // ✅ 尝试从历史消息中查找原附件，复用其 ID（用于后续查询云 URL）
+      const found = findAttachmentByUrl(url, messages);
+      
+      let newAttachment: Attachment;
+      
+      if (found) {
+          // 复用原附件的 ID 和其他信息
+          newAttachment = {
+              id: found.attachment.id,
+              mimeType: found.attachment.mimeType || 'image/png',
+              name: found.attachment.name || 'Reference Image',
+              url: url,  // ✅ 保留原始 URL 用于显示和匹配
+              tempUrl: found.attachment.tempUrl,
+              uploadStatus: found.attachment.uploadStatus
+          };
+          
+          // ✅ 如果 uploadStatus 是 pending，查询后端获取云 URL
+          // 云 URL 存在 tempUrl 中，用于避免重复上传
+          if (found.attachment.uploadStatus === 'pending' && currentSessionId) {
+              console.log('[handleEditImage] uploadStatus=pending，查询后端获取云 URL');
+              const cloudResult = await tryFetchCloudUrl(
+                  currentSessionId,
+                  found.attachment.id,
+                  found.attachment.url,
+                  found.attachment.uploadStatus
+              );
+              if (cloudResult) {
+                  console.log('[handleEditImage] ✅ 获取到云 URL:', cloudResult.url.substring(0, 60));
+                  // ✅ 云 URL 存在 tempUrl 中，原始 URL 保持不变用于显示
+                  newAttachment.tempUrl = cloudResult.url;
+                  newAttachment.uploadStatus = cloudResult.uploadStatus as 'pending' | 'uploading' | 'completed' | 'failed';
+              }
+          }
+      } else {
+          // 未找到原附件，创建新附件
+          newAttachment = {
+              id: uuidv4(),
+              mimeType: 'image/png',
+              name: 'Reference Image',
+              url: url
+          };
+      }
+      
+      console.log('[handleEditImage] 跨模式传递 - 完整附件状态:', {
+          foundOriginal: !!found,
+          attachmentId: newAttachment.id?.substring(0, 8) + '...',
+          url: newAttachment.url?.substring(0, 50) + '...',
+          urlType: newAttachment.url?.startsWith('blob:') ? 'Blob' : newAttachment.url?.startsWith('data:') ? 'Base64' : 'HTTP',
+          tempUrl: newAttachment.tempUrl?.substring(0, 50) + '...',
+          tempUrlType: newAttachment.tempUrl?.startsWith('blob:') ? 'Blob' : newAttachment.tempUrl?.startsWith('data:') ? 'Base64' : newAttachment.tempUrl?.startsWith('http') ? 'HTTP' : 'None',
+          uploadStatus: newAttachment.uploadStatus
+      });
+      
       setInitialAttachments([newAttachment]);
       setInitialPrompt("Make it look like..."); 
       if (activeModelConfig && !activeModelConfig.capabilities.vision) {
@@ -311,7 +364,7 @@ const App: React.FC = () => {
       }
   };
 
-  const handleExpandImage = (url: string) => {
+  const handleExpandImage = async (url: string) => {
       setAppMode('image-outpainting');
       
       // 根据 URL 类型推断 MIME 类型和扩展名
@@ -340,12 +393,57 @@ const App: React.FC = () => {
           extension = 'webp';
       }
       
-      const newAttachment: Attachment = {
-          id: uuidv4(),
-          mimeType: mimeType,
-          name: `expand-source-${Date.now()}.${extension}`,  // ✅ 添加正确的扩展名
-          url: url
-      };
+      // ✅ 尝试从历史消息中查找原附件，复用其 ID（用于后续查询云 URL）
+      const found = findAttachmentByUrl(url, messages);
+      
+      let newAttachment: Attachment;
+      
+      if (found) {
+          // 复用原附件的 ID 和其他信息
+          newAttachment = {
+              id: found.attachment.id,
+              mimeType: found.attachment.mimeType || mimeType,
+              name: found.attachment.name || `expand-source-${Date.now()}.${extension}`,
+              url: url,  // ✅ 保留原始 URL 用于显示
+              tempUrl: found.attachment.tempUrl,
+              uploadStatus: found.attachment.uploadStatus
+          };
+          
+          // ✅ 如果 uploadStatus 是 pending，查询后端获取云 URL
+          // Expand 模式可以直接使用云 URL（通义 API 支持）
+          if (found.attachment.uploadStatus === 'pending' && currentSessionId) {
+              console.log('[handleExpandImage] uploadStatus=pending，查询后端获取云 URL');
+              const cloudResult = await tryFetchCloudUrl(
+                  currentSessionId,
+                  found.attachment.id,
+                  found.attachment.url,
+                  found.attachment.uploadStatus
+              );
+              if (cloudResult) {
+                  console.log('[handleExpandImage] ✅ 获取到云 URL:', cloudResult.url.substring(0, 60));
+                  // ✅ Expand 模式：云 URL 存在 tempUrl 中，通义 API 可以直接使用
+                  newAttachment.tempUrl = cloudResult.url;
+                  newAttachment.uploadStatus = cloudResult.uploadStatus as 'pending' | 'uploading' | 'completed' | 'failed';
+              }
+          }
+      } else {
+          // 未找到原附件，创建新附件
+          newAttachment = {
+              id: uuidv4(),
+              mimeType: mimeType,
+              name: `expand-source-${Date.now()}.${extension}`,
+              url: url
+          };
+      }
+      
+      console.log('[handleExpandImage] 跨模式传递:', {
+          foundOriginal: !!found,
+          attachmentId: newAttachment.id?.substring(0, 8) + '...',
+          urlType: url.startsWith('blob:') ? 'Blob' : url.startsWith('data:') ? 'Base64' : 'HTTP',
+          uploadStatus: newAttachment.uploadStatus,
+          hasCloudUrl: !!newAttachment.tempUrl && newAttachment.tempUrl.startsWith('http')
+      });
+      
       setInitialAttachments([newAttachment]);
       setInitialPrompt(undefined); // Clear prompt as outpainting often just needs settings
       // Ensure we stay on a compatible model if possible, but Expand usually uses specific endpoints handled by provider
@@ -409,6 +507,32 @@ const App: React.FC = () => {
     }
   };
   
+  // 删除单条消息（同时删除对应的用户消息）
+  const handleDeleteMessage = (messageId: string) => {
+    if (!currentSessionId) return;
+    
+    // 找到要删除的消息
+    const msgToDelete = messages.find(m => m.id === messageId);
+    if (!msgToDelete) return;
+    
+    // 如果是 MODEL 消息，同时删除前一条 USER 消息（成对删除）
+    let idsToDelete = [messageId];
+    if (msgToDelete.role === Role.MODEL) {
+      const msgIndex = messages.findIndex(m => m.id === messageId);
+      if (msgIndex > 0) {
+        const prevMsg = messages[msgIndex - 1];
+        if (prevMsg.role === Role.USER && prevMsg.mode === msgToDelete.mode) {
+          idsToDelete.push(prevMsg.id);
+        }
+      }
+    }
+    
+    // 过滤掉要删除的消息
+    const newMessages = messages.filter(m => !idsToDelete.includes(m.id));
+    setMessages(newMessages);
+    updateSessionMessages(currentSessionId, newMessages);
+  };
+
   const handleModeSwitch = (mode: AppMode) => {
     setAppMode(mode);
     if (mode === 'image-gen') {
@@ -455,7 +579,8 @@ const App: React.FC = () => {
           onEditImage: handleEditImage,
           onExpandImage: handleExpandImage, // Pass the new handler
           providerId: config.providerId,
-          sessionId: currentSessionId  // ✅ 传递 sessionId 用于查询附件
+          sessionId: currentSessionId,  // ✅ 传递 sessionId 用于查询附件
+          apiKey: config.apiKey  // ✅ 传递 apiKey 用于调用 API
       };
 
       if (appMode === 'chat') {
@@ -478,6 +603,7 @@ const App: React.FC = () => {
                 mode={appMode}
                 initialPrompt={initialPrompt}
                 initialAttachments={initialAttachments}
+                onDeleteMessage={handleDeleteMessage}
             />
           );
       }

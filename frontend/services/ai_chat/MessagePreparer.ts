@@ -1,5 +1,5 @@
 
-import { Message, ChatOptions, Attachment, Role, ModelConfig } from "../../../types";
+import { Message, ChatOptions, Attachment, Role, ModelConfig } from "../../types/types";
 import { contextManager } from "../ai_tools/ContextManager";
 
 export interface PreparedPayload {

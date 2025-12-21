@@ -1,5 +1,5 @@
 
-import { ModelConfig } from "../../../../types";
+import { ModelConfig } from "../../../types/types";
 
 // --- Metadata Registry for DashScope Models ---
 interface ModelMetadata {

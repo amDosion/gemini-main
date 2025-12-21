@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { ApiProtocol } from '../../types';
+import { ApiProtocol } from '../types/types';
 import { llmService } from '../services/llmService';
 import { configService, ActiveAppConfig } from '../services/configurationService';
 import { AIProviderConfig } from '../config/aiProviders';
@@ -77,8 +77,11 @@ export const useSettings = () => {
 
   // --- Profile Actions ---
 
-  const saveProfile = async (profile: ConfigProfile) => {
+  const saveProfile = async (profile: ConfigProfile, autoActivate: boolean = false) => {
       await configService.saveProfile(profile);
+      if (autoActivate) {
+          await configService.setActiveProfileId(profile.id);
+      }
       await refreshSettings();
   };
 

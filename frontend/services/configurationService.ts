@@ -1,7 +1,7 @@
 
 import { db, ConfigProfile } from './db';
 import { STATIC_AI_PROVIDERS, getStaticProviderConfig, AIProviderConfig } from '../config/aiProviders';
-import { ApiProtocol } from '../../types';
+import { ApiProtocol } from '../types/types';
 
 // Derived runtime config
 export interface ActiveAppConfig {

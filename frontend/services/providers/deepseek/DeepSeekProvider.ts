@@ -1,6 +1,6 @@
 
 import { OpenAIProvider } from "../openai/OpenAIProvider";
-import { ModelConfig } from "../../../../types";
+import { ModelConfig } from "../../../types/types";
 import { getDeepSeekModels } from "./models";
 
 export class DeepSeekProvider extends OpenAIProvider {

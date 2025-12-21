@@ -10,7 +10,7 @@ import json
 import hashlib
 from datetime import datetime
 import numpy as np
-import google.generativeai as genai
+from google import genai
 
 
 # ============================================================================
@@ -157,7 +157,7 @@ def generate_document_id(filename: str, content: str) -> str:
 # Embedding Functions
 # ============================================================================
 
-def get_embedding(text: str, api_key: str, model: str = "models/embedding-001") -> List[float]:
+def get_embedding(text: str, api_key: str, model: str = "text-embedding-004") -> List[float]:
     """
     Generate an embedding for the given text using Gemini.
 
@@ -169,9 +169,9 @@ def get_embedding(text: str, api_key: str, model: str = "models/embedding-001") 
     Returns:
         List of floats representing the embedding vector
     """
-    genai.configure(api_key=api_key)
-    response = genai.embed_content(model=model, content=text)
-    return response['embedding']
+    client = genai.Client(api_key=api_key)
+    response = client.models.embed_content(model=model, contents=text)
+    return response.embeddings[0].values
 
 
 def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:

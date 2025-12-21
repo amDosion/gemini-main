@@ -1,5 +1,5 @@
 
-import { ModelConfig } from "../../../../types";
+import { ModelConfig } from "../../../types/types";
 
 interface ModelMetadata {
     name: string;

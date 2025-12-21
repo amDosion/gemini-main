@@ -31,7 +31,7 @@ inclusion: always
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
-| `PROMPT` | string | ✅ | - | 任务描述 |
+| `PROMPT` | string | ✅ | - | 任务描述（使用英文） |
 | `cd` | path | ✅ | - | 工作目录**绝对路径** |
 | `sandbox` | enum | ❌ | `"read-only"` | 沙箱策略 |
 | `SESSION_ID` | string | ❌ | `""` | 会话 ID，用于续问 |
@@ -43,26 +43,30 @@ inclusion: always
 
 | sandbox 值 | 权限 | 使用场景 |
 |-----------|------|---------|
-| `read-only` | 只读 | 代码分析、方案设计 |
-| `workspace-write` | 工作区写入 | 代码生成（需要直接写文件时） |
+| `read-only` | 只读 | **唯一允许的模式** - 代码分析、方案设计、生成代码片段 |
 
-### 1.4 调用示例
+**重要约束**:
+- Codex **禁止**直接写入文件
+- 所有文件操作必须由 `Desktop Commander MCP` 完成
+- Codex 只负责生成代码内容,返回给 Kiro 后由 Kiro 写入文件
 
-```python
+### 1.4 Kiro 调用格式（已验证 2025-12-19）
+
+```
 mcp_codex_codex(
-    PROMPT="分析当前项目的认证逻辑，给出改进建议。",
-    cd="D:\\gemini-main\\gemini-main\\backend",
-    sandbox="read-only"
+    PROMPT="Reply with Hello from Codex to confirm the connection is working.",
+    sandbox="read-only",
+    cd="D:\\vue-admin\\backend"
 )
 ```
 
-### 1.5 返回结构
+### 1.5 返回结构（实际验证）
 
 ```json
 {
   "success": true,
-  "SESSION_ID": "019b3152-04ac-78d1-95dd-3920b2a12c84",
-  "agent_messages": "生成的代码内容..."
+  "SESSION_ID": "019b3738-5472-7190-9d7d-42e3f1fb73da",
+  "agent_messages": "Hello from Codex!"
 }
 ```
 
@@ -79,30 +83,30 @@ mcp_codex_codex(
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
-| `PROMPT` | string | ✅ | - | 任务描述 |
+| `PROMPT` | string | ✅ | - | 任务描述（使用英文） |
 | `cd` | path | ✅ | - | 工作目录**绝对路径** |
 | `sandbox` | boolean | ❌ | `false` | **必须设置为 `false`** |
 | `SESSION_ID` | string | ❌ | `""` | 会话 ID |
 | `model` | string | ❌ | `""` | 模型名称 |
 | `return_all_messages` | boolean | ❌ | `false` | 返回完整消息链 |
 
-### 2.3 调用示例
+### 2.3 Kiro 调用格式（已验证 2025-12-19）
 
-```python
+```
 mcp_gemini_gemini(
-    PROMPT="创建 Vue 3 缓存状态组件 CacheStatus.vue",
-    cd="D:\\gemini-main\\gemini-main\\frontend",
-    sandbox=false
+    PROMPT="Reply with Hello from Gemini to confirm the connection is working.",
+    sandbox=false,
+    cd="D:\\vue-admin\\frontend"
 )
 ```
 
-### 2.4 返回结构
+### 2.4 返回结构（实际验证）
 
 ```json
 {
   "success": true,
-  "SESSION_ID": "xyz789",
-  "agent_messages": "生成的 Vue 组件代码..."
+  "SESSION_ID": "f0930c95-8a83-436e-af2f-82cc0dc2c1a3",
+  "agent_messages": "Hello from Gemini!"
 }
 ```
 
@@ -123,18 +127,32 @@ mcp_gemini_gemini(
 | `mcp_claude_code_mcp_codeReview` | 代码审查 | `code` |
 | `mcp_claude_code_mcp_editFile` | 编辑文件 | `file_path`, `content` |
 
-### 3.2 调用示例
+### 3.2 Kiro 调用格式（已验证 2025-12-19）
 
-```python
+```
+mcp_claude_code_mcp_think(
+    thought="Testing Claude Code MCP connection. This is a simple test to verify the MCP service is responding correctly."
+)
+```
+
+### 3.3 返回结构（实际验证）
+
+```
+Thought process: Testing Claude Code MCP connection. This is a simple test to verify the MCP service is responding correctly.
+```
+
+### 3.4 其他工具调用示例
+
+```
 # 读取文件
 mcp_claude_code_mcp_readFile(
-    file_path="D:\\gemini-main\\gemini-main\\backend\\app\\main.py"
+    file_path="D:\\vue-admin\\backend\\app\\main.py"
 )
 
 # 搜索代码
 mcp_claude_code_mcp_grep(
     pattern="cache|缓存",
-    path="D:\\gemini-main\\gemini-main",
+    path="D:\\vue-admin",
     include="*.ts"
 )
 
@@ -153,22 +171,25 @@ mcp_claude_code_mcp_codeReview(
 - **Kiro 工作区**：`.kiro/settings/mcp.json`
 - **Codex CLI**：`~/.codex/config.toml`
 
-### 4.2 推荐配置
+### 4.2 推荐配置（含 autoApprove）
 
 ```json
 {
   "mcpServers": {
     "codex": {
       "command": "python",
-      "args": ["-m", "codexmcp.cli"]
+      "args": ["-m", "codexmcp.cli"],
+      "autoApprove": ["codex", "mcp_codex_codex"]
     },
     "gemini": {
       "command": "python",
-      "args": ["-m", "geminimcp.cli"]
+      "args": ["-m", "geminimcp.cli"],
+      "autoApprove": ["gemini", "mcp_gemini_gemini"]
     },
     "claude-code-mcp": {
       "command": "node",
-      "args": ["C:\\Users\\12180\\tools\\claude-code-mcp\\dist\\index.js"]
+      "args": ["C:\\Users\\12180\\tools\\claude-code-mcp\\dist\\index.js"],
+      "autoApprove": ["bash", "readFile", "listFiles", "searchGlob", "grep", "think", "codeReview", "editFile"]
     }
   }
 }
@@ -229,3 +250,65 @@ npx @openai/codex login status
 python -c "import codexmcp; print('codexmcp OK')"
 python -c "import geminimcp; print('geminimcp OK')"
 ```
+
+---
+
+## 七、验证记录
+
+**测试时间**：2025-12-19
+
+| MCP 服务 | 状态 | SESSION_ID |
+|---------|------|------------|
+| **Gemini** | ✅ 正常 | `f0930c95-8a83-436e-af2f-82cc0dc2c1a3` |
+| **Claude Code** | ✅ 正常 | - |
+| **Codex** | ✅ 正常 | `019b3738-5472-7190-9d7d-42e3f1fb73da` |
+
+
+---
+
+## 八、Codex 超时问题分析
+
+**测试时间**：2025-12-19
+
+### 8.1 超时原因
+
+1. **CLI 启动开销** - Codex CLI 每次调用需要初始化，加载 `~/.codex/config.toml`
+2. **任务复杂度** - 文件写入任务比简单测试复杂
+3. **sandbox 限制** - `read-only` 无法写文件，`workspace-write` 需要额外验证
+
+### 8.2 正确使用方式
+
+根据协作规则,Codex 的职责边界:
+
+**Codex 应该做**:
+- ✅ 代码分析和方案设计
+- ✅ 生成代码片段(返回文本)
+- ✅ 提供技术建议和最佳实践
+- ✅ 多轮对话优化代码逻辑
+
+**Codex 不应该做**:
+- ❌ 直接写入文件
+- ❌ 使用 `workspace-write` 模式
+- ❌ 执行文件系统操作
+
+**标准工作流**:
+```
+1. mcp_codex_codex(sandbox="read-only", PROMPT="生成 XXX 功能代码")
+   → 返回: { "agent_messages": "生成的代码内容..." }
+
+2. Kiro 审查代码质量
+
+3. mcp_claude_code_mcp_codeReview(code="...")
+   → 代码审查
+
+4. mcp_desktop_commander_mcp_write_file(path="...", content="...")
+   → 写入文件
+```
+
+### 8.3 超时解决方案
+
+| 方案 | 说明 |
+|------|------|
+| 简化 PROMPT | 减少任务复杂度 |
+| 分步执行 | 先分析，再写入 |
+| 使用 Desktop Commander | 文件操作交给专门工具 |

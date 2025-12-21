@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Link as LinkIcon } from 'lucide-react';
-import { GroundingChunk } from '../../../types';
+import { GroundingChunk } from '../../types/types';
 
 interface GroundingSourcesProps {
   chunks?: GroundingChunk[];

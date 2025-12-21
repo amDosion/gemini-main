@@ -157,6 +157,7 @@ try:
     from .routers.sessions import router as sessions_router
     from .routers.personas import router as personas_router
     from .routers.image_expand import router as image_expand_router
+    from .routers.tryon import router as tryon_router
     API_ROUTES_AVAILABLE = True
     logger.info(f"{LOG_PREFIXES['info']} API routes imported via relative import")
 except ImportError:
@@ -166,6 +167,7 @@ except ImportError:
         from routers.sessions import router as sessions_router
         from routers.personas import router as personas_router
         from routers.image_expand import router as image_expand_router
+        from routers.tryon import router as tryon_router
         API_ROUTES_AVAILABLE = True
         logger.info(f"{LOG_PREFIXES['info']} API routes imported via absolute import (routers)")
     except ImportError:
@@ -176,6 +178,7 @@ except ImportError:
             from backend.app.routers.sessions import router as sessions_router
             from backend.app.routers.personas import router as personas_router
             from backend.app.routers.image_expand import router as image_expand_router
+            from backend.app.routers.tryon import router as tryon_router
             API_ROUTES_AVAILABLE = True
             logger.info(f"{LOG_PREFIXES['info']} API routes imported via backend.app.routers")
         except ImportError as e:
@@ -325,25 +328,63 @@ except ImportError:
 if API_ROUTES_AVAILABLE:
     app.include_router(health.router)
     app.include_router(storage.router)
-    # 注意：browse.router 已被移除，使用 main.py 中的完整实现（包含进度追踪、截图等功能）
-    # app.include_router(browse.router)
-    # 注意：pdf.router 已被移除，使用 main.py 中的完整实现（包含 model_id 参数）
-    # app.include_router(pdf.router)
+    app.include_router(browse.router)
+    app.include_router(pdf.router)
     app.include_router(embedding.router)
     app.include_router(dashscope_proxy.router)
     app.include_router(profiles_router)
     app.include_router(sessions_router)
     app.include_router(personas_router)
     app.include_router(image_expand_router)
-    logger.info(f"{LOG_PREFIXES['info']} API routes registered (profiles, sessions, personas, storage, image_expand)")
+    app.include_router(tryon_router)
+    logger.info(f"{LOG_PREFIXES['info']} API routes registered (health, storage, browse, pdf, embedding, profiles, sessions, personas, image_expand, tryon, dashscope_proxy)")
 
     # Set service availability flags for health check endpoint
     health.set_availability(
         selenium=SELENIUM_AVAILABLE,
         pdf=PDF_EXTRACTION_AVAILABLE,
-        embedding=EMBEDDING_AVAILABLE
+        embedding=EMBEDDING_AVAILABLE,
+        worker_pool=WORKER_POOL_AVAILABLE
     )
     logger.info(f"{LOG_PREFIXES['info']} Service availability flags updated for health endpoint")
+    
+    # Set browser service references for browse router
+    try:
+        from .services.browser import web_search
+    except ImportError:
+        try:
+            from services.browser import web_search
+        except ImportError:
+            try:
+                from backend.app.services.browser import web_search
+            except ImportError:
+                web_search = None
+    
+    browse.set_browser_service(
+        browse_func=selenium_browse if SELENIUM_AVAILABLE else None,
+        read_func=read_webpage if SELENIUM_AVAILABLE else None,
+        search_func=web_search,
+        available=SELENIUM_AVAILABLE,
+        progress_tracker=progress_tracker,
+        logger=logger,
+        log_prefixes=LOG_PREFIXES
+    )
+    logger.info(f"{LOG_PREFIXES['info']} Browser service references set for browse router")
+    
+    # Set PDF service references for pdf router
+    pdf.set_pdf_service(
+        extract_func=extract_structured_data_from_pdf if PDF_EXTRACTION_AVAILABLE else None,
+        templates_func=get_available_templates if PDF_EXTRACTION_AVAILABLE else None,
+        available=PDF_EXTRACTION_AVAILABLE
+    )
+    logger.info(f"{LOG_PREFIXES['info']} PDF service references set for pdf router")
+    
+    # Set embedding service references for embedding router
+    embedding.set_embedding_service(
+        service=rag_service if EMBEDDING_AVAILABLE else None,
+        available=EMBEDDING_AVAILABLE
+    )
+    logger.info(f"{LOG_PREFIXES['info']} Embedding service references set for embedding router")
 
 # Register auth router
 if AUTH_ROUTER_AVAILABLE:
@@ -375,722 +416,8 @@ app.add_middleware(
 )
 
 
-# ============================================================================
-# Request/Response Models
-# ============================================================================
 
-class BrowseRequest(BaseModel):
-    """Request model for browse endpoint"""
-    url: str
-    operation_id: Optional[str] = None  # Optional operation ID for progress tracking
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "url": "https://example.com",
-                "operation_id": "optional-unique-id"
-            }
-        }
-
-
-class BrowseResponse(BaseModel):
-    """Response model for browse endpoint"""
-    markdown: str
-    title: str
-    screenshot: Optional[str] = None
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "markdown": "Page content in markdown format...",
-                "title": "Example Page",
-                "screenshot": "base64_encoded_image_data..."
-            }
-        }
-
-
-# ============================================================================
-# Helper Functions
-# ============================================================================
-
-def extract_title_from_html(html_content: str) -> str:
-    """
-    Extract title from HTML content using simple parsing.
-    Falls back to a default title if not found.
-    """
-    try:
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html_content, 'html.parser')
-        title_tag = soup.find('title')
-        if title_tag and title_tag.string:
-            return title_tag.string.strip()
-    except Exception as e:
-        print(f"Error extracting title: {e}")
-
-    return "Web Page"
-
-
-def html_to_markdown(html_content: str) -> str:
-    """
-    Convert HTML content to Markdown format.
-    """
-    try:
-        from markdownify import markdownify as md
-        markdown_text = md(html_content, heading_style="ATX")
-        return markdown_text
-    except ImportError:
-        # Fallback: Just extract text without markdown formatting
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html_content, 'html.parser')
-        return soup.get_text()
-    except Exception as e:
-        print(f"Error converting to markdown: {e}")
-        return html_content
-
-
-def take_screenshot_selenium(url: str) -> Optional[str]:
-    """
-    Take a screenshot of a webpage using Selenium and return as base64.
-    """
-    if not SELENIUM_AVAILABLE:
-        return None
-
-    try:
-        import base64
-        from io import BytesIO
-        from PIL import Image
-        from selenium import webdriver
-        from selenium.webdriver.chrome.options import Options
-        from selenium.webdriver.chrome.service import Service
-        from webdriver_manager.chrome import ChromeDriverManager
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
-
-        # Setup Chrome options
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=1920,1080")
-
-        # Create driver
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-
-        try:
-            # Navigate to URL
-            driver.get(url)
-
-            # Wait for page to load
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.TAG_NAME, "body"))
-            )
-
-            # Take screenshot
-            screenshot_png = driver.get_screenshot_as_png()
-
-            # Convert to JPEG and resize for efficiency
-            img = Image.open(BytesIO(screenshot_png))
-
-            # Resize to max 1280 width while maintaining aspect ratio
-            max_width = 1280
-            if img.width > max_width:
-                ratio = max_width / img.width
-                new_size = (max_width, int(img.height * ratio))
-                img = img.resize(new_size, Image.Resampling.LANCZOS)
-
-            # Convert to JPEG
-            buffer = BytesIO()
-            img.convert('RGB').save(buffer, format='JPEG', quality=85)
-
-            # Encode to base64
-            screenshot_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-
-            return screenshot_base64
-
-        finally:
-            driver.quit()
-
-    except Exception as e:
-        print(f"Error taking screenshot: {e}")
-        return None
-
-
-# ============================================================================
-# API Endpoints
-# ============================================================================
-
-@app.get("/")
-async def root():
-    """Health check endpoint"""
-    return {
-        "status": "ok",
-        "message": "Gemini Chat Backend API",
-        "selenium_available": SELENIUM_AVAILABLE,
-        "pdf_extraction_available": PDF_EXTRACTION_AVAILABLE,
-        "embedding_available": EMBEDDING_AVAILABLE,
-        "upload_worker_pool_available": WORKER_POOL_AVAILABLE
-    }
-
-
-@app.get("/health")
-async def health():
-    """Detailed health check"""
-    return {
-        "status": "healthy",
-        "selenium": SELENIUM_AVAILABLE,
-        "pdf_extraction": PDF_EXTRACTION_AVAILABLE,
-        "embedding": EMBEDDING_AVAILABLE,
-        "upload_worker_pool": WORKER_POOL_AVAILABLE,
-        "version": "1.0.0"
-    }
-
-
-@app.get("/api/browse/progress/{operation_id}")
-async def browse_progress_stream(operation_id: str, request: Request):
-    """
-    Server-Sent Events endpoint for real-time browse progress updates.
-    
-    Args:
-        operation_id: Unique identifier for the browse operation
-        request: FastAPI request object (for disconnect detection)
-    
-    Returns:
-        StreamingResponse with SSE events
-    """
-    async def event_generator():
-        # Subscribe to progress updates
-        queue = await progress_tracker.subscribe(operation_id)
-        
-        try:
-            while True:
-                # Check if client disconnected
-                if await request.is_disconnected():
-                    break
-                
-                try:
-                    # Wait for next progress update (with timeout)
-                    message = await asyncio.wait_for(queue.get(), timeout=30.0)
-                    
-                    # Format as SSE
-                    yield f"data: {json.dumps(message)}\n\n"
-                    
-                    # If operation completed or errored, stop streaming
-                    if message.get("status") in ["completed", "error"]:
-                        break
-                        
-                except asyncio.TimeoutError:
-                    # Send keepalive
-                    yield f": keepalive\n\n"
-                    
-        finally:
-            # Unsubscribe when done
-            await progress_tracker.unsubscribe(operation_id, queue)
-    
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"  # Disable nginx buffering
-        }
-    )
-
-
-@app.post("/api/browse", response_model=BrowseResponse)
-async def browse_webpage(request: BrowseRequest):
-    """
-    Browse a webpage and return its content as markdown along with a screenshot.
-
-    This endpoint:
-    1. Fetches the webpage content
-    2. Extracts the title
-    3. Converts HTML to Markdown
-    4. Takes a screenshot (if Selenium is available)
-
-    Args:
-        request: BrowseRequest containing the URL to browse
-
-    Returns:
-        BrowseResponse with markdown content, title, and optional screenshot
-
-    Raises:
-        HTTPException: If the URL cannot be accessed or processed
-    """
-    url = request.url
-    operation_id = request.operation_id or str(uuid.uuid4())
-    logger.info(f"{LOG_PREFIXES['request']} Received browse request for URL: {url} (operation_id: {operation_id})")
-
-    try:
-        # Send initial progress
-        await progress_tracker.send_progress(
-            operation_id,
-            step="Starting",
-            status="in_progress",
-            details=f"Preparing to browse {url}",
-            progress=0
-        )
-        
-        # Method 1: Try using Selenium first (gets dynamic content + screenshot)
-        if SELENIUM_AVAILABLE:
-            try:
-                logger.info(f"{LOG_PREFIXES['selenium']} Attempting to browse with Selenium: {url}")
-                
-                await progress_tracker.send_progress(
-                    operation_id,
-                    step="Initializing Browser",
-                    status="in_progress",
-                    details="Starting Selenium WebDriver",
-                    progress=10
-                )
-
-                # Get page content using Selenium
-                await progress_tracker.send_progress(
-                    operation_id,
-                    step="Loading Page",
-                    status="in_progress",
-                    details=f"Navigating to {url}",
-                    progress=30
-                )
-                
-                content = selenium_browse(url, steps=[
-                    {"action": "wait", "seconds": 2}
-                ])
-
-                # Extract title (we need to get it from the original HTML)
-                await progress_tracker.send_progress(
-                    operation_id,
-                    step="Extracting Content",
-                    status="in_progress",
-                    details="Parsing page content",
-                    progress=50
-                )
-                
-                import requests
-                from bs4 import BeautifulSoup
-
-                response = requests.get(url, timeout=10, headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                })
-                title = extract_title_from_html(response.text)
-
-                # Convert content to markdown
-                markdown_content = content  # selenium_browse already returns text
-
-                # Take screenshot
-                logger.info(f"{LOG_PREFIXES['screenshot']} Taking screenshot...")
-                await progress_tracker.send_progress(
-                    operation_id,
-                    step="Taking Screenshot",
-                    status="in_progress",
-                    details="Capturing page screenshot",
-                    progress=70
-                )
-                
-                screenshot_base64 = take_screenshot_selenium(url)
-
-                logger.info(f"{LOG_PREFIXES['success']} Successfully browsed with Selenium: {url}")
-                
-                await progress_tracker.send_progress(
-                    operation_id,
-                    step="Finalizing",
-                    status="in_progress",
-                    details="Preparing response",
-                    progress=90
-                )
-                
-                await progress_tracker.send_complete(operation_id)
-                
-                return BrowseResponse(
-                    markdown=markdown_content,
-                    title=title,
-                    screenshot=screenshot_base64
-                )
-
-            except Exception as selenium_error:
-                logger.warning(f"{LOG_PREFIXES['warning']} Selenium error: {selenium_error}, falling back to requests")
-                await progress_tracker.send_progress(
-                    operation_id,
-                    step="Fallback to Simple Mode",
-                    status="in_progress",
-                    details="Selenium failed, using simple HTTP request",
-                    progress=20
-                )
-
-        # Method 2: Fallback to simple requests + BeautifulSoup
-        logger.info(f"{LOG_PREFIXES['webpage']} Browsing with requests (no Selenium): {url}")
-        
-        await progress_tracker.send_progress(
-            operation_id,
-            step="Fetching Page",
-            status="in_progress",
-            details=f"Downloading {url}",
-            progress=40
-        )
-
-        import requests
-        from bs4 import BeautifulSoup
-
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-
-        response = requests.get(url, timeout=10, headers=headers)
-        response.raise_for_status()
-
-        # Extract title
-        await progress_tracker.send_progress(
-            operation_id,
-            step="Processing Content",
-            status="in_progress",
-            details="Extracting and converting content",
-            progress=60
-        )
-        
-        title = extract_title_from_html(response.text)
-
-        # Convert to markdown
-        markdown_content = html_to_markdown(response.text)
-
-        # Truncate if too long (max 50000 chars)
-        if len(markdown_content) > 50000:
-            logger.warning(f"Content truncated from {len(markdown_content)} to 50000 characters")
-            markdown_content = markdown_content[:50000] + "\n\n[Content truncated...]"
-
-        logger.info(f"{LOG_PREFIXES['success']} Successfully browsed with requests: {url}")
-        
-        await progress_tracker.send_progress(
-            operation_id,
-            step="Finalizing",
-            status="in_progress",
-            details="Preparing response",
-            progress=90
-        )
-        
-        await progress_tracker.send_complete(operation_id)
-        
-        return BrowseResponse(
-            markdown=markdown_content,
-            title=title,
-            screenshot=None  # No screenshot without Selenium
-        )
-
-    except requests.exceptions.Timeout:
-        logger.error(f"{LOG_PREFIXES['error']} Timeout while accessing {url}")
-        await progress_tracker.send_error(operation_id, f"Timeout while accessing {url}")
-        raise HTTPException(
-            status_code=504,
-            detail=f"Timeout while accessing {url}"
-        )
-    except requests.exceptions.RequestException as e:
-        logger.error(f"{LOG_PREFIXES['error']} Request error accessing {url}: {str(e)}")
-        await progress_tracker.send_error(operation_id, f"Request error: {str(e)}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"Error accessing {url}: {str(e)}"
-        )
-    except Exception as e:
-        logger.exception(f"{LOG_PREFIXES['error']} Internal server error while browsing {url}")
-        await progress_tracker.send_error(operation_id, f"Internal error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error: {str(e)}"
-        )
-
-
-# ============================================================================
-# Additional Endpoints (for future expansion)
-# ============================================================================
-
-@app.post("/api/search")
-async def web_search_endpoint(query: str):
-    """
-    Web search endpoint (placeholder for future implementation)
-    """
-    try:
-        from .services.browser import web_search
-        result = web_search(query)
-        return {"results": result}
-    except ImportError:
-        try:
-            from services.browser import web_search
-            result = web_search(query)
-            return {"results": result}
-        except ImportError:
-            try:
-                from backend.app.services.browser import web_search
-                result = web_search(query)
-                return {"results": result}
-            except ImportError:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Web search functionality is not available. Please install required dependencies."
-                )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ============================================================================
-# PDF Extraction Endpoints
-# ============================================================================
-
-@app.get("/api/pdf/templates")
-async def get_pdf_templates():
-    """
-    Get available PDF extraction templates.
-
-    Returns:
-        List of available templates with their metadata
-    """
-    if not PDF_EXTRACTION_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail="PDF extraction functionality is not available. Please install required dependencies."
-        )
-
-    try:
-        templates = get_available_templates()
-        return {
-            "success": True,
-            "templates": templates
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error fetching templates: {str(e)}"
-        )
-
-
-@app.post("/api/pdf/extract")
-async def extract_pdf_data(
-    file: UploadFile = File(...),
-    template_type: str = Form(...),
-    api_key: str = Form(...),
-    model_id: str = Form(...),
-    additional_instructions: str = Form("")
-):
-    """
-    Extract structured data from a PDF document.
-
-    Args:
-        file: PDF file to process
-        template_type: Type of template to use ('invoice', 'form', 'receipt', 'contract')
-        api_key: Google AI API key for Gemini
-        additional_instructions: Optional additional extraction instructions
-
-    Returns:
-        Extracted structured data
-
-    Raises:
-        HTTPException: If PDF extraction fails or is not available
-    """
-    if not PDF_EXTRACTION_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail="PDF extraction functionality is not available. Please install required dependencies."
-        )
-
-    # Validate file type
-    if not file.filename.lower().endswith('.pdf'):
-        raise HTTPException(
-            status_code=400,
-            detail="Only PDF files are supported"
-        )
-
-    try:
-        # Read PDF file
-        pdf_bytes = await file.read()
-
-        if len(pdf_bytes) == 0:
-            raise HTTPException(
-                status_code=400,
-                detail="Uploaded file is empty"
-            )
-
-        # Extract structured data
-        result = await extract_structured_data_from_pdf(
-            pdf_bytes=pdf_bytes,
-            template_type=template_type,
-            api_key=api_key,
-            model_id=model_id,
-            additional_instructions=additional_instructions
-        )
-
-        return result
-
-    except ValueError as e:
-        raise HTTPException(
-            status_code=400,
-            detail=str(e)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error processing PDF: {str(e)}"
-        )
-
-
-# ============================================================================
-# Document Embedding / RAG Endpoints
-# ============================================================================
-
-class AddDocumentRequest(BaseModel):
-    """Request model for adding a document to the vector store"""
-    user_id: str
-    filename: str
-    content: str
-    api_key: str
-    chunk_size: int = 500
-    chunk_overlap: int = 100
-
-
-class SearchRequest(BaseModel):
-    """Request model for semantic search"""
-    user_id: str
-    query: str
-    api_key: str
-    top_k: int = 3
-
-
-@app.post("/api/embedding/add-document")
-async def add_document(request: AddDocumentRequest):
-    """
-    Add a document to the user's vector store.
-
-    The document will be chunked and embedded for later retrieval.
-    """
-    if not EMBEDDING_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail="Embedding service is not available"
-        )
-
-    try:
-        result = await rag_service.add_document(
-            user_id=request.user_id,
-            filename=request.filename,
-            content=request.content,
-            api_key=request.api_key,
-            chunk_size=request.chunk_size,
-            chunk_overlap=request.chunk_overlap
-        )
-        return result
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error adding document: {str(e)}"
-        )
-
-
-@app.post("/api/embedding/search")
-async def search_documents(request: SearchRequest):
-    """
-    Search for document chunks similar to the query.
-
-    Returns the most relevant chunks from the user's vector store.
-    """
-    if not EMBEDDING_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail="Embedding service is not available"
-        )
-
-    try:
-        results = rag_service.search_similar_chunks(
-            user_id=request.user_id,
-            query=request.query,
-            api_key=request.api_key,
-            top_k=request.top_k
-        )
-        return {
-            "success": True,
-            "results": results,
-            "count": len(results)
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error searching documents: {str(e)}"
-        )
-
-
-@app.get("/api/embedding/documents/{user_id}")
-async def get_user_documents(user_id: str):
-    """
-    Get all documents for a user.
-    """
-    if not EMBEDDING_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail="Embedding service is not available"
-        )
-
-    try:
-        documents = rag_service.get_user_documents(user_id)
-        stats = rag_service.get_stats(user_id)
-        return {
-            "success": True,
-            "documents": documents,
-            "stats": stats
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error fetching documents: {str(e)}"
-        )
-
-
-@app.delete("/api/embedding/document/{user_id}/{document_id}")
-async def delete_document(user_id: str, document_id: str):
-    """
-    Delete a specific document from the user's vector store.
-    """
-    if not EMBEDDING_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail="Embedding service is not available"
-        )
-
-    try:
-        success = rag_service.remove_document(user_id, document_id)
-        if success:
-            return {"success": True, "message": "Document deleted"}
-        else:
-            raise HTTPException(
-                status_code=404,
-                detail="Document not found"
-            )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error deleting document: {str(e)}"
-        )
-
-
-@app.delete("/api/embedding/documents/{user_id}")
-async def clear_user_documents(user_id: str):
-    """
-    Clear all documents for a user.
-    """
-    if not EMBEDDING_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail="Embedding service is not available"
-        )
-
-    try:
-        rag_service.clear_user_documents(user_id)
-        return {"success": True, "message": "All documents cleared"}
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error clearing documents: {str(e)}"
-        )
 
 
 # ============================================================================

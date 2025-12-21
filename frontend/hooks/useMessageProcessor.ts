@@ -1,6 +1,6 @@
 
 import { useMemo, useState, useEffect } from 'react';
-import { Message, Role } from '../../types';
+import { Message, Role } from '../types/types';
 
 export const useMessageProcessor = (message: Message) => {
   const isUser = message.role === Role.USER;

@@ -1,5 +1,5 @@
 
-import { ApiProtocol } from '../../types';
+import { ApiProtocol } from '../types/types';
 
 export interface AIProviderConfig {
   id: string;

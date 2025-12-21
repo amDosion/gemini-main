@@ -3,7 +3,7 @@ import React, { useRef, useEffect } from 'react';
 import MessageItem from '../chat/MessageItem';
 import InputArea from '../chat/InputArea';
 import { WelcomeScreen } from '../layout/WelcomeScreen';
-import { Message, ModelConfig, AppMode, ChatOptions, Attachment, Role } from '../../../types';
+import { Message, ModelConfig, AppMode, ChatOptions, Attachment, Role } from '../../types/types';
 
 interface ChatViewProps {
     messages: Message[];

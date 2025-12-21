@@ -1,5 +1,5 @@
 
-import { Attachment } from "../../../../types";
+import { Attachment } from "../../../types/types";
 import { uploadDashScopeFile } from "./api";
 
 // --- Helper: Process Reference Image ---

@@ -1,5 +1,5 @@
 
-import { ModelConfig } from "../../../../types";
+import { ModelConfig } from "../../../types/types";
 
 const CAPABILITY_OVERRIDES: Record<string, Partial<ModelConfig['capabilities']>> = {
     'gemini-2.0-flash-thinking': { reasoning: true, search: false }, // Explicitly disable search for thinking models

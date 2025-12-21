@@ -2,7 +2,7 @@
 import React, { useEffect, useRef } from 'react';
 import MessageItem from '../chat/MessageItem';
 import { WelcomeScreen } from '../layout/WelcomeScreen';
-import { Message, ModelConfig, AppMode } from '../../../types';
+import { Message, ModelConfig, AppMode } from '../../types/types';
 
 interface ChatWorkspaceProps {
   messages: Message[];

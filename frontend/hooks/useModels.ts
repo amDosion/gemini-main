@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useRef } from 'react';
-import { ModelConfig } from '../../types';
+import { ModelConfig } from '../types/types';
 import { llmService } from '../services/llmService';
 
 export const useModels = (

@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     # 数据库配置
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./test.db")
 
+    # GCP / Vertex AI 配置（用于 Virtual Try-On 等功能）
+    gcp_project_id: str | None = os.getenv("GCP_PROJECT_ID")
+    gcp_location: str = os.getenv("GCP_LOCATION", "us-central1")
+    google_application_credentials: str | None = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+
     # Redis 配置
     redis_host: str = os.getenv("REDIS_HOST", "localhost")
     redis_port: int = int(os.getenv("REDIS_PORT", "6379"))

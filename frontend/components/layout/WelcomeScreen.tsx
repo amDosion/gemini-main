@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Sparkles, Globe, Brain, Image as ImageIcon, PlaySquare, Settings, Loader2 } from 'lucide-react';
-import { ModelConfig, AppMode } from '../../../types';
+import { ModelConfig, AppMode } from '../../types/types';
 
 interface WelcomeScreenProps {
     apiKey: string;

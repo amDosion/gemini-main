@@ -9,8 +9,8 @@ from typing import Dict, Any, List, Optional
 import json
 import time
 import pypdf
-import google.generativeai as genai
-import google.ai.generativelanguage as glm
+from google import genai
+from google.genai import types
 
 
 # ============================================================================
@@ -41,116 +41,116 @@ def extract_text_from_pdf(pdf_file_bytes: bytes) -> str:
 # ============================================================================
 
 # Invoice Data Extraction Schema
-extract_invoice_data_tool = glm.FunctionDeclaration(
+extract_invoice_data_tool = types.FunctionDeclaration(
     name='extract_invoice_data',
     description='Extracts structured information from an invoice document.',
-    parameters=glm.Schema(
-        type=glm.Type.OBJECT,
-        properties={
-            'invoice_number': glm.Schema(type=glm.Type.STRING, description='The unique invoice number.'),
-            'vendor_name': glm.Schema(type=glm.Type.STRING, description='The name of the vendor or supplier.'),
-            'vendor_address': glm.Schema(type=glm.Type.STRING, description='The address of the vendor or supplier.'),
-            'customer_name': glm.Schema(type=glm.Type.STRING, description='The name of the customer or recipient.'),
-            'customer_address': glm.Schema(type=glm.Type.STRING, description='The address of the customer or recipient.'),
-            'issue_date': glm.Schema(type=glm.Type.STRING, description='The date the invoice was issued (e.g., YYYY-MM-DD).'),
-            'due_date': glm.Schema(type=glm.Type.STRING, description='The date the invoice is due (e.g., YYYY-MM-DD).'),
-            'total_amount': glm.Schema(type=glm.Type.NUMBER, description='The total amount of the invoice, including tax.'),
-            'currency': glm.Schema(type=glm.Type.STRING, description='The currency of the total amount (e.g., USD, EUR, CNY).'),
-            'tax_amount': glm.Schema(type=glm.Type.NUMBER, description='The total tax amount on the invoice.'),
-            'subtotal_amount': glm.Schema(type=glm.Type.NUMBER, description='The subtotal amount before tax.'),
-            'items': glm.Schema(
-                type=glm.Type.ARRAY,
-                items=glm.Schema(
-                    type=glm.Type.OBJECT,
-                    properties={
-                        'description': glm.Schema(type=glm.Type.STRING, description='Description of the item.'),
-                        'quantity': glm.Schema(type=glm.Type.NUMBER, description='Quantity of the item.'),
-                        'unit_price': glm.Schema(type=glm.Type.NUMBER, description='Unit price of the item.'),
-                        'line_total': glm.Schema(type=glm.Type.NUMBER, description='Total for the item line.')
+    parameters_json_schema={
+        'type': 'object',
+        'properties': {
+            'invoice_number': {'type': 'string', 'description': 'The unique invoice number.'},
+            'vendor_name': {'type': 'string', 'description': 'The name of the vendor or supplier.'},
+            'vendor_address': {'type': 'string', 'description': 'The address of the vendor or supplier.'},
+            'customer_name': {'type': 'string', 'description': 'The name of the customer or recipient.'},
+            'customer_address': {'type': 'string', 'description': 'The address of the customer or recipient.'},
+            'issue_date': {'type': 'string', 'description': 'The date the invoice was issued (e.g., YYYY-MM-DD).'},
+            'due_date': {'type': 'string', 'description': 'The date the invoice is due (e.g., YYYY-MM-DD).'},
+            'total_amount': {'type': 'number', 'description': 'The total amount of the invoice, including tax.'},
+            'currency': {'type': 'string', 'description': 'The currency of the total amount (e.g., USD, EUR, CNY).'},
+            'tax_amount': {'type': 'number', 'description': 'The total tax amount on the invoice.'},
+            'subtotal_amount': {'type': 'number', 'description': 'The subtotal amount before tax.'},
+            'items': {
+                'type': 'array',
+                'description': 'List of line items on the invoice.',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'description': {'type': 'string', 'description': 'Description of the item.'},
+                        'quantity': {'type': 'number', 'description': 'Quantity of the item.'},
+                        'unit_price': {'type': 'number', 'description': 'Unit price of the item.'},
+                        'line_total': {'type': 'number', 'description': 'Total for the item line.'}
                     },
-                    required=['description', 'quantity', 'unit_price', 'line_total']
-                ),
-                description='List of line items on the invoice.'
-            )
+                    'required': ['description', 'quantity', 'unit_price', 'line_total']
+                }
+            }
         },
-        required=['invoice_number', 'vendor_name', 'total_amount', 'issue_date', 'currency']
-    )
+        'required': ['invoice_number', 'vendor_name', 'total_amount', 'issue_date', 'currency']
+    }
 )
 
 # Generic Form Data Extraction Schema
-extract_form_data_tool = glm.FunctionDeclaration(
+extract_form_data_tool = types.FunctionDeclaration(
     name='extract_form_data',
     description='Extracts structured information from a generic form.',
-    parameters=glm.Schema(
-        type=glm.Type.OBJECT,
-        properties={
-            'name': glm.Schema(type=glm.Type.STRING, description='Full name provided in the form.'),
-            'email': glm.Schema(type=glm.Type.STRING, description='Email address provided.'),
-            'phone_number': glm.Schema(type=glm.Type.STRING, description='Phone number provided.'),
-            'address': glm.Schema(type=glm.Type.STRING, description='Full mailing address.'),
-            'company': glm.Schema(type=glm.Type.STRING, description='Company name.'),
-            'job_title': glm.Schema(type=glm.Type.STRING, description='Job title or position.'),
-            'message': glm.Schema(type=glm.Type.STRING, description='Any message or comments from the form.')
+    parameters_json_schema={
+        'type': 'object',
+        'properties': {
+            'name': {'type': 'string', 'description': 'Full name provided in the form.'},
+            'email': {'type': 'string', 'description': 'Email address provided.'},
+            'phone_number': {'type': 'string', 'description': 'Phone number provided.'},
+            'address': {'type': 'string', 'description': 'Full mailing address.'},
+            'company': {'type': 'string', 'description': 'Company name.'},
+            'job_title': {'type': 'string', 'description': 'Job title or position.'},
+            'message': {'type': 'string', 'description': 'Any message or comments from the form.'}
         },
-        required=['name']
-    )
+        'required': ['name']
+    }
 )
 
 # Receipt Data Extraction Schema
-extract_receipt_data_tool = glm.FunctionDeclaration(
+extract_receipt_data_tool = types.FunctionDeclaration(
     name='extract_receipt_data',
     description='Extracts structured information from a receipt.',
-    parameters=glm.Schema(
-        type=glm.Type.OBJECT,
-        properties={
-            'merchant_name': glm.Schema(type=glm.Type.STRING, description='Name of the merchant or store.'),
-            'merchant_address': glm.Schema(type=glm.Type.STRING, description='Address of the merchant.'),
-            'date': glm.Schema(type=glm.Type.STRING, description='Date of the transaction.'),
-            'time': glm.Schema(type=glm.Type.STRING, description='Time of the transaction.'),
-            'total_amount': glm.Schema(type=glm.Type.NUMBER, description='Total amount paid.'),
-            'currency': glm.Schema(type=glm.Type.STRING, description='Currency of the transaction.'),
-            'tax_amount': glm.Schema(type=glm.Type.NUMBER, description='Tax amount.'),
-            'payment_method': glm.Schema(type=glm.Type.STRING, description='Payment method used (cash, card, etc.).'),
-            'items': glm.Schema(
-                type=glm.Type.ARRAY,
-                items=glm.Schema(
-                    type=glm.Type.OBJECT,
-                    properties={
-                        'name': glm.Schema(type=glm.Type.STRING, description='Item name.'),
-                        'quantity': glm.Schema(type=glm.Type.NUMBER, description='Item quantity.'),
-                        'price': glm.Schema(type=glm.Type.NUMBER, description='Item price.')
+    parameters_json_schema={
+        'type': 'object',
+        'properties': {
+            'merchant_name': {'type': 'string', 'description': 'Name of the merchant or store.'},
+            'merchant_address': {'type': 'string', 'description': 'Address of the merchant.'},
+            'date': {'type': 'string', 'description': 'Date of the transaction.'},
+            'time': {'type': 'string', 'description': 'Time of the transaction.'},
+            'total_amount': {'type': 'number', 'description': 'Total amount paid.'},
+            'currency': {'type': 'string', 'description': 'Currency of the transaction.'},
+            'tax_amount': {'type': 'number', 'description': 'Tax amount.'},
+            'payment_method': {'type': 'string', 'description': 'Payment method used (cash, card, etc.).'},
+            'items': {
+                'type': 'array',
+                'description': 'List of purchased items.',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'name': {'type': 'string', 'description': 'Item name.'},
+                        'quantity': {'type': 'number', 'description': 'Item quantity.'},
+                        'price': {'type': 'number', 'description': 'Item price.'}
                     }
-                ),
-                description='List of purchased items.'
-            )
+                }
+            }
         },
-        required=['merchant_name', 'total_amount']
-    )
+        'required': ['merchant_name', 'total_amount']
+    }
 )
 
 # Contract Data Extraction Schema
-extract_contract_data_tool = glm.FunctionDeclaration(
+extract_contract_data_tool = types.FunctionDeclaration(
     name='extract_contract_data',
     description='Extracts structured information from a contract or agreement.',
-    parameters=glm.Schema(
-        type=glm.Type.OBJECT,
-        properties={
-            'contract_title': glm.Schema(type=glm.Type.STRING, description='Title or name of the contract.'),
-            'contract_number': glm.Schema(type=glm.Type.STRING, description='Contract number or reference ID.'),
-            'party_a_name': glm.Schema(type=glm.Type.STRING, description='Name of first party.'),
-            'party_b_name': glm.Schema(type=glm.Type.STRING, description='Name of second party.'),
-            'effective_date': glm.Schema(type=glm.Type.STRING, description='Date when contract becomes effective.'),
-            'expiration_date': glm.Schema(type=glm.Type.STRING, description='Date when contract expires.'),
-            'contract_value': glm.Schema(type=glm.Type.NUMBER, description='Total value of the contract.'),
-            'currency': glm.Schema(type=glm.Type.STRING, description='Currency of the contract value.'),
-            'key_terms': glm.Schema(
-                type=glm.Type.ARRAY,
-                items=glm.Schema(type=glm.Type.STRING),
-                description='List of key terms and conditions.'
-            )
+    parameters_json_schema={
+        'type': 'object',
+        'properties': {
+            'contract_title': {'type': 'string', 'description': 'Title or name of the contract.'},
+            'contract_number': {'type': 'string', 'description': 'Contract number or reference ID.'},
+            'party_a_name': {'type': 'string', 'description': 'Name of first party.'},
+            'party_b_name': {'type': 'string', 'description': 'Name of second party.'},
+            'effective_date': {'type': 'string', 'description': 'Date when contract becomes effective.'},
+            'expiration_date': {'type': 'string', 'description': 'Date when contract expires.'},
+            'contract_value': {'type': 'number', 'description': 'Total value of the contract.'},
+            'currency': {'type': 'string', 'description': 'Currency of the contract value.'},
+            'key_terms': {
+                'type': 'array',
+                'description': 'List of key terms and conditions.',
+                'items': {'type': 'string'}
+            }
         },
-        required=['party_a_name', 'party_b_name']
-    )
+        'required': ['party_a_name', 'party_b_name']
+    }
 )
 
 
@@ -272,31 +272,21 @@ async def extract_structured_data_from_pdf(
         }
 
     # Structured templates continue with function-calling
-    tool = template_config['tool']
+    func_decl = template_config['tool']
 
-    # Configure Gemini
-    genai.configure(api_key=api_key)
-
-    # Initialize model with function calling - use provided model ID
-    print(f"[PDF Extractor] 准备初始化GenerativeModel")
-    print(f"  - 将使用的model_name: '{cleaned_model_id}'")
+    # Initialize Gemini client with new SDK
+    print(f"[PDF Extractor] 准备初始化 genai.Client")
+    print(f"  - 将使用的 model: '{cleaned_model_id}'")
     
     try:
-        model = genai.GenerativeModel(
-            model_name=cleaned_model_id,
-            tools=[tool]
-        )
-        print(f"[PDF Extractor] ✓ GenerativeModel初始化成功")
+        client = genai.Client(api_key=api_key)
+        print(f"[PDF Extractor] ✓ genai.Client 初始化成功")
         print(f"[PDF Extractor] ==========================================")
-    except Exception as model_err:
-        print(f"[PDF Extractor] ✗ GenerativeModel初始化失败!")
-        print(f"  - 错误: {str(model_err)}")
-        print(f"  - 使用的model_id: '{cleaned_model_id}'")
+    except Exception as client_err:
+        print(f"[PDF Extractor] ✗ genai.Client 初始化失败!")
+        print(f"  - 错误: {str(client_err)}")
         print(f"[PDF Extractor] ==========================================")
         raise
-
-    # Create chat session (enable auto function calling to simplify parsing)
-    chat = model.start_chat(enable_automatic_function_calling=True)
 
     # Create prompt
     prompt = f"""
@@ -310,44 +300,34 @@ Document Text:
 ---
 """
 
-    # Send message to model
-    response = chat.send_message(prompt)
+    # Create tool from function declaration
+    tool = types.Tool(function_declarations=[func_decl])
 
-    # --- Extract function call results (compatible with old/new SDK) ---
-    # Newer SDK: function calls live in candidates[].content.parts[].function_call
-    # Older SDK: response.tool_calls is populated.
-    def iter_function_calls(resp):
-        # Old style
-        if getattr(resp, "tool_calls", None):
-            for tc in resp.tool_calls:
-                yield tc.function
-        # New style (GenerateContentResponse)
-        if getattr(resp, "candidates", None):
-            for cand in resp.candidates:
-                if not getattr(cand, "content", None):
-                    continue
-                parts = getattr(cand.content, "parts", []) or []
-                for part in parts:
-                    fc = getattr(part, "function_call", None)
-                    if fc:
-                        yield fc
+    # Send request to model with function calling
+    response = client.models.generate_content(
+        model=cleaned_model_id,
+        contents=prompt,
+        config=types.GenerateContentConfig(tools=[tool])
+    )
 
-    for fn_call in iter_function_calls(response):
-        if fn_call.name == tool.name:
-            extracted_data = dict(fn_call.args)
-            return {
-                'success': True,
-                'template_type': template_type,
-                'template_name': template_config['name'],
-                'data': extracted_data,
-                'raw_text': extracted_text[:500] + '...' if len(extracted_text) > 500 else extracted_text
-            }
+    # Extract function call results from response
+    if response.function_calls:
+        for fn_call in response.function_calls:
+            if fn_call.name == func_decl.name:
+                extracted_data = dict(fn_call.args)
+                return {
+                    'success': True,
+                    'template_type': template_type,
+                    'template_name': template_config['name'],
+                    'data': extracted_data,
+                    'raw_text': extracted_text[:500] + '...' if len(extracted_text) > 500 else extracted_text
+                }
 
     # No function call was made
     return {
         'success': False,
         'error': 'Model did not return structured data',
-        'model_response': getattr(response, "text", None) or 'No response',
+        'model_response': response.text if response.text else 'No response',
         'raw_text': extracted_text[:500] + '...' if len(extracted_text) > 500 else extracted_text
     }
 

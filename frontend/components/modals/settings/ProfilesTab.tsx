@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { PlusCircle, Database, Trash2, Edit3, Check, Layers, List, Copy, Zap, Cpu, Globe, Sparkles, Server, AlertTriangle, ChevronLeft, Loader2, Eye, Box } from 'lucide-react';
 import { ConfigProfile } from '../../../services/db';
-import { ModelConfig, ApiProtocol } from '../../../../types';
+import { ModelConfig, ApiProtocol } from '../../../types/types';
 import { LLMFactory } from '../../../services/LLMFactory';
 import { v4 as uuidv4 } from 'uuid';
 

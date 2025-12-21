@@ -1,7 +1,7 @@
 
 import { GenerateContentResponse, FunctionDeclaration, Type } from "@google/genai";
 import { ILLMProvider, StreamUpdate, ImageGenerationResult, VideoGenerationResult, AudioGenerationResult } from "../interfaces";
-import { ModelConfig, Message, Attachment, ChatOptions } from "../../../../types";
+import { ModelConfig, Message, Attachment, ChatOptions } from "../../../types/types";
 import { GoogleResponseParser } from "./parser";
 import { getGoogleModels } from "./models";
 import { createGoogleClient } from "./utils";

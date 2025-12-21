@@ -1,6 +1,6 @@
 
 import { VideoGenerationResult } from "../../interfaces";
-import { ChatOptions, Attachment } from "../../../../../types";
+import { ChatOptions, Attachment } from "../../../../types/types";
 import { GoogleGenAI } from "@google/genai";
 import { processReferenceImage } from "../../../media/utils";
 

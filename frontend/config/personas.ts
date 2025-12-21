@@ -1,5 +1,5 @@
 
-import { Persona } from '../../types';
+import { Persona } from '../types/types';
 
 // Re-export Persona so other files importing from here don't break immediately
 export type { Persona };

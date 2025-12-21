@@ -1,7 +1,7 @@
 
 import React from 'react';
-import { MessageSquare, Wand2, Crop, Expand, PlaySquare, Mic, FileText } from 'lucide-react';
-import { AppMode, ModelConfig } from '../../../../types';
+import { MessageSquare, Wand2, Crop, Expand, PlaySquare, Mic, FileText, Shirt } from 'lucide-react';
+import { AppMode, ModelConfig } from '../../../types/types';
 
 interface ModeSelectorProps {
   mode: AppMode;
@@ -16,6 +16,7 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({ mode, setMode, curre
     { id: 'chat', label: 'Chat', icon: MessageSquare, disabled: false, color: 'bg-indigo-600' },
     { id: 'image-gen', label: 'Gen', icon: Wand2, disabled: !canGenImage, color: 'bg-emerald-600' },
     { id: 'image-edit', label: 'Edit', icon: Crop, disabled: !canGenImage, color: 'bg-pink-600' },
+    { id: 'virtual-try-on', label: 'Try-On', icon: Shirt, disabled: !canGenImage, color: 'bg-rose-600' },
     { id: 'image-outpainting', label: 'Expand', icon: Expand, disabled: false, color: 'bg-orange-600' },
     { id: 'video-gen', label: 'Video', icon: PlaySquare, disabled: !canGenImage, color: 'bg-indigo-500' },
     { id: 'audio-gen', label: 'Audio', icon: Mic, disabled: false, color: 'bg-cyan-600' },

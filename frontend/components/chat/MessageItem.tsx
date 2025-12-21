@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Message, Role } from '../../../types';
+import { Message, Role } from '../../types/types';
 import MarkdownRenderer from './MarkdownRenderer';
 import { Bot, User, AlertCircle, Copy, Check, Download } from 'lucide-react';
 import { useMessageProcessor } from '../../hooks/useMessageProcessor';

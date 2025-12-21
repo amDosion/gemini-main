@@ -1,5 +1,5 @@
 
-import { ApiProtocol } from '../../types';
+import { ApiProtocol } from '../types/types';
 import { ILLMProvider } from './providers/interfaces';
 import { GoogleProvider } from './providers/google/GoogleProvider';
 import { OpenAIProvider } from './providers/openai/OpenAIProvider';

@@ -2,7 +2,7 @@
 
 ## 1. 概述
 
-本文档描述 Virtual Try-On 功能的技术设计方案。该功能基于 Gemini 2.5 的图像分割能力和 Vertex AI Imagen 3 的图像编辑能力，实现服装的虚拟替换。
+本文档描述 Virtual Try-On 功能的技术设计方案。该功能基于 Gemini 2.5 的图像分割能力、Vertex AI Imagen 3 的图像编辑能力和 Imagen 4 的超分辨率能力，实现服装的虚拟替换、画布扩展和图像质量提升。
 
 ## 2. 系统架构
 
@@ -22,7 +22,7 @@
 │     └─ case 'virtual-try-on': return <VirtualTryOnView {...props} />        │
 │                                                                              │
 │  VirtualTryOnView.tsx                                                        │
-│  └─ 用户上传图片 → 选择服装类型 → 输入描述 → 点击生成                         │
+│  └─ 用户上传图片 → 选择服装类型 → 预览掩码 → 输入描述 → 点击生成            │
 │  └─ onSend(prompt, options, attachments, 'virtual-try-on')                  │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
@@ -57,9 +57,13 @@
 │     ├─ Step 2: generateMask(segmentationResults, imageSize)                 │
 │     │          └─ 合并分割结果生成完整掩码                                    │
 │     │                                                                        │
-│     └─ Step 3: 调用后端 /api/tryon/edit                                     │
-│                └─ 发送 image + mask + prompt                                │
-│                └─ 返回编辑后的图片                                           │
+│     ├─ Step 3: 调用后端 /api/tryon/edit                                     │
+│     │          └─ 发送 image + mask + prompt                                │
+│     │          └─ 返回编辑后的图片                                           │
+│     │                                                                        │
+│     └─ Step 4 (可选): upscaleImage()                                        │
+│                └─ 调用后端 /api/tryon/upscale                               │
+│                └─ 提高图像分辨率                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -67,15 +71,20 @@
 │                              后端层                                          │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  backend/app/routers/tryon.py                                                │
-│  └─ POST /api/tryon/edit                                                     │
-│     └─ 接收 image, mask, prompt, edit_mode                                  │
-│     └─ 调用 Vertex AI Imagen 3 API                                          │
-│     └─ 返回编辑后的图片                                                      │
+│  ├─ POST /api/tryon/edit                                                     │
+│  │  └─ 接收 image, mask, prompt, edit_mode                                  │
+│  │  └─ 调用 Vertex AI Imagen 3 API                                          │
+│  │  └─ 返回编辑后的图片                                                      │
+│  │                                                                           │
+│  └─ POST /api/tryon/upscale                                                  │
+│     └─ 接收 image, upscale_factor                                           │
+│     └─ 检查分辨率限制（17MP）                                                │
+│     └─ 调用 Imagen 4 upscale 模型                                           │
+│     └─ 返回高分辨率图片                                                      │
 │                                                                              │
 │  backend/app/services/tryon_service.py                                       │
-│  └─ edit_with_mask(image, mask, prompt, edit_mode)                          │
-│     └─ 使用 google-cloud-aiplatform SDK                                     │
-│     └─ 调用 imagen-3.0-capability-001 模型                                  │
+│  ├─ edit_with_mask(image, mask, prompt, edit_mode)                          │
+│  └─ upscale_image(image, upscale_factor, add_watermark)                     │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -88,7 +97,7 @@
 | Handler | `imageExpandHandler.ts` | 需新增 `virtualTryOnHandler.ts` |
 | useChat 分支 | `else if (mode === 'image-outpainting')` | 需新增 `else if (mode === 'virtual-try-on')` |
 | 服务 | `tongyi/image-expand.ts` | 需新增 `google/media/virtual-tryon.ts` |
-| 后端 API | `/api/image/out-painting` | 需新增 `/api/tryon/edit` |
+| 后端 API | `/api/image/out-painting` | 需新增 `/api/tryon/edit`, `/api/tryon/upscale` |
 
 ## 3. 组件与接口
 
@@ -115,6 +124,11 @@ export interface VirtualTryOnOptions {
   editMode: 'inpainting-insert' | 'inpainting-remove';
   dilation?: number;  // 掩码膨胀系数，默认 0.02
   showMaskPreview?: boolean;  // 是否显示掩码预览
+  
+  // Upscale 选项
+  enableUpscale?: boolean;
+  upscaleFactor?: 2 | 4;  // 放大倍数
+  addWatermark?: boolean;  // 是否添加水印
 }
 
 // 3. 扩展 ChatOptions
@@ -179,13 +193,18 @@ export interface TryOnOptions {
   editMode?: 'inpainting-insert' | 'inpainting-remove';
   dilation?: number;            // 掩码膨胀系数（默认 0.02）
   modelId?: string;             // Gemini 模型 ID（用于分割）
+  
+  // Upscale 选项
+  enableUpscale?: boolean;
+  upscaleFactor?: 2 | 4;
+  addWatermark?: boolean;
 }
 
 // ========== 主函数 ==========
 
 /**
  * Virtual Try-On 主函数
- * 整合分割和编辑流程
+ * 整合分割、编辑、扩展和超分辨率流程
  */
 export async function virtualTryOn(
   ai: GoogleGenAI,
@@ -218,6 +237,16 @@ export function generateMask(
 ): string;  // 返回 Base64 编码的掩码图像
 
 /**
+ * 生成掩码预览（用于 UI 显示）
+ * 返回半透明红色叠加的预览图
+ */
+export async function generateMaskPreview(
+  imageBase64: string,
+  targetClothing: string,
+  apiKey: string
+): Promise<string>;  // 返回 data:image/png;base64,...
+
+/**
  * 调用后端编辑 API
  */
 export async function editWithMask(
@@ -226,6 +255,15 @@ export async function editWithMask(
   prompt: string,
   editMode: 'inpainting-insert' | 'inpainting-remove',
   dilation?: number
+): Promise<ImageGenerationResult>;
+
+/**
+ * 调用后端 Upscale API
+ */
+export async function upscaleImage(
+  imageBase64: string,
+  upscaleFactor: 2 | 4,
+  addWatermark?: boolean
 ): Promise<ImageGenerationResult>;
 ```
 
@@ -236,9 +274,11 @@ export async function editWithMask(
 ```python
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Literal
 
 router = APIRouter(prefix="/api/tryon", tags=["tryon"])
+
+# ========== 编辑接口 ==========
 
 class TryOnEditRequest(BaseModel):
     image: str  # Base64 编码的原图
@@ -256,9 +296,49 @@ class TryOnEditResponse(BaseModel):
 
 @router.post("/edit", response_model=TryOnEditResponse)
 async def edit_image(request: TryOnEditRequest) -> TryOnEditResponse:
-    """
-    使用 Vertex AI Imagen 3 进行图像编辑
-    """
+    """使用 Vertex AI Imagen 3 进行图像编辑"""
+    pass
+
+# ========== Upscale 接口 ==========
+
+class UpscaleRequest(BaseModel):
+    image: str  # Base64 编码的原图
+    upscale_factor: Literal[2, 4]  # 放大倍数
+    add_watermark: bool = False  # 是否添加水印
+
+class UpscaleResponse(BaseModel):
+    success: bool
+    image: Optional[str] = None  # Base64 编码的高分辨率图像
+    mimeType: str = "image/png"
+    original_resolution: str  # 原始分辨率（如 "1024x1024"）
+    upscaled_resolution: str  # 放大后分辨率（如 "4096x4096"）
+    error: Optional[str] = None
+
+@router.post("/upscale", response_model=UpscaleResponse)
+async def upscale_image(request: UpscaleRequest) -> UpscaleResponse:
+    """使用 Imagen 4 进行图像超分辨率"""
+    pass
+
+# ========== 分割接口（调试用）==========
+
+class SegmentRequest(BaseModel):
+    image: str  # Base64 编码的图片
+    target: str = "clothing"  # 分割目标
+    api_key: str  # Gemini API Key
+
+class SegmentationResult(BaseModel):
+    box_2d: list[float]  # 边界框
+    mask: str  # Base64 编码的掩码
+    label: str  # 标签
+
+class SegmentResponse(BaseModel):
+    success: bool
+    segments: Optional[list[SegmentationResult]] = None
+    error: Optional[str] = None
+
+@router.post("/segment", response_model=SegmentResponse)
+async def segment_clothing(request: SegmentRequest) -> SegmentResponse:
+    """使用 Gemini API 进行服装分割（主要用于调试）"""
     pass
 ```
 
@@ -290,15 +370,19 @@ interface VirtualTryOnViewProps {
 │  ┌─────────────────┐    ┌─────────────────────────────────┐ │
 │  │   侧边栏         │    │         主画布区域              │ │
 │  │  - 历史记录      │    │  - 原图/结果图显示              │ │
-│  │  - 掩码预览      │    │  - 掩码叠加预览                 │ │
-│  │                 │    │  - 缩放/平移控制                │ │
+│  │  - 掩码预览      │    │  - 掩码叠加预览（半透明红色）   │ │
+│  │  - 对比滑块      │    │  - 缩放/平移控制                │ │
+│  │                 │    │  - 对比视图（左右滑动）         │ │
 │  └─────────────────┘    └─────────────────────────────────┘ │
 ├─────────────────────────────────────────────────────────────┤
 │  ┌─────────────────────────────────────────────────────────┐ │
 │  │                    底部控制区                            │ │
 │  │  - 服装类型选择（上衣/下装/全身/自定义）                  │ │
+│  │  - 生成掩码预览按钮                                      │ │
 │  │  - 服装描述输入框                                        │ │
+│  │  - Upscale 控件（2x/4x）                                 │ │
 │  │  - 生成按钮                                              │ │
+│  │  - 下载按钮（原图/结果图/掩码）                          │ │
 │  └─────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -342,6 +426,37 @@ interface GeminiSegmentationResponse {
 8. 生成最终的二值掩码（白色=服装区域，黑色=其他区域）
 ```
 
+### 4.4 Upscale 分辨率检查
+
+```python
+def check_upscale_resolution(
+    width: int,
+    height: int,
+    upscale_factor: int
+) -> tuple[bool, str]:
+    """
+    检查超分辨率后的分辨率是否超过限制
+    
+    Args:
+        width: 原始宽度
+        height: 原始高度
+        upscale_factor: 放大倍数
+    
+    Returns:
+        (is_valid, error_message)
+    """
+    MAX_MEGAPIXELS = 17
+    
+    new_width = width * upscale_factor
+    new_height = height * upscale_factor
+    new_megapixels = (new_width * new_height) / 1_000_000
+    
+    if new_megapixels > MAX_MEGAPIXELS:
+        return False, f"输出分辨率 {new_megapixels:.2f}MP 超过限制 {MAX_MEGAPIXELS}MP"
+    
+    return True, ""
+```
+
 ## 5. 正确性属性
 
 *A property is a characteristic or behavior that should hold true across all valid executions of a system-essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
@@ -364,9 +479,17 @@ interface GeminiSegmentationResponse {
 *For any* 服装描述 prompt，生成的服装应与描述的颜色、款式、材质等特征一致。
 **Validates: Requirements 3.2.1**
 
-### Property 5: 错误处理完整性
+### Property 5: Upscale 分辨率限制
+*For any* 超分辨率操作，输出分辨率（输入分辨率 × 放大倍数）不应超过 17 megapixels。
+**Validates: Requirements 3.4.4**
+
+### Property 6: 错误处理完整性
 *For any* API 调用失败，系统应返回明确的错误信息，不应抛出未捕获的异常。
-**Validates: Requirements 3.6.1, 3.6.2, 3.6.3**
+**Validates: Requirements 3.8.1, 3.8.2, 3.8.3, 3.8.4**
+
+### Property 7: 掩码预览可见性
+*For any* 生成的掩码预览，用户应能清晰看到半透明红色叠加区域，且该区域应与实际编辑区域一致。
+**Validates: Requirements 3.5.4**
 
 ## 6. 错误处理
 
@@ -388,24 +511,44 @@ interface GeminiSegmentationResponse {
 | API 配额超限 | `QUOTA_EXCEEDED` | 提示用户稍后重试 |
 | 图像尺寸超限 | `IMAGE_TOO_LARGE` | 自动缩放或提示用户 |
 
+### 6.3 Upscale 错误
+
+| 错误类型 | 错误码 | 处理方式 |
+|---------|--------|---------|
+| 分辨率超限 | `RESOLUTION_EXCEEDED` | 提示用户当前分辨率和限制 |
+| 模型不可用 | `MODEL_UNAVAILABLE` | 提示用户稍后重试 |
+| 内存不足 | `OUT_OF_MEMORY` | 建议用户使用较小的放大倍数 |
+
 ## 7. 测试策略
 
 ### 7.1 单元测试
 
 - 测试 `segmentClothing` 函数的 JSON 解析逻辑
 - 测试 `generateMask` 函数的坐标转换正确性
+- 测试 `check_upscale_resolution` 函数的分辨率检查
 - 测试错误处理分支
 
 ### 7.2 属性测试
 
 - **Property 2 测试**：生成随机的归一化坐标，验证转换后的绝对坐标在有效范围内
-- **Property 5 测试**：模拟各种 API 错误，验证错误处理逻辑
+- **Property 5 测试**：生成随机的图像尺寸和放大倍数，验证分辨率检查逻辑
+- **Property 6 测试**：模拟各种 API 错误，验证错误处理逻辑
 
 ### 7.3 集成测试
 
 - 测试完整的分割 → 编辑流程
+- 测试虚拟试衣 → Upscale 组合流程
+- 测试完整工作流：试衣 → 超分辨率
 - 测试不同服装类型的分割效果
 - 测试边界情况（无服装、多件服装等）
+
+### 7.4 UI 测试
+
+- 测试掩码预览显示
+- 测试对比滑块功能
+- 测试下载功能
+- 测试图片上传验证
+- 测试错误提示显示
 
 ## 8. 实现注意事项
 
@@ -424,6 +567,7 @@ Output a JSON list of segmentation masks where each entry contains:
 ### 8.2 Imagen 3 编辑参数
 
 ```python
+# Inpainting
 edit_model.edit_image(
     prompt=prompt,
     edit_mode='inpainting-insert',
@@ -442,15 +586,27 @@ edit_model.edit_image(
 )
 ```
 
-### 8.3 认证配置
+### 8.3 Imagen 4 Upscale 参数
+
+```python
+upscale_model = ImageGenerationModel.from_pretrained("imagen-4.0-upscale-preview")
+
+upscaled_images = upscale_model.upscale_image(
+    image=input_image,
+    upscale_factor=2,  # 或 4
+    add_watermark=False
+)
+```
+
+### 8.4 认证配置
 
 由于 Vertex AI 需要 GCP 项目认证（OAuth），不能仅使用 API Key，因此：
 
-1. **后端代理**：所有 Imagen 3 调用必须通过后端代理
+1. **后端代理**：所有 Imagen 3/4 调用必须通过后端代理
 2. **环境变量**：后端需配置 `GCP_PROJECT_ID` 和服务账号凭证
 3. **前端**：Gemini 分割可直接使用 API Key 调用
 
-### 8.4 与现有代码的集成点
+### 8.5 与现有代码的集成点
 
 | 文件 | 修改类型 | 说明 |
 |------|---------|------|
@@ -459,3 +615,264 @@ edit_model.edit_image(
 | `StudioView.tsx` | 修改 | 添加 `case 'virtual-try-on': return <VirtualTryOnView />` |
 | `App.tsx` | 修改 | `handleModeSwitch` 添加 `virtual-try-on` 模型选择逻辑 |
 | `handlers/index.ts` | 修改 | 导出 `handleVirtualTryOn` |
+| `backend/app/routers/tryon.py` | 新增 | 添加 `/upscale` 端点 |
+| `backend/app/services/tryon_service.py` | 修改 | 添加 `upscale_image` 函数 |
+
+### 8.6 UI 组件实现要点
+
+#### 掩码预览叠加
+
+```tsx
+// 半透明红色掩码叠加
+{showMaskPreview && maskPreviewUrl && (
+  <div className="absolute inset-0 pointer-events-none">
+    <img 
+      src={maskPreviewUrl}
+      className="opacity-50 mix-blend-multiply"
+      style={{ filter: 'hue-rotate(330deg)' }}  // 红色/粉色
+      alt="Mask Preview"
+    />
+    <div className="absolute top-4 left-4 bg-black/60 text-white px-3 py-1 rounded-full text-xs">
+      红色区域将被替换
+    </div>
+  </div>
+)}
+```
+
+#### 对比滑块
+
+```tsx
+// 左右对比视图
+<div className="relative w-full h-full overflow-hidden">
+  <img src={originalImageUrl} className="absolute inset-0 w-full h-full object-contain" />
+  <div 
+    className="absolute inset-0 overflow-hidden"
+    style={{ clipPath: `inset(0 ${100 - comparePosition}% 0 0)` }}
+  >
+    <img src={resultImageUrl} className="absolute inset-0 w-full h-full object-contain" />
+  </div>
+  <input
+    type="range"
+    min="0"
+    max="100"
+    value={comparePosition}
+    onChange={(e) => setComparePosition(Number(e.target.value))}
+    className="absolute bottom-4 left-1/2 -translate-x-1/2 w-64"
+  />
+</div>
+```
+
+#### 下载功能
+
+```tsx
+const handleDownload = (imageUrl: string, filename: string) => {
+  const link = document.createElement('a');
+  link.href = imageUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+// 下载按钮
+<button onClick={() => handleDownload(resultImageUrl, 'virtual-tryon-result.png')}>
+  下载结果图
+</button>
+<button onClick={() => handleDownload(originalImageUrl, 'original.png')}>
+  下载原图
+</button>
+<button onClick={() => handleDownload(maskPreviewUrl, 'mask.png')}>
+  下载掩码
+</button>
+```
+
+## 9. 性能优化
+
+### 9.1 图像尺寸优化
+
+```typescript
+// 自动调整过大的图像
+const MAX_SIZE = 1024;
+
+function resizeImageIfNeeded(image: HTMLImageElement): HTMLCanvasElement {
+  if (Math.max(image.width, image.height) <= MAX_SIZE) {
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(image, 0, 0);
+    return canvas;
+  }
+  
+  const ratio = MAX_SIZE / Math.max(image.width, image.height);
+  const newWidth = Math.floor(image.width * ratio);
+  const newHeight = Math.floor(image.height * ratio);
+  
+  const canvas = document.createElement('canvas');
+  canvas.width = newWidth;
+  canvas.height = newHeight;
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(image, 0, 0, newWidth, newHeight);
+  
+  return canvas;
+}
+```
+
+### 9.2 掩码缓存
+
+```typescript
+// 缓存生成的掩码，避免重复生成
+const maskCache = new Map<string, string>();
+
+async function getCachedMask(
+  imageUrl: string,
+  targetClothing: string
+): Promise<string> {
+  const cacheKey = `${imageUrl}-${targetClothing}`;
+  
+  if (maskCache.has(cacheKey)) {
+    return maskCache.get(cacheKey)!;
+  }
+  
+  const maskUrl = await generateMaskPreview(imageUrl, targetClothing, apiKey);
+  maskCache.set(cacheKey, maskUrl);
+  
+  return maskUrl;
+}
+```
+
+### 9.3 批处理优化
+
+```python
+# 后端批处理多个请求
+async def batch_edit_images(requests: list[TryOnEditRequest]) -> list[TryOnEditResponse]:
+    """批量处理编辑请求"""
+    tasks = [edit_image(req) for req in requests]
+    return await asyncio.gather(*tasks)
+```
+
+## 10. 安全考虑
+
+### 10.1 输入验证
+
+```python
+# 验证图像格式和大小
+def validate_image(image_base64: str) -> tuple[bool, str]:
+    try:
+        # 解码 Base64
+        image_bytes = base64.b64decode(image_base64)
+        
+        # 检查文件大小（10MB）
+        if len(image_bytes) > 10 * 1024 * 1024:
+            return False, "图像文件超过 10MB 限制"
+        
+        # 检查图像格式
+        img = PILImage.open(io.BytesIO(image_bytes))
+        if img.format not in ['PNG', 'JPEG']:
+            return False, "仅支持 PNG 和 JPEG 格式"
+        
+        return True, ""
+    except Exception as e:
+        return False, f"图像验证失败: {str(e)}"
+```
+
+### 10.2 API Key 保护
+
+```typescript
+// 前端不应暴露 Vertex AI 凭证
+// 所有 Imagen 3/4 调用必须通过后端代理
+
+// ✅ 正确：通过后端调用
+const result = await fetch('/api/tryon/edit', {
+  method: 'POST',
+  body: JSON.stringify({ image, mask, prompt })
+});
+
+// ❌ 错误：前端直接调用 Vertex AI
+// const result = await vertexai.edit_image(...);  // 不要这样做！
+```
+
+### 10.3 内容安全过滤
+
+```python
+# 后端检测安全过滤错误
+try:
+    result = edit_model.edit_image(...)
+except Exception as e:
+    error_msg = str(e)
+    if "SAFETY" in error_msg.upper():
+        return TryOnEditResponse(
+            success=False,
+            error="内容被安全过滤器拦截，请修改描述"
+        )
+```
+
+## 11. 扩展性设计
+
+### 11.1 支持更多编辑模式
+
+```typescript
+// 未来可扩展的编辑模式
+type EditMode = 
+  | 'inpainting-insert'
+  | 'inpainting-remove'
+  | 'outpainting'
+  | 'style-transfer'      // 未来：风格迁移
+  | 'color-adjustment'    // 未来：颜色调整
+  | 'texture-synthesis';  // 未来：纹理合成
+```
+
+### 11.2 支持更多 AI 模型
+
+```typescript
+// 模型选择接口
+interface ModelConfig {
+  segmentationModel: 'gemini-2.5-flash' | 'gemini-2.5-pro' | 'gemini-3-flash-preview';
+  editModel: 'imagen-3.0-capability-001' | 'imagen-3.0-fast-001';  // 未来可能有更多
+  upscaleModel: 'imagen-4.0-upscale-preview' | 'imagen-4.0-upscale-001';
+}
+```
+
+### 11.3 工作流编排
+
+```typescript
+// 支持自定义工作流
+interface Workflow {
+  steps: WorkflowStep[];
+}
+
+type WorkflowStep = 
+  | { type: 'segment'; target: string }
+  | { type: 'edit'; prompt: string }
+  | { type: 'outpaint'; direction: string; pixels: number }
+  | { type: 'upscale'; factor: 2 | 4 };
+
+// 示例：完整工作流
+const fullWorkflow: Workflow = {
+  steps: [
+    { type: 'segment', target: 'upper body clothing' },
+    { type: 'edit', prompt: 'A dark green jacket' },
+    { type: 'outpaint', direction: 'bottom', pixels: 256 },
+    { type: 'upscale', factor: 2 }
+  ]
+};
+```
+### Property 5: Upscale 分辨率限制
+*For any* 超分辨率操作，输出分辨率（输入分辨率 × 放大倍数）不应超过 17 megapixels。
+**Validates: Requirements 3.4.4**
+
+### Property 6: 错误处理完整性
+*For any* API 调用失败，系统应返回明确的错误信息，不应抛出未捕获的异常。
+**Validates: Requirements 3.8.1, 3.8.2, 3.8.3, 3.8.4**
+
+### Property 8: 掩码预览可见性
+*For any* 生成的掩码预览，用户应能清晰看到半透明红色叠加区域，且该区域应与实际编辑区域一致。
+**Validates: Requirements 3.5.4**
+
+### Property 9: 掩码预览参数动态调整
+*For any* 透明度值 alpha ∈ [0.3, 1.0] 和阈值 threshold ∈ [10, 200]，调整参数后重新生成的掩码预览应反映新的参数设置。
+**Validates: Requirements 3.7.3, 3.7.4**
+
+### Property 10: 参数防抖优化
+*For any* 连续的参数调整操作，系统应在用户停止调整后的 300ms 内只触发一次掩码重新生成。
+**Validates: Requirements 3.7.6**

@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Plus, MessageSquare, X, Settings, Wand2, Crop, Expand, Video, Mic, Trash2, Edit2, Check, UserCircle2 } from 'lucide-react';
-import { ChatSession, AppMode } from '../../../types';
+import { ChatSession, AppMode } from '../../types/types';
 import { CacheIndicator } from '../common/CacheIndicator';
 import { CacheStatusInfo } from '../../hooks/useCacheStatus';
 

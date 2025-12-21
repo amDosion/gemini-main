@@ -1,6 +1,6 @@
 
 import { StreamUpdate } from "../interfaces";
-import { Message, Attachment, ChatOptions } from "../../../../types";
+import { Message, Attachment, ChatOptions } from "../../../types/types";
 import { resolveDashUrl } from "./api";
 
 export async function* streamNativeDashScope(
