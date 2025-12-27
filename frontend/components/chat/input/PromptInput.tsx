@@ -1,7 +1,9 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { Paperclip, StopCircle, Send, Youtube, Link as LinkIcon, X, Check } from 'lucide-react';
+import { Paperclip, StopCircle, Send, Youtube, Link as LinkIcon, X, Check, Upload } from 'lucide-react';
 import { AppMode } from '../../../types/types';
+import { useDragDrop } from '../../../hooks/useDragDrop';
+import { getAcceptedTypes } from '../../../utils/fileValidation';
 
 interface PromptInputProps {
   input: string;
@@ -15,10 +17,11 @@ interface PromptInputProps {
   isMissingImage: boolean;
   onFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onAddLink?: (url: string) => void;
+  attachmentCount?: number;
 }
 
 export const PromptInput: React.FC<PromptInputProps> = ({
-  input, setInput, handleSend, isLoading, onStop, mode, hasActiveContext, hasAttachments, isMissingImage, onFileSelect, onAddLink
+  input, setInput, handleSend, isLoading, onStop, mode, hasActiveContext, hasAttachments, isMissingImage, onFileSelect, onAddLink, attachmentCount = 0
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -30,6 +33,29 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   // Link Input State
   const [showLinkInput, setShowLinkInput] = useState(false);
   const [linkValue, setLinkValue] = useState('');
+
+  // 拖放功能
+  const handleFilesDropped = (files: File[]) => {
+    // 创建一个模拟的 ChangeEvent
+    const dataTransfer = new DataTransfer();
+    files.forEach(file => dataTransfer.items.add(file));
+    
+    const event = {
+      target: {
+        files: dataTransfer.files,
+        value: ''
+      }
+    } as React.ChangeEvent<HTMLInputElement>;
+    
+    onFileSelect(event);
+  };
+
+  const dragDrop = useDragDrop({
+    mode,
+    currentAttachmentCount: attachmentCount,
+    onFilesDropped: handleFilesDropped,
+    disabled: isLoading
+  });
 
   // Sync scroll between textarea and backdrop
   const handleScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
@@ -96,11 +122,37 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       : (!input.trim() && !hasAttachments && !hasActiveContext);  // 其他模式：需要输入或附件
 
   return (
-    <div className={`relative flex items-end gap-2 bg-slate-800/80 backdrop-blur-xl border rounded-3xl p-2 shadow-2xl transition-all duration-300 ${
+    <div 
+      className={`relative flex items-end gap-2 bg-slate-800/80 backdrop-blur-xl border rounded-3xl p-2 shadow-2xl transition-all duration-300 ${
         isMissingImage 
           ? 'border-orange-500/50 ring-2 ring-orange-500/20' 
-          : 'border-slate-700 ring-1 ring-white/5'
-    }`}>
+          : dragDrop.isDragging
+            ? dragDrop.isValidDrop
+              ? 'border-blue-500 ring-2 ring-blue-500/30 bg-blue-500/5'
+              : 'border-red-500 ring-2 ring-red-500/30 bg-red-500/5'
+            : 'border-slate-700 ring-1 ring-white/5'
+      }`}
+      onDragEnter={dragDrop.handleDragEnter}
+      onDragOver={dragDrop.handleDragOver}
+      onDragLeave={dragDrop.handleDragLeave}
+      onDrop={dragDrop.handleDrop}
+      aria-label="输入区域，支持拖放文件上传"
+      role="region"
+    >
+      {/* 拖放提示层 */}
+      {dragDrop.isDragging && (
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm rounded-3xl z-30 pointer-events-none">
+          <div className="flex flex-col items-center gap-2">
+            <Upload 
+              size={32} 
+              className={dragDrop.isValidDrop ? 'text-blue-400' : 'text-red-400'} 
+            />
+            <p className={`text-sm font-medium ${dragDrop.isValidDrop ? 'text-blue-300' : 'text-red-300'}`}>
+              {dragDrop.isValidDrop ? '释放文件以上传' : dragDrop.errorMessage}
+            </p>
+          </div>
+        </div>
+      )}
       <input 
         type="file" 
         ref={fileInputRef} 

@@ -335,3 +335,4 @@ const [expandedProfileId, setExpandedProfileId] = useState<string | null>(null);
 2. **统一间距标准**，确保所有容器都有合理的内边距
 3. **修复ProfilesTab的按钮显示逻辑**，需要添加状态管理
 4. **统一字体大小**，避免使用 `text-[10px]`
+

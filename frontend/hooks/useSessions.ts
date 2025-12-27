@@ -45,14 +45,69 @@ export const useSessions = () => {
         // Sort by createdAt descending (newest first)
         const sortedSessions = result.data.sort((a, b) => b.createdAt - a.createdAt);
         
-        setSessions(sortedSessions);
+        // ============================================================
+        // 长期方案：页面刷新后恢复 Blob URL
+        // 检查每个附件的 url 是否是 Blob URL（已失效）
+        // 如果是，使用 tempUrl（云存储 URL）替代
+        // ============================================================
+        const recoveredSessions = sortedSessions.map(session => {
+          if (!session.messages || session.messages.length === 0) {
+            return session;
+          }
+          
+          const recoveredMessages = session.messages.map(message => {
+            if (!message.attachments || message.attachments.length === 0) {
+              return message;
+            }
+            
+            const recoveredAttachments = message.attachments.map(att => {
+              // 检查 url 是否是 Blob URL（页面刷新后已失效）
+              if (att.url && att.url.startsWith('blob:')) {
+                console.log('[useSessions] 检测到失效的 Blob URL，尝试恢复:', {
+                  attachmentId: att.id?.substring(0, 8) + '...',
+                  hasTempUrl: !!att.tempUrl,
+                  tempUrlType: att.tempUrl?.startsWith('http') ? 'HTTP' : 'Other'
+                });
+                
+                // 如果有 tempUrl（云存储 URL），使用它替代失效的 Blob URL
+                if (att.tempUrl && att.tempUrl.startsWith('http')) {
+                  console.log('[useSessions] ✅ 使用 tempUrl 恢复显示');
+                  return {
+                    ...att,
+                    url: att.tempUrl, // 替换为云存储 URL
+                    uploadStatus: 'completed' as const
+                  };
+                } else {
+                  console.log('[useSessions] ⚠️ 无有效 tempUrl，保持原状');
+                  // 没有有效的 tempUrl，保持原状（可能需要重新生成）
+                  return att;
+                }
+              }
+              
+              // 其他类型的 URL（Base64, HTTP）不需要恢复
+              return att;
+            });
+            
+            return {
+              ...message,
+              attachments: recoveredAttachments
+            };
+          });
+          
+          return {
+            ...session,
+            messages: recoveredMessages
+          };
+        });
+        
+        setSessions(recoveredSessions);
         
         // 更新缓存状态
         cacheStatus.updateStatus(result.fromCache, result.isStale, result.timestamp);
         
         // Restore the most recent session if available
-        if (sortedSessions.length > 0) {
-          setCurrentSessionId(sortedSessions[0].id);
+        if (recoveredSessions.length > 0) {
+          setCurrentSessionId(recoveredSessions[0].id);
         }
       } catch (error) {
         console.error('Failed to load sessions:', error);

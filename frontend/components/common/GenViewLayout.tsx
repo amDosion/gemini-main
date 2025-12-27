@@ -16,7 +16,7 @@ interface GenViewLayoutProps {
     setIsMobileHistoryOpen: (v: boolean) => void;
 }
 
-export const GenViewLayout: React.FC<GenViewLayoutProps> = ({
+export const GenViewLayout: React.FC<GenViewLayoutProps> = React.memo(({
     sidebarHeaderIcon,
     sidebarTitle,
     sidebarContent,
@@ -97,4 +97,4 @@ export const GenViewLayout: React.FC<GenViewLayoutProps> = ({
             </div>
         </div>
     );
-};
+});

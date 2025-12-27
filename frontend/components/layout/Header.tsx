@@ -65,6 +65,7 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
     const ActiveIcon = activeModelConfig ? getModelIcon(activeModelConfig) : Loader2;
     const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+    const [isActivating, setIsActivating] = useState(false);
 
     // Get Current Profile
     const activeProfile = profiles.find(p => p.id === activeProfileId);
@@ -160,16 +161,26 @@ export const Header: React.FC<HeaderProps> = ({
                                         <button
                                             key={p.id}
                                             type="button"
-                                            onClick={(e) => {
+                                            onClick={async (e) => {
                                                 e.preventDefault();
                                                 e.stopPropagation();
-                                                onActivateProfile(p.id);
-                                                setIsProfileMenuOpen(false);
+                                                
+                                                setIsActivating(true);
+                                                try {
+                                                    await onActivateProfile(p.id);
+                                                    setIsProfileMenuOpen(false);
+                                                } catch (error) {
+                                                    console.error('Failed to activate profile:', error);
+                                                    alert('切换提供商失败，请重试');
+                                                } finally {
+                                                    setIsActivating(false);
+                                                }
                                             }}
+                                            disabled={isActivating}
                                             className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm group transition-all ${activeProfileId === p.id
                                                 ? 'bg-indigo-600 text-white'
                                                 : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                                                }`}
+                                                } ${isActivating ? 'opacity-50 cursor-not-allowed' : ''}`}
                                         >
                                             <div className="flex items-center gap-3 overflow-hidden">
                                                 <div className={`p-1 rounded shrink-0 ${activeProfileId === p.id ? 'bg-white/20' : 'bg-slate-800 group-hover:bg-slate-700'}`}>

@@ -22,7 +22,8 @@ export const googleMediaStrategy = {
         const isEdit = referenceImages && referenceImages.length > 0;
         
         if (isEdit) {
-            return editImage(ai, modelId, prompt, referenceImages, options);
+            // 传递 apiKey 和 baseUrl 以支持 Google Files API
+            return editImage(ai, modelId, prompt, referenceImages, options, apiKey, baseUrl);
         } else {
             return generateTextToImage(ai, modelId, prompt, options);
         }

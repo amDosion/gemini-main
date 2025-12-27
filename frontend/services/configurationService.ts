@@ -3,6 +3,14 @@ import { db, ConfigProfile } from './db';
 import { STATIC_AI_PROVIDERS, getStaticProviderConfig, AIProviderConfig } from '../config/aiProviders';
 import { ApiProtocol } from '../types/types';
 
+// Full settings interface for one-time fetch
+export interface FullSettings {
+    profiles: ConfigProfile[];
+    activeProfileId: string | null;
+    activeProfile: ConfigProfile | null;
+    dashscopeKey: string;
+}
+
 // Derived runtime config
 export interface ActiveAppConfig {
     apiKey: string;
@@ -14,6 +22,27 @@ export interface ActiveAppConfig {
 }
 
 class ConfigurationService {
+    
+    // --- Full Settings (One-time Fetch) ---
+    public async getFullSettings(): Promise<FullSettings> {
+        return await db.exec(
+            () => db.api.request<FullSettings>('/settings/full'),
+            async () => {
+                // LocalStorage 降级方案
+                const profiles = await db.local.getProfiles();
+                const activeProfileId = await db.local.getActiveProfileId();
+                const activeProfile = profiles.find(p => p.id === activeProfileId) || null;
+                const dashscopeKey = profiles.find(p => p.providerId === 'tongyi')?.apiKey || '';
+                
+                return {
+                    profiles,
+                    activeProfileId,
+                    activeProfile,
+                    dashscopeKey
+                };
+            }
+        );
+    }
     
     // --- Profile Management ---
     public async getProfiles(): Promise<ConfigProfile[]> {

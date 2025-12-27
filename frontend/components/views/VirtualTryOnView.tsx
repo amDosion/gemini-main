@@ -4,7 +4,7 @@
  * 功能：虚拟试衣 - 上传人物照片，通过 AI 替换服装
  * 复用 ImageEditView 的布局结构和交互模式
  */
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
 import { Shirt, AlertCircle, Layers, User, Bot, Sparkles } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
@@ -208,7 +208,7 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
 
 
     // 从历史消息中查找附件
-    const findAttachmentFromHistory = (targetUrl: string): { attachment: Attachment; messageId: string } | null => {
+    const findAttachmentFromHistory = useCallback((targetUrl: string): { attachment: Attachment; messageId: string } | null => {
         for (const msg of [...messages].reverse()) {
             for (const att of msg.attachments || []) {
                 if (att.url === targetUrl || att.tempUrl === targetUrl) {
@@ -217,10 +217,10 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
             }
         }
         return null;
-    };
+    }, [messages]);
 
     // 从后端查询附件信息
-    const fetchAttachmentFromBackend = async (sessionId: string, attachmentId: string): Promise<{
+    const fetchAttachmentFromBackend = useCallback(async (sessionId: string, attachmentId: string): Promise<{
         url: string;
         uploadStatus: string;
         taskId?: string;
@@ -233,10 +233,10 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
             console.error('[fetchAttachmentFromBackend] 查询异常:', e);
             return null;
         }
-    };
+    }, []);
 
     // 生成掩码预览
-    const handleGenerateMaskPreview = async () => {
+    const handleGenerateMaskPreview = useCallback(async () => {
         if (!activeImageUrl || !apiKey) {
             console.warn('[handleGenerateMaskPreview] 缺少图片或 API Key');
             alert('请先上传图片并确保已配置 API Key');
@@ -317,9 +317,9 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
         } finally {
             setIsGeneratingMask(false);
         }
-    };
+    }, [activeImageUrl, apiKey, currentTryOnTarget, activeModelConfig?.id, maskAlpha, maskThreshold]);
 
-    const handleSend = async (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => {
+    const handleSend = useCallback(async (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => {
         console.log('========== [VirtualTryOnView] handleSend 开始 ==========');
         console.log('[handleSend] 服装描述:', text);
         console.log('[handleSend] tryOnTarget:', options.virtualTryOnTarget);
@@ -441,18 +441,12 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
         };
         
         onSend(text, finalOptions, finalAttachments, mode);
-    };
+    }, [activeImageUrl, currentSessionId, findAttachmentFromHistory, fetchAttachmentFromBackend, enableUpscale, upscaleFactor, addWatermark, onSend]);
 
     const [isMobileHistoryOpen, setIsMobileHistoryOpen] = useState(false);
 
-
-    return (
-        <GenViewLayout
-            isMobileHistoryOpen={isMobileHistoryOpen}
-            setIsMobileHistoryOpen={setIsMobileHistoryOpen}
-            sidebarTitle="History"
-            sidebarHeaderIcon={<Layers size={14} />}
-            sidebarContent={
+    // 缓存 sidebarContent
+    const sidebarContent = useMemo(() => (
                 <div className="flex-1 p-4 space-y-6">
                     {messages.map((msg) => {
                         const isPlaceholder = !msg.content && (!msg.attachments || msg.attachments.length === 0) && !msg.isError;
@@ -499,8 +493,10 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
                     )}
                     <div ref={scrollRef} />
                 </div>
-            }
-            mainContent={
+    ), [messages, loadingState, activeModelConfig?.name, activeImageUrl]);
+
+    // 缓存 mainContent
+    const mainContent = useMemo(() => (
                 <div
                     className="flex-1 w-full h-full select-none flex flex-col relative"
                     onWheel={isCompareMode ? undefined : canvas.handleWheel}
@@ -746,8 +742,10 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
                         </div>
                     )}
                 </div>
-            }
-            bottomContent={
+    ), [loadingState, isCompareMode, originalImageUrl, activeImageUrl, canvas.canvasStyle, canvas.zoom, canvas.handleZoomIn, canvas.handleZoomOut, canvas.handleReset, onImageClick, showMaskPreview, maskPreviewUrl, enableUpscale, upscaleFactor, addWatermark, isGeneratingMask, handleGenerateMaskPreview, maskAlpha, maskThreshold, currentTryOnTarget]);
+
+    // 缓存 bottomContent
+    const bottomContent = useMemo(() => (
                 <InputArea
                     onSend={handleSend}
                     isLoading={loadingState !== 'idle'}
@@ -760,7 +758,17 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
                     onAttachmentsChange={setActiveAttachments}
                     providerId={providerId}
                 />
-            }
+    ), [handleSend, loadingState, onStop, activeModelConfig, setAppMode, initialPrompt, activeAttachments, providerId]);
+
+    return (
+        <GenViewLayout
+            isMobileHistoryOpen={isMobileHistoryOpen}
+            setIsMobileHistoryOpen={setIsMobileHistoryOpen}
+            sidebarTitle="History"
+            sidebarHeaderIcon={<Layers size={14} />}
+            sidebarContent={sidebarContent}
+            mainContent={mainContent}
+            bottomContent={bottomContent}
         />
     );
 };

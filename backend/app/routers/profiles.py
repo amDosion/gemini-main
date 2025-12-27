@@ -106,3 +106,41 @@ async def set_active_profile(data: dict, db: Session = Depends(get_db)):
     
     db.commit()
     return {"success": True, "id": profile_id}
+
+
+@router.get("/settings/full")
+async def get_full_settings(db: Session = Depends(get_db)):
+    """
+    一次性获取所有配置数据
+    
+    返回：
+    - profiles: 所有配置列表
+    - activeProfileId: 当前激活的配置 ID
+    - activeProfile: 当前激活的配置（完整数据）
+    - dashscopeKey: 通义千问的 API Key（用于 DashScope）
+    """
+    # 1. 获取所有配置
+    profiles = db.query(DBConfigProfile).all()
+    profiles_data = [profile.to_dict() for profile in profiles]
+    
+    # 2. 获取当前激活的配置 ID
+    settings = db.query(UserSettings).filter(UserSettings.user_id == "default").first()
+    active_profile_id = settings.active_profile_id if settings else None
+    
+    # 3. 获取当前激活的配置（完整数据）
+    active_profile = None
+    if active_profile_id:
+        active_profile = next((p for p in profiles_data if p["id"] == active_profile_id), None)
+    
+    # 4. 获取 DashScope Key（通义千问的 API Key）
+    dashscope_key = ""
+    tongyi_profile = next((p for p in profiles_data if p["providerId"] == "tongyi"), None)
+    if tongyi_profile:
+        dashscope_key = tongyi_profile.get("apiKey", "")
+    
+    return {
+        "profiles": profiles_data,
+        "activeProfileId": active_profile_id,
+        "activeProfile": active_profile,
+        "dashscopeKey": dashscope_key
+    }

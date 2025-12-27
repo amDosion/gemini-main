@@ -152,7 +152,7 @@ except Exception as e:
 
 # Import API routers
 try:
-    from .routers import health, storage, browse, pdf, embedding, dashscope_proxy
+    from .routers import health, storage, browse, pdf, embedding, dashscope_proxy, research, research_stream, metrics, interactions, file_search
     from .routers.profiles import router as profiles_router
     from .routers.sessions import router as sessions_router
     from .routers.personas import router as personas_router
@@ -162,7 +162,7 @@ try:
     logger.info(f"{LOG_PREFIXES['info']} API routes imported via relative import")
 except ImportError:
     try:
-        from routers import health, storage, browse, pdf, embedding, dashscope_proxy
+        from routers import health, storage, browse, pdf, embedding, dashscope_proxy, research, research_stream, metrics, interactions, file_search
         from routers.profiles import router as profiles_router
         from routers.sessions import router as sessions_router
         from routers.personas import router as personas_router
@@ -173,7 +173,7 @@ except ImportError:
     except ImportError:
         try:
             # 从项目根目录启动时的导入路径
-            from backend.app.routers import health, storage, browse, pdf, embedding, dashscope_proxy
+            from backend.app.routers import health, storage, browse, pdf, embedding, dashscope_proxy, research, research_stream, metrics, interactions, file_search
             from backend.app.routers.profiles import router as profiles_router
             from backend.app.routers.sessions import router as sessions_router
             from backend.app.routers.personas import router as personas_router
@@ -337,7 +337,12 @@ if API_ROUTES_AVAILABLE:
     app.include_router(personas_router)
     app.include_router(image_expand_router)
     app.include_router(tryon_router)
-    logger.info(f"{LOG_PREFIXES['info']} API routes registered (health, storage, browse, pdf, embedding, profiles, sessions, personas, image_expand, tryon, dashscope_proxy)")
+    app.include_router(research.router)
+    app.include_router(research_stream.router)
+    app.include_router(file_search.router)
+    app.include_router(metrics.router)
+    app.include_router(interactions.router)
+    logger.info(f"{LOG_PREFIXES['info']} API routes registered (health, storage, browse, pdf, embedding, profiles, sessions, personas, image_expand, tryon, dashscope_proxy, research, research_stream, file_search, metrics, interactions)")
 
     # Set service availability flags for health check endpoint
     health.set_availability(

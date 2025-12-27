@@ -70,6 +70,7 @@ class AuthService {
     const response = await fetch(`${this.baseUrl}/config`, {
       method: 'GET',
       credentials: 'include',
+      signal: AbortSignal.timeout(10000), // 10秒超时
     });
     if (!response.ok) {
       throw new Error('Failed to fetch auth config');
@@ -94,6 +95,7 @@ class AuthService {
         confirm_password: data.confirmPassword,
         name: data.name,
       }),
+      signal: AbortSignal.timeout(10000), // 10秒超时
     });
     if (!response.ok) {
       const error: AuthError = await response.json();
@@ -111,6 +113,7 @@ class AuthService {
       credentials: 'include',
       headers: getHeaders(),
       body: JSON.stringify(data),
+      signal: AbortSignal.timeout(10000), // 10秒超时
     });
     if (!response.ok) {
       const error: AuthError = await response.json();
@@ -127,6 +130,7 @@ class AuthService {
       method: 'POST',
       credentials: 'include',
       headers: getHeaders(),
+      signal: AbortSignal.timeout(10000), // 10秒超时
     });
     if (!response.ok) {
       throw new Error('Logout failed');
@@ -141,6 +145,7 @@ class AuthService {
       const response = await fetch(`${this.baseUrl}/me`, {
         method: 'GET',
         credentials: 'include',
+        signal: AbortSignal.timeout(10000), // 10秒超时
       });
       if (!response.ok) {
         if (response.status === 401) {
@@ -149,7 +154,8 @@ class AuthService {
         throw new Error('Failed to get current user');
       }
       return response.json();
-    } catch {
+    } catch (error) {
+      console.warn('[AuthService] getCurrentUser failed:', error);
       return null;
     }
   }
@@ -163,6 +169,7 @@ class AuthService {
         method: 'POST',
         credentials: 'include',
         headers: getHeaders(),
+        signal: AbortSignal.timeout(10000), // 10秒超时
       });
       return response.ok;
     } catch {

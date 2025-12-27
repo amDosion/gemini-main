@@ -7,11 +7,21 @@ import { messagePreparer } from "./ai_chat/MessagePreparer";
 import { streamManager } from "./stream/StreamManager";
 import { MediaFactory } from "./media/MediaFactory";
 
+interface ModelCache {
+  models: ModelConfig[];
+  timestamp: number;
+  providerId: string;
+}
+
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 export class LLMService {
   private apiKey: string = '';
   private baseUrl: string = '';
   private protocol: ApiProtocol = 'google';
   private providerId: string = 'google';
+
+  private modelCache = new Map<string, ModelCache>();
 
   private _cachedHistory: Message[] = [];
   private _cachedModelConfig: ModelConfig | null = null;
@@ -38,8 +48,40 @@ export class LLMService {
       return LLMFactory.getProvider(this.protocol, this.providerId);
   }
 
-  public async getAvailableModels(): Promise<ModelConfig[]> {
-      return this.currentProvider.getAvailableModels(this.apiKey, this.baseUrl);
+  public async getAvailableModels(useCache: boolean = true): Promise<ModelConfig[]> {
+      const cacheKey = `${this.providerId}_${this.apiKey}`;
+      const now = Date.now();
+      const cachedData = this.modelCache.get(cacheKey);
+
+      if (useCache && cachedData && (now - cachedData.timestamp < CACHE_TTL)) {
+          console.log(`[LLMService] Returning fresh cached models for ${this.providerId}`);
+          return cachedData.models;
+      }
+
+      try {
+          console.log(`[LLMService] Fetching models from server for ${this.providerId}`);
+          const models = await this.currentProvider.getAvailableModels(this.apiKey, this.baseUrl);
+          
+          this.modelCache.set(cacheKey, {
+              models: models,
+              timestamp: now,
+              providerId: this.providerId,
+          });
+
+          return models;
+      } catch (error) {
+          if (cachedData) {
+              console.warn(`[LLMService] Failed to fetch models for ${this.providerId}. Returning expired cached data as fallback.`, error);
+              return cachedData.models;
+          }
+          console.error(`[LLMService] Failed to fetch models for ${this.providerId} and no cached data available.`, error);
+          throw error;
+      }
+  }
+
+  public clearModelCache() {
+      this.modelCache.clear();
+      console.log("[LLMService] Model cache cleared.");
   }
 
   public async uploadFile(file: File): Promise<string> {
@@ -99,6 +141,16 @@ export class LLMService {
   public async generateImage(prompt: string, referenceImages: Attachment[] = []): Promise<ImageGenerationResult[]> {
       // Use the Media Factory to find the strategy for the current provider
       const strategy = MediaFactory.getStrategy(this.providerId);
+      
+      // 调试日志：检查 apiKey 和 baseUrl
+      console.log('[llmService.generateImage] 配置检查:', {
+          hasApiKey: !!this.apiKey,
+          apiKeyLength: this.apiKey?.length || 0,
+          hasBaseUrl: !!this.baseUrl,
+          baseUrl: this.baseUrl?.substring(0, 30) || 'empty',
+          providerId: this.providerId,
+          hasStrategy: !!strategy
+      });
       
       // If strategy exists, use it. Otherwise fallback to old provider method (Migration phase)
       // 注意：多轮编辑的连续性由前端 ImageEditView 的 CONTINUITY LOGIC 处理

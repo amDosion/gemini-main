@@ -20,7 +20,7 @@ passlib[bcrypt]>=1.7.4
 
 # PDF Processing & AI
 pypdf>=5.0.0
-google-genai>=1.32.0
+google-genai>=1.55.0  # ✅ 修复：升级到支持 Interactions API 的版本
 
 # Document Embedding / RAG
 numpy>=1.24.0

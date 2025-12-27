@@ -23,7 +23,10 @@
         "read_file",
         "edit_block",
         "write_file",
-        "list_directory"
+        "list_directory",
+        "create_directory",
+        "get_file_info",
+        "stop_search"
       ]
     },
     "sequential-thinking": {
@@ -193,19 +196,28 @@
     "codex-mcp-toolkit": {
       "command": "node",
       "args": [
-        "C:/Users/12180/codex-mcp-toolkit/src/index.js",
+        "C:/Users/12180/codex-mcp-toolkit-feature/src/index.js",
         "--config",
-        "C:/Users/12180/codex-mcp-toolkit/config.json"
+        "C:/Users/12180/codex-mcp-toolkit-feature/config.json"
       ],
       "env": {
+        "CODEX_MCP_TOOLKIT_LOG": "stderr",
         "CODEX_MCP_TOOLKIT_QUIET": "1",
+        "CODEX_MCP_TOOLKIT_FORCE_CODEX_SANDBOX": "workspace-write",
         "OPENAI_API_KEY": "sk-Z7Gua6FvOJQWaMWDrRXPAzQK1mDlrVojWwVSh2W8AkGfK3oX",
-        "OPENAI_BASE_URL": "https://yourapi.cn/v1"
+        "OPENAI_BASE_URL": "https://yourapi.cn/v1",
+        "OPENAI_API_KEY_CLAUDE": "sk-AddNnxpyEDyS4WiyVla5otS0zQjNsIklyyaMqXFRrhABHv75",
+        "OPENAI_BASE_URL_CLAUDE": "https://yourapi.cn/v1",
+        "GEMINI_API_KEY": "AIzaSyCcn3hg7MncoCywHOaJUOd0_BVUuu-BlTU",
+        "CODEX_MCP_TOOLKIT_CODEX_PROFILE": "default",
+        "CODEX_MCP_TOOLKIT_CODEX_PROFILES_JSON": "{\"default\":{\"env\":{\"OPENAI_API_KEY\":\"${env:OPENAI_API_KEY}\",\"OPENAI_BASE_URL\":\"${env:OPENAI_BASE_URL}\"},\"configOverrides\":[\"model='gpt-5.1-codex'\"]},\"claude_proxy\":{\"env\":{\"OPENAI_API_KEY\":\"${env:OPENAI_API_KEY_CLAUDE}\",\"OPENAI_BASE_URL\":\"${env:OPENAI_BASE_URL_CLAUDE}\"},\"configOverrides\":[\"model='anthropic/claude-4.5-sonnet'\"]}}",
+        "CODEX_MCP_TOOLKIT_THINKING_LLM_ENABLED": "1",
+        "CODEX_MCP_TOOLKIT_THINKING_LLM_PROFILE": "claude_via_proxy",
+        "CODEX_MCP_TOOLKIT_THINKING_LLM_PROFILES_JSON": "{\"claude_via_proxy\":{\"provider\":\"openai_compatible\",\"apiType\":\"chat_completions\",\"baseUrl\":\"${env:OPENAI_BASE_URL_CLAUDE}\",\"apiKeyEnv\":\"OPENAI_API_KEY_CLAUDE\",\"model\":\"anthropic/claude-4.5-sonnet\",\"timeoutMs\":30000,\"maxOutputTokens\":1200,\"temperature\":0.2},\"gemini_direct\":{\"provider\":\"gemini\",\"baseUrl\":\"https://generativelanguage.googleapis.com/v1beta\",\"apiKeyEnv\":\"GEMINI_API_KEY\",\"model\":\"gemini-3-pro-preview\",\"timeoutMs\":30000,\"maxOutputTokens\":1200,\"temperature\":0.2}}"
       },
-      "description": "Codex CLI 工具包 - AI 辅助编码",
+      "type": "stdio",
       "autoApprove": [
         "codex.run",
-        "codex.status",
         "codex.status",
         "codex.get_result"
       ]

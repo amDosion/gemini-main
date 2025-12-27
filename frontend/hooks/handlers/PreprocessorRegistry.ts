@@ -64,20 +64,21 @@ export class GoogleFileUploadPreprocessor implements Preprocessor {
   }
   
   async process(context: ExecutionContext): Promise<ExecutionContext> {
-    // 使用深拷贝确保不可变性（修复问题3）
-    const clonedContext = this.deepClone(context);
+    // 不使用深拷贝，直接处理附件
+    // structuredClone 无法正确克隆 File 对象，会导致问题
     
     // 处理文件上传逻辑
-    const uploadedAttachments = await this.uploadFiles(clonedContext.attachments, clonedContext);
+    const uploadedAttachments = await this.uploadFiles(context.attachments, context);
     
     return {
-      ...clonedContext,
+      ...context,
       attachments: uploadedAttachments
     };
   }
   
   /**
    * 上传文件，使用 Promise.allSettled 支持部分失败（修复问题6）
+   * 修复：上传失败时降级到 Base64，不阻塞用户
    */
   private async uploadFiles(
     attachments: Attachment[],
@@ -88,32 +89,27 @@ export class GoogleFileUploadPreprocessor implements Preprocessor {
       attachments.map(att => this.uploadFile(att, context))
     );
     
-    const successfulAttachments = results
-      .filter(r => r.status === 'fulfilled')
-      .map(r => (r as PromiseFulfilledResult<Attachment>).value);
+    // 处理上传结果：成功的使用 fileUri，失败的保留原始附件（降级到 Base64）
+    const processedAttachments = results.map((result, index) => {
+      if (result.status === 'fulfilled') {
+        return result.value;
+      } else {
+        // 上传失败，记录警告但保留原始附件（后续会使用 Base64 方式）
+        const attachment = attachments[index];
+        const error = (result as PromiseRejectedResult).reason;
+        
+        console.warn(`[GoogleFileUploadPreprocessor] 文件上传失败，将使用 Base64 方式:`, {
+          fileName: attachment.name || 'unknown',
+          fileType: attachment.mimeType || 'unknown',
+          error: error.message || 'Unknown error'
+        });
+        
+        // 返回原始附件，让后续流程使用 Base64
+        return attachment;
+      }
+    });
     
-    const failedAttachments = results
-      .filter(r => r.status === 'rejected')
-      .map((r, index) => ({
-        attachment: attachments[index],
-        error: (r as PromiseRejectedResult).reason
-      }));
-    
-    // 如果有失败的上传，抛出错误
-    if (failedAttachments.length > 0) {
-      throw new HandlerErrorImpl(
-        `Failed to upload ${failedAttachments.length} files`,
-        'FILE_UPLOAD_FAILED',
-        'INTERNAL',
-        {
-          mode: context.mode,
-          sessionId: context.sessionId,
-          failedAttachments
-        }
-      );
-    }
-    
-    return successfulAttachments;
+    return processedAttachments;
   }
   
   /**
@@ -124,20 +120,19 @@ export class GoogleFileUploadPreprocessor implements Preprocessor {
     context: ExecutionContext
   ): Promise<Attachment> {
     if (attachment.file && !attachment.fileUri) {
+      // 调试日志
+      console.log('[GoogleFileUploadPreprocessor] 准备上传文件:', {
+        fileName: attachment.name,
+        hasLlmService: !!context.llmService,
+        llmServiceType: typeof context.llmService,
+        hasUploadFile: typeof context.llmService?.uploadFile,
+        llmServiceKeys: context.llmService ? Object.keys(context.llmService) : []
+      });
+      
       const uri = await context.llmService.uploadFile(attachment.file);
-      return { ...attachment, fileUri: uri, file: undefined };
+      // 保留原始 url 字段，用于 UI 显示
+      return { ...attachment, fileUri: uri, file: undefined, url: attachment.url };
     }
     return attachment;
-  }
-  
-  /**
-   * 深拷贝对象，确保不可变性（修复问题3）
-   * 使用 structuredClone() 而不是 JSON.parse/stringify
-   * 优势：支持 Date、Set、Map、RegExp、ArrayBuffer 等复杂类型
-   * 性能：比 JSON 方法更快
-   * 浏览器支持：Chrome 98+, Firefox 94+, Safari 15.4+
-   */
-  private deepClone<T>(obj: T): T {
-    return structuredClone(obj);
   }
 }

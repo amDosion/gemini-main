@@ -86,24 +86,28 @@ export const AttachmentGrid: React.FC<AttachmentGridProps> = ({ attachments, onI
         if (!url) return null;
 
         if (isImage) {
+            // ✅ 修复：使用 URL 优先级降级策略（url -> tempUrl -> fileUri）
+            const displayUrl = att.url || att.tempUrl || att.fileUri;
+            if (!displayUrl) return null;
+            
             return (
                 <div key={idx} className="relative rounded-xl overflow-hidden border border-slate-600/50 shadow-lg group/img aspect-square bg-slate-900">
                     <img 
-                       src={url} 
+                       src={displayUrl} 
                        alt={att.name}
                        className="w-full h-full object-cover transition-transform duration-500 group-hover/img:scale-105 cursor-pointer" 
-                       onClick={() => onImageClick?.(url)}
+                       onClick={() => onImageClick?.(displayUrl)}
                     />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-3 backdrop-blur-[2px]">
                        <button 
-                           onClick={(e) => handleDownload(e, url, att.name)} 
+                           onClick={(e) => handleDownload(e, displayUrl, att.name)} 
                            className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-full backdrop-blur-md border border-white/20 transition-transform hover:scale-110"
                            title="Download"
                         >
                            <Download size={20} />
                        </button>
                        <button 
-                           onClick={() => onImageClick?.(url)} 
+                           onClick={() => onImageClick?.(displayUrl)} 
                            className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-full backdrop-blur-md border border-white/20 transition-transform hover:scale-110"
                            title="Fullscreen"
                         >
@@ -111,7 +115,7 @@ export const AttachmentGrid: React.FC<AttachmentGridProps> = ({ attachments, onI
                        </button>
                        {onEditImage && (
                         <button 
-                            onClick={(e) => handleEdit(e, url)} 
+                            onClick={(e) => handleEdit(e, displayUrl)} 
                             className="p-2 bg-pink-500/80 hover:bg-pink-500 text-white rounded-full backdrop-blur-md border border-white/20 transition-transform hover:scale-110"
                             title="Edit this image"
                         >
@@ -122,16 +126,24 @@ export const AttachmentGrid: React.FC<AttachmentGridProps> = ({ attachments, onI
                 </div>
             );
         } else if (isVideo) {
+            // ✅ 修复：视频也使用 URL 优先级降级策略
+            const displayUrl = att.url || att.tempUrl || att.fileUri;
+            if (!displayUrl) return null;
+            
             return (
                 <div key={idx} className="rounded-xl overflow-hidden border border-slate-600/50 shadow-lg bg-black">
-                    <video src={url} controls className="w-full max-h-[200px]" />
+                    <video src={displayUrl} controls className="w-full max-h-[200px]" />
                 </div>
             );
         } else if (isAudio) {
+            // ✅ 修复：音频也使用 URL 优先级降级策略
+            const displayUrl = att.url || att.tempUrl || att.fileUri;
+            if (!displayUrl) return null;
+            
              return (
                 <div key={idx} className="p-3 rounded-xl border border-slate-600/50 shadow-lg bg-slate-900 flex items-center gap-3">
                     <div className="p-2 rounded-full bg-slate-800 text-yellow-400"><Music size={20} /></div>
-                    <audio src={url} controls className="h-8 w-full max-w-[200px]" />
+                    <audio src={displayUrl} controls className="h-8 w-full max-w-[200px]" />
                 </div>
             );
         } else {

@@ -6,3 +6,4 @@ export { VideoGenControls } from './VideoGenControls';
 export { AudioGenControls } from './AudioGenControls';
 export { PdfExtractControls } from './PdfExtractControls';
 export { VirtualTryOnControls } from './VirtualTryOnControls';
+export { DeepResearchControls } from './DeepResearchControls';

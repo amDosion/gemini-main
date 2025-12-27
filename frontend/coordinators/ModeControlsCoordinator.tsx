@@ -8,7 +8,8 @@ import {
   VideoGenControls,
   AudioGenControls,
   VirtualTryOnControls,
-  PdfExtractControls
+  PdfExtractControls,
+  DeepResearchControls
 } from '../controls/modes';
 import {
   ChatControlsProps,
@@ -18,7 +19,8 @@ import {
   VideoGenControlsProps,
   AudioGenControlsProps,
   VirtualTryOnControlsProps,
-  PdfExtractControlsProps
+  PdfExtractControlsProps,
+  DeepResearchControlsProps
 } from '../controls/types';
 
 type ModeControlsCoordinatorProps = {
@@ -32,7 +34,8 @@ type ModeControlsCoordinatorProps = {
   & Partial<VideoGenControlsProps>
   & Partial<AudioGenControlsProps>
   & Partial<VirtualTryOnControlsProps>
-  & Partial<PdfExtractControlsProps>;
+  & Partial<PdfExtractControlsProps>
+  & Partial<DeepResearchControlsProps>;
 
 /**
  * 模式控制协调者
@@ -58,6 +61,8 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
       return <PdfExtractControls {...(controlProps as PdfExtractControlsProps)} />;
     case 'virtual-try-on':
       return <VirtualTryOnControls {...(controlProps as VirtualTryOnControlsProps)} />;
+    case 'deep-research':
+      return <DeepResearchControls currentModel={currentModel} {...(controlProps as DeepResearchControlsProps)} />;
     default:
       return null;
   }

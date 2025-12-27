@@ -7,7 +7,6 @@ import { Copy, Check } from 'lucide-react';
 
 interface MarkdownRendererProps {
   content: string;
-  isStreaming?: boolean;
 }
 
 const CodeBlock = ({ language, children, ...props }: any) => {
@@ -52,7 +51,7 @@ const CodeBlock = ({ language, children, ...props }: any) => {
   );
 };
 
-const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, isStreaming }) => {
+const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
   return (
     <div className="prose prose-invert prose-sm sm:prose-base max-w-none break-words">
       <ReactMarkdown
@@ -79,10 +78,6 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, isStreamin
       >
         {content}
       </ReactMarkdown>
-      {/* Blinking Cursor */}
-      {isStreaming && (
-          <span className="inline-block w-1.5 h-4 ml-1 bg-indigo-400 animate-pulse align-sub duration-75" />
-      )}
     </div>
   );
 };

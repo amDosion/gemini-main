@@ -314,6 +314,54 @@ class HybridDB {
     deleteStorageConfig(id: string) { return this.exec(() => this.api.deleteStorageConfig(id), () => this.local.deleteStorageConfig(id)); }
     getActiveStorageId() { return this.exec(() => this.api.getActiveStorageId(), () => this.local.getActiveStorageId()); }
     setActiveStorageId(id: string) { return this.exec(() => this.api.setActiveStorageId(id), () => this.local.setActiveStorageId(id)); }
+
+    /**
+     * 更新附件的云存储 URL（上传完成后调用）
+     * 
+     * 语义修复 (Semantic Fix):
+     * - 原始问题 (Original Issue): 此函数之前更新的是 `tempUrl` 字段。这在语义上是错误的，因为云存储 URL 是一个永久性、权威性的 URL，而非临时 URL。
+     * - 变更 (Change): 将更新目标从 `tempUrl` 修正为 `url` 字段。
+     * - 理由 (Reason): `url` 字段用于存储附件的规范化、持久化链接。`tempUrl` 用于存储临时的、易变的 URL（例如，来自外部 API 的临时下载链接）。将云存储 URL 保存到 `url` 字段可确保数据模型的一致性和正确性。
+     * 
+     * @param sessionId 会话 ID
+     * @param messageId 消息 ID
+     * @param attachmentId 附件 ID
+     * @param cloudUrl 云存储 URL
+     */
+    async updateAttachmentUrl(sessionId: string, messageId: string, attachmentId: string, cloudUrl: string): Promise<void> {
+        return this.exec(
+            async () => {
+                // API 模式：调用后端 API 更新
+                // 修正 (FIX): 将更新字段从 { tempUrl: cloudUrl } 改为 { url: cloudUrl }
+                await this.api.request(`/sessions/${sessionId}/messages/${messageId}/attachments/${attachmentId}/url`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: cloudUrl })
+                });
+            },
+            async () => {
+                // LocalStorage 模式：直接更新本地数据
+                const sessions = await this.local.getSessions();
+                const session = sessions.find(s => s.id === sessionId);
+                if (!session) return;
+                
+                const message = session.messages.find(m => m.id === messageId);
+                if (!message || !message.attachments) return;
+                
+                const attachment = message.attachments.find(a => a.id === attachmentId);
+                if (!attachment) return;
+                
+                // 修正 (FIX): 将云存储 URL 保存到 `url` 字段
+                attachment.url = cloudUrl;
+                // 清理不再需要的 tempUrl（如果存在）
+                delete attachment.tempUrl;
+                attachment.uploadStatus = 'completed';
+                
+                // 保存回 LocalStorage
+                await this.local.saveSession(session);
+            }
+        );
+    }
 }
 
 export const db = new HybridDB();

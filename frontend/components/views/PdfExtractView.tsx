@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Message,
   Role,
@@ -95,7 +95,7 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
 
   const isBatchError = activeBatchMessage?.isError;
 
-  const renderResultView = () => {
+  const renderResultView = useCallback(() => {
     if (!extractedData?.success) return null;
     switch (viewMode) {
       case 'table':
@@ -109,21 +109,17 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
       default:
         return <PdfTableView data={extractedData.data} />;
     }
-  };
+  }, [extractedData, viewMode]);
 
+  // 缓存 sidebarExtraHeader
+  const sidebarExtraHeader = useMemo(() => (
+    <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-500">
+      {historyBatches.length}
+    </span>
+  ), [historyBatches.length]);
 
-  return (
-    <GenViewLayout
-      isMobileHistoryOpen={isMobileHistoryOpen}
-      setIsMobileHistoryOpen={setIsMobileHistoryOpen}
-      sidebarTitle="提取历史"
-      sidebarHeaderIcon={<Clock size={14} />}
-      sidebarExtraHeader={
-        <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-500">
-          {historyBatches.length}
-        </span>
-      }
-      sidebarContent={
+  // 缓存 sidebarContent
+  const sidebarContent = useMemo(() => (
         <div className="p-3 space-y-3">
           {historyBatches.map((msg) => {
             const isSelected = activeBatchMessage?.id === msg.id;
@@ -194,8 +190,10 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
             <div className="text-center py-10 text-slate-600 text-xs italic">暂无提取历史</div>
           )}
         </div>
-      }
-      mainContent={
+  ), [historyBatches, activeBatchMessage?.id, onDeleteMessage]);
+
+  // 缓存 mainContent
+  const mainContent = useMemo(() => (
         <div className="flex-1 w-full h-full overflow-y-auto relative custom-scrollbar bg-slate-950">
           {extractedData?.success && (
             <div className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur-sm border-b border-slate-800">
@@ -229,8 +227,10 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
             )}
           </div>
         </div>
-      }
-      bottomContent={
+  ), [loadingState, isBatchError, extractedData, activeBatchMessage?.content, viewMode, renderResultView]);
+
+  // 缓存 bottomContent
+  const bottomContent = useMemo(() => (
         <InputArea
           onSend={onSend}
           onStop={onStop}
@@ -245,7 +245,18 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
           selectedPdfTemplate={selectedTemplate}
           onPdfTemplateChange={setSelectedTemplate}
         />
-      }
+  ), [onSend, onStop, setAppMode, loadingState, activeModelConfig, providerId, templates, selectedTemplate]);
+
+  return (
+    <GenViewLayout
+      isMobileHistoryOpen={isMobileHistoryOpen}
+      setIsMobileHistoryOpen={setIsMobileHistoryOpen}
+      sidebarTitle="提取历史"
+      sidebarHeaderIcon={<Clock size={14} />}
+      sidebarExtraHeader={sidebarExtraHeader}
+      sidebarContent={sidebarContent}
+      mainContent={mainContent}
+      bottomContent={bottomContent}
     />
   );
 };

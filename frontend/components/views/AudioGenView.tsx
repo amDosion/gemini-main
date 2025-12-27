@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
 import { Mic, Clock, AlertCircle, User, Bot, Download, Maximize2, Volume2 } from 'lucide-react';
 import InputArea from '../chat/InputArea';
@@ -357,7 +357,7 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
   }, [activeAudioUrl]);
 
   // Update active audio and text when clicking on audio in history
-  const handleAudioClick = (url: string, messageId: string) => {
+  const handleAudioClick = useCallback((url: string) => {
     setActiveAudioUrl(url);
     // Find the message containing this audio
     const modelMsg = messages.find(m =>
@@ -372,19 +372,19 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
         }
       }
     }
-  };
+  }, [messages]);
 
-  const handleDownload = (url: string) => {
+  const handleDownload = useCallback((url: string) => {
     const link = document.createElement('a');
     link.href = url;
     link.download = `gemini-audio-${Date.now()}.wav`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
+  }, []);
 
   // Get current audio text for lyrics display
-  const getActiveAudioText = (): string => {
+  const getActiveAudioText = useCallback((): string => {
     if (activeAudioText) return activeAudioText;
     // Fallback: try to find from current active audio URL
     const modelMsg = messages.find(m =>
@@ -400,18 +400,13 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
       }
     }
     return '';
-  };
+  }, [messages, activeAudioUrl, activeAudioText]);
 
   // Mobile History Toggle
   const [isMobileHistoryOpen, setIsMobileHistoryOpen] = useState(false);
 
-  return (
-    <GenViewLayout
-      isMobileHistoryOpen={isMobileHistoryOpen}
-      setIsMobileHistoryOpen={setIsMobileHistoryOpen}
-      sidebarTitle="History"
-      sidebarHeaderIcon={<Clock size={14} />}
-      sidebarContent={
+  // 缓存 sidebarContent
+  const sidebarContent = useMemo(() => (
         <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar" ref={scrollRef}>
           {messages.map((msg) => {
             // Filter out empty placeholders to prevent "Double Bubble" issue
@@ -442,7 +437,7 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
                     return (
                       <div
                         key={idx}
-                        onClick={() => att.url && isAudio && handleAudioClick(att.url, msg.id)}
+                        onClick={() => att.url && isAudio && handleAudioClick(att.url)}
                         className={`relative group mt-2 rounded-lg overflow-hidden border transition-all ${isAudio ? 'cursor-pointer' : ''
                           } ${isActive ? 'ring-2 ring-cyan-500 border-transparent' : 'border-slate-700 hover:border-slate-500'
                           }`}
@@ -504,8 +499,10 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
             </div>
           )}
         </div>
-      }
-      mainContent={
+  ), [messages, loadingState, activeModelConfig?.name, activeAudioUrl, handleAudioClick]);
+
+  // 缓存 mainContent
+  const mainContent = useMemo(() => (
         /* Main Content Stage */
         <div className="flex-1 flex flex-col items-center justify-center p-8 overflow-hidden bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-slate-950 relative">
           {/* Stage Header */}
@@ -610,8 +607,10 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
             </div>
           )}
         </div>
-      }
-      bottomContent={
+  ), [loadingState, activeAudioUrl, audioRef, isPlaying, currentTime, duration, getActiveAudioText, handleDownload]);
+
+  // 缓存 bottomContent
+  const bottomContent = useMemo(() => (
         <InputArea
           onSend={onSend}
           isLoading={loadingState !== 'idle'}
@@ -621,7 +620,17 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
           setMode={setAppMode}
           initialPrompt={initialPrompt}
         />
-      }
+  ), [onSend, loadingState, onStop, activeModelConfig, setAppMode, initialPrompt]);
+
+  return (
+    <GenViewLayout
+      isMobileHistoryOpen={isMobileHistoryOpen}
+      setIsMobileHistoryOpen={setIsMobileHistoryOpen}
+      sidebarTitle="History"
+      sidebarHeaderIcon={<Clock size={14} />}
+      sidebarContent={sidebarContent}
+      mainContent={mainContent}
+      bottomContent={bottomContent}
     />
   );
 };

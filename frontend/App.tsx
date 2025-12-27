@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 
@@ -32,9 +32,6 @@ import { StorageConfig } from './types/storage';
 import { db } from './services/db';
 import { PdfExtractionService } from './services/pdfExtractionService';
 
-// 应用启动时预加载 PDF 模板数据（避免组件渲染时闪烁）
-PdfExtractionService.preload();
-
 const App: React.FC = () => {
   // --- Router Hooks ---
   const navigate = useNavigate();
@@ -61,6 +58,12 @@ const App: React.FC = () => {
   const [appMode, setAppMode] = useState<AppMode>('chat');
   const [initialAttachments, setInitialAttachments] = useState<Attachment[] | undefined>(undefined);
   const [initialPrompt, setInitialPrompt] = useState<string | undefined>(undefined);
+  
+  // Track previous session ID to detect actual session switches
+  const prevSessionIdRef = useRef<string | null>(null);
+  
+  // Track previous model config to detect actual model switches
+  const prevModelConfigRef = useRef<typeof activeModelConfig>(undefined);
   
   // --- Domain Hooks ---
   const { 
@@ -103,11 +106,16 @@ const App: React.FC = () => {
     
     if (isAuthenticated) {
       loadStorageConfigs();
+      // ✅ 用户登录后预加载 PDF 模板（避免首次使用时的延迟）
+      PdfExtractionService.preload();
     }
   }, [isAuthenticated]);
 
   // Get cached models from the active profile for instant loading
   const activeProfile = useMemo(() => profiles.find(p => p.id === activeProfileId), [profiles, activeProfileId]);
+
+  // ✅ 稳定 cachedModels 引用，避免触发不必要的 useEffect
+  const cachedModels = useMemo(() => activeProfile?.savedModels, [activeProfile?.savedModels]);
 
   // Always try to fetch models when provider changes. 
   const { 
@@ -123,7 +131,7 @@ const App: React.FC = () => {
       true, 
       hiddenModelIds, 
       config.providerId, 
-      activeProfile?.savedModels,
+      cachedModels,  // ✅ 使用稳定的引用
       config.apiKey // Pass apiKey to trigger refresh on profile switch
   );
 
@@ -142,6 +150,9 @@ const App: React.FC = () => {
     cacheStatus,
     refreshSessions,
   } = useSessions();
+
+  // Track sessions in ref to avoid unnecessary useEffect triggers
+  const sessionsRef = useRef(sessions);
 
   const {
     messages,
@@ -206,25 +217,40 @@ const App: React.FC = () => {
   //   }
   // }, [isAuthenticated, isLoadingModels, currentModelId]);
 
+  // Sync sessions to ref
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
   useEffect(() => {
     if (currentSessionId) {
-      const session = getSession(currentSessionId);
+      // Use sessionsRef.current instead of getSession to avoid unnecessary triggers
+      const session = sessionsRef.current.find(s => s.id === currentSessionId);
       if (session) {
-        setMessages(session.messages);
-        
-        // Restore Mode from Session
-        const storedMode = session.mode;
-        if (storedMode) {
-             setAppMode(storedMode);
-        } else {
-             const lastMsg = [...session.messages].reverse().find(m => m.mode);
-             setAppMode(lastMsg?.mode || 'chat');
+        // Only load messages when session actually switches
+        const isSessionSwitch = prevSessionIdRef.current !== currentSessionId;
+        if (isSessionSwitch) {
+          setMessages(session.messages);
+          
+          const storedMode = session.mode;
+          if (storedMode) {
+               setAppMode(storedMode);
+          } else {
+               const lastMsg = [...session.messages].reverse().find(m => m.mode);
+               setAppMode(lastMsg?.mode || 'chat');
+          }
+          prevSessionIdRef.current = currentSessionId;
         }
 
-        if (activeModelConfig) llmService.startNewChat(session.messages, activeModelConfig);
+        // Only update llmService when session switches or model actually changes
+        const isModelSwitch = prevModelConfigRef.current?.id !== activeModelConfig?.id;
+        if ((isSessionSwitch || isModelSwitch) && activeModelConfig) {
+          llmService.startNewChat(session.messages, activeModelConfig);
+          prevModelConfigRef.current = activeModelConfig;
+        }
       }
     }
-  }, [currentSessionId]);
+  }, [currentSessionId, activeModelConfig]);
 
   // --- Handlers ---
   const handleNewChat = () => {
@@ -236,12 +262,11 @@ const App: React.FC = () => {
     setInitialPrompt(undefined);
   };
 
-  const handleModelSelect = (id: string) => {
+  const handleModelSelect = useCallback((id: string) => {
     setCurrentModelId(id);
     setIsModelMenuOpen(false);
-    const newModel = visibleModels.find(m => m.id === id);
-    if (newModel) llmService.startNewChat(messages, newModel);
-  };
+    // Let useEffect handle llmService.startNewChat to avoid duplicate calls
+  }, [setCurrentModelId, setIsModelMenuOpen]);
 
   const handlePersonaSelect = (id: string) => {
       setActivePersonaId(id);
@@ -264,7 +289,7 @@ const App: React.FC = () => {
       }
   };
 
-  const onSend = (text: string, options: any, attachments: Attachment[], mode: AppMode) => {
+  const onSend = useCallback((text: string, options: any, attachments: Attachment[], mode: AppMode) => {
     // Only check for Key if not Ollama
     if (!config.apiKey && config.providerId !== 'ollama') { 
       setSettingsInitialTab('profiles');
@@ -298,9 +323,27 @@ const App: React.FC = () => {
     }
     setInitialAttachments(undefined);
     setInitialPrompt(undefined);
-  };
+  }, [
+    config.apiKey,
+    config.providerId,
+    config.dashscopeApiKey,
+    config.protocol,
+    currentSessionId,
+    createNewSession,
+    activePersonaId,
+    activePersona,
+    visibleModels,
+    currentModelId,
+    activeModelConfig,
+    sendMessage,
+    setInitialAttachments,
+    setInitialPrompt,
+    setIsSettingsOpen,
+    setSettingsInitialTab
+  ]);
 
-  const handleEditImage = async (url: string) => {
+  // ✅ 使用 useCallback 优化，避免每次渲染都创建新函数
+  const handleEditImage = useCallback(async (url: string) => {
       setAppMode('image-edit');
       
       // ✅ 尝试从历史消息中查找原附件，复用其 ID（用于后续查询云 URL）
@@ -320,7 +363,6 @@ const App: React.FC = () => {
           };
           
           // ✅ 如果 uploadStatus 是 pending，查询后端获取云 URL
-          // 云 URL 存在 tempUrl 中，用于避免重复上传
           if (found.attachment.uploadStatus === 'pending' && currentSessionId) {
               console.log('[handleEditImage] uploadStatus=pending，查询后端获取云 URL');
               const cloudResult = await tryFetchCloudUrl(
@@ -331,9 +373,9 @@ const App: React.FC = () => {
               );
               if (cloudResult) {
                   console.log('[handleEditImage] ✅ 获取到云 URL:', cloudResult.url.substring(0, 60));
-                  // ✅ 云 URL 存在 tempUrl 中，原始 URL 保持不变用于显示
-                  newAttachment.tempUrl = cloudResult.url;
-                  newAttachment.uploadStatus = cloudResult.uploadStatus as 'pending' | 'uploading' | 'completed' | 'failed';
+                  // ✅ 修正 (FIX): 云 URL 保存到 url 字段（永久 URL），而不是 tempUrl
+                  newAttachment.url = cloudResult.url;
+                  newAttachment.uploadStatus = 'completed';
               }
           }
       } else {
@@ -362,9 +404,10 @@ const App: React.FC = () => {
           const visionModel = visibleModels.find(m => m.capabilities.vision);
           if (visionModel) setCurrentModelId(visionModel.id);
       }
-  };
+  }, [messages, currentSessionId, activeModelConfig, visibleModels, setCurrentModelId]);
 
-  const handleExpandImage = async (url: string) => {
+  // ✅ 使用 useCallback 优化，避免每次渲染都创建新函数
+  const handleExpandImage = useCallback(async (url: string) => {
       setAppMode('image-outpainting');
       
       // 根据 URL 类型推断 MIME 类型和扩展名
@@ -410,7 +453,6 @@ const App: React.FC = () => {
           };
           
           // ✅ 如果 uploadStatus 是 pending，查询后端获取云 URL
-          // Expand 模式可以直接使用云 URL（通义 API 支持）
           if (found.attachment.uploadStatus === 'pending' && currentSessionId) {
               console.log('[handleExpandImage] uploadStatus=pending，查询后端获取云 URL');
               const cloudResult = await tryFetchCloudUrl(
@@ -421,9 +463,9 @@ const App: React.FC = () => {
               );
               if (cloudResult) {
                   console.log('[handleExpandImage] ✅ 获取到云 URL:', cloudResult.url.substring(0, 60));
-                  // ✅ Expand 模式：云 URL 存在 tempUrl 中，通义 API 可以直接使用
-                  newAttachment.tempUrl = cloudResult.url;
-                  newAttachment.uploadStatus = cloudResult.uploadStatus as 'pending' | 'uploading' | 'completed' | 'failed';
+                  // ✅ 修正 (FIX): 云 URL 保存到 url 字段（永久 URL），而不是 tempUrl
+                  newAttachment.url = cloudResult.url;
+                  newAttachment.uploadStatus = 'completed';
               }
           }
       } else {
@@ -447,7 +489,7 @@ const App: React.FC = () => {
       setInitialAttachments([newAttachment]);
       setInitialPrompt(undefined); // Clear prompt as outpainting often just needs settings
       // Ensure we stay on a compatible model if possible, but Expand usually uses specific endpoints handled by provider
-  };
+  }, [messages, currentSessionId]);
 
   const handleWelcomePrompt = (text: string, mode: AppMode, modelId: string, requiredCap: string) => {
       handleModelSelect(modelId);
@@ -533,7 +575,8 @@ const App: React.FC = () => {
     updateSessionMessages(currentSessionId, newMessages);
   };
 
-  const handleModeSwitch = (mode: AppMode) => {
+  // ✅ 使用 useCallback 优化，避免每次渲染都创建新函数
+  const handleModeSwitch = useCallback((mode: AppMode) => {
     setAppMode(mode);
     if (mode === 'image-gen') {
         let imageModel = visibleModels.find(m => m.id.toLowerCase().includes('imagen'));
@@ -565,13 +608,16 @@ const App: React.FC = () => {
             setCurrentModelId(pdfModel.id);
         }
     }
-  };
+  }, [visibleModels, setCurrentModelId, currentModelId]);
+
+  // ✅ 使用 useCallback 优化 onImageClick
+  const handleImageClick = useCallback((url: string) => setPreviewImage(url), []);
 
   const renderView = () => {
       const commonProps = {
           messages: currentViewMessages,
           setAppMode: handleModeSwitch,
-          onImageClick: (url: string) => setPreviewImage(url),
+          onImageClick: handleImageClick,  // ✅ 使用稳定的引用
           loadingState,
           onSend,
           onStop: stopGeneration,
@@ -583,7 +629,7 @@ const App: React.FC = () => {
           apiKey: config.apiKey  // ✅ 传递 apiKey 用于调用 API
       };
 
-      if (appMode === 'chat') {
+      if (appMode === 'chat' || appMode === 'deep-research') {
           return (
             <ChatView 
                 {...commonProps}
@@ -593,6 +639,7 @@ const App: React.FC = () => {
                 protocol={config.protocol}
                 onPromptSelect={handleWelcomePrompt}
                 onOpenSettings={() => handleOpenSettings('profiles')}
+                appMode={appMode} // ✅ 修复：传递 appMode 给 ChatView
             />
           );
       } else {
@@ -619,7 +666,7 @@ const App: React.FC = () => {
   }
 
   // --- 主应用内容 ---
-  const MainApp = () => (
+  const mainAppElement = (
     <>
         <ImageModal 
             isOpen={!!previewImage}
@@ -738,7 +785,7 @@ const App: React.FC = () => {
         path="/*" 
         element={
           isAuthenticated ? (
-            <MainApp />
+            mainAppElement
           ) : (
             <Navigate to="/login" replace />
           )

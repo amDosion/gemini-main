@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
 import { Expand, AlertCircle, Layers, User, Bot } from 'lucide-react';
 import InputArea from '../chat/InputArea';
@@ -23,7 +23,181 @@ interface ImageExpandViewProps {
     sessionId?: string | null;  // ✅ 会话 ID，用于查询附件
 }
 
-export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
+// 优化：使用 React.memo 配合自定义比较函数，防止不必要的重新渲染
+// Optimization: Use React.memo with a custom comparison function to prevent unnecessary re-renders
+const arePropsEqual = (prevProps: ImageExpandViewProps, nextProps: ImageExpandViewProps) => {
+    // 仅比较 activeModelConfig 的 ID，避免因对象引用变化而重新渲染
+    // Only compare the ID of activeModelConfig to prevent re-renders due to object reference changes
+    if (prevProps.activeModelConfig?.id !== nextProps.activeModelConfig?.id) {
+        return false;
+    }
+
+    // 比较其他关键 props
+    // Compare other critical props
+    if (prevProps.loadingState !== nextProps.loadingState) return false;
+    if (prevProps.messages !== nextProps.messages) return false;
+    if (prevProps.sessionId !== nextProps.sessionId) return false;
+    if (prevProps.providerId !== nextProps.providerId) return false;
+
+    // 如果所有关键 props 都相等，则不重新渲染
+    // If all critical props are equal, do not re-render
+    return true;
+};
+
+type ImageExpandMainCanvasProps = {
+    loadingState: string;
+    isCompareMode: boolean;
+    activeAttachments: Attachment[];
+    activeImageUrl: string | null;
+    originalImageUrl: string | null;
+    zoom: number;
+    isDragging: boolean;
+    canvasStyle: React.CSSProperties;
+    onWheel: (e: React.WheelEvent) => void;
+    onMouseDown: (e: React.MouseEvent) => void;
+    onMouseMove: (e: React.MouseEvent) => void;
+    onMouseUp: () => void;
+    onZoomIn: (e?: React.MouseEvent) => void;
+    onZoomOut: (e?: React.MouseEvent) => void;
+    onReset: (e?: React.MouseEvent) => void;
+    onFullscreen?: () => void;
+    onToggleCompare?: () => void;
+};
+
+const ImageExpandMainCanvas = memo(({
+    loadingState,
+    isCompareMode,
+    activeAttachments,
+    activeImageUrl,
+    originalImageUrl,
+    zoom,
+    isDragging,
+    canvasStyle,
+    onWheel,
+    onMouseDown,
+    onMouseMove,
+    onMouseUp,
+    onZoomIn,
+    onZoomOut,
+    onReset,
+    onFullscreen,
+    onToggleCompare,
+}: ImageExpandMainCanvasProps) => {
+    const cursor =
+        isCompareMode ? 'default' : isDragging ? 'grabbing' : activeImageUrl ? 'grab' : 'default';
+
+    return (
+        // RIGHT MAIN: Result / Canvas
+        <div
+            className="flex-1 w-full h-full select-none flex flex-col relative"
+            onWheel={isCompareMode ? undefined : onWheel}
+            onMouseDown={isCompareMode ? undefined : onMouseDown}
+            onMouseMove={isCompareMode ? undefined : onMouseMove}
+            onMouseUp={isCompareMode ? undefined : onMouseUp}
+            onMouseLeave={isCompareMode ? undefined : onMouseUp}
+            style={{ cursor }}
+        >
+            {/* 棋盘格背景 */}
+            <div
+                className="absolute inset-0 opacity-20 pointer-events-none"
+                style={{
+                    backgroundImage: `
+                               linear-gradient(45deg, #334155 25%, transparent 25%), 
+                               linear-gradient(-45deg, #334155 25%, transparent 25%), 
+                               linear-gradient(45deg, transparent 75%, #334155 75%), 
+                               linear-gradient(-45deg, transparent 75%, #334155 75%)
+                           `,
+                    backgroundSize: '20px 20px',
+                    backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
+                }}
+            />
+
+            {/* Canvas Header */}
+            <div className="absolute top-4 left-4 z-10 pointer-events-none">
+                <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-4 py-1.5 text-xs font-medium text-slate-300 flex items-center gap-2 shadow-lg">
+                    <Expand size={12} className="text-orange-400" />
+                    {isCompareMode
+                        ? '对比模式'
+                        : activeAttachments.length > 0 && activeImageUrl === activeAttachments[0].url
+                            ? 'Source Preview'
+                            : 'Workspace'}
+                    <span className="opacity-50">|</span>
+                    <span className="font-mono text-[10px] opacity-70">{Math.round(zoom * 100)}%</span>
+                </div>
+            </div>
+
+            {/* Main Image Display */}
+            <div className="flex-1 flex items-center justify-center p-0 w-full h-full">
+                {loadingState !== 'idle' ? (
+                    <div className="flex flex-col items-center gap-4 pointer-events-none">
+                        <div className="relative">
+                            <div className="w-20 h-20 border-4 border-orange-500/30 border-t-orange-500 rounded-full animate-spin"></div>
+                        </div>
+                        <p className="text-slate-400 animate-pulse">Expanding Image...</p>
+                    </div>
+                ) : isCompareMode && originalImageUrl && activeImageUrl ? (
+                    // 对比模式
+                    <div className="relative shadow-2xl transition-transform duration-75 ease-out" style={canvasStyle}>
+                        <ImageCompare
+                            beforeImage={originalImageUrl}
+                            afterImage={activeImageUrl}
+                            beforeLabel="原图"
+                            afterLabel="扩图结果"
+                            accentColor="orange"
+                            className="max-w-none rounded-lg border border-slate-800"
+                            style={{ maxHeight: '80vh', maxWidth: '80vw' }}
+                        />
+                    </div>
+                ) : activeImageUrl ? (
+                    // 普通模式
+                    <div
+                        className="relative shadow-2xl group transition-transform duration-75 ease-out"
+                        style={canvasStyle}
+                    >
+                        <img
+                            src={activeImageUrl}
+                            className="max-w-none rounded-lg border border-slate-800 pointer-events-none"
+                            style={{ maxHeight: '80vh', maxWidth: '80vw' }}
+                            alt="Main Canvas"
+                        />
+                    </div>
+                ) : (
+                    <div className="text-center text-slate-600 pointer-events-none flex flex-col items-center gap-4 max-w-md">
+                        <Expand size={48} className="opacity-20" />
+                        <div>
+                            <h3 className="text-xl font-bold text-slate-500 mb-2">Out-Paint Workspace</h3>
+                            <p className="text-sm opacity-60">
+                                Attach an image below to start expanding. Select any image from the history to view it
+                                here.
+                            </p>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* 浮动控制按钮 */}
+            {activeImageUrl && (
+                <div className="absolute bottom-6 right-6 z-20">
+                    <ImageCanvasControls
+                        zoom={zoom}
+                        onZoomIn={onZoomIn}
+                        onZoomOut={onZoomOut}
+                        onReset={onReset}
+                        onFullscreen={onFullscreen}
+                        downloadUrl={activeImageUrl}
+                        onToggleCompare={onToggleCompare}
+                        isCompareMode={isCompareMode}
+                        accentColor="orange"
+                    />
+                </div>
+            )}
+        </div>
+    );
+});
+
+ImageExpandMainCanvas.displayName = 'ImageExpandMainCanvas';
+
+export const ImageExpandView = memo(({
     messages,
     setAppMode,
     onImageClick,
@@ -34,12 +208,39 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
     initialAttachments,
     providerId,
     sessionId: currentSessionId  // ✅ 接收 sessionId
-}) => {
+}: ImageExpandViewProps) => {
     const scrollRef = useRef<HTMLDivElement>(null);
 
     // State for reference image, synced with InputArea
     const [activeAttachments, setActiveAttachments] = useState<Attachment[]>([]);
     const [activeImageUrl, setActiveImageUrl] = useState<string | null>(null);
+
+    // Stable canvas URL (avoid relying on InputArea-managed Blob URLs that may be revoked)
+    const canvasObjectUrlRef = useRef<string | null>(null);
+    const canvasObjectUrlFileRef = useRef<File | null>(null);
+
+    const getStableCanvasUrlFromAttachment = useCallback((att: Attachment) => {
+        if (att.file) {
+            const file = att.file;
+            if (!canvasObjectUrlRef.current || canvasObjectUrlFileRef.current !== file) {
+                if (canvasObjectUrlRef.current) URL.revokeObjectURL(canvasObjectUrlRef.current);
+                canvasObjectUrlRef.current = URL.createObjectURL(file);
+                canvasObjectUrlFileRef.current = file;
+            }
+            return canvasObjectUrlRef.current;
+        }
+        return att.url || att.tempUrl || null;
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            if (canvasObjectUrlRef.current) {
+                URL.revokeObjectURL(canvasObjectUrlRef.current);
+                canvasObjectUrlRef.current = null;
+                canvasObjectUrlFileRef.current = null;
+            }
+        };
+    }, []);
 
     // Track last processed message to auto-update view
     const [lastProcessedMsgId, setLastProcessedMsgId] = useState<string | null>(null);
@@ -56,6 +257,15 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
         setIsCompareMode(false);
     }, [activeImageUrl]);
 
+    // Release any prior canvas object URL once we switch away from it (e.g. to a generated result)
+    useEffect(() => {
+        if (canvasObjectUrlRef.current && activeImageUrl !== canvasObjectUrlRef.current) {
+            URL.revokeObjectURL(canvasObjectUrlRef.current);
+            canvasObjectUrlRef.current = null;
+            canvasObjectUrlFileRef.current = null;
+        }
+    }, [activeImageUrl]);
+
     // 获取原图 URL（用于对比）
     const originalImageUrl = useMemo(() => {
         const lastUserMsg = [...messages].reverse().find(m => m.role === Role.USER && m.attachments?.length);
@@ -67,16 +277,16 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
     useEffect(() => {
         if (initialAttachments && initialAttachments.length > 0) {
             setActiveAttachments(initialAttachments);
-            setActiveImageUrl(initialAttachments[0].url || null);
+            setActiveImageUrl(getStableCanvasUrlFromAttachment(initialAttachments[0]));
         }
-    }, [initialAttachments]);
+    }, [initialAttachments, getStableCanvasUrlFromAttachment]);
 
     // Sync uploaded attachment to main view immediately
     useEffect(() => {
-        if (activeAttachments.length > 0 && activeAttachments[0].url) {
-            setActiveImageUrl(activeAttachments[0].url);
+        if (activeAttachments.length > 0) {
+            setActiveImageUrl(getStableCanvasUrlFromAttachment(activeAttachments[0]));
         }
-    }, [activeAttachments]);
+    }, [activeAttachments, getStableCanvasUrlFromAttachment]);
 
     // Auto-scroll to bottom of history
     useEffect(() => {
@@ -112,34 +322,35 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
     }, [messages, activeAttachments.length, loadingState, lastProcessedMsgId, activeImageUrl]);
 
     const handleSend = async (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => {
-        console.log('========== [ImageExpandView] handleSend 开始 ==========');
-        console.log('[handleSend] 用户上传的附件数量:', attachments.length);
+        try {
+            console.log('========== [ImageExpandView] handleSend 开始 ==========');
+            console.log('[handleSend] 用户上传的附件数量:', attachments.length);
 
-        // 使用统一的附件处理函数
-        const finalAttachments = await processUserAttachments(
-            attachments,
-            activeImageUrl,
-            messages,
-            currentSessionId,
-            'expand'
-        );
+            // 使用统一的附件处理函数
+            const finalAttachments = await processUserAttachments(
+                attachments,
+                activeImageUrl,
+                messages,
+                currentSessionId,
+                'expand'
+            );
 
-        console.log('[handleSend] 最终附件数量:', finalAttachments.length);
-        console.log('========== [ImageExpandView] handleSend 结束 ==========');
-        onSend(text, options, finalAttachments, mode);
+            console.log('[handleSend] 最终附件数量:', finalAttachments.length);
+            console.log('========== [ImageExpandView] handleSend 结束 ==========');
+            onSend(text, options, finalAttachments, mode);
+        } catch (error) {
+            console.error('[ImageExpandView] handleSend 处理附件失败:', error);
+            alert('处理附件失败，请重试');
+            return;
+        }
     };
 
     // Mobile History Toggle
     const [isMobileHistoryOpen, setIsMobileHistoryOpen] = useState(false);
 
-    return (
-        <GenViewLayout
-            isMobileHistoryOpen={isMobileHistoryOpen}
-            setIsMobileHistoryOpen={setIsMobileHistoryOpen}
-            sidebarTitle="History"
-            sidebarHeaderIcon={<Layers size={14} />}
-            sidebarContent={
-                <div className="flex-1 p-4 space-y-6">
+    // 使用 useMemo 缓存 sidebarContent，防止不必要的重新渲染
+    const sidebarContent = useMemo(() => (
+        <div className="flex-1 p-4 space-y-6">
                     {messages.map((msg) => {
                         // Filter out empty placeholders
                         const isPlaceholder = !msg.content && (!msg.attachments || msg.attachments.length === 0) && !msg.isError;
@@ -197,113 +408,37 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
                     {/* Dummy div for scroll ref */}
                     <div ref={scrollRef} />
                 </div>
-            }
-            mainContent={
-                // RIGHT MAIN: Result / Canvas
-                <div
-                    className="flex-1 w-full h-full select-none flex flex-col relative"
-                    onWheel={isCompareMode ? undefined : canvas.handleWheel}
-                    onMouseDown={isCompareMode ? undefined : canvas.handleMouseDown}
-                    onMouseMove={isCompareMode ? undefined : canvas.handleMouseMove}
-                    onMouseUp={isCompareMode ? undefined : canvas.handleMouseUp}
-                    onMouseLeave={isCompareMode ? undefined : canvas.handleMouseUp}
-                    style={{ cursor: isCompareMode ? 'default' : canvas.isDragging ? 'grabbing' : activeImageUrl ? 'grab' : 'default' }}
-                >
-                    {/* 棋盘格背景 */}
-                    <div className="absolute inset-0 opacity-20 pointer-events-none"
-                        style={{
-                            backgroundImage: `
-                               linear-gradient(45deg, #334155 25%, transparent 25%), 
-                               linear-gradient(-45deg, #334155 25%, transparent 25%), 
-                               linear-gradient(45deg, transparent 75%, #334155 75%), 
-                               linear-gradient(-45deg, transparent 75%, #334155 75%)
-                           `,
-                            backgroundSize: '20px 20px',
-                            backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px'
-                        }}
-                    />
+    ), [messages, loadingState, activeImageUrl, activeAttachments]);
 
-                    {/* Canvas Header */}
-                    <div className="absolute top-4 left-4 z-10 pointer-events-none">
-                        <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-4 py-1.5 text-xs font-medium text-slate-300 flex items-center gap-2 shadow-lg">
-                            <Expand size={12} className="text-orange-400" />
-                            {isCompareMode ? '对比模式' : activeAttachments.length > 0 && activeImageUrl === activeAttachments[0].url ? 'Source Preview' : 'Workspace'}
-                            <span className="opacity-50">|</span>
-                            <span className="font-mono text-[10px] opacity-70">{Math.round(canvas.zoom * 100)}%</span>
-                        </div>
-                    </div>
+    const toggleCompare = useCallback(() => setIsCompareMode(prev => !prev), []);
+    const handleFullscreen = useCallback(() => {
+        if (activeImageUrl) onImageClick(activeImageUrl);
+    }, [activeImageUrl, onImageClick]);
 
-                    {/* Main Image Display */}
-                    <div className="flex-1 flex items-center justify-center p-0 w-full h-full">
-                        {loadingState !== 'idle' ? (
-                            <div className="flex flex-col items-center gap-4 pointer-events-none">
-                                <div className="relative">
-                                    <div className="w-20 h-20 border-4 border-orange-500/30 border-t-orange-500 rounded-full animate-spin"></div>
-                                </div>
-                                <p className="text-slate-400 animate-pulse">Expanding Image...</p>
-                            </div>
-                        ) : isCompareMode && originalImageUrl && activeImageUrl ? (
-                            // 对比模式
-                            <div
-                                className="relative shadow-2xl transition-transform duration-75 ease-out"
-                                style={canvas.canvasStyle}
-                            >
-                                <ImageCompare
-                                    beforeImage={originalImageUrl}
-                                    afterImage={activeImageUrl}
-                                    beforeLabel="原图"
-                                    afterLabel="扩图结果"
-                                    accentColor="orange"
-                                    className="max-w-none rounded-lg border border-slate-800"
-                                    style={{ maxHeight: '80vh', maxWidth: '80vw' }}
-                                />
-                            </div>
-                        ) : activeImageUrl ? (
-                            // 普通模式
-                            <div
-                                className="relative shadow-2xl group transition-transform duration-75 ease-out"
-                                style={canvas.canvasStyle}
-                            >
-                                <img
-                                    src={activeImageUrl}
-                                    className="max-w-none rounded-lg border border-slate-800 pointer-events-none"
-                                    style={{ maxHeight: '80vh', maxWidth: '80vw' }}
-                                    alt="Main Canvas"
-                                />
-                            </div>
-                        ) : (
-                            <div className="text-center text-slate-600 pointer-events-none flex flex-col items-center gap-4 max-w-md">
-                                <Expand size={48} className="opacity-20" />
-                                <div>
-                                    <h3 className="text-xl font-bold text-slate-500 mb-2">Out-Paint Workspace</h3>
-                                    <p className="text-sm opacity-60">
-                                        Attach an image below to start expanding.
-                                        Select any image from the history to view it here.
-                                    </p>
-                                </div>
-                            </div>
-                        )}
-                    </div>
+    const mainContent = (
+        <ImageExpandMainCanvas
+            loadingState={loadingState}
+            isCompareMode={isCompareMode}
+            activeAttachments={activeAttachments}
+            activeImageUrl={activeImageUrl}
+            originalImageUrl={originalImageUrl}
+            zoom={canvas.zoom}
+            isDragging={canvas.isDragging}
+            canvasStyle={canvas.canvasStyle}
+            onWheel={canvas.handleWheel}
+            onMouseDown={canvas.handleMouseDown}
+            onMouseMove={canvas.handleMouseMove}
+            onMouseUp={canvas.handleMouseUp}
+            onZoomIn={canvas.handleZoomIn}
+            onZoomOut={canvas.handleZoomOut}
+            onReset={canvas.handleReset}
+            onFullscreen={activeImageUrl ? handleFullscreen : undefined}
+            onToggleCompare={originalImageUrl ? toggleCompare : undefined}
+        />
+    );
 
-                    {/* 浮动控制按钮 */}
-                    {activeImageUrl && (
-                        <div className="absolute bottom-6 right-6 z-20">
-                            <ImageCanvasControls
-                                zoom={canvas.zoom}
-                                onZoomIn={canvas.handleZoomIn}
-                                onZoomOut={canvas.handleZoomOut}
-                                onReset={canvas.handleReset}
-                                onFullscreen={() => onImageClick(activeImageUrl)}
-                                downloadUrl={activeImageUrl}
-                                onToggleCompare={originalImageUrl ? () => setIsCompareMode(!isCompareMode) : undefined}
-                                isCompareMode={isCompareMode}
-                                accentColor="orange"
-                            />
-                        </div>
-                    )}
-                </div>
-            }
-            bottomContent={
+    // 使用 useMemo 缓存 bottomContent，防止不必要的重新渲染
+    const bottomContent = useMemo(() => (
                 <InputArea
                     onSend={handleSend}
                     isLoading={loadingState !== 'idle'}
@@ -318,7 +453,27 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
                     // ✅ 当 workspace 中有图片时，允许发送（CONTINUITY LOGIC 会自动使用该图片）
                     hasActiveContext={!!activeImageUrl}
                 />
-            }
+    ), [
+        handleSend,
+        loadingState,
+        onStop,
+        activeModelConfig,
+        setAppMode,
+        activeAttachments,
+        setActiveAttachments,
+        providerId,
+        activeImageUrl
+    ]);
+
+    return (
+        <GenViewLayout
+            isMobileHistoryOpen={isMobileHistoryOpen}
+            setIsMobileHistoryOpen={setIsMobileHistoryOpen}
+            sidebarTitle="History"
+            sidebarHeaderIcon={<Layers size={14} />}
+            sidebarContent={sidebarContent}
+            mainContent={mainContent}
+            bottomContent={bottomContent}
         />
     );
-};
+}, arePropsEqual);

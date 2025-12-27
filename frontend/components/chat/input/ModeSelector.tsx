@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { MessageSquare, Wand2, Crop, Expand, PlaySquare, Mic, FileText, Shirt } from 'lucide-react';
+import { MessageSquare, Wand2, Crop, Expand, PlaySquare, Mic, FileText, Shirt, Search } from 'lucide-react';
 import { AppMode, ModelConfig } from '../../../types/types';
 
 interface ModeSelectorProps {
@@ -11,9 +11,29 @@ interface ModeSelectorProps {
 
 export const ModeSelector: React.FC<ModeSelectorProps> = ({ mode, setMode, currentModel }) => {
   const canGenImage = currentModel?.capabilities.vision || false;
+  
+  // 增强 Deep Research 检测逻辑
+  const modelName = currentModel?.name || currentModel?.id || '';
+  const modelNameLower = modelName.toLowerCase();
+  const canDeepResearch = modelNameLower.includes('deep-research') || 
+                          modelNameLower.includes('deep research') ||
+                          modelNameLower.includes('deepresearch');
+  
+  // 调试日志
+  React.useEffect(() => {
+    if (currentModel) {
+      console.log('[ModeSelector] 当前模型:', {
+        id: currentModel.id,
+        name: currentModel.name,
+        modelNameLower,
+        canDeepResearch
+      });
+    }
+  }, [currentModel, modelNameLower, canDeepResearch]);
 
   const modes = [
     { id: 'chat', label: 'Chat', icon: MessageSquare, disabled: false, color: 'bg-indigo-600' },
+    { id: 'deep-research', label: 'Research', icon: Search, disabled: !canDeepResearch, color: 'bg-blue-600' },
     { id: 'image-gen', label: 'Gen', icon: Wand2, disabled: !canGenImage, color: 'bg-emerald-600' },
     { id: 'image-edit', label: 'Edit', icon: Crop, disabled: !canGenImage, color: 'bg-pink-600' },
     { id: 'virtual-try-on', label: 'Try-On', icon: Shirt, disabled: !canGenImage, color: 'bg-rose-600' },

@@ -35,6 +35,8 @@ class User(Base):
     sessions = relationship("ChatSessionV2", back_populates="user", cascade="all, delete-orphan")
 ```
 
+
+
 #### ChatSessionV2 表
 
 ```python
@@ -53,6 +55,8 @@ class ChatSessionV2(Base):
     user = relationship("User", back_populates="sessions")
     messages = relationship("MessageV2", back_populates="session", cascade="all, delete-orphan", order_by="MessageV2.timestamp")
 ```
+
+
 
 #### MessageV2 表
 
@@ -77,6 +81,8 @@ class MessageV2(Base):
     session = relationship("ChatSessionV2", back_populates="messages")
     attachments = relationship("AttachmentV2", back_populates="message", cascade="all, delete-orphan")
 ```
+
+
 
 #### AttachmentV2 表（优化后 - 只保留云存储 URL）
 
@@ -114,6 +120,8 @@ class AttachmentV2(Base):
         }
 ```
 
+
+
 ### 1.3 索引设计（优化后）
 
 ```sql
@@ -133,6 +141,8 @@ CREATE INDEX ix_messages_timestamp ON messages_v2(timestamp DESC);
 CREATE INDEX ix_attachments_message ON attachments_v2(message_id);
 CREATE INDEX ix_attachments_status ON attachments_v2(upload_status) WHERE upload_status != 'completed';  -- ✅ 部分索引，优化上传状态查询
 ```
+
+
 
 ## 二、服务层实现
 
@@ -196,5 +206,6 @@ def _clean_attachment_for_storage(self, att_data: dict) -> dict:
 
 清理附件数据用于存储：
 
-        - 只保留云存储 URL
-        - 移除临时字段（file, tempUrl, bas
+    - 只保留云存储 URL
+
+```

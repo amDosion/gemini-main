@@ -14,6 +14,7 @@ import {
   UploadTaskResult
 } from './types';
 import { Attachment } from '../../types/types';
+import { db } from '../../services/db'; // 静态 import，避免动态 import 的性能开销
 
 /**
  * BaseHandler 抽象基类
@@ -173,6 +174,8 @@ export abstract class BaseHandler implements ModeHandler {
    * 启动上传状态轮询
    * 使用全局 PollingManager 管理轮询任务（修复问题1）
    * 修复问题7：使用 .catch() 捕获 Promise rejection
+   * 
+   * 长期方案：上传完成后更新数据库中的 tempUrl，但不刷新前端显示
    */
   protected startUploadPolling(
     attachments: Attachment[],
@@ -190,13 +193,58 @@ export abstract class BaseHandler implements ModeHandler {
             const status = await context.storageService.getUploadTaskStatus(taskId);
             return status;
           },
-          onSuccess: (taskId, result) => {
-            // 更新附件状态
-            context.onProgressUpdate?.({
-              attachmentId: attachment.id,
-              status: 'completed',
-              progress: 100
-            });
+          onSuccess: async (taskId, result) => {
+            // ============================================================
+            // 长期方案：上传完成后更新数据库中的 tempUrl
+            // 只更新数据库，不调用 context.onProgressUpdate()，避免前端重新渲染
+            // ============================================================
+            if (result && result.url) {
+              try {
+                console.log('[BaseHandler] 上传完成，更新数据库 tempUrl:', {
+                  attachmentId: attachment.id,
+                  cloudUrl: result.url.substring(0, 60) + '...'
+                });
+                
+                // ============================================================
+                // 确定附件所属的消息 ID
+                // 策略：先尝试 modelMessageId（大多数情况），如果失败则尝试 userMessageId
+                // ============================================================
+                const messageIds = [context.modelMessageId, context.userMessageId];
+                let updateSuccess = false;
+                
+                for (const messageId of messageIds) {
+                  try {
+                    await db.updateAttachmentUrl(
+                      context.sessionId,
+                      messageId,
+                      attachment.id,
+                      result.url
+                    );
+                    console.log('[BaseHandler] ✅ 数据库 tempUrl 更新成功, messageId:', messageId.substring(0, 8) + '...');
+                    updateSuccess = true;
+                    break; // 成功后退出循环
+                  } catch (e) {
+                    console.warn('[BaseHandler] ⚠️ 尝试更新 messageId 失败:', messageId.substring(0, 8) + '...', e);
+                    // 继续尝试下一个 messageId
+                  }
+                }
+                
+                if (!updateSuccess) {
+                  console.error('[BaseHandler] ❌ 所有 messageId 尝试都失败');
+                }
+              } catch (dbError) {
+                console.error('[BaseHandler] ⚠️ 更新数据库 tempUrl 失败:', dbError);
+                // 不影响主流程，继续执行
+              }
+            }
+            
+            // 原有逻辑：通知前端上传完成（可选，根据需求决定是否保留）
+            // 注释掉以避免前端重新渲染
+            // context.onProgressUpdate?.({
+            //   attachmentId: attachment.id,
+            //   status: 'completed',
+            //   progress: 100
+            // });
           },
           onFailure: (taskId, error) => {
             // 更新附件状态为失败

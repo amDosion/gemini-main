@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Message, Role } from '../../types/types';
+import { Message, Role, ToolCall, ToolResult } from '../../types/types';
 import MarkdownRenderer from './MarkdownRenderer';
 import { Bot, User, AlertCircle, Copy, Check, Download } from 'lucide-react';
 import { useMessageProcessor } from '../../hooks/useMessageProcessor';
@@ -10,6 +10,7 @@ import { GroundingSources } from '../message/GroundingSources';
 import { UrlContextStatus } from '../message/UrlContextStatus';
 import { AttachmentGrid } from '../message/AttachmentGrid';
 import { BrowserProgressIndicator } from '../message/BrowserProgressIndicator';
+import ToolCallDisplay from './ToolCallDisplay';
 
 interface MessageItemProps {
   message: Message;
@@ -131,25 +132,53 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, onImageClick, onEdit
                     <BrowserProgressIndicator operationId={message.browserOperationId} />
                  )}
 
-                 {/* 4. Main Text Content */}
+                 {/* 4. Main Text Content with Cursor */}
                  {(displayContent || showMainCursor) && (
-                    <MarkdownRenderer 
-                        content={displayContent} 
-                        isStreaming={showMainCursor} 
-                    />
+                    <div className="inline-flex items-end min-w-0">
+                      <div className="min-w-0">
+                        <MarkdownRenderer content={displayContent} />
+                      </div>
+                      {showMainCursor && (
+                        <span 
+                          className="inline-block w-0.5 h-4 ml-0.5 bg-indigo-400 animate-pulse align-middle"
+                          style={{ animationDuration: '1s' }}
+                        />
+                      )}
+                    </div>
                  )}
 
-                 {/* 5. Grounding / Sources */}
+                 {/* 5. Tool Calls */}
+                 {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
+                     <div className="flex flex-col gap-2">
+                         {message.toolCalls.map((toolCall) => {
+                             const toolResult = message.toolResults?.find(
+                                 (result) => result.call_id === toolCall.id
+                             );
+                             const isToolExecuting = !toolResult && isStreaming;
+
+                             return (
+                                 <ToolCallDisplay
+                                     key={toolCall.id}
+                                     toolCall={toolCall}
+                                     toolResult={toolResult}
+                                     isExecuting={isToolExecuting}
+                                 />
+                             );
+                         })}
+                     </div>
+                 )}
+
+                 {/* 6. Grounding / Sources */}
                  {!isUser && hasGroundingChunks && (
                     <GroundingSources chunks={groundingChunks} />
                  )}
 
-                 {/* 6. URL Context Status */}
+                 {/* 7. URL Context Status */}
                  {!isUser && hasUrlContext && (
                     <UrlContextStatus metadata={urlContextMetadata} />
                  )}
                  
-                 {/* 7. Attachments (Images, Videos, Files) */}
+                 {/* 8. Attachments (Images, Videos, Files) */}
                  {message.attachments && message.attachments.length > 0 && (
                     <AttachmentGrid 
                         attachments={message.attachments} 

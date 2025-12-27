@@ -88,45 +88,71 @@ export const isCloudStorageUrl = (url: string | undefined): boolean => {
  * @param verbose 是否输出详细日志（默认 false）
  */
 export const cleanAttachmentsForDb = (atts: Attachment[], verbose: boolean = false): Attachment[] => {
+  // 1. Input Validation: Add early return for undefined, null, or non-array inputs.
+  if (!atts || !Array.isArray(atts)) {
+    if (verbose) console.log('[cleanAttachmentsForDb] Input atts is invalid, returning empty array.');
+    return [];
+  }
+
   return atts.map(att => {
     const cleaned = { ...att };
     const url = cleaned.url || '';
-    
-    // 如果已上传到云存储，保持不变
-    if (cleaned.uploadStatus === 'completed' && isHttpUrl(url)) {
-      // 已上传，保持不变
-    }
-    // 如果是 Blob URL，清空（不能持久化）
-    else if (isBlobUrl(url)) {
-      if (verbose) console.log('[cleanAttachmentsForDb] ⚠️ 发现 Blob URL，清空');
+
+    // Blob URLs are always temporary and cannot be persisted.
+    if (isBlobUrl(url)) {
+      if (verbose) console.log('[cleanAttachmentsForDb] ⚠️ Clearing Blob URL.');
       cleaned.url = '';
       cleaned.uploadStatus = 'pending';
-    }
-    // 如果是 Base64 URL，清空（避免数据库存储过大）
+    } 
+    // Base64 URLs are too large for the database and must be cleared.
     else if (isBase64Url(url)) {
-      if (verbose) console.log('[cleanAttachmentsForDb] ⚠️ 发现 Base64 URL，清空');
+      if (verbose) console.log('[cleanAttachmentsForDb] ⚠️ Clearing Base64 URL.');
       cleaned.url = '';
       cleaned.uploadStatus = 'pending';
+    } 
+    // For HTTP URLs, apply more specific rules.
+    else if (isHttpUrl(url)) {
+      // 1. If upload is marked 'completed', trust it and preserve. This is a permanent cloud URL.
+      if (cleaned.uploadStatus === 'completed') {
+        if (verbose) console.log('[cleanAttachmentsForDb] ✅ Preserving completed cloud URL.');
+        // Status and URL are correct, no changes needed.
+      }
+      // 2. If it has an uploadTaskId, it's an in-progress upload. Preserve URL but ensure status is 'pending'.
+      else if ((cleaned as any).uploadTaskId) {
+        if (verbose) console.log('[cleanAttachmentsForDb] ⏳ Preserving URL for attachment with active upload task.');
+        cleaned.uploadStatus = 'pending';
+      }
+      // 3. If the URL contains temporary patterns, it's an expiring link and must be cleared.
+      else if (url.includes('/temp/') || url.includes('expires=')) {
+        if (verbose) console.log('[cleanAttachmentsForDb] 🗑️ Clearing temporary HTTP URL:', url);
+        cleaned.url = '';
+        cleaned.uploadStatus = 'pending'; // Mark for potential re-upload.
+      }
+      // 4. For any other HTTP URL (e.g., from an external source), preserve it but mark as 'pending' for review or upload.
+      else {
+        if (verbose) console.log('[cleanAttachmentsForDb] ⚠️ Marking unknown HTTP URL as pending.');
+        cleaned.uploadStatus = 'pending';
+      }
     }
-    // 其他 HTTP URL（可能是临时 URL），保留但标记为 pending
-    else if (isHttpUrl(url) && cleaned.uploadStatus !== 'completed') {
-      if (verbose) console.log('[cleanAttachmentsForDb] ⚠️ 发现未完成上传的 HTTP URL');
-      cleaned.uploadStatus = 'pending';
-    }
-    
-    // 清除 File 对象（不能序列化）
+
+    // Always remove non-serializable File objects and temporary base64 data.
     delete cleaned.file;
-    // 清除 base64Data（仅用于 API 调用，不需要持久化到数据库）
     delete (cleaned as any).base64Data;
     
-    // 处理 tempUrl：保留 HTTP URL（用于跨模式查找），清空 Base64/Blob
+    // 2. tempUrl Temporary URL Detection:
+    // Clean up tempUrl: only preserve it if it's a valid, non-temporary HTTP URL.
+    // If uploadTaskId exists, it means the upload is in progress, so preserve the tempUrl.
     if (cleaned.tempUrl) {
-      if (isBase64Url(cleaned.tempUrl) || isBlobUrl(cleaned.tempUrl)) {
-        // Base64/Blob 太大，不能持久化，但保留空字符串作为标记
-        // 这样 findAttachmentByUrl 可以通过 url 字段匹配
-        delete cleaned.tempUrl;
+      if (!isHttpUrl(cleaned.tempUrl) || (cleaned.tempUrl.includes('/temp/') || cleaned.tempUrl.includes('expires='))) {
+        // Only clear tempUrl if there's no active upload task associated with it.
+        if ((cleaned as any).uploadTaskId) {
+          if (verbose) console.log('[cleanAttachmentsForDb] ⏳ Preserving temporary tempUrl due to active upload task:', cleaned.tempUrl);
+          // Do nothing, preserve it
+        } else {
+          if (verbose) console.log('[cleanAttachmentsForDb] 🗑️ Clearing temporary tempUrl:', cleaned.tempUrl);
+          delete cleaned.tempUrl;
+        }
       }
-      // HTTP URL 保留，用于跨模式传递时查找
     }
     
     return cleaned;
@@ -236,13 +262,18 @@ export const uploadToCloudStorage = async (
 // ============================================================
 
 /**
- * 将任意来源转换为 File 对象（统一转换函数）
+ * 将任意来源转换为 File 对象（统一转换函数，带降级策略）
  * 
  * 支持的输入类型：
  * - File 对象：直接返回
  * - Base64 URL：fetch 后转换
  * - Blob URL：fetch 后转换
- * - HTTP URL：通过后端代理下载后转换
+ * - HTTP URL：通过后端代理下载后转换（带 3 层降级策略）
+ * 
+ * 降级策略（仅针对 HTTP URL）：
+ * 1. 策略 1：通过后端代理下载（解决 CORS）
+ * 2. 策略 2：直接下载（绕过代理）
+ * 3. 策略 3：使用 urlToFile 函数
  * 
  * @param source 图片来源（File 或 URL 字符串）
  * @param filename 目标文件名
@@ -260,19 +291,64 @@ export const sourceToFile = async (
   }
 
   const url = source;
-  let fetchUrl = url;
 
-  // HTTP URL 需要通过后端代理下载（解决 CORS）
-  if (isHttpUrl(url)) {
-    fetchUrl = `/api/storage/download?url=${encodeURIComponent(url)}`;
+  // 对于非 HTTP URL（Base64, Blob），直接使用 urlToFile
+  if (!isHttpUrl(url)) {
+    return await urlToFile(url, filename, mimeType);
   }
 
-  const response = await fetch(fetchUrl);
-  if (!response.ok) {
-    throw new Error(`下载失败: HTTP ${response.status}`);
+  // HTTP URL：使用 3 层降级策略
+  console.log('[sourceToFile] 开始 HTTP URL 下载，使用降级策略');
+
+  // ============================================================
+  // 策略 1：通过后端代理下载（解决 CORS）
+  // ============================================================
+  try {
+    const proxyUrl = `/api/storage/download?url=${encodeURIComponent(url)}`;
+    console.log('[sourceToFile] 策略 1：尝试后端代理下载');
+    const response = await fetch(proxyUrl);
+    if (!response.ok) {
+      throw new Error(`Proxy failed: HTTP ${response.status} ${response.statusText}`);
+    }
+    const blob = await response.blob();
+    console.log('[sourceToFile] ✅ 策略 1 成功');
+    return new File([blob], filename, { type: mimeType || blob.type || 'image/png' });
+  } catch (e) {
+    console.warn('[sourceToFile] ⚠️ 策略 1（后端代理）失败:', e);
   }
-  const blob = await response.blob();
-  return new File([blob], filename, { type: mimeType || blob.type || 'image/png' });
+
+  // ============================================================
+  // 策略 2：直接下载（绕过代理）
+  // ============================================================
+  try {
+    console.log('[sourceToFile] 策略 2：尝试直接下载');
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Direct download failed: HTTP ${response.status} ${response.statusText}`);
+    }
+    const blob = await response.blob();
+    console.log('[sourceToFile] ✅ 策略 2 成功');
+    return new File([blob], filename, { type: mimeType || blob.type || 'image/png' });
+  } catch (e) {
+    console.warn('[sourceToFile] ⚠️ 策略 2（直接下载）失败:', e);
+  }
+
+  // ============================================================
+  // 策略 3：使用 urlToFile 函数（最后的备选方案）
+  // ============================================================
+  try {
+    console.log('[sourceToFile] 策略 3：尝试 urlToFile 函数');
+    const file = await urlToFile(url, filename, mimeType);
+    console.log('[sourceToFile] ✅ 策略 3 成功');
+    return file;
+  } catch (e) {
+    console.error('[sourceToFile] ❌ 策略 3（urlToFile）失败:', e);
+  }
+
+  // ============================================================
+  // 所有策略都失败
+  // ============================================================
+  throw new Error(`[sourceToFile] All strategies failed for URL: ${url.substring(0, 100)}...`);
 };
 
 /**
@@ -280,11 +356,16 @@ export const sourceToFile = async (
  * 
  * 用于 CONTINUITY LOGIC：当本地 URL 不是云存储 URL 时，查询后端获取
  * 
+ * 语义约定 (Semantic Contract):
+ * - 返回值 (Return Value): 此函数返回的是一个 **永久性** 的云存储 URL。
+ * - 调用方责任 (Caller's Responsibility): 调用方 **必须** 将返回的 URL 保存到附件的 `url` 字段，而不是 `tempUrl` 字段。
+ * - 理由 (Reason): 将永久 URL 存储在 `url` 字段是确保数据一致性和避免在后续操作中重复上传或下载的关键。
+ * 
  * @param sessionId 会话 ID
  * @param attachmentId 附件 ID
  * @param currentUrl 当前 URL
  * @param currentStatus 当前上传状态
- * @returns 云存储 URL 和状态，或 null
+ * @returns 包含永久云存储 URL 和状态的对象，如果无法获取则返回 null。
  */
 export const tryFetchCloudUrl = async (
   sessionId: string | null,
@@ -308,7 +389,8 @@ export const tryFetchCloudUrl = async (
 
   const backendData = await fetchAttachmentStatus(sessionId, attachmentId);
 
-  if (backendData && isHttpUrl(backendData.url)) {
+  // 修正 (FIX): 确保后端返回的是一个有效的、非临时的 HTTP URL
+  if (backendData && isHttpUrl(backendData.url) && backendData.uploadStatus === 'completed') {
     console.log('[tryFetchCloudUrl] ✅ 获取到云 URL:', backendData.url.substring(0, 60));
     return {
       url: backendData.url,
@@ -332,21 +414,51 @@ export const urlToBase64 = async (url: string): Promise<string> => {
   if (isBase64Url(url)) {
     return url;
   }
-  
+
   let fetchUrl = url;
   if (isHttpUrl(url)) {
     // HTTP URL 需要通过后端代理下载（解决 CORS）
     fetchUrl = `/api/storage/download?url=${encodeURIComponent(url)}`;
   }
-  
+
   const response = await fetch(fetchUrl);
-  const blob = await response.blob();
+  if (!response.ok) {
+    throw new Error(`Failed to fetch from ${url}. HTTP status: ${response.status} ${response.statusText}`);
+  }
   
+  const blob = await response.blob();
+
+  // Validate MIME type
+  if (!blob.type) {
+    console.warn(`[urlToBase64] Blob type is empty for URL: ${url}. Proceeding, but this may indicate an issue.`);
+  } else if (!blob.type.startsWith('image/')) {
+    // We are more strict here as Base64 conversion is often for image display
+    throw new Error(`[urlToBase64] Unsupported MIME type: ${blob.type}. This function currently only supports image types.`);
+  }
+
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => resolve(reader.result as string);
-    reader.onerror = reject;
+    // Enhance error handling with more context
+    reader.onerror = (error) => reject(new Error(`[urlToBase64] FileReader failed for URL ${url}: ${error}`));
     reader.readAsDataURL(blob);
+  });
+};
+
+/**
+ * 将 File 对象转换为 Base64 Data URL
+ * - 不依赖 Blob URL，避免因 URL.revokeObjectURL 导致读取失败
+ */
+export const fileToBase64 = async (file: File): Promise<string> => {
+  if (!file) {
+    throw new Error('[fileToBase64] File is required.');
+  }
+
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = (error) => reject(new Error(`[fileToBase64] FileReader failed for file ${file.name}: ${error}`));
+    reader.readAsDataURL(file);
   });
 };
 
@@ -359,13 +471,30 @@ export const urlToFile = async (
   filename: string, 
   mimeType?: string
 ): Promise<File> => {
+  // 1. Validate filename
+  if (!filename || filename.trim() === '') {
+    throw new Error('[urlToFile] Filename cannot be empty.');
+  }
+
   let fetchUrl = url;
   if (isHttpUrl(url)) {
     fetchUrl = `/api/storage/download?url=${encodeURIComponent(url)}`;
   }
   
   const response = await fetch(fetchUrl);
+  // 2. Add HTTP error check
+  if (!response.ok) {
+    throw new Error(`Failed to fetch from ${url}. HTTP status: ${response.status} ${response.statusText}`);
+  }
+
   const blob = await response.blob();
+
+  // 3. Warn if blob type is missing
+  if (!blob.type) {
+    console.warn(`[urlToFile] Blob type is empty for URL: ${url}. Will use provided mimeType or fallback to 'image/png'.`);
+  }
+
+  // 4. Create and return the file
   return new File([blob], filename, { type: mimeType || blob.type || 'image/png' });
 };
 
@@ -385,19 +514,25 @@ export const urlToFile = async (
  * 云存储 URL 需要通过 fetchAttachmentStatus 从后端 upload_tasks 表获取
  */
 export const findAttachmentByUrl = (
-  targetUrl: string, 
+  targetUrl: string,
   messages: Message[]
 ): { attachment: Attachment; messageId: string } | null => {
-  const urlType = isBase64Url(targetUrl) ? 'Base64' : 
-                  isBlobUrl(targetUrl) ? 'Blob' : 
+  // 1. Edge Case: Add early return if targetUrl is empty or falsy.
+  if (!targetUrl) {
+    return null;
+  }
+
+  const urlType = isBase64Url(targetUrl) ? 'Base64' :
+                  isBlobUrl(targetUrl) ? 'Blob' :
                   isHttpUrl(targetUrl) ? 'HTTP' : '未知';
   
   console.log('[findAttachmentByUrl] 开始查找, targetUrl 类型:', urlType);
   
-  // 遍历消息（从最新到最旧）
-  for (const msg of [...messages].reverse()) {
+  // 2. Performance: Use a reverse for-loop to avoid copying the array.
+  // 策略 1：精确匹配 url 或 tempUrl（最可靠）
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
     for (const att of msg.attachments || []) {
-      // 策略 1：精确匹配 url 或 tempUrl（最可靠的匹配方式）
       if (att.url === targetUrl || att.tempUrl === targetUrl) {
         console.log('[findAttachmentByUrl] ✅ 精确匹配成功:', {
           id: att.id,
@@ -410,19 +545,25 @@ export const findAttachmentByUrl = (
     }
   }
   
-  // 策略 4：如果是 Blob URL 且未找到精确匹配，尝试找最近的图片附件
-  // 这是一个兜底策略，用于处理 Blob URL 无法精确匹配的情况
+  // 策略 2：如果是 Blob URL 且未找到精确匹配，尝试找最近的有效云端图片附件作为兜底
+  // 3. Fallback Strategy: Keep the strict fallback, but use the performant loop.
   if (isBlobUrl(targetUrl)) {
-    console.log('[findAttachmentByUrl] Blob URL 未精确匹配，尝试查找最近的图片附件');
-    for (const msg of [...messages].reverse()) {
+    console.log('[findAttachmentByUrl] Blob URL 未精确匹配，尝试查找最近的有效云端图片附件作为兜底');
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
       for (const att of msg.attachments || []) {
-        // 只匹配图片类型的附件
-        if (att.mimeType?.startsWith('image/') && att.id) {
-          console.log('[findAttachmentByUrl] ✅ 找到最近的图片附件（兜底策略）:', {
+        // Strict check: Only return valid, uploaded cloud attachments.
+        if (
+          att.mimeType?.startsWith('image/') &&
+          att.id &&
+          att.uploadStatus === 'completed' &&
+          isHttpUrl(att.url)
+        ) {
+          console.log('[findAttachmentByUrl] ✅ 找到最近的有效云端图片附件（兜底策略）:', {
             id: att.id,
             messageId: msg.id,
-            uploadStatus: att.uploadStatus,
-            hasUploadTaskId: !!(att as any).uploadTaskId
+            url: att.url,
+            uploadStatus: att.uploadStatus
           });
           return { attachment: att, messageId: msg.id };
         }
@@ -475,85 +616,40 @@ export const fetchAttachmentStatus = async (
 /**
  * 准备附件供 API 调用（CONTINUITY LOGIC 核心函数）
  * 
- * 当用户没有上传新图片时，自动使用当前画布上的图片作为输入。
- * 处理流程：
- * 1. 先尝试从历史消息中查找已有附件（复用云 URL）
- * 2. 如果找到，检查 uploadStatus，必要时查询后端获取最新 URL
- * 3. 如果未找到，根据 URL 类型直接处理
- * 4. 准备 base64Data 供 API 调用
- * 
- * 注意：
- * - Google 提供商需要 base64Data
- * - Tongyi 提供商可以直接使用云 URL，不需要 base64Data
+ * 语义修复 (Semantic Fix):
+ * - 原始问题 (Original Issue): 此函数错误地将获取到的永久性云存储 URL 保存到 `tempUrl` 字段，而将临时的本地 URL（如 Base64 或 Blob）保存在 `url` 字段。这与字段的语义完全相反。
+ * - 变更 (Change):
+ *   1.  **纠正 URL 分配**: 当找到或获取到云存储 URL 时，它现在被正确地赋值给 `url` 字段。
+ *   2.  **废弃 tempUrl**: `tempUrl` 字段的使用已被移除或重新定位，以消除混淆。`url` 字段现在是附件的唯一真实来源 (Single Source of Truth)。
+ * - 理由 (Reason): `url` 应该始终指向最持久、最权威的资源位置。将云 URL 放在 `url` 字段可确保所有后续 API 调用和数据处理都能依赖于一个稳定、正确的链接，从而避免数据不一致和不必要的转换。
  * 
  * @param imageUrl 当前画布上的图片 URL
  * @param messages 消息历史
  * @param sessionId 当前会话 ID
  * @param filePrefix 文件名前缀（如 'canvas', 'expand'）
+ * @param skipBase64 是否跳过 base64Data 获取（默认 true，延迟到 API 调用时）
  * @returns 准备好的 Attachment 对象，失败返回 null
  */
 export const prepareAttachmentForApi = async (
   imageUrl: string,
   messages: Message[],
   sessionId: string | null,
-  filePrefix: string = 'canvas'
+  filePrefix: string = 'canvas',
+  skipBase64: boolean = true
 ): Promise<Attachment | null> => {
-  const urlType = isBase64Url(imageUrl) ? 'Base64' : 
-                  isBlobUrl(imageUrl) ? 'Blob URL' : 
-                  isHttpUrl(imageUrl) ? 'HTTP URL' : '未知';
-  
-  console.log('[prepareAttachmentForApi] 开始准备附件');
-  console.log('[prepareAttachmentForApi] imageUrl 类型:', urlType);
+  console.log('[prepareAttachmentForApi] 开始准备附件, imageUrl 类型:', isBase64Url(imageUrl) ? 'Base64' : isBlobUrl(imageUrl) ? 'Blob' : 'HTTP');
 
   try {
-    // ============================================================
-    // 第一步：尝试从历史消息中查找已有附件（复用云 URL）
-    // 这对于跨模式传递场景很重要，可以复用已上传的云 URL
-    // ============================================================
+    // 步骤 1: 尝试从历史消息中查找已有附件
     const found = findAttachmentByUrl(imageUrl, messages);
 
     if (found) {
+      console.log('[prepareAttachmentForApi] ✅ 找到历史附件');
       const { attachment: existingAttachment } = found;
       let finalUrl = existingAttachment.url;
-      let finalUploadStatus = existingAttachment.uploadStatus || 'completed';
+      let finalUploadStatus = existingAttachment.uploadStatus || 'pending';
 
-      console.log('[prepareAttachmentForApi] ✅ 找到历史附件:', {
-        id: existingAttachment.id,
-        url: finalUrl?.substring(0, 60),
-        uploadStatus: finalUploadStatus
-      });
-
-      // ============================================================
-      // 优化：如果 imageUrl 已是 Base64/Blob，直接使用，无需查询后端
-      // ============================================================
-      if (isBase64Url(imageUrl)) {
-        console.log('[prepareAttachmentForApi] ✅ imageUrl 已是 Base64，直接使用（跳过后端查询）');
-        return {
-          id: uuidv4(),
-          mimeType: existingAttachment.mimeType || 'image/png',
-          name: existingAttachment.name || `${filePrefix}-${Date.now()}.png`,
-          url: imageUrl,
-          uploadStatus: 'completed' as const,
-          base64Data: imageUrl
-        } as Attachment;
-      }
-
-      if (isBlobUrl(imageUrl)) {
-        console.log('[prepareAttachmentForApi] ✅ imageUrl 是 Blob，本地转换（跳过后端查询）');
-        const base64Data = await urlToBase64(imageUrl);
-        return {
-          id: uuidv4(),
-          mimeType: existingAttachment.mimeType || 'image/png',
-          name: existingAttachment.name || `${filePrefix}-${Date.now()}.png`,
-          url: imageUrl,
-          uploadStatus: existingAttachment.uploadStatus || 'pending' as const,
-          base64Data
-        } as Attachment;
-      }
-
-      // ============================================================
-      // 只有当 imageUrl 不是 Base64/Blob 时，才查询后端获取云 URL
-      // ============================================================
+      // 查询后端获取最新的云 URL
       const cloudResult = await tryFetchCloudUrl(
         sessionId,
         existingAttachment.id,
@@ -562,82 +658,75 @@ export const prepareAttachmentForApi = async (
       );
       
       if (cloudResult) {
-        finalUrl = cloudResult.url;
-        finalUploadStatus = cloudResult.uploadStatus as 'pending' | 'uploading' | 'completed' | 'failed';
+        finalUrl = cloudResult.url; // 修正 (FIX): 使用后端返回的权威云 URL
+        finalUploadStatus = 'completed';
       }
 
-      // 构建复用的附件对象
       const reusedAttachment: Attachment = {
         id: uuidv4(),
         mimeType: existingAttachment.mimeType || 'image/png',
         name: existingAttachment.name || `${filePrefix}-${Date.now()}.png`,
-        url: finalUrl,
-        uploadStatus: finalUploadStatus as 'pending' | 'uploading' | 'completed' | 'failed'
+        url: finalUrl, // 修正 (FIX): 权威 URL 存储在 `url` 字段
+        uploadStatus: finalUploadStatus as 'pending' | 'uploading' | 'completed' | 'failed',
       };
 
-      // 获取 Base64 数据供 API 使用（此时 imageUrl 是 HTTP URL）
-      try {
-        if (finalUrl && isHttpUrl(finalUrl)) {
-          (reusedAttachment as any).base64Data = await urlToBase64(finalUrl);
+      // 按需获取 base64Data
+      if (!skipBase64 && finalUrl && isHttpUrl(finalUrl)) {
+        try {
+          const base64Data = await urlToBase64(finalUrl);
+          (reusedAttachment as any).base64Data = base64Data;
+          // ✅ 修复：同时设置 tempUrl 字段，供 image-edit.ts 检查使用
+          reusedAttachment.tempUrl = base64Data;
+          console.log('[prepareAttachmentForApi] ✅ 已设置 base64Data 和 tempUrl');
+        } catch (base64Error) {
+          console.warn('[prepareAttachmentForApi] ⚠️ 获取 base64Data 失败:', base64Error);
         }
-      } catch (base64Error) {
-        console.warn('[prepareAttachmentForApi] ⚠️ 获取 base64Data 失败，但仍返回附件:', base64Error);
       }
-
-      console.log('[prepareAttachmentForApi] ✅ 复用历史附件完成:', {
-        hasCloudUrl: isHttpUrl(reusedAttachment.url),
-        hasBase64: !!(reusedAttachment as any).base64Data
-      });
+      
+      console.log('[prepareAttachmentForApi] ✅ 复用历史附件完成, Cloud URL:', reusedAttachment.url);
       return reusedAttachment;
     }
 
-    // ============================================================
-    // 第二步：未在历史中找到，根据 URL 类型直接处理
-    // ============================================================
+    // 步骤 2: 未在历史中找到，根据 URL 类型直接处理
     console.log('[prepareAttachmentForApi] 未在历史中找到匹配附件，直接处理 URL');
 
+    const attachmentId = uuidv4();
+    const attachmentName = `${filePrefix}-${Date.now()}.png`;
+
     if (isBase64Url(imageUrl) || isBlobUrl(imageUrl)) {
-      // Base64/Blob URL 直接处理
-      console.log('[prepareAttachmentForApi] Base64/Blob 直接处理模式');
-      const base64Data = await urlToBase64(imageUrl);
-      
-      // 从 Base64 URL 中提取 MIME 类型
-      let mimeType = 'image/png';
-      if (isBase64Url(imageUrl)) {
-        const match = imageUrl.match(/^data:([^;]+);/);
-        if (match) {
-          mimeType = match[1];
-        }
-      }
-      
-      return {
-        id: uuidv4(),
-        mimeType: mimeType,
-        name: `${filePrefix}-${Date.now()}.png`,
-        url: base64Data,
-        uploadStatus: 'completed',
-        ...({ base64Data } as any)
-      };
+        const mimeType = imageUrl.match(/^data:([^;]+);/)?.[1] || 'image/png';
+        const base64Data = isBase64Url(imageUrl) ? imageUrl : await urlToBase64(imageUrl);
+        // 对于本地数据，url 字段可以留空或设为 base64，但 uploadStatus 必须是 pending
+        // 后续处理流程会负责上传并更新 url
+        return {
+            id: attachmentId,
+            mimeType: mimeType,
+            name: attachmentName,
+            url: '', // 本地数据没有永久 URL
+            uploadStatus: 'pending',
+            base64Data: base64Data // 提供 base64 数据供立即使用
+        } as Attachment;
     }
 
     if (isHttpUrl(imageUrl)) {
-      // HTTP URL 直接处理
-      console.log('[prepareAttachmentForApi] 云存储 URL 模式');
+      // 如果是 HTTP URL，我们假定它是一个可直接使用的云 URL
       const attachment: Attachment = {
-        id: uuidv4(),
-        mimeType: 'image/png',
-        name: `${filePrefix}-${Date.now()}.png`,
-        url: imageUrl,
+        id: attachmentId,
+        mimeType: 'image/png', // 假设，可根据需要改进
+        name: attachmentName,
+        url: imageUrl, // 修正 (FIX): 权威 URL 存储在 `url` 字段
         uploadStatus: 'completed'
       };
       
-      try {
-        (attachment as any).base64Data = await urlToBase64(imageUrl);
-      } catch (base64Error) {
-        console.warn('[prepareAttachmentForApi] ⚠️ 获取 base64Data 失败:', base64Error);
+      if (!skipBase64) {
+        try {
+          (attachment as any).base64Data = await urlToBase64(imageUrl);
+        } catch (base64Error) {
+          console.warn('[prepareAttachmentForApi] ⚠️ 获取 base64Data 失败:', base64Error);
+        }
       }
       
-      console.log('[prepareAttachmentForApi] ✅ 云存储 URL 模式完成, hasBase64:', !!(attachment as any).base64Data);
+      console.log('[prepareAttachmentForApi] ✅ 云存储 URL 模式完成');
       return attachment;
     }
 
@@ -662,7 +751,12 @@ export const prepareAttachmentForApi = async (
  * 
  * 处理流程：
  * 1. 如果用户没有上传新附件，但画布上有图片 → CONTINUITY LOGIC
- * 2. 如果用户上传了附件 → 处理跨模式传递和 base64Data 准备
+ * 2. 如果用户上传了附件 → 处理跨模式传递
+ * 
+ * 优化说明：
+ * - 对于 Base64 URL，直接使用
+ * - 对于 Blob URL，本地转换为 base64Data
+ * - 对于 HTTP URL（云 URL），下载为 File 对象供 Google Files API 使用
  * 
  * @param attachments 用户上传的附件数组
  * @param activeImageUrl 当前画布上的图片 URL
@@ -689,7 +783,8 @@ export const processUserAttachments = async (
       activeImageUrl,
       messages,
       sessionId,
-      filePrefix
+      filePrefix,
+      false // 不跳过 base64，确保有数据
     );
     if (prepared) {
       finalAttachments = [prepared];
@@ -699,135 +794,126 @@ export const processUserAttachments = async (
 
   // ============================================================
   // 处理用户上传的附件（包括跨模式传递的附件）
+  // 语义修复 (Semantic Fix): 优先使用现有云 URL，避免重复下载/转换
   // ============================================================
   if (finalAttachments.length > 0) {
     console.log(`[processUserAttachments] ✅ 处理用户上传的附件, 数量:`, finalAttachments.length);
     const processedAttachments = await Promise.all(
       finalAttachments.map(async (att, index) => {
-        // 详细日志：附件原始状态
-        const urlType = isBase64Url(att.url || '') ? 'Base64' : 
-                        isBlobUrl(att.url || '') ? 'Blob' : 
-                        isHttpUrl(att.url || '') ? 'HTTP' : 'Other';
-        const tempUrlType = isBase64Url(att.tempUrl || '') ? 'Base64' : 
-                           isBlobUrl(att.tempUrl || '') ? 'Blob' : 
-                           isHttpUrl(att.tempUrl || '') ? 'HTTP' : 'None';
-        
         console.log(`[processUserAttachments] 附件[${index}] 原始状态:`, {
-          id: att.id?.substring(0, 8) + '...',
-          urlType,
-          tempUrlType,
-          uploadStatus: att.uploadStatus,
-          hasBase64Data: !!(att as any).base64Data
+            id: att.id?.substring(0, 8) + '...',
+            urlType: isBase64Url(att.url) ? 'Base64' : isBlobUrl(att.url) ? 'Blob' : isHttpUrl(att.url) ? 'HTTP' : 'Other',
+            uploadStatus: att.uploadStatus,
+            hasFile: !!att.file,
         });
 
-        // 如果已有 base64Data，直接返回
-        if ((att as any).base64Data) {
-          console.log(`[processUserAttachments] 附件[${index}] 已有 base64Data，直接返回`);
+        // ============================================================
+        // 修正 (FIX): 优先处理已完成上传的附件，避免重复下载/转换
+        // 如果附件已上传并有云 URL，则直接使用，不进行任何转换。
+        // ============================================================
+        if (att.uploadStatus === 'completed' && isHttpUrl(att.url)) {
+            console.log(`[processUserAttachments] 附件[${index}] ✅ 已上传，直接使用现有云 URL`);
+            return {
+                ...att,
+                url: att.url, // 确保 url 字段是云 URL
+                uploadStatus: 'completed' as const,
+            };
+        }
+        
+        // 如果 url 字段无效，但 tempUrl 中有云 URL，也直接使用
+        if (att.uploadStatus === 'completed' && !isHttpUrl(att.url) && isHttpUrl(att.tempUrl)) {
+            console.log(`[processUserAttachments] 附件[${index}] ✅ 已上传，从 tempUrl 恢复云 URL`);
+            return {
+                ...att,
+                url: att.tempUrl, // 将 tempUrl 的云 URL 修正到 url 字段
+                uploadStatus: 'completed' as const,
+            };
+        }
+
+        // 如果已有 file 对象，优先使用 File（Google Files API 和云存储都需要 File 对象）
+        if (att.file) {
+          const displayUrl = att.url || att.tempUrl || '';
+
+          // Blob URL 会被 InputArea 的 cleanup revoke（发送后清空 attachments），导致历史消息/缩略图加载失败。
+          // 这里将 File 转为 Base64 Data URL，确保 UI 可稳定展示且不依赖 Blob URL 生命周期。
+          if (!displayUrl || isBlobUrl(displayUrl)) {
+            console.log(`[processUserAttachments] 附件[${index}] ✅ 已有 file 对象，生成稳定 Base64 URL`);
+            try {
+              const base64Url = await fileToBase64(att.file);
+              return { ...att, url: base64Url };
+            } catch (e) {
+              console.warn(`[processUserAttachments] 附件[${index}] ⚠️ File 转 Base64 失败:`, e);
+              return att;
+            }
+          }
+
+          console.log(`[processUserAttachments] 附件[${index}] ✅ 已有 file 对象，url 有效，直接使用`);
           return att;
         }
 
         const displayUrl = att.url || '';
-        const cloudUrlFromTemp = att.tempUrl && isHttpUrl(att.tempUrl) ? att.tempUrl : null;
-        
-        console.log(`[processUserAttachments] 附件[${index}] 处理策略:`, {
-          displayUrlType: urlType,
-          hasCloudUrlInTemp: !!cloudUrlFromTemp,
-          uploadStatus: att.uploadStatus
-        });
 
-        // ============================================================
-        // 情况 1：url 字段已是 Base64（跨模式传递时常见）
-        // ✅ 直接使用，无需网络请求
-        // ============================================================
+        // Base64 URL -> 转换为 File 对象
         if (isBase64Url(displayUrl)) {
-          console.log(`[processUserAttachments] 附件[${index}] ✅ url 已是 Base64，直接使用（无需网络请求）`);
-          return {
-            ...att,
-            uploadStatus: att.uploadStatus || 'completed' as const,
-            base64Data: displayUrl
-          } as Attachment;
+          console.log(`[processUserAttachments] 附件[${index}] ✅ Base64 转换为 File 对象`);
+          try {
+            const file = await base64ToFile(displayUrl, att.name || `${filePrefix}-${Date.now()}.png`);
+            return { ...att, file, uploadStatus: att.uploadStatus || 'completed' as const };
+          } catch (e) {
+            console.warn(`[processUserAttachments] 附件[${index}] ⚠️ Base64 转换失败:`, e);
+            return { ...att, base64Data: displayUrl }; // 降级
+          }
         }
 
-        // ============================================================
-        // 情况 2：url 字段是 Blob URL
-        // ✅ 本地转换，无需网络请求
-        // ============================================================
+        // Blob URL -> 转换为 Base64 Data URL（永久有效，不受 InputArea cleanup 影响）
         if (isBlobUrl(displayUrl)) {
-          console.log(`[processUserAttachments] 附件[${index}] ✅ url 是 Blob，本地转换`);
+          console.log(`[processUserAttachments] 附件[${index}] ✅ Blob 转换为 Base64`);
           try {
-            const base64Data = await urlToBase64(displayUrl);
-            return {
-              ...att,
-              uploadStatus: att.uploadStatus || 'pending' as const,
-              base64Data
-            } as Attachment;
+            // 转换为 Base64 Data URL（用于 UI 显示，永久有效）
+            const base64Url = await urlToBase64(displayUrl);
+            // 同时转换为 File 对象（用于上传到云存储）
+            const file = await urlToFile(displayUrl, att.name || `${filePrefix}-${Date.now()}.png`, att.mimeType);
+            return { 
+              ...att, 
+              url: base64Url,  // ✅ 使用 Base64 URL，不受 Blob URL 释放影响
+              file,            // ✅ 保留 File 对象用于上传
+              uploadStatus: att.uploadStatus || 'pending' as const 
+            };
           } catch (e) {
             console.warn(`[processUserAttachments] 附件[${index}] ⚠️ Blob 转换失败:`, e);
+            return att; // 转换失败则返回原样
           }
         }
-
-        // ============================================================
-        // 情况 3：url 字段是 HTTP URL（已上传的云 URL）
-        // ============================================================
+        
+        // HTTP URL (非云端) -> 下载为 File 对象
         if (isHttpUrl(displayUrl)) {
-          console.log(`[processUserAttachments] 附件[${index}] url 是云 URL，从云 URL 获取 base64`);
-          try {
-            const base64Data = await urlToBase64(displayUrl);
-            return {
-              ...att,
-              uploadStatus: 'completed' as const,
-              base64Data
-            } as Attachment;
-          } catch (e) {
-            console.warn(`[processUserAttachments] 附件[${index}] ⚠️ 从云 URL 获取 base64 失败:`, e);
-          }
+            console.log(`[processUserAttachments] 附件[${index}] HTTP URL 下载为 File 对象`);
+            try {
+                const file = await urlToFile(displayUrl, att.name || `${filePrefix}-${Date.now()}.png`, att.mimeType);
+                return { ...att, file, url: displayUrl, uploadStatus: 'completed' as const };
+            } catch (e) {
+                console.warn(`[processUserAttachments] 附件[${index}] ⚠️ 下载 File 失败，保留云 URL:`, e);
+                return { ...att, url: displayUrl, uploadStatus: 'completed' as const };
+            }
         }
 
-        // ============================================================
-        // 情况 4：tempUrl 中有云 URL（url 字段不可用时的备选）
-        // ============================================================
-        if (cloudUrlFromTemp) {
-          console.log(`[processUserAttachments] 附件[${index}] 使用 tempUrl 中的云 URL`);
-          try {
-            const base64Data = await urlToBase64(cloudUrlFromTemp);
-            return {
-              ...att,
-              uploadStatus: 'completed' as const,
-              base64Data
-            } as Attachment;
-          } catch (e) {
-            console.warn(`[processUserAttachments] 附件[${index}] ⚠️ 从 tempUrl 云 URL 获取 base64 失败:`, e);
-          }
-        }
-
-        // ============================================================
-        // 情况 5：查询后端获取云 URL（最后的备选方案）
-        // ============================================================
+        // 最后备选方案：查询后端获取云 URL
         if (att.id && sessionId) {
           console.log(`[processUserAttachments] 附件[${index}] 查询后端获取云 URL`);
-
-          const cloudResult = await tryFetchCloudUrl(
-            sessionId,
-            att.id,
-            displayUrl,
-            att.uploadStatus
-          );
+          const cloudResult = await tryFetchCloudUrl(sessionId, att.id, displayUrl, att.uploadStatus);
 
           if (cloudResult) {
             console.log(`[processUserAttachments] 附件[${index}] ✅ 后端返回云 URL`);
-            const base64Data = await urlToBase64(cloudResult.url);
+            // 拿到云 URL 后，直接返回，不再下载为 File
             return {
               ...att,
-              tempUrl: cloudResult.url,
+              url: cloudResult.url,
               uploadStatus: 'completed' as const,
-              base64Data
-            } as Attachment;
-          } else {
-            console.log(`[processUserAttachments] 附件[${index}] ⚠️ 后端未返回有效云 URL`);
+            };
           }
         }
 
-        console.log(`[processUserAttachments] 附件[${index}] ❌ 无法获取 base64Data`);
+        console.log(`[processUserAttachments] 附件[${index}] ❌ 无法获取有效数据`);
         return att;
       })
     );
@@ -900,7 +986,7 @@ export const processMediaResult = async (
       id: attachmentId,
       mimeType: res.mimeType,
       name: filename,
-      url: '',
+      url: isHttpUrl(originalUrl) ? originalUrl : '',  // ✅ 保存 AI 临时 URL 作为备选（直到上传完成）
       tempUrl: isHttpUrl(originalUrl) ? originalUrl : undefined, // ✅ 保存 HTTP URL 用于跨模式查找
       uploadStatus: result.taskId ? 'pending' : 'failed',
       uploadTaskId: result.taskId || undefined,

@@ -17,6 +17,7 @@ import {
   AudioGenHandler,
   PdfExtractHandler
 } from './AllHandlerClasses';
+import { DeepResearchHandler } from './DeepResearchHandler';
 
 /**
  * 创建并配置全局 StrategyRegistry 实例
@@ -32,6 +33,7 @@ strategyRegistry.register('virtual-try-on', new VirtualTryOnHandler());
 strategyRegistry.register('video-gen', new VideoGenHandler());
 strategyRegistry.register('audio-gen', new AudioGenHandler());
 strategyRegistry.register('pdf-extract', new PdfExtractHandler());
+strategyRegistry.register('deep-research', new DeepResearchHandler());
 
 // 锁定注册表，防止运行时动态注册
 strategyRegistry.finalize();
@@ -44,4 +46,4 @@ export const preprocessorRegistry = new PreprocessorRegistry();
 // 注册 Google 文件上传前置处理器（高优先级）
 preprocessorRegistry.register(new GoogleFileUploadPreprocessor());
 
-console.log('[strategyConfig] 已注册 8 个 Handler 和 1 个 Preprocessor');
+console.log('[strategyConfig] 已注册 9 个 Handler 和 1 个 Preprocessor');

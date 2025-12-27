@@ -2,8 +2,7 @@
 
 | We have updated our[Terms of Service](https://ai.google.dev/gemini-api/terms).
 
-The Interactions API is a unified interface for interacting with Gemini models and agents. It simplifies state management, tool orchestration, and long-running tasks. For comprehensive view of the API schema, see the[API Reference](https://ai.google.dev/api/interactions-api).
-| **Note:** The Interactions API is in[Beta](https://ai.google.dev/gemini-api/docs/api-versions). Features and schemas are subject to[breaking changes](https://ai.google.dev/gemini-api/docs/interactions#breaking-changes).
+The Interactions API ([Beta](https://ai.google.dev/gemini-api/docs/api-versions)) is a unified interface for interacting with Gemini models and agents. It simplifies state management, tool orchestration, and long-running tasks. For comprehensive view of the API schema, see the[API Reference](https://ai.google.dev/api/interactions-api). During the Beta, features and schemas are subject to[breaking changes](https://ai.google.dev/gemini-api/docs/interactions#breaking-changes).
 
 General useFunction callingDeep Research agent
 

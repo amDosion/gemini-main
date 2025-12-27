@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatOptions, ModelConfig, Attachment, AppMode, OutPaintingOptions, PdfExtractionTemplate } from '../../types/types';
 import { v4 as uuidv4 } from 'uuid';
+import { fileToBase64, isBlobUrl } from '../../hooks/handlers/attachmentUtils';
 
 // Sub-components
 import { ModeSelector } from './input/ModeSelector';
@@ -138,11 +139,26 @@ const InputArea: React.FC<InputAreaProps> = ({
   };
 
   const removeAttachment = (id: string) => {
+    const attachmentToRemove = attachments.find(att => att.id === id);
+    if (attachmentToRemove?.tempUrl) {
+      URL.revokeObjectURL(attachmentToRemove.tempUrl);
+    }
     updateAttachments(attachments.filter(att => att.id !== id));
   };
 
+  // Cleanup Blob URLs when component unmounts or attachments change
+  useEffect(() => {
+    return () => {
+      attachments.forEach(att => {
+        if (att.tempUrl) {
+          URL.revokeObjectURL(att.tempUrl);
+        }
+      });
+    };
+  }, [attachments]);
 
-  const handleSend = () => {
+
+  const handleSend = async () => {
     if (isLoading && !onStop) return;
     
     if (mode === 'image-outpainting') {
@@ -153,6 +169,23 @@ const InputArea: React.FC<InputAreaProps> = ({
     } else {
         if (!input.trim() && attachments.length === 0 && !hasActiveContext) return;
     }
+
+    // ✅ 修复：在发送前将 Blob URL 转换为 Base64 Data URL（永久有效）
+    const processedAttachments = await Promise.all(
+      attachments.map(async (att) => {
+        // 如果有 file 对象且 url 是 Blob URL，转换为 Base64
+        if (att.file && isBlobUrl(att.url)) {
+          try {
+            const base64Url = await fileToBase64(att.file);
+            return { ...att, url: base64Url, tempUrl: base64Url };
+          } catch (e) {
+            console.warn('[InputArea] File 转 Base64 失败:', e);
+            return att;
+          }
+        }
+        return att;
+      })
+    );
 
     const outPaintingOptions: OutPaintingOptions = {
         mode: controls.outPaintingMode,
@@ -185,7 +218,7 @@ const InputArea: React.FC<InputAreaProps> = ({
         loraConfig: controls.loraConfig.image ? controls.loraConfig : undefined,
         pdfExtractTemplate: mode === 'pdf-extract' ? currentPdfTemplate : undefined,
         pdfAdditionalInstructions: mode === 'pdf-extract' ? controls.pdfAdditionalInstructions.trim() : undefined
-    }, attachments, mode);
+    }, processedAttachments, mode);
     
     setInput('');
     updateAttachments([]);
@@ -295,6 +328,7 @@ const InputArea: React.FC<InputAreaProps> = ({
           isMissingImage={isMissingImage}
           onFileSelect={handleFileSelect}
           onAddLink={handleAddLink}
+          attachmentCount={attachments.length}
       />
     </div>
   );

@@ -1,5 +1,4 @@
-
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { ModelConfig } from '../types/types';
 import { llmService } from '../services/llmService';
 
@@ -15,94 +14,115 @@ export const useModels = (
   const [isLoadingModels, setIsLoadingModels] = useState(true);
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   
-  // Track previous key to detect actual profile switches
-  const prevKeyRef = useRef<string | undefined>(apiKey);
+  const prevApiKeyRef = useRef<string | undefined>(apiKey);
 
-  // Initialize with cached models if available (instant load)
+  // Main effect to handle model loading and updates
   useEffect(() => {
-      const hasKeyChanged = prevKeyRef.current !== apiKey;
-      prevKeyRef.current = apiKey;
+    if (!configReady) return;
 
-      if (cachedModels && cachedModels.length > 0) {
-          setAvailableModels(cachedModels);
-          setIsLoadingModels(false);
-          // If key changed (profile switch), force reset selection. 
-          // Otherwise, try to preserve current selection.
-          selectBestModel(cachedModels, hasKeyChanged);
-      } else if (!cachedModels && configReady) {
-          // If we switched to a profile without cache, trigger fetch
-          fetchModels(true);
-      }
-  }, [cachedModels, apiKey]); 
+    const apiKeyChanged = prevApiKeyRef.current !== apiKey;
+    prevApiKeyRef.current = apiKey;
 
-  const selectBestModel = (models: ModelConfig[], forceReset = false) => {
-      if (!models || models.length === 0) return;
-      const visible = models.filter(m => !hiddenModelIds.includes(m.id));
-      if (visible.length === 0) return;
+    // Inlined selectBestModel logic
+    const internalSelectBestModel = (models: ModelConfig[], forceReset: boolean) => {
+        if (!models || models.length === 0) {
+            setCurrentModelId("");
+            return;
+        };
+        const visible = models.filter(m => !hiddenModelIds.includes(m.id));
+        if (visible.length === 0) {
+            setCurrentModelId(""); // No visible models, clear selection
+            return;
+        };
 
-      // Smart Selection Logic
-      let candidate;
-      if (providerId === 'google') {
-          candidate = visible.find(m => m.capabilities.reasoning) 
-                   || visible.find(m => m.capabilities.search) 
-                   || visible.find(m => m.id.includes('flash')) 
-                   || visible[0];
-      } else if (providerId === 'openai') {
-          candidate = visible.find(m => m.id.includes('gpt-4o')) || visible[0];
-      } else if (providerId === 'deepseek') {
-          candidate = visible.find(m => m.id.includes('chat')) || visible[0];
-      } else {
-          candidate = visible[0];
-      }
-      
-      if (candidate) {
-         setCurrentModelId(prev => {
-             // If we are NOT forcing a reset (same profile), and the previous model exists in the new list, keep it.
-             if (!forceReset && prev && visible.find(m => m.id === prev)) {
-                 return prev;
-             }
-             // Otherwise (Profile switch or invalid prev), switch to best candidate.
-             return candidate.id;
-         });
-      }
-  };
+        let candidate;
+        if (providerId === 'google') {
+            candidate = visible.find(m => m.capabilities.reasoning) 
+                     || visible.find(m => m.capabilities.search) 
+                     || visible.find(m => m.id.includes('flash')) 
+                     || visible[0];
+        } else if (providerId === 'openai') {
+            candidate = visible.find(m => m.id.includes('gpt-4o')) || visible[0];
+        } else if (providerId === 'deepseek') {
+            candidate = visible.find(m => m.id.includes('chat')) || visible[0];
+        } else {
+            candidate = visible[0];
+        }
+        
+        if (candidate) {
+           setCurrentModelId(prev => {
+               const isPrevModelVisible = prev && visible.find(m => m.id === prev);
+               if (!forceReset && isPrevModelVisible) {
+                   return prev;
+               }
+               return candidate.id;
+           });
+        }
+    };
 
-  const fetchModels = async (forceRefresh = false) => {
-    if (!cachedModels || cachedModels.length === 0) {
-        setIsLoadingModels(true);
-    }
+    // Inlined fetchModels logic
+    const internalFetchModels = async (useCache: boolean) => {
+      setIsLoadingModels(true);
 
-    try {
-      const models = await llmService.getAvailableModels();
-      
-      if (models.length > 0) {
-        setAvailableModels(models);
-        // On explicit fetch, we usually want to verify/reset selection
-        selectBestModel(models, true);
-      } else {
-         if (!cachedModels || cachedModels.length === 0) {
-             setAvailableModels([]);
-         }
-      }
-    } catch (e) {
-      console.error("Failed to init models", e);
-      if (!cachedModels || cachedModels.length === 0) {
+      try {
+        const models = await llmService.getAvailableModels(useCache);
+        
+        if (models && models.length > 0) {
+          setAvailableModels(models);
+          internalSelectBestModel(models, !useCache);
+        } else {
           setAvailableModels([]);
+          setCurrentModelId("");
+        }
+      } catch (e) {
+        console.error("Failed to fetch models", e);
+        setAvailableModels([]);
+        setCurrentModelId("");
+      } finally {
+        setIsLoadingModels(false);
       }
-    } finally {
-      setIsLoadingModels(false);
-    }
-  };
+    };
 
-  // Re-fetch when config/provider changes
-  useEffect(() => {
-    if (configReady) {
-      fetchModels(true); 
+    if (cachedModels && cachedModels.length > 0) {
+        setAvailableModels(cachedModels);
+        setIsLoadingModels(false);
+        internalSelectBestModel(cachedModels, apiKeyChanged);
+    } else {
+      internalFetchModels(true); // Use cache for standard fetching
     }
-  }, [configReady, providerId, apiKey]);
+  }, [configReady, providerId, apiKey, cachedModels, hiddenModelIds]);
 
-  const activeModelConfig = availableModels.find(m => m.id === currentModelId) || availableModels[0];
-  const visibleModels = availableModels.filter(m => !hiddenModelIds.includes(m.id));
+  /**
+   * Forces a refresh of the model list from the provider, bypassing any cache.
+   */
+  const refreshModels = useCallback(async () => {
+      setIsLoadingModels(true);
+
+      try {
+        const models = await llmService.getAvailableModels(false); // false = bypass cache
+        
+        if (models && models.length > 0) {
+          setAvailableModels(models);
+        } else {
+          setAvailableModels([]);
+          setCurrentModelId("");
+        }
+      } catch (e) {
+        console.error("Failed to refresh models", e);
+        setAvailableModels([]);
+        setCurrentModelId("");
+      } finally {
+        setIsLoadingModels(false);
+      }
+  }, []);
+
+  const activeModelConfig = useMemo(() => {
+    return availableModels.find(m => m.id === currentModelId) || availableModels[0];
+  }, [availableModels, currentModelId]);
+
+  const visibleModels = useMemo(() => {
+    return availableModels.filter(m => !hiddenModelIds.includes(m.id));
+  }, [availableModels, hiddenModelIds]);
 
   return {
     availableModels,
@@ -113,6 +133,6 @@ export const useModels = (
     isLoadingModels,
     isModelMenuOpen,
     setIsModelMenuOpen,
-    refreshModels: () => fetchModels(true)
+    refreshModels
   };
 };

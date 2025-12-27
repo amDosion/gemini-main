@@ -321,7 +321,6 @@ class UploadWorkerPool:
         while self._running:
             try:
                 # 从 Redis 队列获取任务（阻塞等待）
-                log_print(f"[{worker_name}] Waiting for task from Redis...")
                 task_id = await redis_queue.dequeue(timeout=5)
 
                 if task_id is None:

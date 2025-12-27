@@ -137,6 +137,12 @@ export interface VirtualTryOnControlsProps {
   setTryOnTarget: (v: string) => void;
 }
 
+export interface DeepResearchControlsProps {
+  currentModel?: ModelConfig;
+  // Deep Research 模式目前不需要额外的控制参数
+  // 未来可以添加：研究深度、来源数量等配置
+}
+
 
 // ============================================
 // Coordinator Props

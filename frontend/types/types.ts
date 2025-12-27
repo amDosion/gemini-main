@@ -1,4 +1,18 @@
 
+export interface ToolCall {
+  type: string;
+  name: string;
+  arguments: any;
+  id: string;
+}
+
+export interface ToolResult {
+  name: string;
+  call_id: string;
+  result: any;
+  error?: string;
+}
+
 export interface Persona {
   id: string;
   name: string;
@@ -16,7 +30,7 @@ export enum Role {
 
 export type ApiProtocol = 'google' | 'openai';
 
-export type AppMode = 'chat' | 'image-gen' | 'image-edit' | 'video-gen' | 'audio-gen' | 'image-outpainting' | 'pdf-extract' | 'virtual-try-on';
+export type AppMode = 'chat' | 'image-gen' | 'image-edit' | 'video-gen' | 'audio-gen' | 'image-outpainting' | 'pdf-extract' | 'virtual-try-on' | 'deep-research';
 
 export interface GroundingChunk {
   web?: {
@@ -52,6 +66,9 @@ export interface Attachment {
   uploadStatus?: 'pending' | 'uploading' | 'completed' | 'failed'; // 上传状态
   uploadTaskId?: string; // 后端上传任务 ID
   uploadError?: string; // 上传失败的错误信息
+  // Google Files API 相关字段
+  googleFileUri?: string; // Google Files API 返回的 file_uri（48小时有效）
+  googleFileExpiry?: number; // Google 文件过期时间戳
 }
 
 export interface Message {
@@ -65,6 +82,8 @@ export interface Message {
   timestamp: number;
   isError?: boolean;
   mode?: AppMode; // Track which mode this message belongs to
+  toolCalls?: ToolCall[]; // Added toolCalls
+  toolResults?: ToolResult[]; // Added toolResults
 }
 
 export interface ChatSession {
@@ -135,6 +154,7 @@ export interface ChatOptions {
   pdfExtractTemplate?: string; // Added for PDF extraction template selection
   pdfAdditionalInstructions?: string; // Added for PDF extraction additional instructions
   enableRAG?: boolean; // Added for RAG (Retrieval-Augmented Generation)
+  useGoogleFilesApi?: boolean; // 使用 Google Files API 替代 Base64（减少数据传输）
 }
 
 // PDF Extraction Types

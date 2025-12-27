@@ -28,7 +28,7 @@ interface StudioViewProps {
   apiKey?: string;  // ✅ API Key，用于调用 API
 }
 
-export const StudioView: React.FC<StudioViewProps> = (props) => {
+export const StudioView: React.FC<StudioViewProps> = React.memo((props) => {
   // Delegate to specific views based on mode
   switch (props.mode) {
       case 'image-gen':
@@ -48,4 +48,4 @@ export const StudioView: React.FC<StudioViewProps> = (props) => {
       default:
           return <ImageGenView {...props} />;
   }
-};
+});

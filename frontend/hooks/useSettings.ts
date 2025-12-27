@@ -1,8 +1,8 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ApiProtocol } from '../types/types';
 import { llmService } from '../services/llmService';
-import { configService, ActiveAppConfig } from '../services/configurationService';
+import { configService, ActiveAppConfig, FullSettings } from '../services/configurationService';
 import { AIProviderConfig } from '../config/aiProviders';
 import { ConfigProfile } from '../services/db';
 
@@ -10,70 +10,213 @@ export interface AppConfig extends ActiveAppConfig {
   dashscopeApiKey: string;
 }
 
+/**
+ * Creates a cross-window synchronization channel.
+ * It uses BroadcastChannel if available, otherwise falls back to using localStorage.
+ */
+const createSyncChannel = () => {
+  const channelName = 'settings-sync';
+  const messageType = 'settings-updated';
+
+  // Use BroadcastChannel if supported
+  if (typeof BroadcastChannel !== 'undefined') {
+    const bc = new BroadcastChannel(channelName);
+    return {
+      postMessage: () => bc.postMessage(messageType),
+      onmessage: (handler: (event: MessageEvent) => void) => {
+        bc.onmessage = (event) => {
+          if (event.data === messageType) {
+            handler(event);
+          }
+        };
+      },
+      close: () => bc.close(),
+    };
+  }
+
+  // Fallback implementation using localStorage for older browsers
+  const localStorageKey = 'gemini-settings-sync';
+  let storageListener: ((event: StorageEvent) => void) | null = null;
+
+  return {
+    postMessage: () => {
+      // Set a value in localStorage to trigger 'storage' event in other tabs
+      localStorage.setItem(localStorageKey, Date.now().toString());
+      // Remove it immediately as we only care about the event, not the value
+      localStorage.removeItem(localStorageKey);
+    },
+    onmessage: (handler: (event: Partial<MessageEvent>) => void) => {
+      storageListener = (event: StorageEvent) => {
+        if (event.key === localStorageKey) {
+          handler({ data: messageType } as Partial<MessageEvent>);
+        }
+      };
+      window.addEventListener('storage', storageListener);
+    },
+    close: () => {
+      if (storageListener) {
+        window.removeEventListener('storage', storageListener);
+      }
+    },
+  };
+};
+
+/**
+ * Creates a debounced function that delays invoking `func` until after `delay`
+ * milliseconds have elapsed since the last time the debounced function was invoked.
+ * @param func The function to debounce.
+ * @param delay The number of milliseconds to delay.
+ * @returns A new debounced function.
+ */
+const debounce = <F extends (...args: any[]) => void>(func: F, delay: number) => {
+  let timeoutId: NodeJS.Timeout | null = null;
+  return (...args: Parameters<F>) => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    timeoutId = setTimeout(() => {
+      func(...args);
+    }, delay);
+  };
+};
+
 export const useSettings = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [config, setConfig] = useState<AppConfig>({
-    apiKey: '',
-    baseUrl: '',
-    protocol: 'google',
-    providerId: 'google',
-    hiddenModels: [],
-    isProxy: false,
-    dashscopeApiKey: ''
-  });
+  
+  // ✅ 使用单一状态存储完整配置
+  const [fullSettings, setFullSettings] = useState<FullSettings | null>(null);
+  const [cacheTimestamp, setCacheTimestamp] = useState<number | null>(null);
+  
+  const channelRef = useRef<ReturnType<typeof createSyncChannel> | null>(null);
+  const debouncedRefreshRef = useRef<() => void>();
+  
+  // ✅ 从 fullSettings 派生其他状态，使用 useMemo 稳定引用
+  const profiles = useMemo(() => fullSettings?.profiles || [], [fullSettings?.profiles]);
+  const activeProfileId = fullSettings?.activeProfileId || null;
+  const activeProfile = fullSettings?.activeProfile || null;
+  
+  // ✅ 使用 useMemo 稳定 hiddenModels 数组引用
+  const hiddenModels = useMemo(() => 
+    activeProfile?.hiddenModels || [], 
+    [activeProfile?.hiddenModels?.join(',')]
+  );
+  
+  // ✅ 构造 AppConfig
+  const config: AppConfig = useMemo(() => ({
+    apiKey: activeProfile?.apiKey || '',
+    baseUrl: activeProfile?.baseUrl || '',
+    protocol: (activeProfile?.protocol as ApiProtocol) || 'google',
+    providerId: activeProfile?.providerId || 'google',
+    hiddenModels,
+    isProxy: activeProfile?.isProxy || false,
+    dashscopeApiKey: fullSettings?.dashscopeKey || ''
+  }), [
+    activeProfile?.apiKey,
+    activeProfile?.baseUrl,
+    activeProfile?.protocol,
+    activeProfile?.providerId,
+    hiddenModels,
+    activeProfile?.isProxy,
+    fullSettings?.dashscopeKey
+  ]);
 
-  const [profiles, setProfiles] = useState<ConfigProfile[]>([]);
-  const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
+  const isCacheExpired = (timestamp: number | null): boolean => {
+    if (!timestamp) {
+      return true; // Always refresh if no timestamp is set
+    }
+    const CACHE_EXPIRY_TIME = 30000; // 30 seconds
+    return Date.now() - timestamp > CACHE_EXPIRY_TIME;
+  };
+
+  /**
+   * Notifies other browser tabs/windows that settings have been updated.
+   */
+  const notifyOtherTabs = () => {
+    if (channelRef.current) {
+      channelRef.current.postMessage();
+    }
+  };
+
+  // ✅ 先声明 refreshSettings 函数
+  const refreshSettings = useCallback(async () => {
+    try {
+      const data = await configService.getFullSettings();
+      setFullSettings(data);
+      setCacheTimestamp(Date.now()); // Update timestamp after successful fetch
+
+      const activeProfile = data.activeProfile;
+
+      if (!activeProfile) {
+        llmService.setConfig('', '', 'google', 'google');
+        return;
+      }
+
+      let { apiKey, baseUrl, protocol, providerId, isProxy } = activeProfile;
+
+      // Intelligent Key Resolution for Google: Use environment variable as a fallback.
+      if (providerId === 'google' && !apiKey) {
+        apiKey = process.env.API_KEY || '';
+      }
+
+      // Clear baseUrl for Google Standard mode to let the SDK use its default.
+      if (protocol === 'google' && !isProxy) {
+        baseUrl = '';
+      }
+
+      // Propagate the resolved and effective configuration to the global service singleton.
+      llmService.setConfig(
+        apiKey,
+        baseUrl,
+        protocol as ApiProtocol,
+        providerId
+      );
+    } catch (error) {
+      console.error('Failed to load settings:', error);
+      // Keep the previous state unchanged if loading fails
+    }
+  }, []);
+
+  // ✅ 然后创建 debounced 版本（在 refreshSettings 声明之后）
+  useEffect(() => {
+    debouncedRefreshRef.current = debounce(refreshSettings, 500);
+  }, [refreshSettings]);
 
   // Load settings on mount
   useEffect(() => {
     refreshSettings();
-  }, []);
+  }, [refreshSettings]);
 
-  const refreshSettings = async () => {
-      // 1. Get Profiles
-      const allProfiles = await configService.getProfiles();
-      setProfiles(allProfiles);
-      
-      const activeId = await configService.getActiveProfileId();
-      setActiveProfileId(activeId);
-
-      // 2. Get Active Config
-      const activeConfig = await configService.getActiveConfig();
-      const dsKey = await configService.getDashScopeKey();
-
-      // Intelligent Key Resolution for Google
-      let finalApiKey = activeConfig.apiKey;
-      if (!finalApiKey && activeConfig.providerId === 'google') {
-          finalApiKey = process.env.API_KEY || '';
+  // Check cache expiry on window focus
+  useEffect(() => {
+    const handleFocus = () => {
+      if (isCacheExpired(cacheTimestamp)) {
+        refreshSettings();
       }
+    };
 
-      // Runtime vs Storage Separation logic fix:
-      // Previous logic aggressively cleared URL if !isProxy. 
-      // This broke Ollama/Local which are "Standard" (not custom proxy) but rely on a specific BaseURL.
-      // We only want to clear it for Google Standard to defer to SDK defaults.
-      let effectiveBaseUrl = activeConfig.baseUrl;
-      if (activeConfig.protocol === 'google' && !activeConfig.isProxy) {
-          effectiveBaseUrl = '';
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [cacheTimestamp, refreshSettings]);
+
+  // Cross-window synchronization
+  useEffect(() => {
+    channelRef.current = createSyncChannel();
+
+    channelRef.current.onmessage(() => {
+      // When a message is received, refresh settings to sync state
+      refreshSettings();
+    });
+
+    // Cleanup on unmount
+    return () => {
+      if (channelRef.current) {
+        channelRef.current.close();
       }
-
-      const newAppConfig: AppConfig = {
-          ...activeConfig,
-          apiKey: finalApiKey,
-          baseUrl: effectiveBaseUrl,
-          dashscopeApiKey: dsKey
-      };
-
-      setConfig(newAppConfig);
-      
-      // Propagate to Singleton
-      llmService.setConfig(
-          newAppConfig.apiKey, 
-          newAppConfig.baseUrl, 
-          newAppConfig.protocol as ApiProtocol, 
-          newAppConfig.providerId
-      );
-  };
+    };
+  }, [refreshSettings]);
 
   // --- Profile Actions ---
 
@@ -83,16 +226,91 @@ export const useSettings = () => {
           await configService.setActiveProfileId(profile.id);
       }
       await refreshSettings();
+      notifyOtherTabs(); // Notify other tabs of the change
   };
 
   const deleteProfile = async (id: string) => {
       await configService.deleteProfile(id);
       await refreshSettings();
+      notifyOtherTabs(); // Notify other tabs of the change
   };
 
   const activateProfile = async (id: string) => {
+    if (!fullSettings) {
+      console.error("Settings not initialized, cannot activate a profile.");
+      return;
+    }
+
+    const previousActiveProfileId = fullSettings.activeProfileId;
+    const previousActiveProfile = fullSettings.activeProfile;
+    const newActiveProfile = fullSettings.profiles.find(p => p.id === id);
+
+    if (!newActiveProfile) {
+      console.error(`Profile with id "${id}" not found.`);
+      return;
+    }
+
+    // Layer 1 - Fast Response: Optimistically update state for quick UI response
+    setFullSettings(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        activeProfileId: id,
+        activeProfile: newActiveProfile,
+      };
+    });
+
+    const profileForLlm = { ...newActiveProfile };
+
+    // Apply Google API Key resolution if necessary
+    if (profileForLlm.providerId === 'google' && !profileForLlm.apiKey) {
+      profileForLlm.apiKey = process.env.API_KEY || '';
+    }
+
+    // Clear baseUrl for non-proxied Google provider to use SDK default
+    if (profileForLlm.protocol === 'google' && !profileForLlm.isProxy) {
+      profileForLlm.baseUrl = '';
+    }
+
+    // Immediately update the LLM service with the resolved configuration
+    llmService.setConfig(
+      profileForLlm.apiKey || '',
+      profileForLlm.baseUrl || '',
+      profileForLlm.protocol as ApiProtocol,
+      profileForLlm.providerId
+    );
+
+    try {
+      // Layer 2 - Backend Update: Persist the active profile change
       await configService.setActiveProfileId(id);
-      await refreshSettings();
+
+      // Layer 3 - Async Refresh: Silently refresh all settings to ensure consistency (debounced)
+      if (debouncedRefreshRef.current) {
+        debouncedRefreshRef.current();
+      }
+    } catch (error) {
+      console.error('Failed to activate profile on the backend:', error);
+
+      // Rollback optimistic UI update
+      setFullSettings(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          activeProfileId: previousActiveProfileId,
+          activeProfile: previousActiveProfile,
+        };
+      });
+
+      // Also rollback llmService config if it was changed
+      if (previousActiveProfile) {
+        llmService.setConfig(
+          previousActiveProfile.apiKey || '',
+          previousActiveProfile.baseUrl || '',
+          previousActiveProfile.protocol as ApiProtocol,
+          previousActiveProfile.providerId
+        );
+      }
+    }
   };
 
   // Legacy Wrapper for simple saves (used by quick provider switchers)
@@ -126,7 +344,7 @@ export const useSettings = () => {
     isSettingsOpen,
     setIsSettingsOpen,
     config,
-    hiddenModelIds: config.hiddenModels,
+    hiddenModelIds: hiddenModels,
     providers: [], // No longer used dynamically in the old way
     profiles,
     activeProfileId,
