@@ -5,7 +5,6 @@ import { StreamUpdate, ImageGenerationResult, VideoGenerationResult, AudioGenera
 import { configService } from "./configurationService";
 import { messagePreparer } from "./ai_chat/MessagePreparer";
 import { streamManager } from "./stream/StreamManager";
-import { MediaFactory } from "./media/MediaFactory";
 
 interface ModelCache {
   models: ModelConfig[];
@@ -139,34 +138,18 @@ export class LLMService {
   // --- Media Operations (Delegated to MediaFactory) ---
 
   public async generateImage(prompt: string, referenceImages: Attachment[] = []): Promise<ImageGenerationResult[]> {
-      // Use the Media Factory to find the strategy for the current provider
-      const strategy = MediaFactory.getStrategy(this.providerId);
-      
       // 调试日志：检查 apiKey 和 baseUrl
       console.log('[llmService.generateImage] 配置检查:', {
           hasApiKey: !!this.apiKey,
           apiKeyLength: this.apiKey?.length || 0,
           hasBaseUrl: !!this.baseUrl,
           baseUrl: this.baseUrl?.substring(0, 30) || 'empty',
-          providerId: this.providerId,
-          hasStrategy: !!strategy
+          providerId: this.providerId
       });
       
-      // If strategy exists, use it. Otherwise fallback to old provider method (Migration phase)
+      // 直接使用 currentProvider，由 LLMFactory 负责提供商路由
       // 注意：多轮编辑的连续性由前端 ImageEditView 的 CONTINUITY LOGIC 处理
       // 前端会自动将当前画布上的图片转换为 Base64 附件传递，不需要后端维护历史
-      if (strategy && this.providerId.includes('google')) {
-          return strategy.generateImage(
-              this._cachedModelConfig!.id,
-              prompt,
-              referenceImages,
-              this._cachedOptions,
-              this.apiKey,
-              this.baseUrl
-          );
-      }
-      
-      // Fallback for providers not yet migrated to MediaFactory strategies (like TongYi/OpenAI temporarily)
       return this.currentProvider.generateImage(
           this._cachedModelConfig!.id,
           prompt,
@@ -178,18 +161,7 @@ export class LLMService {
   }
 
   public async generateVideo(prompt: string, referenceImages: Attachment[] = []): Promise<VideoGenerationResult> {
-      const strategy = MediaFactory.getStrategy(this.providerId);
-      
-      if (strategy && this.providerId.includes('google')) {
-          return strategy.generateVideo(
-              prompt,
-              referenceImages,
-              this._cachedOptions,
-              this.apiKey,
-              this.baseUrl
-          );
-      }
-
+      // 直接使用 currentProvider，由 LLMFactory 负责提供商路由
       return this.currentProvider.generateVideo(
           prompt,
           referenceImages,
@@ -200,17 +172,7 @@ export class LLMService {
   }
 
   public async generateSpeech(text: string): Promise<AudioGenerationResult> {
-      const strategy = MediaFactory.getStrategy(this.providerId);
-
-      if (strategy && this.providerId.includes('google')) {
-          return strategy.generateSpeech(
-              text,
-              this._cachedOptions.voiceName || 'Puck',
-              this.apiKey,
-              this.baseUrl
-          );
-      }
-
+      // 直接使用 currentProvider，由 LLMFactory 负责提供商路由
       return this.currentProvider.generateSpeech(
           text,
           this._cachedOptions.voiceName || 'Puck',

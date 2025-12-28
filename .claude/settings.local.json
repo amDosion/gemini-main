@@ -16,7 +16,11 @@
       "Bash(findstr:*)",
       "Bash(cd:*)",
       "Bash(cat:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "mcp__desktop-commander-mcp__read_file",
+      "mcp__desktop-commander-mcp__list_directory",
+      "mcp__desktop-commander-mcp__write_file",
+      "Bash(del \"d:\\\\gemini-main\\\\gemini-main\\\\backend\\\\app\\\\services\\\\oss_service.py\")"
     ]
   }
 }

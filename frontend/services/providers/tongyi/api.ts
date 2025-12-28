@@ -52,18 +52,9 @@ export function resolveDashUrl(baseUrl: string, endpointType: 'generation' | 'ta
 
     // 4. Image Editing (Inpainting/Repainting)
     if (endpointType === 'image-edit') {
-        // Qwen VL Edit
-        if (modelId === 'qwen-vl-image-edit') {
-            // Qwen often shares the multimodal-generation endpoint, or a dedicated one.
-            // Based on standard patterns, try image-edit/generation first for Qwen visual tools
-            return `${root}/api/v1/services/aigc/image-edit/generation`; 
-        }
-        // WanX V2.5 Edit
-        if (modelId === 'wanx-v2.5-image-edit') {
-             return `${root}/api/v1/services/aigc/image2image/image-synthesis`;
-        }
-        // Default (Wanx V1)
-        return `${root}/api/v1/services/aigc/image2image/image-synthesis`;
+        // 所有图片编辑模型都使用统一的 multimodal-generation 端点
+        // 支持的模型：qwen-image-edit-plus, wan2.6-image 等
+        return `${root}/api/v1/services/aigc/multimodal-generation/generation`;
     }
 
     // 5. Out-Painting
@@ -137,6 +128,83 @@ export async function uploadDashScopeFile(file: File, apiKey: string, baseUrl?: 
     }
 }
 
+// --- Sync Submit (同步调用) ---
+// multimodal-generation API 默认支持同步调用（根据官方 curl 示例）
+// 不需要添加 X-DashScope-Async 请求头
+export async function submitSync(endpoint: string, payload: any, apiKey: string): Promise<ImageGenerationResult> {
+    const safeKey = apiKey.trim();
+    if (!safeKey) throw new Error("DashScope API Key is empty.");
+
+    console.log('[DashScope] 使用同步模式调用 API');
+
+    // 同步调用（不添加 X-DashScope-Async 请求头）
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${safeKey}`,
+            'Content-Type': 'application/json',
+            'X-DashScope-OssResourceResolve': 'enable' // 允许访问外部 URL
+        },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({ message: response.statusText }));
+        const msg = err.message || err.code || response.status;
+        throw new Error(`DashScope API Error: ${msg}`);
+    }
+
+    const data = await response.json();
+    
+    // 详细日志：打印完整响应结构
+    console.log('[DashScope] 同步调用响应:', JSON.stringify(data, null, 2));
+    
+    // 同步模式下，结果可能在多个不同的字段中
+    let resultUrl = null;
+    
+    // 尝试各种可能的字段路径
+    if (data.output) {
+        // 1. output.results[0].url (常见格式)
+        if (data.output.results && Array.isArray(data.output.results) && data.output.results.length > 0) {
+            resultUrl = data.output.results[0].url;
+        }
+        // 2. output.url (简化格式)
+        if (!resultUrl && data.output.url) {
+            resultUrl = data.output.url;
+        }
+        // 3. output.output_image_url (某些模型)
+        if (!resultUrl && data.output.output_image_url) {
+            resultUrl = data.output.output_image_url;
+        }
+        // 4. output.data.image_url (Wan2.6 格式)
+        if (!resultUrl && data.output.data) {
+            if (Array.isArray(data.output.data.image_url)) {
+                resultUrl = data.output.data.image_url[0];
+            } else if (data.output.data.image_url) {
+                resultUrl = data.output.data.image_url;
+            }
+        }
+        // 5. output.task_id (如果返回的是异步任务)
+        if (!resultUrl && data.output.task_id) {
+            console.warn('[DashScope] API 返回了 task_id，可能需要异步轮询');
+            throw new Error('API 返回了异步任务 ID，但当前使用的是同步模式。请检查 API 配置。');
+        }
+    }
+    
+    if (!resultUrl) {
+        console.error('[DashScope] 同步调用成功但未找到图片 URL');
+        console.error('[DashScope] 完整响应:', data);
+        throw new Error("API 返回成功但未找到图片 URL");
+    }
+    
+    console.log('[DashScope] 同步调用成功，图片 URL:', resultUrl.substring(0, 60));
+    
+    return {
+        url: resultUrl,
+        mimeType: 'image/png'
+    };
+}
+
 // --- Async Task Polling ---
 export async function submitAndPoll(endpoint: string, payload: any, apiKey: string): Promise<ImageGenerationResult> {
     const safeKey = apiKey.trim();
@@ -148,7 +216,8 @@ export async function submitAndPoll(endpoint: string, payload: any, apiKey: stri
         headers: {
             'Authorization': `Bearer ${safeKey}`,
             'Content-Type': 'application/json',
-            'X-DashScope-Async': 'enable'
+            'X-DashScope-Async': 'enable',
+            'X-DashScope-OssResourceResolve': 'enable' // 允许访问外部 URL
         },
         body: JSON.stringify(payload)
     });

@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Ratio, Maximize2 } from 'lucide-react';
 import { ImageEditControlsProps } from '../types';
 import { AdvancedToggle } from '../shared';
-import { GEN_ASPECT_RATIOS, GOOGLE_EDIT_ASPECT_RATIOS, OPENAI_ASPECT_RATIOS } from '../constants';
+import { GEN_ASPECT_RATIOS, GOOGLE_EDIT_ASPECT_RATIOS, OPENAI_ASPECT_RATIOS, TONGYI_EDIT_ASPECT_RATIOS } from '../constants';
 
 export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   providerId,
@@ -20,10 +20,13 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   const availableRatios = useMemo(() => {
     if (isOpenAI) return OPENAI_ASPECT_RATIOS;
     if (isGoogle) return GOOGLE_EDIT_ASPECT_RATIOS;
+    if (isTongYi) return TONGYI_EDIT_ASPECT_RATIOS;
     return GEN_ASPECT_RATIOS;
-  }, [isOpenAI, isGoogle]);
+  }, [isOpenAI, isGoogle, isTongYi]);
 
-  const showResolution = !isOpenAI;
+  // 图像编辑模式下不显示分辨率选项
+  // Qwen/Wan 模型的分辨率由 aspectRatio 自动决定
+  const showResolution = false;
   const allow4K = isGoogle;
 
   const getResolutionLabel = (res: string) => {

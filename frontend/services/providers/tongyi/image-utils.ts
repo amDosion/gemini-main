@@ -13,12 +13,36 @@ export async function ensureRemoteUrl(attachment: Attachment, apiKey: string, ba
         throw new Error("Reference image required.");
     }
 
-    // ✅ 如果 url 已经是 HTTP/HTTPS URL，直接使用
-    // 注意：调用方必须在请求头中包含 X-DashScope-OssResourceResolve: enable
-    // 这样 DashScope 才能访问外部 URL（包括用户的云存储 URL）
+    // ✅ 如果 url 已经是 HTTP/HTTPS URL
+    // 注意：DashScope 访问外部 URL 可能会超时，因此我们需要先下载再上传到 OSS
     if (imageUrl?.startsWith('http://') || imageUrl?.startsWith('https://')) {
-        console.log('[ensureRemoteUrl] 已有远程 URL，直接使用:', imageUrl.substring(0, 60));
-        return imageUrl;
+        console.log('[ensureRemoteUrl] 检测到远程 URL，需要下载并上传到 DashScope OSS');
+        console.log('[ensureRemoteUrl] 原始 URL:', imageUrl.substring(0, 60));
+        
+        try {
+            // 通过后端代理下载图片（避免 CORS 问题）
+            const proxyUrl = `/api/storage/download?url=${encodeURIComponent(imageUrl)}`;
+            const response = await fetch(proxyUrl);
+            
+            if (!response.ok) {
+                throw new Error(`下载图片失败: ${response.status} ${response.statusText}`);
+            }
+            
+            const blob = await response.blob();
+            const fileName = attachment.name || imageUrl.split('/').pop() || 'image.png';
+            const fileToUpload = new File([blob], fileName, { type: blob.type || 'image/png' });
+            
+            console.log('[ensureRemoteUrl] 下载完成，开始上传到 DashScope OSS');
+            const ossUrl = await uploadDashScopeFile(fileToUpload, apiKey, baseUrl);
+            console.log('[ensureRemoteUrl] 上传完成，OSS URL:', ossUrl.substring(0, 60));
+            
+            return ossUrl;
+        } catch (error: any) {
+            console.error('[ensureRemoteUrl] 下载或上传失败:', error);
+            // 如果下载失败，尝试直接使用原始 URL（作为后备方案）
+            console.warn('[ensureRemoteUrl] 回退到直接使用原始 URL');
+            return imageUrl;
+        }
     }
 
     // 需要上传到 DashScope OSS

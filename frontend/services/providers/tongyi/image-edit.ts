@@ -1,102 +1,144 @@
-
 import { ImageGenerationResult } from "../interfaces";
 import { Attachment, ChatOptions } from "../../../types/types";
-import { resolveDashUrl, submitAndPoll } from "./api";
-import { ensureRemoteUrl } from "./image-utils";
+import { QWEN_EDIT_RESOLUTIONS, WAN_EDIT_RESOLUTIONS } from "../../../controls";
 
-// --- Image Editing (Repainting/Inpainting) ---
+/**
+ * 通义图片编辑 - 使用后端统一服务
+ *
+ * 后端端点: POST /api/image-edit/edit
+ *
+ * 支持的模型:
+ * - qwen-image-edit-plus (及其变体)
+ * - wan2.6-image (推荐)
+ * - wan2.5-i2i-preview (向后兼容)
+ *
+ * 图片输入支持:
+ * - HTTPS URL: 后端自动下载并上传到 OSS
+ * - oss:// URL: 后端直接使用
+ * - Base64 data URI: 后端解码并上传到 OSS
+ */
 export async function editWanxImage(
-    modelId: string, // Now accepts specific model ID
+    modelId: string,
     prompt: string,
     referenceImage: Attachment,
-    options: ChatOptions, // Added options for LoRA/Seed/N
+    options: ChatOptions,
     apiKey: string,
-    baseUrl?: string
+    _baseUrl?: string  // 未使用（后端服务统一处理）
 ): Promise<ImageGenerationResult> {
     
-    // 1. Ensure Reference Image is uploaded/accessible
-    const imageUrl = await ensureRemoteUrl(referenceImage, apiKey, baseUrl);
+    console.log('[Image Edit] 调用后端图像编辑服务');
+    console.log('[Image Edit] Model:', modelId);
+    console.log('[Image Edit] Reference Image URL:', referenceImage.url?.substring(0, 60));
 
-    let payload: any = {};
+    // 根据模型类型计算分辨率
+    const isQwen = modelId.startsWith('qwen-');
+    const isWan = modelId.startsWith('wan');
 
-    // --- CASE A: WanX V2.5 Image Edit ---
-    if (modelId === 'wanx-v2.5-image-edit') {
-        // https://help.aliyun.com/zh/model-studio/wan2-5-image-edit-api-reference
-        const input: any = {
-            image_url: imageUrl,
-            prompt: prompt,
-            // WanX V2.5 REQUIRES mask_url for editing logic. 
-            // If user didn't provide a mask (just uploaded one image), we might fail or need a fallback.
-            // For now, if no mask is attached, we might need to assume 'mask' is the same as image (full edit) or fail.
-            // NOTE: The UI typically handles masking via a separate attachment or canvas.
-            // Current simplified assumption: If options.maskUrl exists (future) or we generate a full-white mask?
-            // Actually, WanX edit usually implies inpainting. Without a mask, it might act as style transfer or fail.
-            // Let's assume the user provided a mask attachment if they are in 'edit' mode properly, 
-            // BUT current simple UI only sends one image usually. 
-            // Fallback: If no mask, we can't strictly use v2.5's *mask-based* edit properly without updating UI to support mask upload.
-            // However, let's construct the payload assuming best effort.
-        };
+    const aspectRatio = options.imageAspectRatio || '1:1';
+    let size: string;
 
-        // Check for LoRA
-        if (options.loraConfig?.image) {
-            input.lora_image_url = options.loraConfig.image;
-            if (options.loraConfig.alpha) {
-                input.lora_alpha = options.loraConfig.alpha;
-            }
-        }
-
-        const parameters: any = {
-            n: Math.min(Math.max(options.numberOfImages || 1, 1), 4),
-            seed: options.seed && options.seed > -1 ? options.seed : undefined
-        };
-        
-        // If we have a mask file/url in attachments (not yet in simple UI), usage would go here.
-        // For now, we construct the payload.
-        // Note: Currently simple UI sends [refImage]. 
-        // We'll stick to a valid payload structure. 
-        // If the model *requires* a mask, this call might fail if we don't have one.
-        // For 'edit' without explicit mask, sometimes it means 're-generate based on image'.
-        
-        // Let's use the mandatory fields. 
-        // If the UI hasn't supported mask painting, WanX V2.5 might be tricky.
-        // We will pass the image as the base.
-        
-        payload = {
-            model: modelId,
-            input: input,
-            parameters: parameters
-        };
+    if (isQwen) {
+        size = QWEN_EDIT_RESOLUTIONS[aspectRatio] || QWEN_EDIT_RESOLUTIONS['1:1'];
+        console.log('[Image Edit] Qwen 模型 - Aspect Ratio:', aspectRatio, '→ Size:', size);
+    } else if (isWan) {
+        size = WAN_EDIT_RESOLUTIONS[aspectRatio] || WAN_EDIT_RESOLUTIONS['1:1'];
+        console.log('[Image Edit] Wan 模型 - Aspect Ratio:', aspectRatio, '→ Size:', size);
+    } else {
+        // 默认使用 Wan 分辨率
+        size = WAN_EDIT_RESOLUTIONS[aspectRatio] || WAN_EDIT_RESOLUTIONS['1:1'];
+        console.log('[Image Edit] 未知模型，使用 Wan 默认分辨率 - Aspect Ratio:', aspectRatio, '→ Size:', size);
     }
+
+    // 构建请求体
+    const requestBody = {
+        model: modelId,
+        prompt: prompt,
+        reference_image: {
+            url: referenceImage.url || '',
+            file_name: referenceImage.name || 'image.png'
+        },
+        options: {
+            n: Math.min(Math.max(options.numberOfImages || 1, 1), 6),
+            negative_prompt: options.negativePrompt || undefined,
+            size: size,  // 前端已计算好的分辨率
+            watermark: false,
+            prompt_extend: true
+        },
+        api_key: apiKey
+    };
     
-    // --- CASE B: Qwen VL Image Edit ---
-    else if (modelId === 'qwen-vl-image-edit') {
-        // https://help.aliyun.com/zh/model-studio/qwen-image-edit-api
-        payload = {
-            model: modelId,
-            input: {
-                image_url: imageUrl,
-                prompt: prompt
+    try {
+        console.log('[Image Edit] 发送请求到后端...');
+        
+        const response = await fetch('/api/image-edit/edit', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
             },
-            parameters: {} // Qwen Edit often doesn't need extra params
-        };
-    }
-
-    // --- CASE C: WanX V1 (Legacy / Default) ---
-    else {
-        payload = {
-            model: "wanx-v1",
-            input: {
-                image_url: imageUrl, 
-                prompt: prompt
-            },
-            parameters: {
-                style: "<auto>",
-                size: "1024*1024", 
-                n: 1
+            body: JSON.stringify(requestBody)
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[Image Edit] 后端错误:', errorText);
+            
+            // 解析错误信息
+            let errorMessage = '图像编辑失败';
+            try {
+                const errorJson = JSON.parse(errorText);
+                errorMessage = errorJson.detail || errorMessage;
+            } catch {
+                errorMessage = errorText || errorMessage;
             }
+            
+            // 特殊处理 403 权限错误
+            if (response.status === 403 || errorMessage.includes('403')) {
+                throw new Error(
+                    '当前 API Key 无法使用图片编辑功能\n\n' +
+                    '可能的原因:\n' +
+                    '1. API Key 未开通图片编辑权限\n' +
+                    '2. 账户余额不足\n' +
+                    '3. 模型未在阿里云控制台开通\n\n' +
+                    '解决方法:\n' +
+                    '1. 登录阿里云控制台: https://dashscope.console.aliyun.com/\n' +
+                    '2. 检查账户余额和权限\n' +
+                    '3. 开通对应的图片编辑模型\n\n' +
+                    `技术详情: ${errorMessage}`
+                );
+            }
+            
+            throw new Error(errorMessage);
+        }
+        
+        const result = await response.json();
+        
+        console.log('[Image Edit] ✅ 编辑成功:', result.url?.substring(0, 60));
+        
+        return {
+            url: result.url,
+            mimeType: result.mime_type || 'image/png'
         };
+        
+    } catch (error: any) {
+        console.error('[Image Edit] ❌ 编辑失败:', error);
+        
+        // 如果是我们自己抛出的错误,直接重新抛出
+        if (error.message?.includes('API Key')) {
+            throw error;
+        }
+        
+        // 网络错误
+        if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
+            throw new Error(
+                '无法连接到后端服务\n\n' +
+                '请确保:\n' +
+                '1. 后端服务正在运行 (npm run dev)\n' +
+                '2. 网络连接正常\n\n' +
+                `技术详情: ${error.message}`
+            );
+        }
+        
+        // 其他错误
+        throw new Error(`图像编辑失败: ${error.message || '未知错误'}`);
     }
-
-    const url = resolveDashUrl(baseUrl || '', 'image-edit', modelId);
-    return submitAndPoll(url, payload, apiKey);
 }
