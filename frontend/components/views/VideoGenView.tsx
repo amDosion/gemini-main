@@ -12,6 +12,7 @@ interface VideoGenViewProps {
     onSend: (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => void;
     onStop: () => void;
     activeModelConfig?: ModelConfig;
+    visibleModels?: ModelConfig[];  // 新增
     initialPrompt?: string;
 }
 
@@ -22,6 +23,7 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
     onSend,
     onStop,
     activeModelConfig,
+    visibleModels = [],
     initialPrompt
 }) => {
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -235,11 +237,12 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
             isLoading={loadingState !== 'idle'}
             onStop={onStop}
             currentModel={activeModelConfig}
+            visibleModels={visibleModels}
             mode="video-gen"
             setMode={setAppMode}
             initialPrompt={initialPrompt}
         />
-    ), [onSend, loadingState, onStop, activeModelConfig, setAppMode, initialPrompt]);
+    ), [onSend, loadingState, onStop, activeModelConfig, visibleModels, setAppMode, initialPrompt]);
 
     return (
         <GenViewLayout

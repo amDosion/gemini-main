@@ -48,7 +48,7 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
     case 'chat':
       return <ChatControls currentModel={currentModel} {...(controlProps as ChatControlsProps)} />;
     case 'image-gen':
-      return <ImageGenControls providerId={providerId} {...(controlProps as ImageGenControlsProps)} />;
+      return <ImageGenControls providerId={providerId} currentModel={currentModel} {...(controlProps as ImageGenControlsProps)} />;
     case 'image-edit':
       return <ImageEditControls providerId={providerId} {...(controlProps as ImageEditControlsProps)} />;
     case 'image-outpainting':

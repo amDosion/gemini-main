@@ -7,7 +7,7 @@ export class OllamaProvider extends OpenAIProvider {
     public id = 'ollama';
 
     public async getAvailableModels(apiKey: string, baseUrl: string): Promise<ModelConfig[]> {
-        // Ollama usually doesn't need an API key, but we pass what we have
-        return getOllamaModels(baseUrl);
+        // 传递 apiKey 用于远程 Ollama 服务认证
+        return getOllamaModels(baseUrl, apiKey);
     }
 }

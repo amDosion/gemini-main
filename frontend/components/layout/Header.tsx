@@ -27,12 +27,22 @@ interface HeaderProps {
 }
 
 const getModelIcon = (model: ModelConfig) => {
-    if (model.id.includes('veo')) return Video;
-    if (model.id.includes('tts')) return Mic;
+    const id = model.id.toLowerCase();
+    // 视频生成模型
+    if (id.includes('veo') || id.includes('sora') || id.includes('luma')) return Video;
+    // 音频生成模型
+    if (id.includes('tts') || id.includes('audio') || id.includes('speech')) return Mic;
+    // 文生图模型：统一使用 Zap 图标
+    if (id.includes('-t2i') || id.includes('z-image') || id.includes('wanx') || id.includes('dall') || id.includes('flux') || id.includes('midjourney') || id.includes('imagen')) return Zap;
+    // 推理模型
     if (model.capabilities.reasoning) return Brain;
+    // 搜索模型
     if (model.capabilities.search) return Globe;
+    // 视觉理解模型（不是文生图）
     if (model.capabilities.vision) return ImageIcon;
-    if (model.id.includes('pro')) return BrainCircuit;
+    // Pro 模型
+    if (id.includes('pro')) return BrainCircuit;
+    // 默认
     return Zap;
 };
 
@@ -82,29 +92,45 @@ export const Header: React.FC<HeaderProps> = ({
                 case 'audio-gen':
                     return id.includes('tts') || id.includes('audio') || id.includes('speech');
                 case 'image-gen':
-                    return (id.includes('image') || id.includes('dall') || id.includes('wanx') || id.includes('flux') || id.includes('midjourney') || (caps.vision && !id.includes('veo')));
+                    // 文生图模式：排除 edit 模型（如 qwen-image-edit-plus），它们需要输入图片
+                    // 只包含纯文生图模型：-t2i 系列、z-image 系列、dall-e、flux、midjourney、wanx、imagen
+                    // 注意：wan2.6-image 不在此列表中，因为它的纯文生图模式需要流式输出，应放在 image-edit 模式
+                    if (id.includes('edit')) return false; // 排除所有编辑模型
+                    return (id.includes('dall') || id.includes('wanx') || id.includes('flux') || id.includes('midjourney') || id.includes('-t2i') || id.includes('z-image') || id.includes('imagen'));
                 case 'image-edit':
                 case 'image-outpainting':
                     return caps.vision && !id.includes('veo');
+                case 'virtual-try-on':
+                    // 虚拟试衣需要视觉能力的模型,排除视频生成专用模型
+                    return caps.vision && !id.includes('veo');
+                case 'deep-research':
+                    // 深度研究需要搜索或推理能力
+                    return caps.search || caps.reasoning;
                 case 'pdf-extract':
                     // PDF extraction can use any model that supports function calling / text generation
                     // We exclude specialized media generation models
-                    return !id.includes('veo') && !id.includes('tts') && !id.includes('wanx') && !id.includes('imagen');
+                    return !id.includes('veo') && !id.includes('tts') && !id.includes('wanx') && !id.includes('imagen') && !id.includes('-t2i') && !id.includes('z-image');
                 case 'chat':
                 default:
                     // Standard chat: Exclude specialized video/audio generators unless they are multimodal
-                    return !id.includes('veo') && !id.includes('tts') && !id.includes('wanx');
+                    return !id.includes('veo') && !id.includes('tts') && !id.includes('wanx') && !id.includes('-t2i') && !id.includes('z-image');
             }
         });
     }, [visibleModels, appMode]);
 
-    const renderCapabilities = (model: ModelConfig) => (
-        <div className="flex items-center gap-1 ml-2">
-            {model.capabilities.search && <Globe size={12} className="text-blue-400" />}
-            {model.capabilities.reasoning && <Brain size={12} className="text-purple-400" />}
-            {model.capabilities.vision && <ImageIcon size={12} className="text-emerald-400" />}
-        </div>
-    );
+    const renderCapabilities = (model: ModelConfig) => {
+        const id = model.id.toLowerCase();
+        // 文生图模型不显示 vision 能力图标（它们是生成图片，不是理解图片）
+        const isImageGenModel = id.includes('-t2i') || id.includes('z-image') || id.includes('wanx') || id.includes('dall') || id.includes('flux') || id.includes('midjourney') || id.includes('imagen');
+        
+        return (
+            <div className="flex items-center gap-1 ml-2">
+                {model.capabilities.search && <Globe size={12} className="text-blue-400" />}
+                {model.capabilities.reasoning && <Brain size={12} className="text-purple-400" />}
+                {model.capabilities.vision && !isImageGenModel && <ImageIcon size={12} className="text-emerald-400" />}
+            </div>
+        );
+    };
 
     return (
         <header className="h-14 flex items-center justify-between px-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md z-50 shrink-0 sticky top-0">

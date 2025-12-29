@@ -168,6 +168,7 @@ export const ChatView: React.FC<ChatViewProps> = React.memo(({
                     isLoading={loadingState !== 'idle'} 
                     onStop={onStop} // Pass the real stop handler
                     currentModel={activeModelConfig}
+                    visibleModels={visibleModels}
                     mode={appMode} // ✅ 修复：使用传入的 appMode 而不是硬编码 "chat"
                     setMode={setAppMode}
                     providerId={providerId}

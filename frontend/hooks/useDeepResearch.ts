@@ -177,7 +177,7 @@ export const useDeepResearch = (): UseDeepResearchReturn => {
         error?: string;
       }>(`/api/research/status/${interactionId}`);
 
-      const { status, progress, result, error } = response.data;
+      const { status, progress, result, error } = response;
       const elapsedTime = startTimeRef.current ? (Date.now() - startTimeRef.current) / 1000 : 0;
 
       setResearchStatus(prev => ({
@@ -257,7 +257,7 @@ export const useDeepResearch = (): UseDeepResearchReturn => {
         fileSearchStoreNames: options.fileSearchStoreNames,
       });
 
-      const { interactionId } = response.data;
+      const { interactionId } = response;
       if (!interactionId) {
         throw new Error('Backend did not return an interactionId.');
       }

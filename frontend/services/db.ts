@@ -138,18 +138,18 @@ class LocalStorageDB {
 
 // --- API Adapter (Local Server Mode) ---
 class ApiDB {
-    private async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
+    public async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
         // 添加超时控制
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
-        
+
         try {
             const res = await fetch(`${API_BASE}${endpoint}`, {
                 ...options,
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
-            
+
             if (!res.ok) throw new Error(`API Error: ${res.status}`);
             return res.json();
         } catch (error) {
@@ -268,12 +268,12 @@ class HybridDB {
 
     /**
      * 混合执行：根据后端可用性选择使用 API 或 LocalStorage
-     * 
+     *
      * 策略：
      * 1. 首次调用时检测后端
      * 2. 如果后端可用，始终使用 API（不降级到 LocalStorage）
      * 3. 只有在后端完全不可用时才使用 LocalStorage
-     * 
+     *
      * ⚠️ 注意：当后端可用但 API 调用失败时，直接抛出错误，不降级到 LocalStorage
      * 这样可以避免 LocalStorage 配额问题，并让用户知道真正的错误原因
      */
@@ -283,15 +283,42 @@ class HybridDB {
     ): Promise<T> {
         // 首次调用时检测后端
         const backendAvailable = await this.checkBackendAvailable();
-        
+
         // 如果检测结果为"不可用"，直接使用 LocalStorage
         if (!backendAvailable) {
             return localCall();
         }
-        
+
         // 如果检测结果为"可用"，使用 API（不降级）
         // API 调用失败时直接抛出错误，让上层处理
         return await apiCall();
+    }
+
+    /**
+     * 公共访问器：允许外部代码访问 exec 方法
+     * 用于需要自定义混合执行逻辑的场景
+     */
+    public async execMixed<T>(
+        apiCall: () => Promise<T>,
+        localCall: () => Promise<T>
+    ): Promise<T> {
+        return this.exec(apiCall, localCall);
+    }
+
+    /**
+     * 公共访问器：获取 API 实例（用于直接 API 调用）
+     * 警告：仅在确定后端可用时使用
+     */
+    public getApi(): ApiDB {
+        return this.api;
+    }
+
+    /**
+     * 公共访问器：获取 LocalStorage 实例（用于直接本地调用）
+     * 警告：仅在确定需要本地存储时使用
+     */
+    public getLocal(): LocalStorageDB {
+        return this.local;
     }
 
     getSessions() { return this.exec(() => this.api.getSessions(), () => this.local.getSessions()); }

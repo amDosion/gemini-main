@@ -60,11 +60,17 @@ class ImageEditResponse(BaseModel):
 
 async def process_reference_image(
     reference_image: ReferenceImage,
-    api_key: str
+    api_key: str,
+    model: str
 ) -> str:
     """
     处理参考图片,统一转换为 oss:// URL
     复用现有的 DashScope 文件上传服务
+    
+    Args:
+        reference_image: 参考图片对象
+        api_key: DashScope API Key
+        model: 模型名称（用于获取上传凭证）
     
     Returns:
         oss:// 格式的URL
@@ -80,6 +86,7 @@ async def process_reference_image(
     # 情况 2 & 3: HTTPS URL 或 Base64 data URI
     # 使用现有的 upload_to_dashscope 服务统一处理
     logger.info(f"[Image Edit] 上传图片到 OSS: {url[:60]}...")
+    logger.info(f"[Image Edit] 使用模型获取上传凭证: {model}")
     
     try:
         # upload_to_dashscope 支持两种输入:
@@ -88,7 +95,7 @@ async def process_reference_image(
         result = upload_to_dashscope(
             image_url=url,
             api_key=api_key,
-            model="wanx-v1"  # 固定使用 wanx-v1 模型获取上传凭证
+            model=model  # 使用实际请求的模型获取上传凭证
         )
         
         if not result.success:
@@ -148,13 +155,63 @@ def build_qwen_payload(
     return payload
 
 
-def build_wan_payload(
+def build_wan26_image_payload(
     model: str,
     prompt: str,
     image_url: str,
     options: ImageEditOptions
 ) -> dict:
-    """构建通义万相图像编辑请求 payload"""
+    """
+    构建 wan2.6-image 模型请求 payload
+    
+    wan2.6-image 使用 multimodal-generation 端点，采用 messages 格式
+    官方文档: https://help.aliyun.com/zh/model-studio/developer-reference/wan2.6-image
+    
+    enable_interleave=false: 图像编辑模式（需要输入图片，同步调用）
+    """
+    # 构建 content 数组：先文本后图片
+    content = []
+    if prompt:
+        content.append({"text": prompt})
+    content.append({"image": image_url})
+    
+    payload = {
+        "model": model,
+        "input": {
+            "messages": [{
+                "role": "user",
+                "content": content
+            }]
+        },
+        "parameters": {
+            "n": options.n,
+            "watermark": options.watermark,
+            "prompt_extend": options.prompt_extend,
+            "enable_interleave": False  # 图像编辑模式，同步调用
+        }
+    }
+
+    if options.negative_prompt:
+        payload["parameters"]["negative_prompt"] = options.negative_prompt
+    if options.seed is not None:
+        payload["parameters"]["seed"] = options.seed
+    if options.size:
+        payload["parameters"]["size"] = options.size
+
+    return payload
+
+
+def build_wan_legacy_payload(
+    model: str,
+    prompt: str,
+    image_url: str,
+    options: ImageEditOptions
+) -> dict:
+    """
+    构建旧版通义万相模型请求 payload (wanx-v1, wan2.5-i2i-preview 等)
+    
+    使用 image-generation 端点，采用 prompt + images 格式
+    """
     payload = {
         "model": model,
         "input": {
@@ -245,11 +302,13 @@ def extract_image_url(response_data: dict, model: str) -> str:
                            f"- qwen-image-edit-plus\n"
                            f"- qwen-image-edit-plus-2025-12-15\n"
                            f"- qwen-image-edit-plus-2025-10-30\n"
+                           f"- wan2.6-image\n"
                            f"- wan2.5-i2i-preview"
                 )
 
-    # Qwen 模型响应格式
-    if model.startswith('qwen-'):
+    # Qwen 和 wan2.6-image 模型响应格式 (multimodal-generation 端点)
+    # 响应格式: output.choices[0].message.content[{image: url}]
+    if model.startswith('qwen-') or model == 'wan2.6-image':
         if 'output' in response_data and 'choices' in response_data['output']:
             choices = response_data['output']['choices']
             if choices and len(choices) > 0:
@@ -258,8 +317,9 @@ def extract_image_url(response_data: dict, model: str) -> str:
                     if isinstance(item, dict) and 'image' in item:
                         return item['image']
 
-    # 通义万相响应格式
-    if model.startswith('wan'):
+    # 旧版通义万相响应格式 (image-generation 端点)
+    # 响应格式: output.results[0].url
+    if model.startswith('wan') and model != 'wan2.6-image':
         if 'output' in response_data and 'results' in response_data['output']:
             results = response_data['output']['results']
             if results and len(results) > 0:
@@ -302,12 +362,13 @@ async def edit_image(request: ImageEditRequest) -> ImageEditResponse:
         # 步骤 1: 处理参考图片,统一转换为 oss:// URL
         oss_url = await process_reference_image(
             request.reference_image,
-            request.api_key
+            request.api_key,
+            request.model  # 传入实际请求的模型
         )
         
         # 步骤 2: 根据模型类型构建 payload 和 endpoint
         if request.model.startswith('qwen-'):
-            # Qwen Image Edit 系列
+            # Qwen Image Edit 系列 - 使用 multimodal-generation 端点
             endpoint = f"{DASHSCOPE_BASE_URL}/api/v1/services/aigc/multimodal-generation/generation"
             payload = build_qwen_payload(
                 request.model,
@@ -315,10 +376,20 @@ async def edit_image(request: ImageEditRequest) -> ImageEditResponse:
                 oss_url,
                 request.options
             )
+        elif request.model == 'wan2.6-image':
+            # wan2.6-image 模型 - 使用 multimodal-generation 端点 + messages 格式
+            endpoint = f"{DASHSCOPE_BASE_URL}/api/v1/services/aigc/multimodal-generation/generation"
+            payload = build_wan26_image_payload(
+                request.model,
+                request.prompt,
+                oss_url,
+                request.options
+            )
+            logger.info(f"[Image Edit] wan2.6-image 使用 multimodal-generation 端点")
         elif request.model.startswith('wan'):
-            # 通义万相系列
+            # 旧版通义万相系列 (wanx-v1, wan2.5-i2i-preview 等) - 使用 image-generation 端点
             endpoint = f"{DASHSCOPE_BASE_URL}/api/v1/services/aigc/image-generation/generation"
-            payload = build_wan_payload(
+            payload = build_wan_legacy_payload(
                 request.model,
                 request.prompt,
                 oss_url,

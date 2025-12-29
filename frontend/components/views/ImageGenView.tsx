@@ -13,6 +13,7 @@ interface ImageGenViewProps {
     onSend: (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => void;
     onStop: () => void;
     activeModelConfig?: ModelConfig;
+    visibleModels?: ModelConfig[];  // 新增
     initialPrompt?: string;
     onEditImage?: (url: string) => void;
     onExpandImage?: (url: string) => void; // Added prop
@@ -27,6 +28,7 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
     onSend,
     onStop,
     activeModelConfig,
+    visibleModels = [],
     initialPrompt,
     onEditImage,
     onExpandImage,
@@ -284,12 +286,13 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
             isLoading={loadingState !== 'idle'}
             onStop={onStop}
             currentModel={activeModelConfig}
+            visibleModels={visibleModels}
             mode="image-gen"
             setMode={setAppMode}
             initialPrompt={initialPrompt}
             providerId={providerId}
         />
-    ), [onSend, loadingState, onStop, activeModelConfig, setAppMode, initialPrompt, providerId]);
+    ), [onSend, loadingState, onStop, activeModelConfig, visibleModels, setAppMode, initialPrompt, providerId]);
 
     return (
         <>

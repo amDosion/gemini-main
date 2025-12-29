@@ -12,6 +12,7 @@ interface AudioGenViewProps {
   onSend: (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => void;
   onStop: () => void;
   activeModelConfig?: ModelConfig;
+  visibleModels?: ModelConfig[];  // 新增
   initialPrompt?: string;
 }
 
@@ -258,6 +259,7 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
   onSend,
   onStop,
   activeModelConfig,
+  visibleModels = [],
   initialPrompt
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -616,11 +618,12 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
           isLoading={loadingState !== 'idle'}
           onStop={onStop}
           currentModel={activeModelConfig}
+          visibleModels={visibleModels}
           mode="audio-gen"
           setMode={setAppMode}
           initialPrompt={initialPrompt}
         />
-  ), [onSend, loadingState, onStop, activeModelConfig, setAppMode, initialPrompt]);
+  ), [onSend, loadingState, onStop, activeModelConfig, visibleModels, setAppMode, initialPrompt]);
 
   return (
     <GenViewLayout

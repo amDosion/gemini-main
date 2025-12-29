@@ -41,13 +41,12 @@ export function resolveDashUrl(baseUrl: string, endpointType: 'generation' | 'ta
     }
 
     // 3. Image Generation (Text-to-Image)
+    // 根据官方文档，所有文生图模型都使用 multimodal-generation 端点
+    // - Z-Image 系列: z-image-turbo, z-image, z-image-omni-base
+    // - 万相 V2 系列: wan2.6-t2i, wan2.5-t2i-preview, wan2.2-t2i-plus 等
+    // - Qwen-Image: qwen-image-plus
     if (endpointType === 'image-generation') {
-        // WanX V2 specific endpoint
-        if (modelId === 'wanx-v2') {
-            return `${root}/api/v1/services/aigc/text-to-image/image-synthesis`; 
-        }
-        // Default (Wanx V1, Qwen-Image-Plus)
-        return `${root}/api/v1/services/aigc/text2image/image-synthesis`;
+        return `${root}/api/v1/services/aigc/multimodal-generation/generation`;
     }
 
     // 4. Image Editing (Inpainting/Repainting)

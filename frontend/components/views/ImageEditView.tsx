@@ -17,6 +17,7 @@ interface ImageEditViewProps {
     onSend: (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => void;
     onStop: () => void;
     activeModelConfig?: ModelConfig;
+    visibleModels?: ModelConfig[];  // 新增
     initialPrompt?: string;
     initialAttachments?: Attachment[];
     onExpandImage?: (url: string) => void; // Added prop
@@ -222,6 +223,7 @@ export const ImageEditView = memo(({
     onSend,
     onStop,
     activeModelConfig,
+    visibleModels = [],
     initialPrompt,
     initialAttachments,
     onExpandImage,
@@ -488,6 +490,7 @@ export const ImageEditView = memo(({
                     isLoading={loadingState !== 'idle'}
                     onStop={onStop}
                     currentModel={activeModelConfig}
+                    visibleModels={visibleModels}
                     mode="image-edit"
                     setMode={setAppMode}
                     initialPrompt={initialPrompt}
@@ -501,6 +504,7 @@ export const ImageEditView = memo(({
         loadingState,
         onStop,
         activeModelConfig, // activeModelConfig is intentionally kept here as InputArea needs it directly.
+        visibleModels,
         setAppMode,
         initialPrompt,
         activeAttachments,

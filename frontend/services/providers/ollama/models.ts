@@ -1,7 +1,7 @@
 
 import { ModelConfig } from "../../../types/types";
 
-export async function getOllamaModels(baseUrl: string): Promise<ModelConfig[]> {
+export async function getOllamaModels(baseUrl: string, apiKey?: string): Promise<ModelConfig[]> {
     const defaultModels: ModelConfig[] = [
         {
             id: "llama3",
@@ -13,8 +13,13 @@ export async function getOllamaModels(baseUrl: string): Promise<ModelConfig[]> {
 
     try {
         const cleanUrl = baseUrl.replace(/\/$/, '');
+        // 构建请求头(支持API Key认证)
+        const headers: Record<string, string> = {};
+        if (apiKey && apiKey !== 'ollama') {
+            headers['Authorization'] = `Bearer ${apiKey}`;
+        }
         // Ollama OpenAI-compat endpoint
-        const response = await fetch(`${cleanUrl}/models`);
+        const response = await fetch(`${cleanUrl}/models`, { headers });
         
         if (!response.ok) return defaultModels;
 

@@ -153,6 +153,8 @@ except Exception as e:
 # Import API routers
 try:
     from .routers import health, storage, browse, pdf, embedding, dashscope_proxy, research, research_stream, metrics, interactions, file_search
+    from .routers import tongyi_chat, tongyi_models
+    from .routers import ollama_models
     from .routers.profiles import router as profiles_router
     from .routers.sessions import router as sessions_router
     from .routers.personas import router as personas_router
@@ -164,6 +166,8 @@ try:
 except ImportError:
     try:
         from routers import health, storage, browse, pdf, embedding, dashscope_proxy, research, research_stream, metrics, interactions, file_search
+        from routers import tongyi_chat, tongyi_models
+        from routers import ollama_models
         from routers.profiles import router as profiles_router
         from routers.sessions import router as sessions_router
         from routers.personas import router as personas_router
@@ -176,6 +180,8 @@ except ImportError:
         try:
             # 从项目根目录启动时的导入路径
             from backend.app.routers import health, storage, browse, pdf, embedding, dashscope_proxy, research, research_stream, metrics, interactions, file_search
+            from backend.app.routers import tongyi_chat, tongyi_models
+            from backend.app.routers import ollama_models
             from backend.app.routers.profiles import router as profiles_router
             from backend.app.routers.sessions import router as sessions_router
             from backend.app.routers.personas import router as personas_router
@@ -346,7 +352,12 @@ if API_ROUTES_AVAILABLE:
     app.include_router(file_search.router)
     app.include_router(metrics.router)
     app.include_router(interactions.router)
-    logger.info(f"{LOG_PREFIXES['info']} API routes registered (health, storage, browse, pdf, embedding, profiles, sessions, personas, image_expand, tryon, image_edit, dashscope_proxy, research, research_stream, file_search, metrics, interactions)")
+    # 通义千问后端 API 路由
+    app.include_router(tongyi_chat.router)
+    app.include_router(tongyi_models.router)
+    # Ollama 模型管理路由
+    app.include_router(ollama_models.router)
+    logger.info(f"{LOG_PREFIXES['info']} API routes registered (health, storage, browse, pdf, embedding, profiles, sessions, personas, image_expand, tryon, image_edit, dashscope_proxy, research, research_stream, file_search, metrics, interactions, tongyi_chat, tongyi_models, ollama_models)")
 
     # Set service availability flags for health check endpoint
     health.set_availability(

@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { MessageSquare, Wand2, Crop, Expand, PlaySquare, Mic, FileText, Shirt, Search } from 'lucide-react';
 import { AppMode, ModelConfig } from '../../../types/types';
 
@@ -7,40 +7,76 @@ interface ModeSelectorProps {
   mode: AppMode;
   setMode: (mode: AppMode) => void;
   currentModel?: ModelConfig;
+  visibleModels?: ModelConfig[];  // 新增：所有可见模型列表，用于判断模式可用性
 }
 
-export const ModeSelector: React.FC<ModeSelectorProps> = ({ mode, setMode, currentModel }) => {
-  const canGenImage = currentModel?.capabilities.vision || false;
-  
-  // 增强 Deep Research 检测逻辑
-  const modelName = currentModel?.name || currentModel?.id || '';
-  const modelNameLower = modelName.toLowerCase();
-  const canDeepResearch = modelNameLower.includes('deep-research') || 
-                          modelNameLower.includes('deep research') ||
-                          modelNameLower.includes('deepresearch');
-  
-  // 调试日志
-  React.useEffect(() => {
-    if (currentModel) {
-      console.log('[ModeSelector] 当前模型:', {
-        id: currentModel.id,
-        name: currentModel.name,
-        modelNameLower,
-        canDeepResearch
-      });
-    }
-  }, [currentModel, modelNameLower, canDeepResearch]);
+export const ModeSelector: React.FC<ModeSelectorProps> = ({ mode, setMode, currentModel, visibleModels = [] }) => {
+  // 基于 visibleModels 计算每个模式是否有兼容的模型
+  const modeAvailability = useMemo(() => {
+    const models = visibleModels.length > 0 ? visibleModels : (currentModel ? [currentModel] : []);
+    
+    // 检查是否有文生图模型
+    const hasImageGenModels = models.some(m => {
+      const id = m.id.toLowerCase();
+      return id.includes('dall') || id.includes('wanx') || id.includes('flux') || 
+             id.includes('midjourney') || id.includes('-t2i') || id.includes('z-image') || 
+             id.includes('imagen');
+    });
+    
+    // 检查是否有视觉理解模型（用于图像编辑等）
+    const hasVisionModels = models.some(m => {
+      const id = m.id.toLowerCase();
+      return m.capabilities.vision && !id.includes('veo');
+    });
+    
+    // 检查是否有深度研究模型
+    const hasDeepResearchModels = models.some(m => {
+      const name = (m.name || m.id || '').toLowerCase();
+      return name.includes('deep-research') || name.includes('deep research') || name.includes('deepresearch');
+    });
+    
+    // 检查是否有视频生成模型
+    const hasVideoModels = models.some(m => {
+      const id = m.id.toLowerCase();
+      return id.includes('veo') || id.includes('sora') || id.includes('video') || id.includes('luma');
+    });
+    
+    // 检查是否有音频生成模型
+    const hasAudioModels = models.some(m => {
+      const id = m.id.toLowerCase();
+      return id.includes('tts') || id.includes('audio') || id.includes('speech');
+    });
+    
+    // 检查是否有 PDF 提取兼容模型
+    const hasPdfModels = models.some(m => {
+      const id = m.id.toLowerCase();
+      return !id.includes('veo') && !id.includes('tts') && !id.includes('wanx') && 
+             !id.includes('imagen') && !id.includes('-t2i') && !id.includes('z-image');
+    });
+    
+    return {
+      chat: true,  // Chat 模式始终可用
+      'deep-research': hasDeepResearchModels,
+      'image-gen': hasImageGenModels,
+      'image-edit': hasVisionModels || hasImageGenModels,  // 编辑模式需要视觉或图像模型
+      'virtual-try-on': hasVisionModels,
+      'image-outpainting': true,  // Outpainting 使用特定 API，始终可用
+      'video-gen': hasVideoModels,
+      'audio-gen': hasAudioModels || true,  // 音频通常有默认支持
+      'pdf-extract': hasPdfModels
+    };
+  }, [visibleModels, currentModel]);
 
   const modes = [
-    { id: 'chat', label: 'Chat', icon: MessageSquare, disabled: false, color: 'bg-indigo-600' },
-    { id: 'deep-research', label: 'Research', icon: Search, disabled: !canDeepResearch, color: 'bg-blue-600' },
-    { id: 'image-gen', label: 'Gen', icon: Wand2, disabled: !canGenImage, color: 'bg-emerald-600' },
-    { id: 'image-edit', label: 'Edit', icon: Crop, disabled: !canGenImage, color: 'bg-pink-600' },
-    { id: 'virtual-try-on', label: 'Try-On', icon: Shirt, disabled: !canGenImage, color: 'bg-rose-600' },
-    { id: 'image-outpainting', label: 'Expand', icon: Expand, disabled: false, color: 'bg-orange-600' },
-    { id: 'video-gen', label: 'Video', icon: PlaySquare, disabled: !canGenImage, color: 'bg-indigo-500' },
-    { id: 'audio-gen', label: 'Audio', icon: Mic, disabled: false, color: 'bg-cyan-600' },
-    { id: 'pdf-extract', label: 'PDF', icon: FileText, disabled: false, color: 'bg-purple-600' },
+    { id: 'chat', label: 'Chat', icon: MessageSquare, disabled: !modeAvailability.chat, color: 'bg-indigo-600' },
+    { id: 'deep-research', label: 'Research', icon: Search, disabled: !modeAvailability['deep-research'], color: 'bg-blue-600' },
+    { id: 'image-gen', label: 'Gen', icon: Wand2, disabled: !modeAvailability['image-gen'], color: 'bg-emerald-600' },
+    { id: 'image-edit', label: 'Edit', icon: Crop, disabled: !modeAvailability['image-edit'], color: 'bg-pink-600' },
+    { id: 'virtual-try-on', label: 'Try-On', icon: Shirt, disabled: !modeAvailability['virtual-try-on'], color: 'bg-rose-600' },
+    { id: 'image-outpainting', label: 'Expand', icon: Expand, disabled: !modeAvailability['image-outpainting'], color: 'bg-orange-600' },
+    { id: 'video-gen', label: 'Video', icon: PlaySquare, disabled: !modeAvailability['video-gen'], color: 'bg-indigo-500' },
+    { id: 'audio-gen', label: 'Audio', icon: Mic, disabled: !modeAvailability['audio-gen'], color: 'bg-cyan-600' },
+    { id: 'pdf-extract', label: 'PDF', icon: FileText, disabled: !modeAvailability['pdf-extract'], color: 'bg-purple-600' },
   ];
 
   return (

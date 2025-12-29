@@ -28,20 +28,24 @@ async def upload_file_to_dashscope(request: Request):
         api_key = auth_header.replace('Bearer ', '').strip()
         form_data = await request.form()
         
-        # 获取文件和 purpose
+        # 获取文件、purpose 和 model
         file = form_data.get('file')
         purpose = form_data.get('purpose', 'image-out-painting')
+        model_name = form_data.get('model', '')  # 优先使用前端传入的模型
         
         if not file or not hasattr(file, 'file'):
             raise HTTPException(status_code=400, detail="No file provided")
         
-        # 根据 purpose 确定 model
-        model_map = {
-            'image-out-painting': 'wanx-v1',
-            'image-generation': 'wanx-v1',
-            'image-edit': 'wanx-v1'
-        }
-        model_name = model_map.get(purpose, 'wanx-v1')
+        # 如果前端没有传入模型，则根据 purpose 使用默认模型
+        if not model_name:
+            model_map = {
+                'image-out-painting': 'wanx-v1',
+                'image-generation': 'wanx-v1',
+                'image-edit': 'wanx-v1'
+            }
+            model_name = model_map.get(purpose, 'wanx-v1')
+        
+        print(f"[DashScope Proxy] 文件上传 - purpose: {purpose}, model: {model_name}")
         
         # 步骤 1: 获取上传凭证
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -137,6 +141,7 @@ async def proxy_dashscope(path: str, request: Request):
         'content-type',
         'x-dashscope-async',
         'x-dashscope-ossresourceresolve',
+        'x-dashscope-sse',  # SSE 流式输出
     ]
     
     # DashScope 特殊头的正确大小写映射
@@ -145,6 +150,7 @@ async def proxy_dashscope(path: str, request: Request):
         'content-type': 'Content-Type',
         'x-dashscope-async': 'X-DashScope-Async',
         'x-dashscope-ossresourceresolve': 'X-DashScope-OssResourceResolve',
+        'x-dashscope-sse': 'X-DashScope-Sse',  # 注意大小写：Sse 不是 SSE
     }
     
     for key, value in request.headers.items():
@@ -162,6 +168,37 @@ async def proxy_dashscope(path: str, request: Request):
     query_params = dict(request.query_params)
     
     try:
+        # 检查是否需要 SSE 流式响应
+        is_sse_request = headers.get('X-DashScope-Sse', '').lower() == 'enable'
+        
+        if is_sse_request:
+            # SSE 流式响应：使用流式传输
+            print(f"[DashScope Proxy] SSE 流式请求")
+            
+            async def stream_response():
+                async with httpx.AsyncClient(timeout=300.0) as client:
+                    body = await request.body()
+                    async with client.stream(
+                        method=request.method,
+                        url=target_url,
+                        headers=headers,
+                        params=query_params,
+                        content=body
+                    ) as response:
+                        async for chunk in response.aiter_bytes():
+                            yield chunk
+            
+            from fastapi.responses import StreamingResponse
+            return StreamingResponse(
+                stream_response(),
+                media_type='text/event-stream',
+                headers={
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                    'X-Accel-Buffering': 'no',  # 禁用 nginx 缓冲
+                }
+            )
+        
         async with httpx.AsyncClient(timeout=300.0) as client:
             # 根据请求方法转发
             if request.method == "GET":

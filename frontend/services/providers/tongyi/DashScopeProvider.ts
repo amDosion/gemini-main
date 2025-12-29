@@ -1,9 +1,6 @@
-
-import { ILLMProvider, StreamUpdate, ImageGenerationResult, VideoGenerationResult, AudioGenerationResult } from "../interfaces";
+import { ILLMProvider, StreamUpdate, ImageGenerationResult } from "../interfaces";
 import { ModelConfig, Message, Attachment, ChatOptions } from "../../../types/types";
 import { OpenAIProvider } from "../openai/OpenAIProvider";
-import { getTongYiModels } from "./models";
-import { streamNativeDashScope } from "./chat";
 import { generateDashScopeImage } from "./image-gen";
 import { editWanxImage } from "./image-edit";
 import { outPaintWanxImage } from "./image-expand";
@@ -12,11 +9,16 @@ import { uploadDashScopeFile } from "./api";
 export class DashScopeProvider extends OpenAIProvider implements ILLMProvider {
   public id = 'tongyi'; 
   
-  public async getAvailableModels(apiKey: string, baseUrl: string): Promise<ModelConfig[]> {
-      return getTongYiModels(apiKey, baseUrl);
+  public async getAvailableModels(apiKey: string, _baseUrl: string): Promise<ModelConfig[]> {
+    const response = await fetch(`/api/models/tongyi?apiKey=${encodeURIComponent(apiKey)}`);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(error.detail || `API error (${response.status})`);
+    }
+    const data = await response.json();
+    return data.models;
   }
 
-  // --- Chat / Streaming (Native Support) ---
   public async *sendMessageStream(
     modelId: string,
     history: Message[],
@@ -24,57 +26,88 @@ export class DashScopeProvider extends OpenAIProvider implements ILLMProvider {
     attachments: Attachment[],
     options: ChatOptions,
     apiKey: string,
-    baseUrl: string
+    _baseUrl: string
   ): AsyncGenerator<StreamUpdate, void, unknown> {
-      // Models that support Native API features
-      const isNativeCandidate = 
-          modelId === 'qwen-deep-research' || 
-          modelId.includes('qwq') || 
-          modelId.includes('qwen-max') || 
-          modelId.includes('qwen-plus') || 
-          modelId.includes('qwen-turbo') ||
-          (options.enableSearch || options.enableThinking);
+    // 统一使用后端 API（包括视觉模型）
+    const response = await fetch('/api/chat/tongyi', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        modelId,
+        messages: history.map(msg => ({
+          role: msg.role,
+          content: msg.content,
+          isError: msg.isError || false,
+          attachments: msg.attachments?.map(att => ({
+            id: att.id,
+            mimeType: att.mimeType,
+            name: att.name,
+            url: att.url,
+            tempUrl: att.tempUrl,
+            fileUri: att.fileUri,
+          })),
+        })),
+        message,
+        attachments: attachments?.map(att => ({
+          id: att.id,
+          mimeType: att.mimeType,
+          name: att.name,
+          url: att.url,
+          tempUrl: att.tempUrl,
+          fileUri: att.fileUri,
+        })),
+        options: {
+          enableSearch: options.enableSearch || false,
+          enableThinking: options.enableThinking || false,
+          temperature: 1.0,
+          maxTokens: null,
+        },
+        apiKey,
+      }),
+    });
 
-      // 1. Try Native API (if applicable)
-      if (isNativeCandidate && !modelId.includes('vl')) {
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(error.detail || `API error (${response.status})`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('No response body');
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
           try {
-              yield* streamNativeDashScope(modelId, history, message, attachments, options, apiKey, baseUrl);
-              return;
-          } catch (e: any) {
-              console.warn("Native DashScope call failed:", e);
-              const isNetworkError = e.message.includes('Network Error') || e.message.includes('Failed to fetch') || e.message.includes('CORS');
-              const reason = isNetworkError ? "Network/CORS restriction" : (e.message || "Unknown error");
-              yield { text: `\n\n> ⚠️ **System Notice**: Native mode unavailable (${reason}). Switching to compatibility mode (Search/Thinking may be disabled).\n\n` };
-          }
+            yield JSON.parse(line.slice(6)) as StreamUpdate;
+          } catch {}
+        }
       }
-
-      // 2. Fallback: OpenAI Compatibility Layer
-      try {
-          yield* super.sendMessageStream(modelId, history, message, attachments, options, apiKey, baseUrl);
-      } catch (e: any) {
-          console.error("DashScope Fallback Error:", e);
-          yield { text: `\n\n❌ **Error**: Connection failed.\n\nCould not connect to DashScope via Native or Compatibility modes.\n\n**Troubleshooting:**\n- Check your API Key.\n- If using a custom proxy, verify the Base URL.\n- If running in a browser without a proxy, CORS may be blocking requests.\n\nDetails: ${e.message}` };
-      }
+    }
   }
 
   // --- Image Generation (Qwen/Wanx) ---
   public async generateImage(
-      modelId: string, 
-      prompt: string, 
-      referenceImages: Attachment[], 
-      options: ChatOptions, 
-      apiKey: string, 
-      baseUrl: string
+    modelId: string, 
+    prompt: string, 
+    referenceImages: Attachment[], 
+    options: ChatOptions, 
+    apiKey: string, 
+    baseUrl: string
   ): Promise<ImageGenerationResult[]> {
-      
-      // If we have a reference image, it's Editing (Image-to-Image)
-      if (referenceImages && referenceImages.length > 0) {
-          // Pass full options to support LoRA/Seed in editing
-          return [await editWanxImage(modelId, prompt, referenceImages[0], options, apiKey, baseUrl)];
-      }
-
-      // Otherwise, Text-to-Image (using new Logic)
-      return generateDashScopeImage(modelId, prompt, options, apiKey, baseUrl);
+    if (referenceImages && referenceImages.length > 0) {
+      return [await editWanxImage(modelId, prompt, referenceImages[0], options, apiKey, baseUrl)];
+    }
+    return generateDashScopeImage(modelId, prompt, options, apiKey, baseUrl);
   }
 
   // --- Out-Painting ---
@@ -84,11 +117,11 @@ export class DashScopeProvider extends OpenAIProvider implements ILLMProvider {
     apiKey: string,
     baseUrl?: string
   ): Promise<ImageGenerationResult> {
-      return outPaintWanxImage(referenceImage, options, apiKey, baseUrl);
+    return outPaintWanxImage(referenceImage, options, apiKey, baseUrl);
   }
 
   // --- File Upload ---
   public async uploadFile(file: File, apiKey: string, baseUrl: string): Promise<string> {
-      return uploadDashScopeFile(file, apiKey, baseUrl);
+    return uploadDashScopeFile(file, apiKey, baseUrl);
   }
 }

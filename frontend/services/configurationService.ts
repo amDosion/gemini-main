@@ -25,15 +25,15 @@ class ConfigurationService {
     
     // --- Full Settings (One-time Fetch) ---
     public async getFullSettings(): Promise<FullSettings> {
-        return await db.exec(
-            () => db.api.request<FullSettings>('/settings/full'),
+        return await db.execMixed(
+            () => db.getApi().request<FullSettings>('/settings/full'),
             async () => {
                 // LocalStorage 降级方案
-                const profiles = await db.local.getProfiles();
-                const activeProfileId = await db.local.getActiveProfileId();
+                const profiles = await db.getLocal().getProfiles();
+                const activeProfileId = await db.getLocal().getActiveProfileId();
                 const activeProfile = profiles.find(p => p.id === activeProfileId) || null;
                 const dashscopeKey = profiles.find(p => p.providerId === 'tongyi')?.apiKey || '';
-                
+
                 return {
                     profiles,
                     activeProfileId,

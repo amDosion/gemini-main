@@ -3,9 +3,9 @@ import { ModelConfig } from "../../../types/types";
 
 const CAPABILITY_OVERRIDES: Record<string, Partial<ModelConfig['capabilities']>> = {
     'gemini-2.0-flash-thinking': { reasoning: true, search: false }, // Explicitly disable search for thinking models
-    'gemini-2.5': { reasoning: true }, 
+    'gemini-2.5-pro': { reasoning: true },  // 明确指定 2.5 pro 版本
     'gemini-3-pro': { reasoning: true },
-    'veo': { vision: true } 
+    'veo': { vision: true }
 };
 
 export async function getGoogleModels(apiKey: string, baseUrl: string): Promise<ModelConfig[]> {
@@ -77,7 +77,11 @@ export async function getGoogleModels(apiKey: string, baseUrl: string): Promise<
         const supportedMethods: string[] = model.supportedGenerationMethods || [];
         
         if (supportedMethods.length > 0) {
-             const canGen = supportedMethods.includes('generateContent') || supportedMethods.includes('generateVideos') || supportedMethods.includes('predict');
+             // 支持的生成方法：generateContent（聊天）、generateVideos（视频）、predict/predictLongRunning（Veo/Imagen）
+             const canGen = supportedMethods.includes('generateContent') || 
+                            supportedMethods.includes('generateVideos') || 
+                            supportedMethods.includes('predict') ||
+                            supportedMethods.includes('predictLongRunning');
              if (!canGen) return; 
         }
 
@@ -85,8 +89,13 @@ export async function getGoogleModels(apiKey: string, baseUrl: string): Promise<
 
         const isMultimodal = modelId.includes('1.5') || modelId.includes('2.0') || modelId.includes('2.5') || modelId.includes('3.0') || modelId.includes('vision') || modelId.includes('image') || modelId.includes('imagen');
         const isLegacy = modelId.includes('1.0') || (modelId.includes('gemini-pro') && !modelId.includes('1.5'));
-        
-        const isThinking = modelId.includes('thinking') || modelId.includes('reasoning') || modelId.includes('2.5') || modelId.includes('3-pro') || modelId.includes('3.0');
+
+        // 更精确的推理模型判断:明确指定 pro 版本,避免过度匹配
+        const isThinking = modelId.includes('thinking') ||
+                           modelId.includes('reasoning') ||
+                           modelId.includes('2.5-pro') ||    // 明确 2.5 pro 版本
+                           modelId.includes('3-pro') ||
+                           modelId.includes('3.0-pro');      // 明确 3.0 pro 版本
 
         const supportsSearch = !isLegacy && !modelId.includes('imagen') && !modelId.includes('thinking');
 

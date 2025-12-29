@@ -30,6 +30,7 @@ interface PdfExtractViewProps {
   onSend: (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => void;
   onStop: () => void;
   activeModelConfig?: ModelConfig;
+  visibleModels?: ModelConfig[];  // 新增
   providerId?: string;
   onDeleteMessage?: (messageId: string) => void;
 }
@@ -41,6 +42,7 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
   onSend,
   onStop,
   activeModelConfig,
+  visibleModels = [],
   providerId,
   onDeleteMessage
 }) => {
@@ -238,6 +240,7 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
           setMode={setAppMode}
           isLoading={loadingState === 'loading'}
           currentModel={activeModelConfig}
+          visibleModels={visibleModels}
           hasActiveContext={false}
           providerId={providerId}
           initialPrompt="Extract details from this document."
@@ -245,7 +248,7 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
           selectedPdfTemplate={selectedTemplate}
           onPdfTemplateChange={setSelectedTemplate}
         />
-  ), [onSend, onStop, setAppMode, loadingState, activeModelConfig, providerId, templates, selectedTemplate]);
+  ), [onSend, onStop, setAppMode, loadingState, activeModelConfig, visibleModels, providerId, templates, selectedTemplate]);
 
   return (
     <GenViewLayout

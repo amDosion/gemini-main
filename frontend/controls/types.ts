@@ -70,6 +70,7 @@ export interface ChatControlsProps {
 
 export interface ImageGenControlsProps {
   providerId: string;
+  currentModel?: ModelConfig;
   style: string;
   setStyle: (v: string) => void;
   numberOfImages: number;

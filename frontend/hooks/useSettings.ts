@@ -3,7 +3,6 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ApiProtocol } from '../types/types';
 import { llmService } from '../services/llmService';
 import { configService, ActiveAppConfig, FullSettings } from '../services/configurationService';
-import { AIProviderConfig } from '../config/aiProviders';
 import { ConfigProfile } from '../services/db';
 
 export interface AppConfig extends ActiveAppConfig {
@@ -88,7 +87,7 @@ export const useSettings = () => {
   const [cacheTimestamp, setCacheTimestamp] = useState<number | null>(null);
   
   const channelRef = useRef<ReturnType<typeof createSyncChannel> | null>(null);
-  const debouncedRefreshRef = useRef<() => void>();
+  const debouncedRefreshRef = useRef<(() => void) | undefined>(undefined);
   
   // ✅ 从 fullSettings 派生其他状态，使用 useMemo 稳定引用
   const profiles = useMemo(() => fullSettings?.profiles || [], [fullSettings?.profiles]);

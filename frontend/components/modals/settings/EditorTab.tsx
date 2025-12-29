@@ -7,6 +7,7 @@ import { ModelConfig, ApiProtocol } from '../../../types/types';
 import { STATIC_AI_PROVIDERS } from '../../../config/aiProviders';
 import { LLMFactory } from '../../../services/LLMFactory';
 import { v4 as uuidv4 } from 'uuid';
+import { OllamaModelManager } from './OllamaModelManager';
 
 interface EditorTabProps {
     initialData?: ConfigProfile | null;
@@ -319,14 +320,13 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                                             {verifiedModels.map(model => {
                                                 const isHidden = formData.hiddenModels.includes(model.id);
                                                 return (
-                                                    <label key={model.id} className={`flex items-center gap-2 p-2 md:p-1.5 rounded-md cursor-pointer transition-colors border ${!isHidden ? 'bg-slate-800/60 border-slate-700/50 hover:bg-slate-800' : 'opacity-60 border-transparent hover:bg-slate-800/20'}`}>
+                                                    <div
+                                                        key={model.id}
+                                                        onClick={() => toggleEditorModelVisibility(model.id)}
+                                                        className={`flex items-center gap-2 p-2 md:p-1.5 rounded-md cursor-pointer transition-colors border ${!isHidden ? 'bg-slate-800/60 border-slate-700/50 hover:bg-slate-800' : 'opacity-60 border-transparent hover:bg-slate-800/20'}`}
+                                                    >
                                                         <div
-                                                            className={`w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center transition-colors shrink-0 ${!isHidden ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-600 bg-transparent'
-                                                                }`}
-                                                            onClick={(e) => {
-                                                                e.preventDefault();
-                                                                toggleEditorModelVisibility(model.id);
-                                                            }}
+                                                            className={`w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center transition-colors shrink-0 ${!isHidden ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-600 bg-transparent'}`}
                                                         >
                                                             {!isHidden && <Check size={10} />}
                                                         </div>
@@ -338,13 +338,31 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                                                                 {model.id}
                                                             </div>
                                                         </div>
-                                                    </label>
+                                                    </div>
                                                 );
                                             })}
                                         </div>
                                     </div>
                                 </div>
                             )}
+                        </div>
+                    )}
+
+                    {/* Ollama Model Manager - 仅当 providerId 为 ollama 时显示 */}
+                    {formData.providerId === 'ollama' && (
+                        <div className="animate-[fadeIn_0.3s_ease-out] mt-2">
+                            <OllamaModelManager
+                                baseUrl={formData.baseUrl || 'http://localhost:11434'}
+                                apiKey={formData.apiKey}
+                                onModelSelect={(modelId) => {
+                                    // 可选：选择模型时的回调
+                                    console.log('Selected model:', modelId);
+                                }}
+                                onModelsChanged={() => {
+                                    // 模型下载/删除后刷新验证列表
+                                    handleVerify();
+                                }}
+                            />
                         </div>
                     )}
 

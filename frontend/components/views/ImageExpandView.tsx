@@ -18,6 +18,7 @@ interface ImageExpandViewProps {
     onSend: (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => void;
     onStop: () => void;
     activeModelConfig?: ModelConfig;
+    visibleModels?: ModelConfig[];  // 新增
     initialAttachments?: Attachment[];
     providerId?: string;
     sessionId?: string | null;  // ✅ 会话 ID，用于查询附件
@@ -205,6 +206,7 @@ export const ImageExpandView = memo(({
     onSend,
     onStop,
     activeModelConfig,
+    visibleModels = [],
     initialAttachments,
     providerId,
     sessionId: currentSessionId  // ✅ 接收 sessionId
@@ -444,6 +446,7 @@ export const ImageExpandView = memo(({
                     isLoading={loadingState !== 'idle'}
                     onStop={onStop}
                     currentModel={activeModelConfig}
+                    visibleModels={visibleModels}
                     mode="image-outpainting"
                     setMode={setAppMode}
                     // Sync State
@@ -458,6 +461,7 @@ export const ImageExpandView = memo(({
         loadingState,
         onStop,
         activeModelConfig,
+        visibleModels,
         setAppMode,
         activeAttachments,
         setActiveAttachments,

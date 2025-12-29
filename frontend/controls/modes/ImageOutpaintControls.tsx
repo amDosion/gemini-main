@@ -24,7 +24,7 @@ export const ImageOutpaintControls: React.FC<ImageOutpaintControlsProps> = ({
         {showOutPaintMenu && (
           <>
             <div className="fixed inset-0 z-10" onClick={() => setShowOutPaintMenu(false)} />
-            <div className="absolute bottom-full right-0 mb-2 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-20 overflow-hidden animate-[fadeIn_0.1s_ease-out] p-3">
+            <div className="absolute bottom-full mb-2 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-20 overflow-hidden animate-[fadeIn_0.1s_ease-out] p-3">
               <div className="flex gap-2 mb-3">
                 <button
                   onClick={() => setOutPaintingMode('scale')}

@@ -19,6 +19,7 @@ interface InputAreaProps {
   isLoading: boolean;
   onStop?: () => void;
   currentModel?: ModelConfig;
+  visibleModels?: ModelConfig[];  // 新增：所有可见模型列表
   mode: AppMode;
   setMode: (mode: AppMode) => void;
   initialPrompt?: string;
@@ -33,7 +34,7 @@ interface InputAreaProps {
 }
 
 const InputArea: React.FC<InputAreaProps> = ({ 
-    onSend, isLoading, onStop, currentModel, 
+    onSend, isLoading, onStop, currentModel, visibleModels = [],
     mode, setMode, initialPrompt, initialAttachments,
     activeAttachments, onAttachmentsChange, hasActiveContext,
     providerId = 'google',
@@ -237,7 +238,8 @@ const InputArea: React.FC<InputAreaProps> = ({
           <ModeSelector 
               mode={mode} 
               setMode={setMode} 
-              currentModel={currentModel} 
+              currentModel={currentModel}
+              visibleModels={visibleModels}
           />
 
           <div className="flex items-center gap-2 flex-wrap justify-end">

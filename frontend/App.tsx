@@ -648,6 +648,7 @@ const App: React.FC = () => {
                 key={appMode}
                 {...commonProps}
                 mode={appMode}
+                visibleModels={visibleModels}
                 initialPrompt={initialPrompt}
                 initialAttachments={initialAttachments}
                 onDeleteMessage={handleDeleteMessage}

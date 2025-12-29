@@ -22,6 +22,7 @@ interface VirtualTryOnViewProps {
     onSend: (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => void;
     onStop: () => void;
     activeModelConfig?: ModelConfig;
+    visibleModels?: ModelConfig[];  // 新增
     initialPrompt?: string;
     initialAttachments?: Attachment[];
     providerId?: string;
@@ -65,6 +66,7 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
     onSend,
     onStop,
     activeModelConfig,
+    visibleModels = [],
     initialPrompt,
     initialAttachments,
     providerId,
@@ -751,6 +753,7 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
                     isLoading={loadingState !== 'idle'}
                     onStop={onStop}
                     currentModel={activeModelConfig}
+                    visibleModels={visibleModels}
                     mode="virtual-try-on"
                     setMode={setAppMode}
                     initialPrompt={initialPrompt}
@@ -758,7 +761,7 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
                     onAttachmentsChange={setActiveAttachments}
                     providerId={providerId}
                 />
-    ), [handleSend, loadingState, onStop, activeModelConfig, setAppMode, initialPrompt, activeAttachments, providerId]);
+    ), [handleSend, loadingState, onStop, activeModelConfig, visibleModels, setAppMode, initialPrompt, activeAttachments, providerId]);
 
     return (
         <GenViewLayout
