@@ -2,16 +2,16 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Save, Key, Shield, RefreshCw, CheckCircle2, AlertTriangle, Check, Loader2, X } from 'lucide-react';
-import { ConfigProfile } from '../../../services/db';
+import { ConfigProfile, db } from '../../../services/db';
 import { ModelConfig, ApiProtocol } from '../../../types/types';
-import { STATIC_AI_PROVIDERS } from '../../../config/aiProviders';
+import { getProviderTemplates, AIProviderConfig } from '../../../services/providers';
 import { LLMFactory } from '../../../services/LLMFactory';
 import { v4 as uuidv4 } from 'uuid';
 import { OllamaModelManager } from './OllamaModelManager';
 
 interface EditorTabProps {
     initialData?: ConfigProfile | null;
-    existingProfiles: ConfigProfile[];
+    existingProfiles?: ConfigProfile[]; // 用于智能切换 Provider 时查找已有配置
     onSave: (profile: ConfigProfile) => Promise<void>;
     onClose: () => void;
     footerNode?: HTMLDivElement | null;
@@ -31,23 +31,109 @@ export const EditorTab: React.FC<EditorTabProps> = ({
     const [isVerifying, setIsVerifying] = useState(false);
     const [verifyError, setVerifyError] = useState<string | null>(null);
 
+    // ✅ Provider Templates State (从后端 API 加载)
+    const [providerTemplates, setProviderTemplates] = useState<AIProviderConfig[]>([]);
+    const [isLoadingTemplates, setIsLoadingTemplates] = useState(true);
+    const [templatesError, setTemplatesError] = useState<string | null>(null);
+
+    /**
+     * 根据 providerId 查找已有配置
+     * 如果存在多个，返回最近更新的
+     * @param providerId Provider ID
+     * @param profiles 配置列表
+     * @param excludeId 排除的配置 ID（通常是当前编辑的配置）
+     * @returns 找到的配置或 null
+     */
+    const findProviderConfig = (
+        providerId: string,
+        profiles: ConfigProfile[],
+        excludeId?: string
+    ): ConfigProfile | null => {
+        try {
+            const matchingProfiles = profiles.filter(
+                p => p.providerId === providerId && p.id !== excludeId
+            );
+            
+            if (matchingProfiles.length === 0) {
+                return null;
+            }
+            
+            // 返回最近更新的配置
+            return matchingProfiles.reduce((latest, current) => 
+                current.updatedAt > latest.updatedAt ? current : latest
+            );
+        } catch (error) {
+            console.error('[EditorTab] Error finding provider config:', error);
+            return null;
+        }
+    };
+
+    // ✅ 加载 Provider Templates
+    useEffect(() => {
+        const loadTemplates = async () => {
+            try {
+                console.log('[EditorTab] Loading provider templates...');
+                setIsLoadingTemplates(true);
+                const templates = await getProviderTemplates();
+                setProviderTemplates(templates);
+                setTemplatesError(null);
+                
+                console.log('[EditorTab] Provider templates loaded:', {
+                    count: templates.length,
+                    templates: templates.map(t => ({
+                        id: t.id,
+                        name: t.name,
+                        baseUrl: t.baseUrl,
+                        protocol: t.protocol,
+                        isCustom: t.isCustom
+                    })),
+                    timestamp: new Date().toISOString()
+                });
+            } catch (error: any) {
+                console.error('[EditorTab] Failed to load provider templates:', error);
+                setTemplatesError(error.message || 'Failed to load provider templates');
+                // 不使用降级配置，显示错误状态
+                setProviderTemplates([]);
+            } finally {
+                setIsLoadingTemplates(false);
+            }
+        };
+        
+        loadTemplates();
+    }, []);
+
     // Initialize Form
     useEffect(() => {
         if (initialData) {
+            // 编辑现有配置：加载所有数据
             setFormData({ ...initialData });
-            if (initialData.savedModels && initialData.savedModels.length > 0) {
-                setVerifiedModels(initialData.savedModels);
-            } else {
-                setVerifiedModels([]);
-            }
-        } else {
-            // New Profile
+            
+            // ✅ 从 savedModels 加载已保存的模型列表
+            // 用户可以看到之前的选择，并在此基础上修改
+            setVerifiedModels(initialData.savedModels || []);
+            
+            console.log('[EditorTab] Loaded existing profile:', {
+                id: initialData.id.substring(0, 8) + '...',
+                name: initialData.name,
+                savedModelsCount: initialData.savedModels?.length || 0,
+                timestamp: new Date().toISOString()
+            });
+        } else if (!initialData && providerTemplates.length > 0) {
+            // 创建新配置：初始化空白表单
+            const googleTemplate = providerTemplates.find(p => p.id === 'google');
+            
+            console.log('[EditorTab] Initializing new profile with Google template:', {
+                templateFound: !!googleTemplate,
+                baseUrl: googleTemplate?.baseUrl,
+                timestamp: new Date().toISOString()
+            });
+            
             setFormData({
                 id: uuidv4(),
                 name: 'New Configuration',
                 providerId: 'google',
                 apiKey: '',
-                baseUrl: 'https://generativelanguage.googleapis.com',
+                baseUrl: googleTemplate?.baseUrl || '',  // ✅ 使用 Template 的 baseUrl
                 protocol: 'google',
                 isProxy: false,
                 hiddenModels: [],
@@ -59,17 +145,37 @@ export const EditorTab: React.FC<EditorTabProps> = ({
             setVerifiedModels([]);
         }
         setVerifyError(null);
-    }, [initialData]);
+    }, [initialData, providerTemplates]);  // ✅ 添加 providerTemplates 依赖
 
     const handleVerify = async () => {
         if (!formData) return;
+        
+        console.log('[EditorTab] Starting verification:', {
+            providerId: formData.providerId,
+            protocol: formData.protocol,
+            hasApiKey: !!formData.apiKey,
+            baseUrl: formData.baseUrl
+        });
+        
         setIsVerifying(true);
         setVerifiedModels([]);
         setVerifyError(null);
 
         try {
+            // ✅ 统一通过后端 API 验证
+            // 前端只负责传递 URL 和 Key，后端负责调用 Provider API
             const providerInstance = LLMFactory.getProvider(formData.protocol as ApiProtocol, formData.providerId);
-            const models = await providerInstance.getAvailableModels(formData.apiKey, formData.baseUrl);
+            console.log('[EditorTab] Provider instance created:', providerInstance.id);
+            
+            const models = await providerInstance.getAvailableModels(
+                formData.apiKey,
+                formData.baseUrl
+            );
+            
+            console.log('[EditorTab] Models received:', {
+                count: models.length,
+                models: models.map(m => ({ id: m.id, name: m.name }))
+            });
 
             if (models.length > 0) {
                 setVerifiedModels(models);
@@ -80,8 +186,9 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                     // Smart Selection for Fresh Setup
                     let nextHidden = prev.hiddenModels;
                     if (prev.cachedModelCount === 0) {
-                        const staticConfig = STATIC_AI_PROVIDERS.find(p => p.id === prev.providerId);
-                        const defaultModelId = staticConfig?.defaultModel;
+                        // ✅ 使用动态加载的 providerTemplates
+                        const templateConfig = providerTemplates.find(p => p.id === prev.providerId);
+                        const defaultModelId = templateConfig?.defaultModel;
 
                         const visibleModel = (defaultModelId && models.find(m => m.id === defaultModelId))
                             || models.find(m => m.id.toLowerCase().includes('chat'))
@@ -98,9 +205,11 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                     };
                 });
             } else {
+                console.warn('[EditorTab] No models returned from provider');
                 setVerifyError("Connection established, but no models were returned.");
             }
         } catch (e: any) {
+            console.error('[EditorTab] Verification failed:', e);
             setVerifyError(e.message || "Connection failed.");
         } finally {
             setIsVerifying(false);
@@ -114,11 +223,15 @@ export const EditorTab: React.FC<EditorTabProps> = ({
             return;
         }
 
+        // ✅ 保存完整的 ModelConfig 对象数组到数据库
+        // 后端会直接存储完整对象，前端加载时可以直接使用，无需再次调用 API
         const profileToSave: ConfigProfile = {
             ...formData,
             updatedAt: Date.now(),
-            savedModels: verifiedModels.length > 0 ? verifiedModels : formData.savedModels,
-            cachedModelCount: verifiedModels.length > 0 ? verifiedModels.length : formData.cachedModelCount
+            ...(verifiedModels.length > 0 && {
+                savedModels: verifiedModels,  // ✅ 保存完整的 ModelConfig 对象，不是 ID 数组
+                cachedModelCount: verifiedModels.length
+            })
         };
 
         await onSave(profileToSave);
@@ -165,15 +278,15 @@ export const EditorTab: React.FC<EditorTabProps> = ({
 
                     {/* Name Input */}
                     <div className="space-y-1.5 shrink-0">
-                        <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Configuration Name</label>
-                        <input
-                            type="text"
-                            value={formData.name}
-                            onChange={e => setFormData({ ...formData, name: e.target.value })}
-                            placeholder="e.g. Work OpenAI"
-                            className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-indigo-500 outline-none text-slate-200 transition-colors"
-                        />
-                    </div>
+                                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Configuration Name</label>
+                                <input
+                                    type="text"
+                                    value={formData.name}
+                                    onChange={e => setFormData({ ...formData, name: e.target.value })}
+                                    placeholder="e.g. Work OpenAI"
+                                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-indigo-500 outline-none text-slate-200 transition-colors"
+                                />
+                            </div>
 
                     {/* Template Selection */}
                     <div className="space-y-1.5 shrink-0">
@@ -182,32 +295,99 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                             <span className="text-xs text-slate-600">Clicking applies default settings</span>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
-                            {STATIC_AI_PROVIDERS.map(p => (
-                                <button
-                                    key={p.id}
-                                    onClick={() => {
-                                        setFormData(prev => {
-                                            if (!prev) return null;
-                                            return {
-                                                ...prev,
-                                                providerId: p.id,
-                                                protocol: p.protocol,
-                                                baseUrl: p.isCustom ? prev.baseUrl : p.baseUrl,
-                                                isProxy: !!p.isCustom,
-                                                name: (prev.name === 'New Configuration' || prev.name.includes('Config')) ? `${p.name} Config` : prev.name
-                                            };
-                                        });
-                                        setVerifiedModels([]);
-                                    }}
-                                    className={`flex items-center gap-2 p-3 md:p-2 rounded-lg border text-left transition-all ${formData.providerId === p.id
-                                        ? 'bg-indigo-600/10 border-indigo-500 ring-1 ring-indigo-500/50 text-indigo-200'
-                                        : 'bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-400'
-                                        }`}
-                                >
-                                    <div className={`w-2 h-2 md:w-1.5 md:h-1.5 rounded-full ${formData.providerId === p.id ? 'bg-indigo-500' : 'bg-slate-600'}`} />
-                                    <span className="text-sm md:text-xs font-medium">{p.name}</span>
-                                </button>
-                            ))}
+                            {isLoadingTemplates ? (
+                                <div className="col-span-full text-center text-slate-500 text-xs py-4">
+                                    <Loader2 size={14} className="inline animate-spin mr-2" />
+                                    Loading providers...
+                                </div>
+                            ) : templatesError && providerTemplates.length === 0 ? (
+                                <div className="col-span-full text-center text-red-400 text-xs py-4">
+                                    {templatesError}
+                                </div>
+                            ) : (
+                                providerTemplates.map(p => (
+                                    <button
+                                        key={p.id}
+                                        onClick={() => {
+                                            // 查找该 Provider 的已有配置
+                                            const existingConfig = existingProfiles 
+                                                ? findProviderConfig(p.id, existingProfiles, formData?.id)
+                                                : null;
+                                            
+                                            if (initialData) {
+                                                // ========== 编辑模式：智能切换到已有配置 ==========
+                                                if (existingConfig) {
+                                                    // 找到已有配置：完全切换到该配置
+                                                    setFormData({ ...existingConfig });
+                                                    setVerifiedModels(existingConfig.savedModels || []);
+                                                    
+                                                    console.log('[EditorTab] Switched to existing config:', {
+                                                        providerId: p.id,
+                                                        providerName: p.name,
+                                                        configId: existingConfig.id.substring(0, 8) + '...',
+                                                        configName: existingConfig.name,
+                                                        savedModelsCount: existingConfig.savedModels?.length || 0,
+                                                        timestamp: new Date().toISOString()
+                                                    });
+                                                } else {
+                                                    // 未找到配置：应用模板默认值并清空用户数据
+                                                    setFormData(prev => {
+                                                        if (!prev) return null;
+                                                        return {
+                                                            ...prev,
+                                                            providerId: p.id,
+                                                            protocol: p.protocol,
+                                                            baseUrl: p.baseUrl,
+                                                            isProxy: !!p.isCustom,
+                                                            name: `${p.name} Config`,
+                                                            apiKey: '',
+                                                            savedModels: [],
+                                                            hiddenModels: [],
+                                                            cachedModelCount: 0
+                                                        };
+                                                    });
+                                                    setVerifiedModels([]);
+                                                    
+                                                    console.log('[EditorTab] No existing config found, applied template defaults:', {
+                                                        providerId: p.id,
+                                                        providerName: p.name,
+                                                        timestamp: new Date().toISOString()
+                                                    });
+                                                }
+                                            } else {
+                                                // ========== 创建模式：应用模板默认值 ==========
+                                                // 在创建模式下，始终应用模板默认值，不自动加载已有配置
+                                                // 如果用户想基于已有配置创建，应该使用 Duplicate 功能
+                                                setFormData(prev => {
+                                                    if (!prev) return null;
+                                                    return {
+                                                        ...prev,
+                                                        providerId: p.id,
+                                                        protocol: p.protocol,
+                                                        baseUrl: p.baseUrl,
+                                                        isProxy: !!p.isCustom,
+                                                        name: `${p.name} Config`
+                                                    };
+                                                });
+                                                setVerifiedModels([]);
+                                                
+                                                console.log('[EditorTab] Create mode: applied template defaults:', {
+                                                    providerId: p.id,
+                                                    providerName: p.name,
+                                                    timestamp: new Date().toISOString()
+                                                });
+                                            }
+                                        }}
+                                        className={`flex items-center gap-2 p-3 md:p-2 rounded-lg border text-left transition-all ${formData.providerId === p.id
+                                            ? 'bg-indigo-600/10 border-indigo-500 ring-1 ring-indigo-500/50 text-indigo-200'
+                                            : 'bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-400'
+                                            }`}
+                                    >
+                                        <div className={`w-2 h-2 md:w-1.5 md:h-1.5 rounded-full ${formData.providerId === p.id ? 'bg-indigo-500' : 'bg-slate-600'}`} />
+                                        <span className="text-sm md:text-xs font-medium">{p.name}</span>
+                                    </button>
+                                ))
+                            )}
                         </div>
                     </div>
 
