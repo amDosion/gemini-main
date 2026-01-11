@@ -1,0 +1,16 @@
+{
+  "enabled": false,
+  "name": "register-in-index",
+  "description": "Automatically register new modules in __init__.py or index.ts",
+  "when": {
+    "type": "fileCreated",
+    "patterns": [
+      "{backend/app/**/*.py,frontend/components/**/*.{ts,tsx},frontend/services/**/*.ts}"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A new module file has been created at ${FILE}. Please use Desktop Commander MCP to register it in the appropriate index file:\n\nFor Python modules (backend/app/**/*.py):\n1. Find the nearest __init__.py in the same directory\n2. Add import statement: `from .module_name import ClassName`\n3. Add to __all__ list if it exists\n4. Use mcp_desktop_commander_mcp_edit_block() to update __init__.py\n\nFor TypeScript modules (frontend/**/*.{ts,tsx}):\n1. Find or create index.ts in the same directory\n2. Add export statement: `export { default as ComponentName } from './ComponentName';`\n3. Use mcp_desktop_commander_mcp_edit_block() to update index.ts\n\nOnly register if:\n- The file is not a test file (no 'test_' prefix or '.test.' suffix)\n- The file is not an __init__.py or index.ts itself\n- The file exports a class, function, or component"
+  },
+  "blocking": false
+}

@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "validate-modular-structure",
+  "description": "验证文件是否遵循模块化目录结构",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "{backend/app/services/**/*.py,frontend/components/**/*.tsx}"
+    ]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "python .claude/scripts/validate_modular_structure.py ${FILE}"
+  },
+  "blocking": false
+}

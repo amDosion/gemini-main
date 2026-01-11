@@ -1,0 +1,16 @@
+{
+  "enabled": false,
+  "name": "apply-json-schema",
+  "description": "Add JSON schema validation for configuration files",
+  "when": {
+    "type": "fileCreated",
+    "patterns": [
+      "**/*.config.json"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A new JSON configuration file has been created at ${FILE}. Please use Desktop Commander MCP to add a JSON schema reference:\n\n1. Determine the configuration type based on filename:\n   - mcp.json → MCP server configuration\n   - package.json → npm package configuration\n   - tsconfig.json → TypeScript configuration\n   - *.config.json → Custom configuration\n\n2. Add $schema property at the top of the JSON:\n```json\n{\n  \"$schema\": \"[schema-url]\",\n  // ... rest of configuration\n}\n```\n\n3. For custom configurations, create a basic schema structure:\n```json\n{\n  \"$schema\": \"http://json-schema.org/draft-07/schema#\",\n  \"type\": \"object\",\n  \"properties\": {},\n  \"required\": []\n}\n```\n\nUse mcp_desktop_commander_mcp_edit_block() to add the schema reference. This enables IDE validation and autocomplete."
+  },
+  "blocking": false
+}

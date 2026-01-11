@@ -1,0 +1,30 @@
+# 将以下内容添加到项目根目录的 .gitignore 文件中
+# 用于忽略 Claude Agent Hooks 生成的临时文件和日志
+
+# ============================================
+# Claude Agent Hooks
+# ============================================
+
+# 日志文件
+.claude/logs/
+.claude/*.log
+.claude/*_log.txt
+.claude/error_log.txt
+.claude/bash_log.txt
+.claude/read_log.txt
+.claude/session_log.txt
+
+# 备份文件
+.claude/backups/
+*.backup.*
+
+# 本地覆盖配置（个人定制）
+.claude/hooks.local.json
+
+# 临时文件
+.claude/temp/
+.claude/*.tmp
+
+# ============================================
+# 已有的 .gitignore 内容保持不变，仅添加以上内容
+# ============================================

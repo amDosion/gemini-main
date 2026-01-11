@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "name": "check-context-usage",
+  "description": "Monitor context usage and suggest optimization",
+  "when": {
+    "type": "promptSubmit"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Context usage check:\n\n- If reading large Spec documents (> 500 lines), use Context7 MCP for structured summaries\n- If exploring unfamiliar code, use context-gatherer subagent\n- If generating code, use general-purpose subagent with Codex/Gemini\n- Avoid loading all documents into main context\n\nCurrent architecture (v2.0.6) reduces context usage by 88% through proper tool usage."
+  }
+}

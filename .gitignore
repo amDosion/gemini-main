@@ -1,0 +1,37 @@
+# IDEs and editors
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+
+# Environment variables
+.env
+backend/.env
+.env.local
+*.env.local
+.env.*
+!.env.example
+
+# Google Cloud 服务账号密钥
+backend/credentials/
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!manifest.json
+!metadata.json
+
+# Databases
+backend/test.db
+*.db
+node_modules
+
+# IDE specific
+.idx/
+nul
+
+# Hypothesis testing cache (属性测试缓存)
+.hypothesis/
+backend/.hypothesis/

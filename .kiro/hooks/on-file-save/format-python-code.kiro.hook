@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "format-python-code",
+  "description": "Auto-format Python files using Black",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "backend/**/*.py"
+    ]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "black --line-length 100 --quiet ${FILE}"
+  },
+  "blocking": true
+}

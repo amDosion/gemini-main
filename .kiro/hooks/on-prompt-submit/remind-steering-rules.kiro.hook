@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "remind-steering-rules",
+  "description": "Remind agent to check KIRO-RULES.md for routing and tool usage",
+  "maxTriggers": 3,
+  "when": {
+    "type": "promptSubmit"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "⚠️ Before processing: Check KIRO-RULES.md for:\n\n1. **Scene routing table** (identify from keywords)\n2. **Tool usage strategy** (context-gatherer → general-purpose → Desktop Commander)\n3. **Fixed execution flow** (parallel context gathering → parallel execution → write)\n\nDo NOT reference non-existent files. All routing info is in KIRO-RULES.md."
+  }
+}

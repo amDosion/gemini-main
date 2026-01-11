@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "version": "1",
+  "name": "check-npm-vulnerabilities",
+  "description": "Scan for security issues in npm dependencies",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "npm audit --audit-level=moderate"
+  }
+}

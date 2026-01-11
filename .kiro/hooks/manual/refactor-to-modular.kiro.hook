@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "version": "1",
+  "name": "refactor-to-modular",
+  "description": "将大文件重构为模块化结构",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Please help refactor a large file to modular structure:\n\n**Instructions**:\n1. Ask the user which file they want to refactor\n2. Use context-gatherer subagent to read the target file and analyze its structure\n3. Use context-gatherer subagent to read .kiro/docs/architecture/project-structure.md for modular architecture principles\n4. Based on the summaries, identify logical modules and suggest how to split into smaller files\n5. Provide a refactoring plan with file names and responsibilities\n\n**Follow KIRO-RULES.md**: Never directly use readFile. Always use context-gatherer subagent for reading project files and documentation.\n\nAsk the user which file they want to refactor, then proceed with the analysis."
+  }
+}

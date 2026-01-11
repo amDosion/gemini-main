@@ -1,0 +1,102 @@
+# Ruff 配置文件
+# 文档: https://docs.astral.sh/ruff/
+
+line-length = 100
+target-version = "py310"
+indent-width = 4
+
+[lint]
+# 启用的规则集
+# E: pycodestyle errors
+# F: pyflakes
+# W: pycodestyle warnings
+# I: isort
+# N: pep8-naming
+# UP: pyupgrade
+# B: flake8-bugbear
+# A: flake8-builtins
+# C4: flake8-comprehensions
+# DTZ: flake8-datetimez
+# T10: flake8-debugger
+# EM: flake8-errmsg
+# ISC: flake8-implicit-str-concat
+# ICN: flake8-import-conventions
+# G: flake8-logging-format
+# PIE: flake8-pie
+# PT: flake8-pytest-style
+# Q: flake8-quotes
+# RET: flake8-return
+# SIM: flake8-simplify
+# TID: flake8-tidy-imports
+# ARG: flake8-unused-arguments
+# ERA: eradicate
+# PD: pandas-vet
+# PL: pylint
+# TRY: tryceratops
+# NPY: NumPy-specific rules
+# RUF: Ruff-specific rules
+select = [
+    "E",
+    "F",
+    "W",
+    "I",
+    "N",
+    "UP",
+    "B",
+    "A",
+    "C4",
+    "DTZ",
+    "T10",
+    "EM",
+    "ISC",
+    "ICN",
+    "G",
+    "PIE",
+    "PT",
+    "Q",
+    "RET",
+    "SIM",
+    "TID",
+    "ARG",
+    "ERA",
+    "PD",
+    "PL",
+    "TRY",
+    "NPY",
+    "RUF"
+]
+
+# 忽略的规则
+ignore = [
+    "E501",      # 行长度（由 Black 处理）
+    "B008",      # 函数调用在参数默认值中（FastAPI 依赖注入）
+    "TRY003",    # 避免在 raise 语句中指定长消息
+    "PLR0913",   # 函数参数过多
+    "PLR2004",   # 魔术值比较
+    "UP007",     # 使用 | 代替 Union（保持与旧版本兼容）
+]
+
+# 每个文件的特定忽略规则
+[lint.per-file-ignores]
+"__init__.py" = ["F401", "F403"]  # 未使用的导入
+"tests/**/*.py" = ["ARG", "PLR2004", "S101"]  # 测试文件可以有未使用的参数和 assert
+"app/models/db_models.py" = ["A003"]  # 模型字段可以使用内置名称
+"scripts/**/*.py" = ["T201"]  # 脚本可以使用 print
+"migrations/**/*.py" = ["ERA001"]  # 迁移文件可以有注释代码
+
+[lint.isort]
+known-first-party = ["app"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[lint.flake8-quotes]
+inline-quotes = "double"
+multiline-quotes = "double"
+
+[lint.mccabe]
+max-complexity = 10
+
+[format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

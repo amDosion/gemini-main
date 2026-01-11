@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "version": "1",
+  "name": "run-backend-tests",
+  "description": "Run backend unit tests after agent completes",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "cd backend && pytest tests/ -v --tb=short"
+  }
+}

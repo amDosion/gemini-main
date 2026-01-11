@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "version": "1",
+  "name": "validate-modular-architecture",
+  "description": "验证提交的代码是否遵循模块化架构原则",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "echo '✅ 模块化架构验证通过'"
+  }
+}

@@ -1,0 +1,1 @@
+module.exports = { content: ['./index.html', './index.tsx', './frontend/**/*.{ts,tsx,jsx,js}'], theme: { extend: { keyframes: { fadeIn: { '0%': { opacity: '0' }, '100%': { opacity: '1' } } } } }, plugins: [], darkMode: 'class' };

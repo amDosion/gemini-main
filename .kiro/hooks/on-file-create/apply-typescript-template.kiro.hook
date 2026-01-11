@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "apply-typescript-template",
+  "description": "Apply TypeScript/React component template with proper structure",
+  "when": {
+    "type": "fileCreated",
+    "patterns": [
+      "frontend/**/*.{ts,tsx}"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A new TypeScript file has been created at ${FILE}. Please use Desktop Commander MCP to add the appropriate template:\n\nFor .tsx files (React components):\n1. Import React and necessary hooks\n2. Define component Props interface\n3. Create functional component with TypeScript\n4. Add JSDoc comments\n5. Export component as default\n\nFor .ts files (utilities/services):\n1. Add file description comment\n2. Import necessary types\n3. Define interfaces/types\n4. Add placeholder functions with proper type annotations\n\nUse mcp_desktop_commander_mcp_write_file() to write the template. Follow project naming conventions (PascalCase for components, camelCase for utilities)."
+  },
+  "blocking": false
+}

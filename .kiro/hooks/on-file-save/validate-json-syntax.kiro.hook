@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "validate-json-syntax",
+  "description": "Validate JSON file syntax",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "**/*.json"
+    ]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "python -m json.tool ${FILE} > /dev/null"
+  },
+  "blocking": true
+}

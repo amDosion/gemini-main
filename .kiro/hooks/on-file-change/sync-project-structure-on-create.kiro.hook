@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "name": "sync-project-structure-on-create",
+  "description": "Auto-sync project-structure.md when files are created",
+  "when": {
+    "type": "fileCreated"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "📁 File created: ${FILE}\n\n**Task**: Update `.kiro/docs/architecture/project-structure.md` - ONLY modify the `### 目录树` section.\n\n**Instructions**:\n1. Use context-gatherer to read current project-structure.md\n2. Identify which `### 目录树` section needs updating:\n   - `## 后端结构` → `### 目录树` (for backend/ files)\n   - `## 前端结构` → `### 目录树` (for frontend/ files)\n   - `## 项目概览` (for root-level files)\n3. Use listDirectory to scan the affected directory tree\n4. Use Desktop Commander edit_block to update ONLY that specific `### 目录树` ASCII tree\n5. Maintain exact ASCII tree format with proper indentation\n\n**Critical**:\n- ONLY update the ASCII tree diagram in the `### 目录树` section\n- Do NOT modify any other sections (naming conventions, examples, best practices)\n- Use edit_block with precise old_string/new_string for the tree section only\n- Follow KIRO-RULES.md: context-gatherer for reading, Desktop Commander for writing"
+  }
+}

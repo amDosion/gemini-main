@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "python-type-check",
+  "description": "Type check Python files using mypy",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "backend/**/*.py"
+    ]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "cd backend && mypy ${FILE} --ignore-missing-imports"
+  },
+  "blocking": false
+}

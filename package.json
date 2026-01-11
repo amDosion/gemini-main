@@ -1,0 +1,42 @@
+{
+  "name": "gemini-flux-chat-local",
+  "private": true,
+  "version": "1.2.1",
+  "type": "module",
+  "scripts": {
+    "dev": "node --no-deprecation ./node_modules/concurrently/dist/bin/concurrently.js \"npm run server\" \"vite\"",
+    "server": "cd backend && set PYTHONUNBUFFERED=1 && uvicorn app.main:app --reload --reload-dir app --port 8000 --log-level info",
+    "install:backend": "pip install -r backend/requirements.txt",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@google/genai": "^1.32.0",
+    "@heroicons/react": "^2.1.1",
+    "form-data": "^4.0.5",
+    "lucide-react": "^0.561.0",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "react-markdown": "^9.0.1",
+    "react-router-dom": "^7.11.0",
+    "react-syntax-highlighter": "^16.1.0",
+    "rehype-raw": "^7.0.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.1",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/uuid": "^9.0.8",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.19",
+    "concurrently": "^8.2.2",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.4",
+    "typescript": "^5.2.2",
+    "vite": "^6.4.1",
+    "vitest": "^3.2.4"
+  }
+}

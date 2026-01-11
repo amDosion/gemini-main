@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "apply-python-template",
+  "description": "Apply Python file template with proper structure and imports",
+  "when": {
+    "type": "fileCreated",
+    "patterns": [
+      "backend/**/*.py"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A new Python file has been created at ${FILE}. Please use Desktop Commander MCP to add the following template structure:\n\n1. File docstring with module description\n2. Standard library imports section\n3. Third-party imports section\n4. Local imports section\n5. Type hints imports (from typing import ...)\n6. A placeholder class or function based on the file name\n\nUse mcp_desktop_commander_mcp_write_file() to write the template. Follow PEP 8 style guide."
+  },
+  "blocking": false
+}

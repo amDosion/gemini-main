@@ -1,0 +1,736 @@
+"""
+上传 Worker 池管理器
+
+特性：
+- 使用 Redis BRPOP 阻塞等待（无轮询，低 CPU）
+- 自动重试（指数退避）
+- 分布式锁（防止重复处理）
+- 崩溃恢复（重启后自动恢复中断任务）
+- 详细日志输出（每个步骤都有日志）
+"""
+
+import asyncio
+import os
+import sys
+from typing import Optional, List
+from datetime import datetime
+import logging
+import httpx
+
+from ..core.database import SessionLocal
+from ..core.config import settings
+from ..models.db_models import UploadTask, StorageConfig, ActiveStorage, ChatSession
+from .storage.storage_service import StorageService
+from .redis_queue_service import redis_queue
+
+logger = logging.getLogger(__name__)
+
+
+def log_print(message: str, level: str = "INFO"):
+    """
+    统一使用 logger 输出，确保立即刷新
+    移除 sys.stderr.write() 避免被 Uvicorn 重定向
+    """
+    # 直接使用 logger（logger 已配置 FlushingStreamHandler）
+    if level == "ERROR":
+        logger.error(message)
+    elif level == "WARNING":
+        logger.warning(message)
+    elif level == "DEBUG":
+        logger.debug(message)
+    else:
+        logger.info(message)
+
+
+class UploadWorkerPool:
+    """
+    上传 Worker 池
+
+    使用 Redis 队列 + 数据库持久化架构：
+    - Redis BRPOP 阻塞等待任务（无轮询，0 CPU）
+    - 数据库存储任务详情（持久化）
+    - 分布式锁防止重复处理
+    - 自动重试（指数退避）
+    - 死信队列处理最终失败
+    """
+
+    def __init__(self):
+        self.num_workers = settings.upload_queue_workers
+        self.max_retries = settings.upload_queue_max_retries
+        self.base_retry_delay = settings.upload_queue_retry_delay
+
+        self._running = False
+        self._workers: List[asyncio.Task] = []
+        self._reconciler: asyncio.Task | None = None
+        # 周期性补偿入队：避免“必须重启才触发恢复”
+        self._reconcile_interval_s: float = float(os.getenv("UPLOAD_QUEUE_RECONCILE_INTERVAL", "15"))
+        self._reconcile_limit: int = int(os.getenv("UPLOAD_QUEUE_RECONCILE_LIMIT", "500"))
+
+    async def start(self):
+        """启动 Worker 池"""
+        if self._running:
+            logger.warning("[WorkerPool] Worker pool already running")
+            return
+
+        self._running = True
+
+        # 使用 WARNING 级别确保日志可见
+        logger.warning("=" * 80)
+        logger.warning("[WorkerPool] STARTING UPLOAD WORKER POOL...")
+        logger.warning("=" * 80)
+
+        # 连接 Redis
+        logger.warning(f"[WorkerPool] Connecting to Redis: {settings.redis_host}:{settings.redis_port}")
+        try:
+            await redis_queue.connect()
+            logger.warning("[WorkerPool] Redis connected successfully")
+        except Exception as e:
+            logger.error(f"[WorkerPool] Redis connection failed: {e}")
+            self._running = False
+            raise
+
+        # 恢复中断任务
+        logger.warning("[WorkerPool] Recovering interrupted tasks...")
+        recovered_count = await self._recover_tasks()
+        logger.warning(f"[WorkerPool] Recovered {recovered_count} tasks")
+
+        # 启动 Workers
+        logger.warning(f"[WorkerPool] Starting {self.num_workers} workers...")
+        for i in range(self.num_workers):
+            worker = asyncio.create_task(self._worker_loop(i))
+            self._workers.append(worker)
+
+        logger.warning(f"[WorkerPool] All {self.num_workers} workers started successfully")
+        logger.warning("=" * 80)
+        logger.warning("[WorkerPool] WORKER POOL READY")
+        logger.warning("=" * 80)
+
+        # 周期性补偿：把 DB 中 pending 且不在 Redis 队列的任务补回队列
+        if self._reconcile_interval_s > 0:
+            self._reconciler = asyncio.create_task(self._reconcile_loop())
+            logger.warning(
+                f"[WorkerPool] Reconciler started (interval={self._reconcile_interval_s}s, limit={self._reconcile_limit})"
+            )
+
+    async def stop(self):
+        """停止 Worker 池"""
+        logger.warning("[WorkerPool] Stopping worker pool...")
+        self._running = False
+
+        if self._reconciler:
+            self._reconciler.cancel()
+            await asyncio.gather(self._reconciler, return_exceptions=True)
+            self._reconciler = None
+
+        for worker in self._workers:
+            worker.cancel()
+
+        if self._workers:
+            await asyncio.gather(*self._workers, return_exceptions=True)
+
+        self._workers.clear()
+        await redis_queue.disconnect()
+
+        logger.warning("[WorkerPool] Worker pool stopped")
+
+    async def _reconcile_loop(self):
+        """周期性补偿入队（只处理 pending，不动 uploading）。"""
+        while self._running:
+            try:
+                await asyncio.sleep(self._reconcile_interval_s)
+                if not self._running:
+                    break
+
+                # Redis 不可用时跳过（等待 supervisor/下一轮）
+                if redis_queue._redis is None:
+                    continue
+
+                requeued, failed = await self._reconcile_pending_tasks(limit=self._reconcile_limit)
+                if requeued or failed:
+                    logger.warning(
+                        f"[WorkerPool] Reconcile tick: requeued_pending={requeued}, failed_pending={failed}"
+                    )
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"[WorkerPool] Reconcile loop error: {e}")
+                await asyncio.sleep(1)
+
+    async def _reconcile_pending_tasks(self, limit: int = 500) -> tuple[int, int]:
+        """
+        补偿：把 DB 中 pending 且不在 Redis 队列里的任务重新入队。
+
+        注意：不处理 uploading（避免把正在执行的任务错误回滚）。
+        """
+        db = SessionLocal()
+        requeued_pending = 0
+        failed_pending = 0
+
+        try:
+            pending_tasks = (
+                db.query(UploadTask)
+                .filter(UploadTask.status == 'pending')
+                .order_by(UploadTask.created_at.desc())
+                .limit(int(limit))
+                .all()
+            )
+
+            for task in pending_tasks:
+                task.priority = task.priority or 'normal'
+                task.retry_count = task.retry_count or 0
+
+                # 无有效来源的任务无法处理，直接标记失败（避免永远 pending）
+                if not task.source_file_path and not task.source_url:
+                    task.status = 'failed'
+                    task.error_message = "任务缺少 source_file_path/source_url，无法处理"
+                    task.completed_at = int(datetime.now().timestamp() * 1000)
+                    failed_pending += 1
+                    try:
+                        await redis_queue.append_task_log(
+                            task.id,
+                            level="error",
+                            message="task has no source_file_path/source_url; marked as failed during reconcile",
+                            source="reconcile",
+                        )
+                    except Exception:
+                        pass
+                    continue
+
+                # 已在队列中则跳过
+                try:
+                    queued = await redis_queue.is_task_queued(task.id)
+                except Exception:
+                    queued = False
+
+                if queued:
+                    continue
+
+                await redis_queue.enqueue(task.id, task.priority)
+                requeued_pending += 1
+                try:
+                    await redis_queue.append_task_log(
+                        task.id,
+                        level="info",
+                        message="reconciled pending task not present in Redis queue; re-enqueued",
+                        source="reconcile",
+                    )
+                except Exception:
+                    pass
+
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.error(f"[WorkerPool] reconcile_pending_tasks failed: {e}")
+        finally:
+            db.close()
+
+        return requeued_pending, failed_pending
+
+    async def _recover_tasks(self) -> int:
+        """恢复中断的任务，并补偿 pending 但未入队的任务"""
+        db = SessionLocal()
+        recovered_uploading = 0
+        requeued_pending = 0
+        failed_pending = 0
+
+        try:
+            # 1) 将 uploading 状态重置为 pending 并重新入队
+            uploading_tasks = db.query(UploadTask).filter(
+                UploadTask.status == 'uploading'
+            ).all()
+
+            for task in uploading_tasks:
+                task.status = 'pending'
+                task.priority = task.priority or 'normal'
+                task.retry_count = task.retry_count or 0
+
+                await redis_queue.enqueue(task.id, task.priority)
+                await redis_queue.append_task_log(
+                    task.id,
+                    level="warn",
+                    message="recovered from 'uploading' to 'pending' and re-enqueued",
+                    source="recover",
+                )
+                log_print(f"[WorkerPool] 🔄 恢复任务(uploading): {task.id[:8]}... ({task.filename})")
+                recovered_uploading += 1
+
+            # 2) 补偿：pending 但不在 Redis 队列里的任务重新入队（避免长期卡住）
+            pending_tasks = db.query(UploadTask).filter(
+                UploadTask.status == 'pending'
+            ).order_by(
+                UploadTask.created_at.desc()
+            ).limit(1000).all()
+
+            for task in pending_tasks:
+                task.priority = task.priority or 'normal'
+                task.retry_count = task.retry_count or 0
+
+                # 无有效来源的任务无法处理，直接标记失败（避免永远 pending）
+                if not task.source_file_path and not task.source_url:
+                    task.status = 'failed'
+                    task.error_message = "任务缺少 source_file_path/source_url，无法恢复入队"
+                    task.completed_at = int(datetime.now().timestamp() * 1000)
+                    await redis_queue.append_task_log(
+                        task.id,
+                        level="error",
+                        message="task has no source_file_path/source_url; marked as failed during startup reconcile",
+                        source="recover",
+                    )
+                    log_print(f"[WorkerPool] ❌ 标记失败(pending 无来源): {task.id[:8]}... ({task.filename})", "ERROR")
+                    failed_pending += 1
+                    continue
+
+                # 已在队列中则跳过，避免重复入队
+                if await redis_queue.is_task_queued(task.id):
+                    continue
+
+                await redis_queue.enqueue(task.id, task.priority)
+                await redis_queue.append_task_log(
+                    task.id,
+                    level="info",
+                    message="reconciled pending task not present in Redis queue; re-enqueued",
+                    source="recover",
+                )
+                log_print(f"[WorkerPool] 🔄 补偿入队(pending): {task.id[:8]}... ({task.filename})")
+                requeued_pending += 1
+
+            db.commit()
+        except Exception as e:
+            log_print(f"[WorkerPool] ❌ 恢复/补偿任务失败: {e}", "ERROR")
+            import traceback
+            traceback.print_exc()
+            db.rollback()
+        finally:
+            db.close()
+
+        if recovered_uploading or requeued_pending or failed_pending:
+            log_print(
+                "[WorkerPool] 🔍 恢复摘要: "
+                f"uploading->pending={recovered_uploading}, "
+                f"pending补偿入队={requeued_pending}, "
+                f"pending标记失败={failed_pending}"
+            )
+
+        return recovered_uploading + requeued_pending + failed_pending
+
+    async def _worker_loop(self, worker_id: int):
+        """Worker 主循环"""
+        worker_name = f"Worker-{worker_id}"
+        logger.warning(f"[{worker_name}] Started, listening for tasks...")
+
+        while self._running:
+            try:
+                # 从 Redis 队列获取任务（阻塞等待）
+                task_id = await redis_queue.dequeue(timeout=5)
+
+                if task_id is None:
+                    # 超时，继续等待
+                    continue
+
+                # ========== 收到任务 ==========
+                logger.warning(f"[{worker_name}] Got task: {task_id[:8]}...")
+                await redis_queue.append_task_log(
+                    task_id,
+                    level="info",
+                    message=f"{worker_name} received task",
+                    source="worker",
+                )
+
+                # 获取分布式锁
+                log_print(f"[{worker_name}] 🔒 获取分布式锁: {task_id[:8]}...")
+                if not await redis_queue.acquire_lock(task_id, worker_name):
+                    log_print(f"[{worker_name}] ⚠️ 获取锁失败（任务可能被其他 Worker 处理）: {task_id[:8]}...", "WARNING")
+                    continue
+                log_print(f"[{worker_name}] ✅ 获取锁成功: {task_id[:8]}...")
+                await redis_queue.append_task_log(
+                    task_id,
+                    level="info",
+                    message=f"{worker_name} acquired lock",
+                    source="worker",
+                )
+
+                try:
+                    # 限流检查
+                    log_print(f"[{worker_name}] ⏳ 等待限流令牌: {task_id[:8]}...")
+                    if not await redis_queue.wait_for_rate_token(max_wait=30):
+                        log_print(f"[{worker_name}] ⚠️ 限流等待超时，重新入队: {task_id[:8]}...", "WARNING")
+                        await redis_queue.enqueue(task_id, 'normal')
+                        continue
+                    log_print(f"[{worker_name}] ✅ 获取限流令牌: {task_id[:8]}...")
+
+                    # 处理任务
+                    log_print(f"[{worker_name}] 🔄 开始处理任务: {task_id[:8]}...")
+                    await self._process_task(task_id, worker_name)
+
+                finally:
+                    # 释放锁
+                    await redis_queue.release_lock(task_id, worker_name)
+                    log_print(f"[{worker_name}] 🔓 释放分布式锁: {task_id[:8]}...")
+
+            except asyncio.CancelledError:
+                log_print(f"[{worker_name}] ⏹️ 收到停止信号")
+                break
+            except Exception as e:
+                log_print(f"[{worker_name}] ❌ 异常: {e}", "ERROR")
+                import traceback
+                traceback.print_exc()
+                await asyncio.sleep(1)
+
+        log_print(f"[{worker_name}] 🛑 已停止")
+
+    async def _process_task(self, task_id: str, worker_name: str):
+        """处理单个任务"""
+        db = SessionLocal()
+        try:
+            # ========== 步骤 1: 查询任务详情 ==========
+            log_print(f"[{worker_name}] 📋 查询任务详情: {task_id[:8]}...")
+            task = db.query(UploadTask).filter(UploadTask.id == task_id).first()
+
+            if not task:
+                log_print(f"[{worker_name}] ❌ 任务不存在: {task_id}", "ERROR")
+                return
+
+            if task.status != 'pending':
+                log_print(f"[{worker_name}] ⚠️ 任务状态异常: {task_id[:8]}..., status={task.status}", "WARNING")
+                return
+
+            log_print(f"[{worker_name}] 📋 任务详情:")
+            log_print(f"    - 任务 ID: {task.id[:8]}...")
+            log_print(f"    - 文件名: {task.filename}")
+            log_print(f"    - 优先级: {task.priority}")
+            log_print(f"    - 重试次数: {task.retry_count or 0}")
+            log_print(f"    - 文件路径: {task.source_file_path or 'None'}")
+            log_print(f"    - 源 URL: {task.source_url[:50] + '...' if task.source_url else 'None'}")
+
+            # ========== 步骤 2: 更新状态为 uploading ==========
+            log_print(f"[{worker_name}] 🔄 更新任务状态: pending → uploading")
+            task.status = 'uploading'
+            db.commit()
+            await redis_queue.append_task_log(
+                task_id,
+                level="info",
+                message="status changed: pending -> uploading",
+                source="worker",
+                extra={"worker": worker_name},
+            )
+
+            # ========== 步骤 3: 读取文件内容 ==========
+            log_print(f"[{worker_name}] 📂 读取文件内容...")
+            content = await self._get_file_content(task, worker_name)
+            file_size = len(content)
+            log_print(f"[{worker_name}] ✅ 文件读取成功，大小: {file_size / 1024:.2f} KB")
+
+            # ========== 步骤 4: 获取存储配置 ==========
+            log_print(f"[{worker_name}] ⚙️ 获取存储配置...")
+            config = self._get_storage_config(db, task.storage_id, task.session_id)
+            if not config:
+                raise Exception("存储配置不可用")
+            log_print(f"[{worker_name}] ✅ 存储配置: {config.name} ({config.provider})")
+
+            # ========== 步骤 5: 执行上传 ==========
+            log_print(f"[{worker_name}] ☁️ 开始上传到云存储...")
+            log_print(f"    - 提供商: {config.provider}")
+            log_print(f"    - 文件名: {task.filename}")
+            log_print(f"    - 文件大小: {file_size / 1024:.2f} KB")
+            await redis_queue.append_task_log(
+                task_id,
+                level="info",
+                message=f"upload started (provider={config.provider}, filename={task.filename}, size_kb={file_size / 1024:.2f})",
+                source="worker",
+                extra={"worker": worker_name},
+            )
+            
+            upload_start = datetime.now()
+            result = await StorageService.upload_file(
+                filename=task.filename,
+                content=content,
+                content_type='image/png',
+                provider=config.provider,
+                config=config.config
+            )
+            upload_duration = (datetime.now() - upload_start).total_seconds()
+
+            # ========== 步骤 6: 处理上传结果 ==========
+            if result.get('success'):
+                url = result.get('url')
+                log_print(f"[{worker_name}] ✅ 上传成功！")
+                log_print(f"    - 耗时: {upload_duration:.2f} 秒")
+                log_print(f"    - URL: {url}")
+                await redis_queue.append_task_log(
+                    task_id,
+                    level="info",
+                    message=f"upload succeeded (duration_s={upload_duration:.2f}, url={str(url)[:120]})",
+                    source="worker",
+                    extra={"worker": worker_name},
+                )
+                await self._handle_success(db, task, url, worker_name)
+            else:
+                error = result.get('error', '上传失败')
+                log_print(f"[{worker_name}] ❌ 上传失败: {error}", "ERROR")
+                await redis_queue.append_task_log(
+                    task_id,
+                    level="error",
+                    message=f"upload failed: {error}",
+                    source="worker",
+                    extra={"worker": worker_name},
+                )
+                raise Exception(error)
+
+        except Exception as e:
+            log_print(f"[{worker_name}] ❌ 任务处理异常: {e}", "ERROR")
+            await redis_queue.append_task_log(
+                task_id,
+                level="error",
+                message=f"task processing exception: {e}",
+                source="worker",
+                extra={"worker": worker_name},
+            )
+            await self._handle_failure(db, task_id, str(e), worker_name)
+        finally:
+            db.close()
+
+    async def _get_file_content(self, task: UploadTask, worker_name: str) -> bytes:
+        """Get file content from local file or URL"""
+        if task.source_file_path:
+            source_path = task.source_file_path
+
+            # 兼容：source_file_path 可能是绝对路径，也可能是不同基准目录下的相对路径（历史数据/启动目录差异）
+            backend_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+            project_root = os.path.abspath(os.path.join(backend_root, ".."))
+
+            if os.path.isabs(source_path):
+                candidate_paths = [source_path]
+            else:
+                candidate_paths = [
+                    source_path,  # relative to current working directory
+                    os.path.join(backend_root, source_path),   # relative to backend/
+                    os.path.join(project_root, source_path),   # relative to project root
+                ]
+
+            for file_path in candidate_paths:
+                if os.path.exists(file_path):
+                    if file_path != source_path:
+                        log_print(f"[{worker_name}] 🔎 Resolved path: {source_path} -> {file_path}")
+                    log_print(f"[{worker_name}] 📂 Read from local file: {file_path}")
+                    with open(file_path, 'rb') as f:
+                        return f.read()
+
+            raise Exception(f"File not found for source_file_path={source_path}")
+        elif task.source_url:
+            log_print(f"[{worker_name}] 🌐 Download from URL: {task.source_url[:50]}...")
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(task.source_url)
+                response.raise_for_status()
+                return response.content
+        else:
+            raise Exception("No file source available (both source_file_path and source_url are empty)")
+
+    def _get_storage_config(self, db, storage_id: Optional[str], session_id: Optional[str] = None):
+        """获取存储配置"""
+        if storage_id:
+            config = db.query(StorageConfig).filter(StorageConfig.id == storage_id).first()
+        else:
+            user_id = None
+            if session_id:
+                session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
+                if session:
+                    user_id = session.user_id
+
+            if user_id:
+                active = db.query(ActiveStorage).filter(ActiveStorage.user_id == user_id).first()
+            else:
+                active = db.query(ActiveStorage).filter(ActiveStorage.user_id == "default").first()
+
+            if active and active.storage_id:
+                config = db.query(StorageConfig).filter(StorageConfig.id == active.storage_id).first()
+            else:
+                return None
+
+        return config if config and config.enabled else None
+
+    async def _handle_success(self, db, task: UploadTask, url: str, worker_name: str):
+        """处理成功"""
+        now = int(datetime.now().timestamp() * 1000)
+
+        # 更新任务状态
+        log_print(f"[{worker_name}] 💾 更新任务状态: uploading → completed")
+        task.status = 'completed'
+        task.target_url = url
+        task.completed_at = now
+        db.commit()
+        await self._log_task_db_state(task.id, stage="after_success_commit", worker_name=worker_name)
+        await redis_queue.append_task_log(
+            task.id,
+            level="info",
+            message="status changed: uploading -> completed",
+            source="worker",
+            extra={"worker": worker_name},
+        )
+
+        # Delete temp file
+        if task.source_file_path:
+            # Convert relative path to absolute path for deletion
+            file_path = task.source_file_path
+            if not os.path.isabs(file_path):
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+                file_path = os.path.join(project_root, file_path)
+
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    log_print(f"[{worker_name}] 🗑️ Temp file deleted: {file_path}")
+                except Exception as e:
+                    log_print(f"[{worker_name}] ⚠️ Failed to delete temp file: {e}", "WARNING")
+            else:
+                log_print(f"[{worker_name}] ⚠️ Temp file not found: {file_path}", "WARNING")
+
+        # 更新会话附件
+        if task.session_id and task.message_id and task.attachment_id:
+            log_print(f"[{worker_name}] 🔄 更新会话附件 URL...")
+            await self._update_session_attachment(
+                db, task.session_id, task.message_id, task.attachment_id, url, worker_name
+            )
+
+        # 更新 Redis 统计
+        await redis_queue.update_stats("total_completed")
+
+        log_print(f"[{worker_name}] ✅✅✅ 任务完成: {task.id[:8]}...")
+        log_print(f"    - 文件名: {task.filename}")
+        log_print(f"    - 云存储 URL: {url}")
+
+    async def _handle_failure(self, db, task_id: str, error: str, worker_name: str):
+        """处理失败"""
+        task = db.query(UploadTask).filter(UploadTask.id == task_id).first()
+        if not task:
+            return
+
+        # 递增重试次数
+        retry_count = (task.retry_count or 0) + 1
+        task.retry_count = retry_count
+        task.error_message = f"{error} (重试 {retry_count}/{self.max_retries})"
+
+        log_print(f"[{worker_name}] ⚠️ 任务失败: {task_id[:8]}...", "WARNING")
+        log_print(f"    - 错误: {error}")
+        log_print(f"    - 重试次数: {retry_count}/{self.max_retries}")
+        await redis_queue.append_task_log(
+            task_id,
+            level="warn",
+            message=f"task failed: {error} (retry {retry_count}/{self.max_retries})",
+            source="worker",
+            extra={"worker": worker_name},
+        )
+
+        if retry_count < self.max_retries:
+            # 指数退避
+            delay = self.base_retry_delay * (2 ** (retry_count - 1))
+            log_print(f"[{worker_name}] 🔄 将在 {delay} 秒后重试...")
+
+            task.status = 'pending'
+            db.commit()
+            await self._log_task_db_state(task_id, stage="after_failure_commit_pending", worker_name=worker_name)
+
+            # 延迟后重新入队
+            await asyncio.sleep(delay)
+            await redis_queue.enqueue(task_id, 'low')  # 重试任务低优先级
+            await redis_queue.update_stats("total_retried")
+
+            log_print(f"[{worker_name}] 🔄 任务已重新入队（低优先级）: {task_id[:8]}...")
+            await redis_queue.append_task_log(
+                task_id,
+                level="info",
+                message=f"re-enqueued for retry (priority=low, delay_s={delay})",
+                source="worker",
+                extra={"worker": worker_name},
+            )
+        else:
+            log_print(f"[{worker_name}] ❌❌❌ 任务最终失败（已达最大重试次数）: {task_id[:8]}...", "ERROR")
+            
+            task.status = 'failed'
+            task.completed_at = int(datetime.now().timestamp() * 1000)
+            db.commit()
+            await self._log_task_db_state(task_id, stage="after_failure_commit_failed", worker_name=worker_name)
+
+            # 移入死信队列
+            await redis_queue.move_to_dead_letter(task_id)
+            await redis_queue.update_stats("total_failed")
+
+            log_print(f"[{worker_name}] 📭 任务已移入死信队列: {task_id[:8]}...")
+            await redis_queue.append_task_log(
+                task_id,
+                level="error",
+                message="moved to dead-letter queue",
+                source="worker",
+                extra={"worker": worker_name},
+            )
+
+    async def _log_task_db_state(self, task_id: str, stage: str, worker_name: str):
+        """
+        在单独的 DB session 中回读任务状态，写入任务日志。
+
+        用于排查：Worker 已处理完成，但外部观察不到 upload_tasks 更新。
+        """
+        verify_db = SessionLocal()
+        try:
+            task = verify_db.query(UploadTask).filter(UploadTask.id == task_id).first()
+            if not task:
+                await redis_queue.append_task_log(
+                    task_id,
+                    level="warn",
+                    message=f"db verify ({stage}): task not found",
+                    source="db",
+                    extra={"worker": worker_name},
+                )
+                return
+
+            await redis_queue.append_task_log(
+                task_id,
+                level="info",
+                message=(
+                    f"db verify ({stage}): status={task.status}, "
+                    f"target_url={'yes' if bool(task.target_url) else 'no'}, "
+                    f"retry_count={task.retry_count}, "
+                    f"completed_at={task.completed_at}"
+                ),
+                source="db",
+                extra={"worker": worker_name},
+            )
+        except Exception as e:
+            await redis_queue.append_task_log(
+                task_id,
+                level="error",
+                message=f"db verify failed ({stage}): {e}",
+                source="db",
+                extra={"worker": worker_name},
+            )
+        finally:
+            try:
+                verify_db.close()
+            except Exception:
+                pass
+
+    async def _update_session_attachment(
+        self, db, session_id: str, message_id: str, attachment_id: str, url: str, worker_name: str
+    ):
+        """
+        更新会话附件 (v3 架构)
+        
+        v3 架构：直接更新 message_attachments 表
+        """
+        from ..models.db_models import MessageAttachment
+        
+        attachment = db.query(MessageAttachment).filter(
+            MessageAttachment.id == attachment_id
+        ).first()
+        
+        if attachment:
+            attachment.url = url
+            attachment.upload_status = 'completed'
+            attachment.temp_url = None
+            db.commit()
+            log_print(f"[{worker_name}] ✅ 附件表已更新: {attachment_id[:8]}...")
+        else:
+            log_print(f"[{worker_name}] ⚠️ 附件不存在: {attachment_id[:8]}...", "WARNING")
+
+
+# 全局单例
+worker_pool = UploadWorkerPool()

@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "version": "1",
+  "name": "update-steering-changelog",
+  "description": "自动更新 Steering 文档变更日志",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "echo '📝 Steering 文档已更新。请查看 CHANGELOG.md'"
+  }
+}

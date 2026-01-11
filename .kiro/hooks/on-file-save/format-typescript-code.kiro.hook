@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "format-typescript-code",
+  "description": "Auto-format TypeScript/TSX files using Prettier",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "frontend/**/*.{ts,tsx}"
+    ]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "npx prettier --write ${FILE}"
+  },
+  "blocking": true
+}

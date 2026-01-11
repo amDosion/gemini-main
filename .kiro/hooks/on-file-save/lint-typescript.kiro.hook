@@ -1,0 +1,16 @@
+{
+  "enabled": false,
+  "name": "lint-typescript",
+  "description": "Lint TypeScript files using ESLint",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "frontend/**/*.{ts,tsx}"
+    ]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "npx eslint ${FILE} --fix"
+  },
+  "blocking": false
+}

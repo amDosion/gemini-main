@@ -1,0 +1,252 @@
+{
+  "mcpServers": {
+    "desktop-commander-mcp": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\12180\\tools\\DesktopCommanderMCP\\dist\\index.js"
+      ],
+      "description": "系统操作和文件管理",
+      "autoApprove": [
+        "mcp_read_file",
+        "mcp_read_multiple_files",
+        "mcp_write_file",
+        "mcp_edit_block",
+        "mcp_list_directory",
+        "mcp_start_search",
+        "mcp_get_more_search_results",
+        "mcp_get_file_info",
+        "mcp_create_directory",
+        "mcp_move_file",
+        "read_multiple_files",
+        "start_search",
+        "get_more_search_results",
+        "read_file",
+        "edit_block",
+        "write_file",
+        "list_directory",
+        "create_directory",
+        "get_file_info",
+        "stop_search",
+        "start_process",
+        "kill_process",
+        "get_process_list",
+        "move_file"
+      ]
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ],
+      "description": "顺序思维辅助工具,帮助 AI 进行逐步推理",
+      "autoApprove": [
+        "sequentialthinking",
+        "mcp_sequential_thinking_sequentialthinking"
+      ]
+    },
+    "postgres-mcp": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "C:\\Users\\12180\\AppData\\Roaming\\Python\\Python314\\Scripts\\postgres-mcp.exe",
+        "postgresql://tools:DAe%5E%40kV%25%2A8yR@192.168.50.116:5432/vue_admin",
+        "--access-mode=unrestricted"
+      ],
+      "description": "PostgreSQL 数据库访问和查询(完整权限)",
+      "autoApprove": []
+    },
+    "redis": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-redis",
+        "redis://:941378@192.168.50.175:6379"
+      ],
+      "description": "Redis 缓存数据库操作",
+      "autoApprove": [
+        "set",
+        "get",
+        "delete",
+        "list",
+        "mcp_redis_set",
+        "mcp_redis_get",
+        "mcp_redis_delete",
+        "mcp_redis_list"
+      ]
+    },
+    "github": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "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"
+      },
+      "description": "GitHub 仓库管理、PR、Issue 操作",
+      "autoApprove": []
+    },
+    "vue-analyzer-mcp": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\12180\\tools\\vue-analyzer-mcp.js"
+      ],
+      "description": "Vue.js 项目结构分析",
+      "autoApprove": [
+        "mcp_analyze_vue_components",
+        "mcp_check_i18n_coverage",
+        "mcp_analyze_bundle_size",
+        "mcp_check_code_quality"
+      ]
+    },
+    "fastapi-mcp-server": {
+      "command": "python",
+      "args": [
+        "C:\\Users\\12180\\tools\\fastapi_mcp_server.py"
+      ],
+      "description": "FastAPI 后端分析器",
+      "autoApprove": [
+        "analyze_fastapi_structure",
+        "get_api_endpoints",
+        "search_endpoint",
+        "get_data_models",
+        "analyze_route_file"
+      ]
+    },
+    "openapi-mcp-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@percent-tech/openapi-mcp-server@latest",
+        "http://localhost:8000/openapi.json"
+      ],
+      "description": "OpenAPI/Swagger 文档服务器(需要后端运行)",
+      "autoApprove": [
+        "load_openapi_spec",
+        "set_api_config",
+        "list_generated_tools",
+        "debug_info"
+      ]
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest"
+      ],
+      "description": "Chrome 浏览器控制、调试、网络监控",
+      "autoApprove": [
+        "take_snapshot",
+        "take_screenshot",
+        "list_pages",
+        "navigate_page",
+        "evaluate_script"
+      ]
+    },
+    "swiftcode-mcp": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\12180\\tools\\swiftcode-mcp-server\\dist\\index.js"
+      ],
+      "description": "Swagger/OpenAPI → TypeScript 客户端生成、Vue 列表页脚手架",
+      "autoApprove": [
+        "generate_api_client",
+        "generate_sfc_template_client",
+        "generate_sfc_client"
+      ]
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
+      "description": "编程库文档查询、代码示例、最佳实践",
+      "autoApprove": [
+        "resolve_library_id",
+        "get_library_docs"
+      ]
+    },
+    "codex-mcp-toolkit": {
+      "command": "node",
+      "args": [
+        "C:/Users/12180/codex-mcp-toolkit-feature/src/index.js",
+        "--config",
+        "C:/Users/12180/codex-mcp-toolkit-feature/config.json"
+      ],
+      "env": {
+        "CODEX_MCP_TOOLKIT_LOG": "stderr",
+        "CODEX_MCP_TOOLKIT_QUIET": "1",
+        "CODEX_MCP_TOOLKIT_FORCE_CODEX_SANDBOX": "workspace-write",
+        "OPENAI_API_KEY": "sk-Z7Gua6FvOJQWaMWDrRXPAzQK1mDlrVojWwVSh2W8AkGfK3oX",
+        "OPENAI_BASE_URL": "https://yourapi.cn/v1",
+        "OPENAI_API_KEY_CLAUDE": "sk-AddNnxpyEDyS4WiyVla5otS0zQjNsIklyyaMqXFRrhABHv75",
+        "OPENAI_BASE_URL_CLAUDE": "https://yourapi.cn/v1",
+        "GEMINI_API_KEY": "AIzaSyCcn3hg7MncoCywHOaJUOd0_BVUuu-BlTU",
+        "CODEX_MCP_TOOLKIT_CODEX_PROFILE": "default",
+        "CODEX_MCP_TOOLKIT_CODEX_PROFILES_JSON": "{\"default\":{\"env\":{\"OPENAI_API_KEY\":\"${env:OPENAI_API_KEY}\",\"OPENAI_BASE_URL\":\"${env:OPENAI_BASE_URL}\"},\"configOverrides\":[\"model='gpt-5.1-codex'\"]},\"claude_proxy\":{\"env\":{\"OPENAI_API_KEY\":\"${env:OPENAI_API_KEY_CLAUDE}\",\"OPENAI_BASE_URL\":\"${env:OPENAI_BASE_URL_CLAUDE}\"},\"configOverrides\":[\"model='anthropic/claude-4.5-sonnet'\"]}}",
+        "CODEX_MCP_TOOLKIT_THINKING_LLM_ENABLED": "1",
+        "CODEX_MCP_TOOLKIT_THINKING_LLM_PROFILE": "claude_via_proxy",
+        "CODEX_MCP_TOOLKIT_THINKING_LLM_PROFILES_JSON": "{\"claude_via_proxy\":{\"provider\":\"openai_compatible\",\"apiType\":\"chat_completions\",\"baseUrl\":\"${env:OPENAI_BASE_URL_CLAUDE}\",\"apiKeyEnv\":\"OPENAI_API_KEY_CLAUDE\",\"model\":\"anthropic/claude-4.5-sonnet\",\"timeoutMs\":30000,\"maxOutputTokens\":1200,\"temperature\":0.2},\"gemini_direct\":{\"provider\":\"gemini\",\"baseUrl\":\"https://generativelanguage.googleapis.com/v1beta\",\"apiKeyEnv\":\"GEMINI_API_KEY\",\"model\":\"gemini-3-pro-preview\",\"timeoutMs\":30000,\"maxOutputTokens\":1200,\"temperature\":0.2}}"
+      },
+      "type": "stdio",
+      "autoApprove": [
+        "codex.run",
+        "codex.status",
+        "codex.get_result"
+      ]
+    },
+    "gemini": {
+      "command": "python",
+      "args": [
+        "-m",
+        "geminimcp.cli"
+      ],
+      "description": "Gemini MCP 服务 - Google AI 集成（本地安装）",
+      "autoApprove": [
+        "gemini",
+        "mcp_gemini_gemini"
+      ]
+    },
+    "claude-code": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@anthropic-ai/claude-code@latest",
+        "--mcp"
+      ],
+      "env": {
+        "ANTHROPIC_API_KEY": "sk-yVQcnMc7lnHkAEuOEsMZV6Ys2Wl1dPzq2gIDmFqKQeWap0By",
+        "ANTHROPIC_BASE_URL": "https://api.yourapi.cn"
+      },
+      "description": "Claude Code MCP - 通过 MCP 协议调用 Claude Code 编码能力",
+      "autoApprove": []
+    },
+    "claude-code-mcp": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\12180\\tools\\claude-code-mcp\\dist\\index.js"
+      ],
+      "description": "Claude Code MCP (auchenberg) - 文件操作、Shell命令、代码分析",
+      "autoApprove": [
+        "bash",
+        "readFile",
+        "listFiles",
+        "searchGlob",
+        "grep",
+        "think",
+        "codeReview",
+        "editFile",
+        "mcp_claude_code_mcp_bash",
+        "mcp_claude_code_mcp_readFile",
+        "mcp_claude_code_mcp_listFiles",
+        "mcp_claude_code_mcp_searchGlob",
+        "mcp_claude_code_mcp_grep",
+        "mcp_claude_code_mcp_think",
+        "mcp_claude_code_mcp_codeReview",
+        "mcp_claude_code_mcp_editFile"
+      ]
+    }
+  }
+}

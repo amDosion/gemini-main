@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "version": "1",
+  "name": "check-modular-compliance",
+  "description": "检查项目模块化架构合规性",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Please check modular architecture compliance:\n\n**Instructions**:\n1. Use context-gatherer subagent to scan backend/app/services/ for files > 300 lines\n2. Use context-gatherer subagent to scan frontend/components/ for files > 200 lines\n3. Analyze the summaries to check for proper module separation\n4. Verify single responsibility principle from the code summaries\n5. Generate compliance report based on gathered context\n\n**Follow KIRO-RULES.md**: Never directly use readFile or grepSearch. Always use context-gatherer subagent for reading and analyzing project code.\n\nProvide recommendations for any non-compliant files."
+  }
+}
