@@ -119,8 +119,3 @@ invokeSubAgent(
 )
 ```
 
----
-
-**文件路径**：`.kiro/docs/core/steering-index.md`  
-**版本**：v5.1.0  
-**状态**：✅ 路径统一，版本同步

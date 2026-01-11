@@ -18,6 +18,7 @@ from ..core.encryption import encrypt_data, decrypt_data, is_encrypted
 from ..models.db_models import ImagenConfig
 from ..services.gemini.imagen_coordinator import ImagenCoordinator
 from ..services.gemini.imagen_common import ConfigurationError
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,8 @@ class ImagenConfigResponse(BaseModel):
     vertex_ai_project_id: Optional[str] = Field(default=None, alias='vertexAiProjectId')
     vertex_ai_location: Optional[str] = Field(default='us-central1', alias='vertexAiLocation')
     vertex_ai_credentials_json: Optional[str] = Field(default=None, alias='vertexAiCredentialsJson')
+    hidden_models: List[str] = Field(default_factory=list, alias='hiddenModels')
+    saved_models: List[Dict[str, Any]] = Field(default_factory=list, alias='savedModels')
 
     class Config:
         populate_by_name = True
@@ -69,6 +72,16 @@ class ImagenConfigUpdateRequest(BaseModel):
         default=None,
         alias='vertex_ai_credentials_json',
         description="Service account credentials JSON content (required for vertex_ai mode)"
+    )
+    hiddenModels: Optional[List[str]] = Field(
+        default=None,
+        alias='hidden_models',
+        description="List of hidden model IDs"
+    )
+    savedModels: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        alias='saved_models',
+        description="List of saved model configurations (ModelConfig[])"
     )
     
     class Config:
@@ -163,7 +176,9 @@ async def get_imagen_config(
                 vertex_ai_configured=False,
                 vertex_ai_project_id=None,
                 vertex_ai_location='us-central1',
-                vertex_ai_credentials_json=None
+                vertex_ai_credentials_json=None,
+                hidden_models=[],
+                saved_models=[]
             )
         
         # Get coordinator with user configuration
@@ -210,7 +225,9 @@ async def get_imagen_config(
             vertex_ai_configured=vertex_ai_configured,
             vertex_ai_project_id=vertex_ai_project_id,
             vertex_ai_location=vertex_ai_location,
-            vertex_ai_credentials_json=vertex_ai_credentials_json
+            vertex_ai_credentials_json=vertex_ai_credentials_json,
+            hidden_models=user_config.hidden_models or [],
+            saved_models=user_config.saved_models or []
         )
         
     except HTTPException:
@@ -290,11 +307,35 @@ async def update_imagen_config(
                         status_code=500,
                         detail="Failed to encrypt credentials"
                     )
+            
+            # Save model configurations (hidden_models and saved_models)
+            # Always update these fields if provided (even if empty array)
+            if hasattr(request_body, 'hiddenModels') and request_body.hiddenModels is not None:
+                user_config.hidden_models = request_body.hiddenModels
+                logger.info(
+                    f"[ImagenConfig] Updated hidden_models for user={user_id}: {len(request_body.hiddenModels)} models"
+                )
+            elif request_body.apiMode == 'vertex_ai':
+                # If not provided but in vertex_ai mode, initialize as empty array
+                if user_config.hidden_models is None:
+                    user_config.hidden_models = []
+            
+            if hasattr(request_body, 'savedModels') and request_body.savedModels is not None:
+                user_config.saved_models = request_body.savedModels
+                logger.info(
+                    f"[ImagenConfig] Saved {len(request_body.savedModels)} model configurations for user={user_id}"
+                )
+            elif request_body.apiMode == 'vertex_ai':
+                # If not provided but in vertex_ai mode, initialize as empty array
+                if user_config.saved_models is None:
+                    user_config.saved_models = []
         else:
             # Clear Vertex AI config when switching to Gemini API
             user_config.vertex_ai_project_id = None
             user_config.vertex_ai_location = 'us-central1'
             user_config.vertex_ai_credentials_json = None
+            user_config.hidden_models = []
+            user_config.saved_models = []
         
         # Commit to database
         db.commit()
@@ -442,23 +483,27 @@ async def test_imagen_connection(
 @router.post("/verify-vertex-ai", response_model=VerifyVertexAIResponse)
 async def verify_vertex_ai_connection(
     request_body: VerifyVertexAIRequest,
-    request: Request
+    request: Request,
+    db: Session = Depends(get_db)
 ):
     """
     Verify Vertex AI connection and list all available models.
     
     This endpoint uses the Google GenAI SDK to list all models available
     in the specified Vertex AI project and location.
+    Also updates saved model names in the database.
     
     Args:
         request_body: Vertex AI credentials (project ID, location, credentials JSON)
+        request: FastAPI request object for user authentication
+        db: Database session
     
     Returns:
         List of available models with their details
     """
     try:
         # Authenticate user
-        require_user_id(request)
+        user_id = require_user_id(request)
         
         logger.info(
             f"[ImagenConfig] Verifying Vertex AI connection: "

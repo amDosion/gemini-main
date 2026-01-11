@@ -12,7 +12,9 @@
 
 ## 1. 工具使用优先级
 
-### 1.1 优先级表
+> 💡 **详细的工具使用优先级表（带 Token 节省数据）请查看 `.kiro/docs/core/agents-collaboration.md`**
+
+### 1.1 优先级表（简化版）
 
 | 优先级 | 工具 | 用途 | Token 节省 | 何时使用 |
 |-------|------|------|-----------|---------|
@@ -20,10 +22,14 @@
 | 🥈 **最高** | **Context7 MCP** | 读取外部库文档 | 90% (20K → 2K) | 读取外部库文档（FastAPI、React、Gemini SDK） |
 | 🥉 **高** | **general-purpose subagent** | 代码生成 | 90% (30K → 3K) | 调用 Codex/Gemini 生成代码 |
 | 4️⃣ **中** | **Redis MCP** | 缓存摘要 | 避免重复 | 缓存文档摘要、避免重复读取 |
-| 5️⃣ **中** | **Desktop Commander MCP** | 文件操作 | N/A | 写入文件、编辑文件（不用于读取） |
+| 5️⃣ **中** | **general-purpose subagent + Kiro 原生工具** | 文件操作 | 100% (主 Agent 0 token) | 通过 subagent 写入文件、编辑文件（fsWrite/strReplace/fsAppend） |
 | 6️⃣ **低** | **Hooks** | 自动化 | 减少负担 | 自动化重复任务 |
 
 ### 1.2 禁止操作（会导致上下文爆炸）
+
+> 💡 **完整的禁止操作列表请查看 `.kiro/steering/KIRO-RULES.md` 的"禁止操作"表格**
+
+**本文档提供详细的禁止操作说明（带原因）**：
 
 | 禁止操作 | 原因 | 正确做法 |
 |---------|------|---------|
@@ -33,7 +39,8 @@
 | ❌ 主 Agent 直接调用 **Sequential Thinking/Claude Code MCP** | 占用主 Agent 上下文 | 使用 general-purpose subagent |
 | ❌ 重复读取相同文档（不使用缓存） | 浪费 Token | 使用 Redis MCP 缓存摘要 |
 | ❌ 使用 **Desktop Commander** 读取文档 | 不支持结构化摘要 | 使用 context-gatherer subagent + readFile |
-| ❌ 使用 **fsWrite/fsAppend** 写入文件 | 不符合架构规范 | 使用 Desktop Commander MCP |
+| ❌ 主 Agent 直接使用 **Kiro 原生工具** 写入文件 | 不符合架构规范 | 通过 general-purpose subagent + Kiro 原生工具 |
+| ❌ 使用 **Desktop Commander** 写入文件 | 不符合架构规范 | 通过 general-purpose subagent + Kiro 原生工具 |
 | ❌ **Context7 读取项目 Spec** | Context7 仅用于外部库文档 | 使用 context-gatherer subagent + readFile |
 
 ---
@@ -49,13 +56,17 @@
 ❌ 错误做法：readFile(".kiro/specs/feature/requirements.md")
     └─ 问题：直接加载 20K tokens 到主 Agent 上下文
     
-✅ 正确做法：使用 Context7 MCP
-    └─ mcp_context7_query_docs(
-         libraryId="/project/specs/feature",
-         query="Summarize requirements, design, and tasks"
+❌ 错误做法：使用 Context7 MCP 读取项目 Spec
+    └─ 问题：Context7 仅用于外部库文档，不能读取项目内部文档
+    
+✅ 正确做法：使用 context-gatherer subagent
+    └─ invokeSubAgent(
+         name="context-gatherer",
+         prompt="Read .kiro/specs/feature/requirements.md and provide summary",
+         explanation="Reading Spec document"
        )
-    └─ 返回：结构化摘要（~2K tokens）
-    └─ Token 节省：90%
+    └─ 返回：结构化摘要（~2-5K tokens）
+    └─ Token 节省：100%（主 Agent 0 token）
 ```
 
 ### 2.2 探索代码流程
@@ -103,20 +114,19 @@
 用户请求：写入文件
     │
     ▼
-❌ 错误做法：fsWrite(path="...", text="...")
+❌ 错误做法：主 Agent 直接使用 Kiro 原生工具
+    └─ 问题：不符合架构规范，应通过 general-purpose subagent
+    
+❌ 错误做法：使用 Desktop Commander MCP
     └─ 问题：不符合架构规范
     
-✅ 正确做法：使用 Desktop Commander MCP
-    ├─ 新文件 → mcp_desktop_commander_mcp_write_file(
-    │              path="D:\\gemini-main\\gemini-main\\backend\\...",
-    │              content="...",
-    │              mode="rewrite"
-    │            )
-    └─ 修改文件 → mcp_desktop_commander_mcp_edit_block(
-                   file_path="D:\\gemini-main\\gemini-main\\backend\\...",
-                   old_string="...",
-                   new_string="..."
-                 )
+✅ 正确做法：通过 general-purpose subagent 使用 Kiro 原生工具
+    └─ invokeSubAgent(
+         name="general-task-execution",
+         prompt="Use Kiro native tools to write files:\n- fsWrite(path='...', text='...') for new files\n- strReplace(file='...', old='...', new='...') for modifications\n- fsAppend(file='...', text='...') for appending",
+         explanation="File operations through subagent"
+       )
+    └─ Token 节省：100%（主 Agent 0 token）
 ```
 
 ---
@@ -128,29 +138,31 @@
 **任务**：读取 `.kiro/specs/feature/requirements.md`
 
 **检查清单**：
-- [ ] ❌ 不使用 `readFile`
-- [ ] ❌ 不使用 `readMultipleFiles`
+- [ ] ❌ 不使用 `readFile`（主 Agent 直接）
+- [ ] ❌ 不使用 `readMultipleFiles`（主 Agent 直接）
 - [ ] ❌ 不使用 Desktop Commander 读取
-- [ ] ✅ 使用 Context7 MCP：`mcp_context7_query_docs`
-- [ ] ✅ 指定 `libraryId="/project/specs/feature"`
-- [ ] ✅ 提供清晰的 `query` 参数
+- [ ] ❌ 不使用 Context7 MCP 读取项目 Spec（Context7 仅用于外部库文档）
+- [ ] ✅ 使用 context-gatherer subagent 读取项目 Spec
+- [ ] ✅ 提供清晰的 prompt 参数
 - [ ] ✅ 检查是否有 Redis 缓存可用
 
 **示例**：
 ```python
-# ✅ 正确做法
-result = mcp_context7_query_docs(
-    libraryId="/project/specs/feature",
-    query="Summarize the requirements, design decisions, and implementation tasks"
+# ✅ 正确做法：使用 context-gatherer subagent
+result = invokeSubAgent(
+    name="context-gatherer",
+    prompt="Read .kiro/specs/feature/requirements.md and provide summary of requirements, design decisions, and implementation tasks",
+    explanation="Reading Spec document"
 )
-# 返回：结构化摘要（~2K tokens）
+# 返回：结构化摘要（~2-5K tokens），主 Agent 0 token
 
-# ❌ 错误做法
-content = readFile(
-    path=".kiro/specs/feature/requirements.md",
-    explanation="Reading requirements"
-)
+# ❌ 错误做法 1：主 Agent 直接读取
+# content = readFile(path=".kiro/specs/feature/requirements.md")
 # 问题：直接加载 20K tokens
+
+# ❌ 错误做法 2：使用 Context7 MCP 读取项目 Spec
+# result = mcp_context7_query_docs(libraryId="/project/specs/feature", ...)
+# 问题：Context7 仅用于外部库文档，不能读取项目内部文档
 ```
 
 ### 3.2 场景 2：探索项目代码
@@ -287,21 +299,24 @@ result = mcp_gemini_gemini(
 **任务**：写入生成的代码到文件
 
 **检查清单**：
-- [ ] ❌ 不使用 `fsWrite`
-- [ ] ❌ 不使用 `fsAppend`
-- [ ] ❌ 不使用 `strReplace`
-- [ ] ✅ 使用 Desktop Commander MCP
-- [ ] ✅ 使用绝对路径
-- [ ] ✅ 新文件使用 `write_file`
-- [ ] ✅ 修改文件使用 `edit_block`
+- [ ] ❌ 主 Agent 不直接使用 Kiro 原生工具
+- [ ] ❌ 不使用 Desktop Commander MCP
+- [ ] ✅ 通过 general-purpose subagent 使用 Kiro 原生工具
+- [ ] ✅ 新文件使用 `fsWrite`
+- [ ] ✅ 修改文件使用 `strReplace`
+- [ ] ✅ 追加内容使用 `fsAppend`
 - [ ] ✅ 验证文件写入成功
 
 **示例**：
 ```python
-# ✅ 正确做法（新文件）
-mcp_desktop_commander_mcp_write_file(
-    path="D:\\gemini-main\\gemini-main\\backend\\app\\routers\\auth.py",
-    content="""from fastapi import APIRouter, Depends
+# ✅ 正确做法：通过 general-purpose subagent
+result = invokeSubAgent(
+    name="general-task-execution",
+    prompt="""Use Kiro native tools to write the authentication router file:
+
+fsWrite(
+    path="backend/app/routers/auth.py",
+    text=\"\"\"from fastapi import APIRouter, Depends
 from ..services.auth_service import AuthService
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -309,29 +324,41 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 @router.post("/login")
 async def login(credentials: LoginRequest):
     return await AuthService.login(credentials)
-""",
-    mode="rewrite"
+\"\"\"
+)""",
+    explanation="Writing file through subagent"
 )
 
-# ✅ 正确做法（修改文件）
-mcp_desktop_commander_mcp_edit_block(
-    file_path="D:\\gemini-main\\gemini-main\\backend\\app\\routers\\auth.py",
-    old_string="""@router.post("/login")
+# ❌ 错误做法：主 Agent 直接使用
+# fsWrite(path="...", text="...")
+# 问题：不符合架构规范
+
+# ✅ 正确做法（修改文件）：通过 general-purpose subagent
+result = invokeSubAgent(
+    name="general-task-execution",
+    prompt="""Use Kiro native tools to modify file:
+
+strReplace(
+    file="backend/app/routers/auth.py",
+    old=\"\"\"@router.post("/login")
 async def login(credentials: LoginRequest):
-    return await AuthService.login(credentials)""",
-    new_string="""@router.post("/login")
+    return await AuthService.login(credentials)\"\"\",
+    new=\"\"\"@router.post("/login")
 async def login(
     credentials: LoginRequest,
     user_id: int = Depends(require_user_id)
 ):
-    return await AuthService.login(credentials, user_id)"""
+    return await AuthService.login(credentials, user_id)\"\"\"
+)""",
+    explanation="Modifying file through subagent"
 )
 
-# ❌ 错误做法
-fsWrite(
-    path="backend/app/routers/auth.py",
-    text="..."
-)
+# ❌ 错误做法 1：主 Agent 直接使用 Kiro 原生工具
+# strReplace(file="...", old="...", new="...")
+# 问题：不符合架构规范
+
+# ❌ 错误做法 2：使用 Desktop Commander MCP
+# mcp_desktop_commander_mcp_edit_block(...)
 # 问题：不符合架构规范
 ```
 
@@ -427,11 +454,12 @@ content = readFile(
 
 **修正代码**：
 ```python
-result = mcp_context7_query_docs(
-    libraryId="/project/specs/feature",
-    query="Summarize requirements, design, and tasks"
+result = invokeSubAgent(
+    name="context-gatherer",
+    prompt="Read .kiro/specs/feature/requirements.md and summarize requirements, design, and tasks",
+    explanation="Reading Spec document"
 )
-# Token 节省：90%
+# Token 节省：100%（主 Agent 0 token）
 ```
 
 ### 5.2 错误 2：批量读取多个文件
@@ -482,25 +510,35 @@ result = invokeSubAgent(
 # Token 节省：90%，并行度提升 5x
 ```
 
-### 5.4 错误 4：使用 fsWrite 写入文件
+### 5.4 错误 4：主 Agent 直接使用 Kiro 原生工具写入文件
 
 **错误代码**：
 ```python
+# ❌ 错误做法 1：主 Agent 直接使用 Kiro 原生工具
 fsWrite(
     path="backend/app/routers/auth.py",
     text="..."
+)
+# 问题：不符合架构规范，应通过 general-purpose subagent
+
+# ❌ 错误做法 2：使用 Desktop Commander MCP
+mcp_desktop_commander_mcp_write_file(
+    path="D:\\gemini-main\\gemini-main\\backend\\app\\routers\\auth.py",
+    content="...",
+    mode="rewrite"
 )
 # 问题：不符合架构规范
 ```
 
 **修正代码**：
 ```python
-mcp_desktop_commander_mcp_write_file(
-    path="D:\\gemini-main\\gemini-main\\backend\\app\\routers\\auth.py",
-    content="...",
-    mode="rewrite"
+# ✅ 正确做法：通过 general-purpose subagent
+result = invokeSubAgent(
+    name="general-task-execution",
+    prompt="Use Kiro native tools to write file:\nfsWrite(path='backend/app/routers/auth.py', text='...')",
+    explanation="File operations through subagent"
 )
-# 符合架构规范
+# 符合架构规范，主 Agent 0 token
 ```
 
 ### 5.5 错误 5：重复读取相同文档
@@ -552,11 +590,13 @@ if cached:
 
 ### 6.2 读取文档时
 
-- [ ] ❌ 不使用 `readFile`
-- [ ] ❌ 不使用 `readMultipleFiles`
+- [ ] ❌ 不使用 `readFile`（主 Agent 直接）
+- [ ] ❌ 不使用 `readMultipleFiles`（主 Agent 直接）
 - [ ] ❌ 不使用 Desktop Commander 读取
-- [ ] ✅ 使用 Context7 MCP
-- [ ] ✅ 提供清晰的 query 参数
+- [ ] ❌ 不使用 Context7 MCP 读取项目 Spec（Context7 仅用于外部库文档）
+- [ ] ✅ 读取项目文档使用 context-gatherer subagent
+- [ ] ✅ 读取外部库文档使用 Context7 MCP
+- [ ] ✅ 提供清晰的 prompt/query 参数
 - [ ] ✅ 缓存返回的摘要
 
 ### 6.3 探索代码时
@@ -579,11 +619,12 @@ if cached:
 
 ### 6.5 写入文件时
 
-- [ ] ❌ 不使用 `fsWrite`
-- [ ] ❌ 不使用 `fsAppend`
-- [ ] ❌ 不使用 `strReplace`
-- [ ] ✅ 使用 Desktop Commander MCP
-- [ ] ✅ 使用绝对路径
+- [ ] ❌ 主 Agent 不直接使用 Kiro 原生工具
+- [ ] ❌ 不使用 Desktop Commander MCP
+- [ ] ✅ 通过 general-purpose subagent 使用 Kiro 原生工具
+- [ ] ✅ 新文件使用 `fsWrite`
+- [ ] ✅ 修改文件使用 `strReplace`
+- [ ] ✅ 追加内容使用 `fsAppend`
 - [ ] ✅ 验证写入成功
 
 ### 6.6 任务完成后
@@ -649,23 +690,26 @@ result = invokeSubAgent(
 3. 使用 SESSION_ID 反馈问题进行修正
 4. 最多迭代 3 次
 
-### 7.4 问题：Desktop Commander 写入失败
+### 7.4 问题：文件写入失败
 
 **症状**：
 ```python
-mcp_desktop_commander_mcp_write_file(
-    path="backend/app/routers/auth.py",
-    content="...",
-    mode="rewrite"
+result = invokeSubAgent(
+    name="general-task-execution",
+    prompt="Use fsWrite to write file...",
+    explanation="File operations"
 )
 # 错误：写入失败
 ```
 
 **解决方案**：
-1. 检查路径是否为绝对路径
-2. 确认文件未被占用
-3. 检查权限是否足够
-4. 验证目录是否存在
+1. 检查 general-purpose subagent 返回的错误信息
+2. 确认路径正确（相对路径或绝对路径均可）
+3. 确认文件未被占用
+4. 检查权限是否足够
+5. 验证目录是否存在
+6. 检查文件内容格式是否正确
+7. 确保 subagent prompt 中正确指定了文件路径和内容
 
 ---
 
@@ -673,11 +717,11 @@ mcp_desktop_commander_mcp_write_file(
 
 ### 8.1 核心要点
 
-1. **Context7 MCP**：读取所有文档（Spec、库文档、API 文档）
-2. **context-gatherer subagent**：探索项目代码，收集相关上下文
+1. **Context7 MCP**：读取外部库文档（FastAPI/React/Gemini SDK）
+2. **context-gatherer subagent**：读取项目文档（Spec/Steering/代码），探索项目代码
 3. **general-purpose subagent**：调用 Codex/Gemini 生成代码
 4. **Redis MCP**：缓存文档摘要，避免重复读取
-5. **Desktop Commander MCP**：写入文件，编辑文件（不用于读取）
+5. **Kiro 原生工具**：写入文件，编辑文件（fsWrite/strReplace/fsAppend）
 6. **Hooks**：自动化重复任务，减少主 Agent 负担
 
 ### 8.2 预期效果
@@ -690,14 +734,19 @@ mcp_desktop_commander_mcp_write_file(
 
 ### 8.3 快速参考
 
-**读取文档**：
+**读取外部库文档**：
 ```python
 mcp_context7_query_docs(libraryId="...", query="...")
 ```
 
+**读取项目文档**：
+```python
+invokeSubAgent(name="context-gatherer", prompt="Read .kiro/specs/...", explanation="...")
+```
+
 **探索代码**：
 ```python
-invokeSubAgent(name="context-gatherer", prompt="...", explanation="...")
+invokeSubAgent(name="context-gatherer", prompt="Explore backend codebase...", explanation="...")
 ```
 
 **生成代码**：
@@ -707,7 +756,11 @@ invokeSubAgent(name="general-task-execution", prompt="Use Codex/Gemini to...", e
 
 **写入文件**：
 ```python
-mcp_desktop_commander_mcp_write_file(path="...", content="...", mode="rewrite")
+invokeSubAgent(
+    name="general-task-execution",
+    prompt="Use Kiro native tools:\n- fsWrite(path='...', text='...') for new files\n- strReplace(file='...', old='...', new='...') for modifications\n- fsAppend(file='...', text='...') for appending",
+    explanation="File operations through subagent"
+)
 ```
 
 **缓存摘要**：
@@ -715,8 +768,3 @@ mcp_desktop_commander_mcp_write_file(path="...", content="...", mode="rewrite")
 mcp_redis_set(key="...", value=json.dumps(...), expireSeconds=86400)
 ```
 
----
-
-**最后更新**：2026-01-10  
-**版本**：v1.0.0  
-**维护者**：技术团队

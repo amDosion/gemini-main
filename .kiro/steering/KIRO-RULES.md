@@ -3,7 +3,6 @@ inclusion: always
 ---
 
 # Kiro AI 开发规则（唯一 Steering 文件）
-<!-- Version: v5.1.1 -->
 
 ## ⚠️ 核心原则
 
@@ -34,8 +33,8 @@ inclusion: always
 1. 识别场景（根据关键词）
 2. 调用 context-gatherer 读取场景文档
 3. 调用 context-gatherer 读取项目文档/代码
-4. 调用 general-purpose 执行生成/分析
-5. 使用 Desktop Commander 写入文件
+4. 调用 general-purpose 执行生成/分析/文件操作
+5. 接收 subagent 结果并整合
 ```
 
 ### 工具调用规则（简化版）
@@ -44,9 +43,14 @@ inclusion: always
 |------|--------|------|
 | **Context7 MCP** | Main Agent 直接 | 外部库文档（FastAPI/React/Gemini SDK） |
 | **context-gatherer** | Main Agent 调用 | 项目文档/代码（Spec/Steering/代码文件） |
-| **general-purpose** | Main Agent 调用 | 代码生成/分析（Codex/Gemini/Sequential Thinking） |
-| **Desktop Commander** | Main Agent 直接 | 文件操作（写入/编辑，不读取） |
+| **general-purpose** | Main Agent 调用 | 代码生成/分析/文件操作（Codex/Gemini/Sequential Thinking/文件写入） |
 | **Redis MCP** | Main Agent 直接 | 缓存摘要 |
+
+**重要说明**：
+- ✅ 读取项目文档（Spec/Steering/代码）必须使用 **context-gatherer subagent**
+- ✅ 文件写入/编辑必须通过 **general-purpose subagent** 使用 Kiro 原生工具（fsWrite/strReplace/fsAppend）
+- ❌ 禁止主 Agent 直接使用 Kiro 原生工具写入文件（应通过 general-purpose subagent）
+- ❌ 禁止使用 Desktop Commander MCP 读取或写入文件
 
 **详细的 Token 节省数据和使用示例**：见 `.kiro/docs/core/agents-collaboration.md`
 
@@ -58,9 +62,9 @@ inclusion: always
 | 主 Agent 直接 readMultipleFiles | context-gatherer + readMultipleFiles |
 | 主 Agent 直接调用 Codex/Gemini | general-purpose + Codex/Gemini |
 | 主 Agent 直接调用 Sequential Thinking | general-purpose + Sequential Thinking |
-| 使用 fsWrite/fsAppend/strReplace | Desktop Commander MCP |
+| 主 Agent 直接使用 fsWrite/fsAppend/strReplace | general-purpose + Kiro 原生工具 |
 | Context7 读取项目 Spec | context-gatherer + readFile |
-| Desktop Commander 读取文档 | context-gatherer + readFile |
+| Desktop Commander 读取/写入文件 | context-gatherer（读取）或 general-purpose（写入） |
 
 ---
 
@@ -81,11 +85,10 @@ inclusion: always
 并行阶段 2：执行
   ├─ general-purpose + Codex 生成代码
   ├─ general-purpose + Sequential Thinking 分析
-  └─ general-purpose + Claude Code 审查
+  ├─ general-purpose + Claude Code 审查
+  └─ general-purpose + Kiro 原生工具 写入文件
   ↓
 主 Agent 接收结果（3K tokens）
-  ↓
-主 Agent 写入文件（Desktop Commander）
   ↓
 完成
 ```
@@ -145,6 +148,4 @@ invokeSubAgent(
 
 ---
 
-**文件路径**：`.kiro/steering/KIRO-RULES.md`  
-**版本**：v5.1.1  
 **这是唯一的 Steering 文件**：所有其他文档都通过 context-gatherer 按需获取

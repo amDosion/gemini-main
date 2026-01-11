@@ -165,7 +165,7 @@ mcpServers: ["codex-mcp-toolkit", "gemini", "sequential-thinking", "desktop-comm
   },
   "then": {
     "type": "askAgent",
-    "prompt": "为新文件 ${FILE} 创建对应的测试文件样板。\n\n要求：\n1. 后端：使用 pytest，包含基本的单元测试结构\n2. 前端：使用 Vitest + React Testing Library\n3. 包含至少 3 个测试用例：正常情况、边界条件、错误处理\n4. 使用 Desktop Commander MCP 写入文件"
+    "prompt": "为新文件 ${FILE} 创建对应的测试文件样板。\n\n要求：\n1. 后端：使用 pytest，包含基本的单元测试结构\n2. 前端：使用 Vitest + React Testing Library\n3. 包含至少 3 个测试用例：正常情况、边界条件、错误处理\n4. 通过 general-purpose subagent 使用 Kiro 原生工具写入文件"
   }
 }
 ```
@@ -186,7 +186,7 @@ mcpServers: ["codex-mcp-toolkit", "gemini", "sequential-thinking", "desktop-comm
   },
   "then": {
     "type": "askAgent",
-    "prompt": "为新文件 ${FILE} 添加许可证标头。\n\n包含：\n1. MIT License 声明\n2. 文件描述\n3. 创建日期\n4. 作者信息\n\n使用 Desktop Commander MCP 的 edit_block 工具在文件开头插入。"
+    "prompt": "为新文件 ${FILE} 添加许可证标头。\n\n包含：\n1. MIT License 声明\n2. 文件描述\n3. 创建日期\n4. 作者信息\n\n通过 general-purpose subagent 使用 Kiro 原生工具（strReplace）在文件开头插入。"
   }
 }
 ```
@@ -207,7 +207,7 @@ mcpServers: ["codex-mcp-toolkit", "gemini", "sequential-thinking", "desktop-comm
   },
   "then": {
     "type": "askAgent",
-    "prompt": "为新组件 ${FILE} 生成样板代码。\n\n包含：\n1. React 函数组件结构\n2. TypeScript 类型定义（Props interface）\n3. 基本的 JSX 结构\n4. 导出语句\n5. 简单的注释说明\n\n使用 Desktop Commander MCP 写入文件。"
+    "prompt": "为新组件 ${FILE} 生成样板代码。\n\n包含：\n1. React 函数组件结构\n2. TypeScript 类型定义（Props interface）\n3. 基本的 JSX 结构\n4. 导出语句\n5. 简单的注释说明\n\n通过 general-purpose subagent 使用 Kiro 原生工具写入文件。"
   }
 }
 ```
@@ -292,7 +292,7 @@ mcpServers: ["codex-mcp-toolkit", "gemini", "sequential-thinking", "desktop-comm
   },
   "then": {
     "type": "askAgent",
-    "prompt": "用户提交了新消息。请记住以下项目上下文：\n1. 模块化原则：后端 < 300 行，前端 < 200 行\n2. 使用 Desktop Commander MCP 写入文件\n3. 使用 context-gatherer subagent 读取文档\n4. 遵循 .kiro/steering/KIRO-RULES.md 中的规则"
+    "prompt": "用户提交了新消息。请记住以下项目上下文：\n1. 模块化原则：后端 < 300 行，前端 < 200 行\n2. 通过 general-purpose subagent 使用 Kiro 原生工具写入文件\n3. 使用 context-gatherer subagent 读取文档\n4. 遵循 .kiro/steering/KIRO-RULES.md 中的规则"
   }
 }
 ```
@@ -376,7 +376,7 @@ mcpServers: ["codex-mcp-toolkit", "gemini", "sequential-thinking", "desktop-comm
   },
   "then": {
     "type": "askAgent",
-    "prompt": "生成完整的 API 文档。\n\n包含：\n1. 所有 API 端点列表\n2. 请求/响应格式\n3. 参数说明\n4. 错误代码\n5. 使用示例\n\n使用 context-gatherer subagent 读取所有路由文件，然后生成 Markdown 文档。使用 Desktop Commander MCP 写入文件到 docs/api.md。"
+    "prompt": "生成完整的 API 文档。\n\n包含：\n1. 所有 API 端点列表\n2. 请求/响应格式\n3. 参数说明\n4. 错误代码\n5. 使用示例\n\n使用 context-gatherer subagent 读取所有路由文件，然后生成 Markdown 文档。通过 general-purpose subagent 使用 Kiro 原生工具写入文件到 docs/api.md。"
   }
 }
 ```
@@ -546,7 +546,7 @@ ENCRYPTION_KEY=your_encryption_key
 3. Kiro 进行深度思考分析（Sequential Thinking MCP）
 4. Kiro 验证思考结果
 5. Kiro 进行最终代码审查（Claude Code MCP）
-6. Kiro 写入文件（Desktop Commander MCP）
+6. Kiro 写入文件（通过 general-purpose subagent 使用 Kiro 原生工具）
 7. Kiro 标记任务完成
 
 ### 3. Gemini API 集成

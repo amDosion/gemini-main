@@ -83,7 +83,7 @@ inclusion: manual
    └─ 验证代码质量和正确性
 
 9. 主 Agent：写入文件
-   └─ 使用 Desktop Commander MCP 写入所有文件
+   └─ 通过 general-purpose subagent 使用 Kiro 原生工具写入所有文件
    └─ 标记任务完成
 ```
 
@@ -189,7 +189,9 @@ inclusion: manual
 
 ## 主 Agent 职责
 
-### 主 Agent 应该做的事
+> 💡 **详细的主 Agent 职责说明请查看 `.kiro/docs/core/agents-collaboration.md` 的"主 Agent 职责边界"章节**
+
+### 主 Agent 应该做的事（简化版）
 
 | 职责 | 说明 | 示例 |
 |------|------|------|
@@ -198,9 +200,11 @@ inclusion: manual
 | **结果整合** | 综合所有 subagent 返回的结果 | 整合 Spec、代码、文档、审查结果 |
 | **质量把控** | 验证生成的代码质量和正确性 | 整合 Sequential Thinking 和 Claude Code 的审查结果 |
 | **最终决策** | 决定是否接受生成的代码 | 审查后决定写入文件 |
-| **文件写入** | 使用 Desktop Commander MCP 写入文件 | 写入所有生成的代码 |
+| **文件写入** | 通过 general-purpose subagent 使用 Kiro 原生工具 | 写入所有生成的代码 |
 
-### 主 Agent 不应该做的事
+### 主 Agent 不应该做的事（简化版）
+
+> 💡 **完整的禁止操作列表请查看 `.kiro/steering/KIRO-RULES.md` 的"禁止操作"表格**
 
 | 禁止操作 | 原因 | 正确做法 |
 |---------|------|---------|
@@ -344,18 +348,29 @@ invokeSubAgent(
 )
 ```
 
-### Desktop Commander MCP（文件操作）
+### 文件操作（通过 general-purpose subagent）
 
 **用途**：写入文件、编辑文件
 
 **使用方式**：
 ```python
-# ✅ 主 Agent 直接使用（写入文件）
-mcp_desktop_commander_mcp_write_file(
-    path="D:\\gemini-main\\gemini-main\\backend\\app\\routers\\auth.py",
-    content=generated_code,
-    mode="rewrite"
+# ✅ 正确做法：通过 general-purpose subagent 使用 Kiro 原生工具
+result = invokeSubAgent(
+    name="general-task-execution",
+    prompt="""Use Kiro native tools to write file:
+
+fsWrite(
+    path="backend/app/routers/auth.py",
+    text=\"\"\"from fastapi import APIRouter
+# ... generated code ...
+\"\"\"
+)""",
+    explanation="File operations through subagent"
 )
+
+# ❌ 错误做法：主 Agent 直接使用 Desktop Commander MCP
+# mcp_desktop_commander_mcp_write_file(...)
+# 问题：不符合架构规范
 ```
 
 ### Redis MCP（缓存）
@@ -464,23 +479,23 @@ if not cached:
 
 **步骤 7：主 Agent 写入文件**
 ```python
-# 主 Agent 使用 Desktop Commander 写入所有文件
-mcp_desktop_commander_mcp_write_file(
-    path="D:\\gemini-main\\gemini-main\\backend\\app\\routers\\auth.py",
-    content=backend_code,
-    mode="rewrite"
+# 主 Agent 通过 general-purpose subagent 使用 Kiro 原生工具写入所有文件
+file_result1 = invokeSubAgent(
+    name="general-task-execution",
+    prompt=f"Use Kiro native tools to write file:\nfsWrite(path='backend/app/routers/auth.py', text='''{backend_code}''')",
+    explanation="Writing backend file through subagent"
 )
 
-mcp_desktop_commander_mcp_write_file(
-    path="D:\\gemini-main\\gemini-main\\frontend\\components\\auth\\LoginForm.tsx",
-    content=frontend_code,
-    mode="rewrite"
+file_result2 = invokeSubAgent(
+    name="general-task-execution",
+    prompt=f"Use Kiro native tools to write file:\nfsWrite(path='frontend/components/auth/LoginForm.tsx', text='''{frontend_code}''')",
+    explanation="Writing frontend file through subagent"
 )
 
-mcp_desktop_commander_mcp_write_file(
-    path="D:\\gemini-main\\gemini-main\\backend\\tests\\test_auth.py",
-    content=test_code,
-    mode="rewrite"
+file_result3 = invokeSubAgent(
+    name="general-task-execution",
+    prompt=f"Use Kiro native tools to write file:\nfsWrite(path='backend/tests/test_auth.py', text='''{test_code}''')",
+    explanation="Writing test file through subagent"
 )
 ```
 
@@ -596,7 +611,7 @@ else:
 4. **使用 general-purpose 审查代码**（并行审查：Sequential Thinking + Claude Code）
 5. **主 Agent 负责整合和决策**（质量把控）
 6. **使用 Redis 缓存文档摘要**（避免重复）
-7. **主 Agent 负责文件写入**（避免冲突）
+7. **通过 general-purpose subagent 执行文件写入**（使用 Kiro 原生工具，避免冲突）
 
 ### ❌ 不应该做的事
 
@@ -616,11 +631,3 @@ else:
 - [上下文优化检查清单](.kiro/docs/reference/context-optimization-checklist.md)
 - [主 Agent 协作规则](.kiro/docs/core/agents-collaboration.md)
 
----
-
-**版本**：v2.1.0  
-**最后更新**：2026-01-10  
-**重大变更**：
-- 强调 Subagent 并行执行和独立上下文空间
-- 明确 Sequential Thinking 和 Claude Code 应通过 general-purpose subagent 使用
-- 添加并行审查模式（Sequential Thinking + Claude Code 同时运行）

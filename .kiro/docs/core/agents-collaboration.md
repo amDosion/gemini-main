@@ -15,8 +15,8 @@ inclusion: manual
 ## ⚠️ 核心架构原则
 
 **Kiro 使用两种专用 subagents**：
-1. **context-gatherer subagent**: 探索项目和收集相关上下文
-2. **general-purpose subagent**: 并行执行所有其他任务
+1. **context-gatherer subagent**: 探索项目和收集相关上下文（读取文档/代码）
+2. **general-purpose subagent**: 并行执行所有其他任务（代码生成/分析/文件操作）
 
 **关键特性**：
 - ✅ Subagents 有**独立的上下文空间**，不占用主 Agent token
@@ -36,15 +36,12 @@ inclusion: manual
 |-------|------|------|-----------|---------|
 | 🥇 **最高** | **context-gatherer subagent** | 读取项目文档/代码 | 100% (主 Agent 0 token) | 读取 Spec、代码、项目文档 |
 | 🥈 **最高** | **Context7 MCP** | 读取外部文档 | 90% (20K → 2K) | 读取外部库文档、API 文档 |
-| 🥉 **高** | **general-purpose subagent** | 代码生成/审查 | 90% (30K → 3K) | 调用 Codex/Gemini/Claude Code |
+| 🥉 **高** | **general-purpose subagent** | 代码生成/审查/文件操作 | 90% (30K → 3K) | 调用 Codex/Gemini/Claude Code，使用 Kiro 原生工具写入文件 |
 | 4️⃣ **中** | **Redis MCP** | 缓存摘要 | 避免重复 | 缓存文档摘要 |
-| 5️⃣ **中** | **Desktop Commander MCP** | 文件操作 | N/A | 写入文件、编辑文件 |
 
 ### 禁止操作
 
 > 💡 **完整的禁止操作列表请查看 `.kiro/steering/KIRO-RULES.md` 的"禁止操作"表格**
-> 
-> 本节提供详细的解释和错误/正确示例。
 
 ---
 
@@ -62,13 +59,13 @@ inclusion: manual
 **工具集**：
 - `invokeSubAgent`: 启动 context-gatherer 或 general-purpose subagent
 - `Context7 MCP`: 读取外部库文档（FastAPI、React 等）
-- `Desktop Commander MCP`: 写入文件、编辑文件
 - `Redis MCP`: 缓存文档摘要
 - `taskStatus`: 更新任务状态
 
 **禁止使用**：
 - ❌ `readFile` / `readMultipleFiles`（使用 context-gatherer 代替）
 - ❌ 直接调用 Codex/Gemini/Claude Code MCP（使用 general-purpose subagent 代替）
+- ❌ 直接使用 Kiro 原生工具写入文件（使用 general-purpose subagent 代替）
 
 ### 1.2 context-gatherer subagent
 
@@ -102,13 +99,14 @@ invokeSubAgent(
 
 ### 1.3 general-purpose subagent
 
-**用途**：并行执行任务（代码生成、审查等）
+**用途**：并行执行任务（代码生成、审查、文件操作等）
 
 **何时使用**：
 - 调用 Codex MCP 生成后端代码
 - 调用 Gemini MCP 生成前端代码
 - 调用 Sequential Thinking MCP 进行深度分析
 - 调用 Claude Code MCP 进行代码审查
+- 使用 Kiro 原生工具写入/编辑文件（fsWrite/strReplace/fsAppend）
 - 并行执行多个任务
 
 **关键特性**：
@@ -188,9 +186,13 @@ invokeSubAgent(
      explanation="Parallel code review"
    )
 
-步骤 7：Kiro 主 Agent 写入文件
-├─ 新文件 → mcp_desktop_commander_mcp_write_file(...)
-└─ 修改文件 → mcp_desktop_commander_mcp_edit_block(...)
+步骤 7：Kiro 主 Agent 启动文件写入
+└─ 启动 general-purpose subagent（文件操作）：
+   invokeSubAgent(
+     name="general-task-execution",
+     prompt="Use Kiro native tools to write files:\n- fsWrite(path='...', text='...') for new files\n- strReplace(file='...', old='...', new='...') for modifications\n- fsAppend(file='...', text='...') for appending",
+     explanation="File operations through subagent"
+   )
 
 步骤 8：Kiro 主 Agent 标记任务完成
 └─ taskStatus(task="1.1 实现 XXX", status="completed")
@@ -318,10 +320,9 @@ review2 = invokeSubAgent(
 **Kiro 主 Agent 应该**：
 - ✅ 使用 Context7 MCP 读取外部库文档
 - ✅ 使用 context-gatherer subagent 读取项目文档和代码
-- ✅ 使用 general-purpose subagent 调用所有 MCP 工具
+- ✅ 使用 general-purpose subagent 调用所有 MCP 工具和执行文件操作
 - ✅ 最大化并行执行（多个 subagents）
 - ✅ 整合 subagent 结果并做出决策
-- ✅ 使用 Desktop Commander MCP 写入文件
 - ✅ 使用 Redis MCP 缓存文档摘要
 
 ### 5.2 主 Agent 不应该做的
@@ -331,7 +332,8 @@ review2 = invokeSubAgent(
 - ❌ 直接调用 Codex/Gemini MCP
 - ❌ 直接调用 Sequential Thinking MCP
 - ❌ 直接调用 Claude Code MCP
-- ❌ 使用 Desktop Commander 读取文档
+- ❌ 直接使用 Kiro 原生工具写入文件（fsWrite/strReplace/fsAppend）
+- ❌ 使用 Desktop Commander MCP 读取或写入文件
 - ❌ 在验证失败时继续执行
 
 ### 5.3 必须事项
@@ -339,8 +341,8 @@ review2 = invokeSubAgent(
 **Kiro 主 Agent 必须**：
 - ✅ 所有文件读取通过 context-gatherer subagent
 - ✅ 所有 MCP 工具调用通过 general-purpose subagent
+- ✅ 所有文件写入操作通过 general-purpose subagent（使用 Kiro 原生工具）
 - ✅ 最大化利用并行执行能力
-- ✅ 使用 Desktop Commander MCP 写入文件
 
 ---
 
@@ -396,24 +398,3 @@ result2 = invokeSubAgent(
 - ✅ 并行审查（Sequential Thinking + Claude Code）
 - ✅ 主 Agent 最终决策和质量把控
 
----
-
-## 📝 版本信息
-
-**版本**：v2.0.0  
-**更新日期**：2026-01-10  
-**维护者**：Development Team  
-**变更说明**：重写为符合 Kiro Powers 官方架构（context-gatherer + general-purpose subagents）
-
-**重大变更**：
-- ✅ 移除所有主 Agent 直接读取文件的示例
-- ✅ 移除所有主 Agent 直接调用 MCP 的示例
-- ✅ 添加 context-gatherer subagent 使用指南
-- ✅ 添加 general-purpose subagent 使用指南
-- ✅ 强调并行执行模式
-- ✅ 更新所有工作流程示例
-
----
-
-**最后更新**：2026-01-10  
-**文件路径**：`.kiro/docs/core/agents-collaboration.md`

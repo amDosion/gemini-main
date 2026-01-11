@@ -29,6 +29,12 @@ class ProviderFactory:
     service instances. Providers are automatically registered based on
     ProviderConfig.CONFIGS on first use.
     
+    Caching Strategy:
+    - Cache key: f"{provider}:{api_key}"
+    - Scope: Per (provider, api_key) tuple
+    - Lifetime: Application lifetime (until clear_cache() called)
+    - Thread-safe: Uses class-level dict (GIL-protected in CPython)
+    
     Example:
         >>> service = ProviderFactory.create("openai", api_key="sk-...")
         >>> models = await service.get_available_models()
@@ -36,6 +42,8 @@ class ProviderFactory:
     
     # Registry of provider names to service classes
     _providers: Dict[str, Type[BaseProviderService]] = {}
+    # Client instance cache
+    _client_cache: Dict[str, BaseProviderService] = {}
     # Initialization flag
     _initialized = False
     
@@ -50,7 +58,12 @@ class ProviderFactory:
         **kwargs
     ) -> BaseProviderService:
         """
-        Create a provider service instance.
+        Create or retrieve cached provider service instance.
+        
+        Caching Logic:
+        1. Check if (provider, api_key) exists in cache
+        2. If yes: Return cached instance
+        3. If no: Create new instance, cache it, return it
         
         Args:
             provider: Provider name (e.g., 'openai', 'google', 'ollama')
@@ -61,7 +74,7 @@ class ProviderFactory:
             **kwargs: Additional configuration parameters passed to the service
         
         Returns:
-            Instance of the appropriate provider service class
+            Cached or newly created provider service instance
         
         Raises:
             ValueError: If provider name is not registered
@@ -78,6 +91,12 @@ class ProviderFactory:
         if not cls._initialized:
             cls._auto_register()
         
+        # Check cache first
+        cache_key = f"{provider}:{api_key}"
+        if cache_key in cls._client_cache:
+            logger.debug(f"[Provider Factory] Cache hit: {cache_key}")
+            return cls._client_cache[cache_key]
+        
         if provider not in cls._providers:
             raise ValueError(
                 f"Unknown provider: {provider}. "
@@ -93,9 +112,14 @@ class ProviderFactory:
         # Pass user_id and db to Google providers for Vertex AI support
         # Other providers don't need these parameters yet
         if provider in ['google', 'google-custom']:
-            return service_class(api_key, api_url, user_id=user_id, db=db, **kwargs)
+            service = service_class(api_key, api_url, user_id=user_id, db=db, **kwargs)
         else:
-            return service_class(api_key, api_url, **kwargs)
+            service = service_class(api_key, api_url, **kwargs)
+        
+        # Cache before returning
+        cls._client_cache[cache_key] = service
+        logger.info(f"[Provider Factory] Created and cached: {cache_key}")
+        return service
     
     @classmethod
     def _auto_register(cls):

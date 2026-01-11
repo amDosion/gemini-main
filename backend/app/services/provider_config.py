@@ -33,10 +33,27 @@ class ProviderConfig:
             "client_type": "google",
             "supports_streaming": True,
             "supports_function_call": True,
+            "supports_vision": True,
+            "supports_thinking": True,
+            "supports_web_search": True,
+            "supports_code_execution": True,
             "name": "Google Gemini",
             "description": "Native Google SDK. Supports Vision, Search & Thinking.",
             "icon": "gemini",
             "is_custom": False,
+            # Google-specific modes (image editing operations)
+            "modes": [
+                "image-outpainting",
+                "image-inpainting",
+                "virtual-try-on",
+                "product-background-edit"
+            ],
+            # Platform routing configuration
+            "platform_routing": {
+                "vertex": True,           # Supports Vertex AI
+                "developer": True,        # Supports Developer API
+                "default_platform": "developer"
+            },
         },
         "google-custom": {
             "base_url": "https://generativelanguage.googleapis.com/v1beta",
@@ -55,6 +72,10 @@ class ProviderConfig:
             "client_type": "openai",
             "supports_streaming": True,
             "supports_function_call": True,
+            "supports_vision": True,
+            "supports_thinking": False,
+            "supports_web_search": False,
+            "supports_code_execution": False,
             "name": "OpenAI",
             "description": "Standard OpenAI API.",
             "icon": "openai",
@@ -66,6 +87,10 @@ class ProviderConfig:
             "client_type": "openai",
             "supports_streaming": True,
             "supports_function_call": True,
+            "supports_vision": False,
+            "supports_thinking": True,  # DeepSeek R1 supports reasoning
+            "supports_web_search": False,
+            "supports_code_execution": False,
             "name": "DeepSeek",
             "description": "DeepSeek V3 & R1 (Reasoning).",
             "icon": "deepseek",
@@ -77,10 +102,17 @@ class ProviderConfig:
             "client_type": "dashscope",
             "supports_streaming": True,
             "supports_function_call": True,
+            "supports_vision": True,
+            "supports_thinking": True,
+            "supports_web_search": True,
+            "supports_code_execution": True,
             "name": "Aliyun TongYi",
             "description": "Qwen models via DashScope.",
             "icon": "qwen",
             "is_custom": False,
+            # Dual-client support (OPTIONAL - already implemented in QwenNativeProvider)
+            "secondary_client_type": "openai",
+            "secondary_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         },
         "siliconflow": {
             "base_url": "https://api.siliconflow.cn/v1",
@@ -88,6 +120,10 @@ class ProviderConfig:
             "client_type": "openai",
             "supports_streaming": True,
             "supports_function_call": True,
+            "supports_vision": False,
+            "supports_thinking": False,
+            "supports_web_search": False,
+            "supports_code_execution": False,
             "name": "SiliconFlow",
             "description": "High-performance inference (Qwen, DeepSeek, etc).",
             "icon": "silicon",
@@ -99,6 +135,10 @@ class ProviderConfig:
             "client_type": "openai",
             "supports_streaming": True,
             "supports_function_call": True,
+            "supports_vision": False,
+            "supports_thinking": False,
+            "supports_web_search": False,
+            "supports_code_execution": False,
             "name": "Moonshot",
             "description": "Kimi AI models.",
             "icon": "moonshot",
@@ -110,6 +150,10 @@ class ProviderConfig:
             "client_type": "openai",
             "supports_streaming": True,
             "supports_function_call": True,
+            "supports_vision": False,
+            "supports_thinking": False,
+            "supports_web_search": False,
+            "supports_code_execution": False,
             "name": "ZhiPu AI",
             "description": "ChatGLM models.",
             "icon": "glm",
@@ -118,13 +162,19 @@ class ProviderConfig:
         "ollama": {
             "base_url": "http://localhost:11434/v1",
             "default_model": "llama3",
-            "client_type": "openai",
+            "client_type": "ollama",  # Changed from "openai" to "ollama" for dedicated service
             "supports_streaming": True,
-            "supports_function_call": False,
+            "supports_function_call": False,  # Dynamic detection via /api/show
+            "supports_vision": False,         # Dynamic detection via /api/show
+            "supports_thinking": False,       # Dynamic detection via /api/show
             "name": "Ollama",
             "description": "Local models. Ensure CORS is enabled.",
             "icon": "ollama",
             "is_custom": False,
+            # Dual-API support (OPTIONAL - already implemented in OllamaService)
+            # Primary: OpenAI-compatible API (/v1/*) for chat
+            # Secondary: Native Ollama API (/api/*) for model management, embedding, capabilities
+            "secondary_base_url": "http://localhost:11434",  # Native API endpoint
         },
         "custom": {
             "base_url": "",
@@ -132,6 +182,10 @@ class ProviderConfig:
             "client_type": "openai",
             "supports_streaming": True,
             "supports_function_call": True,
+            "supports_vision": False,
+            "supports_thinking": False,
+            "supports_web_search": False,
+            "supports_code_execution": False,
             "name": "Custom OpenAI",
             "description": "Connect to any OpenAI compatible endpoint.",
             "icon": "settings",
@@ -212,6 +266,115 @@ class ProviderConfig:
         return cls.CONFIGS.get(provider, {}).get("supports_function_call", False)
     
     @classmethod
+    def supports_vision(cls, provider: str) -> bool:
+        """是否支持视觉输入
+        
+        Args:
+            provider: Provider 标识
+        
+        Returns:
+            是否支持视觉输入
+        """
+        return cls.CONFIGS.get(provider, {}).get("supports_vision", False)
+    
+    @classmethod
+    def supports_thinking(cls, provider: str) -> bool:
+        """是否支持思考模式
+        
+        Args:
+            provider: Provider 标识
+        
+        Returns:
+            是否支持思考模式
+        """
+        return cls.CONFIGS.get(provider, {}).get("supports_thinking", False)
+    
+    @classmethod
+    def supports_web_search(cls, provider: str) -> bool:
+        """是否支持网页搜索
+        
+        Args:
+            provider: Provider 标识
+        
+        Returns:
+            是否支持网页搜索
+        """
+        return cls.CONFIGS.get(provider, {}).get("supports_web_search", False)
+    
+    @classmethod
+    def supports_code_execution(cls, provider: str) -> bool:
+        """是否支持代码执行
+        
+        Args:
+            provider: Provider 标识
+        
+        Returns:
+            是否支持代码执行
+        """
+        return cls.CONFIGS.get(provider, {}).get("supports_code_execution", False)
+    
+    @classmethod
+    def get_secondary_client_type(cls, provider: str) -> Optional[str]:
+        """获取次要客户端类型（双客户端支持）
+        
+        Args:
+            provider: Provider 标识
+        
+        Returns:
+            次要客户端类型，如果不存在返回 None
+        """
+        return cls.CONFIGS.get(provider, {}).get("secondary_client_type")
+    
+    @classmethod
+    def get_secondary_base_url(cls, provider: str) -> Optional[str]:
+        """获取次要客户端 Base URL（双客户端支持）
+        
+        Args:
+            provider: Provider 标识
+        
+        Returns:
+            次要客户端 Base URL，如果不存在返回 None
+        """
+        return cls.CONFIGS.get(provider, {}).get("secondary_base_url")
+    
+    @classmethod
+    def has_dual_client_support(cls, provider: str) -> bool:
+        """检查是否支持双客户端模式
+        
+        Args:
+            provider: Provider 标识
+        
+        Returns:
+            是否支持双客户端
+        """
+        config = cls.CONFIGS.get(provider, {})
+        return "secondary_client_type" in config or "secondary_base_url" in config
+    
+    @classmethod
+    def get_modes(cls, provider: str) -> List[str]:
+        """获取 Provider 支持的模式列表（如 Google 图像编辑模式）
+        
+        Args:
+            provider: Provider 标识
+        
+        Returns:
+            模式列表，如果不存在返回空列表
+        """
+        return cls.CONFIGS.get(provider, {}).get("modes", [])
+    
+    @classmethod
+    def get_platform_routing(cls, provider: str) -> Optional[Dict[str, Any]]:
+        """获取平台路由配置（如 Google Vertex AI vs Developer API）
+        
+        Args:
+            provider: Provider 标识
+        
+        Returns:
+            平台路由配置，如果不存在返回 None
+        """
+        return cls.CONFIGS.get(provider, {}).get("platform_routing")
+    
+    @classmethod
     def list_all_providers(cls) -> List[Dict[str, Any]]:
         """列出所有可用的 Provider
         
@@ -272,7 +435,7 @@ class ProviderConfig:
             return False
         
         # 必需字段
-        required_fields = ["client_type", "default_model"]
+        required_fields = ["client_type", "default_model", "name", "description", "icon"]
         missing_fields = [field for field in required_fields if field not in config]
         
         if missing_fields:
@@ -289,6 +452,16 @@ class ProviderConfig:
             logger.warning(
                 f"[ProviderConfig] Provider '{provider}' has invalid client_type: "
                 f"'{client_type}'. Valid types: {', '.join(valid_client_types)}"
+            )
+            return False
+        
+        # 验证双客户端配置一致性
+        has_secondary_type = "secondary_client_type" in config
+        has_secondary_url = "secondary_base_url" in config
+        if has_secondary_type != has_secondary_url:
+            logger.warning(
+                f"[ProviderConfig] Provider '{provider}' has incomplete dual-client config: "
+                f"secondary_client_type={has_secondary_type}, secondary_base_url={has_secondary_url}"
             )
             return False
         
@@ -312,6 +485,17 @@ class ProviderConfig:
             f"[ProviderConfig] Validated {total_count} providers: "
             f"{valid_count} valid, {total_count - valid_count} invalid"
         )
+        
+        # 记录双客户端支持的 Provider
+        dual_client_providers = [
+            provider_id for provider_id in cls.CONFIGS.keys()
+            if cls.has_dual_client_support(provider_id)
+        ]
+        if dual_client_providers:
+            logger.info(
+                f"[ProviderConfig] Providers with dual-client support: "
+                f"{', '.join(dual_client_providers)}"
+            )
         
         return results
     
@@ -343,7 +527,22 @@ class ProviderConfig:
             "defaultModel": "gemini-2.0-flash-exp",
             "description": "Native Google SDK...",
             "isCustom": false,
-            "icon": "gemini"
+            "icon": "gemini",
+            "capabilities": {
+                "streaming": true,
+                "functionCall": true,
+                "vision": true,
+                "thinking": true,
+                "webSearch": true,
+                "codeExecution": true
+            },
+            "dualClient": {
+                "supported": true,
+                "secondaryType": "openai",
+                "secondaryBaseUrl": "https://..."
+            },
+            "modes": ["image-outpainting", ...],
+            "platformRouting": {...}
         }
         
         Returns:
@@ -351,7 +550,7 @@ class ProviderConfig:
         """
         templates = []
         for provider_id, config in cls.CONFIGS.items():
-            templates.append({
+            template = {
                 "id": provider_id,
                 "name": config.get("name", provider_id),
                 "protocol": cls._map_client_type_to_protocol(config.get("client_type", "openai")),
@@ -360,7 +559,35 @@ class ProviderConfig:
                 "description": config.get("description", ""),
                 "isCustom": config.get("is_custom", False),
                 "icon": config.get("icon"),
-            })
+                "capabilities": {
+                    "streaming": config.get("supports_streaming", False),
+                    "functionCall": config.get("supports_function_call", False),
+                    "vision": config.get("supports_vision", False),
+                    "thinking": config.get("supports_thinking", False),
+                    "webSearch": config.get("supports_web_search", False),
+                    "codeExecution": config.get("supports_code_execution", False),
+                }
+            }
+            
+            # 添加双客户端配置（如果存在）
+            if cls.has_dual_client_support(provider_id):
+                template["dualClient"] = {
+                    "supported": True,
+                    "secondaryType": config.get("secondary_client_type"),
+                    "secondaryBaseUrl": config.get("secondary_base_url"),
+                }
+            
+            # 添加模式列表（如果存在）
+            modes = config.get("modes")
+            if modes:
+                template["modes"] = modes
+            
+            # 添加平台路由配置（如果存在）
+            platform_routing = config.get("platform_routing")
+            if platform_routing:
+                template["platformRouting"] = platform_routing
+            
+            templates.append(template)
         
         logger.info(f"[ProviderConfig] Generated {len(templates)} provider templates")
         return templates

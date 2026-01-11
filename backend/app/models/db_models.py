@@ -649,6 +649,10 @@ class ImagenConfig(Base):
     vertex_ai_location = Column(String, nullable=True, default='us-central1')
     vertex_ai_credentials_json = Column(Text, nullable=True)  # 加密存储的 service account JSON
     
+    # 模型配置（参考 config_profiles 的设计）
+    hidden_models = Column(JSON, default=list)  # 隐藏的模型ID列表
+    saved_models = Column(JSON, default=list)  # 保存的模型配置列表（ModelConfig[]）
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -661,6 +665,8 @@ class ImagenConfig(Base):
             "vertexAiProjectId": self.vertex_ai_project_id,
             "vertexAiLocation": self.vertex_ai_location or 'us-central1',
             "vertexAiCredentialsJson": self.vertex_ai_credentials_json,
+            "hiddenModels": self.hidden_models or [],
+            "savedModels": self.saved_models or [],
             "createdAt": self.created_at.isoformat() if self.created_at else None,
             "updatedAt": self.updated_at.isoformat() if self.updated_at else None
         }

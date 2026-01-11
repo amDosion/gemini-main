@@ -6,6 +6,7 @@ import {
     ImagenAPISettings, 
     ImagenConfigResponse
 } from '../../../types/imagen-config';
+import { ModelConfig } from '../../../types/types';
 
 interface ImagenTabProps {
     footerNode?: HTMLDivElement | null;
@@ -56,6 +57,38 @@ export const ImagenTab: React.FC<ImagenTabProps> = ({
                         credentialsJson: data.vertexAiCredentialsJson || ''
                     }
                 });
+                
+                // Restore saved models and display them if available
+                if (data.savedModels && data.savedModels.length > 0) {
+                    // Convert ModelConfig[] to VertexAIModel[]
+                    const savedModelList: VertexAIModel[] = data.savedModels.map((sm: ModelConfig) => ({
+                        id: sm.id,
+                        name: sm.name || sm.id,
+                        displayName: sm.name || sm.id
+                    }));
+                    
+                    // Also include hidden models in the display (but unselected)
+                    const allModelsMap = new Map<string, VertexAIModel>();
+                    savedModelList.forEach(m => allModelsMap.set(m.id, m));
+                    
+                    // Add hidden models to the list (if any)
+                    if (data.hiddenModels && data.hiddenModels.length > 0) {
+                        data.hiddenModels.forEach((hmId: string) => {
+                            if (!allModelsMap.has(hmId)) {
+                                allModelsMap.set(hmId, {
+                                    id: hmId,
+                                    name: hmId,
+                                    displayName: hmId
+                                });
+                            }
+                        });
+                    }
+                    
+                    setVerifiedModels(Array.from(allModelsMap.values()));
+                    
+                    // Restore selected models (only saved models are selected, hidden models are not)
+                    setSelectedModels(new Set(data.savedModels.map((sm: ModelConfig) => sm.id)));
+                }
             } catch (error: any) {
                 console.error('[ImagenTab] Failed to load Imagen configuration:', error);
                 setImagenConfig({
@@ -122,13 +155,44 @@ export const ImagenTab: React.FC<ImagenTabProps> = ({
                 
                 setVerifiedModels(uniqueModels);
                 
-                // Auto-select image-related models
-                const imageModels = uniqueModels.filter(m => 
-                    m.id.toLowerCase().includes('image') || 
-                    m.id.toLowerCase().includes('imagen') ||
-                    m.id.toLowerCase().includes('veo')
+                // Restore saved models selection from database if available
+                // First, try to load saved configuration
+                try {
+                    const configData = await db.request<ImagenConfigResponse>('/imagen/config');
+                    if (configData.savedModels && configData.savedModels.length > 0) {
+                        // Restore selected models from savedModels
+                        const savedModelIds = configData.savedModels.map((sm: ModelConfig) => sm.id);
+                        const validSavedModels = savedModelIds.filter(id => 
+                            uniqueModels.some(m => m.id === id)
+                        );
+                        
+                        if (validSavedModels.length > 0) {
+                            setSelectedModels(new Set(validSavedModels));
+                            return; // Exit early if we restored from saved models
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[ImagenTab] Failed to load saved config during verification:', e);
+                }
+                
+                // Fallback: use current selection or auto-select image-related models
+                const currentSelected = Array.from(selectedModels);
+                const validSavedModels = currentSelected.filter(id => 
+                    uniqueModels.some(m => m.id === id)
                 );
-                setSelectedModels(new Set(imageModels.map(m => m.id)));
+                
+                if (validSavedModels.length > 0) {
+                    // Keep existing selection if valid
+                    setSelectedModels(new Set(validSavedModels));
+                } else {
+                    // Auto-select image-related models if no valid saved selection
+                    const imageModels = uniqueModels.filter(m => 
+                        m.id.toLowerCase().includes('image') || 
+                        m.id.toLowerCase().includes('imagen') ||
+                        m.id.toLowerCase().includes('veo')
+                    );
+                    setSelectedModels(new Set(imageModels.map(m => m.id)));
+                }
             } else {
                 setVerifyError(response.message || "Connection established, but no models were returned.");
             }
@@ -156,11 +220,29 @@ export const ImagenTab: React.FC<ImagenTabProps> = ({
         try {
             setIsSaving(true);
             
+            // Convert selected models to ModelConfig format
+            const selectedModelConfigs: ModelConfig[] = verifiedModels
+                .filter(m => selectedModels.has(m.id))
+                .map(m => ({
+                    id: m.id,
+                    name: m.displayName || m.name || m.id,
+                    description: m.displayName || m.name || m.id,
+                    capabilities: { vision: false, search: false, reasoning: false, coding: false },
+                    contextWindow: 0
+                }));
+            
+            // Calculate hidden models: all verified models that are NOT selected
+            const hiddenModelIds = verifiedModels
+                .filter(m => !selectedModels.has(m.id))
+                .map(m => m.id);
+            
             const requestBody = {
                 apiMode: 'vertex_ai',
                 vertexAiProjectId: imagenConfig.vertexAI?.projectId,
                 vertexAiLocation: imagenConfig.vertexAI?.location || 'us-central1',
-                vertexAiCredentialsJson: imagenConfig.vertexAI?.credentialsJson
+                vertexAiCredentialsJson: imagenConfig.vertexAI?.credentialsJson,
+                hiddenModels: hiddenModelIds,  // Save hidden models (unselected models)
+                savedModels: selectedModelConfigs  // Save selected models as ModelConfig[]
             };
 
             await db.request('/imagen/config', {
@@ -322,7 +404,7 @@ export const ImagenTab: React.FC<ImagenTabProps> = ({
                                     </div>
 
                                     <div className="w-full p-3 md:p-2 max-h-96 overflow-y-auto">
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 md:gap-1 w-full">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 md:gap-1 w-full">
                                             {verifiedModels.map(model => {
                                                 const isSelected = selectedModels.has(model.id);
                                                 const isImageModel = model.id.toLowerCase().includes('image') || 

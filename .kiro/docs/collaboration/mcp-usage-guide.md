@@ -22,8 +22,11 @@ inclusion: manual
 | MCP 工具 | 使用方式 | 允许操作 |
 |---------|---------|---------|
 | Context7 MCP | 主 Agent 可以直接使用 | ✅ 读取外部库文档 |
-| Desktop Commander MCP | 主 Agent 可以直接使用 | ✅ 写入文件（不读取） |
 | Redis MCP | 主 Agent 可以直接使用 | ✅ 缓存摘要 |
+
+**重要说明**：
+- ❌ **Desktop Commander MCP 不应用于文件操作**
+- ✅ 文件写入/编辑应使用 **Kiro 原生工具**（fsWrite/strReplace/fsAppend）
 
 ---
 
@@ -65,7 +68,7 @@ inclusion: manual
 
 **重要约束**:
 - Codex **禁止**直接写入文件
-- 所有文件操作必须由主 Agent 通过 Desktop Commander MCP 完成
+- 所有文件操作必须通过 general-purpose subagent 使用 Kiro 原生工具完成
 
 ### 1.4 正确使用方式（通过 subagent）
 
@@ -265,41 +268,60 @@ result = mcp_context7_query_docs(
 
 ---
 
-## 六、Desktop Commander MCP（文件操作）
+## 六、文件操作（通过 general-purpose subagent）
 
 ### 6.1 工具信息
 
 - **用途**：文件写入和编辑
-- **使用方式**：**主 Agent 可以直接使用**
-- **禁止用途**：❌ 不要用于读取文档（使用 context-gatherer 代替）
+- **使用方式**：**通过 general-purpose subagent 使用 Kiro 原生工具**
+- **禁止用途**：❌ 主 Agent 不要直接使用 Kiro 原生工具或 Desktop Commander MCP
 
 ### 6.2 主要工具
 
 | 工具名称 | 用途 | 何时使用 |
 |---------|------|---------|
-| `mcp_desktop_commander_mcp_write_file` | 写入文件 | 创建新文件 |
-| `mcp_desktop_commander_mcp_edit_block` | 编辑文件 | 修改现有文件 |
+| `fsWrite` | 写入新文件 | 创建新文件（通过 subagent） |
+| `strReplace` | 编辑文件 | 修改现有文件（通过 subagent） |
+| `fsAppend` | 追加内容 | 在文件末尾追加内容（通过 subagent） |
 
 ### 6.3 使用方式
 
 ```python
-# ✅ 写入新文件
-mcp_desktop_commander_mcp_write_file(
-    path="D:\\project\\backend\\app\\routers\\auth.py",
-    content=generated_code,
-    mode="rewrite"
+# ✅ 正确做法：通过 general-purpose subagent
+result = invokeSubAgent(
+    name="general-task-execution",
+    prompt="""Use Kiro native tools to write files:
+
+1. Write new file:
+fsWrite(
+    path="backend/app/routers/auth.py",
+    text="\"\"\"from fastapi import APIRouter
+# ... code ...
+\"\"\"
 )
 
-# ✅ 编辑现有文件
-mcp_desktop_commander_mcp_edit_block(
-    file_path="D:\\project\\backend\\app\\main.py",
-    old_string="# TODO: Add auth router",
-    new_string="from app.routers import auth\napp.include_router(auth.router)"
+2. Modify existing file:
+strReplace(
+    file="backend/app/main.py",
+    old="# TODO: Add auth router",
+    new="from app.routers import auth\\napp.include_router(auth.router)"
 )
 
-# ❌ 不要用于读取文档
-# content = mcp_desktop_commander_mcp_read_file(path="...")
-# 问题：不支持结构化摘要，应使用 context-gatherer
+3. Append content:
+fsAppend(
+    file="backend/app/main.py",
+    text="\\n# Additional configuration"
+)""",
+    explanation="File operations through subagent"
+)
+
+# ❌ 错误做法 1：主 Agent 直接使用 Kiro 原生工具
+# fsWrite(path="...", text="...")
+# 问题：不符合架构规范
+
+# ❌ 错误做法 2：使用 Desktop Commander MCP
+# mcp_desktop_commander_mcp_write_file(...)
+# 问题：不符合架构规范
 ```
 
 ---
@@ -380,11 +402,11 @@ review = invokeSubAgent(
     explanation="Code review"
 )
 
-# 步骤 6：写入文件（主 Agent 直接使用 Desktop Commander）
-mcp_desktop_commander_mcp_write_file(
-    path="D:\\project\\backend\\app\\routers\\auth.py",
-    content=generated_code,
-    mode="rewrite"
+# 步骤 6：写入文件（通过 general-purpose subagent）
+file_result = invokeSubAgent(
+    name="general-task-execution",
+    prompt=f"Use Kiro native tools to write the generated code to file:\nfsWrite(path='backend/app/routers/auth.py', text='''{generated_code}''')",
+    explanation="File operations through subagent"
 )
 ```
 
@@ -399,7 +421,7 @@ mcp_desktop_commander_mcp_write_file(
 | Codex/Gemini/Sequential Thinking/Claude Code | 通过 general-purpose subagent | 避免占用主 Agent 上下文 |
 | 项目文档/代码读取 | 通过 context-gatherer subagent | 独立上下文空间，返回摘要 |
 | 外部库文档 | Context7 MCP（主 Agent 直接使用） | 已优化为摘要格式 |
-| 文件写入 | Desktop Commander MCP（主 Agent 直接使用） | 不占用上下文 |
+| 文件写入 | 通过 general-purpose subagent + Kiro 原生工具 | 符合架构规范，主 Agent 0 token |
 | 缓存 | Redis MCP（主 Agent 直接使用） | 避免重复读取 |
 
 ### 9.2 性能优化
@@ -415,23 +437,3 @@ mcp_desktop_commander_mcp_write_file(
 - ✅ 并行审查（Sequential Thinking + Claude Code）
 - ✅ 主 Agent 最终决策和质量把控
 
----
-
-## 📝 版本信息
-
-**版本**：v2.0.0  
-**更新日期**：2026-01-10  
-**维护者**：Development Team  
-**变更说明**：重写为强调必须通过 subagents 使用 MCP 工具
-
-**重大变更**：
-- ✅ 添加所有工具的"使用方式"列
-- ✅ 强调 Codex/Gemini/Sequential Thinking/Claude Code 必须通过 subagent
-- ✅ 移除所有主 Agent 直接调用的示例
-- ✅ 添加正确的 subagent 调用示例
-- ✅ 更新完整工作流程示例
-
----
-
-**最后更新**：2026-01-10  
-**文件路径**：`.kiro/docs/collaboration/mcp-usage-guide.md`

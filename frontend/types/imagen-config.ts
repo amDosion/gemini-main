@@ -49,6 +49,8 @@ export interface ImageGenerationCapabilities {
   // supportsAllowAll: boolean;
 }
 
+import { ModelConfig } from './types';
+
 /**
  * Configuration response from backend
  */
@@ -67,6 +69,10 @@ export interface ImagenConfigResponse {
   vertexAiLocation?: string;
   /** Vertex AI credentials JSON content */
   vertexAiCredentialsJson?: string;
+  /** Hidden model IDs (for Vertex AI mode) */
+  hiddenModels?: string[];
+  /** Saved model configurations (ModelConfig[] for Vertex AI mode) */
+  savedModels?: ModelConfig[];
 }
 
 /**
@@ -83,6 +89,10 @@ export interface ImagenConfigUpdateRequest {
   vertexAiLocation?: string;
   /** Vertex AI credentials JSON content (required for vertex_ai mode) */
   vertexAiCredentialsJson?: string;
+  /** Hidden model IDs */
+  hiddenModels?: string[];
+  /** Saved model configurations (ModelConfig[]) */
+  savedModels?: ModelConfig[];
 }
 
 /**

@@ -258,6 +258,23 @@ async def lifespan(app: FastAPI):
     supervisor_task: asyncio.Task | None = None
 
     # Startup
+    # Validate provider configurations
+    logger.info(f"{LOG_PREFIXES['info']} Validating provider configurations...")
+    try:
+        from .services.provider_config import ProviderConfig
+        validation_results = ProviderConfig.validate_all_configs()
+        invalid_providers = [p for p, valid in validation_results.items() if not valid]
+        if invalid_providers:
+            logger.warning(
+                f"{LOG_PREFIXES['warning']} Some providers have invalid configurations: "
+                f"{', '.join(invalid_providers)}"
+            )
+        else:
+            logger.info(f"{LOG_PREFIXES['success']} All provider configurations validated successfully")
+    except Exception as e:
+        logger.error(f"{LOG_PREFIXES['error']} Failed to validate provider configurations: {e}")
+        logger.error("WARNING: Application will continue but some providers may not work correctly!")
+    
     if WORKER_POOL_AVAILABLE:
         logger.info(f"{LOG_PREFIXES['info']} Starting upload worker pool...")
         try:
