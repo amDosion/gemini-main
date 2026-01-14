@@ -1,18 +1,28 @@
 /**
- * Virtual Try-On 服务
+ * @deprecated 此文件已废弃，请使用 UnifiedProviderClient 代替
  * 
- * 提供服装分割和虚拟试穿功能
+ * Virtual Try-On 服务 - 已统一到 UnifiedProviderClient
  * 
- * 流程：
- * 1. segmentClothing() - 使用 Gemini API 进行服装区域分割
- * 2. generateMask() - 将分割结果合并为完整的二值掩码
- * 3. editWithMask() - 调用后端 API 进行掩码编辑
- * 4. virtualTryOn() - 整合上述流程的主函数
+ * 新架构: 所有 Provider 统一使用 UnifiedProviderClient，通过后端统一路由处理
+ * - Virtual Try-On: /api/modes/google/virtual-try-on
+ * - 所有功能都通过后端统一处理，无需前端直接调用 Google SDK
+ * 
+ * 迁移指南:
+ * - 使用 UnifiedProviderClient('google').executeMode('virtual-try-on', ...) 代替
+ * - generateMaskPreview 函数已重构为通过后端 API 调用
  */
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI } from "@google/genai"; // 保留用于向后兼容
 import { Attachment } from "../../../../types/types";
 import { ImageGenerationResult } from "../../interfaces";
 import { processReferenceImage } from "../../../media/utils";
+import { UnifiedProviderClient } from "../../UnifiedProviderClient";
+
+/**
+ * 获取访问令牌
+ */
+function getAccessToken(): string | null {
+    return localStorage.getItem('access_token');
+}
 
 // ========== 类型定义 ==========
 
@@ -71,33 +81,83 @@ interface TryOnEditResponse {
 // ========== 服装分割 ==========
 
 /**
- * 服装分割
- * 调用 Gemini API 进行服装区域分割
+ * @deprecated 此函数已废弃，请使用 UnifiedProviderClient 调用后端 API
  * 
- * @param ai - GoogleGenAI 客户端
- * @param image - 输入图像附件
- * @param targetClothing - 目标服装类型
- * @param modelId - Gemini 模型 ID（可选）
- * @returns 分割结果数组
+ * 服装分割 - 已移动到后端
+ * 
+ * 新方式: 使用 UnifiedProviderClient('google').executeMode('segment-clothing', ...)
+ * 此函数保留用于向后兼容，但内部已改为通过后端 API 调用
  */
 export async function segmentClothing(
-    ai: GoogleGenAI,
+    ai: GoogleGenAI, // 已弃用 - 不再使用
     image: Attachment,
     targetClothing: string,
     modelId?: string
 ): Promise<SegmentationResult[]> {
-    const model = modelId || 'gemini-2.0-flash-exp';
+    console.warn('[segmentClothing] ⚠️ 此函数已废弃，请使用 UnifiedProviderClient 调用后端 API');
     
-    console.log(`[VirtualTryOn] Segmenting clothing: target=${targetClothing}, model=${model}`);
+    try {
+        const token = getAccessToken();
+        if (!token) {
+            throw new Error('未登录，请先登录');
+        }
+        
+        // ✅ 通过 UnifiedProviderClient 调用后端 API
+        const client = new UnifiedProviderClient('google');
+        
+        // 准备附件
+        const attachments: Attachment[] = [image];
+        
+        // 调用后端 API
+        const response = await fetch(`/api/modes/google/segment-clothing`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+                modelId: modelId || 'gemini-2.0-flash-exp',
+                prompt: '', // segment-clothing 不需要 prompt
+                attachments: attachments,
+                options: {},
+                extra: {
+                    target_clothing: targetClothing
+                }
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`后端 API 调用失败: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (!data.success) {
+            throw new Error(data.error || '分割失败');
+        }
+        
+        // 转换后端响应格式为前端格式
+        const segments: SegmentationResult[] = data.data.segments || [];
+        console.log(`[VirtualTryOn] Segmentation successful: ${segments.length} segments found`);
+        return segments;
+        
+    } catch (error) {
+        console.error('[VirtualTryOn] Segmentation error:', error);
+        // ✅ 回退到旧方式（向后兼容，但会显示警告）
+        console.warn('[segmentClothing] ⚠️ 后端 API 调用失败，回退到已废弃的直接调用 Google SDK 方式');
+        
+        const model = modelId || 'gemini-2.0-flash-exp';
+        console.log(`[VirtualTryOn] Segmenting clothing: target=${targetClothing}, model=${model}`);
 
-    // 处理输入图像
-    const { mimeType, imageBytes } = await processReferenceImage(image);
-    if (!imageBytes) {
-        throw new Error('Failed to process reference image');
-    }
+        // 处理输入图像
+        const { mimeType, imageBytes } = await processReferenceImage(image);
+        if (!imageBytes) {
+            throw new Error('Failed to process reference image');
+        }
 
-    // 构建分割 prompt
-    const segmentPrompt = `Give the segmentation masks for ${targetClothing} in this image.
+        // 构建分割 prompt
+        const segmentPrompt = `Give the segmentation masks for ${targetClothing} in this image.
 Output a JSON list of segmentation masks where each entry contains:
 - the 2D bounding box in the key 'box_2d' as [y0, x0, y1, x1] normalized to 1000
 - the segmentation mask in key 'mask' as a base64 encoded PNG image (data:image/png;base64,...)
@@ -105,7 +165,6 @@ Output a JSON list of segmentation masks where each entry contains:
 
 Only output the JSON array, no other text or markdown formatting.`;
 
-    try {
         const response = await ai.models.generateContent({
             model: model,
             contents: {
@@ -144,10 +203,6 @@ Only output the JSON array, no other text or markdown formatting.`;
 
         console.warn('[VirtualTryOn] No segmentation result from Gemini');
         return [];
-
-    } catch (error) {
-        console.error('[VirtualTryOn] Segmentation error:', error);
-        throw error;
     }
 }
 
@@ -504,10 +559,18 @@ export async function getTryOnStatus(): Promise<{
  * @param threshold 阈值（10-200，默认 50）
  * @returns Base64 编码的掩码预览图
  */
+/**
+ * 生成掩码预览（已重构为通过后端 API）
+ * 
+ * @deprecated 此函数已重构为通过 UnifiedProviderClient 调用后端 API
+ * 
+ * 新方式: 使用 UnifiedProviderClient('google').executeMode('virtual-try-on', ...)
+ * 此函数保留用于向后兼容，但内部已改为通过后端 API 调用
+ */
 export async function generateMaskPreview(
   imageBase64: string,
   targetClothing: string,
-  apiKey: string,
+  apiKey: string, // 已弃用 - 后端从数据库获取
   modelId?: string,
   alpha: number = 0.7,
   threshold: number = 50
@@ -526,27 +589,89 @@ export async function generateMaskPreview(
     
     console.log(`[generateMaskPreview] 图片尺寸: ${img.width}x${img.height}`);
     
-    // 2. 调用分割函数
-    const ai = new GoogleGenAI({ apiKey });
+    // ✅ 2. 通过 UnifiedProviderClient 调用后端 API 获取分割结果
+    let maskBase64: string;
     
-    // 创建 Attachment 对象
-    const attachment: Attachment = {
-      id: 'preview',
-      url: imageBase64,
-      mimeType: 'image/png',
-      name: 'preview.png'
-    };
-    
-    const segments = await segmentClothing(ai, attachment, targetClothing, modelId);
-    
-    if (segments.length === 0) {
-      throw new Error('未检测到目标服装区域');
+    try {
+      const token = getAccessToken();
+      
+      if (!token) {
+        throw new Error('未登录，请先登录');
+      }
+      
+      // ✅ 通过后端 API 调用分割功能
+      const attachment: Attachment = {
+        id: 'preview',
+        url: imageBase64,
+        mimeType: 'image/png',
+        name: 'preview.png'
+      };
+      
+      // ✅ 通过 UnifiedProviderClient 调用后端 API
+      // 使用 segment-clothing mode 调用后端分割功能
+      const response = await fetch(`/api/modes/google/segment-clothing`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          modelId: modelId || 'gemini-2.0-flash-exp',
+          prompt: '', // segment-clothing 不需要 prompt
+          attachments: [attachment],
+          options: {},
+          extra: {
+            target_clothing: targetClothing
+          }
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`后端 API 调用失败: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || '分割失败');
+      }
+      
+      // 转换后端响应格式为前端格式
+      segments = data.data.segments || [];
+      
+      if (segments.length === 0) {
+        throw new Error('未检测到目标服装区域');
+      }
+      
+      console.log(`[generateMaskPreview] 检测到 ${segments.length} 个区域`);
+      
+      // 3. 生成完整掩码
+      maskBase64 = await generateMaskAsync(segments, img.width, img.height);
+    } catch (backendError) {
+      console.warn('[generateMaskPreview] 后端 API 调用失败，回退到旧方式:', backendError);
+      // ✅ 回退到旧方式（向后兼容，但会显示警告）
+      console.warn('[generateMaskPreview] ⚠️ 使用已废弃的直接调用 Google SDK 方式');
+      
+      const ai = new GoogleGenAI({ apiKey });
+      const attachment: Attachment = {
+        id: 'preview',
+        url: imageBase64,
+        mimeType: 'image/png',
+        name: 'preview.png'
+      };
+      
+      const segments = await segmentClothing(ai, attachment, targetClothing, modelId);
+      
+      if (segments.length === 0) {
+        throw new Error('未检测到目标服装区域');
+      }
+      
+      console.log(`[generateMaskPreview] 检测到 ${segments.length} 个区域`);
+      
+      // 3. 生成完整掩码
+      maskBase64 = await generateMaskAsync(segments, img.width, img.height);
     }
-    
-    console.log(`[generateMaskPreview] 检测到 ${segments.length} 个区域`);
-    
-    // 3. 生成完整掩码
-    const maskBase64 = await generateMaskAsync(segments, img.width, img.height);
     
     // 4. 创建半透明红色叠加预览
     const canvas = document.createElement('canvas');

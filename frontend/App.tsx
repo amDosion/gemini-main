@@ -10,6 +10,8 @@ import { llmService } from './services/llmService';
 import {
   AppLayout,
   ChatView,
+  AgentView,
+  MultiAgentView,
   StudioView,
   SettingsModal,
   ImageModal,
@@ -31,6 +33,7 @@ import {
   useAuth,
   useInitData
 } from './hooks';
+import { useControlsState } from './hooks/useControlsState';
 import { findAttachmentByUrl, tryFetchCloudUrl } from './hooks/handlers/attachmentUtils';
 import { StorageConfig } from './types/storage';
 import { db } from './services/db';
@@ -262,6 +265,9 @@ const App: React.FC = () => {
     stopGeneration
   } = useChat(currentSessionId, updateSessionMessages, config.apiKey, activeStorageId);
 
+  // ✅ 获取 Deep Research 控制状态（用于 Multi-Agent 工作流）
+  const controls = useControlsState(appMode, activeModelConfig);
+
   // --- Filter Messages for Current View (Separation Logic) ---
   const currentViewMessages = useMemo(() => {
     return messages.filter(m => {
@@ -387,16 +393,16 @@ const App: React.FC = () => {
     }
 
     const persona = personas.find(p => p.id === id);
-    if (persona && persona.category === 'Image Generation') {
-      const match = persona.systemPrompt.match(/"([^"]*\[[^"]*\][^"]*)"/);
+        if (persona && persona.category === 'Image Generation') {
+          const match = persona.systemPrompt.match(/"([^"]*\[[^"]*\][^"]*)"/);
 
-      if (match && match[1]) {
-        if (appMode !== 'image-gen' && appMode !== 'image-edit') {
-          setAppMode('image-gen');
+          if (match && match[1]) {
+            if (appMode !== 'image-gen' && !appMode.startsWith('image-')) {
+              setAppMode('image-gen');
+            }
+            setInitialPrompt(match[1]);
+          }
         }
-        setInitialPrompt(match[1]);
-      }
-    }
   };
 
   const onSend = useCallback((text: string, options: any, attachments: Attachment[], mode: AppMode) => {
@@ -454,7 +460,7 @@ const App: React.FC = () => {
 
   // ✅ 使用 useCallback 优化，避免每次渲染都创建新函数
   const handleEditImage = useCallback(async (url: string) => {
-    setAppMode('image-edit');
+    setAppMode('image-chat-edit');  // 默认使用对话式编辑模式
 
     // ✅ 尝试从历史消息中查找原附件，复用其 ID（用于后续查询云 URL）
     const found = findAttachmentByUrl(url, messages);
@@ -703,7 +709,12 @@ const App: React.FC = () => {
           || visibleModels.find(m => m.capabilities.vision);
       }
       if (imageModel) setCurrentModelId(imageModel.id);
-    } else if (mode === 'image-edit' || mode === 'image-outpainting') {
+    } else if (
+      mode === 'image-chat-edit' || mode === 'image-mask-edit' || 
+      mode === 'image-inpainting' || mode === 'image-background-edit' || 
+      mode === 'image-recontext' || 
+      mode === 'image-outpainting'
+    ) {
       const imageModel = visibleModels.find(m => m.capabilities.vision && !m.id.includes('imagen'));
       if (imageModel) setCurrentModelId(imageModel.id);
     } else if (mode === 'video-gen') {
@@ -746,7 +757,33 @@ const App: React.FC = () => {
       apiKey: config.apiKey  // ✅ 传递 apiKey 用于调用 API
     };
 
-    if (appMode === 'chat' || appMode === 'deep-research') {
+    if (appMode === 'deep-research') {
+      return (
+        <AgentView
+          {...commonProps}
+          isLoadingModels={isLoadingModels}
+          visibleModels={visibleModels}
+          apiKey={config.apiKey}
+          protocol={config.protocol}
+          onPromptSelect={handleWelcomePrompt}
+          onOpenSettings={() => handleOpenSettings('profiles')}
+          appMode={appMode}
+        />
+      );
+    } else if (appMode === 'multi-agent') {
+      return (
+        <MultiAgentView
+          {...commonProps}
+          isLoadingModels={isLoadingModels}
+          visibleModels={visibleModels}
+          apiKey={config.apiKey}
+          protocol={config.protocol}
+          onPromptSelect={handleWelcomePrompt}
+          onOpenSettings={() => handleOpenSettings('profiles')}
+          appMode={appMode}
+        />
+      );
+    } else if (appMode === 'chat') {
       return (
         <ChatView
           {...commonProps}
@@ -756,7 +793,7 @@ const App: React.FC = () => {
           protocol={config.protocol}
           onPromptSelect={handleWelcomePrompt}
           onOpenSettings={() => handleOpenSettings('profiles')}
-          appMode={appMode} // ✅ 修复：传递 appMode 给 ChatView
+          appMode={appMode}
         />
       );
     } else {

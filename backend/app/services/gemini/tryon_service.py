@@ -9,7 +9,7 @@ Virtual Try-On 服务
 import base64
 import io
 import os
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, Any
 from dataclasses import dataclass
 
 # 尝试导入 Vertex AI SDK
@@ -342,6 +342,60 @@ The new clothing should match the lighting and style of the original image."""
             success=False,
             error="No available editing backend. Configure Vertex AI or provide Gemini API key."
         )
+    
+    async def virtual_tryon(
+        self,
+        prompt: str,
+        reference_images: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> TryOnResult:
+        """
+        统一的虚拟试穿接口 - 处理参数提取
+        
+        Args:
+            prompt: 服装描述
+            reference_images: 参考图片字典 {'raw': image_base64, 'mask': mask_base64}
+            **kwargs: 额外参数：
+                - edit_mode: 编辑模式
+                - mask_mode: 掩码模式
+                - dilation: 掩码膨胀系数
+                - api_key: Gemini API Key
+                - target_clothing: 目标服装类型
+        
+        Returns:
+            TryOnResult
+        """
+        # 从 reference_images 或 kwargs 中提取图片
+        image_base64 = None
+        mask_base64 = None
+        
+        if reference_images:
+            image_base64 = reference_images.get("raw")
+            mask_base64 = reference_images.get("mask")
+        else:
+            # 兼容旧接口：从 kwargs 中提取
+            image_base64 = kwargs.get("image_base64")
+            mask_base64 = kwargs.get("mask_base64")
+        
+        if not image_base64:
+            raise ValueError("virtual_tryon requires 'raw' image in reference_images or 'image_base64' in kwargs")
+        
+        edit_mode = kwargs.get("edit_mode", "inpainting-insert")
+        mask_mode = kwargs.get("mask_mode", "foreground")
+        dilation = kwargs.get("dilation", 0.02)
+        api_key = kwargs.get("api_key")
+        target_clothing = kwargs.get("target_clothing", "upper body clothing")
+        
+        return self.edit_with_mask(
+            image_base64=image_base64,
+            mask_base64=mask_base64,
+            prompt=prompt,
+            edit_mode=edit_mode,
+            mask_mode=mask_mode,
+            dilation=dilation,
+            api_key=api_key,
+            target_clothing=target_clothing
+        )
 
     def upscale_image(
         self,
@@ -434,6 +488,108 @@ The new clothing should match the lighting and style of the original image."""
                 return TryOnResult(success=False, error="Authentication error. Please check GCP credentials.")
             else:
                 return TryOnResult(success=False, error=error_msg)
+
+
+    async def segment_clothing(
+        self,
+        image_base64: str,
+        target_clothing: str,
+        model: str = "gemini-2.0-flash-exp",
+        api_key: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        使用 Gemini API 进行服装区域分割
+        
+        Args:
+            image_base64: Base64 编码的图像
+            target_clothing: 目标服装类型（如 "upper body clothing", "lower body clothing"）
+            model: Gemini 模型 ID（默认: gemini-2.0-flash-exp）
+            api_key: Gemini API Key（如果未提供，需要从配置中获取）
+        
+        Returns:
+            Dict with segmentation results:
+                - success: Boolean
+                - segments: List of segmentation results
+                - error: Error message (if failed)
+        """
+        if not GENAI_AVAILABLE:
+            return {
+                "success": False,
+                "error": "Google GenAI SDK not available"
+            }
+        
+        if not api_key:
+            return {
+                "success": False,
+                "error": "API key is required for clothing segmentation"
+            }
+        
+        try:
+            # 清理 Base64 前缀
+            if image_base64.startswith('data:'):
+                image_base64 = image_base64.split(',', 1)[1]
+            
+            # 创建客户端
+            client = genai.Client(api_key=api_key)
+            
+            # 构建分割 prompt
+            segment_prompt = f"""Give the segmentation masks for {target_clothing} in this image.
+Output a JSON list of segmentation masks where each entry contains:
+- the 2D bounding box in the key 'box_2d' as [y0, x0, y1, x1] normalized to 1000
+- the segmentation mask in key 'mask' as a base64 encoded PNG image (data:image/png;base64,...)
+- the text label in the key 'label'
+
+Only output the JSON array, no other text or markdown formatting."""
+            
+            print(f"[TryOnService] Segmenting clothing: target={target_clothing}, model={model}")
+            
+            # 调用 Gemini API
+            response = client.models.generate_content(
+                model=model,
+                contents=[
+                    {
+                        "parts": [
+                            {"inline_data": {"mime_type": "image/png", "data": image_base64}},
+                            {"text": segment_prompt}
+                        ]
+                    }
+                ]
+            )
+            
+            # 解析响应
+            if response.candidates and len(response.candidates) > 0:
+                text = response.candidates[0].content.parts[0].text
+                
+                # 清理可能的 markdown 代码块
+                json_text = text.strip()
+                if json_text.startswith('```'):
+                    lines = json_text.split('\n')
+                    lines.pop(0)  # 移除 ```json
+                    if lines and lines[-1] == '```':
+                        lines.pop()
+                    json_text = '\n'.join(lines)
+                
+                import json
+                segments_data = json.loads(json_text)
+                
+                print(f"[TryOnService] Segmentation successful: {len(segments_data)} segments found")
+                return {
+                    "success": True,
+                    "segments": segments_data
+                }
+            
+            return {
+                "success": False,
+                "error": "No segmentation result from Gemini"
+            }
+            
+        except Exception as e:
+            error_msg = str(e)
+            print(f"[TryOnService] Segmentation error: {error_msg}")
+            return {
+                "success": False,
+                "error": error_msg
+            }
 
 
 # 单例实例
