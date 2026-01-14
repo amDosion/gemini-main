@@ -35,3 +35,6 @@ nul
 # Hypothesis testing cache (属性测试缓存)
 .hypothesis/
 backend/.hypothesis/
+
+# Kiro specs directory (排除 .kiro/specs 目录)
+.kiro/specs/
