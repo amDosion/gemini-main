@@ -1,0 +1,208 @@
+"""
+通义图像服务 - 路由层
+
+职责:
+1. 请求参数验证
+2. 用户认证
+3. 获取 API Key
+4. 调用管理层
+5. 响应格式化
+"""
+from fastapi import APIRouter, HTTPException, Request, Depends
+from sqlalchemy.orm import Session
+from pydantic import BaseModel, Field
+from typing import List, Optional
+import logging
+
+from ...core.database import SessionLocal
+from ...core.user_context import require_user_id
+from ...core.encryption import decrypt_data, is_encrypted
+from ...models.db_models import ConfigProfile, UserSettings
+from ...services.tongyi.image_service import TongyiImageService, GenerateImageParams
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/generate/tongyi", tags=["Tongyi Image"])
+
+
+# ==================== Database Dependency ====================
+
+def get_db():
+    """获取数据库会话"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def _decrypt_api_key(api_key: str) -> str:
+    """解密 API Key（兼容未加密的历史数据）"""
+    if not api_key:
+        return api_key
+    if not is_encrypted(api_key):
+        return api_key
+    try:
+        return decrypt_data(api_key)
+    except Exception as e:
+        logger.warning(f"[TongyiImage] API key decryption failed: {e}")
+        return api_key
+
+
+async def get_tongyi_api_key(db: Session, user_id: str) -> str:
+    """
+    从数据库获取 tongyi 的 API Key
+
+    Args:
+        db: 数据库会话
+        user_id: 用户 ID
+
+    Returns:
+        API Key
+
+    Raises:
+        HTTPException: 如果未找到 API Key
+    """
+    # 获取用户设置
+    settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+    active_profile_id = settings.active_profile_id if settings else None
+
+    # 查询所有匹配 tongyi 的配置
+    matching_profiles = db.query(ConfigProfile).filter(
+        ConfigProfile.provider_id == "tongyi",
+        ConfigProfile.user_id == user_id
+    ).all()
+
+    if not matching_profiles:
+        raise HTTPException(
+            status_code=401,
+            detail="API Key not found for provider: tongyi. "
+                   "Please configure it in Settings → Profiles."
+        )
+
+    # 优先使用激活配置
+    if active_profile_id:
+        for profile in matching_profiles:
+            if profile.id == active_profile_id and profile.api_key:
+                logger.info(f"[TongyiImage] Using API key from active profile '{profile.name}'")
+                return _decrypt_api_key(profile.api_key)
+
+    # 回退：使用第一个匹配的配置
+    for profile in matching_profiles:
+        if profile.api_key:
+            logger.info(f"[TongyiImage] Using API key from profile '{profile.name}' (fallback)")
+            return _decrypt_api_key(profile.api_key)
+
+    raise HTTPException(
+        status_code=401,
+        detail="API Key not found for provider: tongyi. "
+               "Please configure it in Settings → Profiles."
+    )
+
+
+# ========== 请求/响应模型 ==========
+
+class GenerateImageRequest(BaseModel):
+    """文生图请求"""
+    model_id: str = Field(..., description="模型 ID，如 z-image-turbo, wan2.6-t2i")
+    prompt: str = Field(..., min_length=1, description="生成提示词")
+    aspect_ratio: str = Field(default="1:1", description="宽高比，如 1:1, 16:9, 9:16")
+    resolution: str = Field(default="1.25K", description="分辨率档位，如 1K, 1.25K, 1.5K, 2K")
+    num_images: int = Field(default=1, ge=1, le=4, description="生成数量 1-4")
+    negative_prompt: Optional[str] = Field(default=None, description="负向提示词")
+    seed: Optional[int] = Field(default=None, description="随机种子")
+    style: Optional[str] = Field(default=None, description="风格")
+
+
+class ImageResult(BaseModel):
+    """单张图片结果"""
+    url: str
+    mime_type: str = "image/png"
+
+
+class GenerateImageResponse(BaseModel):
+    """文生图响应"""
+    success: bool = True
+    images: List[ImageResult]
+    request_id: Optional[str] = None
+
+
+class ErrorResponse(BaseModel):
+    """错误响应"""
+    success: bool = False
+    error: str
+    code: Optional[str] = None
+
+
+# ========== 路由端点 ==========
+
+@router.post(
+    "/image",
+    response_model=GenerateImageResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "请求参数错误"},
+        401: {"model": ErrorResponse, "description": "未认证或 API Key 无效"},
+        500: {"model": ErrorResponse, "description": "服务器错误"},
+    }
+)
+async def generate_image(
+    request_body: GenerateImageRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    文生图接口
+
+    支持的模型:
+    - **Z-Image 系列**: z-image-turbo (仅1张), z-image, z-image-omni-base
+    - **Qwen 系列**: qwen-image-plus
+    - **WanV2 系列**: wan2.6-t2i, wan2.5-t2i-preview, wan2.2-t2i-plus, wan2.2-t2i-flash, wanx2.1-t2i-plus, wanx2.1-t2i-turbo, wanx2.0-t2i-turbo
+
+    分辨率说明:
+    - Z-Image: 1K (1024), 1.25K (1280), 1.5K (1536), 2K (2048)
+    - WanV2: 1K (1280), 1.25K (1440), 1.5K (1536)
+    - Qwen: 固定分辨率（由宽高比决定）
+    """
+    # 1. 获取用户 ID
+    user_id = require_user_id(request)
+
+    logger.info(
+        f"[TongyiImage] 收到请求: model={request_body.model_id}, "
+        f"prompt={request_body.prompt[:50]}..., "
+        f"user_id={user_id}"
+    )
+
+    # 2. 从数据库获取 API Key
+    try:
+        api_key = await get_tongyi_api_key(db, user_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[TongyiImage] 获取凭证失败: {str(e)}")
+        raise HTTPException(status_code=401, detail="获取 API Key 失败")
+
+    # 3. 获取管理层实例
+    service = TongyiImageService.get_instance(api_key)
+
+    # 4. 调用生成服务
+    try:
+        results = await service.generate_image(GenerateImageParams(
+            model_id=request_body.model_id,
+            prompt=request_body.prompt,
+            aspect_ratio=request_body.aspect_ratio,
+            resolution=request_body.resolution,
+            num_images=request_body.num_images,
+            negative_prompt=request_body.negative_prompt,
+            seed=request_body.seed,
+            style=request_body.style,
+        ))
+
+        return GenerateImageResponse(
+            success=True,
+            images=[ImageResult(url=r.url, mime_type=r.mime_type) for r in results]
+        )
+    except ValueError as e:
+        # 参数错误（如不支持的模型）
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[TongyiImage] 生成失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

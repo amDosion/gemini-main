@@ -54,7 +54,11 @@ export const useChat = (
     try {
       // 1. Initialize Service Context
       const contextHistory = messages.filter(m => m.mode === mode || (!m.mode && mode === 'chat'));
-      llmService.startNewChat(contextHistory, currentModel, options);
+      // 如果启用了 Research，强制启用 Search 以提供增强的研究功能
+      const enhancedOptions = options.enableResearch
+        ? { ...options, enableSearch: true }
+        : options;
+      llmService.startNewChat(contextHistory, currentModel, enhancedOptions);
 
       // 2. Create User Message (before preprocessing)
       const userMessageId = uuidv4();
@@ -142,7 +146,10 @@ export const useChat = (
         attachments: result.attachments as Attachment[],
         groundingMetadata: result.groundingMetadata,
         urlContextMetadata: result.urlContextMetadata,
-        browserOperationId: result.browserOperationId
+        browserOperationId: result.browserOperationId,
+        // 存储 thoughts 和 textResponse（如果存在）
+        ...(result.thoughts && { thoughts: result.thoughts }),
+        ...(result.textResponse && { textResponse: result.textResponse })
       };
 
       setMessages(prev => prev.map(msg => msg.id === modelMessageId ? displayModelMessage : msg));

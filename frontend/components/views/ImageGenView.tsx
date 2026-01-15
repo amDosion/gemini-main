@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
 import { Image as ImageIcon, Maximize2, Crop, Download, Layers, Clock, AlertCircle, Grid, X, History, Expand } from 'lucide-react';
 import InputArea from '../chat/InputArea';
@@ -66,16 +66,16 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
     const displayImages = (activeBatchMessage?.attachments || []).filter(att => att.url && att.url.length > 0);
     const isBatchError = activeBatchMessage?.isError;
 
-    // ✅ 使用 useMemo 缓存 ReactNode props，确保引用稳定
-    const sidebarHeaderIcon = useMemo(() => <Clock size={14} />, []);
+    // Sidebar header icon and extra header
+    const sidebarHeaderIcon = <Clock size={14} />;
     
-    const sidebarExtraHeader = useMemo(() => (
+    const sidebarExtraHeader = (
         <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-500">
             {historyBatches.length}
         </span>
-    ), [historyBatches.length]);
+    );
 
-    const sidebarContent = useMemo(() => (
+    const sidebarContent = (
         <div className="p-3 space-y-3">
             {historyBatches.map((msg, i) => {
                 const firstImage = msg.attachments?.[0]?.url;
@@ -98,15 +98,19 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
                                 <div className="w-full h-full flex items-center justify-center text-red-400 bg-red-900/10">
                                     <AlertCircle size={24} />
                                 </div>
-                            ) : (
+                            ) : firstImage ? (
                                 <>
-                                    <img src={firstImage} className="w-full h-full object-cover transition-transform group-hover:scale-105" loading="lazy" />
+                                    <img src={firstImage} className="w-full h-full object-cover transition-transform group-hover:scale-105" loading="lazy" alt="Generated image" />
                                     {count > 1 && (
                                         <div className="absolute top-1 right-1 bg-black/60 backdrop-blur-sm text-white text-[10px] px-1.5 py-0.5 rounded-md flex items-center gap-1 font-medium border border-white/10">
                                             <Layers size={10} /> {count}
                                         </div>
                                     )}
                                 </>
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-slate-600">
+                                    <ImageIcon size={24} className="opacity-50" />
+                                </div>
                             )}
                         </div>
                         <div className="px-1">
@@ -127,7 +131,7 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
                 </div>
             )}
         </div>
-    ), [historyBatches, activeBatchMessage?.id, setSelectedMsgId, setIsMobileHistoryOpen]);
+    );
 
     const handleDownload = async (url: string) => {
         // 判断 URL 类型
@@ -159,10 +163,24 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
         }
     };
 
-    // ✅ 使用 useMemo 缓存 mainContent，确保引用稳定
-    const mainContent = useMemo(() => (
-        <div className="flex-1 w-full h-full overflow-y-auto p-6 relative custom-scrollbar bg-[url('https://grainy-gradients.vercel.app/noise.svg')]">
-            <div className="min-h-full flex flex-col items-center justify-center">
+    // Main content area
+    const mainContent = (
+        <div className="flex-1 w-full h-full overflow-y-auto p-6 relative custom-scrollbar">
+            {/* 棋盘格背景 - 与 ImageEditView 和 ImageExpandView 保持一致 */}
+            <div
+                className="absolute inset-0 opacity-20 pointer-events-none"
+                style={{
+                    backgroundImage: `
+                        linear-gradient(45deg, #334155 25%, transparent 25%), 
+                        linear-gradient(-45deg, #334155 25%, transparent 25%), 
+                        linear-gradient(45deg, transparent 75%, #334155 75%), 
+                        linear-gradient(-45deg, transparent 75%, #334155 75%)
+                    `,
+                    backgroundSize: '20px 20px',
+                    backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
+                }}
+            />
+            <div className="min-h-full flex flex-col items-center justify-center relative z-10">
                 {loadingState !== 'idle' ? (
                     <div className="flex-1 flex flex-col items-center gap-6 p-8 rounded-3xl bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 shadow-2xl">
                         <div className="relative">
@@ -197,15 +215,22 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
                                 }`}
                                 style={{ animationDelay: `${idx * 100}ms` }}
                             >
-                                <img
-                                    src={att.url}
-                                    className={`block ${
-                                        displayImages.length === 1
-                                            ? 'max-h-[80vh] w-auto object-contain'
-                                            : 'w-full h-auto object-cover'
-                                    }`}
-                                    onClick={() => onImageClick(att.url!)}
-                                />
+                                {att.url ? (
+                                    <img
+                                        src={att.url}
+                                        className={`block ${
+                                            displayImages.length === 1
+                                                ? 'max-h-[80vh] w-auto object-contain'
+                                                : 'w-full h-auto object-cover'
+                                        }`}
+                                        onClick={() => onImageClick(att.url!)}
+                                        alt="Generated image"
+                                    />
+                                ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-slate-600 bg-slate-900">
+                                        <ImageIcon size={48} className="opacity-50" />
+                                    </div>
+                                )}
                                 <div className="absolute top-4 right-4 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
                                     {onEditImage && (
                                         <button onClick={() => onEditImage(att.url!)} className="p-2.5 bg-pink-600 hover:bg-pink-500 text-white rounded-xl shadow-lg" title="Edit this image">
@@ -265,10 +290,10 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
                 )}
             </div>
         </div>
-    ), [loadingState, isBatchError, activeBatchMessage?.content, displayImages, onImageClick, onEditImage, onExpandImage, handleDownload]);
+    );
 
-    // ✅ 使用 useMemo 缓存 mainAreaOverlay，确保引用稳定
-    const mainAreaOverlay = useMemo(() => (
+    // Main area overlay
+    const mainAreaOverlay = (
         displayImages.length > 1 && (
             <div className="absolute top-4 left-16 md:left-4 z-10 animate-[fadeIn_0.3s_ease-out] pointer-events-none">
                 <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-4 py-1.5 text-xs font-medium text-slate-300 flex items-center gap-2 shadow-xl">
@@ -277,10 +302,10 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
                 </div>
             </div>
         )
-    ), [displayImages.length]);
+    );
 
-    // ✅ 使用 useMemo 缓存 bottomContent，确保引用稳定
-    const bottomContent = useMemo(() => (
+    // Bottom input area
+    const bottomContent = (
         <InputArea
             onSend={onSend}
             isLoading={loadingState !== 'idle'}
@@ -292,21 +317,19 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
             initialPrompt={initialPrompt}
             providerId={providerId}
         />
-    ), [onSend, loadingState, onStop, activeModelConfig, visibleModels, setAppMode, initialPrompt, providerId]);
+    );
 
     return (
-        <>
-            <GenViewLayout
-                isMobileHistoryOpen={isMobileHistoryOpen}
-                setIsMobileHistoryOpen={setIsMobileHistoryOpen}
-                sidebarTitle="History"
-                sidebarHeaderIcon={sidebarHeaderIcon}
-                sidebarExtraHeader={sidebarExtraHeader}
-                sidebarContent={sidebarContent}
-                mainContent={mainContent}
-                mainAreaOverlay={mainAreaOverlay}
-                bottomContent={bottomContent}
-            />
-        </>
+        <GenViewLayout
+            isMobileHistoryOpen={isMobileHistoryOpen}
+            setIsMobileHistoryOpen={setIsMobileHistoryOpen}
+            sidebarTitle="History"
+            sidebarHeaderIcon={sidebarHeaderIcon}
+            sidebarExtraHeader={sidebarExtraHeader}
+            sidebar={sidebarContent}
+            main={mainContent}
+            mainOverlay={mainAreaOverlay}
+            bottom={bottomContent}
+        />
     );
 };

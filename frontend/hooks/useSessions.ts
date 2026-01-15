@@ -45,22 +45,14 @@ export const useSessions = (
         const recoveredAttachments = message.attachments.map(att => {
           // 检查 url 是否是 Blob URL（页面刷新后已失效）
           if (att.url && att.url.startsWith('blob:')) {
-            console.log('[useSessions] 检测到失效的 Blob URL，尝试恢复:', {
-              attachmentId: att.id?.substring(0, 8) + '...',
-              hasTempUrl: !!att.tempUrl,
-              tempUrlType: att.tempUrl?.startsWith('http') ? 'HTTP' : 'Other'
-            });
-            
             // 如果有 tempUrl（云存储 URL），使用它替代失效的 Blob URL
             if (att.tempUrl && att.tempUrl.startsWith('http')) {
-              console.log('[useSessions] ? 使用 tempUrl 恢复显示');
               return {
                 ...att,
                 url: att.tempUrl, // 替换为云存储 URL
                 uploadStatus: 'completed' as const
               };
             } else {
-              console.log('[useSessions] ?? 无有效 tempUrl，保持原状');
               // 没有有效的 tempUrl，保持原状（可能需要重新生成）
               return att;
             }
@@ -114,15 +106,7 @@ export const useSessions = (
   // ? 处理 initialData：恢复 Blob URL 和设置 currentSessionId
   // ?? 优先使用 initData.sessions，缺失时回退到 /sessions
   useEffect(() => {
-    console.log('[useSessions] useEffect triggered:', {
-      hasInitialSessions: initialSessions !== undefined,
-      sessionsCount: initialSessions?.length || 0,
-      isAlreadyInitialized: isInitializedFromPropsRef.current,
-      timestamp: new Date().toISOString()
-    });
-
     if (initialSessions === undefined) {
-      console.log('[useSessions] initialData not ready, resetting state');
       isInitializedFromPropsRef.current = false;
       setSessions([]);
       setCurrentSessionId(null);
@@ -134,17 +118,10 @@ export const useSessions = (
       isInitializedFromPropsRef.current = true;
 
       const preparedSessions = prepareSessions(initialSessions);
-      console.log('[useSessions] Setting recovered sessions:', {
-        count: preparedSessions.length,
-        firstSessionId: preparedSessions[0]?.id?.substring(0, 8) + '...',
-        timestamp: new Date().toISOString()
-      });
-
       setSessions(preparedSessions);
 
       // Restore the most recent session if available
       if (preparedSessions.length > 0) {
-        console.log('[useSessions] Setting currentSessionId to:', preparedSessions[0].id.substring(0, 8) + '...');
         setCurrentSessionId(prev => prev ?? preparedSessions[0].id);
       } else {
         setCurrentSessionId(null);
@@ -153,13 +130,11 @@ export const useSessions = (
     }
 
     if (isInitializedFromPropsRef.current) {
-      console.log('[useSessions] Already initialized from props, skipping fallback');
       return;
     }
 
     // 初始会话为空时，回退到 sessions API
     isInitializedFromPropsRef.current = true;
-    console.log('[useSessions] No sessions in initData, refreshing from backend');
     refreshSessions();
   }, [initialSessions, prepareSessions]); // ✅ 移除 refreshSessions 依赖，避免无限循环
 
@@ -248,10 +223,12 @@ export const useSessions = (
           const currentMode = lastMsgWithMode?.mode || s.mode || 'chat';
 
           // ✅ 根据会话模式判断是否需要清理附件
-          // 图片模式（image-outpainting、image-edit、image-gen）需要清理 Blob URL 和 Base64 URL
+          // 图片模式（image-outpainting、image-chat-edit、image-mask-edit、image-inpainting、image-background-edit、image-recontext、image-gen）需要清理 Blob URL 和 Base64 URL
           // 因为这些模式都有异步上传任务，清理后 URL 为空，等待后端上传完成后更新
           const needsCleanSession = currentMode === 'image-outpainting' || 
-                                    currentMode === 'image-edit' || 
+                                    (currentMode === 'image-chat-edit' || currentMode === 'image-mask-edit' || 
+                                     currentMode === 'image-inpainting' || currentMode === 'image-background-edit' || 
+                                     currentMode === 'image-recontext') || 
                                     currentMode === 'image-gen';
           
           const cleanedMessages = needsCleanSession 

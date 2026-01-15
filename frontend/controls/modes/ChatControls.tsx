@@ -1,5 +1,5 @@
 import React from 'react';
-import { Globe, Brain, Code2, Link2, MonitorDot, Zap, Database } from 'lucide-react';
+import { Globe, Brain, Code2, Link2, MonitorDot, Zap, Database, Search } from 'lucide-react';
 import { ChatControlsProps } from '../types';
 
 export const ChatControls: React.FC<ChatControlsProps> = ({
@@ -10,6 +10,7 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
   enableUrlContext, setEnableUrlContext,
   enableBrowser, setEnableBrowser,
   enableRAG, setEnableRAG,
+  enableResearch, setEnableResearch,
   onOpenDocuments,
   googleCacheMode = 'none', setGoogleCacheMode
 }) => {
@@ -19,6 +20,7 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
   const canUrlContext = !currentModel?.id.includes('imagen') && !currentModel?.id.includes('veo');
   const canBrowse = !currentModel?.id.includes('imagen') && !currentModel?.id.includes('veo') && setEnableBrowser;
   const canRAG = !currentModel?.id.includes('imagen') && !currentModel?.id.includes('veo') && setEnableRAG;
+  const canResearch = !currentModel?.id.includes('imagen') && !currentModel?.id.includes('veo'); // Research available for most models
   const canCache = currentModel?.id.includes('gemini') && setGoogleCacheMode;
 
   const cycleCacheMode = () => {
@@ -76,6 +78,19 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
         </button>
       )}
 
+      {canResearch && (
+        <button
+          onClick={() => setEnableResearch(!enableResearch)}
+          disabled={!canResearch}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border shrink-0 ${!canResearch ? 'bg-transparent text-slate-600 cursor-not-allowed opacity-40 border-transparent'
+            : enableResearch ? 'bg-blue-600 text-blue-50 border-transparent shadow-sm'
+              : 'bg-transparent text-slate-400 border-transparent hover:bg-slate-800/50 hover:text-slate-200'
+            }`}
+          title="Research: Enhanced search and analysis"
+        >
+          <Search size={13} strokeWidth={2.5} /> Research
+        </button>
+      )}
 
       {canCache && (
         <button

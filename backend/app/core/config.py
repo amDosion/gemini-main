@@ -17,8 +17,9 @@ else:
 class Settings(BaseSettings):
     """应用配置类"""
 
-    # 数据库配置
-    database_url: str = os.getenv("DATABASE_URL", "sqlite:///./test.db")
+    # 数据库配置（必须设置，仅支持 PostgreSQL）
+    # 注意：实际的数据库连接由 backend/app/core/database.py 处理，该模块要求必须设置 DATABASE_URL 环境变量
+    database_url: str = os.getenv("DATABASE_URL", "")
 
     # GCP / Vertex AI 配置（用于 Virtual Try-On 等功能）
     gcp_project_id: str | None = os.getenv("GCP_PROJECT_ID")
@@ -39,7 +40,8 @@ class Settings(BaseSettings):
 
     # 认证配置
     allow_registration: bool = os.getenv("ALLOW_REGISTRATION", "false").lower() == "true"
-    jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "your-super-secret-key-change-in-production")
+    # 注意：jwt_secret_key 不再从环境变量读取，由 jwt_secret_manager.py 管理
+    # 保留此字段仅用于向后兼容，实际使用 jwt_utils.py 中的 JWT_SECRET_KEY
     jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     jwt_refresh_token_expire_days: int = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 

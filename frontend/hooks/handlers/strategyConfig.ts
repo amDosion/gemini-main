@@ -27,7 +27,12 @@ export const strategyRegistry = new StrategyRegistry();
 // 注册所有 Handler
 strategyRegistry.register('chat', new ChatHandler());
 strategyRegistry.register('image-gen', new ImageGenHandler());
-strategyRegistry.register('image-edit', new ImageEditHandler());
+// 图片编辑模式（已拆分为多个独立模式）
+strategyRegistry.register('image-chat-edit', new ImageEditHandler());
+strategyRegistry.register('image-mask-edit', new ImageEditHandler());
+strategyRegistry.register('image-inpainting', new ImageEditHandler());
+strategyRegistry.register('image-background-edit', new ImageEditHandler());
+strategyRegistry.register('image-recontext', new ImageEditHandler());
 strategyRegistry.register('image-outpainting', new ImageOutpaintingHandler());
 strategyRegistry.register('virtual-try-on', new VirtualTryOnHandler());
 strategyRegistry.register('video-gen', new VideoGenHandler());
@@ -45,5 +50,3 @@ export const preprocessorRegistry = new PreprocessorRegistry();
 
 // 注册 Google 文件上传前置处理器（高优先级）
 preprocessorRegistry.register(new GoogleFileUploadPreprocessor());
-
-console.log('[strategyConfig] 已注册 9 个 Handler 和 1 个 Preprocessor');

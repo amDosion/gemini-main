@@ -3,6 +3,10 @@ import React from 'react';
 import { Message, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
 import { ImageGenView } from './ImageGenView';
 import { ImageEditView } from './ImageEditView';
+import { ImageMaskEditView } from './ImageMaskEditView';
+import { ImageInpaintingView } from './ImageInpaintingView';
+import { ImageBackgroundEditView } from './ImageBackgroundEditView';
+import { ImageRecontextView } from './ImageRecontextView';
 import { ImageExpandView } from './ImageExpandView';
 import { VideoGenView } from './VideoGenView';
 import { AudioGenView } from './AudioGenView';
@@ -34,8 +38,17 @@ export const StudioView: React.FC<StudioViewProps> = React.memo((props) => {
   switch (props.mode) {
       case 'image-gen':
           return <ImageGenView {...props} />;
-      case 'image-edit':
+      // 图片编辑模式（已拆分为多个独立模式，每个模式有独立的视图组件）
+      case 'image-chat-edit':
           return <ImageEditView {...props} />;
+      case 'image-mask-edit':
+          return <ImageMaskEditView {...props} />;
+      case 'image-inpainting':
+          return <ImageInpaintingView {...props} />;
+      case 'image-background-edit':
+          return <ImageBackgroundEditView {...props} />;
+      case 'image-recontext':
+          return <ImageRecontextView {...props} />;
       case 'image-outpainting':
           return <ImageExpandView {...props} />;
       case 'video-gen':

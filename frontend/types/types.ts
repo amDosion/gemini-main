@@ -30,7 +30,7 @@ export enum Role {
 
 export type ApiProtocol = 'google' | 'openai';
 
-export type AppMode = 'chat' | 'image-gen' | 'image-edit' | 'video-gen' | 'audio-gen' | 'image-outpainting' | 'pdf-extract' | 'virtual-try-on' | 'deep-research';
+export type AppMode = 'chat' | 'image-gen' | 'image-chat-edit' | 'image-mask-edit' | 'image-inpainting' | 'image-background-edit' | 'image-recontext' | 'video-gen' | 'audio-gen' | 'image-outpainting' | 'pdf-extract' | 'virtual-try-on' | 'deep-research' | 'multi-agent';
 
 export interface GroundingChunk {
   web?: {
@@ -84,6 +84,8 @@ export interface Message {
   mode?: AppMode; // Track which mode this message belongs to
   toolCalls?: ToolCall[]; // Added toolCalls
   toolResults?: ToolResult[]; // Added toolResults
+  thoughts?: Array<{ type: 'text' | 'image'; content: string }>; // 思考过程（thoughts）
+  textResponse?: string; // 文本响应
 }
 
 export interface ChatSession {
@@ -121,6 +123,8 @@ export interface OutPaintingOptions {
     bottomOffset?: number;
     angle?: number;        // For ratio mode
     outputRatio?: string;  // For ratio mode (e.g., "16:9")
+    aspectRatio?: string;   // Aspect ratio for outpainting
+    platform?: string;     // Platform identifier (e.g., 'gemini', 'vertex_ai')
     bestQuality: boolean;
     limitImageSize: boolean;
 }
@@ -134,8 +138,10 @@ export interface ChatOptions {
   enableSearch: boolean;
   enableThinking: boolean;
   enableCodeExecution: boolean;
+  enableGrounding?: boolean; // Added for Google Grounding
   enableUrlContext?: boolean; // Added URL Context option
   enableBrowser?: boolean; // Added Browser Tool option
+  enableResearch?: boolean; // Added Research option (basic research in Chat mode)
   googleCacheMode?: 'none' | 'exact' | 'semantic'; // Added Google Cache Mode
   imageAspectRatio: string;
   imageResolution: string;
@@ -169,6 +175,33 @@ export interface ChatOptions {
   language?: string; // Prompt language
 
   enhancePrompt?: boolean; // Let AI improve the prompt
+  prompt?: string; // Prompt text for image generation/editing
+  modelId?: string; // Model ID for specific operations
+  platform?: string; // Platform identifier (e.g., 'gemini', 'vertex_ai')
+  // Deep Research specific options
+  deepResearchConfig?: {
+    thinkingSummaries?: 'auto' | 'none'; // Thinking summaries mode for Deep Research
+    researchMode?: 'vertex-ai' | 'gemini-api'; // Research mode: Vertex AI (interactions API) or Gemini API (genai SDK)
+  };
+  // Multi-Agent workflow configuration
+  multiAgentConfig?: {
+    nodes: Array<{
+      id: string;
+      type: 'agent' | 'condition' | 'merge';
+      agentId?: string;
+      label: string;
+      position: { x: number; y: number };
+    }>;
+    edges: Array<{
+      id: string;
+      source: string;
+      target: string;
+    }>;
+  };
+  // Live API configuration
+  liveAPIConfig?: {
+    agentId?: string; // Optional agent ID for Live API
+  };
 }
 
 // PDF Extraction Types
@@ -229,8 +262,16 @@ export interface InitData {
   // Persona related
   personas: Persona[];
   
+  // Imagen configuration
+  imagenConfig?: {
+    apiMode: string;
+    vertexAiProjectId: string | null;
+    vertexAiLocation: string;
+    vertexAiCredentialsJson: string | null;
+  } | null;
+  
   // Optional: cached model list
-  cachedModels?: ModelConfig[];
+  cachedModels?: ModelConfig[] | null;
   
   // Metadata
   _metadata?: {

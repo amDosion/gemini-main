@@ -3,11 +3,7 @@ import { ExecutionContext, HandlerResult } from './types';
 
 export class DeepResearchHandler extends BaseHandler {
   protected async doExecute(context: ExecutionContext): Promise<HandlerResult> {
-    const { text, attachments, currentModel, onStreamUpdate, apiKey } = context;
-
-    if (!apiKey) {
-      throw new Error('API Key is required for Deep Research');
-    }
+    const { text, attachments, currentModel, onStreamUpdate } = context;
 
     // 1. 如果有附件，先上传到 File Search Store
     let fileSearchStoreNames: string[] | undefined;
@@ -39,9 +35,7 @@ export class DeepResearchHandler extends BaseHandler {
           
           const uploadResponse = await fetch('/api/file-search/upload', {
             method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${apiKey}`
-            },
+            credentials: 'include', // 使用 Cookie 认证
             body: formData
           });
           
@@ -70,20 +64,36 @@ export class DeepResearchHandler extends BaseHandler {
     }
 
     // 2. 启动流式研究任务
+    // ✅ 获取 access_token 并添加到 Authorization header
+    const token = localStorage.getItem('access_token');
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    // ✅ 从 options 中获取 Deep Research 配置，如果没有则使用默认值
+    const thinkingSummaries = context.options?.deepResearchConfig?.thinkingSummaries || 'auto';
+    const researchMode = context.options?.deepResearchConfig?.researchMode || 'vertex-ai';
+    
+    // ✅ 调试日志：确认 researchMode 值
+    console.log('[DeepResearchHandler] researchMode:', researchMode);
+    console.log('[DeepResearchHandler] context.options?.deepResearchConfig:', context.options?.deepResearchConfig);
+    
     const startResponse = await fetch('/api/research/stream/start', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
+      headers,
+      credentials: 'include', // 同时使用 Cookie 认证（向后兼容）
       body: JSON.stringify({
         prompt: text,
         agent: currentModel.id || 'deep-research-pro-preview-12-2025',
         background: true,
         stream: true,
+        research_mode: researchMode,  // ✅ 传递工作模式（vertex-ai 或 gemini-api）
         agent_config: {
           type: 'deep-research',
-          thinking_summaries: 'auto'  // 关键配置：启用思考摘要
+          thinking_summaries: thinkingSummaries  // ✅ 使用用户配置的思考摘要模式
         },
         file_search_store_names: fileSearchStoreNames  // 传递文档存储名称
       }),
@@ -119,18 +129,21 @@ export class DeepResearchHandler extends BaseHandler {
       let retryCount = 0;
       const MAX_RETRIES = 5;  // 最大重试次数
       const RETRY_DELAY = 2000;  // 重试延迟（毫秒）
+      let lastGroundingMetadata: any = undefined;  // ✅ 累积 grounding metadata
 
       // 连接函数（支持重连）
       const connectSSE = () => {
         // 构造SSE URL（包含 last_event_id 用于断点续传）
-        let sseUrl = `/api/research/stream/${interaction_id}?authorization=${encodeURIComponent(`Bearer ${apiKey}`)}`;
+        // 注意：EventSource 不支持自定义 headers，所以认证通过 Cookie 进行
+        let sseUrl = `/api/research/stream/${interaction_id}`;
         if (lastEventId) {
-          sseUrl += `&last_event_id=${lastEventId}`;
+          sseUrl += `?last_event_id=${lastEventId}`;
           console.log('[DeepResearchHandler] 🔄 重连SSE（断点续传）:', `...&last_event_id=${lastEventId.substring(0, 8)}...`);
         } else {
-          console.log('[DeepResearchHandler] 连接SSE:', sseUrl.replace(apiKey, '***'));
+          console.log('[DeepResearchHandler] 连接SSE:', sseUrl);
         }
 
+        // EventSource 会自动发送 Cookie（同源请求），后端从 Cookie 获取用户信息并从数据库获取 API Key
         const eventSource = new EventSource(sseUrl);
 
         // 添加详细的连接状态监控
@@ -163,6 +176,7 @@ export class DeepResearchHandler extends BaseHandler {
                 
                 onStreamUpdate?.({
                   content: fullContent,
+                  groundingMetadata: lastGroundingMetadata,  // ✅ 传递累积的 grounding metadata
                 });
               } else if (data.delta?.type === 'thought_summary') {
                 // 累积思考过程
@@ -177,12 +191,53 @@ export class DeepResearchHandler extends BaseHandler {
                   
                   onStreamUpdate?.({
                     content: fullContent,
+                    groundingMetadata: lastGroundingMetadata,  // ✅ 传递累积的 grounding metadata
                   });
                 }
               }
+            } else if (data.event_type === 'tool.call') {
+              // ✅ 处理 Browser 工具调用事件
+              const toolCall = data.tool_call;
+              const toolName = toolCall?.name || 'unknown';
+              const toolArgs = toolCall?.args || {};
+              
+              console.log(`[DeepResearchHandler] 🔧 工具调用: ${toolName}`, toolArgs);
+              
+              // 显示工具调用信息（类似 ChatHandlerClass.ts）
+              const toolCallText = `\n\n> **调用工具:** \`${toolName}\`\n> **参数:** \`${JSON.stringify(toolArgs)}\`\n\n`;
+              accumulatedText += toolCallText;
+              
+              onStreamUpdate?.({
+                content: accumulatedText,
+                groundingMetadata: lastGroundingMetadata,
+              });
+            } else if (data.event_type === 'tool.result') {
+              // ✅ 处理 Browser 工具结果事件
+              const toolResult = data.tool_result;
+              const toolName = toolResult?.tool || 'unknown';
+              const result = toolResult?.result || '';
+              
+              console.log(`[DeepResearchHandler] ✅ 工具结果: ${toolName}`, result.substring(0, 200));
+              
+              // 显示工具结果（类似 ChatHandlerClass.ts）
+              const resultPreview = result.length > 200 ? result.substring(0, 200) + '...' : result;
+              const toolResultText = `\n\n> **工具结果** (\`${toolName}\`):\n> \`\`\`\n> ${resultPreview.split('\n').join('\n> ')}\n> \`\`\`\n\n`;
+              accumulatedText += toolResultText;
+              
+              onStreamUpdate?.({
+                content: accumulatedText,
+                groundingMetadata: lastGroundingMetadata,
+              });
             } else if (data.event_type === 'interaction.complete') {
               // 研究完成
               console.log('[DeepResearchHandler] ✅ 研究完成');
+              
+              // ✅ 提取 grounding metadata（如果存在）
+              if (data.grounding_metadata) {
+                lastGroundingMetadata = data.grounding_metadata;
+                console.log('[DeepResearchHandler] 找到 grounding metadata:', lastGroundingMetadata);
+              }
+              
               isComplete = true;
               eventSource.close();
               
@@ -194,6 +249,7 @@ export class DeepResearchHandler extends BaseHandler {
               resolve({
                 content: finalContent,
                 attachments: [],
+                groundingMetadata: lastGroundingMetadata,  // ✅ 传递 grounding metadata
               });
             } else if (data.event_type === 'error') {
               // 服务端错误

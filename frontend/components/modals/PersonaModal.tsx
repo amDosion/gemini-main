@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Save, Tag } from 'lucide-react';
-import { Persona, PERSONA_CATEGORIES } from '../../config/personas';
+import { Persona } from '../../types/types';
+import { PERSONA_CATEGORIES } from '../../constants/personaCategories';
 import { ICON_MAP, AVAILABLE_ICONS } from '../../utils/iconUtils';
 
 interface PersonaModalProps {

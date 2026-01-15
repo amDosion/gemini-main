@@ -1,6 +1,5 @@
 # Services module
+# 注意：不要在这里导入 GoogleService，会导致循环导入
+# 需要使用时直接从 services.gemini 导入
 
-# 向后兼容：从 gemini 子模块导出 GoogleService
-from .gemini import GoogleService
-
-__all__ = ['GoogleService']
+__all__ = []

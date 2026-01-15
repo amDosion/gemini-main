@@ -75,8 +75,30 @@ class ApiClient {
     if (response.status === 401 && !skipAuth) {
       const refreshed = await this.tryRefreshToken();
       if (refreshed) {
-        // 重试原请求
-        return this.request<T>(url, { ...options, skipAuth: true });
+        // ✅ 修复：重试时带上新的 access_token
+        const newToken = getAccessToken();
+        const retryHeaders: HeadersInit = {
+          ...fetchOptions.headers,
+        };
+        if (newToken) {
+          (retryHeaders as Record<string, string>)['Authorization'] = `Bearer ${newToken}`;
+        }
+        
+        // 重试原请求（带新 token）
+        const retryResponse = await fetch(`${this.baseUrl}${url}`, {
+          ...fetchOptions,
+          headers: retryHeaders,
+        });
+        
+        if (!retryResponse.ok) {
+          const errorData = await retryResponse.json().catch(() => ({}));
+          throw new Error(errorData.detail || `Request failed: ${retryResponse.status}`);
+        }
+        
+        if (retryResponse.status === 204) {
+          return undefined as T;
+        }
+        return retryResponse.json();
       } else {
         // 刷新失败，触发未授权回调
         this.onUnauthorized?.();

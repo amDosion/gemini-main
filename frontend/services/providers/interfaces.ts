@@ -1,17 +1,34 @@
 
 import { ModelConfig, Message, Attachment, ChatOptions } from '../../types/types';
 
+export interface ToolCall {
+  name: string;
+  args: Record<string, any>;
+}
+
+export interface ToolResult {
+  name: string;
+  result: string;
+  screenshot?: string; // Base64 encoded PNG screenshot (fallback)
+  screenshotUrl?: string; // URL of uploaded screenshot (preferred)
+}
+
 export interface StreamUpdate {
   text: string;
   attachments?: Attachment[];
   groundingMetadata?: any;
   urlContextMetadata?: any; // Added URL Context Metadata
   browserOperationId?: string; // Added: Browser tool operation ID
+  toolCall?: ToolCall; // Browser tool call (function calling)
+  toolResult?: ToolResult; // Browser tool result
 }
 
 export interface ImageGenerationResult {
   url: string;
   mimeType: string;
+  filename?: string; // Optional filename for generated images
+  thoughts?: Array<{ type: 'text' | 'image'; content: string }>; // 思考过程（thoughts）
+  text?: string; // 文本响应
 }
 
 export interface VideoGenerationResult {
@@ -47,6 +64,7 @@ export interface ILLMProvider {
     prompt: string,
     referenceImages: Attachment[], 
     options: ChatOptions,
+    apiKey: string,
     baseUrl: string
   ): Promise<ImageGenerationResult[]>;
 

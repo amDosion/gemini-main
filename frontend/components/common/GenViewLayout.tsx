@@ -2,28 +2,39 @@ import React from 'react';
 import { History, X } from 'lucide-react';
 
 interface GenViewLayoutProps {
+    // Sidebar slots
     sidebarHeaderIcon?: React.ReactNode;
     sidebarTitle: string | React.ReactNode;
-    sidebarContent: React.ReactNode;
     sidebarExtraHeader?: React.ReactNode; // Extra buttons in header
+    sidebar?: React.ReactNode; // Sidebar content slot
 
-    mainContent: React.ReactNode;
-    bottomContent?: React.ReactNode;
-    mainAreaOverlay?: React.ReactNode;
+    // Main area slots
+    main?: React.ReactNode; // Main content slot
+    mainOverlay?: React.ReactNode; // Overlay slot
+    bottom?: React.ReactNode; // Bottom input area slot
 
     // Mobile Sidebar State (Controlled)
     isMobileHistoryOpen: boolean;
     setIsMobileHistoryOpen: (v: boolean) => void;
 }
 
+// 使用自定义比较函数，只比较非 ReactNode 的 props
+const arePropsEqual = (prevProps: GenViewLayoutProps, nextProps: GenViewLayoutProps) => {
+    // 只比较非 ReactNode 的 props
+    if (prevProps.isMobileHistoryOpen !== nextProps.isMobileHistoryOpen) return false;
+    if (prevProps.sidebarTitle !== nextProps.sidebarTitle) return false;
+    // ReactNode props 的变化会自然触发重新渲染，不需要在这里比较
+    return true;
+};
+
 export const GenViewLayout: React.FC<GenViewLayoutProps> = React.memo(({
     sidebarHeaderIcon,
     sidebarTitle,
-    sidebarContent,
     sidebarExtraHeader,
-    mainContent,
-    bottomContent,
-    mainAreaOverlay,
+    sidebar,
+    main,
+    mainOverlay,
+    bottom,
     isMobileHistoryOpen,
     setIsMobileHistoryOpen
 }) => {
@@ -72,7 +83,7 @@ export const GenViewLayout: React.FC<GenViewLayoutProps> = React.memo(({
 
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto custom-scrollbar relative">
-                    {sidebarContent}
+                    {sidebar}
                 </div>
             </div>
 
@@ -80,21 +91,21 @@ export const GenViewLayout: React.FC<GenViewLayoutProps> = React.memo(({
             <div className="flex-1 flex flex-col min-w-0 bg-slate-950 relative">
                 {/* Main Content (Canvas/Grid) */}
                 <div className="flex-1 overflow-hidden relative flex flex-col">
-                    {mainContent}
+                    {main}
                 </div>
 
                 {/* Overlays (controls, etc) */}
-                {mainAreaOverlay}
+                {mainOverlay}
 
                 {/* Bottom Input Area */}
-                {bottomContent && (
+                {bottom && (
                     <div className="p-4 md:p-6 bg-gradient-to-t from-slate-950 via-slate-950 to-transparent z-20 shrink-0 border-t border-transparent md:border-none">
                         <div className="max-w-4xl mx-auto w-full">
-                            {bottomContent}
+                            {bottom}
                         </div>
                     </div>
                 )}
             </div>
         </div>
     );
-});
+}, arePropsEqual);

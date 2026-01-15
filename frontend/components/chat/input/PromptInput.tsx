@@ -109,9 +109,12 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   const isOutPaintingMode = mode === 'image-outpainting';
   
   // Determine placeholder text
+  const isImageEditMode = mode === 'image-chat-edit' || mode === 'image-mask-edit' || 
+                          mode === 'image-inpainting' || mode === 'image-background-edit' || 
+                          mode === 'image-recontext';
   const placeholderText = mode === 'chat' ? "Message Gemini... (Attach PDFs, Images, etc.)" :
       mode === 'image-gen' ? "Describe the image you want to generate..." :
-      mode === 'image-edit' ? (hasActiveContext ? "Enter instructions to edit the image..." : "Attach an image to edit...") :
+      isImageEditMode ? (hasActiveContext ? "Enter instructions to edit the image..." : "Attach an image to edit...") :
       mode === 'image-outpainting' ? "扩图模式无需输入提示词" :
       mode === 'video-gen' ? "Describe the video you want to generate..." :
       "Enter text...";
@@ -155,10 +158,12 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       )}
       <input 
         type="file" 
+        id="prompt-file-input"
+        name="prompt-file-input"
         ref={fileInputRef} 
         onChange={onFileSelect} 
         className="hidden" 
-        multiple={mode === 'chat' || mode === 'image-edit'} 
+        multiple={mode === 'chat' || isImageEditMode} 
         // Expanded accept list for document processing
         accept={mode !== 'chat' ? "image/*,video/*,audio/*" : "image/*,video/*,audio/*,application/pdf,text/plain,text/csv,text/html,application/json"} 
       />
@@ -177,6 +182,8 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     <div className="pl-3 pr-2 text-slate-400"><LinkIcon size={14} /></div>
                     <input 
                         type="text" 
+                        id="youtube-link-input"
+                        name="youtube-link-input"
                         value={linkValue}
                         onChange={(e) => setLinkValue(e.target.value)}
                         placeholder="Paste YouTube URL..."
@@ -217,6 +224,8 @@ export const PromptInput: React.FC<PromptInputProps> = ({
           </div>
 
           <textarea
+              id="prompt-textarea"
+              name="prompt-textarea"
               ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}

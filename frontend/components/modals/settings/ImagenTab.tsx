@@ -7,6 +7,7 @@ import {
     ImagenConfigResponse
 } from '../../../types/imagen-config';
 import { ModelConfig } from '../../../types/types';
+import { useToastContext } from '../../../contexts/ToastContext';
 
 interface ImagenTabProps {
     footerNode?: HTMLDivElement | null;
@@ -32,6 +33,7 @@ export const ImagenTab: React.FC<ImagenTabProps> = ({
     const [imagenConfig, setImagenConfig] = useState<ImagenAPISettings | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const { showSuccess, showError } = useToastContext();
     
     // Verification State
     const [verifiedModels, setVerifiedModels] = useState<VertexAIModel[]>([]);
@@ -251,11 +253,11 @@ export const ImagenTab: React.FC<ImagenTabProps> = ({
                 body: JSON.stringify(requestBody)
             });
 
-            alert('Vertex AI configuration saved successfully!');
+            showSuccess('Vertex AI configuration saved successfully!');
             onClose();
         } catch (error: any) {
             console.error('[ImagenTab] Failed to save Vertex AI configuration:', error);
-            alert(`Failed to save Vertex AI configuration: ${error.message}`);
+            showError(`Failed to save Vertex AI configuration: ${error.message}`);
         } finally {
             setIsSaving(false);
         }

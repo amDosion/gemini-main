@@ -271,9 +271,9 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
       sidebarTitle="提取历史"
       sidebarHeaderIcon={<Clock size={14} />}
       sidebarExtraHeader={sidebarExtraHeader}
-      sidebarContent={sidebarContent}
-      mainContent={mainContent}
-      bottomContent={bottomContent}
+      sidebar={sidebarContent}
+      main={mainContent}
+      bottom={bottomContent}
     />
   );
 };

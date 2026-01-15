@@ -10,9 +10,9 @@ import logging
 from typing import Dict, Any, List, Optional, Union, AsyncGenerator
 from pathlib import Path
 
-# Import official SDK compatibility layer
-from .official import Client
-from .official.types import (
+# Import official SDK compatibility layer (从 agent 目录)
+from .agent import Client
+from .agent.types import (
     GenerateContentConfig,
     Content,
     Part,
@@ -21,15 +21,25 @@ from .official.types import (
     SafetySetting
 )
 
+# Import unified client pool
+from .client_pool import get_client_pool
+# Note: get_interactions_manager is imported lazily to avoid circular import
+
 logger = logging.getLogger(__name__)
 
 
 class OfficialSDKAdapter:
     """
-    Adapter to integrate official Google GenAI SDK with existing service architecture.
+    Adapter for Models API (content generation only).
     
-    This adapter provides a bridge between the existing GoogleService interface
-    and the official SDK, enabling gradual migration and feature compatibility.
+    职责：
+    - ✅ Content generation (generate_content)
+    - ✅ Streaming generation (stream_generate_content)
+    - ✅ Message format conversion
+    - ✅ Response format conversion
+    - ❌ Interactions API（已移除，由 interactions_manager 处理）
+    
+    注意：不再持有 client 实例，从统一池获取
     """
     
     def __init__(self, api_key: str, use_vertex: bool = False, project: str = None, location: str = None):
@@ -47,17 +57,25 @@ class OfficialSDKAdapter:
         self.project = project
         self.location = location
         
-        # Initialize official SDK client
-        if use_vertex:
-            self.client = Client(
-                vertexai=True,
-                project=project,
-                location=location or 'us-central1'
-            )
-        else:
-            self.client = Client(api_key=api_key)
+        # 移除：self.client = Client(...)
+        # 改为：从统一池按需获取
         
-        logger.info(f"[Official SDK Adapter] Initialized (vertex={use_vertex})")
+        logger.info(f"[Official SDK Adapter] Initialized (vertex={use_vertex}, using unified client pool)")
+    
+    def _get_client(self) -> Client:
+        """
+        从统一池获取客户端
+        
+        Returns:
+            Client 实例
+        """
+        pool = get_client_pool()
+        return pool.get_client(
+            api_key=self.api_key,
+            vertexai=self.use_vertex,
+            project=self.project,
+            location=self.location or 'us-central1' if self.use_vertex else None
+        )
     
     async def generate_content(
         self,
@@ -77,6 +95,9 @@ class OfficialSDKAdapter:
             Response dictionary compatible with existing interface
         """
         try:
+            # 从统一池获取客户端
+            client = self._get_client()
+            
             # Convert messages to official SDK format
             contents = self._convert_messages_to_contents(messages)
             
@@ -84,7 +105,7 @@ class OfficialSDKAdapter:
             config = self._build_generation_config(**kwargs)
             
             # Generate content using official SDK
-            response = self.client.models.generate_content(
+            response = client.models.generate_content(
                 model=model,
                 contents=contents,
                 config=config
@@ -115,6 +136,9 @@ class OfficialSDKAdapter:
             Response chunks compatible with existing interface
         """
         try:
+            # 从统一池获取客户端
+            client = self._get_client()
+            
             # Convert messages to official SDK format
             contents = self._convert_messages_to_contents(messages)
             
@@ -122,7 +146,7 @@ class OfficialSDKAdapter:
             config = self._build_generation_config(**kwargs)
             
             # Stream generate content using official SDK
-            stream = self.client.models.generate_content_stream(
+            stream = client.models.generate_content_stream(
                 model=model,
                 contents=contents,
                 config=config
@@ -277,32 +301,48 @@ class OfficialSDKAdapter:
         self,
         query: str,
         agent: str = 'deep-research-pro-preview-12-2025',
-        background: bool = True
+        background: bool = True,
+        agent_config: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Create a Deep Research Agent interaction using the official SDK.
+        
+        Uses interactions_manager for better client pooling and resource management.
         
         Args:
             query: Research query
             agent: Agent name
             background: Whether to run in background
+            agent_config: Optional agent configuration (e.g., thinking_summaries)
             
         Returns:
             Interaction result
         """
         try:
-            interaction = self.client.interactions.create(
+            # Use interactions_manager for better client pooling
+            # Lazy import to avoid circular dependency
+            from ..common.interactions_manager import get_interactions_manager
+            manager = get_interactions_manager()
+            
+            # Build agent_config if not provided
+            if agent_config is None:
+                agent_config = {
+                    "type": "deep-research",
+                    "thinking_summaries": "auto"
+                }
+            
+            result = await manager.create_interaction_async(
+                api_key=self.api_key,
                 input=query,
                 agent=agent,
-                background=background
+                background=background,
+                agent_config=agent_config,
+                vertexai=self.use_vertex,
+                project=self.project,
+                location=self.location
             )
             
-            return {
-                'id': interaction.id,
-                'status': interaction.status,
-                'outputs': interaction.outputs or [],
-                'error': interaction.error
-            }
+            return result
             
         except Exception as e:
             logger.error(f"[Official SDK Adapter] Error in deep research: {e}")
@@ -312,6 +352,8 @@ class OfficialSDKAdapter:
         """
         Get the status of a Deep Research interaction.
         
+        Uses interactions_manager for better client pooling and resource management.
+        
         Args:
             interaction_id: Interaction ID
             
@@ -319,25 +361,39 @@ class OfficialSDKAdapter:
             Interaction status
         """
         try:
-            interaction = self.client.interactions.get(interaction_id)
+            # Use interactions_manager for better client pooling
+            # Lazy import to avoid circular dependency
+            from ..common.interactions_manager import get_interactions_manager
+            manager = get_interactions_manager()
             
-            return {
-                'id': interaction.id,
-                'status': interaction.status,
-                'outputs': interaction.outputs or [],
-                'error': interaction.error
-            }
+            status = await manager.get_interaction_status_async(
+                api_key=self.api_key,
+                interaction_id=interaction_id,
+                vertexai=self.use_vertex,
+                project=self.project,
+                location=self.location
+            )
+            
+            return status
             
         except Exception as e:
             logger.error(f"[Official SDK Adapter] Error getting interaction status: {e}")
             raise
     
     def close(self):
-        """Close the official SDK client."""
-        if hasattr(self.client, 'close'):
-            self.client.close()
+        """
+        关闭适配器（不再需要，统一池管理生命周期）
+        
+        注意：统一池会自动管理客户端生命周期，此方法保留以保持向后兼容
+        """
+        # 统一池管理客户端生命周期，不需要手动关闭
+        logger.debug("[Official SDK Adapter] close() called (unified pool manages lifecycle)")
     
     async def aclose(self):
-        """Async close the official SDK client."""
-        if hasattr(self.client, 'aio') and hasattr(self.client.aio, 'aclose'):
-            await self.client.aio.aclose()
+        """
+        异步关闭适配器（不再需要，统一池管理生命周期）
+        
+        注意：统一池会自动管理客户端生命周期，此方法保留以保持向后兼容
+        """
+        # 统一池管理客户端生命周期，不需要手动关闭
+        logger.debug("[Official SDK Adapter] aclose() called (unified pool manages lifecycle)")

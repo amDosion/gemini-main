@@ -8,6 +8,7 @@ import { getProviderTemplates, AIProviderConfig } from '../../../services/provid
 import { LLMFactory } from '../../../services/LLMFactory';
 import { v4 as uuidv4 } from 'uuid';
 import { OllamaModelManager } from './OllamaModelManager';
+import { useToastContext } from '../../../contexts/ToastContext';
 
 interface EditorTabProps {
     initialData?: ConfigProfile | null;
@@ -24,6 +25,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
     onClose,
     footerNode
 }) => {
+    const { showWarning } = useToastContext();
     const [formData, setFormData] = useState<ConfigProfile | null>(null);
 
     // Verification State
@@ -219,7 +221,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
     const handleSaveInternal = async () => {
         if (!formData) return;
         if (!formData.name.trim()) {
-            alert("Please enter a configuration name.");
+            showWarning('Please enter a configuration name.');
             return;
         }
 

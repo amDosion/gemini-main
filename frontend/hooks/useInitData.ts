@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { InitData } from '../types/types';
 import { apiClient } from '../services/apiClient';
+import { LLMFactory } from '../services/LLMFactory';
 
 /**
  * Return interface for the useInitData hook.
@@ -83,6 +84,15 @@ export const useInitData = (isAuthenticated: boolean): UseInitDataReturn => {
           
           setInitData(data);
           setError(null); // Clear error on success
+          
+          // ✅ 初始化 LLMFactory（从后端加载 Provider 配置）
+          try {
+            await LLMFactory.initialize();
+          } catch (error) {
+            console.warn('[useInitData] Failed to initialize LLMFactory:', error);
+            // 不阻塞主流程，即使 LLMFactory 初始化失败也继续
+          }
+          
           // Data successfully fetched, exit the retry loop.
           return; 
         } catch (e) {

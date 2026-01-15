@@ -1,2 +1,5 @@
 # Routers module
-from . import health, storage, browse, pdf, embedding, dashscope_proxy, profiles, sessions, personas, image_expand, auth, research, research_stream, metrics, interactions, file_search, providers
+# 注意：路由文件已按功能分类到子目录中
+# 不再从此处直接导入，请从对应的子目录导入
+
+__all__ = []

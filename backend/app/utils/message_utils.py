@@ -10,6 +10,11 @@ from ..models.db_models import (
     MessagesChat,
     MessagesImageGen,
     MessagesVideoGen,
+    MessagesImageChatEdit,
+    MessagesImageMaskEdit,
+    MessagesImageInpainting,
+    MessagesImageBackgroundEdit,
+    MessagesImageRecontext,
     MessagesGeneric,
     MessageAttachment,
     MessageIndex
@@ -21,6 +26,11 @@ MODE_TABLE_MAP: Dict[str, str] = {
     'chat': 'messages_chat',
     'image-gen': 'messages_image_gen',
     'video-gen': 'messages_video_gen',
+    'image-chat-edit': 'messages_image_chat_edit',
+    'image-mask-edit': 'messages_image_mask_edit',
+    'image-inpainting': 'messages_image_inpainting',
+    'image-background-edit': 'messages_image_background_edit',
+    'image-recontext': 'messages_image_recontext',
     # 其他模式使用兜底表
 }
 
@@ -29,6 +39,11 @@ TABLE_CLASS_MAP: Dict[str, Type] = {
     'messages_chat': MessagesChat,
     'messages_image_gen': MessagesImageGen,
     'messages_video_gen': MessagesVideoGen,
+    'messages_image_chat_edit': MessagesImageChatEdit,
+    'messages_image_mask_edit': MessagesImageMaskEdit,
+    'messages_image_inpainting': MessagesImageInpainting,
+    'messages_image_background_edit': MessagesImageBackgroundEdit,
+    'messages_image_recontext': MessagesImageRecontext,
     'messages_generic': MessagesGeneric,
 }
 
@@ -41,13 +56,15 @@ def get_table_name_for_mode(mode: str) -> str:
         mode: 消息模式（chat/image-gen/video-gen/...）
     
     Returns:
-        表名（messages_chat/messages_image_gen/messages_video_gen/messages_generic）
+        表名（messages_chat/messages_image_gen/messages_video_gen/messages_image_chat_edit/.../messages_generic）
     
     示例:
         >>> get_table_name_for_mode('chat')
         'messages_chat'
         >>> get_table_name_for_mode('image-gen')
         'messages_image_gen'
+        >>> get_table_name_for_mode('image-chat-edit')
+        'messages_image_chat_edit'
         >>> get_table_name_for_mode('pdf-extract')
         'messages_generic'
     """

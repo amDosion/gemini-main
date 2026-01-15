@@ -1,7 +1,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { X, UserCircle2, Info, Plus, Pencil, Trash2, RotateCcw, ChevronDown, ChevronRight } from 'lucide-react';
-import { Persona, PERSONA_CATEGORIES } from '../../config/personas';
+import { Persona } from '../../types/types';
+import { PERSONA_CATEGORIES } from '../../constants/personaCategories';
 import { getPersonaIcon } from '../../utils/iconUtils';
 import PersonaModal from '../modals/PersonaModal';
 
@@ -14,7 +15,7 @@ interface RightSidebarProps {
   onCreatePersona: (p: Omit<Persona, 'id'>) => void;
   onUpdatePersona: (id: string, p: Partial<Persona>) => void;
   onDeletePersona: (id: string) => void;
-  onResetPersonas: () => void;
+  onRefreshPersonas: () => void;
 }
 
 const RightSidebar: React.FC<RightSidebarProps> = ({ 
@@ -26,7 +27,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   onCreatePersona,
   onUpdatePersona,
   onDeletePersona,
-  onResetPersonas
+  onRefreshPersonas
 }) => {
   const [editingPersona, setEditingPersona] = useState<Persona | undefined>(undefined);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -128,9 +129,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               <Plus size={14} /> Create New
             </button>
             <button 
-              onClick={onResetPersonas}
+              onClick={onRefreshPersonas}
               className="px-3 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs font-medium rounded-lg transition-colors border border-slate-700"
-              title="Reset to defaults"
+              title="Refresh personas from server"
             >
               <RotateCcw size={14} />
             </button>
@@ -211,8 +212,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                       </div>
                   );
               })}
+          </div>
 
-              <div className="mt-6 p-3 bg-blue-900/10 border border-blue-500/20 rounded-xl flex gap-3 text-xs text-blue-300/80">
+          {/* Footer - Fixed at bottom */}
+          <div className="p-4 border-t border-slate-800/50 bg-slate-900 shrink-0">
+              <div className="p-3 bg-blue-900/10 border border-blue-500/20 rounded-xl flex gap-3 text-xs text-blue-300/80">
                   <Info size={16} className="shrink-0 mt-0.5" />
                   <p>
                       Personas act as system prompts. Editing them changes the behavior of the AI for subsequent messages.

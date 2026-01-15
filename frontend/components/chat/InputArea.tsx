@@ -13,6 +13,7 @@ import { PromptInput } from './input/PromptInput';
 // New refactored components
 import { ModeControlsCoordinator } from '../../coordinators';
 import { useControlsState } from '../../hooks/useControlsState';
+import { useToastContext } from '../../contexts/ToastContext';
 
 interface InputAreaProps {
   onSend: (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => void;
@@ -96,7 +97,8 @@ const InputArea: React.FC<InputAreaProps> = ({
     if (!files) return;
 
     if (mode === 'image-outpainting' && (attachments.length > 0 || files.length > 1)) {
-      alert("Out-Painting mode supports only one reference image at a time.");
+      // Out-Painting mode supports only one reference image at a time.
+      // This validation is handled by the backend, so we just prevent submission
       if (e.target) e.target.value = '';
       return;
     }
@@ -164,7 +166,8 @@ const InputArea: React.FC<InputAreaProps> = ({
 
     if (mode === 'image-outpainting') {
       if (attachments.length === 0 && !hasActiveContext) {
-        alert("Please attach an image to expand (Out-Painting).");
+        // Please attach an image to expand (Out-Painting).
+        // This validation is handled by the backend, so we just prevent submission
         return;
       }
     } else {
@@ -206,6 +209,7 @@ const InputArea: React.FC<InputAreaProps> = ({
       enableCodeExecution: controls.enableCodeExecution,
       enableUrlContext: controls.enableUrlContext,
       enableBrowser: controls.enableBrowser,
+      enableResearch: controls.enableResearch,
       googleCacheMode: controls.googleCacheMode,
       imageAspectRatio: controls.aspectRatio,
       imageResolution: controls.resolution,
@@ -221,19 +225,36 @@ const InputArea: React.FC<InputAreaProps> = ({
       pdfAdditionalInstructions: mode === 'pdf-extract' ? controls.pdfAdditionalInstructions.trim() : undefined,
       // Google Imagen Advanced Parameters
       guidanceScale: controls.guidanceScale,
-      personGeneration: controls.personGeneration,
       outputMimeType: controls.outputMimeType,
       outputCompressionQuality: controls.outputCompressionQuality,
       enhancePrompt: controls.enhancePrompt,
+      // Deep Research specific options
+      deepResearchConfig: mode === 'deep-research' ? {
+        thinkingSummaries: controls.thinkingSummaries,
+        researchMode: controls.researchMode  // ✅ 传递工作模式（vertex-ai 或 gemini-api）
+      } : undefined,
     }, processedAttachments, mode);
 
     setInput('');
     updateAttachments([]);
   };
 
-  const isGenMode = mode === 'image-gen' || mode === 'image-edit' || mode === 'video-gen' || mode === 'image-outpainting';
-  const isMissingImage = (mode === 'image-edit' || mode === 'image-outpainting') && attachments.length === 0 && !hasActiveContext;
-  const showLoraSettings = providerId === 'tongyi' && mode === 'image-edit';
+  const isGenMode = mode === 'image-gen' || 
+                    mode === 'image-chat-edit' || mode === 'image-mask-edit' || 
+                    mode === 'image-inpainting' || mode === 'image-background-edit' || 
+                    mode === 'image-recontext' ||
+                    mode === 'video-gen' || mode === 'image-outpainting';
+  const isMissingImage = (
+    mode === 'image-chat-edit' || mode === 'image-mask-edit' || 
+    mode === 'image-inpainting' || mode === 'image-background-edit' || 
+    mode === 'image-recontext' ||
+    mode === 'image-outpainting'
+  ) && attachments.length === 0 && !hasActiveContext;
+  const showLoraSettings = providerId === 'tongyi' && (
+    mode === 'image-chat-edit' || mode === 'image-mask-edit' || 
+    mode === 'image-inpainting' || mode === 'image-background-edit' || 
+    mode === 'image-recontext'
+  );
 
 
   return (
@@ -266,8 +287,18 @@ const InputArea: React.FC<InputAreaProps> = ({
             setEnableBrowser={controls.setEnableBrowser}
             enableRAG={controls.enableRAG}
             setEnableRAG={controls.setEnableRAG}
+            enableResearch={controls.enableResearch}
+            setEnableResearch={controls.setEnableResearch}
             googleCacheMode={controls.googleCacheMode}
             setGoogleCacheMode={controls.setGoogleCacheMode}
+            // Deep Research controls（只在 deep-research 模式下传递）
+            thinkingSummaries={mode === 'deep-research' ? controls.thinkingSummaries : 'none'}
+            setThinkingSummaries={mode === 'deep-research' ? controls.setThinkingSummaries : () => {}}
+            researchMode={mode === 'deep-research' ? controls.researchMode : 'vertex-ai'}
+            setResearchMode={mode === 'deep-research' ? controls.setResearchMode : () => {}}
+            // Multi-Agent controls（保留用于向后兼容，但 multi-agent 模式主要在工作流编辑器中管理）
+            enableMultiAgent={mode === 'multi-agent' ? true : (mode === 'deep-research' ? controls.enableMultiAgent : false)}
+            setEnableMultiAgent={mode === 'deep-research' ? controls.setEnableMultiAgent : () => {}}
             // Generation controls
             style={controls.style}
             setStyle={controls.setStyle}
@@ -286,8 +317,6 @@ const InputArea: React.FC<InputAreaProps> = ({
             setSeed={controls.setSeed}
             guidanceScale={controls.guidanceScale}
             setGuidanceScale={controls.setGuidanceScale}
-            personGeneration={controls.personGeneration}
-            setPersonGeneration={controls.setPersonGeneration}
             outputMimeType={controls.outputMimeType}
             setOutputMimeType={controls.setOutputMimeType}
             outputCompressionQuality={controls.outputCompressionQuality}

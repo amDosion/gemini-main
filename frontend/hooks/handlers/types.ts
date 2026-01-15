@@ -176,6 +176,10 @@ export interface HandlerResult {
   // 部分失败支持（修复问题6）
   readonly partialSuccess?: boolean;
   readonly failedOperations?: ReadonlyArray<FailedOperation>;
+  
+  // 思考过程和文本响应（用于图片编辑等场景）
+  readonly thoughts?: Array<{ type: 'text' | 'image'; content: string }>;
+  readonly textResponse?: string;
 }
 
 /**

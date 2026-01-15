@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sparkles, ArrowRight, Lock, ShieldCheck, Mail, User, ArrowLeft } from 'lucide-react';
 import { RegisterData } from '../../services/auth';
 
@@ -7,14 +7,27 @@ interface RegisterPageProps {
     onNavigateToLogin: () => void;
     isLoading?: boolean;
     error?: string | null;
+    allowRegistration?: boolean;
 }
 
 export const RegisterPage: React.FC<RegisterPageProps> = ({ 
     onRegister, 
     onNavigateToLogin,
     isLoading = false,
-    error = null
+    error = null,
+    allowRegistration = false
 }) => {
+    // ✅ 如果注册被禁用，重定向到登录页
+    useEffect(() => {
+        if (!allowRegistration) {
+            onNavigateToLogin();
+        }
+    }, [allowRegistration, onNavigateToLogin]);
+
+    // ✅ 如果注册被禁用，不渲染注册表单
+    if (!allowRegistration) {
+        return null;
+    }
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');

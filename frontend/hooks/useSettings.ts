@@ -112,11 +112,6 @@ export const useSettings = (
     // 2. fullSettings 为 null（首次加载）
     // 3. 尚未从 initialData 初始化过
     if (initialData && !fullSettings && !isInitializedFromDataRef.current) {
-      console.log('[useSettings] 初始化 fullSettings 从 initialData:', {
-        profilesCount: initialData.profiles.length,
-        activeProfileId: initialData.activeProfileId,
-        timestamp: new Date().toISOString()
-      });
       setFullSettings({
         profiles: initialData.profiles,
         activeProfileId: initialData.activeProfileId,
@@ -131,21 +126,6 @@ export const useSettings = (
   const profiles = useMemo(() => fullSettings?.profiles || [], [fullSettings?.profiles]);
   const activeProfileId = fullSettings?.activeProfileId || null;
 
-  // 调试日志：检查 fullSettings 和 profiles
-  useEffect(() => {
-    if (process.env.NODE_ENV === 'development') {
-      const stateInfo = {
-        hasFullSettings: !!fullSettings,
-        profilesCount: profiles.length,
-        activeProfileId,
-        fullSettingsProfilesCount: fullSettings?.profiles?.length || 0,
-        hasInitialData: !!initialData,
-        initialDataProfilesCount: initialData?.profiles?.length || 0,
-        timestamp: new Date().toISOString()
-      };
-      console.log('[useSettings] State check:', JSON.stringify(stateInfo, null, 2));
-    }
-  }, [fullSettings, profiles, activeProfileId, initialData]);
   
   // ✅ 修复：如果 activeProfile 为 null 但 activeProfileId 存在，从 profiles 中查找
   const activeProfile = useMemo(() => {
@@ -156,10 +136,7 @@ export const useSettings = (
     if (activeProfileId && profiles.length > 0) {
       const found = profiles.find(p => p.id === activeProfileId);
       if (found) {
-        console.log('[useSettings] 从 profiles 中找到 activeProfile:', found.id);
         return found;
-      } else {
-        console.warn('[useSettings] activeProfileId 存在但找不到对应的 profile:', activeProfileId);
       }
     }
     return null;
@@ -315,14 +292,6 @@ export const useSettings = (
       return;
     }
 
-    console.log('[useSettings] 开始切换提供商:', {
-      from: previousActiveProfileId?.substring(0, 8) + '...',
-      to: id.substring(0, 8) + '...',
-      fromName: previousActiveProfile?.name,
-      toName: newActiveProfile.name,
-      timestamp: new Date().toISOString()
-    });
-
     // Layer 1 - Fast Response: Optimistically update state for quick UI response
     setFullSettings(prev => {
       if (!prev) return prev;
@@ -356,11 +325,6 @@ export const useSettings = (
     try {
       // Layer 2 - Backend Update: Persist the active profile change
       await configService.setActiveProfileId(id);
-      
-      console.log('[useSettings] ✅ 后端更新成功:', {
-        activeProfileId: id.substring(0, 8) + '...',
-        timestamp: new Date().toISOString()
-      });
 
       // ✅ 修复：通知其他标签页同步状态
       notifyOtherTabs();

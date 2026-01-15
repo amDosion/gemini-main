@@ -18,21 +18,23 @@ import subprocess
 import sys
 import atexit
 import platform
+import signal
+from pathlib import Path
 
 # Import logger and progress tracker
 try:
     from .core.logger import setup_logger, LOG_PREFIXES
-    from .services.progress_tracker import progress_tracker
+    from .services.common.progress_tracker import progress_tracker
     logger = setup_logger("main")
 except ImportError:
     try:
         from core.logger import setup_logger, LOG_PREFIXES
-        from services.progress_tracker import progress_tracker
+        from services.common.progress_tracker import progress_tracker
         logger = setup_logger("main")
     except ImportError:
         # 从项目根目录启动时的导入路径
         from backend.app.core.logger import setup_logger, LOG_PREFIXES
-        from backend.app.services.progress_tracker import progress_tracker
+        from backend.app.services.common.progress_tracker import progress_tracker
         logger = setup_logger("main")
 
 # ============================================================================
@@ -106,17 +108,17 @@ except ImportError:
 # Embedding service module import
 try:
     # Try relative import first (when run as module: python -m backend.app.main)
-    from .services.embedding_service import rag_service
+    from .services.common.embedding_service import rag_service
     EMBEDDING_AVAILABLE = True
 except ImportError:
     try:
         # Fall back to absolute import (when run directly: python main.py)
-        from services.embedding_service import rag_service
+        from services.common.embedding_service import rag_service
         EMBEDDING_AVAILABLE = True
     except ImportError:
         try:
             # 从项目根目录启动时的导入路径
-            from backend.app.services.embedding_service import rag_service
+            from backend.app.services.common.embedding_service import rag_service
             EMBEDDING_AVAILABLE = True
         except ImportError as e:
             logger.warning(f"{LOG_PREFIXES['warning']} Could not import embedding service: {e}")
@@ -154,85 +156,41 @@ except ImportError:
 except Exception as e:
     logger.warning(f"{LOG_PREFIXES['warning']} Database initialization failed: {e}")
 
-# Import API routers
+# Import router registry (统一路由注册)
 try:
-    from .routers import health, storage, browse, pdf, embedding, dashscope_proxy, research, research_stream, metrics, interactions, file_search
-    from .routers import tongyi_chat, tongyi_models
-    from .routers import google_chat
-    from .routers import ollama_models
-    from .routers import providers
-    from .routers import models
-    from .routers import chat
-    from .routers import generate
-    from .routers.profiles import router as profiles_router
-    from .routers.sessions import router as sessions_router
-    from .routers.personas import router as personas_router
-    from .routers.image_expand import router as image_expand_router
-    from .routers.tryon import router as tryon_router
-    from .routers.image_edit import router as image_edit_router
-    from .routers.init import router as init_router
-    from .routers.imagen_config import router as imagen_config_router
-    API_ROUTES_AVAILABLE = True
-    logger.info(f"{LOG_PREFIXES['info']} API routes imported via relative import")
+    from .routers.registry import register_routers, register_service_dependencies
+    ROUTER_REGISTRY_AVAILABLE = True
+    logger.info(f"{LOG_PREFIXES['info']} Router registry imported via relative import")
 except ImportError:
     try:
-        from routers import health, storage, browse, pdf, embedding, dashscope_proxy, research, research_stream, metrics, interactions, file_search
-        from routers import tongyi_chat, tongyi_models
-        from routers import google_chat
-        from routers import ollama_models
-        from routers import providers
-        from routers import models
-        from routers import chat
-        from routers import generate
-        from routers.profiles import router as profiles_router
-        from routers.sessions import router as sessions_router
-        from routers.personas import router as personas_router
-        from routers.image_expand import router as image_expand_router
-        from routers.tryon import router as tryon_router
-        from routers.image_edit import router as image_edit_router
-        from routers.init import router as init_router
-        from routers.imagen_config import router as imagen_config_router
-        API_ROUTES_AVAILABLE = True
-        logger.info(f"{LOG_PREFIXES['info']} API routes imported via absolute import (routers)")
+        from routers.registry import register_routers, register_service_dependencies
+        ROUTER_REGISTRY_AVAILABLE = True
+        logger.info(f"{LOG_PREFIXES['info']} Router registry imported via absolute import (routers)")
     except ImportError:
         try:
-            # 从项目根目录启动时的导入路径
-            from backend.app.routers import health, storage, browse, pdf, embedding, dashscope_proxy, research, research_stream, metrics, interactions, file_search
-            from backend.app.routers import tongyi_chat, tongyi_models
-            from backend.app.routers import google_chat
-            from backend.app.routers import ollama_models
-            from backend.app.routers import providers
-            from backend.app.routers import models
-            from backend.app.routers import chat
-            from backend.app.routers import generate
-            from backend.app.routers.profiles import router as profiles_router
-            from backend.app.routers.sessions import router as sessions_router
-            from backend.app.routers.personas import router as personas_router
-            from backend.app.routers.image_expand import router as image_expand_router
-            from backend.app.routers.tryon import router as tryon_router
-            from backend.app.routers.image_edit import router as image_edit_router
-            from backend.app.routers.init import router as init_router
-            from backend.app.routers.imagen_config import router as imagen_config_router
-            API_ROUTES_AVAILABLE = True
-            logger.info(f"{LOG_PREFIXES['info']} API routes imported via backend.app.routers")
+            from backend.app.routers.registry import register_routers, register_service_dependencies
+            ROUTER_REGISTRY_AVAILABLE = True
+            logger.info(f"{LOG_PREFIXES['info']} Router registry imported via backend.app.routers")
         except ImportError as e:
-            logger.warning(f"{LOG_PREFIXES['warning']} Could not import API routes module: {e}")
-            API_ROUTES_AVAILABLE = False
+            logger.error(f"{LOG_PREFIXES['error']} Could not import router registry: {e}", exc_info=True)
+            import traceback
+            logger.error(f"{LOG_PREFIXES['error']} Import traceback:\n{traceback.format_exc()}")
+            ROUTER_REGISTRY_AVAILABLE = False
 
 # Import upload worker pool
 try:
-    from .services.upload_worker_pool import worker_pool
+    from .services.common.upload_worker_pool import worker_pool
     WORKER_POOL_AVAILABLE = True
     logger.info(f"{LOG_PREFIXES['info']} Worker pool imported via relative import")
 except ImportError:
     try:
-        from services.upload_worker_pool import worker_pool
+        from services.common.upload_worker_pool import worker_pool
         WORKER_POOL_AVAILABLE = True
         logger.info(f"{LOG_PREFIXES['info']} Worker pool imported via absolute import (services)")
     except ImportError:
         try:
             # 从项目根目录启动时的导入路径
-            from backend.app.services.upload_worker_pool import worker_pool
+            from backend.app.services.common.upload_worker_pool import worker_pool
             WORKER_POOL_AVAILABLE = True
             logger.info(f"{LOG_PREFIXES['info']} Worker pool imported via backend.app.services")
         except ImportError as e:
@@ -256,12 +214,218 @@ async def lifespan(app: FastAPI):
     - 优雅停止 Worker 池（等待当前任务完成）
     """
     supervisor_task: asyncio.Task | None = None
+    cleanup_task: asyncio.Task | None = None
+    key_service_process: subprocess.Popen | None = None
 
     # Startup
+    # ✅ 自动启动 Key Service（方案 D：Client 进程 + Key Service）
+    # 如果启动失败，会自动回退到文件存储（向后兼容）
+    try:
+        import os
+        # 检查是否应该启动 Key Service（可通过环境变量控制）
+        auto_start_key_service = os.getenv('AUTO_START_KEY_SERVICE', 'true').lower() == 'true'
+        
+        if auto_start_key_service:
+            # 启动 Key Service 子进程
+            try:
+                # 获取 Python 解释器路径
+                python_exe = sys.executable
+                
+                # 计算项目根目录
+                # 从 backend/app/main.py 向上查找项目根目录
+                current_file = Path(__file__).resolve()
+                
+                # 尝试从 backend/app/main.py 向上 2 级（项目根目录）
+                project_root = current_file.parents[2]  # backend/app/main.py -> 项目根目录
+                key_service_path = project_root / 'backend' / 'services' / 'key_service' / 'main.py'
+                
+                # 如果不存在，尝试从 backend 目录的父目录（兼容 uvicorn app.main:app 方式）
+                if not key_service_path.exists():
+                    backend_dir = current_file.parents[1]  # backend/app/main.py -> backend/app -> backend
+                    project_root = backend_dir.parent  # backend -> 项目根目录
+                    key_service_path = project_root / 'backend' / 'services' / 'key_service' / 'main.py'
+                
+                if not key_service_path.exists():
+                    logger.warning(f"{LOG_PREFIXES['warning']} Key Service 模块未找到: {key_service_path}，将使用文件存储")
+                    key_service_process = None
+                else:
+                    key_service_module = 'backend.services.key_service.main'
+                    
+                    # 设置环境变量，确保 Python 能找到 backend 模块
+                    env = os.environ.copy()
+                    # 将项目根目录添加到 PYTHONPATH
+                    pythonpath = env.get('PYTHONPATH', '')
+                    if pythonpath:
+                        pythonpath = f"{project_root}{os.pathsep}{pythonpath}"
+                    else:
+                        pythonpath = str(project_root)
+                    env['PYTHONPATH'] = pythonpath
+                    
+                    logger.debug(f"[KeyService] 项目根目录: {project_root}")
+                    logger.debug(f"[KeyService] PYTHONPATH: {pythonpath}")
+                    logger.debug(f"[KeyService] Key Service 路径: {key_service_path}")
+                    
+                    # 启动 Key Service 子进程
+                    key_service_process = subprocess.Popen(
+                        [python_exe, '-m', key_service_module],
+                        cwd=str(project_root),
+                        env=env,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == 'Windows' else 0
+                    )
+                
+                # 等待 Key Service 启动（最多等待 3 秒）
+                if key_service_process:
+                    import time
+                    max_wait = 3.0
+                    wait_interval = 0.1
+                    waited = 0.0
+                    
+                    while waited < max_wait:
+                        if key_service_process.poll() is not None:
+                            # 进程已退出，启动失败
+                            stderr_output = key_service_process.stderr.read().decode('utf-8', errors='ignore') if key_service_process.stderr else ''
+                            logger.warning(
+                                f"{LOG_PREFIXES['warning']} Key Service 启动失败，将使用文件存储: {stderr_output[:200]}"
+                            )
+                            key_service_process = None
+                            break
+                    
+                        # 检查 Key Service 是否已就绪（检查 Socket 文件或端口文件）
+                        from .core.key_service_client import KEY_SERVICE_CLIENT_SOCKET
+                        import platform as plat
+                        
+                        is_ready = False
+                        if plat.system() == 'Windows':
+                            port_file = KEY_SERVICE_CLIENT_SOCKET.parent / "gemini_key_service_client.port"
+                            if port_file.exists():
+                                is_ready = True
+                        else:
+                            if KEY_SERVICE_CLIENT_SOCKET.exists():
+                                is_ready = True
+                        
+                        if is_ready:
+                            logger.info(f"{LOG_PREFIXES['success']} Key Service 已自动启动（进程 ID: {key_service_process.pid}）")
+                            break
+                        
+                        time.sleep(wait_interval)
+                        waited += wait_interval
+                    
+                    if waited >= max_wait and key_service_process and key_service_process.poll() is None:
+                        # 超时但进程仍在运行，假设启动成功（可能启动较慢）
+                        logger.info(f"{LOG_PREFIXES['info']} Key Service 正在启动（进程 ID: {key_service_process.pid}），稍后会自动连接...")
+                
+            except Exception as e:
+                logger.warning(f"{LOG_PREFIXES['warning']} 无法自动启动 Key Service，将使用文件存储: {e}")
+                if key_service_process:
+                    try:
+                        key_service_process.terminate()
+                        key_service_process.wait(timeout=2)
+                    except:
+                        pass
+                key_service_process = None
+        
+        # 初始化 Key Service Client（尝试连接 Key Service 或回退到文件存储）
+        try:
+            from .core.key_service_client import initialize_key_service_client
+            client_token = os.getenv('KEY_SERVICE_CLIENT_TOKEN', 'default_token_change_me')
+            initialize_key_service_client(client_token)
+            # 日志已在 initialize_key_service_client 中输出
+        except Exception as e:
+            logger.warning(f"{LOG_PREFIXES['warning']} Key Service Client initialization failed (will use file storage): {e}")
+            
+    except Exception as e:
+        logger.warning(f"{LOG_PREFIXES['warning']} Key Service 自动启动失败，将使用文件存储: {e}")
+        if key_service_process:
+            try:
+                key_service_process.terminate()
+            except:
+                pass
+        key_service_process = None
+    
+    # ✅ 初始化系统配置
+    try:
+        from .core.database import SessionLocal
+        from .services.common.system_config_service import initialize_system_configs
+        db = SessionLocal()
+        try:
+            initialize_system_configs(db)
+            logger.info(f"{LOG_PREFIXES['success']} System configuration initialized")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"{LOG_PREFIXES['warning']} Failed to initialize system config: {e}")
+    
+    # ✅ 启动时清理过期的 refresh_tokens
+    try:
+        from .core.database import SessionLocal
+        from .models.db_models import RefreshToken
+        from datetime import datetime, timezone, timedelta
+        db = SessionLocal()
+        try:
+            now = datetime.now(timezone.utc)
+            # 删除已过期或已撤销超过 7 天的记录
+            cleanup_threshold = now - timedelta(days=7)
+            deleted_count = db.query(RefreshToken).filter(
+                (RefreshToken.expires_at < now) |
+                (
+                    (RefreshToken.revoked_at.isnot(None)) &
+                    (RefreshToken.revoked_at < cleanup_threshold)
+                )
+            ).delete()
+            db.commit()
+            if deleted_count > 0:
+                logger.info(f"{LOG_PREFIXES['success']} Cleaned up {deleted_count} expired/revoked refresh tokens on startup")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"{LOG_PREFIXES['warning']} Failed to cleanup refresh tokens: {e}")
+    
+    # ✅ 启动定期清理任务（每 24 小时清理一次）
+    async def _periodic_cleanup_tokens():
+        """定期清理过期的 refresh_tokens"""
+        # 首次等待 1 小时后再开始清理（避免启动时立即执行）
+        await asyncio.sleep(60 * 60)  # 1 小时
+        
+        while True:
+            try:
+                from .core.database import SessionLocal
+                from .models.db_models import RefreshToken
+                from datetime import datetime, timezone, timedelta
+                db = SessionLocal()
+                try:
+                    now = datetime.now(timezone.utc)
+                    cleanup_threshold = now - timedelta(days=7)
+                    deleted_count = db.query(RefreshToken).filter(
+                        (RefreshToken.expires_at < now) |
+                        (
+                            (RefreshToken.revoked_at.isnot(None)) &
+                            (RefreshToken.revoked_at < cleanup_threshold)
+                        )
+                    ).delete()
+                    db.commit()
+                    if deleted_count > 0:
+                        logger.info(f"{LOG_PREFIXES['info']} Periodic cleanup: removed {deleted_count} expired/revoked refresh tokens")
+                finally:
+                    db.close()
+                
+                # 等待 24 小时后再次清理
+                await asyncio.sleep(24 * 60 * 60)  # 24 小时
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"{LOG_PREFIXES['error']} Periodic token cleanup failed: {e}")
+                # 出错后等待 1 小时再重试
+                await asyncio.sleep(60 * 60)
+    
+    # 启动后台清理任务
+    cleanup_task = asyncio.create_task(_periodic_cleanup_tokens())
+    logger.info(f"{LOG_PREFIXES['success']} Periodic refresh token cleanup task started")
     # Validate provider configurations
     logger.info(f"{LOG_PREFIXES['info']} Validating provider configurations...")
     try:
-        from .services.provider_config import ProviderConfig
+        from .services.common.provider_config import ProviderConfig
         validation_results = ProviderConfig.validate_all_configs()
         invalid_providers = [p for p, valid in validation_results.items() if not valid]
         if invalid_providers:
@@ -336,12 +500,80 @@ async def lifespan(app: FastAPI):
 
         supervisor_task = asyncio.create_task(_worker_pool_supervisor())
 
+    # Browser session cleanup background task
+    browser_cleanup_task: asyncio.Task | None = None
+    if SELENIUM_AVAILABLE:
+        async def _browser_session_cleanup():
+            """Periodically clean up idle browser sessions"""
+            while True:
+                try:
+                    await asyncio.sleep(60.0)  # Check every minute
+                    from .services.gemini.browser import cleanup_idle_sessions
+                    cleanup_idle_sessions()
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.error(f"{LOG_PREFIXES['error']} Browser session cleanup error: {e}")
+
+        browser_cleanup_task = asyncio.create_task(_browser_session_cleanup())
+        logger.info(f"{LOG_PREFIXES['info']} Browser session cleanup task started")
+
+    # 将 key_service_process 保存到 app.state，以便在 shutdown 时访问
+    app.state.key_service_process = key_service_process
+
     yield
 
     # Shutdown
+    # 从 app.state 获取 key_service_process
+    key_service_process = getattr(app.state, 'key_service_process', None)
+    # ✅ 停止定期清理任务
+    if cleanup_task:
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
+    
+    if browser_cleanup_task:
+        browser_cleanup_task.cancel()
+        await asyncio.gather(browser_cleanup_task, return_exceptions=True)
+
+    # Close all browser sessions
+    if SELENIUM_AVAILABLE:
+        try:
+            from .services.gemini.browser import close_all_drivers
+            close_all_drivers()
+            logger.info(f"{LOG_PREFIXES['success']} All browser sessions closed on shutdown")
+        except Exception as e:
+            logger.error(f"{LOG_PREFIXES['error']} Error closing browser sessions: {e}")
+
     if supervisor_task:
         supervisor_task.cancel()
         await asyncio.gather(supervisor_task, return_exceptions=True)
+
+    # ✅ 停止 Key Service 子进程（如果已启动）
+    if key_service_process:
+        logger.info(f"{LOG_PREFIXES['info']} 正在停止 Key Service（进程 ID: {key_service_process.pid}）...")
+        try:
+            if platform.system() == 'Windows':
+                # Windows 使用 terminate
+                key_service_process.terminate()
+            else:
+                # Unix/Linux 发送 SIGTERM
+                key_service_process.send_signal(signal.SIGTERM)
+            
+            # 等待进程结束（最多等待 5 秒）
+            try:
+                key_service_process.wait(timeout=5)
+                logger.info(f"{LOG_PREFIXES['success']} Key Service 已停止")
+            except subprocess.TimeoutExpired:
+                # 超时，强制终止
+                logger.warning(f"{LOG_PREFIXES['warning']} Key Service 未在 5 秒内停止，强制终止...")
+                key_service_process.kill()
+                key_service_process.wait()
+                logger.info(f"{LOG_PREFIXES['success']} Key Service 已强制停止")
+        except Exception as e:
+            logger.error(f"{LOG_PREFIXES['error']} 停止 Key Service 时出错: {e}")
 
     if WORKER_POOL_AVAILABLE:
         logger.info(f"{LOG_PREFIXES['info']} Stopping upload worker pool...")
@@ -375,98 +607,46 @@ except ImportError:
             AUTH_ROUTER_AVAILABLE = False
             logger.warning(f"{LOG_PREFIXES['warning']} Auth router not available")
 
-# Register API routes
-if API_ROUTES_AVAILABLE:
-    app.include_router(health.router)
-    app.include_router(storage.router)
-    app.include_router(browse.router)
-    app.include_router(pdf.router)
-    app.include_router(embedding.router)
-    app.include_router(dashscope_proxy.router)
-    app.include_router(profiles_router)
-    app.include_router(sessions_router)
-    app.include_router(personas_router)
-    app.include_router(init_router)
-    app.include_router(image_expand_router)
-    app.include_router(tryon_router)
-    app.include_router(image_edit_router)
-    app.include_router(research.router)
-    app.include_router(research_stream.router)
-    app.include_router(file_search.router)
-    app.include_router(metrics.router)
-    app.include_router(interactions.router)
-    # 通义千问后端 API 路由
-    app.include_router(tongyi_chat.router)
-    app.include_router(tongyi_models.router)
-    # Google (Gemini) 后端 API 路由（必须在通用 chat 路由之前注册）
-    app.include_router(google_chat.router)
-    # Ollama 模型管理路由
-    app.include_router(ollama_models.router)
-    # Provider 配置 API 路由
-    app.include_router(providers.router)
-    # Models API 路由
-    app.include_router(models.router)
-    # Chat API 路由（通用路由，放在最后）
-    app.include_router(chat.router)
-    # Generate API 路由 (图像/视频/语音生成)
-    app.include_router(generate.router)
-    # Imagen Configuration API 路由
-    app.include_router(imagen_config_router)
-    logger.info(f"{LOG_PREFIXES['info']} API routes registered (health, storage, browse, pdf, embedding, profiles, sessions, personas, init, image_expand, tryon, image_edit, dashscope_proxy, research, research_stream, file_search, metrics, interactions, tongyi_chat, tongyi_models, google_chat, ollama_models, providers, models, chat, generate, imagen_config)")
-
-    # Set service availability flags for health check endpoint
-    health.set_availability(
-        selenium=SELENIUM_AVAILABLE,
-        pdf=PDF_EXTRACTION_AVAILABLE,
-        embedding=EMBEDDING_AVAILABLE,
-        worker_pool=WORKER_POOL_AVAILABLE
-    )
-    logger.info(f"{LOG_PREFIXES['info']} Service availability flags updated for health endpoint")
-    
-    # Set browser service references for browse router
+# Register all API routes (统一注册)
+if ROUTER_REGISTRY_AVAILABLE:
     try:
-        from .services.gemini.browser import web_search
-    except ImportError:
+        register_routers(app)
+        
+        # Register service dependencies (设置路由所需的外部服务引用)
+        # 获取 web_search 函数
         try:
-            from services.gemini.browser import web_search
+            from .services.gemini.browser import web_search
         except ImportError:
             try:
-                from backend.app.services.gemini.browser import web_search
+                from services.gemini.browser import web_search
             except ImportError:
-                web_search = None
-    
-    browse.set_browser_service(
-        browse_func=selenium_browse if SELENIUM_AVAILABLE else None,
-        read_func=read_webpage if SELENIUM_AVAILABLE else None,
-        search_func=web_search,
-        available=SELENIUM_AVAILABLE,
-        progress_tracker=progress_tracker,
-        logger=logger,
-        log_prefixes=LOG_PREFIXES
-    )
-    logger.info(f"{LOG_PREFIXES['info']} Browser service references set for browse router")
-    
-    # Set PDF service references for pdf router
-    pdf.set_pdf_service(
-        extract_func=extract_structured_data_from_pdf if PDF_EXTRACTION_AVAILABLE else None,
-        templates_func=get_available_templates if PDF_EXTRACTION_AVAILABLE else None,
-        available=PDF_EXTRACTION_AVAILABLE
-    )
-    logger.info(f"{LOG_PREFIXES['info']} PDF service references set for pdf router")
-    
-    # Set embedding service references for embedding router
-    embedding.set_embedding_service(
-        service=rag_service if EMBEDDING_AVAILABLE else None,
-        available=EMBEDDING_AVAILABLE
-    )
-    logger.info(f"{LOG_PREFIXES['info']} Embedding service references set for embedding router")
-
-# Register auth router
-if AUTH_ROUTER_AVAILABLE:
-    app.include_router(auth_router)
-    logger.info(f"{LOG_PREFIXES['info']} Auth router registered")
+                try:
+                    from backend.app.services.gemini.browser import web_search
+                except ImportError:
+                    web_search = None
+        
+        register_service_dependencies(
+            app=app,
+            selenium_available=SELENIUM_AVAILABLE,
+            pdf_extraction_available=PDF_EXTRACTION_AVAILABLE,
+            embedding_available=EMBEDDING_AVAILABLE,
+            worker_pool_available=WORKER_POOL_AVAILABLE,
+            selenium_browse=selenium_browse if SELENIUM_AVAILABLE else None,
+            read_webpage=read_webpage if SELENIUM_AVAILABLE else None,
+            web_search=web_search,
+            progress_tracker=progress_tracker,
+            extract_structured_data_from_pdf=extract_structured_data_from_pdf if PDF_EXTRACTION_AVAILABLE else None,
+            get_available_templates=get_available_templates if PDF_EXTRACTION_AVAILABLE else None,
+            rag_service=rag_service if EMBEDDING_AVAILABLE else None,
+            logger_instance=logger,
+            log_prefixes=LOG_PREFIXES
+        )
+    except Exception as e:
+        logger.error(f"{LOG_PREFIXES['error']} Failed to register routes: {e}", exc_info=True)
+        import traceback
+        logger.error(f"{LOG_PREFIXES['error']} Registration traceback:\n{traceback.format_exc()}")
 else:
-    logger.warning(f"{LOG_PREFIXES['warning']} Auth router not available")
+    logger.error(f"{LOG_PREFIXES['error']} Router registry not available, routes will not be registered!")
 
 # Log module availability on startup
 logger.info("=" * 60)
@@ -476,8 +656,7 @@ logger.info(f"Selenium Available: {'[YES]' if SELENIUM_AVAILABLE else '[NO]'}")
 logger.info(f"PDF Extraction Available: {'[YES]' if PDF_EXTRACTION_AVAILABLE else '[NO]'}")
 logger.info(f"Embedding Service Available: {'[YES]' if EMBEDDING_AVAILABLE else '[NO]'}")
 logger.info(f"Upload Worker Pool Available: {'[YES]' if WORKER_POOL_AVAILABLE else '[NO]'}")
-logger.info(f"API Routes Available: {'[YES]' if API_ROUTES_AVAILABLE else '[NO]'}")
-logger.info(f"Auth Router Available: {'[YES]' if AUTH_ROUTER_AVAILABLE else '[NO]'}")
+logger.info(f"Router Registry Available: {'[YES]' if ROUTER_REGISTRY_AVAILABLE else '[NO]'}")
 logger.info("=" * 60)
 
 # Configure CORS

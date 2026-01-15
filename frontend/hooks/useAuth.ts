@@ -23,16 +23,17 @@ export function useAuth(): UseAuthReturn {
   const [error, setError] = useState<string | null>(null);
   const [allowRegistration, setAllowRegistration] = useState(false);
 
-  // 初始化：只在有 token 时才获取用户信息
+  // 初始化：尝试刷新 token 而不是直接清除
   useEffect(() => {
     const init = async () => {
       setIsLoading(true);
       try {
-        // ✅ 修复：只在有 token 时才获取用户信息和配置
         const token = localStorage.getItem('access_token');
+        const refreshToken = localStorage.getItem('refresh_token');
+        
         if (token) {
-          // 有 token，获取用户信息和配置
           try {
+            // 尝试获取用户信息
             const [currentUser, config] = await Promise.all([
               authService.getCurrentUser(),
               authService.getConfig().catch(() => ({ allowRegistration: false }))
@@ -40,24 +41,42 @@ export function useAuth(): UseAuthReturn {
             setUser(currentUser);
             setAllowRegistration(config.allowRegistration);
           } catch (err) {
-            // Token 可能已过期，清除 token
-            console.warn('Auth token invalid, clearing:', err);
+            console.warn('Auth token invalid, attempting refresh:', err);
+            
+            // ✅ 新增：如果有 refresh_token，尝试刷新
+            if (refreshToken) {
+              try {
+                const refreshed = await authService.refreshToken();
+                if (refreshed) {
+                  // 刷新成功，重新获取用户信息
+                  const [currentUser, config] = await Promise.all([
+                    authService.getCurrentUser(),
+                    authService.getConfig().catch(() => ({ allowRegistration: false }))
+                  ]);
+                  setUser(currentUser);
+                  setAllowRegistration(config.allowRegistration);
+                  return; // 成功，退出
+                }
+              } catch (refreshErr) {
+                console.warn('[useAuth] Refresh failed on init:', refreshErr);
+              }
+            }
+            
+            // 刷新失败或没有 refresh_token，清除所有 tokens
             localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
             setUser(null);
-            // 获取配置（不需要认证）
-        const config = await authService.getConfig().catch(() => ({ allowRegistration: false }));
-        setAllowRegistration(config.allowRegistration);
+            const config = await authService.getConfig().catch(() => ({ allowRegistration: false }));
+            setAllowRegistration(config.allowRegistration);
           }
         } else {
           // 没有 token，设置为未登录状态
-          // ✅ 修复：未登录时也获取配置（用于显示注册按钮）
           const config = await authService.getConfig().catch(() => ({ allowRegistration: false }));
           setAllowRegistration(config.allowRegistration);
           setUser(null);
         }
       } catch (err) {
         console.error('Auth init error:', err);
-        // 即使出错也设置为未登录状态
         setUser(null);
       } finally {
         setIsLoading(false);
@@ -65,6 +84,36 @@ export function useAuth(): UseAuthReturn {
     };
     init();
   }, []);
+
+  // ✅ 新增：自动刷新 Token（静默刷新）
+  useEffect(() => {
+    if (!user) return;
+
+    // ✅ 使用服务端返回的 expires_in，提前 2 小时刷新（更安全）
+    // 24 小时 - 2 小时 = 22 小时后刷新
+    const refreshInterval = 22 * 60 * 60 * 1000; // 22 小时（毫秒）
+    
+    const timer = setInterval(async () => {
+      try {
+        const success = await authService.refreshToken();
+        if (!success) {
+          console.warn('[useAuth] Token 刷新失败，需要重新登录');
+          setUser(null);
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+        }
+      } catch (error) {
+        console.error('[useAuth] Token 刷新异常:', error);
+        setUser(null);
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+      }
+    }, refreshInterval);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [user]);
 
 
   // 注册

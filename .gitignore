@@ -14,6 +14,17 @@ backend/.env
 .env.*
 !.env.example
 
+# JWT Secret Key files (安全文件，存储在 backend/credentials 目录，不应提交到版本控制)
+.jwt_secret
+.jwt_secret.enc
+backend/.jwt_secret
+backend/.jwt_secret.enc
+backend/credentials/.jwt_secret
+backend/credentials/.jwt_secret.enc
+
+# ENCRYPTION_KEY files (主密钥文件，存储在 backend/credentials 目录，不应提交到版本控制)
+backend/credentials/.encryption_key
+
 # Google Cloud 服务账号密钥
 backend/credentials/
 *.json

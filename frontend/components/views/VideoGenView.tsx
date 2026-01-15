@@ -164,9 +164,23 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
     // ✅ 使用 useMemo 缓存 mainContent，防止不必要的重新渲染
     const mainContent = useMemo(() => (
         /* Main Content (Stage) */
-        <div className="flex-1 flex flex-col items-center justify-center p-8 overflow-hidden bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-slate-950 relative">
-            {/* Stage Header */}
-            <div className="absolute top-4 left-4 z-10">
+        <div className="flex-1 flex flex-col items-center justify-center p-8 overflow-hidden bg-slate-950 relative">
+            {/* 棋盘格背景 - 与其他视图保持一致 */}
+            <div
+                className="absolute inset-0 opacity-20 pointer-events-none"
+                style={{
+                    backgroundImage: `
+                        linear-gradient(45deg, #334155 25%, transparent 25%), 
+                        linear-gradient(-45deg, #334155 25%, transparent 25%), 
+                        linear-gradient(45deg, transparent 75%, #334155 75%), 
+                        linear-gradient(-45deg, transparent 75%, #334155 75%)
+                    `,
+                    backgroundSize: '20px 20px',
+                    backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
+                }}
+            />
+            {/* Canvas Header */}
+            <div className="absolute top-4 left-4 z-10 pointer-events-none">
                 <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-4 py-1.5 text-xs font-medium text-slate-300 flex items-center gap-2 shadow-lg">
                     <Film size={12} className="text-indigo-400" />
                     Video Workspace
@@ -174,7 +188,7 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
             </div>
 
             {loadingState !== 'idle' ? (
-                <div className="flex flex-col items-center gap-6 p-8 rounded-3xl bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 shadow-2xl">
+                <div className="flex flex-col items-center gap-6 p-8 rounded-3xl bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 shadow-2xl relative z-10">
                     <div className="relative">
                         <div className="w-24 h-24 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin"></div>
                         <div className="absolute inset-0 flex items-center justify-center text-sm font-mono text-indigo-400 font-bold tracking-widest">VEO</div>
@@ -185,7 +199,7 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
                     </div>
                 </div>
             ) : activeVideoUrl ? (
-                <div className="relative max-w-full max-h-full shadow-2xl group rounded-xl overflow-hidden bg-black ring-1 ring-white/10 flex items-center justify-center">
+                <div className="relative max-w-full max-h-full shadow-2xl group rounded-xl overflow-hidden bg-black ring-1 ring-white/10 flex items-center justify-center z-10">
                     <video
                         src={activeVideoUrl}
                         controls
@@ -214,7 +228,7 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
                     </div>
                 </div>
             ) : (
-                <div className="text-center text-slate-600 flex flex-col items-center gap-6">
+                <div className="text-center text-slate-600 flex flex-col items-center gap-6 relative z-10">
                     <div className="w-32 h-32 rounded-3xl bg-slate-900 border border-slate-800 flex items-center justify-center shadow-inner relative overflow-hidden group">
                         <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                         <VideoIcon size={64} className="opacity-20 group-hover:scale-110 transition-transform duration-500" />
@@ -250,9 +264,9 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
             setIsMobileHistoryOpen={setIsMobileHistoryOpen}
             sidebarTitle="History"
             sidebarHeaderIcon={<Clock size={14} />}
-            sidebarContent={sidebarContent}
-            mainContent={mainContent}
-            bottomContent={bottomContent}
+            sidebar={sidebarContent}
+            main={mainContent}
+            bottom={bottomContent}
         />
     );
 };

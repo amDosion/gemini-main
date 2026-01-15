@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Plus, MessageSquare, X, Settings, Wand2, Crop, Expand, Video, Mic, Trash2, Edit2, Check, UserCircle2, LogOut } from 'lucide-react';
+import { Plus, MessageSquare, X, Settings, Wand2, Crop, Expand, Video, Mic, Trash2, Edit2, Check, ChevronRight, FileText, Shirt, Search, Network } from 'lucide-react';
 import { ChatSession, AppMode } from '../../types/types';
 import { CacheIndicator } from '../common/CacheIndicator';
 import { CacheStatusInfo } from '../../hooks/useCacheStatus';
@@ -16,9 +16,6 @@ interface SidebarProps {
   onDeleteSession?: (id: string) => void;
   onUpdateSessionTitle?: (id: string, newTitle: string) => void;
   onOpenSettings: () => void;
-  onLogout?: () => void;
-  isRightSidebarOpen: boolean;
-  setIsRightSidebarOpen: (v: boolean) => void;
   // 缓存相关（可选）
   cacheStatus?: CacheStatusInfo;
   onRefreshSessions?: () => void;
@@ -26,13 +23,32 @@ interface SidebarProps {
 
 const getModeIcon = (mode?: AppMode) => {
   switch (mode) {
-    case 'image-gen': return Wand2;
-    case 'image-edit': return Crop;
-    case 'image-outpainting': return Expand;
-    case 'video-gen': return Video;
-    case 'audio-gen': return Mic;
     case 'chat':
-    default: return MessageSquare;
+      return MessageSquare;
+    case 'image-gen':
+      return Wand2;
+    case 'image-chat-edit':
+    case 'image-mask-edit':
+    case 'image-inpainting':
+    case 'image-background-edit':
+    case 'image-recontext':
+      return Crop;
+    case 'image-outpainting':
+      return Expand;
+    case 'video-gen':
+      return Video;
+    case 'audio-gen':
+      return Mic;
+    case 'pdf-extract':
+      return FileText;
+    case 'virtual-try-on':
+      return Shirt;
+    case 'deep-research':
+      return Search;
+    case 'multi-agent':
+      return Network;
+    default:
+      return MessageSquare;
   }
 };
 
@@ -46,9 +62,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   onDeleteSession,
   onUpdateSessionTitle,
   onOpenSettings,
-  onLogout,
-  isRightSidebarOpen,
-  setIsRightSidebarOpen,
   cacheStatus,
   onRefreshSessions,
 }) => {
@@ -129,8 +142,24 @@ const Sidebar: React.FC<SidebarProps> = ({
         />
       )}
 
+      {/* Floating Expand Button - Only visible when sidebar is collapsed */}
+      {!isOpen && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsOpen(true);
+          }}
+          className="fixed left-0 top-1/2 -translate-y-1/2 z-[100] p-3 bg-slate-900 hover:bg-indigo-600 border-r border-y border-slate-800 rounded-r-lg text-slate-400 hover:text-white transition-all shadow-lg hover:shadow-indigo-500/50 pointer-events-auto"
+          title="Expand Sidebar"
+        >
+          <ChevronRight size={20} className="text-white" />
+        </button>
+      )}
+
       {/* Sidebar Content */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 border-r border-slate-800 transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'
+      <div className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 border-r border-slate-800 transform transition-transform duration-300 ease-in-out md:relative ${isOpen ? 'translate-x-0' : '-translate-x-full md:hidden'
         }`}>
         <div className="flex flex-col h-full">
 
@@ -203,6 +232,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                       <ModeIcon size={16} className="text-indigo-400 flex-shrink-0" />
                       <input
                         type="text"
+                        id={`edit-session-title-${session.id}`}
+                        name={`edit-session-title-${session.id}`}
                         value={editingTitle}
                         onChange={(e) => setEditingTitle(e.target.value)}
                         onKeyDown={(e) => {
@@ -313,31 +344,16 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           {/* Footer */}
-          <div className="p-4 border-t border-slate-800 bg-slate-900 flex items-center gap-2">
+          <div className="p-4 border-t border-slate-800 bg-slate-900">
             <button
               onClick={() => {
                 onOpenSettings();
                 if (window.innerWidth < 768) setIsOpen(false);
               }}
-              className="flex-1 flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors text-sm"
+              className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors text-sm"
             >
               <Settings size={18} />
-              <span>User Setting</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsRightSidebarOpen(!isRightSidebarOpen)}
-              className={`p-3 rounded-lg transition-colors shrink-0 ${isRightSidebarOpen ? 'bg-indigo-500/20 text-indigo-400' : 'hover:bg-slate-800 text-slate-400 hover:text-white'}`}
-              title="AI Persona & Roles"
-            >
-              <UserCircle2 size={20} />
-            </button>
-            <button
-              onClick={onLogout}
-              className="p-3 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors shrink-0"
-              title="Log Out"
-            >
-              <LogOut size={20} />
+              <span>Setting</span>
             </button>
           </div>
         </div>

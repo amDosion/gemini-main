@@ -16,12 +16,15 @@ Architecture:
 - message_converter.py: Message format conversion
 - response_parser.py: Response parsing
 - config_builder.py: Configuration building
+- mode_registry.py: Google-specific mode registry (NEW)
+- mode_initialization.py: Mode handler initialization (NEW)
 
 New Features (P0):
 - Files API: Multi-modal file processing
 - Function Calling: Tool integration and external API calls
 - JSON Schema Response: Structured output formatting
 - Token Management: Usage tracking and cost control
+- Mode Registry: Google-specific modes (outpainting, inpainting, virtual try-on)
 """
 
 from .google_service import GoogleService
@@ -29,6 +32,8 @@ from .file_handler import FileHandler
 from .function_handler import FunctionHandler, FunctionCallingMode
 from .schema_handler import SchemaHandler, CommonSchemas
 from .token_handler import TokenHandler, TokenCount, ModelPricing, ModelLimits
+from .mode_registry import GoogleModeRegistry, get_global_registry, ModeHandler
+from .mode_initialization import initialize_google_modes, get_registered_modes
 
 __all__ = [
     'GoogleService',
@@ -40,5 +45,10 @@ __all__ = [
     'TokenHandler',
     'TokenCount',
     'ModelPricing',
-    'ModelLimits'
+    'ModelLimits',
+    'GoogleModeRegistry',
+    'get_global_registry',
+    'ModeHandler',
+    'initialize_google_modes',
+    'get_registered_modes',
 ]

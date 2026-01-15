@@ -13,6 +13,7 @@ import { useImageCanvas } from '../../hooks/useImageCanvas';
 import { ImageCanvasControls } from '../common/ImageCanvasControls';
 import { ImageCompare } from '../common/ImageCompare';
 import { GenViewLayout } from '../common/GenViewLayout';
+import { useToastContext } from '../../contexts/ToastContext';
 
 interface VirtualTryOnViewProps {
     messages: Message[];
@@ -80,6 +81,7 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
     const [activeImageUrl, setActiveImageUrl] = useState<string | null>(null);
     const [lastProcessedMsgId, setLastProcessedMsgId] = useState<string | null>(null);
     const [isCompareMode, setIsCompareMode] = useState(false);
+    const { showError, showWarning } = useToastContext();
     
     // State for Try-On Target (跟踪当前选择的服装类型)
     const [currentTryOnTarget, setCurrentTryOnTarget] = useState('upper');
@@ -241,7 +243,7 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
     const handleGenerateMaskPreview = useCallback(async () => {
         if (!activeImageUrl || !apiKey) {
             console.warn('[handleGenerateMaskPreview] 缺少图片或 API Key');
-            alert('请先上传图片并确保已配置 API Key');
+            showWarning('请先上传图片并确保已配置 API Key');
             return;
         }
         
@@ -315,7 +317,8 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
             console.log('[handleGenerateMaskPreview] 掩码预览生成成功');
         } catch (error) {
             console.error('[handleGenerateMaskPreview] 生成失败:', error);
-            alert(`掩码预览生成失败：${error instanceof Error ? error.message : '未知错误'}\n请检查图片是否包含目标服装`);
+            // 掩码预览生成失败
+            // Error handling is done via toast
         } finally {
             setIsGeneratingMask(false);
         }
@@ -769,9 +772,9 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
             setIsMobileHistoryOpen={setIsMobileHistoryOpen}
             sidebarTitle="History"
             sidebarHeaderIcon={<Layers size={14} />}
-            sidebarContent={sidebarContent}
-            mainContent={mainContent}
-            bottomContent={bottomContent}
+            sidebar={sidebarContent}
+            main={mainContent}
+            bottom={bottomContent}
         />
     );
 };

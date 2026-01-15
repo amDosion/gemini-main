@@ -30,6 +30,8 @@ export const SearchInput: React.FC<SearchInputProps> = ({
     <div className={`relative ${className}`}>
       <input
         type="text"
+        id="sidebar-search-input"
+        name="sidebar-search-input"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}

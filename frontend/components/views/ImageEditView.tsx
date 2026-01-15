@@ -1,13 +1,15 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
-import { Crop, Wand2, AlertCircle, Layers, User, Bot, Sparkles, Palette, PenTool } from 'lucide-react';
+import { Crop, Wand2, AlertCircle, Layers, User, Bot, Sparkles, Palette, PenTool, MessageSquare } from 'lucide-react';
 import InputArea from '../chat/InputArea';
 import { useImageCanvas } from '../../hooks/useImageCanvas';
 import { ImageCanvasControls } from '../common/ImageCanvasControls';
 import { ImageCompare } from '../common/ImageCompare';
 import { GenViewLayout } from '../common/GenViewLayout';
 import { processUserAttachments } from '../../hooks/handlers/attachmentUtils';
+import { ThinkingBlock } from '../message/ThinkingBlock';
+import { useToastContext } from '../../contexts/ToastContext';
 
 interface ImageEditViewProps {
     messages: Message[];
@@ -132,14 +134,27 @@ const ImageEditMainCanvas = memo(({
 
             {/* Main Image Display with Transformations */}
             <div className="flex-1 flex items-center justify-center p-0 w-full h-full">
-                {loadingState !== 'idle' ? (
-                    <div className="flex flex-col items-center gap-4 pointer-events-none">
-                        <div className="relative">
-                            <div className="w-20 h-20 border-4 border-pink-500/30 border-t-pink-500 rounded-full animate-spin"></div>
+                {loadingState !== 'idle' ? (() => {
+                    // 根据 loadingState 显示不同的过程信息
+                    let statusText = 'Processing Image...';
+                    
+                    if (loadingState === 'uploading') {
+                        statusText = '上传图片中...';
+                    } else if (loadingState === 'loading') {
+                        statusText = 'AI 正在处理图片...';
+                    } else if (loadingState === 'streaming') {
+                        statusText = '流式处理中...';
+                    }
+                    
+                    return (
+                        <div className="flex flex-col items-center gap-4 pointer-events-none">
+                            <div className="relative">
+                                <div className="w-20 h-20 border-4 border-pink-500/30 border-t-pink-500 rounded-full animate-spin"></div>
+                            </div>
+                            <p className="text-slate-400 animate-pulse">{statusText}</p>
                         </div>
-                        <p className="text-slate-400 animate-pulse">Processing Image...</p>
-                    </div>
-                ) : isCompareMode && originalImageUrl && activeImageUrl ? (
+                    );
+                })() : isCompareMode && originalImageUrl && activeImageUrl ? (
                     // 对比模式
                     <div className="relative shadow-2xl transition-transform duration-75 ease-out" style={canvasStyle}>
                         <ImageCompare
@@ -230,11 +245,19 @@ export const ImageEditView = memo(({
     providerId,
     sessionId: currentSessionId  // ✅ 接收 sessionId
 }: ImageEditViewProps) => {
+    const { showError } = useToastContext();
     const scrollRef = useRef<HTMLDivElement>(null);
 
     // State for reference image
     const [activeAttachments, setActiveAttachments] = useState<Attachment[]>([]);
     const [activeImageUrl, setActiveImageUrl] = useState<string | null>(null);
+    
+    // 固定使用 image-chat-edit 模式（此视图专门用于对话式编辑）
+    const editMode: AppMode = 'image-chat-edit';
+    
+    // State for thinking block
+    const [isThinkingOpen, setIsThinkingOpen] = useState(true);
+    const [displayedThinkingContent, setDisplayedThinkingContent] = useState('');
 
     // Stable canvas URL (avoid relying on InputArea-managed Blob URLs that may be revoked)
     const canvasObjectUrlRef = useRef<string | null>(null);
@@ -322,13 +345,76 @@ export const ImageEditView = memo(({
         });
     }, [messages, activeAttachments]);
 
+    // 流式输出思考过程（打字效果）
+    useEffect(() => {
+        const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+        if (!lastMessage) {
+            setDisplayedThinkingContent('');
+            return;
+        }
+        
+        // 合并 thoughts 和 textResponse 的内容
+        const thoughts = lastMessage?.thoughts || [];
+        const textResponse = lastMessage?.textResponse;
+        const thinkingParts: string[] = [];
+        thoughts.forEach((thought) => {
+            if (thought.type === 'text') {
+                thinkingParts.push(thought.content);
+            } else {
+                thinkingParts.push('[图片思考过程]');
+            }
+        });
+        if (textResponse) {
+            thinkingParts.push(`\n\n💬 AI 响应：\n${textResponse}`);
+        }
+        const fullContent = thinkingParts.join('\n\n');
+        
+        if (!fullContent) {
+            setDisplayedThinkingContent('');
+            return;
+        }
+        
+        // 如果加载完成，立即显示完整内容
+        if (loadingState === 'idle') {
+            setDisplayedThinkingContent(fullContent);
+            return;
+        }
+        
+        // 流式输出：逐步显示思考内容（打字效果）
+        const targetLength = fullContent.length;
+        const currentLength = displayedThinkingContent.length;
+        
+        if (currentLength < targetLength) {
+            // 使用 requestAnimationFrame 实现平滑的打字效果
+            const chunkSize = 5; // 每次显示的字符数（可以调整速度）
+            const nextLength = Math.min(currentLength + chunkSize, targetLength);
+            
+            const timer = setTimeout(() => {
+                setDisplayedThinkingContent(fullContent.substring(0, nextLength));
+            }, 30); // 30ms 延迟（可以调整速度）
+            
+            return () => clearTimeout(timer);
+        } else if (fullContent !== displayedThinkingContent) {
+            // 如果内容已更新但长度相同，直接更新
+            setDisplayedThinkingContent(fullContent);
+        }
+    }, [messages, loadingState]);
+    
     // Auto-select latest result logic
     useEffect(() => {
         // 1. Initial Load: If no active image, pick latest from history
+        // 优先从用户消息中获取（原始图片），如果没有则从模型消息中获取（编辑后的图片）
         if (activeAttachments.length === 0 && !activeImageUrl) {
-            const lastModelMsg = [...messages].reverse().find(m => m.role === Role.MODEL && m.attachments?.length);
-            if (lastModelMsg && lastModelMsg.attachments?.[0]?.url) {
-                setActiveImageUrl(lastModelMsg.attachments[0].url);
+            // 优先查找用户消息中的图片（对话式编辑的原始图片）
+            const lastUserMsg = [...messages].reverse().find(m => m.role === Role.USER && m.attachments?.length);
+            if (lastUserMsg && lastUserMsg.attachments?.[0]?.url) {
+                setActiveImageUrl(lastUserMsg.attachments[0].url);
+            } else {
+                // 如果没有用户消息，从模型消息中获取（编辑后的图片）
+                const lastModelMsg = [...messages].reverse().find(m => m.role === Role.MODEL && m.attachments?.length);
+                if (lastModelMsg && lastModelMsg.attachments?.[0]?.url) {
+                    setActiveImageUrl(lastModelMsg.attachments[0].url);
+                }
             }
         }
 
@@ -353,6 +439,7 @@ export const ImageEditView = memo(({
         try {
             console.log('========== [ImageEditView] handleSend 开始 ==========');
             console.log('[handleSend] 用户输入:', text);
+            console.log('[handleSend] 选择的编辑模式:', editMode);
             console.log('[handleSend] 用户上传的附件数量:', attachments.length);
             
             // 详细日志：附件状态
@@ -370,12 +457,6 @@ export const ImageEditView = memo(({
                     uploadStatus: att.uploadStatus
                 });
             });
-            console.log('[handleSend] activeImageUrl 类型:', 
-                activeImageUrl?.startsWith('blob:') ? 'Blob' : 
-                activeImageUrl?.startsWith('data:') ? 'Base64' : 
-                activeImageUrl?.startsWith('http') ? 'HTTP' : 'None'
-            );
-
             // 使用统一的附件处理函数
             const finalAttachments = await processUserAttachments(
                 attachments,
@@ -387,13 +468,14 @@ export const ImageEditView = memo(({
 
             console.log('[handleSend] 最终附件数量:', finalAttachments.length);
             console.log('========== [ImageEditView] handleSend 结束 ==========');
-            onSend(text, options, finalAttachments, mode);
+            // 使用选择的编辑模式而不是传入的 mode
+            onSend(text, options, finalAttachments, editMode);
         } catch (error) {
             console.error('[ImageEditView] handleSend 处理附件失败:', error);
-            alert('处理附件失败，请重试');
+            showError('处理附件失败，请重试');
             return;
         }
-    }, [activeImageUrl, messages, currentSessionId, onSend]);
+    }, [activeImageUrl, messages, currentSessionId, onSend, editMode]);
 
     // Canvas 事件处理器现在由 useImageCanvas Hook 提供
 
@@ -441,16 +523,69 @@ export const ImageEditView = memo(({
                             </div>
                         );
                     })}
-                    {loadingState !== 'idle' && (
-                        <div className="flex items-start gap-2 animate-pulse">
-                            <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center"><Bot size={16} className="text-slate-500" /></div>
-                            <div className="bg-slate-800/50 rounded-xl p-3 text-xs text-slate-400">Processing request...</div>
-                        </div>
-                    )}
+                    {loadingState !== 'idle' && (() => {
+                        // 根据 loadingState 和 editMode 显示不同的过程信息
+                        let statusText = 'Processing request...';
+                        let statusIcon = <Bot size={16} className="text-slate-500" />;
+                        
+                        if (loadingState === 'uploading') {
+                            statusText = '上传图片中...';
+                            statusIcon = <Layers size={16} className="text-blue-400" />;
+                        } else if (loadingState === 'loading') {
+                            // 对话式编辑模式的状态消息
+                            statusText = '对话式编辑中，AI 正在理解您的需求并生成图片...';
+                            statusIcon = <MessageSquare size={16} className="text-pink-400" />;
+                        } else if (loadingState === 'streaming') {
+                            statusText = '流式处理中...';
+                            statusIcon = <Sparkles size={16} className="text-pink-400 animate-pulse" />;
+                        }
+                        
+                        // 检查最新的消息是否有 thoughts 或文本内容
+                        const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+                        const thoughts = lastMessage?.thoughts || [];
+                        const textResponse = lastMessage?.textResponse;
+                        const hasTextContent = lastMessage?.content && lastMessage.content.trim().length > 0;
+                        
+                        // 判断思考过程是否完成（loadingState 为 idle 时完成）
+                        const isThinkingComplete = loadingState === 'idle';
+                        
+                        return (
+                            <div className="flex items-start gap-2">
+                                <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center flex-shrink-0">
+                                    {statusIcon}
+                                </div>
+                                <div className="bg-slate-800/50 rounded-xl p-3 text-xs text-slate-400 flex-1">
+                                    <div className={`font-medium mb-1 ${loadingState !== 'idle' ? 'animate-pulse' : ''}`}>
+                                        {statusText}
+                                    </div>
+                                    
+                                    {/* 使用 ThinkingBlock 显示思考过程（包含 thoughts 和 textResponse） */}
+                                    {displayedThinkingContent && (
+                                        <div className="mt-2">
+                                            <ThinkingBlock
+                                                content={displayedThinkingContent}
+                                                isOpen={isThinkingOpen}
+                                                onToggle={() => setIsThinkingOpen(!isThinkingOpen)}
+                                                isComplete={isThinkingComplete}
+                                            />
+                                        </div>
+                                    )}
+                                    
+                                    {/* 显示内容（如果有，且没有 thoughts 和 textResponse） */}
+                                    {hasTextContent && !thoughts.length && !textResponse && (
+                                        <div className="mt-2 pt-2 border-t border-slate-700/50 text-slate-500 italic">
+                                            {lastMessage.content.substring(0, 100)}
+                                            {lastMessage.content.length > 100 ? '...' : ''}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })()}
                     {/* 底部占位符 */}
                     <div />
                 </div>
-    ), [messages, loadingState, activeModelConfig?.name, activeImageUrl, activeAttachments]);
+    ), [messages, loadingState, activeModelConfig?.name, activeImageUrl, activeAttachments, editMode]);
 
     const toggleCompare = useCallback(() => setIsCompareMode(prev => !prev), []);
     const handleFullscreen = useCallback(() => {
@@ -483,34 +618,23 @@ export const ImageEditView = memo(({
         />
     );
 
-    // 使用 useMemo 缓存 bottomContent，防止不必要的重新渲染
-    const bottomContent = useMemo(() => (
-                <InputArea
-                    onSend={handleSend}
-                    isLoading={loadingState !== 'idle'}
-                    onStop={onStop}
-                    currentModel={activeModelConfig}
-                    visibleModels={visibleModels}
-                    mode="image-edit"
-                    setMode={setAppMode}
-                    initialPrompt={initialPrompt}
-                    // Sync State
-                    activeAttachments={activeAttachments}
-                    onAttachmentsChange={setActiveAttachments}
-                    providerId={providerId}
-                />
-    ), [
-        handleSend,
-        loadingState,
-        onStop,
-        activeModelConfig, // activeModelConfig is intentionally kept here as InputArea needs it directly.
-        visibleModels,
-        setAppMode,
-        initialPrompt,
-        activeAttachments,
-        setActiveAttachments,
-        providerId
-    ]);
+    // bottomContent - 直接渲染，固定使用 image-chat-edit 模式
+    const bottomContent = (
+        <InputArea
+            onSend={handleSend}
+            isLoading={loadingState !== 'idle'}
+            onStop={onStop}
+            currentModel={activeModelConfig}
+            visibleModels={visibleModels}
+            mode={editMode}
+            setMode={setAppMode}
+            initialPrompt={initialPrompt}
+            // Sync State
+            activeAttachments={activeAttachments}
+            onAttachmentsChange={setActiveAttachments}
+            providerId={providerId}
+        />
+    );
 
     return (
         <GenViewLayout
@@ -518,9 +642,9 @@ export const ImageEditView = memo(({
             setIsMobileHistoryOpen={setIsMobileHistoryOpen}
             sidebarTitle="History"
             sidebarHeaderIcon={<Layers size={14} />}
-            sidebarContent={sidebarContent}
-            mainContent={mainContent}
-            bottomContent={bottomContent}
+            sidebar={sidebarContent}
+            main={mainContent}
+            bottom={bottomContent}
         />
     );
 }, arePropsEqual);

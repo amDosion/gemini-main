@@ -10,7 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from ..core.jwt_utils import decode_token, TokenPayload
 from ..core.database import get_db
-from ..services.auth_service import AuthService, InvalidTokenError, TokenExpiredError
+from ..services.common.auth_service import AuthService, InvalidTokenError, TokenExpiredError
 
 
 # 不需要认证的路径

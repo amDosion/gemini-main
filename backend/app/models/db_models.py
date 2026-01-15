@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, BigInteger, String, DateTime, Boolean, Text, JSON, func
+from sqlalchemy import Column, Integer, BigInteger, String, DateTime, Boolean, Text, JSON, Float, func
 from ..core.database import Base
 from datetime import datetime
+import uuid
 
 class History(Base):
     __tablename__ = "history"
@@ -281,8 +282,15 @@ class MessagesGeneric(Base):
     """
     兜底表 - 覆盖所有未做专表优化的模式
 
-    支持模式：image-edit, image-outpainting, audio-gen, pdf-extract,
+    支持模式：image-outpainting, audio-gen, pdf-extract,
              virtual-try-on, deep-research 等
+
+    注意：image-edit 相关模式已拆分为独立表：
+    - image-chat-edit → messages_image_chat_edit
+    - image-mask-edit → messages_image_mask_edit
+    - image-inpainting → messages_image_inpainting
+    - image-background-edit → messages_image_background_edit
+    - image-recontext → messages_image_recontext
 
     使用 metadata_json 存储模式特定数据
     """
@@ -308,6 +316,267 @@ class MessagesGeneric(Base):
             "content": self.content,
             "timestamp": self.timestamp,
             "isError": self.is_error
+        }
+        if self.metadata_json:
+            try:
+                metadata = json.loads(self.metadata_json)
+                if isinstance(metadata, dict):
+                    result.update(metadata)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return result
+
+
+class MessagesImageChatEdit(Base):
+    """
+    image-chat-edit 模式消息表 - 对话式图片编辑
+    
+    存储对话式图片编辑消息，使用 Google Chat SDK 进行多轮编辑。
+    包含：
+    - 基础字段：id, session_id, role, content, timestamp, is_error
+    - 对话式编辑特定字段：chat_id, model_name, edit_prompt
+    - 复杂结构：metadata_json
+    """
+    __tablename__ = "messages_image_chat_edit"
+
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String, nullable=False, index=True)  # 用户ID
+    session_id = Column(String(36), nullable=False, index=True)
+    role = Column(String(20), nullable=False)  # 'user' | 'model' | 'system'
+    content = Column(Text, nullable=False)
+    timestamp = Column(BigInteger, nullable=False)
+    is_error = Column(Boolean, default=False)
+
+    # 对话式编辑特定字段
+    chat_id = Column(String(36), nullable=True, index=True)  # Google Chat ID
+    model_name = Column(String(100), nullable=True)  # 使用的模型
+    edit_prompt = Column(Text, nullable=True)  # 编辑提示词
+
+    # 复杂结构使用 JSON 存储
+    metadata_json = Column(Text, nullable=True)
+
+    def to_dict(self):
+        """转换为字典格式（兼容前端 Message 结构）"""
+        import json
+        result = {
+            "id": self.id,
+            "role": self.role,
+            "content": self.content,
+            "timestamp": self.timestamp,
+            "isError": self.is_error,
+            "chatId": self.chat_id,
+            "modelName": self.model_name,
+            "editPrompt": self.edit_prompt
+        }
+        if self.metadata_json:
+            try:
+                metadata = json.loads(self.metadata_json)
+                if isinstance(metadata, dict):
+                    result.update(metadata)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return result
+
+
+class MessagesImageMaskEdit(Base):
+    """
+    image-mask-edit 模式消息表 - 带 mask 的精确编辑
+    
+    存储带 mask 的精确图片编辑消息，使用 Vertex AI Imagen。
+    包含：
+    - 基础字段：id, session_id, role, content, timestamp, is_error
+    - Mask 编辑特定字段：edit_mode, mask_mode, guidance_scale, model_name
+    - 复杂结构：metadata_json
+    """
+    __tablename__ = "messages_image_mask_edit"
+
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String, nullable=False, index=True)  # 用户ID
+    session_id = Column(String(36), nullable=False, index=True)
+    role = Column(String(20), nullable=False)  # 'user' | 'model' | 'system'
+    content = Column(Text, nullable=False)
+    timestamp = Column(BigInteger, nullable=False)
+    is_error = Column(Boolean, default=False)
+
+    # Mask 编辑特定字段
+    edit_mode = Column(String(50), nullable=True)  # inpainting-insert/inpainting-remove/outpainting
+    mask_mode = Column(String(50), nullable=True)  # user-provided/auto-generated
+    guidance_scale = Column(String(20), nullable=True)  # 使用 String 存储，支持范围值
+    model_name = Column(String(100), nullable=True)  # 使用的模型
+    number_of_images = Column(Integer, default=1)  # 生成数量
+    aspect_ratio = Column(String(20), nullable=True)  # 图片比例
+
+    # 复杂结构使用 JSON 存储
+    metadata_json = Column(Text, nullable=True)
+
+    def to_dict(self):
+        """转换为字典格式（兼容前端 Message 结构）"""
+        import json
+        result = {
+            "id": self.id,
+            "role": self.role,
+            "content": self.content,
+            "timestamp": self.timestamp,
+            "isError": self.is_error,
+            "editMode": self.edit_mode,
+            "maskMode": self.mask_mode,
+            "guidanceScale": self.guidance_scale,
+            "modelName": self.model_name,
+            "numberOfImages": self.number_of_images,
+            "aspectRatio": self.aspect_ratio
+        }
+        if self.metadata_json:
+            try:
+                metadata = json.loads(self.metadata_json)
+                if isinstance(metadata, dict):
+                    result.update(metadata)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return result
+
+
+class MessagesImageInpainting(Base):
+    """
+    image-inpainting 模式消息表 - 图片修复
+    
+    存储图片修复消息，用于修复图片中的缺陷或移除不需要的元素。
+    包含：
+    - 基础字段：id, session_id, role, content, timestamp, is_error
+    - 修复特定字段：repair_type, model_name
+    - 复杂结构：metadata_json
+    """
+    __tablename__ = "messages_image_inpainting"
+
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String, nullable=False, index=True)  # 用户ID
+    session_id = Column(String(36), nullable=False, index=True)
+    role = Column(String(20), nullable=False)  # 'user' | 'model' | 'system'
+    content = Column(Text, nullable=False)
+    timestamp = Column(BigInteger, nullable=False)
+    is_error = Column(Boolean, default=False)
+
+    # 修复特定字段
+    repair_type = Column(String(50), nullable=True)  # defect-removal/object-removal/content-fill
+    model_name = Column(String(100), nullable=True)  # 使用的模型
+    guidance_scale = Column(String(20), nullable=True)
+
+    # 复杂结构使用 JSON 存储
+    metadata_json = Column(Text, nullable=True)
+
+    def to_dict(self):
+        """转换为字典格式（兼容前端 Message 结构）"""
+        import json
+        result = {
+            "id": self.id,
+            "role": self.role,
+            "content": self.content,
+            "timestamp": self.timestamp,
+            "isError": self.is_error,
+            "repairType": self.repair_type,
+            "modelName": self.model_name,
+            "guidanceScale": self.guidance_scale
+        }
+        if self.metadata_json:
+            try:
+                metadata = json.loads(self.metadata_json)
+                if isinstance(metadata, dict):
+                    result.update(metadata)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return result
+
+
+class MessagesImageBackgroundEdit(Base):
+    """
+    image-background-edit 模式消息表 - 背景编辑
+    
+    存储背景编辑消息，用于替换或修改图片背景。
+    包含：
+    - 基础字段：id, session_id, role, content, timestamp, is_error
+    - 背景编辑特定字段：background_type, model_name
+    - 复杂结构：metadata_json
+    """
+    __tablename__ = "messages_image_background_edit"
+
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String, nullable=False, index=True)  # 用户ID
+    session_id = Column(String(36), nullable=False, index=True)
+    role = Column(String(20), nullable=False)  # 'user' | 'model' | 'system'
+    content = Column(Text, nullable=False)
+    timestamp = Column(BigInteger, nullable=False)
+    is_error = Column(Boolean, default=False)
+
+    # 背景编辑特定字段
+    background_type = Column(String(50), nullable=True)  # replace/remove/blur/enhance
+    model_name = Column(String(100), nullable=True)  # 使用的模型
+    guidance_scale = Column(String(20), nullable=True)
+
+    # 复杂结构使用 JSON 存储
+    metadata_json = Column(Text, nullable=True)
+
+    def to_dict(self):
+        """转换为字典格式（兼容前端 Message 结构）"""
+        import json
+        result = {
+            "id": self.id,
+            "role": self.role,
+            "content": self.content,
+            "timestamp": self.timestamp,
+            "isError": self.is_error,
+            "backgroundType": self.background_type,
+            "modelName": self.model_name,
+            "guidanceScale": self.guidance_scale
+        }
+        if self.metadata_json:
+            try:
+                metadata = json.loads(self.metadata_json)
+                if isinstance(metadata, dict):
+                    result.update(metadata)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return result
+
+
+class MessagesImageRecontext(Base):
+    """
+    image-recontext 模式消息表 - 重新上下文
+    
+    存储重新上下文消息，用于改变图片的上下文环境或场景。
+    包含：
+    - 基础字段：id, session_id, role, content, timestamp, is_error
+    - 重新上下文特定字段：context_type, model_name
+    - 复杂结构：metadata_json
+    """
+    __tablename__ = "messages_image_recontext"
+
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String, nullable=False, index=True)  # 用户ID
+    session_id = Column(String(36), nullable=False, index=True)
+    role = Column(String(20), nullable=False)  # 'user' | 'model' | 'system'
+    content = Column(Text, nullable=False)
+    timestamp = Column(BigInteger, nullable=False)
+    is_error = Column(Boolean, default=False)
+
+    # 重新上下文特定字段
+    context_type = Column(String(50), nullable=True)  # scene-change/environment-swap/style-transfer
+    model_name = Column(String(100), nullable=True)  # 使用的模型
+    guidance_scale = Column(String(20), nullable=True)
+
+    # 复杂结构使用 JSON 存储
+    metadata_json = Column(Text, nullable=True)
+
+    def to_dict(self):
+        """转换为字典格式（兼容前端 Message 结构）"""
+        import json
+        result = {
+            "id": self.id,
+            "role": self.role,
+            "content": self.content,
+            "timestamp": self.timestamp,
+            "isError": self.is_error,
+            "contextType": self.context_type,
+            "modelName": self.model_name,
+            "guidanceScale": self.guidance_scale
         }
         if self.metadata_json:
             try:
@@ -366,6 +635,51 @@ class MessageAttachment(Base):
             "googleFileExpiry": self.google_file_expiry,
             "size": self.size
         }
+
+
+class GoogleChatSession(Base):
+    """
+    Google Chat 会话表 - 存储对话式图片编辑的 Chat 会话元数据
+    
+    关联关系：
+    - chat_id: Google SDK Chat 对象的标识符（UUID）
+    - frontend_session_id: 前端会话 ID（关联 ChatSession.id）
+    - user_id: 用户 ID
+    
+    注意：
+    - 实际的消息历史存储在 MessageIndex + MessagesGeneric（mode='image-edit'）
+    - 附件存储在 MessageAttachment
+    - 此表仅存储 Google Chat SDK 的会话元数据，用于重建 Chat 对象
+    """
+    __tablename__ = "google_chat_sessions"
+
+    chat_id = Column(String(36), primary_key=True)  # Google Chat ID（UUID）
+    user_id = Column(String, nullable=False, index=True)  # 用户ID
+    frontend_session_id = Column(String(36), nullable=False, index=True)  # 前端会话ID（ChatSession.id）
+    model_name = Column(String(100), nullable=False)  # 使用的模型名称
+    config_json = Column(Text, nullable=True)  # Chat 配置（JSON）
+    created_at = Column(BigInteger, nullable=False)  # 创建时间戳（ms）
+    last_used_at = Column(BigInteger, nullable=False)  # 最后使用时间（ms）
+    is_active = Column(Boolean, default=True)  # 是否活跃
+
+    def to_dict(self):
+        """转换为字典格式"""
+        import json
+        result = {
+            "chatId": self.chat_id,
+            "userId": self.user_id,
+            "frontendSessionId": self.frontend_session_id,
+            "modelName": self.model_name,
+            "createdAt": self.created_at,
+            "lastUsedAt": self.last_used_at,
+            "isActive": self.is_active
+        }
+        if self.config_json:
+            try:
+                result["config"] = json.loads(self.config_json)
+            except (json.JSONDecodeError, TypeError):
+                result["config"] = None
+        return result
 
 
 class Persona(Base):
@@ -670,3 +984,489 @@ class ImagenConfig(Base):
             "createdAt": self.created_at.isoformat() if self.created_at else None,
             "updatedAt": self.updated_at.isoformat() if self.updated_at else None
         }
+
+
+# ============================================
+# Agent Engine 模型 (Agent Engine Models)
+# ============================================
+
+class AgentMemoryBank(Base):
+    """
+    Memory Bank 实例表 - 存储 Vertex AI Memory Bank 实例元数据
+    
+    关联关系：
+    - user_id: 用户 ID
+    - vertex_memory_bank_id: Vertex AI Memory Bank 资源 ID
+    - config_json: Memory Bank 配置（JSON）
+    """
+    __tablename__ = "agent_memory_banks"
+
+    id = Column(String, primary_key=True, index=True, default=generate_uuid)  # UUID字符串
+    user_id = Column(String, nullable=False, index=True)  # 用户ID
+    name = Column(String, nullable=False)  # Memory Bank 名称
+    vertex_memory_bank_id = Column(String, nullable=True)  # Vertex AI Memory Bank 资源 ID
+    config_json = Column(Text, nullable=True)  # Memory Bank 配置（JSON）
+    created_at = Column(BigInteger, nullable=False)  # 创建时间戳（毫秒）
+    updated_at = Column(BigInteger, nullable=False)  # 更新时间戳（毫秒）
+
+    def to_dict(self):
+        """转换为字典格式"""
+        import json
+        result = {
+            "id": self.id,
+            "userId": self.user_id,
+            "name": self.name,
+            "vertexMemoryBankId": self.vertex_memory_bank_id,
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at
+        }
+        if self.config_json:
+            try:
+                result["config"] = json.loads(self.config_json)
+            except (json.JSONDecodeError, TypeError):
+                result["config"] = None
+        return result
+
+
+class AgentMemory(Base):
+    """
+    记忆数据表 - 存储 Memory Bank 中的记忆内容
+    
+    关联关系：
+    - user_id: 用户 ID
+    - memory_bank_id: 关联的 Memory Bank ID
+    - session_id: 关联的会话 ID（可选）
+    - content: 记忆内容
+    - metadata_json: 记忆元数据（JSON）
+    """
+    __tablename__ = "agent_memories"
+
+    id = Column(String, primary_key=True, index=True, default=generate_uuid)  # UUID字符串
+    user_id = Column(String, nullable=False, index=True)  # 用户ID
+    memory_bank_id = Column(String, nullable=False, index=True)  # Memory Bank ID
+    session_id = Column(String, nullable=True, index=True)  # 会话 ID（可选）
+    vertex_memory_id = Column(String, nullable=True)  # Vertex AI Memory ID
+    content = Column(Text, nullable=False)  # 记忆内容
+    metadata_json = Column(Text, nullable=True)  # 记忆元数据（JSON）
+    created_at = Column(BigInteger, nullable=False)  # 创建时间戳（毫秒）
+    updated_at = Column(BigInteger, nullable=False)  # 更新时间戳（毫秒）
+
+    def to_dict(self):
+        """转换为字典格式"""
+        import json
+        result = {
+            "id": self.id,
+            "userId": self.user_id,
+            "memoryBankId": self.memory_bank_id,
+            "sessionId": self.session_id,
+            "vertexMemoryId": self.vertex_memory_id,
+            "content": self.content,
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at
+        }
+        if self.metadata_json:
+            try:
+                result["metadata"] = json.loads(self.metadata_json)
+            except (json.JSONDecodeError, TypeError):
+                result["metadata"] = None
+        return result
+
+
+class AgentMemorySession(Base):
+    """
+    Memory Bank 会话表 - 存储 Memory Bank 会话元数据
+    
+    关联关系：
+    - user_id: 用户 ID
+    - memory_bank_id: 关联的 Memory Bank ID
+    - session_id: 会话 ID
+    - metadata_json: 会话元数据（JSON）
+    """
+    __tablename__ = "agent_memory_sessions"
+
+    id = Column(String, primary_key=True, index=True, default=generate_uuid)  # UUID字符串
+    user_id = Column(String, nullable=False, index=True)  # 用户ID
+    memory_bank_id = Column(String, nullable=False, index=True)  # Memory Bank ID
+    session_id = Column(String, nullable=False, index=True)  # 会话 ID
+    vertex_session_id = Column(String, nullable=True)  # Vertex AI Session ID
+    metadata_json = Column(Text, nullable=True)  # 会话元数据（JSON）
+    created_at = Column(BigInteger, nullable=False)  # 创建时间戳（毫秒）
+    last_used_at = Column(BigInteger, nullable=False)  # 最后使用时间（毫秒）
+
+    def to_dict(self):
+        """转换为字典格式"""
+        import json
+        result = {
+            "id": self.id,
+            "userId": self.user_id,
+            "memoryBankId": self.memory_bank_id,
+            "sessionId": self.session_id,
+            "vertexSessionId": self.vertex_session_id,
+            "createdAt": self.created_at,
+            "lastUsedAt": self.last_used_at
+        }
+        if self.metadata_json:
+            try:
+                result["metadata"] = json.loads(self.metadata_json)
+            except (json.JSONDecodeError, TypeError):
+                result["metadata"] = None
+        return result
+
+
+class AgentCodeSandbox(Base):
+    """
+    代码执行沙箱表 - 存储 Vertex AI Sandbox 实例元数据
+    
+    关联关系：
+    - user_id: 用户 ID
+    - vertex_sandbox_id: Vertex AI Sandbox 资源 ID
+    - config_json: 沙箱配置（JSON）
+    - status: 沙箱状态
+    """
+    __tablename__ = "agent_code_sandboxes"
+
+    id = Column(String, primary_key=True, index=True, default=generate_uuid)  # UUID字符串
+    user_id = Column(String, nullable=False, index=True)  # 用户ID
+    vertex_sandbox_id = Column(String, nullable=True)  # Vertex AI Sandbox 资源 ID
+    config_json = Column(Text, nullable=True)  # 沙箱配置（JSON）
+    status = Column(String, nullable=False, default='active')  # active/inactive/expired
+    created_at = Column(BigInteger, nullable=False)  # 创建时间戳（毫秒）
+    updated_at = Column(BigInteger, nullable=False)  # 更新时间戳（毫秒）
+
+    def to_dict(self):
+        """转换为字典格式"""
+        import json
+        result = {
+            "id": self.id,
+            "userId": self.user_id,
+            "vertexSandboxId": self.vertex_sandbox_id,
+            "status": self.status,
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at
+        }
+        if self.config_json:
+            try:
+                result["config"] = json.loads(self.config_json)
+            except (json.JSONDecodeError, TypeError):
+                result["config"] = None
+        return result
+
+
+class AgentArtifact(Base):
+    """
+    代码执行 Artifact 表 - 存储代码执行产生的 Artifact 元数据
+    
+    关联关系：
+    - user_id: 用户 ID
+    - sandbox_id: 关联的沙箱 ID
+    - vertex_artifact_id: Vertex AI Artifact ID
+    - gcs_uri: Google Cloud Storage URI
+    """
+    __tablename__ = "agent_artifacts"
+
+    id = Column(String, primary_key=True, index=True, default=generate_uuid)  # UUID字符串
+    user_id = Column(String, nullable=False, index=True)  # 用户ID
+    sandbox_id = Column(String, nullable=False, index=True)  # 沙箱 ID
+    vertex_artifact_id = Column(String, nullable=True)  # Vertex AI Artifact ID
+    gcs_uri = Column(Text, nullable=True)  # Google Cloud Storage URI
+    metadata_json = Column(Text, nullable=True)  # Artifact 元数据（JSON）
+    created_at = Column(BigInteger, nullable=False)  # 创建时间戳（毫秒）
+
+    def to_dict(self):
+        """转换为字典格式"""
+        import json
+        result = {
+            "id": self.id,
+            "userId": self.user_id,
+            "sandboxId": self.sandbox_id,
+            "vertexArtifactId": self.vertex_artifact_id,
+            "gcsUri": self.gcs_uri,
+            "createdAt": self.created_at
+        }
+        if self.metadata_json:
+            try:
+                result["metadata"] = json.loads(self.metadata_json)
+            except (json.JSONDecodeError, TypeError):
+                result["metadata"] = None
+        return result
+
+
+class AgentRegistry(Base):
+    """
+    智能体注册表 - 存储智能体注册信息
+    
+    关联关系：
+    - user_id: 用户 ID
+    - agent_type: 智能体类型
+    - agent_card_json: Agent Card JSON
+    - endpoint_url: 智能体端点 URL
+    """
+    __tablename__ = "agent_registry"
+
+    id = Column(String, primary_key=True, index=True, default=generate_uuid)  # UUID字符串
+    user_id = Column(String, nullable=False, index=True)  # 用户ID
+    name = Column(String, nullable=False)  # 智能体名称
+    agent_type = Column(String, nullable=False)  # 智能体类型（adk/interactions/custom）
+    agent_card_json = Column(Text, nullable=True)  # Agent Card JSON
+    endpoint_url = Column(String, nullable=True)  # 智能体端点 URL
+    status = Column(String, nullable=False, default='active')  # active/inactive/error
+    created_at = Column(BigInteger, nullable=False)  # 创建时间戳（毫秒）
+    updated_at = Column(BigInteger, nullable=False)  # 更新时间戳（毫秒）
+
+    def to_dict(self):
+        """转换为字典格式"""
+        import json
+        result = {
+            "id": self.id,
+            "userId": self.user_id,
+            "name": self.name,
+            "agentType": self.agent_type,
+            "endpointUrl": self.endpoint_url,
+            "status": self.status,
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at
+        }
+        if self.agent_card_json:
+            try:
+                result["agentCard"] = json.loads(self.agent_card_json)
+            except (json.JSONDecodeError, TypeError):
+                result["agentCard"] = None
+        return result
+
+
+class AgentCard(Base):
+    """
+    Agent Card 定义表 - 存储 Agent Card 定义
+    
+    关联关系：
+    - user_id: 用户 ID
+    - agent_id: 关联的智能体 ID
+    - card_json: Agent Card JSON
+    - version: Agent Card 版本
+    """
+    __tablename__ = "agent_cards"
+
+    id = Column(String, primary_key=True, index=True, default=generate_uuid)  # UUID字符串
+    user_id = Column(String, nullable=False, index=True)  # 用户ID
+    agent_id = Column(String, nullable=False, index=True)  # 智能体 ID
+    card_json = Column(Text, nullable=False)  # Agent Card JSON
+    version = Column(String, nullable=False, default='1.0.0')  # Agent Card 版本
+    created_at = Column(BigInteger, nullable=False)  # 创建时间戳（毫秒）
+    updated_at = Column(BigInteger, nullable=False)  # 更新时间戳（毫秒）
+
+    def to_dict(self):
+        """转换为字典格式"""
+        import json
+        result = {
+            "id": self.id,
+            "userId": self.user_id,
+            "agentId": self.agent_id,
+            "version": self.version,
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at
+        }
+        if self.card_json:
+            try:
+                result["card"] = json.loads(self.card_json)
+            except (json.JSONDecodeError, TypeError):
+                result["card"] = None
+        return result
+
+
+class WorkflowTemplate(Base):
+    """工作流模板表 - 存储预定义的工作流模板"""
+    __tablename__ = "workflow_templates"
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))  # UUID字符串
+    user_id = Column(String, nullable=False, index=True)  # 用户ID
+    name = Column(String, nullable=False)  # 模板名称
+    description = Column(Text, nullable=True)  # 模板描述
+    category = Column(String, nullable=False, index=True)  # 模板分类（image-edit, excel-analysis, general等）
+    workflow_type = Column(String, nullable=False)  # 工作流类型（sequential, parallel, coordinator）
+    config_json = Column(Text, nullable=False)  # 工作流配置（节点、边、参数等，JSON格式）
+    is_public = Column(Boolean, default=False)  # 是否公开（其他用户可见）
+    version = Column(Integer, default=1)  # 版本号
+    created_at = Column(BigInteger, nullable=False)  # 创建时间戳（毫秒）
+    updated_at = Column(BigInteger, nullable=False)  # 更新时间戳（毫秒）
+
+    def to_dict(self):
+        """转换为字典格式"""
+        import json
+        result = {
+            "id": self.id,
+            "userId": self.user_id,
+            "name": self.name,
+            "description": self.description,
+            "category": self.category,
+            "workflowType": self.workflow_type,
+            "isPublic": self.is_public,
+            "version": self.version,
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at
+        }
+        try:
+            result["config"] = json.loads(self.config_json)
+        except (json.JSONDecodeError, TypeError):
+            result["config"] = None
+        return result
+
+
+class A2ATask(Base):
+    """
+    A2A 协议任务表 - 存储 A2A 协议任务状态
+    
+    关联关系：
+    - user_id: 用户 ID
+    - agent_id: 关联的智能体 ID
+    - task_id: A2A 任务 ID
+    - context_id: A2A 上下文 ID
+    - status: 任务状态
+    """
+    __tablename__ = "a2a_tasks"
+
+    id = Column(String, primary_key=True, index=True, default=generate_uuid)  # UUID字符串
+    user_id = Column(String, nullable=False, index=True)  # 用户ID
+    agent_id = Column(String, nullable=False, index=True)  # 智能体 ID
+    task_id = Column(String, nullable=False, index=True)  # A2A 任务 ID
+    context_id = Column(String, nullable=False, index=True)  # A2A 上下文 ID
+    status = Column(String, nullable=False, default='submitted')  # submitted/working/completed/failed
+    metadata_json = Column(Text, nullable=True)  # 任务元数据（JSON）
+    created_at = Column(BigInteger, nullable=False)  # 创建时间戳（毫秒）
+    updated_at = Column(BigInteger, nullable=False)  # 更新时间戳（毫秒）
+
+    def to_dict(self):
+        """转换为字典格式"""
+        import json
+        result = {
+            "id": self.id,
+            "userId": self.user_id,
+            "agentId": self.agent_id,
+            "taskId": self.task_id,
+            "contextId": self.context_id,
+            "status": self.status,
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at
+        }
+        if self.metadata_json:
+            try:
+                result["metadata"] = json.loads(self.metadata_json)
+            except (json.JSONDecodeError, TypeError):
+                result["metadata"] = None
+        return result
+
+
+class A2AEvent(Base):
+    """
+    A2A 事件队列表 - 存储 A2A 协议事件
+    
+    关联关系：
+    - task_id: 关联的任务 ID
+    - event_type: 事件类型
+    - event_data_json: 事件数据（JSON）
+    """
+    __tablename__ = "a2a_events"
+
+    id = Column(String, primary_key=True, index=True, default=generate_uuid)  # UUID字符串
+    task_id = Column(String, nullable=False, index=True)  # 任务 ID
+    event_type = Column(String, nullable=False)  # 事件类型
+    event_data_json = Column(Text, nullable=True)  # 事件数据（JSON）
+    created_at = Column(BigInteger, nullable=False)  # 创建时间戳（毫秒）
+
+    def to_dict(self):
+        """转换为字典格式"""
+        import json
+        result = {
+            "id": self.id,
+            "taskId": self.task_id,
+            "eventType": self.event_type,
+            "createdAt": self.created_at
+        }
+        if self.event_data_json:
+            try:
+                result["eventData"] = json.loads(self.event_data_json)
+            except (json.JSONDecodeError, TypeError):
+                result["eventData"] = None
+        return result
+
+
+class SystemConfig(Base):
+    """系统配置表 - 存储系统级别的配置（如注册开关等）"""
+    __tablename__ = "system_config"
+
+    id = Column(String, primary_key=True, index=True, default=generate_uuid)
+    key = Column(String, unique=True, nullable=False, index=True)  # 配置键（如 'allow_registration'）
+    value = Column(Text, nullable=False)  # 配置值（JSON 字符串）
+    description = Column(Text, nullable=True)  # 配置描述
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "key": self.key,
+            "value": self.value,
+            "description": self.description,
+            "createdAt": self.created_at.isoformat() if self.created_at else None,
+            "updatedAt": self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
+class LoginAttempt(Base):
+    """登录尝试记录表 - 用于防暴力破解"""
+    __tablename__ = "login_attempts"
+
+    id = Column(String, primary_key=True, index=True, default=generate_uuid)
+    email = Column(String, nullable=True, index=True)  # 尝试登录的邮箱（可为空，用于IP限制）
+    ip_address = Column(String, nullable=False, index=True)  # IP 地址
+    success = Column(Boolean, default=False)  # 是否成功
+    user_agent = Column(Text, nullable=True)  # 用户代理
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "email": self.email,
+            "ipAddress": self.ip_address,
+            "success": self.success,
+            "userAgent": self.user_agent,
+            "createdAt": self.created_at.isoformat() if self.created_at else None
+        }
+
+
+class ADKSession(Base):
+    """
+    ADK 会话表 - 存储 ADK 会话元数据
+    
+    关联关系：
+    - user_id: 用户 ID
+    - agent_id: 关联的智能体 ID
+    - session_id: ADK 会话 ID
+    - metadata_json: 会话元数据（JSON）
+    """
+    __tablename__ = "adk_sessions"
+
+    id = Column(String, primary_key=True, index=True, default=generate_uuid)  # UUID字符串
+    user_id = Column(String, nullable=False, index=True)  # 用户ID
+    agent_id = Column(String, nullable=False, index=True)  # 智能体 ID
+    session_id = Column(String, nullable=False, index=True)  # ADK 会话 ID
+    metadata_json = Column(Text, nullable=True)  # 会话元数据（JSON）
+    created_at = Column(BigInteger, nullable=False)  # 创建时间戳（毫秒）
+    last_used_at = Column(BigInteger, nullable=False)  # 最后使用时间（毫秒）
+
+    def to_dict(self):
+        """转换为字典格式"""
+        import json
+        result = {
+            "id": self.id,
+            "userId": self.user_id,
+            "agentId": self.agent_id,
+            "sessionId": self.session_id,
+            "createdAt": self.created_at,
+            "lastUsedAt": self.last_used_at
+        }
+        if self.metadata_json:
+            try:
+                result["metadata"] = json.loads(self.metadata_json)
+            except (json.JSONDecodeError, TypeError):
+                result["metadata"] = None
+        return result

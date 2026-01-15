@@ -1,6 +1,7 @@
 /**
  * 认证服务 - 处理用户认证相关的 API 调用
  */
+import { broadcastTokenRefresh, broadcastLogout, listenTokenRefresh, listenLogout } from './authSync';
 
 // ============================================
 // 类型定义
@@ -15,6 +16,14 @@ export interface User {
   email: string;
   name: string | null;
   status: string;
+}
+
+export interface LoginResponse {
+  user: User;
+  access_token: string;
+  refresh_token?: string;
+  token_type?: string;
+  expires_in: number;
 }
 
 export interface RegisterData {
@@ -38,7 +47,7 @@ export interface AuthError {
 // Token 工具函数
 // ============================================
 
-function getAccessToken(): string | null {
+export function getAccessToken(): string | null {
   return localStorage.getItem('access_token');
 }
 
@@ -48,6 +57,32 @@ function setAccessToken(token: string): void {
 
 function removeAccessToken(): void {
   localStorage.removeItem('access_token');
+}
+
+// ✅ 新增：Refresh Token 工具函数
+function getRefreshToken(): string | null {
+  return localStorage.getItem('refresh_token');
+}
+
+function setRefreshToken(token: string): void {
+  localStorage.setItem('refresh_token', token);
+}
+
+function removeRefreshToken(): void {
+  localStorage.removeItem('refresh_token');
+}
+
+/**
+ * 检查 token 是否过期
+ */
+function isTokenExpired(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    // 提前 5 分钟判断为过期（缓冲时间）
+    return payload.exp * 1000 < Date.now() + 5 * 60 * 1000;
+  } catch {
+    return true;
+  }
 }
 
 function getHeaders(includeJson = true): HeadersInit {
@@ -71,6 +106,22 @@ function getHeaders(includeJson = true): HeadersInit {
 class AuthService {
   private baseUrl = '/api/auth';
 
+  constructor() {
+    // ✅ 监听其他标签页的 token 刷新
+    listenTokenRefresh((accessToken, refreshToken) => {
+      setAccessToken(accessToken);
+      setRefreshToken(refreshToken);
+    });
+
+    // ✅ 监听其他标签页的登出
+    listenLogout(() => {
+      removeAccessToken();
+      removeRefreshToken();
+      // 触发页面刷新或重定向到登录页
+      window.location.reload();
+    });
+  }
+
   /**
    * 获取认证配置（注册开关状态）- 公开端点，不需要 token
    */
@@ -89,7 +140,7 @@ class AuthService {
   }
 
   /**
-   * 用户注册
+   * 用户注册 - 支持注册即登录
    */
   async register(data: RegisterData): Promise<User> {
     const response = await fetch(`${this.baseUrl}/register`, {
@@ -107,13 +158,24 @@ class AuthService {
       const error: AuthError = await response.json();
       throw new Error(error.detail || 'Registration failed');
     }
-    return response.json();
+    const result = await response.json();
+    // ✅ 新增：如果注册返回了 tokens，保存它们（注册即登录）
+    if (result.access_token) {
+      setAccessToken(result.access_token);
+      console.log('[AuthService] Saved access_token from registration');
+    }
+    if (result.refresh_token) {
+      setRefreshToken(result.refresh_token);
+      console.log('[AuthService] Saved refresh_token from registration');
+    }
+    // 返回用户对象
+    return result.user || result;
   }
 
   /**
    * 用户登录 - 返回用户信息和 token
    */
-  async login(data: LoginData): Promise<{ user: User; access_token: string; expires_in: number }> {
+  async login(data: LoginData): Promise<LoginResponse> {
     const response = await fetch(`${this.baseUrl}/login`, {
       method: 'POST',
       headers: getHeaders(),
@@ -125,9 +187,18 @@ class AuthService {
       throw new Error(error.detail || 'Login failed');
     }
     const result = await response.json();
-    // ✅ 将 token 存储到 localStorage
+    // ✅ 保存 access_token 到 localStorage
     if (result.access_token) {
       setAccessToken(result.access_token);
+      // ✅ 同时设置 Cookie（用于 EventSource 等场景）
+      // 注意：后端也会设置 Cookie，这里作为双重保障
+      const expiresIn = result.expires_in || 3600; // 默认 1 小时
+      const expiresDate = new Date(Date.now() + expiresIn * 1000);
+      document.cookie = `access_token=${result.access_token}; expires=${expiresDate.toUTCString()}; path=/; SameSite=Lax`;
+    }
+    // ✅ 保存 refresh_token
+    if (result.refresh_token) {
+      setRefreshToken(result.refresh_token);
     }
     return result;
   }
@@ -137,20 +208,29 @@ class AuthService {
    */
   async logout(): Promise<void> {
     try {
-    const response = await fetch(`${this.baseUrl}/logout`, {
-      method: 'POST',
-      headers: getHeaders(),
-      signal: AbortSignal.timeout(10000), // 10秒超时
-    });
+      // ✅ 清除 Cookie
+      document.cookie = 'access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax';
+    } catch (e) {
+      // 忽略 Cookie 清除错误
+    }
+    try {
+      const response = await fetch(`${this.baseUrl}/logout`, {
+        method: 'POST',
+        headers: getHeaders(),
+        signal: AbortSignal.timeout(10000), // 10秒超时
+      });
       // 即使后端请求失败，也清除本地 token
-    if (!response.ok) {
-        console.warn('Logout request failed, but clearing local token');
+      if (!response.ok) {
+        console.warn('Logout request failed, but clearing local tokens');
       }
     } catch (error) {
-      console.warn('Logout request error, but clearing local token:', error);
+      console.warn('Logout request error, but clearing local tokens:', error);
     } finally {
-      // ✅ 清除本地 token
+      // ✅ 清除所有 token
       removeAccessToken();
+      removeRefreshToken();
+      // ✅ 广播登出事件给其他标签页
+      broadcastLogout();
     }
   }
 
@@ -186,24 +266,62 @@ class AuthService {
   }
 
   /**
-   * 刷新令牌
+   * 刷新令牌（改进版 - 支持 Token 轮换和有效性检查）
    */
   async refreshToken(): Promise<boolean> {
     try {
+      const accessToken = getAccessToken();
+      const refreshToken = getRefreshToken();
+      
+      if (!refreshToken) {
+        console.warn('[AuthService] No refresh token available');
+        return false;
+      }
+      
+      // ✅ 检查 access_token 是否真的需要刷新
+      if (accessToken && !isTokenExpired(accessToken)) {
+        console.log('[AuthService] Access token still valid, skip refresh');
+        return true;
+      }
+
+      // 发送 refresh_token
       const response = await fetch(`${this.baseUrl}/refresh`, {
         method: 'POST',
-        headers: getHeaders(),
-        signal: AbortSignal.timeout(10000), // 10秒超时
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${refreshToken}`,
+        },
+        signal: AbortSignal.timeout(10000),
       });
+      
       if (response.ok) {
         const result = await response.json();
+        
+        // ✅ 更新 access_token
         if (result.access_token) {
           setAccessToken(result.access_token);
-          return true;
+          // ✅ 同时更新 Cookie
+          const expiresIn = result.expires_in || 3600;
+          const expiresDate = new Date(Date.now() + expiresIn * 1000);
+          document.cookie = `access_token=${result.access_token}; expires=${expiresDate.toUTCString()}; path=/; SameSite=Lax`;
         }
+        
+        // ✅ 更新 refresh_token（Token 轮换）
+        if (result.refresh_token) {
+          setRefreshToken(result.refresh_token);
+          console.log('[AuthService] Refresh token rotated');
+          // ✅ 广播给其他标签页
+          broadcastTokenRefresh(result.access_token, result.refresh_token);
+        }
+        
+        console.log('[AuthService] Token refreshed successfully');
+        return true;
       }
+      
+      console.warn('[AuthService] Token refresh failed');
       return false;
-    } catch {
+    } catch (error) {
+      console.error('[AuthService] Token refresh error:', error);
       return false;
     }
   }

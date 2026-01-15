@@ -8,7 +8,7 @@ code can continue to work while new code can use the official SDK interfaces.
 
 from typing import Any, Dict, List, Optional, Union, AsyncGenerator
 import logging
-from ..official.types import (
+from ..agent.types import (
     GenerateContentConfig,
     GenerateContentResponse,
     File,
@@ -273,7 +273,7 @@ class OfficialToLegacyAdapter:
                     parts=[Part(text=content_text)]
                 )
                 
-                from ..official.types import Candidate
+                from ..agent.types import Candidate
                 candidate = Candidate(
                     content=candidate_content,
                     finish_reason=choice.get('finish_reason')

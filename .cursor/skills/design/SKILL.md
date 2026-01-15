@@ -1,0 +1,1116 @@
+---
+name: design
+description: This is a new rule
+---
+
+# Overview
+
+Insert overview text here. The agent will only see this should they choose to apply the rule.
+
+
+**核心设计原则：路由层直接调用提供商服务，服务内部分发到子服务**
+
+```
+目标架构（直接服务调用 + 统一路由）：
+┌─────────────────────────────────────────────────────────────┐
+│  路由层（只负责路由 + 认证 + 凭证获取）                        │
+├─────────────────────────────────────────────────────────────┤
+│  chat.py    → /api/chat/{provider}                          │
+│  modes.py   → /api/modes/{provider}/{mode}                  │
+│  - 认证（Depends require_current_user）                      │
+│  - 获取凭证（CredentialManager）                            │
+│  - 创建服务（ProviderFactory.create）                        │
+│  - 调用服务方法（service.method）                            │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  提供商服务层（统一入口，内部分发）                             │
+├─────────────────────────────────────────────────────────────┤
+│  Google:  GoogleService (协调者)                             │
+│  ├── generate_image() → ImageGenerator                     │
+│  ├── edit_image() → ImageEditCoordinator                    │
+│  ├── stream_chat() → ChatHandler                            │
+│  ├── expand_image() → ExpandService                        │
+│  └── virtual_tryon() → TryOnService                         │
+│                                                              │
+│  Tongyi:  TongyiService (需要创建统一协调者)                  │
+│  ├── generate_image() → TongyiImageService                  │
+│  ├── edit_image() → ImageEditService                        │
+│  ├── stream_chat() → QwenNativeProvider                     │
+│  └── expand_image() → ImageExpandService                    │
+│                                                              │
+│  OpenAI:  OpenAIService (协调者，需要重构为委托模式)          │
+│  ├── stream_chat() → ChatHandler                            │
+│  └── generate_image() → ImageGenerator                     │
+│                                                              │
+│  Ollama:  OllamaService (协调者，需要重构为委托模式)          │
+│  ├── stream_chat() → NativeOllamaHandler 或                 │
+│  │                  OpenAICompatibleHandler                 │
+│  └── 其他方法...                                             │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  子服务层（具体业务逻辑实现）                                   │
+├─────────────────────────────────────────────────────────────┤
+│  Google:  ChatHandler, ImageGenerator, ImageEditCoordinator │
+│  Tongyi:  QwenNativeProvider, TongyiImageService, ...      │
+│  OpenAI:  OpenAIService 内部实现                             │
+│  Ollama:  OllamaService 内部实现                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 二、架构设计
+
+### 2.1 整体架构图
+
+```
+                    ┌─────────────────┐
+                    │   前端请求       │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              ▼              ▼              ▼
+    ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+    │  chat.py    │  │  modes.py   │  │ (旧路由)    │
+    │ /api/chat/* │  │ /api/modes/*│  │ deprecated  │
+    └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
+           │                │                │
+           └────────────────┼────────────────┘
+                            ▼
+              ┌─────────────────────────┐
+              │   Depends(require_      │
+              │   current_user)         │
+              │   (统一认证)             │
+              └────────────┬────────────┘
+                           ▼
+              ┌─────────────────────────┐
+              │   CredentialManager     │
+              │   (统一凭证获取)         │
+              └────────────┬────────────┘
+                           ▼
+              ┌─────────────────────────┐
+              │   ProviderFactory      │
+              │   (创建提供商协调者)     │
+              └────────────┬────────────┘
+                           │
+     ┌─────────────────────┼─────────────────────┐
+     ▼                     ▼                     ▼
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│GoogleService │   │TongyiService │   │OpenAIService │
+│  (协调者)     │   │  (协调者)     │   │   (协调者)    │
+│  委托模式     │   │  委托模式     │   │  委托模式     │
+│              │   │              │   │              │
+│ ┌──────────┐ │   │ ┌──────────┐ │   │ ┌──────────┐ │
+│ │ChatHdlr  │◄─┼──┤ │Chat      │◄─┼──┤ │ChatHdlr  │◄─┤
+│ │ImageGen  │◄─┼──┤ │Image     │◄─┼──┤ │ImageGen  │◄─┤
+│ │ImageEdit │◄─┼──┤ │Edit      │◄─┼──┤ │...       │◄─┤
+│ │VideoSvc  │◄─┼──┤ │Expand    │◄─┼──┤ │          │  │
+│ │TryOnSvc  │◄─┼──┤ │Video     │◄─┼──┤ │          │  │
+│ │ExpandSvc │◄─┼──┤ │...      │◄─┼──┤ │          │  │
+│ │...       │  │   │ └──────────┘ │   │ └──────────┘ │
+│ └──────────┘ │   │ └────────────┘   │ └────────────┘
+└──────────────┘   └──────────────────┘ └──────────────┘
+       │                  │                  │
+       └──────────────────┼──────────────────┘
+                          ▼
+              ┌─────────────────────────┐
+              │   子服务/处理器          │
+              │   (具体业务逻辑实现)      │
+              │                          │
+              │  Google: ChatHandler,    │
+              │         ImageGenerator,  │
+              │         ImageEditCoordinator,│
+              │         TryOnService, ...│
+              │                          │
+              │  Tongyi: QwenNativeProvider,│
+              │         TongyiImageService,│
+              │         ImageEditService,│
+              │         ImageExpandService,│
+              │         ...              │
+              │                          │
+              │  OpenAI: ChatHandler,    │
+              │          ImageGenerator, │
+              │          ...             │
+              │                          │
+              │  Ollama: NativeOllamaHandler,│
+              │          OpenAICompatibleHandler,│
+              │          ...             │
+              └─────────────────────────┘
+```
+
+### 2.2 路由到服务方法映射
+
+**核心思想：路由层直接调用提供商服务的方法，服务内部根据 mode 或方法名分发到子服务**
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    提供商服务协调者架构（统一委托模式）                    │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  核心原则：所有 Provider 都应有协调者服务，统一使用委托模式                │
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │ GoogleService (协调者 - 委托模式)                                   │ │
+│  │ ┌─────────────────────────────────────────────────────────────┐   │ │
+│  │ │ class GoogleService(BaseProviderService):                   │   │ │
+│  │ │     def generate_image(self, prompt, model, **kwargs):      │   │ │
+│  │ │         # 委托给 ImageGenerator 子服务                        │   │ │
+│  │ │         return self.image_generator.generate(...)          │   │ │
+│  │ │                                                              │   │ │
+│  │ │     def edit_image(self, mode, prompt, image, **kwargs):    │   │ │
+│  │ │         # 根据 mode 委托给不同子服务                           │   │ │
+│  │ │         if mode == "image-chat-edit":                       │   │ │
+│  │ │             return self.conversational_edit_service.edit(...)│ │
+│  │ │         elif mode == "image-mask-edit":                     │   │ │
+│  │ │             return self.image_edit_coordinator.edit(...)     │   │ │
+│  │ │                                                              │   │ │
+│  │ │     def stream_chat(self, messages, model, **kwargs):        │   │ │
+│  │ │         # 委托给 ChatHandler 子服务                            │   │ │
+│  │ │         return self.chat_handler.stream_chat(...)           │   │ │
+│  │ │                                                              │   │ │
+│  │ │ 子服务：ChatHandler, ImageGenerator, ImageEditCoordinator,  │   │ │
+│  │ │         ExpandService, TryOnService, VideoService, ...      │   │ │
+│  │ └─────────────────────────────────────────────────────────────┘   │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │ TongyiService (协调者 - 委托模式，需要创建)                         │ │
+│  │ ┌─────────────────────────────────────────────────────────────┐   │ │
+│  │ │ class TongyiService(BaseProviderService):                   │   │ │
+│  │ │     def generate_image(self, prompt, model, **kwargs):      │   │ │
+│  │ │         # 委托给 TongyiImageService 子服务                    │   │ │
+│  │ │         service = TongyiImageService.get_instance(...)      │   │ │
+│  │ │         return service.generate(...)                         │   │ │
+│  │ │                                                              │   │ │
+│  │ │     def edit_image(self, mode, prompt, image, **kwargs):    │   │ │
+│  │ │         # 委托给 ImageEditService 子服务                      │   │ │
+│  │ │         service = ImageEditService(api_key=self.api_key)     │   │ │
+│  │ │         return service.edit_image_sync(...)                  │   │ │
+│  │ │                                                              │   │ │
+│  │ │     def stream_chat(self, messages, model, **kwargs):        │   │ │
+│  │ │         # 委托给 QwenNativeProvider 子服务                    │   │ │
+│  │ │         provider = QwenNativeProvider(...)                    │   │ │
+│  │ │         return provider.stream_chat(...)                     │   │ │
+│  │ │                                                              │   │ │
+│  │ │ 子服务：QwenNativeProvider, TongyiImageService,             │   │ │
+│  │ │         ImageEditService, ImageExpandService, ...            │   │ │
+│  │ └─────────────────────────────────────────────────────────────┘   │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │ OpenAIService (协调者 - 委托模式)                                   │ │
+│  │ ┌─────────────────────────────────────────────────────────────┐   │ │
+│  │ │ class OpenAIService(BaseProviderService):                   │   │ │
+│  │ │     def stream_chat(self, messages, model, **kwargs):        │   │ │
+│  │ │         # 委托给 ChatHandler 子服务                            │   │ │
+│  │ │         return self.chat_handler.stream_chat(...)           │   │ │
+│  │ │                                                              │   │ │
+│  │ │     def generate_image(self, prompt, model, **kwargs):      │   │ │
+│  │ │         # 委托给 ImageGenerator 子服务                        │   │ │
+│  │ │         return self.image_generator.generate(...)          │   │ │
+│  │ │                                                              │   │ │
+│  │ │ 子服务：ChatHandler, ImageGenerator, ...                     │   │ │
+│  │ └─────────────────────────────────────────────────────────────┘   │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │ OllamaService (协调者 - 委托模式)                                   │ │
+│  │ ┌─────────────────────────────────────────────────────────────┐   │ │
+│  │ │ class OllamaService(BaseProviderService):                    │   │ │
+│  │ │     def stream_chat(self, messages, model, **kwargs):        │   │ │
+│  │ │         # 根据配置委托给 Native API 或 OpenAI 兼容模式         │   │ │
+│  │ │         if self.use_native_api:                              │   │ │
+│  │ │             return self.native_handler.stream_chat(...)       │   │ │
+│  │ │         else:                                                │   │ │
+│  │ │             return self.openai_compat_handler.stream_chat(...)│ │
+│  │ │                                                              │   │ │
+│  │ │ 子服务：NativeOllamaHandler, OpenAICompatibleHandler, ...   │   │ │
+│  │ └─────────────────────────────────────────────────────────────┘   │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│                                                                         │
+│  统一特点：                                                              │
+│  - 所有 Provider 都有协调者服务（统一入口）                               │
+│  - 协调者服务实现 BaseProviderService 接口                               │
+│  - 协调者内部使用委托模式，分发到子服务                                   │
+│  - 路由层只调用协调者服务的方法，不直接调用子服务                         │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### 2.3 路由设计
+
+#### 2.2.1 统一路由模式
+
+```
+/api/chat/{provider}                    # 聊天模式（保留）
+/api/modes/{provider}/{mode}            # 所有其他模式（新建）
+```
+
+#### 2.2.2 前端模式到后端路由映射
+
+| 前端 AppMode | 后端路由 | 说明 |
+|-------------|---------|------|
+| `chat` | `/api/chat/{provider}` | 聊天 |
+| `image-gen` | `/api/modes/{provider}/image-gen` | 图片生成 |
+| `image-chat-edit` | `/api/modes/{provider}/image-chat-edit` | 对话式图片编辑 |
+| `image-mask-edit` | `/api/modes/{provider}/image-mask-edit` | 遮罩编辑 |
+| `image-inpainting` | `/api/modes/{provider}/image-inpainting` | 图片修复 |
+| `image-background-edit` | `/api/modes/{provider}/image-background-edit` | 背景编辑 |
+| `image-recontext` | `/api/modes/{provider}/image-recontext` | 图片重上下文 |
+| `image-edit` | `/api/modes/{provider}/image-edit` | 图片编辑（通用） |
+| `video-gen` | `/api/modes/{provider}/video-gen` | 视频生成 |
+| `audio-gen` | `/api/modes/{provider}/audio-gen` | 音频生成 |
+| `image-outpainting` | `/api/modes/{provider}/image-outpainting` | 图片扩展 |
+| `pdf-extract` | `/api/modes/{provider}/pdf-extract` | PDF提取 |
+| `virtual-try-on` | `/api/modes/{provider}/virtual-try-on` | 虚拟试穿 |
+| `deep-research` | `/api/modes/{provider}/deep-research` | 深度研究 |
+| `multi-agent` | `/api/modes/{provider}/multi-agent` | 多智能体 |
+
+---
+
+## 三、核心组件设计
+
+### 3.1 统一凭证管理器
+
+**文件**: `backend/app/core/credential_manager.py`
+
+```python
+"""
+统一凭证管理器
+
+提供统一的 API Key 和 Base URL 获取逻辑。
+所有路由和服务都应该使用此模块获取凭证。
+"""
+from typing import Optional, Tuple
+from sqlalchemy.orm import Session
+from fastapi import HTTPException
+import logging
+
+from ..models.db_models import ConfigProfile, UserSettings
+from .encryption import decrypt_data, is_encrypted
+
+logger = logging.getLogger(__name__)
+
+
+def _decrypt_api_key(api_key: str) -> str:
+    """解密 API Key（兼容未加密的历史数据）"""
+    if not api_key:
+        return api_key
+    if not is_encrypted(api_key):
+        return api_key
+    try:
+        return decrypt_data(api_key)
+    except Exception as e:
+        logger.warning(f"[CredentialManager] API key decryption failed: {e}")
+        return api_key
+
+
+async def get_provider_credentials(
+    provider: str,
+    db: Session,
+    user_id: str,
+    request_api_key: Optional[str] = None,
+    request_base_url: Optional[str] = None
+) -> Tuple[str, Optional[str]]:
+    """
+    获取 Provider 的凭证（API Key 和 Base URL）
+
+    优先级：
+    1. 请求参数（用于测试/覆盖）
+    2. 数据库激活配置（必须匹配 provider）
+    3. 数据库任意配置（匹配 provider）
+
+    Args:
+        provider: Provider 标识（google, tongyi, openai 等）
+        db: 数据库会话
+        user_id: 当前用户 ID
+        request_api_key: 请求中的 API Key（可选，用于覆盖）
+        request_base_url: 请求中的 Base URL（可选）
+
+    Returns:
+        Tuple[api_key, base_url]
+
+    Raises:
+        HTTPException: 如果未找到 API Key
+    """
+    # 1. 优先使用请求参数
+    if request_api_key and request_api_key.strip():
+        logger.info(f"[CredentialManager] Using API key from request for {provider}")
+        return request_api_key, request_base_url
+
+    # 2. 从数据库获取
+    settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+    active_profile_id = settings.active_profile_id if settings else None
+
+    # 查询所有匹配 provider 的配置
+    matching_profiles = db.query(ConfigProfile).filter(
+        ConfigProfile.provider_id == provider,
+        ConfigProfile.user_id == user_id
+    ).all()
+
+    if not matching_profiles:
+        raise HTTPException(
+            status_code=401,
+            detail=f"API Key not found for provider: {provider}. "
+                   f"Please configure it in Settings → Profiles."
+        )
+
+    # 优先使用激活配置
+    if active_profile_id:
+        for profile in matching_profiles:
+            if profile.id == active_profile_id and profile.api_key:
+                logger.info(f"[CredentialManager] Using active profile '{profile.name}' for {provider}")
+                return _decrypt_api_key(profile.api_key), profile.base_url
+
+    # 回退：使用第一个匹配的配置
+    for profile in matching_profiles:
+        if profile.api_key:
+            logger.info(f"[CredentialManager] Using profile '{profile.name}' for {provider} (fallback)")
+            return _decrypt_api_key(profile.api_key), profile.base_url
+
+    raise HTTPException(
+        status_code=401,
+        detail=f"API Key not found for provider: {provider}. "
+               f"Please configure it in Settings → Profiles."
+    )
+```
+
+### 3.2 Mode 到服务方法映射
+
+**文件**: `backend/app/core/mode_method_mapper.py`
+
+```python
+"""
+Mode 到服务方法映射
+
+将前端 mode 映射到提供商服务的对应方法。
+路由层使用此映射来调用正确的服务方法。
+"""
+from typing import Dict, Optional, Tuple
+
+# Mode 到服务方法的映射表
+MODE_METHOD_MAP: Dict[str, str] = {
+    # 聊天
+    "chat": "stream_chat",
+    
+    # 图片相关
+    "image-gen": "generate_image",
+    "image-chat-edit": "edit_image",  # 传递 mode='image-chat-edit'
+    "image-mask-edit": "edit_image",  # 传递 mode='image-mask-edit'
+    "image-inpainting": "edit_image",  # 传递 mode='image-inpainting'
+    "image-background-edit": "edit_image",  # 传递 mode='image-background-edit'
+    "image-recontext": "edit_image",  # 传递 mode='image-recontext'
+    "image-edit": "edit_image",  # 传递 mode=None 或自动检测
+    "image-outpainting": "expand_image",
+    
+    # 视频和音频
+    "video-gen": "generate_video",
+    "audio-gen": "generate_speech",
+    
+    # 其他
+    "pdf-extract": "extract_pdf_data",
+    "virtual-try-on": "virtual_tryon",
+    "deep-research": "deep_research",  # 可能需要新增方法
+    "multi-agent": "multi_agent",  # 可能需要新增方法
+}
+
+
+def get_service_method(mode: str) -> Optional[str]:
+    """
+    根据 mode 获取对应的服务方法名
+    
+    Args:
+        mode: 前端模式名称
+        
+    Returns:
+        服务方法名，如果不存在则返回 None
+    """
+    return MODE_METHOD_MAP.get(mode)
+
+
+def is_streaming_mode(mode: str) -> bool:
+    """
+    判断是否为流式模式
+    
+    Args:
+        mode: 前端模式名称
+        
+    Returns:
+        是否为流式模式
+    """
+    streaming_modes = {"chat"}
+    return mode in streaming_modes
+```
+
+
+### 3.3 统一模式路由
+
+**文件**: `backend/app/routers/modes.py`
+
+```python
+"""
+统一模式路由
+
+所有非聊天模式都通过此路由处理。
+路由层只负责：
+1. 接收请求
+2. 参数验证
+3. 用户认证（使用 Depends）
+4. 获取凭证
+5. 创建提供商服务（ProviderFactory）
+6. 根据 mode 调用服务方法
+7. 返回响应
+
+不包含任何业务逻辑，业务逻辑在服务层。
+"""
+from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from typing import Optional, Dict, Any, List
+from sqlalchemy.orm import Session
+import json
+import logging
+
+from ..core.database import get_db
+from ..core.dependencies import require_current_user
+from ..core.credential_manager import get_provider_credentials
+from ..core.mode_method_mapper import get_service_method, is_streaming_mode
+from ..services.provider_factory import ProviderFactory
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/modes", tags=["modes"])
+
+
+# ==================== 统一请求模型 ====================
+
+class ModeRequest(BaseModel):
+    """统一的模式请求模型"""
+    modelId: Optional[str] = None
+    prompt: Optional[str] = None
+    options: Optional[Dict[str, Any]] = None
+    apiKey: Optional[str] = None
+    attachments: Optional[List[Dict[str, Any]]] = None
+    # 扩展字段
+    extra: Optional[Dict[str, Any]] = None
+
+
+class ModeResponse(BaseModel):
+    """统一的模式响应模型"""
+    success: bool = True
+    data: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    provider: Optional[str] = None
+    mode: Optional[str] = None
+
+
+# ==================== 统一路由端点 ====================
+
+@router.post("/{provider}/{mode}", response_model=ModeResponse)
+async def handle_mode(
+    provider: str,
+    mode: str,
+    request_body: ModeRequest,
+    user_id: str = Depends(require_current_user),  # ✅ 自动注入 user_id
+    db: Session = Depends(get_db)
+):
+    """
+    统一的模式处理端点
+
+    根据 provider 和 mode 参数，直接调用提供商服务的对应方法。
+    服务内部会根据 mode 分发到子服务。
+
+    Args:
+        provider: 提供商名称 (google, tongyi, openai, etc.)
+        mode: 模式名称 (image-gen, image-edit, video-gen, etc.)
+        request_body: 请求体
+        user_id: 用户 ID（自动注入）
+        db: 数据库会话
+
+    Returns:
+        ModeResponse: 统一的响应格式
+    """
+    try:
+        logger.info(f"[Modes] Request: provider={provider}, mode={mode}, user_id={user_id}")
+
+        # ✅ 1. 获取凭证
+        api_key, api_url = await get_provider_credentials(
+            provider=provider,
+            db=db,
+            user_id=user_id,
+            request_api_key=request_body.apiKey,
+            request_base_url=request_body.options.get("baseUrl") if request_body.options else None
+        )
+
+        # ✅ 2. 创建提供商服务（如 GoogleService）
+        service = ProviderFactory.create(
+            provider=provider,
+            api_key=api_key,
+            api_url=api_url,
+            user_id=user_id,
+            db=db
+        )
+
+        # ✅ 3. 根据 mode 获取服务方法名
+        method_name = get_service_method(mode)
+        if not method_name:
+            raise ValueError(f"Unsupported mode: {mode}")
+
+        # ✅ 4. 检查服务是否支持该方法
+        if not hasattr(service, method_name):
+            raise ValueError(f"Provider '{provider}' does not support method '{method_name}' for mode '{mode}'")
+
+        # ✅ 5. 准备参数
+        method = getattr(service, method_name)
+        
+        # 构建调用参数
+        params = {
+            "model": request_body.modelId,
+            "prompt": request_body.prompt,
+            **(request_body.options or {}),
+            **(request_body.extra or {})
+        }
+        
+        # 对于 edit_image 方法，需要传递 mode 参数
+        if method_name == "edit_image" and mode:
+            params["mode"] = mode
+        
+        # 处理附件（如图片）
+        if request_body.attachments:
+            params["attachments"] = request_body.attachments
+
+        # ✅ 6. 调用服务方法（服务内部会分发到子服务）
+        result = await method(**params)
+
+        # ✅ 7. 返回响应
+        logger.info(f"[Modes] Success: provider={provider}, mode={mode}")
+        return ModeResponse(
+            success=True,
+            data=result,
+            provider=provider,
+            mode=mode
+        )
+
+    except ValueError as e:
+        logger.warning(f"[Modes] Invalid request: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Modes] Error: provider={provider}, mode={mode}, error={e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.post("/{provider}/{mode}/stream")
+async def handle_mode_stream(
+    provider: str,
+    mode: str,
+    request_body: ModeRequest,
+    user_id: str = Depends(require_current_user),  # ✅ 自动注入 user_id
+    db: Session = Depends(get_db)
+):
+    """
+    统一的流式模式处理端点
+
+    支持流式响应的模式（如聊天）
+    """
+    try:
+        # ✅ 1. 获取凭证
+        api_key, api_url = await get_provider_credentials(
+            provider=provider,
+            db=db,
+            user_id=user_id,
+            request_api_key=request_body.apiKey,
+            request_base_url=request_body.options.get("baseUrl") if request_body.options else None
+        )
+
+        # ✅ 2. 创建提供商服务
+        service = ProviderFactory.create(
+            provider=provider,
+            api_key=api_key,
+            api_url=api_url,
+            user_id=user_id,
+            db=db
+        )
+
+        # ✅ 3. 获取服务方法
+        method_name = get_service_method(mode)
+        if not method_name or not is_streaming_mode(mode):
+            raise ValueError(f"Mode '{mode}' does not support streaming")
+
+        method = getattr(service, method_name)
+        if not method:
+            raise ValueError(f"Provider '{provider}' does not support method '{method_name}'")
+
+        # ✅ 4. 流式响应
+        async def generate():
+            try:
+                # 准备参数
+                params = {
+                    "messages": request_body.attachments or [],  # 聊天消息
+                    "model": request_body.modelId,
+                    **(request_body.options or {})
+                }
+                
+                # 调用流式方法
+                async for chunk in method(**params):
+                    yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+            except Exception as e:
+                logger.error(f"[Modes] Stream error: {e}", exc_info=True)
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+        return StreamingResponse(
+            generate(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Modes] Stream error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+```
+
+---
+
+## 四、具体服务实现示例
+
+### 4.1 图片生成服务
+
+**文件**: `backend/app/services/modes/image_gen_service.py`
+
+```python
+"""
+图片生成服务
+
+处理所有 provider 的图片生成请求。
+"""
+from typing import Dict, Any, Optional, List
+from ..base_mode_service import BaseModeService
+from ..provider_factory import ProviderFactory
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class ImageGenService(BaseModeService):
+    """图片生成服务"""
+
+    async def execute(
+        self,
+        request_data: Dict[str, Any],
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        执行图片生成
+
+        Args:
+            request_data: 请求数据，包含：
+                - prompt: 生成提示词
+                - modelId: 模型 ID
+                - options: 生成选项（size, quality, style 等）
+
+        Returns:
+            {
+                "images": [{"url": "...", "revised_prompt": "..."}],
+                "metadata": {...}
+            }
+        """
+        prompt = request_data.get("prompt")
+        model_id = request_data.get("modelId")
+        options = request_data.get("options", {})
+
+        if not prompt:
+            raise ValueError("Prompt is required for image generation")
+
+        self.logger.info(f"[ImageGenService] Generating image: model={model_id}")
+
+        # 创建 provider 服务
+        service = ProviderFactory.create(
+            provider=self._get_provider_from_model(model_id),
+            api_key=self.api_key,
+            api_url=self.api_url,
+            user_id=self.user_id,
+            db=self.db
+        )
+
+        # 构建生成参数
+        gen_kwargs = self._build_generation_params(options)
+
+        # 调用生成
+        result = await service.generate_image(
+            prompt=prompt,
+            model=model_id,
+            **gen_kwargs
+        )
+
+        return {
+            "images": result.get("images", []),
+            "metadata": {
+                "model": model_id,
+                "prompt": prompt,
+                **gen_kwargs
+            }
+        }
+
+    def _get_provider_from_model(self, model_id: str) -> str:
+        """从模型 ID 推断 provider"""
+        model_lower = model_id.lower()
+        if model_lower.startswith("dall-e") or model_lower.startswith("gpt"):
+            return "openai"
+        elif model_lower.startswith("imagen") or model_lower.startswith("gemini"):
+            return "google"
+        elif model_lower.startswith("qwen") or model_lower.startswith("wan"):
+            return "tongyi"
+        else:
+            raise ValueError(f"Cannot determine provider for model: {model_id}")
+
+    def _build_generation_params(self, options: Dict[str, Any]) -> Dict[str, Any]:
+        """构建生成参数"""
+        params = {}
+
+        if options.get("size"):
+            params["size"] = options["size"]
+        if options.get("quality"):
+            params["quality"] = options["quality"]
+        if options.get("style"):
+            params["style"] = options["style"]
+        if options.get("n"):
+            params["n"] = options["n"]
+        if options.get("negative_prompt"):
+            params["negative_prompt"] = options["negative_prompt"]
+
+        return params
+```
+
+### 4.2 图片编辑服务
+
+**文件**: `backend/app/services/modes/image_edit_service.py`
+
+```python
+"""
+图片编辑服务
+
+处理所有 provider 的图片编辑请求。
+"""
+from typing import Dict, Any
+from ..base_mode_service import BaseModeService
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class ImageEditService(BaseModeService):
+    """图片编辑服务"""
+
+    async def execute(
+        self,
+        request_data: Dict[str, Any],
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        执行图片编辑
+
+        Args:
+            request_data: 请求数据，包含：
+                - prompt: 编辑提示词
+                - reference_image: 参考图片（url 或 base64）
+                - options: 编辑选项
+
+        Returns:
+            {
+                "url": "生成的图片 URL",
+                "metadata": {...}
+            }
+        """
+        prompt = request_data.get("prompt")
+        reference_image = request_data.get("reference_image")
+        options = request_data.get("options", {})
+
+        if not reference_image:
+            raise ValueError("Reference image is required for image editing")
+
+        self.logger.info(f"[ImageEditService] Editing image")
+
+        # 根据 provider 调用不同的编辑服务
+        # ... 业务逻辑
+
+        return {
+            "url": "...",
+            "metadata": {}
+        }
+```
+
+---
+
+## 五、实施计划
+
+### 5.1 分阶段实施
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  阶段 0: 统一认证（已完成）                                    │
+├─────────────────────────────────────────────────────────────┤
+│  ✅ tongyi_chat.py - apiKey 改为 Optional                    │
+│  ✅ image_edit.py - api_key 改为 Optional                    │
+│  ✅ image_expand.py - api_key 改为 Optional                  │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  阶段 1: 创建基础设施                                          │
+├─────────────────────────────────────────────────────────────┤
+│  □ credential_manager.py - 统一凭证管理                      │
+│  □ mode_method_mapper.py - Mode 到方法映射                   │
+│  □ dependencies.py - 统一认证依赖（已完成）                   │
+│  □ modes.py - 统一模式路由                                   │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  阶段 2: 创建/重构提供商协调者服务                             │
+├─────────────────────────────────────────────────────────────┤
+│  □ GoogleService - 已有协调者（保持不变）                     │
+│  □ TongyiService - 创建统一协调者，委托到各子服务            │
+│  □ OpenAIService - 重构为协调者，提取子服务（ChatHandler等） │
+│  □ OllamaService - 重构为协调者，提取子服务                  │
+│  所有协调者都实现 BaseProviderService 接口                     │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  阶段 3: 测试和验证                                           │
+├─────────────────────────────────────────────────────────────┤
+│  □ 通过新路由测试所有 Google 模式                             │
+│  □ 通过新路由测试所有 Tongyi 模式                             │
+│  □ 通过新路由测试所有 OpenAI 模式                             │
+│  □ 确保旧路由仍然工作（兼容期）                               │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  阶段 4: 前端迁移和清理                                       │
+├─────────────────────────────────────────────────────────────┤
+│  □ 更新前端调用新路由                                        │
+│  □ 标记旧路由为 deprecated                                   │
+│  □ 观察一段时间后移除旧路由文件                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 5.2 文件清单
+
+#### 新建文件
+
+| 文件路径 | 说明 | 阶段 |
+|---------|------|------|
+| `backend/app/core/credential_manager.py` | 统一凭证管理 | 1 |
+| `backend/app/core/mode_method_mapper.py` | Mode 到方法映射 | 1 |
+| `backend/app/core/dependencies.py` | 统一认证依赖 | 1（已完成） |
+| `backend/app/routers/modes.py` | 统一模式路由 | 1 |
+| `backend/app/services/tongyi/tongyi_service.py` | Tongyi 协调者服务 | 2 |
+| `backend/app/services/openai/openai_service.py` | OpenAI 协调者服务（重构） | 2 |
+| `backend/app/services/ollama/ollama_service.py` | Ollama 协调者服务（重构） | 2 |
+
+**说明：所有 Provider 都需要有协调者服务，使用委托模式分发到子服务**
+
+#### 需要修改的文件
+
+| 文件路径 | 修改内容 | 阶段 |
+|---------|----------|------|
+| `backend/app/main.py` | 注册新路由 | 1 |
+| `backend/app/routers/chat.py` | 简化，使用凭证管理器 | 2 |
+| `backend/app/routers/generate.py` | 简化，标记 deprecated | 2 |
+
+#### 最终可删除的文件
+
+| 文件路径 | 说明 | 阶段 |
+|---------|------|------|
+| `backend/app/routers/image_edit.py` | 迁移到 modes.py | 4 |
+| `backend/app/routers/image_expand.py` | 迁移到 modes.py | 4 |
+| `backend/app/routers/tongyi_chat.py` | 迁移到 chat.py | 4 |
+| `backend/app/routers/google_modes.py` | 迁移到 modes.py | 4 |
+| `backend/app/routers/qwen_modes.py` | 迁移到 modes.py | 4 |
+| `backend/app/routers/tryon.py` | 迁移到 modes.py | 4 |
+
+### 5.3 架构优势说明
+
+#### 与原方案对比
+
+| 方面 | 原方案（分散路由）| 新方案（统一协调者）|
+|------|------------------|-------------------|
+| 服务层改动 | 各 Provider 架构不一致 | 统一协调者模式 |
+| Google 适配 | 已有协调者 | 保持 GoogleService 作为入口 |
+| Tongyi 适配 | 无统一协调者 | 创建 TongyiService 协调者 |
+| OpenAI 适配 | 单一服务 | 重构为协调者，提取子服务 |
+| 实施难度 | 中（需要创建协调者）| 中（需要创建/重构协调者）|
+| 风险 | 中（逐步迁移）| 低（保持向后兼容）|
+
+#### 设计原则
+
+1. **统一协调者模式**：所有 Provider 都应有协调者服务，统一使用委托模式
+2. **服务内部分发**：协调者服务内部根据 mode 或方法名分发到子服务
+3. **路由层简化**：路由层只调用协调者服务的方法，不包含业务逻辑
+4. **易于扩展**：添加新 Provider 只需创建协调者服务，实现 BaseProviderService 接口
+5. **向后兼容**：保持现有子服务不变，只添加协调者层
+
+---
+
+## 六、前端配合修改
+
+### 6.1 API 调用修改
+
+```typescript
+// 旧的调用方式
+const response = await fetch('/api/generate/tongyi/image/edit', {
+  method: 'POST',
+  body: JSON.stringify({ ... })
+});
+
+// 新的调用方式
+const response = await fetch('/api/modes/tongyi/image-edit', {
+  method: 'POST',
+  body: JSON.stringify({ ... })
+});
+```
+
+### 6.2 统一 API 客户端
+
+```typescript
+// frontend/src/services/ModeApiClient.ts
+
+class ModeApiClient {
+  async execute(provider: string, mode: string, data: any) {
+    const response = await fetch(`/api/modes/${provider}/${mode}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getAccessToken()}`
+      },
+      body: JSON.stringify(data)
+    });
+    return response.json();
+  }
+
+  async stream(provider: string, mode: string, data: any) {
+    const response = await fetch(`/api/modes/${provider}/${mode}/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getAccessToken()}`
+      },
+      body: JSON.stringify(data)
+    });
+    return response.body; // ReadableStream
+  }
+}
+```
+
+---
+
+## 七、测试策略
+
+### 7.1 单元测试
+
+```python
+# tests/test_mode_dispatcher.py
+
+import pytest
+from backend.app.services.mode_dispatcher import ModeDispatcher
+
+@pytest.mark.asyncio
+async def test_dispatch_image_gen():
+    service = await ModeDispatcher.dispatch(
+        provider="tongyi",
+        mode="image-gen",
+        api_key="test-key"
+    )
+    assert service is not None
+
+@pytest.mark.asyncio
+async def test_dispatch_unsupported_mode():
+    with pytest.raises(ValueError):
+        await ModeDispatcher.dispatch(
+            provider="tongyi",
+            mode="unsupported-mode",
+            api_key="test-key"
+        )
+```
+
+### 7.2 集成测试
+
+```python
+# tests/test_modes_router.py
+
+import pytest
+from fastapi.testclient import TestClient
+from backend.app.main import app
+
+client = TestClient(app)
+
+def test_modes_endpoint():
+    response = client.post(
+        "/api/modes/tongyi/image-gen",
+        json={
+            "prompt": "test image",
+            "modelId": "wanx-v1",
+            "options": {}
+        },
+        headers={"Authorization": "Bearer test-token"}
+    )
+    assert response.status_code in [200, 401]  # 401 if no valid token
+```
+
+---
+
+## 八、风险与缓解
+
+| 风险 | 影响 | 缓解措施 |
+|------|------|----------|
+| 大规模重构导致回归 | 高 | 分阶段实施，每阶段充分测试 |
+| 前端调用失败 | 高 | 保持旧路由兼容，渐进迁移 |
+| 服务适配问题 | 中 | 先创建基础设施，再逐步迁移 |
+| 性能下降 | 低 | 服务实例缓存，避免重复创建 |
+
+---
+
+## 九、验收标准
+
+### 阶段 1 验收
+
+- [ ] `credential_manager.py` 创建并通过单元测试
+- [ ] `mode_method_mapper.py` 创建并通过单元测试
+- [ ] `modes.py` 创建并注册到 `main.py`
+- [ ] `/api/modes/{provider}/{mode}` 端点可访问
+
+### 阶段 2 验收
+
+- [ ] `GoogleService` 协调者正常工作（已有）
+- [ ] `TongyiService` 协调者创建完成，可调用所有 Tongyi 模式
+- [ ] `OpenAIService` 重构为协调者，提取子服务，可调用 Chat 和 Image-gen
+- [ ] `OllamaService` 重构为协调者，提取子服务，可调用 Chat
+- [ ] 所有协调者都实现 BaseProviderService 接口
+
+### 阶段 3 验收
+
+- [ ] 通过新路由测试所有 Google 模式正常
+- [ ] 通过新路由测试所有 Tongyi 模式正常
+- [ ] 通过新路由测试所有 OpenAI 模式正常
+- [ ] 旧路由仍然可用（兼容期）
+
+### 最终验收
+
+- [ ] 前端全部迁移到新 API `/api/modes/{provider}/{mode}`
+- [ ] 旧路由标记为 deprecated
+- [ ] 无回归问题
+- [ ] 性能无明显下降
+
+---
+
+## 十、参考资料
+
+- [统一后端认证架构方案](./统一后端认证架构方案.md)
+- [AUTHENTICATION_TOKEN_FLOW.md](./AUTHENTICATION_TOKEN_FLOW.md)
+- [FastAPI 依赖注入文档](https://fastapi.tiangolo.com/tutorial/dependencies/)

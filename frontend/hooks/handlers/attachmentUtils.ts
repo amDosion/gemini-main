@@ -17,6 +17,14 @@ import { Attachment, Message } from '../../types/types';
 import { storageUpload } from '../../services/storage/storageUpload';
 
 /**
+ * 获取访问令牌
+ * 参考 UnifiedProviderClient.ts 的实现
+ */
+function getAccessToken(): string | null {
+  return localStorage.getItem('access_token');
+}
+
+/**
  * 将 Base64 Data URL 转换为 File 对象
  */
 export const base64ToFile = async (base64: string, filename: string): Promise<File> => {
@@ -588,7 +596,19 @@ export const fetchAttachmentStatus = async (
       sessionId: sessionId?.substring(0, 8) + '...',
       attachmentId: attachmentId
     });
-    const response = await fetch(`/api/sessions/${sessionId}/attachments/${attachmentId}`);
+    
+    // ✅ 构建请求头，添加 Authorization header（参考 UnifiedProviderClient.ts）
+    const headers: HeadersInit = {};
+    const token = getAccessToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    const response = await fetch(`/api/sessions/${sessionId}/attachments/${attachmentId}`, {
+      headers,
+      credentials: 'include',  // 发送认证 Cookie（向后兼容）
+    });
+    
     if (!response.ok) {
       console.log('[fetchAttachmentStatus] 查询失败:', response.status);
       return null;
@@ -670,17 +690,21 @@ export const prepareAttachmentForApi = async (
         uploadStatus: finalUploadStatus as 'pending' | 'uploading' | 'completed' | 'failed',
       };
 
-      // 按需获取 base64Data
-      if (!skipBase64 && finalUrl && isHttpUrl(finalUrl)) {
+      // 注意：对于 HTTP URL，不转换为 Base64（避免占用空间）
+      // 后端会自己下载 HTTP URL，所以直接传递 URL 即可
+      // 只有在没有 HTTP URL 的情况下（如 Blob URL），才需要转换为 Base64
+      if (!skipBase64 && finalUrl && !isHttpUrl(finalUrl)) {
+        // 只有非 HTTP URL（如 Blob URL）才转换为 Base64
         try {
           const base64Data = await urlToBase64(finalUrl);
           (reusedAttachment as any).base64Data = base64Data;
-          // ✅ 修复：同时设置 tempUrl 字段，供 image-edit.ts 检查使用
           reusedAttachment.tempUrl = base64Data;
-          console.log('[prepareAttachmentForApi] ✅ 已设置 base64Data 和 tempUrl');
+          console.log('[prepareAttachmentForApi] ✅ 已设置 base64Data（非 HTTP URL）');
         } catch (base64Error) {
           console.warn('[prepareAttachmentForApi] ⚠️ 获取 base64Data 失败:', base64Error);
         }
+      } else if (isHttpUrl(finalUrl)) {
+        console.log('[prepareAttachmentForApi] ✅ HTTP URL，直接传递（后端会自己下载）');
       }
       
       console.log('[prepareAttachmentForApi] ✅ 复用历史附件完成, Cloud URL:', reusedAttachment.url);
@@ -709,24 +733,18 @@ export const prepareAttachmentForApi = async (
     }
 
     if (isHttpUrl(imageUrl)) {
-      // 如果是 HTTP URL，我们假定它是一个可直接使用的云 URL
+      // 如果是 HTTP URL，直接返回 URL（后端会自己下载，避免 Base64 占用空间）
       const attachment: Attachment = {
         id: attachmentId,
         mimeType: 'image/png', // 假设，可根据需要改进
         name: attachmentName,
-        url: imageUrl, // 修正 (FIX): 权威 URL 存储在 `url` 字段
+        url: imageUrl, // 直接传递 HTTP URL，后端会自己下载
         uploadStatus: 'completed'
       };
       
-      if (!skipBase64) {
-        try {
-          (attachment as any).base64Data = await urlToBase64(imageUrl);
-        } catch (base64Error) {
-          console.warn('[prepareAttachmentForApi] ⚠️ 获取 base64Data 失败:', base64Error);
-        }
-      }
-      
-      console.log('[prepareAttachmentForApi] ✅ 云存储 URL 模式完成');
+      // 注意：对于 HTTP URL，不转换为 Base64（避免占用空间）
+      // 后端会自己下载 HTTP URL
+      console.log('[prepareAttachmentForApi] ✅ HTTP URL，直接传递（后端会自己下载）');
       return attachment;
     }
 
@@ -779,12 +797,15 @@ export const processUserAttachments = async (
   // ============================================================
   if (finalAttachments.length === 0 && activeImageUrl) {
     console.log(`[processUserAttachments] ✅ 触发 CONTINUITY LOGIC（无新上传）`);
+    // 注意：对于 HTTP URL，不转换为 Base64（后端会自己下载）
+    // 只有在非 HTTP URL（如 Blob URL）时，才需要转换为 Base64
+    const skipBase64ForHttp = isHttpUrl(activeImageUrl);
     const prepared = await prepareAttachmentForApi(
       activeImageUrl,
       messages,
       sessionId,
       filePrefix,
-      false // 不跳过 base64，确保有数据
+      skipBase64ForHttp // HTTP URL 跳过 Base64，让后端自己下载
     );
     if (prepared) {
       finalAttachments = [prepared];
@@ -808,55 +829,29 @@ export const processUserAttachments = async (
         });
 
         // ============================================================
-        // 修正 (FIX): 已完成上传的附件，需要下载为 File 对象
-        // 原因：后续 editImage 等函数需要 File 对象来上传到 Google Files API
-        // 如果只传递 URL，会导致重复上传或无法处理
+        // 修正 (FIX): 已完成上传的附件，直接传递 HTTP URL（后端会自己下载）
+        // 原因：避免前端下载后再转换为 Base64，减少数据传输和占用空间
+        // 后端会自己下载 HTTP URL，所以前端只需要传递 URL 即可
         // ============================================================
         if (att.uploadStatus === 'completed' && isHttpUrl(att.url)) {
-            // 如果已有 file 对象，直接使用
-            if (att.file) {
-                console.log(`[processUserAttachments] 附件[${index}] ✅ 已上传且有 File 对象，直接使用`);
-                return att;
-            }
-            // 没有 file 对象，需要下载云 URL 为 File 对象
-            console.log(`[processUserAttachments] 附件[${index}] ✅ 已上传，下载云 URL 为 File 对象`);
-            try {
-                const file = await urlToFile(att.url, att.name || `attachment-${Date.now()}.png`, att.mimeType);
-                return {
-                    ...att,
-                    file,
-                    url: att.url,
-                    uploadStatus: 'completed' as const,
-                };
-            } catch (e) {
-                console.warn(`[processUserAttachments] 附件[${index}] ⚠️ 下载 File 失败，保留云 URL:`, e);
-                return {
-                    ...att,
-                    url: att.url,
-                    uploadStatus: 'completed' as const,
-                };
-            }
+            // 直接传递 HTTP URL，后端会自己下载
+            // 不需要下载为 File 对象，也不需要转换为 Base64
+            console.log(`[processUserAttachments] 附件[${index}] ✅ 已上传 HTTP URL，直接传递（后端会自己下载）`);
+            return {
+                ...att,
+                url: att.url,
+                uploadStatus: 'completed' as const,
+            };
         }
         
-        // 如果 url 字段无效，但 tempUrl 中有云 URL，下载为 File 对象
+        // 如果 url 字段无效，但 tempUrl 中有云 URL，直接使用 tempUrl（后端会自己下载）
         if (att.uploadStatus === 'completed' && !isHttpUrl(att.url) && isHttpUrl(att.tempUrl)) {
-            console.log(`[processUserAttachments] 附件[${index}] ✅ 已上传，从 tempUrl 下载为 File 对象`);
-            try {
-                const file = await urlToFile(att.tempUrl, att.name || `attachment-${Date.now()}.png`, att.mimeType);
-                return {
-                    ...att,
-                    file,
-                    url: att.tempUrl,
-                    uploadStatus: 'completed' as const,
-                };
-            } catch (e) {
-                console.warn(`[processUserAttachments] 附件[${index}] ⚠️ 下载 File 失败，保留云 URL:`, e);
-                return {
-                    ...att,
-                    url: att.tempUrl,
-                    uploadStatus: 'completed' as const,
-                };
-            }
+            console.log(`[processUserAttachments] 附件[${index}] ✅ 已上传，使用 tempUrl（后端会自己下载）`);
+            return {
+                ...att,
+                url: att.tempUrl,
+                uploadStatus: 'completed' as const,
+            };
         }
 
         // 如果已有 file 对象，优先使用 File（Google Files API 和云存储都需要 File 对象）
@@ -914,16 +909,10 @@ export const processUserAttachments = async (
           }
         }
         
-        // HTTP URL (非云端) -> 下载为 File 对象
+        // HTTP URL -> 直接传递 URL（后端会自己下载，避免前端下载和 Base64 转换）
         if (isHttpUrl(displayUrl)) {
-            console.log(`[processUserAttachments] 附件[${index}] HTTP URL 下载为 File 对象`);
-            try {
-                const file = await urlToFile(displayUrl, att.name || `${filePrefix}-${Date.now()}.png`, att.mimeType);
-                return { ...att, file, url: displayUrl, uploadStatus: 'completed' as const };
-            } catch (e) {
-                console.warn(`[processUserAttachments] 附件[${index}] ⚠️ 下载 File 失败，保留云 URL:`, e);
-                return { ...att, url: displayUrl, uploadStatus: 'completed' as const };
-            }
+            console.log(`[processUserAttachments] 附件[${index}] ✅ HTTP URL，直接传递（后端会自己下载）`);
+            return { ...att, url: displayUrl, uploadStatus: 'completed' as const };
         }
 
         // 最后备选方案：查询后端获取云 URL

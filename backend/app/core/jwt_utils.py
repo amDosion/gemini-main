@@ -3,15 +3,30 @@ JWT 工具类 - 处理 JWT 令牌的生成和验证
 """
 import os
 import secrets
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from jose import JWTError, jwt
 from pydantic import BaseModel
+from dotenv import load_dotenv
 
+# ✅ 加载 .env 文件（与 config.py 和 database.py 保持一致）
+# 尽量从 backend/.env 加载环境变量（避免因启动目录不同导致读取不到配置）
+_backend_env = Path(__file__).resolve().parents[2] / ".env"
+if _backend_env.exists():
+    load_dotenv(dotenv_path=_backend_env)
+else:
+    load_dotenv()  # 回退：从当前工作目录向上查找 .env
 
-# 环境变量配置
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-super-secret-key-change-in-production")
+# ✅ 使用 JWT Secret Manager 安全获取密钥（延迟导入避免循环依赖）
+def _get_jwt_secret_key():
+    """延迟导入 JWT Secret Manager（避免循环依赖）"""
+    from .jwt_secret_manager import get_jwt_secret_key
+    return get_jwt_secret_key()
+
+# JWT 配置
+JWT_SECRET_KEY = _get_jwt_secret_key()  # ✅ 从安全文件或环境变量获取
 JWT_ALGORITHM = "HS256"
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
 JWT_REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))

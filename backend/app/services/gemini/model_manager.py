@@ -11,7 +11,7 @@ import json
 import asyncio
 from typing import List, Optional
 
-from ..model_capabilities import ModelConfig, build_model_config
+from ..common.model_capabilities import ModelConfig, build_model_config
 
 logger = logging.getLogger(__name__)
 

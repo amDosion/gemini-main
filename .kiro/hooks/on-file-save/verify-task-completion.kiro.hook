@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "name": "Verify Task Completion",
+  "description": "监视 tasks.md 和代码文件变动，使用 subagent 验证任务完成度",
+  "version": "1.0",
+  "when": {
+    "type": "fileEdited",
+    "pattern": "{.kiro/specs/unified-provider-architecture/tasks.md,backend/app/services/**/*.py,backend/app/routers/**/*.py}"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "🔍 代码变动检测到：${FILE}\n\n**任务**：实时验证任务完成度和代码实现\n\n**要求**：\n1. 使用 context-gatherer subagent 检查 tasks.md 中是否有新的任务标记为 ✅ COMPLETED\n2. 如果检测到新完成的任务，使用 context-gatherer subagent 验证对应代码文件是否存在和完整\n3. 使用 general-purpose subagent 检查代码实现是否符合验收标准\n4. 直接告诉我结果，不要创建任何文档\n5. 如果发现代码问题，直接指出具体问题\n\n**重点关注**：\n- 任务状态从其他状态变为 ✅ COMPLETED\n- 代码文件是否存在（根据任务的 Files Created/Modified）\n- 代码实现是否满足 Acceptance Criteria\n- 是否有明显的代码错误或重复代码\n\n**输出格式**：\n- 如果发现新完成的任务：\n  \"✅ Task X.X 完成 - 代码验证：通过/失败\"\n  \"问题（如有）：具体问题描述\"\n- 如果没有新完成的任务：\n  \"⏸️ 无新完成的任务\"\n\n遵循 KIRO-RULES.md：使用 subagents 并行执行验证任务。"
+  }
+}

@@ -9,7 +9,8 @@ import {
   AudioGenControls,
   VirtualTryOnControls,
   PdfExtractControls,
-  DeepResearchControls
+  DeepResearchControls,
+  MultiAgentControls
 } from '../controls/modes';
 import {
   ChatControlsProps,
@@ -20,7 +21,8 @@ import {
   AudioGenControlsProps,
   VirtualTryOnControlsProps,
   PdfExtractControlsProps,
-  DeepResearchControlsProps
+  DeepResearchControlsProps,
+  MultiAgentControlsProps
 } from '../controls/types';
 
 type ModeControlsCoordinatorProps = {
@@ -35,7 +37,8 @@ type ModeControlsCoordinatorProps = {
   & Partial<AudioGenControlsProps>
   & Partial<VirtualTryOnControlsProps>
   & Partial<PdfExtractControlsProps>
-  & Partial<DeepResearchControlsProps>;
+  & Partial<DeepResearchControlsProps>
+  & Partial<MultiAgentControlsProps>;
 
 /**
  * 模式控制协调者
@@ -49,7 +52,12 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
       return <ChatControls currentModel={currentModel} {...(controlProps as ChatControlsProps)} />;
     case 'image-gen':
       return <ImageGenControls providerId={providerId} currentModel={currentModel} {...(controlProps as ImageGenControlsProps)} />;
-    case 'image-edit':
+    // 图片编辑模式（已拆分为多个独立模式，都使用 ImageEditControls）
+    case 'image-chat-edit':
+    case 'image-mask-edit':
+    case 'image-inpainting':
+    case 'image-background-edit':
+    case 'image-recontext':
       return <ImageEditControls providerId={providerId} {...(controlProps as ImageEditControlsProps)} />;
     case 'image-outpainting':
       return <ImageOutpaintControls {...(controlProps as ImageOutpaintControlsProps)} />;
@@ -63,6 +71,8 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
       return <VirtualTryOnControls {...(controlProps as VirtualTryOnControlsProps)} />;
     case 'deep-research':
       return <DeepResearchControls currentModel={currentModel} {...(controlProps as DeepResearchControlsProps)} />;
+    case 'multi-agent':
+      return <MultiAgentControls currentModel={currentModel} {...(controlProps as MultiAgentControlsProps)} />;
     default:
       return null;
   }

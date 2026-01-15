@@ -345,6 +345,56 @@ Document Text:
             'raw_text': extracted_text[:500] + '...' if len(extracted_text) > 500 else extracted_text
         }
 
+    async def extract_pdf_data(
+        self,
+        prompt: str,
+        model: str,
+        reference_images: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        统一的 PDF 数据提取接口 - 处理 PDF 数据提取和下载
+        
+        Args:
+            prompt: Extraction instructions (used as additional_instructions)
+            model: Model identifier (required)
+            reference_images: Reference images dict (should contain 'pdf_bytes' or 'pdf_url')
+            **kwargs: Additional parameters:
+                - template_type: Template type ('invoice', 'form', 'receipt', 'contract', 'full-text')
+                - pdf_bytes: PDF file content as bytes (alternative to reference_images)
+                - pdf_url: PDF file URL (alternative to reference_images)
+                - additional_instructions: Optional additional extraction instructions
+        
+        Returns:
+            Dictionary containing extracted structured data
+        """
+        # 获取 PDF 数据
+        pdf_bytes = None
+        if reference_images:
+            pdf_bytes = reference_images.get("pdf_bytes")
+            if not pdf_bytes:
+                # 如果有 URL，需要下载
+                pdf_url = reference_images.get("pdf_url")
+                if pdf_url:
+                    import httpx
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get(pdf_url)
+                        response.raise_for_status()
+                        pdf_bytes = response.content
+        
+        # 从 kwargs 中获取（兼容旧接口）
+        if not pdf_bytes:
+            pdf_bytes = kwargs.get("pdf_bytes")
+        
+        if not pdf_bytes:
+            raise ValueError("extract_pdf_data requires 'pdf_bytes' in reference_images or kwargs")
+        
+        template_type = kwargs.get("template_type", "full-text")
+        additional_instructions = kwargs.get("additional_instructions", prompt)
+
+        logger.info(f"[PDF Extractor Service] PDF extraction: template={template_type}, model={model}")
+        return await self.extract_structured_data(pdf_bytes, template_type, model, additional_instructions)
+    
     def get_available_templates(self) -> List[Dict[str, str]]:
         """
         Get list of available extraction templates.

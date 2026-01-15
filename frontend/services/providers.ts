@@ -7,10 +7,44 @@
  * - 提供辅助函数
  * 
  * 创建时间: 2026-01-05
+ * 更新时间: 2026-01-11 (Task 3.1: Enhanced with capabilities, modes, platformRouting)
  */
 
 import { ApiProtocol } from '../types/types';
 
+/**
+ * Provider capabilities configuration
+ */
+export interface ProviderCapabilities {
+  vision?: boolean;
+  thinking?: boolean;
+  search?: boolean;
+  codeExecution?: boolean;
+  streaming?: boolean;
+  functionCalling?: boolean;
+}
+
+/**
+ * Platform routing configuration for Google modes
+ */
+export interface PlatformRoutingConfig {
+  support: 'vertex_ai_only' | 'developer_api_only' | 'vertex_ai_preferred' | 'either';
+  default: 'vertex_ai' | 'developer_api';
+}
+
+/**
+ * Dual-client configuration
+ */
+export interface DualClientConfig {
+  enabled: boolean;
+  primaryClientType: string;
+  secondaryClientType?: string;
+  secondaryBaseUrl?: string;
+}
+
+/**
+ * AI Provider Configuration (matches backend schema)
+ */
 export interface AIProviderConfig {
   id: string;
   name: string;
@@ -20,6 +54,11 @@ export interface AIProviderConfig {
   icon?: string;
   description: string;
   isCustom?: boolean;
+  // Enhanced fields (Task 3.1)
+  capabilities?: ProviderCapabilities;
+  dualClient?: boolean | DualClientConfig;
+  modes?: string[];
+  platformRouting?: Record<string, PlatformRoutingConfig>;
 }
 
 /**
@@ -34,7 +73,6 @@ export async function fetchProviderTemplates(): Promise<AIProviderConfig[]> {
     }
     
     const templates = await response.json();
-    console.log('[Provider Templates] Loaded', templates.length, 'templates from API');
     return templates;
   } catch (error) {
     console.error('[Provider Templates] Failed to fetch:', error);
@@ -52,7 +90,6 @@ let cachedTemplates: AIProviderConfig[] | null = null;
  */
 export async function getProviderTemplates(forceRefresh = false): Promise<AIProviderConfig[]> {
   if (!forceRefresh && cachedTemplates) {
-    console.log('[Provider Templates] Using cached templates');
     return cachedTemplates;
   }
   
@@ -65,7 +102,6 @@ export async function getProviderTemplates(forceRefresh = false): Promise<AIProv
  */
 export function clearProviderTemplatesCache(): void {
   cachedTemplates = null;
-  console.log('[Provider Templates] Cache cleared');
 }
 
 /**
@@ -77,3 +113,44 @@ export function getProviderTemplateById(
 ): AIProviderConfig | undefined {
   return templates.find(t => t.id === id);
 }
+
+/**
+ * 检查 Provider 是否支持特定能力
+ */
+export function hasCapability(
+  provider: AIProviderConfig,
+  capability: keyof ProviderCapabilities
+): boolean {
+  return provider.capabilities?.[capability] === true;
+}
+
+/**
+ * 检查 Provider 是否支持特定模式
+ */
+export function hasMode(
+  provider: AIProviderConfig,
+  mode: string
+): boolean {
+  return provider.modes?.includes(mode) === true;
+}
+
+/**
+ * 获取 Provider 的平台路由配置
+ */
+export function getPlatformRouting(
+  provider: AIProviderConfig,
+  mode: string
+): PlatformRoutingConfig | undefined {
+  return provider.platformRouting?.[mode];
+}
+
+/**
+ * 检查 Provider 是否支持双客户端模式
+ */
+export function hasDualClient(provider: AIProviderConfig): boolean {
+  if (typeof provider.dualClient === 'boolean') {
+    return provider.dualClient;
+  }
+  return provider.dualClient?.enabled === true;
+}
+

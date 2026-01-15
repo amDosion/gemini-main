@@ -4,7 +4,6 @@
  */
 import { ChatSession, Persona, ModelConfig } from '../types/types';
 import { StorageConfig } from '../types/storage';
-import { DEFAULT_PERSONAS } from '../config/personas';
 
 export interface ConfigProfile {
     id: string;
@@ -114,11 +113,7 @@ class ApiDB {
 
     // ==================== Personas ====================
     async getPersonas(): Promise<Persona[]> {
-        try {
-            return await this.request<Persona[]>('/personas');
-        } catch {
-            return DEFAULT_PERSONAS;
-        }
+        return await this.request<Persona[]>('/personas');
     }
 
     async savePersonas(personas: Persona[]): Promise<void> {
@@ -127,6 +122,15 @@ class ApiDB {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(personas)
         });
+    }
+
+    async resetPersonas(): Promise<Persona[]> {
+        // 调用重置 API
+        await this.request('/personas/reset', {
+            method: 'POST'
+        });
+        // 重置后重新获取 Personas
+        return await this.getPersonas();
     }
 
     // ==================== Profiles ====================

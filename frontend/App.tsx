@@ -1,9 +1,8 @@
 
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { v4 as uuidv4 } from 'uuid';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 
-import { AppMode, Attachment, Role, ApiProtocol } from './types/types';
+import { AppMode, Attachment, Role } from './types/types';
 import { llmService } from './services/llmService';
 
 // Cleaner Imports via Barrel Files
@@ -15,7 +14,6 @@ import {
   StudioView,
   SettingsModal,
   ImageModal,
-  PersonaModal, // Ensure this is exported if used, otherwise remove
   LoadingSpinner,
   ErrorView,
   WelcomeScreen
@@ -31,17 +29,22 @@ import {
   useChat,
   usePersonas,
   useAuth,
-  useInitData
+  useInitData,
+  useStorageConfigs,
+  useImageNavigation,
+  useViewMessages,
+  useLLMService,
+  useModeSwitch,
+  useImageHandlers,
+  useSessionSync
 } from './hooks';
-import { useControlsState } from './hooks/useControlsState';
-import { findAttachmentByUrl, tryFetchCloudUrl } from './hooks/handlers/attachmentUtils';
-import { StorageConfig } from './types/storage';
-import { db } from './services/db';
+import { ToastProvider, useToastContext } from './contexts/ToastContext';
 
-const App: React.FC = () => {
+const AppContent: React.FC = () => {
   // --- Router Hooks ---
   const navigate = useNavigate();
   const location = useLocation();
+  const { showError, showWarning } = useToastContext();
 
   // --- Auth State (使用真实认证) ---
   const {
@@ -57,41 +60,10 @@ const App: React.FC = () => {
   // --- 统一初始化数据 ---
   const { initData, isLoading: isInitLoading, error: initError, isConfigReady, retry } = useInitData(isAuthenticated);
 
-  // --- 日志：记录 initData 加载状态 ---
-  useEffect(() => {
-    if (initData) {
-      console.log('[App] initData loaded:', {
-        profilesCount: initData.profiles?.length || 0,
-        activeProfileId: initData.activeProfileId,
-        hasActiveProfile: !!initData.activeProfile,
-        activeProfileName: initData.activeProfile?.name || 'None',
-        storageConfigsCount: initData.storageConfigs?.length || 0,
-        sessionsCount: initData.sessions?.length || 0,
-        personasCount: initData.personas?.length || 0,
-        hasPartialFailures: !!initData._metadata?.partialFailures?.length,
-        profiles: initData.profiles?.map(p => ({ id: p.id?.substring(0, 8) + '...', name: p.name })) || [],
-        sessions: initData.sessions?.map(s => ({
-          id: s.id?.substring(0, 8) + '...',
-          title: s.title,
-          messagesCount: s.messages?.length || 0
-        })) || [],
-        timestamp: new Date().toISOString()
-      });
-
-      if (initData._metadata?.partialFailures?.length) {
-        console.warn('[App] Partial failures detected:', initData._metadata.partialFailures);
-      }
-    } else if (initError) {
-      console.error('[App] Failed to load initData:', initError);
-    } else if (isInitLoading) {
-      console.log('[App] Loading initData...');
-    }
-  }, [initData, initError, isInitLoading]);
 
   // --- UI State ---
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'profiles' | 'editor'>('profiles');
 
   // App Mode State
@@ -99,11 +71,6 @@ const App: React.FC = () => {
   const [initialAttachments, setInitialAttachments] = useState<Attachment[] | undefined>(undefined);
   const [initialPrompt, setInitialPrompt] = useState<string | undefined>(undefined);
 
-  // Track previous session ID to detect actual session switches
-  const prevSessionIdRef = useRef<string | null>(null);
-
-  // Track previous model config to detect actual model switches
-  const prevModelConfigRef = useRef<typeof activeModelConfig>(undefined);
 
   // --- Domain Hooks ---
   const {
@@ -117,42 +84,25 @@ const App: React.FC = () => {
     dashscopeKey: initData.dashscopeKey || ''  // ✅ 确保不为 undefined
   } : undefined);
 
-  // 调试日志：检查 useSettings 返回的 profiles（必须在 useSettings 调用之后）
-  useEffect(() => {
-    if (process.env.NODE_ENV === 'development') {
-      const profilesInfo = {
-        count: profiles.length,
-        activeProfileId,
-        profiles: profiles.map(p => ({ id: p.id?.substring(0, 8) + '...', name: p.name })),
-        timestamp: new Date().toISOString()
-      };
-      console.log('[App] useSettings profiles:', JSON.stringify(profilesInfo, null, 2));
-    }
-  }, [profiles, activeProfileId]);
 
   const {
     personas, activePersona, activePersonaId, setActivePersonaId,
-    createPersona, updatePersona, deletePersona, resetPersonas
+    createPersona, updatePersona, deletePersona, refreshPersonas
   } = usePersonas(initData ? {
     personas: initData.personas
   } : undefined);
 
-  // --- 云存储状态 ---
-  const [storageConfigs, setStorageConfigs] = useState<StorageConfig[]>([]);
-  const [activeStorageId, setActiveStorageId] = useState<string | null>(null);
-
-  // --- 从 initData 初始化云存储配置 ---
-  useEffect(() => {
-    if (initData) {
-      console.log('[Storage] 从 initData 初始化配置:', {
-        configCount: initData.storageConfigs?.length || 0,
-        activeId: initData.activeStorageId,
-        timestamp: new Date().toISOString()
-      });
-      setStorageConfigs(initData.storageConfigs || []);
-      setActiveStorageId(initData.activeStorageId || null);
-    }
-  }, [initData]);
+  // --- 云存储管理 ---
+  const {
+    storageConfigs,
+    activeStorageId,
+    handleSaveStorage,
+    handleDeleteStorage,
+    handleActivateStorage
+  } = useStorageConfigs(initData ? {
+    storageConfigs: initData.storageConfigs,
+    activeStorageId: initData.activeStorageId
+  } : undefined);
 
   // --- Auth 路由重定向 ---
   useEffect(() => {
@@ -167,45 +117,8 @@ const App: React.FC = () => {
   // 必须在所有使用 activeProfile 的 useEffect 之前定义
   const activeProfile = activeProfileFromSettings;
 
-  // --- 初始化 llmService ---
-  useEffect(() => {
-    if (initData?.activeProfile) {
-      console.log('[llmService] 初始化配置:', {
-        providerId: initData.activeProfile.providerId,
-        hasApiKey: !!initData.activeProfile.apiKey,
-        timestamp: new Date().toISOString()
-      });
-      llmService.setConfig(
-        initData.activeProfile.apiKey,
-        initData.activeProfile.baseUrl,
-        initData.activeProfile.protocol,
-        initData.activeProfile.providerId
-      );
-    } else if (initData && !initData.activeProfile) {
-      // 用户未配置，清空 llmService
-      console.log('[llmService] 清空配置（用户未配置）');
-      llmService.setConfig('', '', null, '');
-    }
-  }, [initData]);
-
-  // ✅ 修复：只依赖 activeProfile，不依赖 initData，避免状态回退
-  useEffect(() => {
-    if (activeProfile) {
-      console.log('[llmService] 更新配置:', {
-        providerId: activeProfile.providerId,
-        profileId: activeProfile.id?.substring(0, 8) + '...',
-        profileName: activeProfile.name,
-        hasApiKey: !!activeProfile.apiKey,
-        timestamp: new Date().toISOString()
-      });
-      llmService.setConfig(
-        activeProfile.apiKey || '',
-        activeProfile.baseUrl || '',
-        (activeProfile.protocol as ApiProtocol) || null,
-        activeProfile.providerId || ''
-      );
-    }
-  }, [activeProfile]); // ✅ 只依赖 activeProfile
+  // --- LLM Service 初始化 ---
+  useLLMService(initData, activeProfile);
 
   // PDF 模板会在 PdfExtractView 组件中按需加载，无需预加载
 
@@ -226,7 +139,6 @@ const App: React.FC = () => {
     isLoadingModels,
     isModelMenuOpen,
     setIsModelMenuOpen,
-    refreshModels
   } = useModels(
     isProfileReady, // ✅ 使用 isProfileReady 而不是 isConfigReady
     hiddenModelIds,
@@ -244,8 +156,6 @@ const App: React.FC = () => {
     updateSessionPersona,
     updateSessionTitle, // ✅ 新增
     deleteSession,
-    getSession,
-    isLoading: isLoadingSessions,
     // 缓存相关
     cacheStatus,
     refreshSessions,
@@ -253,120 +163,42 @@ const App: React.FC = () => {
     sessions: initData.sessions
   } : undefined);
 
-  // Track sessions in ref to avoid unnecessary useEffect triggers
-  const sessionsRef = useRef(sessions);
 
   const {
     messages,
     setMessages,
     loadingState,
-    setLoadingState,
     sendMessage,
     stopGeneration
   } = useChat(currentSessionId, updateSessionMessages, config.apiKey, activeStorageId);
 
-  // ✅ 获取 Deep Research 控制状态（用于 Multi-Agent 工作流）
-  const controls = useControlsState(appMode, activeModelConfig);
 
-  // --- Filter Messages for Current View (Separation Logic) ---
-  const currentViewMessages = useMemo(() => {
-    return messages.filter(m => {
-      // Backward compatibility: If no mode is set, assume it belongs to 'chat'
-      const messageMode = m.mode || 'chat';
-      return messageMode === appMode;
-    });
-  }, [messages, appMode]);
+  // --- 消息过滤 ---
+  const currentViewMessages = useViewMessages(messages, appMode);
 
-  // --- Image Navigation Logic ---
-  const { allImages, currentImageIndex } = useMemo(() => {
-    if (!previewImage) return { allImages: [], currentImageIndex: -1 };
-
-    // Flatten all image attachments from current view messages
-    const images = currentViewMessages.flatMap(m =>
-      (m.attachments || [])
-        .filter(att => att.mimeType.startsWith('image/') && att.url)
-        .map(att => att.url!)
-    );
-
-    // Keep array order
-    return {
-      allImages: images,
-      currentImageIndex: images.indexOf(previewImage)
-    };
-  }, [currentViewMessages, previewImage]);
-
-  // Loop Navigation: Next
-  const handleNextImage = () => {
-    if (allImages.length <= 1) return;
-    const nextIndex = currentImageIndex === allImages.length - 1 ? 0 : currentImageIndex + 1;
-    setPreviewImage(allImages[nextIndex]);
-  };
-
-  // Loop Navigation: Prev
-  const handlePrevImage = () => {
-    if (allImages.length <= 1) return;
-    const prevIndex = currentImageIndex === 0 ? allImages.length - 1 : currentImageIndex - 1;
-    setPreviewImage(allImages[prevIndex]);
-  };
+  // --- 图片导航 ---
+  const {
+    previewImage,
+    setPreviewImage,
+    allImages,
+    handleNextImage,
+    handlePrevImage,
+    handleImageClick
+  } = useImageNavigation(currentViewMessages);
 
   // --- Effects ---
   useEffect(() => {
     if (window.innerWidth >= 1280) setIsRightSidebarOpen(true);
   }, []);
 
-  // ❌ 移除自动创建会话的逻辑
-  // 用户应该主动点击"新建聊天"或发送消息时自动创建会话
-  // useEffect(() => {
-  //   if (isAuthenticated && !isLoadingModels && sessions.length === 0 && currentModelId) {
-  //     handleNewChat();
-  //   }
-  // }, [isAuthenticated, isLoadingModels, currentModelId]);
-
-  // Sync sessions to ref
-  useEffect(() => {
-    sessionsRef.current = sessions;
-  }, [sessions]);
-
-  // --- Partial Failure Warning ---
-  useEffect(() => {
-    if (initData?._metadata?.partialFailures?.length) {
-      console.warn(
-        '部分数据加载失败:',
-        initData._metadata.partialFailures
-      );
-      // 可以在这里添加 Toast 通知
-    }
-  }, [initData]);
-
-  useEffect(() => {
-    if (currentSessionId) {
-      // Use sessionsRef.current instead of getSession to avoid unnecessary triggers
-      const session = sessionsRef.current.find(s => s.id === currentSessionId);
-      if (session) {
-        // Only load messages when session actually switches
-        const isSessionSwitch = prevSessionIdRef.current !== currentSessionId;
-        if (isSessionSwitch) {
-          setMessages(session.messages);
-
-          const storedMode = session.mode;
-          if (storedMode) {
-            setAppMode(storedMode);
-          } else {
-            const lastMsg = [...session.messages].reverse().find(m => m.mode);
-            setAppMode(lastMsg?.mode || 'chat');
-          }
-          prevSessionIdRef.current = currentSessionId;
-        }
-
-        // Only update llmService when session switches or model actually changes
-        const isModelSwitch = prevModelConfigRef.current?.id !== activeModelConfig?.id;
-        if ((isSessionSwitch || isModelSwitch) && activeModelConfig) {
-          llmService.startNewChat(session.messages, activeModelConfig);
-          prevModelConfigRef.current = activeModelConfig;
-        }
-      }
-    }
-  }, [currentSessionId, activeModelConfig]);
+  // --- 会话同步 ---
+  useSessionSync({
+    currentSessionId,
+    sessions,
+    activeModelConfig,
+    setMessages,
+    setAppMode
+  });
 
   // --- Handlers ---
   const handleNewChat = () => {
@@ -414,7 +246,7 @@ const App: React.FC = () => {
     }
 
     if (mode === 'image-outpainting' && !config.dashscopeApiKey && config.providerId !== 'tongyi') {
-      alert("DashScope API Key is required for 'Expand Image'. Please configure it in Settings.");
+      showWarning("DashScope API Key is required for 'Expand Image'. Please configure it in Settings.");
       setIsSettingsOpen(true);
       return;
     }
@@ -430,7 +262,7 @@ const App: React.FC = () => {
 
     // For PDF extraction, enforce using the user-selected model only (no fallback).
     if (mode === 'pdf-extract' && !selectedModel) {
-      alert('当前选择的模型不可用，请在模型列表中重新选择后再进行 PDF 提取。');
+      showError('当前选择的模型不可用，请在模型列表中重新选择后再进行 PDF 提取。');
       return;
     }
 
@@ -445,6 +277,8 @@ const App: React.FC = () => {
     config.dashscopeApiKey,
     config.protocol,
     currentSessionId,
+    showError,
+    showWarning,
     createNewSession,
     activePersonaId,
     activePersona,
@@ -458,154 +292,17 @@ const App: React.FC = () => {
     setSettingsInitialTab
   ]);
 
-  // ✅ 使用 useCallback 优化，避免每次渲染都创建新函数
-  const handleEditImage = useCallback(async (url: string) => {
-    setAppMode('image-chat-edit');  // 默认使用对话式编辑模式
-
-    // ✅ 尝试从历史消息中查找原附件，复用其 ID（用于后续查询云 URL）
-    const found = findAttachmentByUrl(url, messages);
-
-    let newAttachment: Attachment;
-
-    if (found) {
-      // 复用原附件的 ID 和其他信息
-      newAttachment = {
-        id: found.attachment.id,
-        mimeType: found.attachment.mimeType || 'image/png',
-        name: found.attachment.name || 'Reference Image',
-        url: url,  // ✅ 保留原始 URL 用于显示和匹配
-        tempUrl: found.attachment.tempUrl,
-        uploadStatus: found.attachment.uploadStatus
-      };
-
-      // ✅ 如果 uploadStatus 是 pending，查询后端获取云 URL
-      if (found.attachment.uploadStatus === 'pending' && currentSessionId) {
-        console.log('[handleEditImage] uploadStatus=pending，查询后端获取云 URL');
-        const cloudResult = await tryFetchCloudUrl(
-          currentSessionId,
-          found.attachment.id,
-          found.attachment.url,
-          found.attachment.uploadStatus
-        );
-        if (cloudResult) {
-          console.log('[handleEditImage] ✅ 获取到云 URL:', cloudResult.url.substring(0, 60));
-          // ✅ 修正 (FIX): 云 URL 保存到 url 字段（永久 URL），而不是 tempUrl
-          newAttachment.url = cloudResult.url;
-          newAttachment.uploadStatus = 'completed';
-        }
-      }
-    } else {
-      // 未找到原附件，创建新附件
-      newAttachment = {
-        id: uuidv4(),
-        mimeType: 'image/png',
-        name: 'Reference Image',
-        url: url
-      };
-    }
-
-    console.log('[handleEditImage] 跨模式传递 - 完整附件状态:', {
-      foundOriginal: !!found,
-      attachmentId: newAttachment.id?.substring(0, 8) + '...',
-      url: newAttachment.url?.substring(0, 50) + '...',
-      urlType: newAttachment.url?.startsWith('blob:') ? 'Blob' : newAttachment.url?.startsWith('data:') ? 'Base64' : 'HTTP',
-      tempUrl: newAttachment.tempUrl?.substring(0, 50) + '...',
-      tempUrlType: newAttachment.tempUrl?.startsWith('blob:') ? 'Blob' : newAttachment.tempUrl?.startsWith('data:') ? 'Base64' : newAttachment.tempUrl?.startsWith('http') ? 'HTTP' : 'None',
-      uploadStatus: newAttachment.uploadStatus
-    });
-
-    setInitialAttachments([newAttachment]);
-    setInitialPrompt("Make it look like...");
-    if (activeModelConfig && !activeModelConfig.capabilities.vision) {
-      const visionModel = visibleModels.find(m => m.capabilities.vision);
-      if (visionModel) setCurrentModelId(visionModel.id);
-    }
-  }, [messages, currentSessionId, activeModelConfig, visibleModels, setCurrentModelId]);
-
-  // ✅ 使用 useCallback 优化，避免每次渲染都创建新函数
-  const handleExpandImage = useCallback(async (url: string) => {
-    setAppMode('image-outpainting');
-
-    // 根据 URL 类型推断 MIME 类型和扩展名
-    let mimeType = 'image/png';
-    let extension = 'png';
-
-    if (url.startsWith('data:')) {
-      // 从 Base64 Data URL 中提取 MIME 类型
-      const match = url.match(/^data:([^;]+);/);
-      if (match) {
-        mimeType = match[1];
-        // 根据 MIME 类型确定扩展名
-        if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
-          extension = 'jpg';
-        } else if (mimeType === 'image/webp') {
-          extension = 'webp';
-        } else if (mimeType === 'image/gif') {
-          extension = 'gif';
-        }
-      }
-    } else if (url.includes('.jpg') || url.includes('.jpeg')) {
-      mimeType = 'image/jpeg';
-      extension = 'jpg';
-    } else if (url.includes('.webp')) {
-      mimeType = 'image/webp';
-      extension = 'webp';
-    }
-
-    // ✅ 尝试从历史消息中查找原附件，复用其 ID（用于后续查询云 URL）
-    const found = findAttachmentByUrl(url, messages);
-
-    let newAttachment: Attachment;
-
-    if (found) {
-      // 复用原附件的 ID 和其他信息
-      newAttachment = {
-        id: found.attachment.id,
-        mimeType: found.attachment.mimeType || mimeType,
-        name: found.attachment.name || `expand-source-${Date.now()}.${extension}`,
-        url: url,  // ✅ 保留原始 URL 用于显示
-        tempUrl: found.attachment.tempUrl,
-        uploadStatus: found.attachment.uploadStatus
-      };
-
-      // ✅ 如果 uploadStatus 是 pending，查询后端获取云 URL
-      if (found.attachment.uploadStatus === 'pending' && currentSessionId) {
-        console.log('[handleExpandImage] uploadStatus=pending，查询后端获取云 URL');
-        const cloudResult = await tryFetchCloudUrl(
-          currentSessionId,
-          found.attachment.id,
-          found.attachment.url,
-          found.attachment.uploadStatus
-        );
-        if (cloudResult) {
-          console.log('[handleExpandImage] ✅ 获取到云 URL:', cloudResult.url.substring(0, 60));
-          // ✅ 修正 (FIX): 云 URL 保存到 url 字段（永久 URL），而不是 tempUrl
-          newAttachment.url = cloudResult.url;
-          newAttachment.uploadStatus = 'completed';
-        }
-      }
-    } else {
-      // 未找到原附件，创建新附件
-      newAttachment = {
-        id: uuidv4(),
-        mimeType: mimeType,
-        name: `expand-source-${Date.now()}.${extension}`,
-        url: url
-      };
-    }
-
-    console.log('[handleExpandImage] 跨模式传递:', {
-      foundOriginal: !!found,
-      attachmentId: newAttachment.id?.substring(0, 8) + '...',
-      urlType: url.startsWith('blob:') ? 'Blob' : url.startsWith('data:') ? 'Base64' : 'HTTP',
-      uploadStatus: newAttachment.uploadStatus,
-      hasCloudUrl: !!newAttachment.tempUrl && newAttachment.tempUrl.startsWith('http')
-    });
-
-    setInitialAttachments([newAttachment]);
-    setInitialPrompt(undefined); // Clear prompt as outpainting often just needs settings
-    // Ensure we stay on a compatible model if possible, but Expand usually uses specific endpoints handled by provider
-  }, [messages, currentSessionId]);
+  // --- 图片处理 Handlers ---
+  const { handleEditImage, handleExpandImage } = useImageHandlers({
+    messages,
+    currentSessionId,
+    visibleModels,
+    activeModelConfig,
+    setAppMode,
+    setCurrentModelId,
+    setInitialAttachments,
+    setInitialPrompt
+  });
 
   const handleWelcomePrompt = (text: string, mode: AppMode, modelId: string, requiredCap: string) => {
     handleModelSelect(modelId);
@@ -625,45 +322,6 @@ const App: React.FC = () => {
     setIsSettingsOpen(true);
   };
 
-  // --- 云存储处理函数 ---
-  const handleSaveStorage = async (config: StorageConfig) => {
-    try {
-      await db.saveStorageConfig(config);
-      const configs = await db.getStorageConfigs();
-      setStorageConfigs(configs);
-    } catch (e) {
-      // ✅ 降级到 LocalStorage 不应该报错
-      console.error("保存云存储配置失败", e);
-      // ❌ 移除 alert，因为 LocalStorage 保存不应该失败
-    }
-  };
-
-  const handleDeleteStorage = async (id: string) => {
-    try {
-      await db.deleteStorageConfig(id);
-      const configs = await db.getStorageConfigs();
-      setStorageConfigs(configs);
-      if (activeStorageId === id) {
-        setActiveStorageId(null);
-        await db.setActiveStorageId('');
-      }
-    } catch (e) {
-      // ✅ 降级到 LocalStorage 不应该报错
-      console.error("删除云存储配置失败", e);
-      // ❌ 移除 alert
-    }
-  };
-
-  const handleActivateStorage = async (id: string) => {
-    try {
-      await db.setActiveStorageId(id);
-      setActiveStorageId(id);
-    } catch (e) {
-      // ✅ 降级到 LocalStorage 不应该报错
-      console.error("激活云存储配置失败", e);
-      // ❌ 移除 alert
-    }
-  };
 
   // 删除单条消息（同时删除对应的用户消息）
   const handleDeleteMessage = (messageId: string) => {
@@ -691,55 +349,13 @@ const App: React.FC = () => {
     updateSessionMessages(currentSessionId, newMessages);
   };
 
-  // ✅ 使用 useCallback 优化，避免每次渲染都创建新函数
-  const handleModeSwitch = useCallback((mode: AppMode) => {
-    setAppMode(mode);
-    if (mode === 'image-gen') {
-      // 优先选择专门的图像生成模型
-      let imageModel = visibleModels.find(m => m.id.toLowerCase().includes('imagen'));
-      if (!imageModel) {
-        // 其次选择 Gemini 2.0+ 支持原生图像生成的模型
-        imageModel = visibleModels.find(m => {
-          const id = m.id.toLowerCase();
-          return (id.includes('gemini-2') || id.includes('gemini-3')) &&
-            (id.includes('flash') || id.includes('pro'));
-        })
-          || visibleModels.find(m => m.id === 'gemini-2.5-flash-image')
-          || visibleModels.find(m => m.id.includes('image'))
-          || visibleModels.find(m => m.capabilities.vision);
-      }
-      if (imageModel) setCurrentModelId(imageModel.id);
-    } else if (
-      mode === 'image-chat-edit' || mode === 'image-mask-edit' || 
-      mode === 'image-inpainting' || mode === 'image-background-edit' || 
-      mode === 'image-recontext' || 
-      mode === 'image-outpainting'
-    ) {
-      const imageModel = visibleModels.find(m => m.capabilities.vision && !m.id.includes('imagen'));
-      if (imageModel) setCurrentModelId(imageModel.id);
-    } else if (mode === 'video-gen') {
-      const videoModel = visibleModels.find(m => m.id.includes('veo'));
-      if (videoModel) setCurrentModelId(videoModel.id);
-    } else if (mode === 'pdf-extract') {
-      // PDF extraction works with most models that support function calling
-      // Prefer reasoning-capable models, but allow any compatible model
-      const pdfModel = visibleModels.find(m =>
-        m.capabilities.reasoning && !m.id.includes('veo') && !m.id.includes('tts')
-      ) || visibleModels.find(m =>
-        !m.id.includes('veo') && !m.id.includes('tts') && !m.id.includes('wanx')
-      );
-
-      // Only switch if current model is incompatible (e.g. Veo, TTS, Image Gen)
-      if (pdfModel && !visibleModels.find(m =>
-        m.id === currentModelId && !m.id.includes('veo') && !m.id.includes('tts')
-      )) {
-        setCurrentModelId(pdfModel.id);
-      }
-    }
-  }, [visibleModels, setCurrentModelId, currentModelId]);
-
-  // ✅ 使用 useCallback 优化 onImageClick
-  const handleImageClick = useCallback((url: string) => setPreviewImage(url), []);
+  // --- 模式切换 ---
+  const { handleModeSwitch } = useModeSwitch({
+    visibleModels,
+    currentModelId,
+    setCurrentModelId,
+    setAppMode
+  });
 
   const renderView = () => {
     const commonProps = {
@@ -881,7 +497,7 @@ const App: React.FC = () => {
         onCreatePersona={createPersona}
         onUpdatePersona={updatePersona}
         onDeletePersona={deletePersona}
-        onResetPersonas={resetPersonas}
+        onRefreshPersonas={refreshPersonas}
 
         settings={isSettingsOpen && (
           <SettingsModal
@@ -941,6 +557,7 @@ const App: React.FC = () => {
               isLoading={isAuthLoading}
               error={authError}
               onNavigateToLogin={() => navigate('/login')}
+              allowRegistration={allowRegistration}
             />
           ) : (
             <Navigate to="/login" replace />
@@ -958,6 +575,14 @@ const App: React.FC = () => {
         }
       />
     </Routes>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
   );
 };
 

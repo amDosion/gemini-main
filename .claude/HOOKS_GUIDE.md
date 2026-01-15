@@ -550,7 +550,7 @@ cd backend && pytest tests/ -v
   "environment_variables": {
     "PYTHONPATH": "${WORKSPACE_ROOT}/backend",
     "TESTING": "true",
-    "DATABASE_URL": "sqlite:///./test.db"
+    "DATABASE_URL": "postgresql+psycopg2://user:password@localhost:5432/dbname"
   }
 }
 ```

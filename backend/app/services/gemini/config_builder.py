@@ -89,18 +89,20 @@ class ConfigBuilder:
         enable_thinking: bool = False,
         enable_code_execution: bool = False,
         enable_grounding: bool = False,
+        enable_browser: bool = False,
         **kwargs
     ) -> Any:
         """
         构建包含工具配置的生成配置（统一 SDK 方案）
-        
+
         Args:
             enable_search: 启用 Google Search
             enable_thinking: 启用 Thinking Mode
             enable_code_execution: 启用 Code Execution
             enable_grounding: 启用 Grounding (URL Context)
+            enable_browser: 启用 Browser Tools (web_search, read_webpage, selenium_browse)
             **kwargs: 其他配置参数（temperature, max_tokens 等）
-        
+
         Returns:
             types.GenerateContentConfig 对象
         """
@@ -154,7 +156,30 @@ class ConfigBuilder:
                 google_maps=genai_types.GoogleMaps()
             ))
             logger.info("[Config Builder] Enabled Grounding (Google Maps) tool")
-        
+
+        # 4. Browser Tools (Function Calling)
+        if enable_browser:
+            try:
+                from .browser import get_tool_declarations
+                browser_declarations = get_tool_declarations()
+                # 将浏览工具声明转换为 SDK 格式
+                function_declarations = []
+                for decl in browser_declarations:
+                    function_declarations.append(
+                        genai_types.FunctionDeclaration(
+                            name=decl["name"],
+                            description=decl["description"],
+                            parameters=decl.get("parameters")
+                        )
+                    )
+                if function_declarations:
+                    tools.append(genai_types.Tool(
+                        function_declarations=function_declarations
+                    ))
+                logger.info(f"[Config Builder] Enabled Browser tools: {[d['name'] for d in browser_declarations]}")
+            except ImportError as e:
+                logger.warning(f"[Config Builder] Browser tools not available: {e}")
+
         # 添加工具到配置
         if tools:
             config_params['tools'] = tools

@@ -1,10 +1,11 @@
 
 import { LLMFactory } from "./LLMFactory";
-import { Message, ModelConfig, ChatOptions, Attachment, ApiProtocol } from "../types/types";
+import { Message, ModelConfig, ChatOptions, Attachment, ApiProtocol, AppMode } from "../types/types";
 import { StreamUpdate, ImageGenerationResult, VideoGenerationResult, AudioGenerationResult } from "./providers/interfaces";
 import { configService } from "./configurationService";
 import { messagePreparer } from "./ai_chat/MessagePreparer";
 import { streamManager } from "./stream/StreamManager";
+import { UnifiedProviderClient } from "./providers/UnifiedProviderClient";
 
 interface ModelCache {
   models: ModelConfig[];
@@ -163,6 +164,39 @@ export class LLMService {
 
   public cancelCurrentStream() {
       streamManager.cancelTask('active_chat_stream', 'User stopped generation');
+
+      // Also stop browser session if Browse was enabled
+      this.stopBrowserSession().catch((e) => {
+          console.warn('[LLMService] Failed to stop browser session:', e);
+      });
+  }
+
+  /**
+   * Stop the user's browser session on the backend.
+   * Called when user stops generation to clean up Selenium resources.
+   */
+  private async stopBrowserSession(): Promise<void> {
+      if (!this.baseUrl) return;
+
+      try {
+          const response = await fetch(`${this.baseUrl}/api/chat/browser/stop`, {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+              },
+              credentials: 'include', // Include cookies for user_id
+          });
+
+          if (response.ok) {
+              console.log('[LLMService] Browser session stopped');
+          } else {
+              const error = await response.text();
+              console.warn('[LLMService] Browser stop response:', error);
+          }
+      } catch (e) {
+          // Silently ignore network errors (browser may not have been active)
+          console.debug('[LLMService] Browser stop request failed (may be expected):', e);
+      }
   }
 
   // --- Media Operations (Delegated to MediaFactory) ---
@@ -184,11 +218,17 @@ export class LLMService {
           prompt,
           referenceImages,
           this._cachedOptions,
+          '', // API Key - now managed by backend
           this.baseUrl
       );
   }
 
-  public async editImage(prompt: string, referenceImages: Record<string, Attachment>): Promise<ImageGenerationResult[]> {
+  public async editImage(
+      prompt: string, 
+      referenceImages: Record<string, Attachment>,
+      mode?: AppMode,
+      options?: ChatOptions
+  ): Promise<ImageGenerationResult[]> {
       // ✅ Check if provider is configured
       if (!this.isConfigured()) {
           throw new Error('Provider not configured. Please configure a provider in Settings → Profiles.');
@@ -218,16 +258,58 @@ export class LLMService {
           baseUrl: this.baseUrl?.substring(0, 30) || 'empty',
           providerId: this.providerId,
           modelId: this._cachedModelConfig.id,
+          mode: mode || 'auto',
           referenceImageTypes: Object.keys(referenceImages)
       });
 
+      // 路由 1: 对话式编辑模式（image-chat-edit）
+      // 注意：对话式编辑由后端 UnifiedProviderClient 处理，直接传递 mode 参数即可
+      // 不需要特殊处理，后端会根据 mode='image-chat-edit' 路由到 ConversationalImageEditService
+
+      // 路由 2: Mask 编辑模式（image-mask-edit）- 必须有 mask
+      if (mode === 'image-mask-edit') {
+          if (!referenceImages.mask) {
+              throw new Error('image-mask-edit mode requires a mask in referenceImages');
+          }
+          if (this.providerId === 'google') {
+              const result = await this.callGoogleInpaintAPI(prompt, referenceImages);
+              return [result];
+          }
+      }
+
+      // 路由 3: 自动路由（根据是否有 mask）
+      // Route Google inpainting through backend API if mask is provided
+      if (this.providerId === 'google' && referenceImages.mask) {
+          const result = await this.callGoogleInpaintAPI(prompt, referenceImages);
+          return [result];
+      }
+
       // ✅ Call currentProvider.editImage()
       // API Key is retrieved from database by backend, not passed from frontend
-      return this.currentProvider.editImage(
+      // 对于 UnifiedProviderClient，传递 mode 参数
+      // 检查是否是 UnifiedProviderClient（通过检查是否有 id 属性，这是 UnifiedProviderClient 的特征）
+      const provider = this.currentProvider;
+      // 合并 options（如果提供了）
+      const finalOptions = options ? { ...this._cachedOptions, ...options } : this._cachedOptions;
+      
+      if ('id' in provider && typeof (provider as any).id === 'string') {
+          // 这是 UnifiedProviderClient，它有 editImage 方法支持 mode 参数
+          return (provider as UnifiedProviderClient).editImage(
+              this._cachedModelConfig.id,
+              prompt,
+              referenceImages,
+              finalOptions,  // 使用合并后的 options
+              this.baseUrl,
+              mode  // 传递模式参数
+          );
+      }
+      
+      // 其他提供者（保持向后兼容，不支持 mode 参数）
+      return provider.editImage(
           this._cachedModelConfig.id,
           prompt,
           referenceImages,
-          this._cachedOptions,
+          finalOptions,  // 使用合并后的 options
           this.baseUrl
       );
   }
@@ -254,16 +336,23 @@ export class LLMService {
   }
 
   public async outPaintImage(referenceImage: Attachment): Promise<ImageGenerationResult> {
+      // Route Google provider through backend API
+      if (this.providerId === 'google') {
+          return this.callGoogleOutpaintAPI(referenceImage);
+      }
+      
+      // For other providers, use existing logic
       if (this.currentProvider.outPaintImage) {
           return this.currentProvider.outPaintImage(referenceImage, this._cachedOptions, this.apiKey, this.baseUrl);
       }
       
-      // Fallback: If current provider (e.g. Google) doesn't support outpainting,
-      // check if we have a DashScope key configured and use the DashScope provider for this specific task.
+      // Fallback: If current provider doesn't support outpainting,
+      // check if we have a DashScope key configured and use the Tongyi provider (via UnifiedProviderClient) for this specific task.
+      // ✅ 新架构: 使用 UnifiedProviderClient('tongyi')，通过 executeMode('image-outpainting', ...) 统一处理
       const dashscopeKey = await configService.getDashScopeKey();
       if (dashscopeKey) {
-           const dashscopeProvider = LLMFactory.getProvider('openai', 'tongyi');
-           if (dashscopeProvider.outPaintImage) {
+           const tongyiProvider = LLMFactory.getProvider('openai', 'tongyi'); // 返回 UnifiedProviderClient('tongyi')
+           if (tongyiProvider.outPaintImage) {
                // Resolve correct DashScope URL from config if available, otherwise default standard
                const profiles = await configService.getProfiles();
                const tongyiProfile = profiles.find(p => p.providerId === 'tongyi');
@@ -272,10 +361,203 @@ export class LLMService {
                // We avoid defaulting to the absolute 'https://dashscope...' URL here because it breaks CORS in browsers.
                const dsUrl = tongyiProfile?.baseUrl;
 
-               return dashscopeProvider.outPaintImage(referenceImage, this._cachedOptions, dashscopeKey, dsUrl);
+               return tongyiProvider.outPaintImage(referenceImage, this._cachedOptions, dashscopeKey, dsUrl);
            }
       }
       throw new Error("Out-Painting not supported by current provider.");
+  }
+
+  public async virtualTryOn(prompt: string, attachments: Attachment[]): Promise<ImageGenerationResult[]> {
+      // ✅ 新架构: 使用 UnifiedProviderClient.executeMode('virtual-try-on', ...) 统一处理
+      if (this.currentProvider && 'executeMode' in this.currentProvider) {
+          const unifiedProvider = this.currentProvider as any;
+          const result = await unifiedProvider.executeMode(
+              'virtual-try-on',
+              this._cachedOptions.modelId || '',
+              prompt,
+              attachments,
+              this._cachedOptions,
+              {}
+          );
+          return Array.isArray(result) ? result : [result];
+      }
+      
+      // 回退到旧方法（仅用于兼容性，应该尽快迁移）
+      if (this.providerId === 'google') {
+          const result = await this.callGoogleVirtualTryonAPI(prompt, attachments);
+          return [result];
+      }
+      
+      throw new Error("Virtual Try-On not supported by current provider.");
+  }
+
+  private async callGoogleOutpaintAPI(referenceImage: Attachment): Promise<ImageGenerationResult> {
+      try {
+          // Convert attachment to base64 if needed
+          let imageData = referenceImage.url;
+          if (referenceImage.url.startsWith('blob:')) {
+              const response = await fetch(referenceImage.url);
+              const blob = await response.blob();
+              const base64 = await new Promise<string>((resolve) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve(reader.result as string);
+                  reader.readAsDataURL(blob);
+              });
+              imageData = base64;
+          }
+
+          const response = await fetch('/api/google/outpaint', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+              },
+              credentials: 'include',
+              body: JSON.stringify({
+                  image: imageData,
+                  prompt: this._cachedOptions.prompt || 'Extend the image naturally',
+                  model: this._cachedOptions.modelId || 'imagen-3.0-generate-001',
+                  aspectRatio: this._cachedOptions.outPainting?.aspectRatio,
+                  platform: this._cachedOptions.outPainting?.platform,
+              }),
+          });
+
+          if (!response.ok) {
+              const error = await response.json().catch(() => ({ detail: response.statusText }));
+              throw new Error(error.detail || `HTTP ${response.status}`);
+          }
+
+          const result = await response.json();
+          
+          // Convert backend response to ImageGenerationResult format
+          return {
+              url: result.images[0], // Backend returns base64 in images array
+              mimeType: 'image/png',
+              filename: 'outpainted.png',
+          };
+      } catch (error) {
+          console.error('[LLMService] Google outpaint API error:', error);
+          throw error;
+      }
+  }
+
+  /**
+   * @deprecated 使用 UnifiedProviderClient.executeMode('virtual-try-on', ...) 代替
+   * 旧 API 路由: /api/google/virtual-tryon
+   * 新 API 路由: /api/modes/google/virtual-try-on
+   */
+  private async callGoogleVirtualTryonAPI(prompt: string, attachments: Attachment[]): Promise<ImageGenerationResult> {
+      try {
+          if (!attachments || attachments.length < 2) {
+              throw new Error('Virtual try-on requires 2 images: person and garment');
+          }
+
+          // Convert attachments to base64
+          const convertToBase64 = async (attachment: Attachment): Promise<string> => {
+              if (attachment.url.startsWith('data:')) {
+                  return attachment.url;
+              }
+              if (attachment.url.startsWith('blob:')) {
+                  const response = await fetch(attachment.url);
+                  const blob = await response.blob();
+                  return await new Promise<string>((resolve) => {
+                      const reader = new FileReader();
+                      reader.onloadend = () => resolve(reader.result as string);
+                      reader.readAsDataURL(blob);
+                  });
+              }
+              return attachment.url;
+          };
+
+          const personImage = await convertToBase64(attachments[0]);
+          const garmentImage = await convertToBase64(attachments[1]);
+
+          const response = await fetch('/api/google/virtual-tryon', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+              },
+              credentials: 'include',
+              body: JSON.stringify({
+                  personImage,
+                  garmentImage,
+                  model: this._cachedOptions.modelId || 'imagen-3.0-generate-001',
+                  platform: this._cachedOptions.platform,
+              }),
+          });
+
+          if (!response.ok) {
+              const error = await response.json().catch(() => ({ detail: response.statusText }));
+              throw new Error(error.detail || `HTTP ${response.status}`);
+          }
+
+          const result = await response.json();
+          
+          // Convert backend response to ImageGenerationResult format
+          return {
+              url: result.images[0], // Backend returns base64 in images array
+              mimeType: 'image/png',
+              filename: 'virtual-tryon.png',
+          };
+      } catch (error) {
+          console.error('[LLMService] Google virtual try-on API error:', error);
+          throw error;
+      }
+  }
+
+  private async callGoogleInpaintAPI(prompt: string, referenceImages: Record<string, Attachment>): Promise<ImageGenerationResult> {
+      try {
+          // Convert attachments to base64
+          const convertToBase64 = async (attachment: Attachment): Promise<string> => {
+              if (attachment.url.startsWith('data:')) {
+                  return attachment.url;
+              }
+              if (attachment.url.startsWith('blob:')) {
+                  const response = await fetch(attachment.url);
+                  const blob = await response.blob();
+                  return await new Promise<string>((resolve) => {
+                      const reader = new FileReader();
+                      reader.onloadend = () => resolve(reader.result as string);
+                      reader.readAsDataURL(blob);
+                  });
+              }
+              return attachment.url;
+          };
+
+          const image = await convertToBase64(referenceImages.raw);
+          const mask = await convertToBase64(referenceImages.mask);
+
+          const response = await fetch('/api/google/inpaint', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+              },
+              credentials: 'include',
+              body: JSON.stringify({
+                  image,
+                  mask,
+                  prompt,
+                  model: this._cachedOptions.modelId || 'imagen-3.0-generate-001',
+                  platform: this._cachedOptions.platform,
+              }),
+          });
+
+          if (!response.ok) {
+              const error = await response.json().catch(() => ({ detail: response.statusText }));
+              throw new Error(error.detail || `HTTP ${response.status}`);
+          }
+
+          const result = await response.json();
+          
+          // Convert backend response to ImageGenerationResult format
+          return {
+              url: result.images[0], // Backend returns base64 in images array
+              mimeType: 'image/png',
+              filename: 'inpainted.png',
+          };
+      } catch (error) {
+          console.error('[LLMService] Google inpaint API error:', error);
+          throw error;
+      }
   }
 }
 

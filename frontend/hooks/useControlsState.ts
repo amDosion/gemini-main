@@ -11,6 +11,7 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
   const [enableUrlContext, setEnableUrlContext] = useState(false);
   const [enableBrowser, setEnableBrowser] = useState(false);
   const [enableRAG, setEnableRAG] = useState(false);
+  const [enableResearch, setEnableResearch] = useState(false);
   const [googleCacheMode, setGoogleCacheMode] = useState<'none' | 'exact' | 'semantic'>('none');
 
   // Generation Controls
@@ -49,6 +50,11 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
   // Virtual Try-On
   const [tryOnTarget, setTryOnTarget] = useState('upper');
 
+  // Deep Research Controls
+  const [thinkingSummaries, setThinkingSummaries] = useState<'auto' | 'none'>('auto');
+  const [enableMultiAgent, setEnableMultiAgent] = useState(false);
+  const [researchMode, setResearchMode] = useState<'vertex-ai' | 'gemini-api'>('vertex-ai');
+
   // Reset UI state when mode changes (only generic resets, no mode-specific logic)
   useEffect(() => {
     setShowAdvanced(false);
@@ -70,6 +76,7 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
     enableUrlContext, setEnableUrlContext,
     enableBrowser, setEnableBrowser,
     enableRAG, setEnableRAG,
+    enableResearch, setEnableResearch,
     googleCacheMode, setGoogleCacheMode,
 
     // Generation Controls
@@ -107,6 +114,11 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
 
     // Virtual Try-On
     tryOnTarget, setTryOnTarget,
+
+    // Deep Research Controls
+    thinkingSummaries, setThinkingSummaries,
+    enableMultiAgent, setEnableMultiAgent,
+    researchMode, setResearchMode,
   };
 }
 

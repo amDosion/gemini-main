@@ -3,7 +3,17 @@
  * 
  * This client provides a unified interface to interact with all AI providers
  * through the backend API. It implements the ILLMProvider interface and routes
- * all requests to the appropriate backend endpoints.
+ * all requests to the unified backend endpoints:
+ * - All modes (including chat): /api/modes/{provider}/{mode}
+ * 
+ * All requests use the new unified authentication (JWT Bearer token).
+ * 
+ * 统一模式处理:
+ * - 所有模式都通过 executeMode(mode, ...) 方法统一处理
+ * - 支持的模式: image-gen, image-chat-edit, image-mask-edit,
+ *   image-inpainting, image-background-edit, image-recontext, image-outpainting,
+ *   video-gen, audio-gen, pdf-extract, virtual-try-on, deep-research, multi-agent
+ * - 旧方法 (generateImage, editImage, etc.) 已标记为 @deprecated，内部委托给 executeMode
  */
 
 import { 
@@ -67,7 +77,7 @@ export class UnifiedProviderClient implements ILLMProvider {
       try {
         const response = await fetch(url, {
           headers,
-          credentials: 'include',  // 发送认证 Cookie（向后兼容）
+          credentials: 'include',  // 发送认证 Cookie
           signal: controller.signal
         });
         
@@ -153,6 +163,9 @@ export class UnifiedProviderClient implements ILLMProvider {
           topK: safeOptions.topK,
           enableSearch: safeOptions.enableSearch,
           enableThinking: safeOptions.enableThinking,
+          enableBrowser: safeOptions.enableBrowser,
+          enableCodeExecution: safeOptions.enableCodeExecution,
+          enableGrounding: safeOptions.enableGrounding,
           baseUrl: baseUrl || safeOptions.baseUrl
         },
         stream: true
@@ -181,19 +194,19 @@ export class UnifiedProviderClient implements ILLMProvider {
       }, 60000);
       
       try {
-        // Call backend API
+        // Call backend API - ✅ 统一使用 /api/modes/{provider}/chat
         console.debug('[UnifiedProviderClient] Sending request:', {
-          url: `/api/chat/${this.id}`,
+          url: `/api/modes/${this.id}/chat`,
           modelId,
           messageLength: message.length,
           historyLength: history.length,
           attachmentsCount: attachments.length
         });
         
-        const response = await fetch(`/api/chat/${this.id}`, {
+        const response = await fetch(`/api/modes/${this.id}/chat`, {
           method: 'POST',
           headers,
-          credentials: 'include',  // 发送认证 Cookie（向后兼容）
+          credentials: 'include',  // 发送认证 Cookie
           body: JSON.stringify(requestBody),
           signal: controller.signal
         });
@@ -270,17 +283,46 @@ export class UnifiedProviderClient implements ILLMProvider {
                   console.error('[UnifiedProviderClient] Error chunk received:', chunk.error);
                   throw new Error(chunk.error || 'Unknown error');
                 }
-                
+
+                // Handle tool_call chunks (Browser function calling)
+                if (chunk.chunk_type === 'tool_call') {
+                  console.debug('[UnifiedProviderClient] Tool call:', chunk.tool_name, chunk.tool_args);
+                  yield {
+                    text: '',
+                    toolCall: {
+                      name: chunk.tool_name,
+                      args: chunk.tool_args || {}
+                    }
+                  } as StreamUpdate;
+                  continue;
+                }
+
+                // Handle tool_result chunks (Browser function result)
+                if (chunk.chunk_type === 'tool_result') {
+                  const hasScreenshot = chunk.screenshot_url || chunk.screenshot;
+                  console.debug('[UnifiedProviderClient] Tool result:', chunk.tool_name, hasScreenshot ? '(with screenshot)' : '');
+                  yield {
+                    text: '',
+                    toolResult: {
+                      name: chunk.tool_name,
+                      result: chunk.tool_result || '',
+                      screenshot: chunk.screenshot,
+                      screenshotUrl: chunk.screenshot_url
+                    }
+                  } as StreamUpdate;
+                  continue;
+                }
+
                 // Yield content chunks - 修复：确保所有有效的 chunk 都被 yield
                 // 包括 text 为空字符串的情况（可能是中间状态）
-                const shouldYield = chunk.chunk_type === 'done' || 
-                                  chunk.chunk_type === 'content' || 
+                const shouldYield = chunk.chunk_type === 'done' ||
+                                  chunk.chunk_type === 'content' ||
                                   chunk.text !== undefined;
-                
+
                 if (shouldYield) {
                   const text = chunk.text || '';
                   totalTextLength += text.length;
-                  
+
                   yield {
                     text,
                     attachments: chunk.attachments,
@@ -321,25 +363,35 @@ export class UnifiedProviderClient implements ILLMProvider {
   }
   
   /**
-   * Generate images
+   * 统一模式处理方法
+   * 
+   * 处理所有模式请求，统一调用 /api/modes/{provider}/{mode}
+   * 
+   * @param mode - 模式名称 (image-gen, image-chat-edit, image-mask-edit, image-inpainting, image-background-edit, image-recontext, pdf-extract, etc.)
+   * @param modelId - 模型 ID
+   * @param prompt - 提示词
+   * @param attachments - 附件列表（用于图片、PDF等）
+   * @param options - 选项（包括 baseUrl 等）
+   * @param extra - 额外参数（用于特定模式）
+   * @returns Promise<any> - 响应数据
    */
-  async generateImage(
+  async executeMode(
+    mode: string,
     modelId: string,
     prompt: string,
-    referenceImages: Attachment[],
-    options: ChatOptions,
-    baseUrl: string
-  ): Promise<ImageGenerationResult[]> {
+    attachments: Attachment[] = [],
+    options: Partial<ChatOptions> = {},
+    extra: Record<string, any> = {}
+  ): Promise<any> {
     try {
       const requestBody = {
         modelId,
         prompt,
-        referenceImages,
+        attachments,
         options: {
-          ...options,
-          baseUrl: baseUrl || options.baseUrl
-        }
-        // ✅ API Key 由后端管理，不在前端传递（安全性）
+          ...options
+        },
+        extra
       };
       
       // ✅ 构建请求头，添加 Authorization header
@@ -351,105 +403,17 @@ export class UnifiedProviderClient implements ILLMProvider {
         headers['Authorization'] = `Bearer ${token}`;
       }
       
-      const response = await fetch(`/api/generate/${this.id}/image`, {
+      // ✅ 统一路由: /api/modes/{provider}/{mode}
+      const response = await fetch(`/api/modes/${this.id}/${mode}`, {
         method: 'POST',
         headers,
-        credentials: 'include',  // 发送认证 Cookie（向后兼容）
+        credentials: 'include',
         body: JSON.stringify(requestBody)
       });
       
       if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Image generation failed: ${error}`);
-      }
-      
-      const data = await response.json();
-      return data.images || [];
-    } catch (error) {
-      console.error(`[UnifiedProviderClient] Image generation error for ${this.id}:`, error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Edit images (Google Imagen edit_image API)
-   * 
-   * Security: API Key is managed by backend, not passed from frontend
-   * Authentication: Uses session cookies + JWT token
-   * 
-   * @param modelId - Model ID (e.g., "imagen-3.0-capability-001")
-   * @param prompt - Edit prompt describing the desired changes
-   * @param referenceImages - Dictionary of reference images:
-   *   - raw: Base image to edit (required)
-   *   - mask: Mask for inpainting (optional)
-   *   - control: Control image (optional)
-   *   - style: Style reference (optional)
-   *   - subject: Subject reference (optional)
-   *   - content: Content reference (optional)
-   * @param options - Chat options (includes edit_mode, aspect_ratio, etc.)
-   * @param baseUrl - Base URL for API endpoint
-   * @returns Promise<ImageGenerationResult[]> - Array of edited images
-   */
-  async editImage(
-    modelId: string,
-    prompt: string,
-    referenceImages: Record<string, any>,
-    options: ChatOptions,
-    baseUrl: string
-  ): Promise<ImageGenerationResult[]> {
-    try {
-      // ✅ 输入验证
-      if (!modelId || typeof modelId !== 'string') {
-        throw new Error('Invalid modelId: must be a non-empty string');
-      }
-      if (!prompt || typeof prompt !== 'string') {
-        throw new Error('Invalid prompt: must be a non-empty string');
-      }
-      if (!referenceImages || typeof referenceImages !== 'object') {
-        throw new Error('Invalid referenceImages: must be an object');
-      }
-      if (!referenceImages.raw) {
-        throw new Error('Invalid referenceImages: must include "raw" base image');
-      }
-      
-      const requestBody = {
-        modelId,
-        prompt,
-        referenceImages,
-        options: {
-          ...options,
-          baseUrl: baseUrl || options.baseUrl
-        }
-        // ✅ API Key 由后端管理，不在前端传递（安全性）
-      };
-      
-      // ✅ 构建请求头，添加 Authorization header
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-      const token = getAccessToken();
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      
-      console.debug('[UnifiedProviderClient] Sending image edit request:', {
-        url: `/api/generate/${this.id}/image/edit`,
-        modelId,
-        promptLength: prompt.length,
-        referenceImageTypes: Object.keys(referenceImages)
-      });
-      
-      const response = await fetch(`/api/generate/${this.id}/image/edit`, {
-        method: 'POST',
-        headers,
-        credentials: 'include',  // 发送认证 Cookie（向后兼容）
-        body: JSON.stringify(requestBody)
-      });
-      
-      if (!response.ok) {
-        // ✅ 详细的错误处理
         const contentType = response.headers.get('content-type');
-        let errorMessage = `Image editing failed (${response.status})`;
+        let errorMessage = `Mode execution failed (${response.status})`;
         
         try {
           if (contentType?.includes('application/json')) {
@@ -462,42 +426,134 @@ export class UnifiedProviderClient implements ILLMProvider {
           console.error('[UnifiedProviderClient] Error parsing error response:', parseError);
         }
         
-        // ✅ 根据 HTTP 状态码提供友好的错误信息
-        switch (response.status) {
-          case 400:
-            throw new Error(`Invalid request: ${errorMessage}`);
-          case 401:
-            throw new Error('Authentication required. Please log in again.');
-          case 404:
-            throw new Error(`Provider "${this.id}" not found or does not support image editing.`);
-          case 422:
-            throw new Error(`Content policy violation: ${errorMessage}`);
-          case 429:
-            throw new Error('Rate limit exceeded. Please try again later.');
-          case 500:
-          case 502:
-          case 503:
-          case 504:
-            throw new Error(`Server error: ${errorMessage}. Please try again later.`);
-          default:
-            throw new Error(errorMessage);
-        }
+        throw new Error(errorMessage);
       }
       
       const data = await response.json();
-      console.debug('[UnifiedProviderClient] Image edit response received:', {
-        imagesCount: data.images?.length || 0
-      });
+      // ✅ 新架构统一响应格式: { success: true, data: {...} }
+      if (!data.success || data.data === undefined) {
+        throw new Error(`Invalid response format: ${JSON.stringify(data)}`);
+      }
       
-      return data.images || [];
+      return data.data;
     } catch (error) {
-      console.error(`[UnifiedProviderClient] Image editing error for ${this.id}:`, error);
+      console.error(`[UnifiedProviderClient] Mode execution error for ${this.id}/${mode}:`, error);
       throw error;
     }
+  }
+
+  /**
+   * Generate images
+   * 
+   * @deprecated 使用 executeMode('image-gen', ...) 代替
+   */
+  async generateImage(
+    modelId: string,
+    prompt: string,
+    referenceImages: Attachment[],
+    options: ChatOptions,
+    apiKey: string,
+    baseUrl: string
+  ): Promise<ImageGenerationResult[]> {
+    // ✅ 委托给统一模式处理方法
+    const data = await this.executeMode(
+      'image-gen',
+      modelId,
+      prompt,
+      referenceImages,
+      { ...options, baseUrl: baseUrl || options.baseUrl }
+    );
+    return Array.isArray(data) ? data : [];
+  }
+  
+  /**
+   * Edit images (Google Imagen edit_image API)
+   * 
+   * @deprecated 使用 executeMode('image-chat-edit', ...) 代替
+   * 
+   * @param modelId - Model ID (e.g., "imagen-3.0-capability-001")
+   * @param prompt - Edit prompt describing the desired changes
+   * @param referenceImages - Dictionary of reference images:
+   *   - raw: Base image to edit (required)
+   *   - mask: Mask for inpainting (optional)
+   *   - control: Control image (optional)
+   *   - style: Style reference (optional)
+   *   - subject: Subject reference (optional)
+   *   - content: Content reference (optional)
+   * @param options - Chat options (includes edit_mode, aspect_ratio, etc.)
+   * @param baseUrl - Base URL for API endpoint
+   * @param mode - 编辑模式 (image-chat-edit, image-mask-edit, image-inpainting, image-background-edit, image-recontext)
+   * @returns Promise<ImageGenerationResult[]> - Array of edited images
+   */
+  async editImage(
+    modelId: string,
+    prompt: string,
+    referenceImages: Record<string, any>,
+    options: ChatOptions,
+    baseUrl: string,
+    mode?: string
+  ): Promise<ImageGenerationResult[]> {
+    // ✅ 输入验证
+    if (!modelId || typeof modelId !== 'string') {
+      throw new Error('Invalid modelId: must be a non-empty string');
+    }
+    if (!prompt || typeof prompt !== 'string') {
+      throw new Error('Invalid prompt: must be a non-empty string');
+    }
+    if (!referenceImages || typeof referenceImages !== 'object') {
+      throw new Error('Invalid referenceImages: must be an object');
+    }
+    if (!referenceImages.raw) {
+      throw new Error('Invalid referenceImages: must include "raw" base image');
+    }
+    
+    // ✅ 将 referenceImages 对象转换为 attachments 数组
+    const attachments: Attachment[] = [];
+    for (const [key, value] of Object.entries(referenceImages)) {
+      if (value) {
+        // 构建 Attachment 对象（Attachment 接口不包含 role 字段）
+        const attachment: Attachment = {
+          id: `ref-${key}-${Date.now()}`,
+          name: key === 'mask' ? 'mask.png' : 'reference.png',
+          mimeType: typeof value === 'object' && value.mimeType ? value.mimeType : 'image/png'
+        };
+        
+        // 根据值的类型设置 url 或 base64Data
+        if (typeof value === 'string') {
+          if (value.startsWith('data:')) {
+            attachment.url = value;
+          } else if (value.startsWith('http')) {
+            attachment.url = value;
+          } else {
+            attachment.url = value; // 可能是 base64 字符串
+          }
+        } else if (typeof value === 'object') {
+          if (value.url) attachment.url = value.url;
+          if (value.tempUrl) attachment.tempUrl = value.tempUrl;
+          if (value.mimeType) attachment.mimeType = value.mimeType;
+        }
+        
+        attachments.push(attachment);
+      }
+    }
+    
+    // ✅ 使用统一模式处理方法
+    const editMode = mode || 'image-chat-edit';
+    const data = await this.executeMode(
+      editMode,
+      modelId,
+      prompt,
+      attachments,
+      { ...options, baseUrl: baseUrl || options.baseUrl }
+    );
+    
+    return Array.isArray(data) ? data : [];
   }
   
   /**
    * Generate video
+   * 
+   * @deprecated 使用 executeMode('video-gen', ...) 代替
    */
   async generateVideo(
     prompt: string,
@@ -506,47 +562,20 @@ export class UnifiedProviderClient implements ILLMProvider {
     apiKey: string,
     baseUrl: string
   ): Promise<VideoGenerationResult> {
-    try {
-      const requestBody = {
-        prompt,
-        referenceImages,
-        options: {
-          ...options,
-          baseUrl: baseUrl || options.baseUrl
-        },
-        apiKey
-      };
-      
-      // ✅ 构建请求头，添加 Authorization header
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-      const token = getAccessToken();
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      
-      const response = await fetch(`/api/generate/${this.id}/video`, {
-        method: 'POST',
-        headers,
-        credentials: 'include',  // 发送认证 Cookie（向后兼容）
-        body: JSON.stringify(requestBody)
-      });
-      
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Video generation failed: ${error}`);
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error(`[UnifiedProviderClient] Video generation error for ${this.id}:`, error);
-      throw error;
-    }
+    // ✅ 委托给统一模式处理方法
+    return await this.executeMode(
+      'video-gen',
+      '', // modelId 对于 video-gen 可能不需要，但保持接口一致性
+      prompt,
+      referenceImages,
+      { ...options, baseUrl: baseUrl || options.baseUrl }
+    );
   }
   
   /**
    * Generate speech
+   * 
+   * @deprecated 使用 executeMode('audio-gen', ...) 代替
    */
   async generateSpeech(
     text: string,
@@ -554,40 +583,50 @@ export class UnifiedProviderClient implements ILLMProvider {
     apiKey: string,
     baseUrl: string
   ): Promise<AudioGenerationResult> {
-    try {
-      const requestBody = {
-        text,
-        voiceName,
-        apiKey,
-        baseUrl
-      };
-      
-      // ✅ 构建请求头，添加 Authorization header
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-      const token = getAccessToken();
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      
-      const response = await fetch(`/api/generate/${this.id}/speech`, {
-        method: 'POST',
-        headers,
-        credentials: 'include',  // 发送认证 Cookie（向后兼容）
-        body: JSON.stringify(requestBody)
-      });
-      
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Speech generation failed: ${error}`);
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error(`[UnifiedProviderClient] Speech generation error for ${this.id}:`, error);
-      throw error;
+    // ✅ 委托给统一模式处理方法
+    return await this.executeMode(
+      'audio-gen',
+      '', // modelId 对于 audio-gen 可能不需要
+      text,
+      [],
+      { 
+        baseUrl,
+        enableSearch: false,
+        enableThinking: false,
+        enableCodeExecution: false,
+        imageAspectRatio: '1:1',
+        imageResolution: '1024x1024'
+      },
+      { voice: voiceName }
+    );
+  }
+  
+  /**
+   * Out-paint image (image expansion)
+   * 
+   * @deprecated 使用 executeMode('image-outpainting', ...) 代替
+   */
+  async outPaintImage(
+    referenceImage: Attachment,
+    options: ChatOptions,
+    _apiKey: string, // 已弃用 - 后端从数据库获取
+    baseUrl?: string
+  ): Promise<ImageGenerationResult> {
+    // ✅ 委托给统一模式处理方法
+    const data = await this.executeMode(
+      'image-outpainting',
+      '', // modelId 对于 image-outpainting 可能不需要
+      '', // prompt 对于 outpainting 可能不需要
+      [referenceImage],
+      { ...options, baseUrl: baseUrl || options.baseUrl },
+      options.outPainting || {}
+    );
+    
+    // 返回单个结果（outpainting 通常返回单张图片）
+    if (Array.isArray(data) && data.length > 0) {
+      return data[0];
     }
+    return data as ImageGenerationResult;
   }
   
   /**
@@ -614,7 +653,7 @@ export class UnifiedProviderClient implements ILLMProvider {
       const response = await fetch(`/api/upload/${this.id}`, {
         method: 'POST',
         headers,
-        credentials: 'include',  // 发送认证 Cookie（向后兼容）
+        credentials: 'include',  // 发送认证 Cookie
         body: formData
       });
       

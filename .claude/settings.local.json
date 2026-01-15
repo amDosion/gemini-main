@@ -54,7 +54,10 @@
       "WebSearch",
       "Bash(done)",
       "Bash(tree:*)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(del \"D:\\\\gemini-main\\\\gemini-main\\\\backend\\\\app\\\\services\\\\storage_service.py\")",
+      "Bash(del \"d:\\\\gemini-main\\\\gemini-main\\\\backend\\\\test_browse_debug.py\")",
+      "Bash(wc:*)"
     ]
   }
 }

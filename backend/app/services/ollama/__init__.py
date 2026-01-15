@@ -6,11 +6,13 @@ Ollama 本地模型服务模块
 
 from .ollama import (
     OllamaService,
-    AIServiceError,
+)
+from ..common.errors import (
     APIKeyError,
     RateLimitError,
     ModelNotFoundError,
     InvalidRequestError,
+    OperationError,
 )
 from .ollama_types import (
     OllamaAPIMode,
@@ -23,7 +25,7 @@ __all__ = [
     # 服务类
     "OllamaService",
     # 异常类
-    "AIServiceError",
+    "OperationError",
     "APIKeyError",
     "RateLimitError",
     "ModelNotFoundError",

@@ -35,7 +35,10 @@ export class ImageOutpaintingHandler extends BaseHandler {
 
 export class VirtualTryOnHandler extends BaseHandler {
   protected async doExecute(context: ExecutionContext): Promise<HandlerResult> {
-    // @ts-expect-error - virtualTryOn may not be on llmService type
+    if (!context.attachments || context.attachments.length < 2) {
+      throw new Error('Virtual try-on requires 2 images: person and garment');
+    }
+
     const results = await llmService.virtualTryOn(context.text, context.attachments);
 
     const processed = await Promise.all(

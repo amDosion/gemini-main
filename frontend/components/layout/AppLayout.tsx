@@ -27,7 +27,7 @@ interface AppLayoutProps {
     onCreatePersona: (p: any) => void;
     onUpdatePersona: (id: string, p: any) => void;
     onDeletePersona: (id: string) => void;
-    onResetPersonas: () => void;
+    onRefreshPersonas: () => void;
     // Header Props
     isLoadingModels: boolean;
     isModelMenuOpen: boolean;
@@ -67,9 +67,6 @@ export const AppLayout: React.FC<AppLayoutProps> = (props) => {
                 onDeleteSession={props.onDeleteSession}
                 onUpdateSessionTitle={props.onUpdateSessionTitle}
                 onOpenSettings={() => props.onOpenSettings('profiles')}
-                onLogout={props.onLogout}
-                isRightSidebarOpen={props.isRightSidebarOpen}
-                setIsRightSidebarOpen={props.setIsRightSidebarOpen}
                 cacheStatus={props.cacheStatus}
                 onRefreshSessions={props.onRefreshSessions}
             />
@@ -96,6 +93,7 @@ export const AppLayout: React.FC<AppLayoutProps> = (props) => {
                     profiles={props.profiles}
                     activeProfileId={props.activeProfileId}
                     onActivateProfile={props.onActivateProfile}
+                    onLogout={props.onLogout}
                 />
 
                 <div className="flex-1 flex overflow-hidden relative">
@@ -115,7 +113,7 @@ export const AppLayout: React.FC<AppLayoutProps> = (props) => {
                         onCreatePersona={props.onCreatePersona}
                         onUpdatePersona={props.onUpdatePersona}
                         onDeletePersona={props.onDeletePersona}
-                        onResetPersonas={props.onResetPersonas}
+                        onRefreshPersonas={props.onRefreshPersonas}
                     />
                 </div>
             </div>

@@ -55,7 +55,64 @@ class ExpandService:
             'imagen-3.0-generate-002',  # ⚠️ 已不可用
         }
     
+    def _extract_image_path(self, reference_images: Optional[Dict[str, Any]], **kwargs) -> str:
+        """
+        从 reference_images 或 kwargs 中提取图片路径
+        
+        Args:
+            reference_images: 参考图片字典 {'raw': image_path or image_url}
+            **kwargs: 额外参数（可能包含 image_path）
+        
+        Returns:
+            图片路径或 URL
+        """
+        image_path = None
+        
+        if reference_images:
+            image_path = reference_images.get("raw")
+        
+        # 从 kwargs 中获取（兼容旧接口）
+        if not image_path:
+            image_path = kwargs.get("image_path")
+        
+        if not image_path:
+            raise ValueError("expand_image requires 'raw' image in reference_images or 'image_path' in kwargs")
+        
+        return image_path
+    
     async def expand_image(
+        self,
+        prompt: str,
+        model: str,
+        reference_images: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> List[Dict[str, Any]]:
+        """
+        统一的图片扩展接口 - 处理参数提取
+        
+        Args:
+            prompt: Description of what to add in expanded areas
+            model: Model identifier (required)
+            reference_images: Reference images dict {'raw': image_path or image_url}
+            **kwargs: Additional parameters:
+                - mode: Expansion mode ('scale', 'offset', 'ratio')
+                - image_path: Path to the image (alternative to reference_images)
+                - expand_prompt: Alternative prompt parameter
+                - 其他扩展参数（x_scale, y_scale, left_offset, etc.）
+        
+        Returns:
+            List of expanded images
+        """
+        # 获取图片路径
+        image_path = self._extract_image_path(reference_images, **kwargs)
+        
+        expand_prompt = kwargs.get("expand_prompt", prompt)
+        mode = kwargs.get("mode", "scale")
+        
+        logger.info(f"[Expand Service] Image expansion: model={model}, mode={mode}")
+        return await self._expand_image_internal(image_path, expand_prompt, model, mode, **kwargs)
+    
+    async def _expand_image_internal(
         self,
         image_path: str,
         expand_prompt: str,

@@ -31,7 +31,11 @@ export function getAcceptedTypes(mode: AppMode): string[] {
         'application/json'
       ];
     case 'image-gen':
-    case 'image-edit':
+    case 'image-chat-edit':
+    case 'image-mask-edit':
+    case 'image-inpainting':
+    case 'image-background-edit':
+    case 'image-recontext':
     case 'image-outpainting':
     case 'video-gen':
     case 'audio-gen':

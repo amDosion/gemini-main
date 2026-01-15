@@ -13,9 +13,18 @@ Based on Google Gemini Cookbook: Browser_as_a_tool.ipynb
 import os
 import time
 import json
+import base64
 import requests
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from bs4 import BeautifulSoup
+
+# Markdown conversion for cleaner output
+try:
+    import markdownify
+    MARKDOWNIFY_AVAILABLE = True
+except ImportError:
+    MARKDOWNIFY_AVAILABLE = False
+    print("Warning: markdownify not available. Install with: pip install markdownify")
 
 # Import logger from core module
 try:
@@ -142,17 +151,17 @@ def web_search(query: str) -> str:
 
 def read_webpage(url: str, max_length: int = 50000) -> str:
     """
-    Reads the content of a given URL and returns its main text.
+    Reads the content of a given URL and returns its content as Markdown.
 
-    This function fetches the HTML content, parses it with BeautifulSoup,
-    removes script and style elements, and extracts the main text content.
+    This function fetches the HTML content, converts it to Markdown format
+    for better readability by the AI model.
 
     Args:
         url: The URL of the webpage to read
         max_length: Maximum length of text to return (default: 50000 characters)
 
     Returns:
-        The extracted text content of the webpage, or an error message
+        The extracted content in Markdown format, or an error message
     """
     logger.info(f"{LOG_PREFIXES['webpage']} Executing read_webpage for: '{url}'")
 
@@ -165,25 +174,28 @@ def read_webpage(url: str, max_length: int = 50000) -> str:
         response = requests.get(url, timeout=10, headers=headers)
         response.raise_for_status()  # Raise an exception for HTTP errors
 
-        soup = BeautifulSoup(response.text, 'html.parser')
-
-        # Remove script and style elements
-        for script_or_style in soup(['script', 'style', 'header', 'footer', 'nav']):
-            script_or_style.extract()
-
-        # Get text, strip whitespace, and format
-        text = soup.get_text()
-        lines = (line.strip() for line in text.splitlines())
-        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-        text = '\n'.join(chunk for chunk in chunks if chunk)
+        # Convert HTML to Markdown if markdownify is available
+        if MARKDOWNIFY_AVAILABLE:
+            content = markdownify.markdownify(response.text, heading_style="ATX")
+        else:
+            # Fallback to plain text extraction
+            soup = BeautifulSoup(response.text, 'html.parser')
+            # Remove script and style elements
+            for script_or_style in soup(['script', 'style', 'header', 'footer', 'nav']):
+                script_or_style.extract()
+            # Get text, strip whitespace, and format
+            text = soup.get_text()
+            lines = (line.strip() for line in text.splitlines())
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            content = '\n'.join(chunk for chunk in chunks if chunk)
 
         # Truncate if too long
-        if len(text) > max_length:
-            logger.warning(f"Content truncated from {len(text)} to {max_length} characters")
-            text = text[:max_length] + f"\n\n[Content truncated at {max_length} characters]"
-        
-        logger.info(f"{LOG_PREFIXES['success']} Successfully read webpage: {url} ({len(text)} characters)")
-        return text
+        if len(content) > max_length:
+            logger.warning(f"Content truncated from {len(content)} to {max_length} characters")
+            content = content[:max_length] + f"\n\n[Content truncated at {max_length} characters]"
+
+        logger.info(f"{LOG_PREFIXES['success']} Successfully read webpage: {url} ({len(content)} characters)")
+        return content
 
     except requests.exceptions.Timeout:
         error_msg = f"Error: Request timeout while reading webpage {url}"
@@ -200,11 +212,28 @@ def read_webpage(url: str, max_length: int = 50000) -> str:
 
 
 # ============================================================================
-# Selenium Browser Automation
+# Selenium Browser Automation (User-Scoped Sessions)
 # ============================================================================
 
-# Global WebDriver instance (optional - can be managed differently)
-_global_driver = None
+import threading
+from dataclasses import dataclass
+from datetime import datetime
+
+@dataclass
+class UserBrowserSession:
+    """Represents a user's browser session"""
+    driver: Any  # webdriver.Chrome
+    user_id: str
+    created_at: datetime
+    last_used: datetime
+
+
+# User-scoped WebDriver instances: {user_id: UserBrowserSession}
+_user_drivers: Dict[str, UserBrowserSession] = {}
+_drivers_lock = threading.Lock()
+
+# Session timeout in seconds (close idle sessions after 10 minutes)
+SESSION_TIMEOUT_SECONDS = 600
 
 
 def create_browser_driver() -> Optional[webdriver.Chrome]:
@@ -240,38 +269,130 @@ def create_browser_driver() -> Optional[webdriver.Chrome]:
         return None
 
 
-def get_driver() -> Optional[webdriver.Chrome]:
+def get_driver(user_id: str = "default") -> Optional[webdriver.Chrome]:
     """
-    Gets or creates the global WebDriver instance.
+    Gets or creates a WebDriver instance for a specific user.
+
+    Args:
+        user_id: The user's ID (for session isolation)
 
     Returns:
-        The global Chrome WebDriver instance
+        The user's Chrome WebDriver instance
     """
-    global _global_driver
-    if _global_driver is None:
-        _global_driver = create_browser_driver()
-    return _global_driver
+    with _drivers_lock:
+        # Check if user already has a session
+        if user_id in _user_drivers:
+            session = _user_drivers[user_id]
+            session.last_used = datetime.now()
+            logger.info(f"{LOG_PREFIXES['info']} Reusing browser session for user: {user_id}")
+            return session.driver
+
+        # Create new session for user
+        driver = create_browser_driver()
+        if driver:
+            _user_drivers[user_id] = UserBrowserSession(
+                driver=driver,
+                user_id=user_id,
+                created_at=datetime.now(),
+                last_used=datetime.now()
+            )
+            logger.info(f"{LOG_PREFIXES['info']} Created new browser session for user: {user_id}")
+        return driver
 
 
-def close_driver():
+def close_driver(user_id: str = "default"):
     """
-    Closes and cleans up the global WebDriver instance.
+    Closes and cleans up the WebDriver instance for a specific user.
+
+    Args:
+        user_id: The user's ID whose session should be closed
     """
-    global _global_driver
-    if _global_driver is not None:
-        try:
-            _global_driver.quit()
-            logger.info(f"{LOG_PREFIXES['success']} Selenium WebDriver closed successfully")
-        except Exception as e:
-            logger.error(f"{LOG_PREFIXES['error']} Error closing WebDriver: {e}")
-        finally:
-            _global_driver = None
+    with _drivers_lock:
+        if user_id in _user_drivers:
+            session = _user_drivers[user_id]
+            try:
+                session.driver.quit()
+                logger.info(f"{LOG_PREFIXES['success']} Selenium WebDriver closed for user: {user_id}")
+            except Exception as e:
+                logger.error(f"{LOG_PREFIXES['error']} Error closing WebDriver for user {user_id}: {e}")
+            finally:
+                del _user_drivers[user_id]
+        else:
+            logger.warning(f"{LOG_PREFIXES['warning']} No browser session found for user: {user_id}")
 
 
-def selenium_browse(url: str, steps: Optional[List[Dict[str, Any]]] = None, max_length: int = 50000) -> str:
+def close_all_drivers():
+    """
+    Closes all user browser sessions. Used for cleanup on shutdown.
+    """
+    with _drivers_lock:
+        for user_id in list(_user_drivers.keys()):
+            session = _user_drivers[user_id]
+            try:
+                session.driver.quit()
+                logger.info(f"{LOG_PREFIXES['success']} Selenium WebDriver closed for user: {user_id}")
+            except Exception as e:
+                logger.error(f"{LOG_PREFIXES['error']} Error closing WebDriver for user {user_id}: {e}")
+        _user_drivers.clear()
+        logger.info(f"{LOG_PREFIXES['info']} All browser sessions closed")
+
+
+def cleanup_idle_sessions():
+    """
+    Closes browser sessions that have been idle for too long.
+    Should be called periodically (e.g., via a background task).
+    """
+    with _drivers_lock:
+        now = datetime.now()
+        expired_users = []
+
+        for user_id, session in _user_drivers.items():
+            idle_seconds = (now - session.last_used).total_seconds()
+            if idle_seconds > SESSION_TIMEOUT_SECONDS:
+                expired_users.append(user_id)
+                logger.info(f"{LOG_PREFIXES['info']} Session expired for user {user_id} (idle {idle_seconds:.0f}s)")
+
+        for user_id in expired_users:
+            session = _user_drivers[user_id]
+            try:
+                session.driver.quit()
+            except Exception as e:
+                logger.error(f"{LOG_PREFIXES['error']} Error closing expired session for {user_id}: {e}")
+            del _user_drivers[user_id]
+
+        if expired_users:
+            logger.info(f"{LOG_PREFIXES['info']} Cleaned up {len(expired_users)} idle browser session(s)")
+
+
+def get_active_sessions() -> Dict[str, dict]:
+    """
+    Returns information about active browser sessions.
+    Useful for debugging and monitoring.
+    """
+    with _drivers_lock:
+        return {
+            user_id: {
+                "created_at": session.created_at.isoformat(),
+                "last_used": session.last_used.isoformat(),
+                "idle_seconds": (datetime.now() - session.last_used).total_seconds()
+            }
+            for user_id, session in _user_drivers.items()
+        }
+
+
+def selenium_browse(
+    url: str,
+    steps: Optional[List[Dict[str, Any]]] = None,
+    max_length: int = 50000,
+    capture_screenshot: bool = True,
+    auto_scroll: bool = True,
+    scroll_pause: float = 1.0,
+    max_scrolls: int = 10,
+    user_id: str = "default"
+) -> Dict[str, Any]:
     """
     Navigates to a URL using Selenium and optionally performs interactive steps,
-    then returns the page content.
+    then returns the page content as Markdown and optionally a screenshot.
 
     Supported steps:
     - {'action': 'click', 'by': 'id', 'value': 'element_id'}
@@ -284,27 +405,40 @@ def selenium_browse(url: str, steps: Optional[List[Dict[str, Any]]] = None, max_
         url: The URL to navigate to
         steps: Optional list of interaction steps to perform
         max_length: Maximum length of text to return
+        capture_screenshot: Whether to capture a screenshot (default: True)
+        auto_scroll: Whether to automatically scroll to load lazy content (default: True)
+        scroll_pause: Seconds to wait between scrolls for content to load (default: 1.0)
+        max_scrolls: Maximum number of scroll iterations to prevent infinite scrolling (default: 10)
+        user_id: User ID for session isolation (default: "default")
 
     Returns:
-        The extracted text content after performing all steps, or an error message
+        Dict containing:
+        - content: The page content as Markdown
+        - screenshot: Base64-encoded PNG screenshot (if capture_screenshot=True)
+        - error: Error message if any
     """
-    logger.info(f"{LOG_PREFIXES['selenium']} Executing selenium_browse for: '{url}'")
+    logger.info(f"{LOG_PREFIXES['selenium']} Executing selenium_browse for: '{url}' (user: {user_id})")
     if steps:
         logger.debug(f"Steps to perform: {steps}")
 
-    if not SELENIUM_AVAILABLE:
-        error_msg = "Error: Selenium is not available. Please install selenium and webdriver-manager."
-        logger.error(f"{LOG_PREFIXES['error']} {error_msg}")
-        return error_msg
+    result = {"content": "", "screenshot": None, "error": None}
 
-    driver = get_driver()
+    if not SELENIUM_AVAILABLE:
+        result["error"] = "Error: Selenium is not available. Please install selenium and webdriver-manager."
+        logger.error(f"{LOG_PREFIXES['error']} {result['error']}")
+        return result
+
+    driver = get_driver(user_id=user_id)
 
     if driver is None:
-        error_msg = "Error: Selenium WebDriver not initialized. Please check setup."
-        logger.error(f"{LOG_PREFIXES['error']} {error_msg}")
-        return error_msg
+        result["error"] = "Error: Selenium WebDriver not initialized. Please check setup."
+        logger.error(f"{LOG_PREFIXES['error']} {result['error']}")
+        return result
 
     try:
+        # Set window size for better screenshots (2x high for capturing more content)
+        driver.set_window_size(1024, 2048)
+
         # Navigate to the URL
         logger.info(f"{LOG_PREFIXES['navigate']} Navigating to: {url}")
         driver.get(url)
@@ -313,6 +447,46 @@ def selenium_browse(url: str, steps: Optional[List[Dict[str, Any]]] = None, max_
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.TAG_NAME, "body"))
         )
+
+        # Additional wait for dynamic content
+        time.sleep(2)
+
+        # Auto-scroll to load lazy content (infinite scroll, lazy loading images, etc.)
+        if auto_scroll:
+            logger.info(f"{LOG_PREFIXES['action']} Auto-scrolling to load lazy content...")
+            last_height = driver.execute_script("return document.body.scrollHeight")
+
+            for scroll_count in range(max_scrolls):
+                # Scroll down by viewport height
+                driver.execute_script("window.scrollBy(0, window.innerHeight);")
+                time.sleep(scroll_pause)
+
+                # Calculate new scroll height
+                new_height = driver.execute_script("return document.body.scrollHeight")
+                current_position = driver.execute_script("return window.pageYOffset + window.innerHeight")
+
+                logger.debug(f"  Scroll {scroll_count + 1}/{max_scrolls}: position={current_position}, total_height={new_height}")
+
+                # Check if we've reached the bottom
+                if current_position >= new_height:
+                    logger.info(f"{LOG_PREFIXES['success']} Reached bottom of page after {scroll_count + 1} scrolls")
+                    break
+
+                # Check if page height hasn't changed (no new content loaded)
+                if new_height == last_height:
+                    # Try one more scroll to be sure
+                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    time.sleep(scroll_pause)
+                    final_height = driver.execute_script("return document.body.scrollHeight")
+                    if final_height == new_height:
+                        logger.info(f"{LOG_PREFIXES['success']} No more content to load after {scroll_count + 1} scrolls")
+                        break
+
+                last_height = new_height
+
+            # Scroll back to top for screenshot
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(0.5)
 
         # Perform the steps if provided
         if steps:
@@ -366,31 +540,75 @@ def selenium_browse(url: str, steps: Optional[List[Dict[str, Any]]] = None, max_
                 else:
                     logger.warning(f"{LOG_PREFIXES['warning']} Unknown action '{action}' in step: {step}")
 
-        # Extract the page content
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
+        # Capture full-page screenshot if requested
+        if capture_screenshot:
+            try:
+                # Get full page dimensions
+                total_width = driver.execute_script("return Math.max(document.body.scrollWidth, document.documentElement.scrollWidth, document.body.offsetWidth, document.documentElement.offsetWidth, document.body.clientWidth, document.documentElement.clientWidth);")
+                total_height = driver.execute_script("return Math.max(document.body.scrollHeight, document.documentElement.scrollHeight, document.body.offsetHeight, document.documentElement.offsetHeight, document.body.clientHeight, document.documentElement.clientHeight);")
 
-        # Remove script, style, and navigation elements
-        for script_or_style in soup(['script', 'style', 'header', 'footer', 'nav']):
-            script_or_style.extract()
+                # Limit max dimensions to prevent memory issues (max 16384px which is common browser limit)
+                max_dimension = 16384
+                total_width = min(total_width, max_dimension)
+                total_height = min(total_height, max_dimension)
 
-        # Get text
-        text = soup.get_text()
-        lines = (line.strip() for line in text.splitlines())
-        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-        text = '\n'.join(chunk for chunk in chunks if chunk)
+                logger.info(f"{LOG_PREFIXES['screenshot']} Capturing full-page screenshot: {total_width}x{total_height}")
+
+                # Save original window size
+                original_size = driver.get_window_size()
+
+                # Resize window to full page dimensions
+                driver.set_window_size(total_width, total_height)
+                time.sleep(0.5)  # Small delay for resize to take effect
+
+                # Scroll to top to capture from beginning
+                driver.execute_script("window.scrollTo(0, 0);")
+                time.sleep(0.3)
+
+                # Capture screenshot
+                screenshot_data = driver.get_screenshot_as_base64()
+                result["screenshot"] = screenshot_data
+
+                # Restore original window size
+                driver.set_window_size(original_size['width'], original_size['height'])
+
+                logger.info(f"{LOG_PREFIXES['screenshot']} Full-page screenshot captured successfully")
+            except Exception as e:
+                logger.warning(f"{LOG_PREFIXES['warning']} Failed to capture full-page screenshot: {e}")
+                # Fallback to regular screenshot
+                try:
+                    screenshot_data = driver.get_screenshot_as_base64()
+                    result["screenshot"] = screenshot_data
+                    logger.info(f"{LOG_PREFIXES['screenshot']} Fallback viewport screenshot captured")
+                except Exception as e2:
+                    logger.warning(f"{LOG_PREFIXES['warning']} Failed to capture fallback screenshot: {e2}")
+
+        # Convert page content to Markdown
+        if MARKDOWNIFY_AVAILABLE:
+            content = markdownify.markdownify(driver.page_source, heading_style="ATX")
+        else:
+            # Fallback to plain text extraction
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
+            for script_or_style in soup(['script', 'style', 'header', 'footer', 'nav']):
+                script_or_style.extract()
+            text = soup.get_text()
+            lines = (line.strip() for line in text.splitlines())
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            content = '\n'.join(chunk for chunk in chunks if chunk)
 
         # Truncate if too long
-        if len(text) > max_length:
-            logger.warning(f"Content truncated from {len(text)} to {max_length} characters")
-            text = text[:max_length] + f"\n\n[Content truncated at {max_length} characters]"
+        if len(content) > max_length:
+            logger.warning(f"Content truncated from {len(content)} to {max_length} characters")
+            content = content[:max_length] + f"\n\n[Content truncated at {max_length} characters]"
 
-        logger.info(f"{LOG_PREFIXES['success']} Successfully browsed with Selenium: {url} ({len(text)} characters)")
-        return text
+        result["content"] = content
+        logger.info(f"{LOG_PREFIXES['success']} Successfully browsed with Selenium: {url} ({len(content)} characters)")
+        return result
 
     except Exception as e:
-        error_msg = f"Error during selenium_browse for {url}: {str(e)}"
-        logger.exception(f"{LOG_PREFIXES['error']} {error_msg}")
-        return error_msg
+        result["error"] = f"Error during selenium_browse for {url}: {str(e)}"
+        logger.exception(f"{LOG_PREFIXES['error']} {result['error']}")
+        return result
 
 
 # ============================================================================
@@ -443,7 +661,7 @@ def get_tool_declarations():
         },
         {
             "name": "selenium_browse",
-            "description": "Navigate to a URL using a headless browser (Selenium), optionally perform interactive steps (clicks, typing, scrolling), and return the page content. Useful for interacting with dynamic web pages, JavaScript-heavy sites, or those requiring user interaction.",
+            "description": "Navigate to a URL using a headless browser (Selenium) with automatic scrolling to load lazy content. Captures screenshots and returns page content as Markdown. Useful for dynamic pages, JavaScript-heavy sites, infinite scroll pages, or those requiring user interaction.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -485,6 +703,21 @@ def get_tool_declarations():
                         "type": "integer",
                         "description": "Maximum length of text to return (default: 50000)",
                         "default": 50000
+                    },
+                    "auto_scroll": {
+                        "type": "boolean",
+                        "description": "Whether to automatically scroll the page to load lazy content like infinite scroll or lazy-loaded images (default: true)",
+                        "default": True
+                    },
+                    "scroll_pause": {
+                        "type": "number",
+                        "description": "Seconds to wait between scrolls for content to load (default: 1.0)",
+                        "default": 1.0
+                    },
+                    "max_scrolls": {
+                        "type": "integer",
+                        "description": "Maximum number of scroll iterations to prevent infinite scrolling (default: 10)",
+                        "default": 10
                     }
                 },
                 "required": ["url"]

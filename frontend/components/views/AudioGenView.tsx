@@ -506,9 +506,23 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
   // 缓存 mainContent
   const mainContent = useMemo(() => (
         /* Main Content Stage */
-        <div className="flex-1 flex flex-col items-center justify-center p-8 overflow-hidden bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-slate-950 relative">
-          {/* Stage Header */}
-          <div className="absolute top-4 left-4 z-10">
+        <div className="flex-1 flex flex-col items-center justify-center p-8 overflow-hidden bg-slate-950 relative">
+          {/* 棋盘格背景 - 与其他视图保持一致 */}
+          <div
+            className="absolute inset-0 opacity-20 pointer-events-none"
+            style={{
+              backgroundImage: `
+                linear-gradient(45deg, #334155 25%, transparent 25%), 
+                linear-gradient(-45deg, #334155 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #334155 75%), 
+                linear-gradient(-45deg, transparent 75%, #334155 75%)
+              `,
+              backgroundSize: '20px 20px',
+              backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
+            }}
+          />
+          {/* Canvas Header */}
+          <div className="absolute top-4 left-4 z-10 pointer-events-none">
             <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-4 py-1.5 text-xs font-medium text-slate-300 flex items-center gap-2 shadow-lg">
               <Mic size={12} className="text-cyan-400" />
               Audio Workspace
@@ -516,9 +530,9 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
           </div>
 
           {/* Main Content */}
-          <div className="flex-1 flex items-center justify-center p-8 overflow-hidden w-full">
+          <div className="flex-1 flex items-center justify-center p-8 overflow-hidden w-full relative z-10">
             {loadingState !== 'idle' ? (
-              <div className="flex flex-col items-center gap-6 p-8 rounded-3xl bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 shadow-2xl">
+                <div className="flex flex-col items-center gap-6 p-8 rounded-3xl bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 shadow-2xl relative z-10">
                 <div className="relative">
                   <div className="w-24 h-24 border-4 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin"></div>
                   <div className="absolute inset-0 flex items-center justify-center text-sm font-mono text-cyan-400 font-bold tracking-widest">TTS</div>
@@ -529,7 +543,7 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
                 </div>
               </div>
             ) : activeAudioUrl ? (
-              <div className="relative max-w-2xl w-full shadow-2xl rounded-xl overflow-hidden bg-slate-900/80 backdrop-blur-sm ring-1 ring-white/10 flex flex-col items-center justify-center p-8 gap-6">
+              <div className="relative max-w-2xl w-full shadow-2xl rounded-xl overflow-hidden bg-slate-900/80 backdrop-blur-sm ring-1 ring-white/10 flex flex-col items-center justify-center p-8 gap-6 z-10">
                 <div className="p-6 bg-cyan-500/10 rounded-full text-cyan-400">
                   <Mic size={64} />
                 </div>
@@ -573,7 +587,7 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
                 )}
               </div>
             ) : (
-              <div className="text-center text-slate-600 flex flex-col items-center gap-6">
+              <div className="text-center text-slate-600 flex flex-col items-center gap-6 relative z-10">
                 <div className="w-32 h-32 rounded-3xl bg-slate-900 border border-slate-800 flex items-center justify-center shadow-inner relative overflow-hidden group">
                   <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                   <Mic size={64} className="opacity-20 group-hover:scale-110 transition-transform duration-500" />
@@ -590,7 +604,7 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
 
           {/* Action Buttons - Fixed in bottom right of main stage */}
           {activeAudioUrl && (
-            <div className="absolute bottom-4 right-4 z-20 flex gap-2">
+            <div className="absolute bottom-4 right-4 z-20 flex gap-2 relative">
               <button
                 onClick={() => window.open(activeAudioUrl, '_blank')}
                 className="p-2.5 bg-black/60 backdrop-blur-md hover:bg-black/80 text-white rounded-xl border border-white/10 transition-colors shadow-lg"
@@ -631,9 +645,9 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
       setIsMobileHistoryOpen={setIsMobileHistoryOpen}
       sidebarTitle="History"
       sidebarHeaderIcon={<Clock size={14} />}
-      sidebarContent={sidebarContent}
-      mainContent={mainContent}
-      bottomContent={bottomContent}
+      sidebar={sidebarContent}
+      main={mainContent}
+      bottom={bottomContent}
     />
   );
 };

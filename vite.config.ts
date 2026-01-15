@@ -13,7 +13,7 @@ export default defineConfig({
     cors: true, // 启用 CORS
     hmr: {
       protocol: 'ws', // 使用 WebSocket 协议
-      host: '127.0.0.1', // HMR 明确使用 IPv4 的 localhost
+      // 不指定 host，让 HMR 自动适配当前访问地址（支持 localhost、127.0.0.1 和局域网 IP）
       port: 21573,
       clientPort: 21573,
       timeout: 30000, // 30 秒超时

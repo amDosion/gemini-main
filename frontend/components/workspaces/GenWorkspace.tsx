@@ -3,6 +3,9 @@ import React, { useMemo, useRef } from 'react';
 import { Message, Role, AppMode } from '../../types/types';
 import { Download, Maximize2, RefreshCw, ArrowRight, Image as ImageIcon, Video as VideoIcon, Layers, AlertCircle, Expand, Crop, Shirt } from 'lucide-react';
 
+// 图片编辑模式列表（已拆分为独立模式）
+const IMAGE_EDIT_MODES: AppMode[] = ['image-chat-edit', 'image-mask-edit', 'image-inpainting', 'image-background-edit', 'image-recontext'];
+
 interface GenWorkspaceProps {
   messages: Message[];
   mode: AppMode;
@@ -38,13 +41,14 @@ export const GenWorkspace: React.FC<GenWorkspaceProps> = ({
   // Find Reference Image (Crucial for Edit Mode)
   // We look for the latest user message with an image attachment
   const referenceImage = useMemo(() => {
-      if (mode !== 'image-edit' && mode !== 'image-outpainting' && mode !== 'virtual-try-on') return null;
+      if (!IMAGE_EDIT_MODES.includes(mode) && mode !== 'image-outpainting' && mode !== 'virtual-try-on') return null;
       const lastUserMsg = [...messages].reverse().find(m => m.role === Role.USER && m.attachments && m.attachments.length > 0);
       return lastUserMsg?.attachments?.[0];
   }, [messages, mode]);
 
   const isVideo = mode === 'video-gen';
-  const isEditMode = mode === 'image-edit' || mode === 'image-outpainting' || mode === 'virtual-try-on';
+  const isEditMode = IMAGE_EDIT_MODES.includes(mode) || 
+                     mode === 'image-outpainting' || mode === 'virtual-try-on';
   const isTryOnMode = mode === 'virtual-try-on';
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -57,7 +61,9 @@ export const GenWorkspace: React.FC<GenWorkspaceProps> = ({
   if (isEditMode && !referenceImage && loadingState === 'idle') {
       const getModeInfo = () => {
           if (isTryOnMode) return { title: 'Virtual Try-On', desc: 'Upload a person photo to try on clothes with AI.', icon: <Shirt size={36} /> };
-          if (mode === 'image-edit') return { title: 'Image Editing', desc: 'Upload an image to start transforming it with AI.', icon: <Crop size={36} /> };
+          if (IMAGE_EDIT_MODES.includes(mode)) {
+            return { title: 'Image Editing', desc: 'Upload an image to start transforming it with AI.', icon: <Crop size={36} /> };
+          }
           return { title: 'Image Out-Painting', desc: 'Upload an image to start expanding it with AI.', icon: <Expand size={36} /> };
       };
       const modeInfo = getModeInfo();
@@ -138,7 +144,9 @@ export const GenWorkspace: React.FC<GenWorkspaceProps> = ({
                               </div>
                           </div>
                           <div className="text-sm text-slate-400 animate-pulse font-mono">
-                              {mode === 'image-edit' ? 'EDITING...' : mode === 'image-outpainting' ? 'EXPANDING...' : mode === 'virtual-try-on' ? 'TRYING ON...' : 'GENERATING...'}
+                              {IMAGE_EDIT_MODES.includes(mode) ? 'EDITING...' : 
+                               mode === 'image-outpainting' ? 'EXPANDING...' : 
+                               mode === 'virtual-try-on' ? 'TRYING ON...' : 'GENERATING...'}
                           </div>
                      </div>
                  ) : latestResult ? (

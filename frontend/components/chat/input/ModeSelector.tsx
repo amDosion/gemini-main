@@ -1,6 +1,6 @@
 
 import React, { useMemo } from 'react';
-import { MessageSquare, Wand2, Crop, Expand, PlaySquare, Mic, FileText, Shirt, Search } from 'lucide-react';
+import { MessageSquare, Wand2, Crop, Expand, PlaySquare, Mic, FileText, Shirt, Search, Network, Layers, Sparkles } from 'lucide-react';
 import { AppMode, ModelConfig } from '../../../types/types';
 
 interface ModeSelectorProps {
@@ -64,8 +64,14 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({ mode, setMode, curre
     return {
       chat: true,  // Chat 模式始终可用
       'deep-research': hasDeepResearchModels,
+      'multi-agent': true,  // Multi-Agent 模式始终可用（工作流编排）
       'image-gen': hasImageGenModels,
-      'image-edit': hasVisionModels || hasImageGenModels,  // 编辑模式需要视觉或图像模型
+      // 图片编辑模式（已拆分为多个独立模式）
+      'image-chat-edit': hasVisionModels || hasImageGenModels,
+      'image-mask-edit': hasVisionModels || hasImageGenModels,
+      'image-inpainting': hasVisionModels || hasImageGenModels,
+      'image-background-edit': hasVisionModels || hasImageGenModels,
+      'image-recontext': hasVisionModels || hasImageGenModels,
       'virtual-try-on': hasVisionModels,
       'image-outpainting': true,  // Outpainting 使用特定 API，始终可用
       'video-gen': hasVideoModels,
@@ -76,9 +82,15 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({ mode, setMode, curre
 
   const modes = [
     { id: 'chat', label: 'Chat', icon: MessageSquare, disabled: !modeAvailability.chat, color: 'bg-indigo-600' },
-    { id: 'deep-research', label: 'Research', icon: Search, disabled: !modeAvailability['deep-research'], color: 'bg-blue-600' },
+    { id: 'deep-research', label: 'Deep Research', icon: Search, disabled: !modeAvailability['deep-research'], color: 'bg-blue-600' },
+    { id: 'multi-agent', label: 'Multi-Agent', icon: Network, disabled: !modeAvailability['multi-agent'], color: 'bg-teal-600' },
     { id: 'image-gen', label: 'Gen', icon: Wand2, disabled: !modeAvailability['image-gen'], color: 'bg-emerald-600' },
-    { id: 'image-edit', label: 'Edit', icon: Crop, disabled: !modeAvailability['image-edit'], color: 'bg-pink-600' },
+    // 图片编辑模式：拆分为独立的模式
+    { id: 'image-chat-edit', label: 'Chat Edit', icon: MessageSquare, disabled: !modeAvailability['image-chat-edit'], color: 'bg-pink-600' },
+    { id: 'image-mask-edit', label: 'Mask', icon: Crop, disabled: !modeAvailability['image-mask-edit'], color: 'bg-pink-500' },
+    { id: 'image-inpainting', label: 'Inpaint', icon: Wand2, disabled: !modeAvailability['image-inpainting'], color: 'bg-pink-400' },
+    { id: 'image-background-edit', label: 'Background', icon: Layers, disabled: !modeAvailability['image-background-edit'], color: 'bg-pink-300' },
+    { id: 'image-recontext', label: 'Recontext', icon: Sparkles, disabled: !modeAvailability['image-recontext'], color: 'bg-pink-200' },
     { id: 'virtual-try-on', label: 'Try-On', icon: Shirt, disabled: !modeAvailability['virtual-try-on'], color: 'bg-rose-600' },
     { id: 'image-outpainting', label: 'Expand', icon: Expand, disabled: !modeAvailability['image-outpainting'], color: 'bg-orange-600' },
     { id: 'video-gen', label: 'Video', icon: PlaySquare, disabled: !modeAvailability['video-gen'], color: 'bg-indigo-500' },
@@ -87,7 +99,7 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({ mode, setMode, curre
   ];
 
   return (
-    <div className="flex items-center gap-1 bg-slate-900/60 p-1 rounded-full border border-slate-700/50 backdrop-blur-md overflow-x-auto max-w-full custom-scrollbar shadow-sm">
+    <div className="flex items-center bg-slate-900/60 p-1 rounded-full border-slate-700/50 backdrop-blur-md overflow-x-auto max-w-full custom-scrollbar shadow-sm">
       {modes.map((m) => (
         <button
           key={m.id}

@@ -63,6 +63,8 @@ export interface ChatControlsProps {
   setEnableBrowser?: (v: boolean) => void;
   enableRAG?: boolean;
   setEnableRAG?: (v: boolean) => void;
+  enableResearch: boolean;
+  setEnableResearch: (v: boolean) => void;
   onOpenDocuments?: () => void;
   googleCacheMode?: 'none' | 'exact' | 'semantic';
   setGoogleCacheMode?: (v: 'none' | 'exact' | 'semantic') => void;
@@ -155,8 +157,18 @@ export interface VirtualTryOnControlsProps {
 
 export interface DeepResearchControlsProps {
   currentModel?: ModelConfig;
-  // Deep Research 模式目前不需要额外的控制参数
-  // 未来可以添加：研究深度、来源数量等配置
+  thinkingSummaries: 'auto' | 'none';
+  setThinkingSummaries: (v: 'auto' | 'none') => void;
+  researchMode?: 'vertex-ai' | 'gemini-api';
+  setResearchMode?: (v: 'vertex-ai' | 'gemini-api') => void;
+}
+
+export interface MultiAgentControlsProps {
+  // Multi-Agent 模式目前主要在工作流编辑器中配置
+  // 这里可以添加一些全局设置，如默认节点配置等
+  currentModel?: ModelConfig;
+  enableMultiAgent?: boolean;
+  setEnableMultiAgent?: (v: boolean) => void;
 }
 
 
@@ -189,6 +201,8 @@ export interface ControlsState {
   setEnableBrowser: (v: boolean) => void;
   enableRAG: boolean;
   setEnableRAG: (v: boolean) => void;
+  enableResearch: boolean;
+  setEnableResearch: (v: boolean) => void;
   googleCacheMode: 'none' | 'exact' | 'semantic';
   setGoogleCacheMode: (v: 'none' | 'exact' | 'semantic') => void;
 
@@ -245,4 +259,14 @@ export interface ControlsState {
   // Virtual Try-On
   tryOnTarget: string;
   setTryOnTarget: (v: string) => void;
+
+  // Deep Research Controls
+  thinkingSummaries: 'auto' | 'none';
+  setThinkingSummaries: (v: 'auto' | 'none') => void;
+  researchMode: 'vertex-ai' | 'gemini-api';
+  setResearchMode: (v: 'vertex-ai' | 'gemini-api') => void;
+  
+  // Multi-Agent Controls (保留用于向后兼容，但主要在工作流编辑器中管理)
+  enableMultiAgent: boolean;
+  setEnableMultiAgent: (v: boolean) => void;
 }

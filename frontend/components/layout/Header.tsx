@@ -1,8 +1,9 @@
 
 import React, { useMemo, useState } from 'react';
-import { Menu, MonitorUp, ChevronDown, Check, Loader2, Settings, Globe, Brain, Image as ImageIcon, Zap, BrainCircuit, Video, Mic, Server, Cpu, Sparkles, PlusCircle, FileText } from 'lucide-react';
+import { Menu, MonitorUp, ChevronDown, Check, Loader2, Settings, Globe, Brain, Image as ImageIcon, Zap, BrainCircuit, Video, Mic, Server, Cpu, Sparkles, PlusCircle, FileText, LogOut, UserCircle2, Search, X } from 'lucide-react';
 import { ModelConfig, AppMode } from '../../types/types';
 import { ConfigProfile } from '../../services/db';
+import { useToastContext } from '../../contexts/ToastContext';
 
 interface HeaderProps {
     isSidebarOpen: boolean;
@@ -24,6 +25,7 @@ interface HeaderProps {
     profiles: ConfigProfile[];
     activeProfileId: string | null;
     onActivateProfile: (id: string) => void;
+    onLogout?: () => void;
 }
 
 const getModelIcon = (model: ModelConfig) => {
@@ -71,16 +73,19 @@ export const Header: React.FC<HeaderProps> = ({
     appMode,
     profiles,
     activeProfileId,
-    onActivateProfile
+    onActivateProfile,
+    onLogout
 }) => {
     const ActiveIcon = activeModelConfig ? getModelIcon(activeModelConfig) : Loader2;
     const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
     const [isActivating, setIsActivating] = useState(false);
+    const [modelSearchQuery, setModelSearchQuery] = useState('');
+    const { showError } = useToastContext();
 
     // Get Current Profile
     const activeProfile = profiles.find(p => p.id === activeProfileId);
 
-    // Filter models based on the current App Mode
+    // Filter models based on the current App Mode and search query
     const filteredModels = useMemo(() => {
         return visibleModels.filter(m => {
             const id = m.id.toLowerCase();
@@ -97,7 +102,11 @@ export const Header: React.FC<HeaderProps> = ({
                     // 注意：wan2.6-image 不在此列表中，因为它的纯文生图模式需要流式输出，应放在 image-edit 模式
                     if (id.includes('edit')) return false; // 排除所有编辑模型
                     return (id.includes('dall') || id.includes('wanx') || id.includes('flux') || id.includes('midjourney') || id.includes('-t2i') || id.includes('z-image') || id.includes('imagen'));
-                case 'image-edit':
+                case 'image-chat-edit':
+                case 'image-mask-edit':
+                case 'image-inpainting':
+                case 'image-background-edit':
+                case 'image-recontext':
                 case 'image-outpainting':
                     // 图像编辑模式：需要 vision 能力，但排除以下模型：
                     // 1. 视频生成模型（veo）
@@ -131,8 +140,13 @@ export const Header: React.FC<HeaderProps> = ({
                     // Standard chat: Exclude specialized video/audio generators unless they are multimodal
                     return !id.includes('veo') && !id.includes('tts') && !id.includes('wanx') && !id.includes('-t2i') && !id.includes('z-image');
             }
+        }).filter(m => {
+            // Apply search filter
+            if (!modelSearchQuery.trim()) return true;
+            const query = modelSearchQuery.toLowerCase();
+            return m.name.toLowerCase().includes(query) || m.id.toLowerCase().includes(query);
         });
-    }, [visibleModels, appMode]);
+    }, [visibleModels, appMode, modelSearchQuery]);
 
     const renderCapabilities = (model: ModelConfig) => {
         const id = model.id.toLowerCase();
@@ -213,7 +227,7 @@ export const Header: React.FC<HeaderProps> = ({
                                                     setIsProfileMenuOpen(false);
                                                 } catch (error) {
                                                     console.error('Failed to activate profile:', error);
-                                                    alert('切换提供商失败，请重试');
+                                                    showError('切换提供商失败，请重试');
                                                 } finally {
                                                     setIsActivating(false);
                                                 }
@@ -283,12 +297,35 @@ export const Header: React.FC<HeaderProps> = ({
                         <>
                             <div className="fixed inset-0 z-40" onClick={() => setIsModelMenuOpen(false)} />
                             <div className="absolute top-full left-0 mt-2 w-96 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden ring-1 ring-black/50">
-                                <div className="p-2 flex flex-col gap-1 max-h-[60vh] overflow-y-auto custom-scrollbar">
-
-                                    <div className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider flex justify-between bg-slate-950/50 sticky top-0 z-10 backdrop-blur-sm">
-                                        <span>{appMode.replace('-', ' ')} Models</span>
-                                        <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">{filteredModels.length}</span>
+                                {/* Search Input */}
+                                <div className="p-2 border-b border-slate-800">
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            value={modelSearchQuery}
+                                            onChange={(e) => setModelSearchQuery(e.target.value)}
+                                            placeholder="Search models..."
+                                            className="w-full pl-3 pr-20 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                                            {modelSearchQuery && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setModelSearchQuery('');
+                                                    }}
+                                                    className="p-1 text-slate-500 hover:text-white transition-colors rounded hover:bg-slate-700"
+                                                    title="Clear search"
+                                                >
+                                                    <X size={14} />
+                                                </button>
+                                            )}
+                                            <Search size={16} className="text-slate-500" />
+                                        </div>
                                     </div>
+                                </div>
+                                <div className="p-2 flex flex-col gap-1 max-h-[60vh] overflow-y-auto custom-scrollbar">
 
                                     {filteredModels.length === 0 && (
                                         <div className="p-4 text-sm text-slate-500 text-center flex flex-col gap-2 items-center">
@@ -346,7 +383,8 @@ export const Header: React.FC<HeaderProps> = ({
                                         className="w-full flex items-center justify-center gap-2 p-2 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
                                     >
                                         <Settings size={14} />
-                                        Manage Active Models
+                                        <span>Manage Active Models</span>
+                                        <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">{filteredModels.length}</span>
                                     </button>
                                 </div>
                             </div>
@@ -357,12 +395,29 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="flex items-center gap-2">
                 <button
                     type="button"
+                    onClick={() => setIsRightSidebarOpen(!isRightSidebarOpen)}
+                    className={`p-2 rounded-lg transition-colors ${isRightSidebarOpen ? 'bg-indigo-500/20 text-indigo-400' : 'hover:bg-slate-800 text-slate-400 hover:text-white'}`}
+                    title="AI Persona & Roles"
+                >
+                    <UserCircle2 size={20} />
+                </button>
+                <button
+                    type="button"
                     onClick={() => window.open(window.location.href, '_blank')}
                     className="hidden sm:block p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
                     title="Open in new tab"
                 >
                     <MonitorUp size={20} />
                 </button>
+                {onLogout && (
+                    <button
+                        onClick={onLogout}
+                        className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors"
+                        title="Log Out"
+                    >
+                        <LogOut size={20} />
+                    </button>
+                )}
             </div>
         </header>
     );

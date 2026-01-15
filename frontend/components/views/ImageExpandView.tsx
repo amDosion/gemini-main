@@ -8,6 +8,7 @@ import { ImageCanvasControls } from '../common/ImageCanvasControls';
 import { ImageCompare } from '../common/ImageCompare';
 import { GenViewLayout } from '../common/GenViewLayout';
 import { processUserAttachments } from '../../hooks/handlers/attachmentUtils';
+import { useToastContext } from '../../contexts/ToastContext';
 
 
 interface ImageExpandViewProps {
@@ -211,6 +212,7 @@ export const ImageExpandView = memo(({
     providerId,
     sessionId: currentSessionId  // ✅ 接收 sessionId
 }: ImageExpandViewProps) => {
+    const { showError } = useToastContext();
     const scrollRef = useRef<HTMLDivElement>(null);
 
     // State for reference image, synced with InputArea
@@ -342,7 +344,7 @@ export const ImageExpandView = memo(({
             onSend(text, options, finalAttachments, mode);
         } catch (error) {
             console.error('[ImageExpandView] handleSend 处理附件失败:', error);
-            alert('处理附件失败，请重试');
+            showError('处理附件失败，请重试');
             return;
         }
     };
@@ -475,9 +477,9 @@ export const ImageExpandView = memo(({
             setIsMobileHistoryOpen={setIsMobileHistoryOpen}
             sidebarTitle="History"
             sidebarHeaderIcon={<Layers size={14} />}
-            sidebarContent={sidebarContent}
-            mainContent={mainContent}
-            bottomContent={bottomContent}
+            sidebar={sidebarContent}
+            main={mainContent}
+            bottom={bottomContent}
         />
     );
 }, arePropsEqual);

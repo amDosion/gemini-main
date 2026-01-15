@@ -6,6 +6,7 @@ import { MultiAgentWorkflowEditorReactFlow as MultiAgentWorkflowEditor } from '.
 import type { WorkflowNode, WorkflowEdge, ExecutionStatus } from '../multiagent/types';
 import { GenViewLayout } from '../common/GenViewLayout';
 import { X, Network, MessageSquare } from 'lucide-react';
+import { useToastContext } from '../../contexts/ToastContext';
 
 interface MultiAgentViewProps {
     messages: Message[];
@@ -48,6 +49,7 @@ export const MultiAgentView: React.FC<MultiAgentViewProps> = React.memo(({
     const [executionStatus, setExecutionStatus] = useState<ExecutionStatus | undefined>(undefined);
     const [isMobileHistoryOpen, setIsMobileHistoryOpen] = useState(false);
     const [viewMode, setViewMode] = useState<'editor' | 'chat'>('editor');
+    const { showError } = useToastContext();
 
     // ✅ Multi-Agent 工作流执行处理
     const handleWorkflowExecute = useCallback(async (workflow: { nodes: WorkflowNode[]; edges: WorkflowEdge[] }) => {
@@ -200,15 +202,15 @@ export const MultiAgentView: React.FC<MultiAgentViewProps> = React.memo(({
                 };
             });
             
-            alert(`工作流执行失败: ${errorMessage}`);
+            showError(`工作流执行失败: ${errorMessage}`);
         }
-    }, [onSend]);
+    }, [onSend, showError]);
 
     return (
         <GenViewLayout
             sidebarHeaderIcon={<Network size={16} className="text-teal-400" />}
             sidebarTitle="工作流历史"
-            sidebarContent={
+            sidebar={
                 <div className="p-4 space-y-4">
                     {/* 工作流历史 */}
                     <div>
@@ -252,7 +254,7 @@ export const MultiAgentView: React.FC<MultiAgentViewProps> = React.memo(({
                     </button>
                 </div>
             }
-            mainContent={
+            main={
                 <div className="flex-1 flex flex-col h-full relative">
                     {/* 顶部工具栏 */}
                     <div className="shrink-0 border-b border-slate-700/50 bg-slate-900/50 backdrop-blur-sm">
@@ -322,7 +324,7 @@ export const MultiAgentView: React.FC<MultiAgentViewProps> = React.memo(({
                     </div>
                 </div>
             }
-            bottomContent={
+            bottom={
                 viewMode === 'chat' ? (
                     <InputArea 
                         onSend={onSend} 
