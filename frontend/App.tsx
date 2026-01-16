@@ -132,6 +132,7 @@ const AppContent: React.FC = () => {
 
   // Always try to fetch models when provider changes. 
   const {
+    availableModels,
     visibleModels,
     currentModelId,
     setCurrentModelId,
@@ -143,7 +144,8 @@ const AppContent: React.FC = () => {
     isProfileReady, // ✅ 使用 isProfileReady 而不是 isConfigReady
     hiddenModelIds,
     config.providerId,
-    cachedModels  // ✅ 使用稳定的引用
+    cachedModels,  // ✅ 使用稳定的引用
+    appMode  // ✅ 传递 appMode，后端会根据模式过滤模型
     // apiKey 已移除 - 后端从数据库获取 API Key
   );
 
@@ -191,13 +193,22 @@ const AppContent: React.FC = () => {
     if (window.innerWidth >= 1280) setIsRightSidebarOpen(true);
   }, []);
 
+  // --- 模式切换（需要在其他 handlers 之前定义）---
+  const { handleModeSwitch } = useModeSwitch({
+    availableModels,
+    hiddenModelIds,
+    currentModelId,
+    setCurrentModelId,
+    setAppMode
+  });
+
   // --- 会话同步 ---
   useSessionSync({
     currentSessionId,
     sessions,
     activeModelConfig,
     setMessages,
-    setAppMode
+    setAppMode: handleModeSwitch // ✅ 使用 handleModeSwitch 确保模型选择逻辑正确
   });
 
   // --- Handlers ---
@@ -205,7 +216,7 @@ const AppContent: React.FC = () => {
     createNewSession(activePersonaId); // ✅ 传递当前激活的 persona
     if (activeModelConfig) llmService.startNewChat([], activeModelConfig);
     if (window.innerWidth < 768) setIsSidebarOpen(false);
-    setAppMode('chat');
+    handleModeSwitch('chat'); // ✅ 使用 handleModeSwitch 确保模型选择逻辑正确
     setInitialAttachments(undefined);
     setInitialPrompt(undefined);
   };
@@ -230,7 +241,7 @@ const AppContent: React.FC = () => {
 
           if (match && match[1]) {
             if (appMode !== 'image-gen' && !appMode.startsWith('image-')) {
-              setAppMode('image-gen');
+              handleModeSwitch('image-gen'); // ✅ 使用 handleModeSwitch 确保模型选择逻辑正确
             }
             setInitialPrompt(match[1]);
           }
@@ -259,7 +270,7 @@ const AppContent: React.FC = () => {
     const optionsWithPersona = { ...options, persona: activePersona };
     const selectedModel = visibleModels.find(m => m.id === currentModelId);
     const modelForSend = mode === 'pdf-extract' ? selectedModel : activeModelConfig;
-
+    
     // For PDF extraction, enforce using the user-selected model only (no fallback).
     if (mode === 'pdf-extract' && !selectedModel) {
       showError('当前选择的模型不可用，请在模型列表中重新选择后再进行 PDF 提取。');
@@ -298,7 +309,7 @@ const AppContent: React.FC = () => {
     currentSessionId,
     visibleModels,
     activeModelConfig,
-    setAppMode,
+    setAppMode: handleModeSwitch, // ✅ 使用 handleModeSwitch 确保模型选择逻辑正确
     setCurrentModelId,
     setInitialAttachments,
     setInitialPrompt
@@ -306,7 +317,7 @@ const AppContent: React.FC = () => {
 
   const handleWelcomePrompt = (text: string, mode: AppMode, modelId: string, requiredCap: string) => {
     handleModelSelect(modelId);
-    setAppMode(mode);
+    handleModeSwitch(mode); // ✅ 使用 handleModeSwitch 确保模型选择逻辑正确
     onSend(text, {
       enableSearch: requiredCap === 'search',
       enableThinking: requiredCap === 'reasoning',
@@ -348,14 +359,6 @@ const AppContent: React.FC = () => {
     setMessages(newMessages);
     updateSessionMessages(currentSessionId, newMessages);
   };
-
-  // --- 模式切换 ---
-  const { handleModeSwitch } = useModeSwitch({
-    visibleModels,
-    currentModelId,
-    setCurrentModelId,
-    setAppMode
-  });
 
   const renderView = () => {
     const commonProps = {

@@ -18,15 +18,6 @@ interface GenViewLayoutProps {
     setIsMobileHistoryOpen: (v: boolean) => void;
 }
 
-// 使用自定义比较函数，只比较非 ReactNode 的 props
-const arePropsEqual = (prevProps: GenViewLayoutProps, nextProps: GenViewLayoutProps) => {
-    // 只比较非 ReactNode 的 props
-    if (prevProps.isMobileHistoryOpen !== nextProps.isMobileHistoryOpen) return false;
-    if (prevProps.sidebarTitle !== nextProps.sidebarTitle) return false;
-    // ReactNode props 的变化会自然触发重新渲染，不需要在这里比较
-    return true;
-};
-
 export const GenViewLayout: React.FC<GenViewLayoutProps> = React.memo(({
     sidebarHeaderIcon,
     sidebarTitle,
@@ -108,4 +99,4 @@ export const GenViewLayout: React.FC<GenViewLayoutProps> = React.memo(({
             </div>
         </div>
     );
-}, arePropsEqual);
+});

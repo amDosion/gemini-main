@@ -24,64 +24,51 @@ def _encrypt_api_key(api_key: str) -> str:
     加密 API Key（如果尚未加密）
 
     Args:
-        api_key: 原始或已加密的 API Key
+        api_key: API Key（可能是明文或已加密）
 
     Returns:
         加密后的 API Key
     """
     if not api_key:
         return api_key
-
-    # 如果已经加密，直接返回
+    
+    # 如果已经是加密的，直接返回
     if is_encrypted(api_key):
         return api_key
-
+    
+    # 明文 API Key，加密后返回
     try:
-        encrypted = encrypt_data(api_key)
-        logger.debug("[Profiles] API key encrypted successfully")
-        return encrypted
+        return encrypt_data(api_key)
     except Exception as e:
-        # 如果加密失败（如未配置 ENCRYPTION_KEY），记录警告但不阻止操作
-        logger.warning(f"[Profiles] API key encryption failed (storing plain): {e}")
-        return api_key
+        logger.error(f"[Profiles] Failed to encrypt API key: {e}")
+        raise
 
 
-def _decrypt_api_key(api_key: str) -> str:
+def _decrypt_api_key(api_key: str, silent: bool = False) -> str:
     """
-    解密 API Key（兼容未加密的历史数据）
+    解密 API Key（如果已加密）
 
     Args:
-        api_key: 加密或明文的 API Key
+        api_key: API Key（可能是明文或已加密）
+        silent: 如果为 True，解密失败时不记录错误（用于兼容性检查）
 
     Returns:
-        解密后的 API Key
+        解密后的 API Key（如果未加密则原样返回）
     """
     if not api_key:
         return api_key
-
-    # 如果不是加密格式，直接返回（兼容历史数据）
+    
+    # 如果未加密，直接返回
     if not is_encrypted(api_key):
         return api_key
-
+    
+    # 尝试解密
     try:
-        # 使用 silent=True 避免在兼容性检查时记录 ERROR
-        decrypted = decrypt_data(api_key, silent=True)
-        return decrypted
-    except ValueError as e:
-        # ENCRYPTION_KEY 未设置，这是配置问题
-        logger.warning(
-            f"[Profiles] ENCRYPTION_KEY not configured. "
-            f"Cannot decrypt API key (returning as-is). "
-            f"Please set ENCRYPTION_KEY in .env file."
-        )
-        return api_key
+        return decrypt_data(api_key, silent=silent)
     except Exception as e:
-        # 解密失败，可能是未加密的旧数据或密钥不匹配
-        # 这种情况在兼容性场景中是正常的，只记录 DEBUG
-        logger.debug(
-            f"[Profiles] API key decryption failed (returning as-is): "
-            f"{type(e).__name__} - This may be normal for unencrypted legacy data"
-        )
+        if not silent:
+            logger.warning(f"[Profiles] Failed to decrypt API key: {e}")
+        # 解密失败时返回原值（可能是旧数据或密钥不匹配）
         return api_key
 
 
@@ -113,18 +100,34 @@ class ConfigProfilePayload(BaseModel):
 
 @router.get("/profiles")
 async def get_profiles(
+    edit_mode: bool = False,  # 编辑模式：True 时解密返回，False 时返回加密值
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取所有配置文件（API Key 自动解密）"""
+    """
+    获取所有配置文件
+    
+    Args:
+        edit_mode: 编辑模式，True 时解密 API Key 返回，False 时返回加密值
+    """
     user_query = UserScopedQuery(db, user_id)
     profiles = user_query.get_all(DBConfigProfile)
 
-    # 解密 API Key 后返回
     result = []
     for profile in profiles:
         profile_dict = profile.to_dict()
-        profile_dict["apiKey"] = _decrypt_api_key(profile_dict.get("apiKey", ""))
+        
+        # 根据 edit_mode 决定是否解密 API Key
+        if edit_mode and profile_dict.get("apiKey"):
+            # 编辑模式：解密返回给前端
+            try:
+                profile_dict["apiKey"] = _decrypt_api_key(profile_dict["apiKey"], silent=True)
+                logger.debug(f"[Profiles] Decrypted API key for edit mode (profile={profile.id})")
+            except Exception as e:
+                logger.warning(f"[Profiles] Failed to decrypt API key in edit mode: {e}")
+                # 解密失败时返回加密值（前端可以显示错误）
+        # 非编辑模式：返回加密值（或 None）
+        
         result.append(profile_dict)
     return result
 
@@ -153,8 +156,58 @@ async def create_or_update_profile(
             if "providerId" in update_data:
                 profile.provider_id = update_data["providerId"]
             if "apiKey" in update_data:
-                # 加密存储 API Key
-                profile.api_key = _encrypt_api_key(update_data["apiKey"])
+                # 保存 API Key（加密存储）
+                api_key_to_save = update_data["apiKey"]
+                
+                # 判断是否已经是加密的（通过一致性检查）
+                existing_encrypted = profile.api_key
+                
+                if existing_encrypted and existing_encrypted == api_key_to_save:
+                    # 用户没有修改 API Key，保持加密状态
+                    logger.debug(f"[Profiles] API key unchanged, keeping encrypted value (profile={profile.id})")
+                    # 不需要更新，保持原值
+                else:
+                    # 新的 API Key 或修改过的 API Key，需要加密保存
+                    try:
+                        # 检查是否已经是加密格式
+                        if is_encrypted(api_key_to_save):
+                            # 如果已经是加密的，直接保存（可能是前端传递回来的加密值）
+                            profile.api_key = api_key_to_save
+                            logger.debug(f"[Profiles] Saved encrypted API key (already encrypted) (profile={profile.id})")
+                        else:
+                            # 明文 API Key，加密后保存
+                            # 先检查是否与数据库中解密后的值相同（避免不必要的加密操作）
+                            if existing_encrypted:
+                                try:
+                                    if is_encrypted(existing_encrypted):
+                                        existing_decrypted = _decrypt_api_key(existing_encrypted, silent=True)
+                                        if existing_decrypted == api_key_to_save:
+                                            # 用户没有修改 API Key，保持加密状态
+                                            logger.debug(f"[Profiles] API key unchanged (decrypted comparison), keeping encrypted value (profile={profile.id})")
+                                            # 不需要更新，保持原值
+                                        else:
+                                            # 新的 API Key，加密后保存
+                                            profile.api_key = _encrypt_api_key(api_key_to_save)
+                                            logger.info(f"[Profiles] Encrypted and saved new API key (profile={profile.id})")
+                                    else:
+                                        # 数据库中是明文（旧数据），加密后保存
+                                        profile.api_key = _encrypt_api_key(api_key_to_save)
+                                        logger.info(f"[Profiles] Encrypted and saved API key (migrated from plaintext) (profile={profile.id})")
+                                except Exception as e:
+                                    # 解密失败，可能是密钥不匹配，当作新 API Key 处理
+                                    logger.warning(f"[Profiles] Failed to decrypt existing API key for comparison: {e}")
+                                    profile.api_key = _encrypt_api_key(api_key_to_save)
+                                    logger.info(f"[Profiles] Encrypted and saved new API key (decryption failed) (profile={profile.id})")
+                            else:
+                                # 数据库中没有 API Key，加密后保存
+                                profile.api_key = _encrypt_api_key(api_key_to_save)
+                                logger.info(f"[Profiles] Encrypted and saved new API key (first time) (profile={profile.id})")
+                    except Exception as e:
+                        logger.error(f"[Profiles] Failed to encrypt API key: {e}")
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Failed to encrypt API key: {str(e)}"
+                        )
             if "baseUrl" in update_data:
                 profile.base_url = update_data["baseUrl"]
             if "protocol" in update_data:
@@ -170,12 +223,24 @@ async def create_or_update_profile(
             profile.updated_at = int(datetime.now().timestamp() * 1000)
         else:
             # 创建新配置（加密存储 API Key）
+            api_key_to_save = profile_data.apiKey or ""
+            if api_key_to_save:
+                # 只有提供了 API Key 才加密保存
+                if is_encrypted(api_key_to_save):
+                    # 如果已经是加密的，直接保存
+                    encrypted_api_key = api_key_to_save
+                else:
+                    # 明文 API Key，加密后保存
+                    encrypted_api_key = _encrypt_api_key(api_key_to_save)
+            else:
+                encrypted_api_key = ""
+            
             profile = DBConfigProfile(
                 id=profile_data.id,
                 user_id=user_id,
                 name=profile_data.name or "新配置",
                 provider_id=profile_data.providerId or "",
-                api_key=_encrypt_api_key(profile_data.apiKey or ""),
+                api_key=encrypted_api_key,
                 base_url=profile_data.baseUrl or "",
                 protocol=profile_data.protocol or "openai",
                 is_proxy=profile_data.isProxy or False,
@@ -269,11 +334,15 @@ async def set_active_profile(
 
 @router.get("/settings/full")
 async def get_full_settings(
+    edit_mode: bool = False,  # 编辑模式：True 时解密返回，False 时返回加密值
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    一次性获取所有配置数据（API Key 自动解密）
+    一次性获取所有配置数据
+
+    Args:
+        edit_mode: 编辑模式，True 时解密 API Key 返回，False 时返回加密值
 
     返回：
     - profiles: 所有配置列表
@@ -283,12 +352,23 @@ async def get_full_settings(
     """
     user_query = UserScopedQuery(db, user_id)
 
-    # 1. 获取所有配置（解密 API Key）
+    # 1. 获取所有配置
     profiles = user_query.get_all(DBConfigProfile)
     profiles_data = []
     for profile in profiles:
         profile_dict = profile.to_dict()
-        profile_dict["apiKey"] = _decrypt_api_key(profile_dict.get("apiKey", ""))
+        
+        # 根据 edit_mode 决定是否解密 API Key
+        if edit_mode and profile_dict.get("apiKey"):
+            # 编辑模式：解密返回给前端
+            try:
+                profile_dict["apiKey"] = _decrypt_api_key(profile_dict["apiKey"], silent=True)
+                logger.debug(f"[Profiles] Decrypted API key for edit mode in full settings (profile={profile.id})")
+            except Exception as e:
+                logger.warning(f"[Profiles] Failed to decrypt API key in edit mode: {e}")
+                # 解密失败时返回加密值
+        # 非编辑模式：返回加密值（或 None）
+        
         profiles_data.append(profile_dict)
 
     # 2. 获取当前激活的配置 ID

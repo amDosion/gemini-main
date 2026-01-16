@@ -58,32 +58,42 @@ export class LLMService {
       return LLMFactory.getProvider(this.protocol, this.providerId);
   }
 
-  public async getAvailableModels(useCache: boolean = true): Promise<ModelConfig[]> {
+  public async getAvailableModels(useCache: boolean = true, mode?: string): Promise<ModelConfig[]> {
       // ✅ 如果未配置 Provider，返回空数组而不是发送请求
       if (!this.providerId) {
         console.warn('[LLMService] Provider not configured, returning empty models list');
         return [];
       }
       // ✅ 从后端 API 获取模型列表（后端会从数据库读取 API Key）
+      // 缓存策略：按 providerId 缓存完整模型列表（不按 mode 缓存，因为 mode 会变化）
       const cacheKey = `${this.providerId}`;
       const now = Date.now();
       const cachedData = this.modelCache.get(cacheKey);
 
-      if (useCache && cachedData && (now - cachedData.timestamp < CACHE_TTL)) {
+      // ✅ 如果传递了 mode，不使用缓存（因为缓存的是完整列表）
+      // 如果未传递 mode，可以使用缓存
+      if (useCache && !mode && cachedData && (now - cachedData.timestamp < CACHE_TTL)) {
           console.log(`[LLMService] Returning fresh cached models for ${this.providerId}`);
           return cachedData.models;
       }
 
       try {
-          console.log(`[LLMService] Fetching models from backend API for ${this.providerId}`);
+          console.log(`[LLMService] Fetching models from backend API for ${this.providerId}${mode ? ` (mode: ${mode})` : ''}`);
 
-          // ✅ 调用后端 API：/api/models/{provider}
+          // ✅ 调用后端 API：/api/models/{provider}?mode={mode}
           // 后端会：
           // 1. 从 config_profiles 表读取当前用户激活的配置
           // 2. 获取对应的 API Key 和 BaseURL
           // 3. 调用提供商 API 获取模型列表
-          // 4. 返回完整的 ModelConfig 数组
-          const response = await fetch(`/api/models/${this.providerId}?useCache=${useCache}`, {
+          // 4. 如果传递了 mode，后端会根据模式过滤模型
+          // 5. 返回 ModelConfig 数组（已过滤或完整列表）
+          const params = new URLSearchParams();
+          params.append('useCache', String(useCache));
+          if (mode) {
+              params.append('mode', mode);
+          }
+          
+          const response = await fetch(`/api/models/${this.providerId}?${params.toString()}`, {
               method: 'GET',
               credentials: 'include', // 携带认证 Cookie
               headers: {
@@ -99,16 +109,20 @@ export class LLMService {
           const data = await response.json();
           const models = data.models || [];
 
-          this.modelCache.set(cacheKey, {
-              models: models,
-              timestamp: now,
-              providerId: this.providerId,
-          });
+          // ✅ 只有未传递 mode 时才缓存（缓存完整列表）
+          // 如果传递了 mode，不缓存（因为不同 mode 需要不同的过滤结果）
+          if (!mode) {
+              this.modelCache.set(cacheKey, {
+                  models: models,
+                  timestamp: now,
+                  providerId: this.providerId,
+              });
+          }
 
-          console.log(`[LLMService] Successfully fetched ${models.length} models from backend`);
+          console.log(`[LLMService] Successfully fetched ${models.length} models from backend${data.filtered_by_mode ? ` (filtered by mode: ${data.filtered_by_mode})` : ''}`);
           return models;
       } catch (error) {
-          if (cachedData) {
+          if (cachedData && !mode) {
               console.warn(`[LLMService] Failed to fetch models for ${this.providerId}. Returning expired cached data as fallback.`, error);
               return cachedData.models;
           }

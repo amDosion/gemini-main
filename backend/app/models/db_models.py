@@ -950,9 +950,9 @@ class UserOnlineStatus(Base):
         }
 
 
-class ImagenConfig(Base):
-    """Imagen 配置表 - 存储用户的图像生成 API 配置"""
-    __tablename__ = "imagen_configs"
+class VertexAIConfig(Base):
+    """Vertex AI 配置表 - 存储用户的 Vertex AI 配置"""
+    __tablename__ = "vertex_ai_configs"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, nullable=False, unique=True, index=True)  # 关联 users.id，每个用户只有一条配置

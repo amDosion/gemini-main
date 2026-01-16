@@ -144,11 +144,11 @@ class ImageEditCoordinator:
         # Try to load from database if user_id and db session are provided
         if self._user_id and self._db:
             try:
-                from ...models.db_models import ImagenConfig
+                from ...models.db_models import VertexAIConfig
                 from ...core.encryption import decrypt_data
                 
-                user_config = self._db.query(ImagenConfig).filter(
-                    ImagenConfig.user_id == self._user_id
+                user_config = self._db.query(VertexAIConfig).filter(
+                    VertexAIConfig.user_id == self._user_id
                 ).first()
                 
                 if user_config:

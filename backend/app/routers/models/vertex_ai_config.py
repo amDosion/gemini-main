@@ -1,7 +1,7 @@
 """
-Imagen Configuration API Router
+Vertex AI Configuration API Router
 
-This module provides API endpoints for managing Imagen API configuration,
+This module provides API endpoints for managing Vertex AI configuration,
 including switching between Gemini API and Vertex AI, testing connections,
 and retrieving capabilities.
 
@@ -11,7 +11,7 @@ and retrieving capabilities.
 - POST /test-connection: 直接使用子服务测试（因为测试的是用户提供的凭证，不是存储的凭证）
 - POST /verify-vertex-ai: 直接使用 genai.Client（同上，测试用户提供的凭证）
 
-Updated: 2026-01-14 - 统一通过 GoogleService 调用（get_imagen_config 端点）
+Updated: 2026-01-15 - 重命名为 vertex_ai_config，数据表名称改为 vertex_ai_configs
 """
 
 from fastapi import APIRouter, HTTPException, Depends, Request
@@ -23,19 +23,19 @@ import logging
 from ...core.database import get_db
 from ...core.dependencies import require_current_user
 from ...core.encryption import encrypt_data, decrypt_data, is_encrypted
-from ...models.db_models import ImagenConfig, ConfigProfile, UserSettings
+from ...models.db_models import VertexAIConfig, ConfigProfile, UserSettings
 from ...services.common.provider_factory import ProviderFactory
 from ...services.gemini.imagen_common import ConfigurationError
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/imagen", tags=["imagen"])
+router = APIRouter(prefix="/api/vertex-ai", tags=["vertex-ai"])
 
 
 # ==================== Request/Response Models ====================
 
-class ImagenConfigResponse(BaseModel):
-    """Response model for Imagen configuration"""
+class VertexAIConfigResponse(BaseModel):
+    """Response model for Vertex AI configuration"""
     api_mode: Literal['gemini_api', 'vertex_ai'] = Field(alias='apiMode')
     capabilities: Dict[str, Any]
     gemini_api_configured: bool = Field(alias='geminiApiConfigured')
@@ -50,8 +50,8 @@ class ImagenConfigResponse(BaseModel):
         populate_by_name = True
 
 
-class ImagenConfigUpdateRequest(BaseModel):
-    """Request model for updating Imagen configuration"""
+class VertexAIConfigUpdateRequest(BaseModel):
+    """Request model for updating Vertex AI configuration"""
     apiMode: Literal['gemini_api', 'vertex_ai'] = Field(
         alias='api_mode',
         description="API mode to use for image generation"
@@ -150,14 +150,14 @@ class VerifyVertexAIResponse(BaseModel):
 
 async def _get_google_api_key(db: Session, user_id: str) -> Optional[str]:
     """
-    Get Google API Key from database for the user.
+    Get Google API Key from database for the user (自动解密).
 
     Priority:
     1. Active profile's API key
     2. Any Google profile's API key
 
     Returns:
-        API key string or None if not found
+        Decrypted API key string or None if not found
     """
     settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
     active_profile_id = settings.active_profile_id if settings else None
@@ -175,36 +175,45 @@ async def _get_google_api_key(db: Session, user_id: str) -> Optional[str]:
         for profile in matching_profiles:
             if profile.id == active_profile_id and profile.api_key:
                 api_key = profile.api_key
-                if is_encrypted(api_key):
-                    try:
-                        return decrypt_data(api_key)
-                    except Exception:
+                # 自动解密 API key（用于业务逻辑使用）
+                try:
+                    if is_encrypted(api_key):
+                        return decrypt_data(api_key, silent=True)
+                    else:
                         return api_key
-                return api_key
+                except Exception as e:
+                    logger.warning(f"[VertexAIConfig] Failed to decrypt API key: {e}")
+                    # 解密失败时返回原值（可能是旧数据）
+                    return api_key
 
     # Fallback: first matching profile
     for profile in matching_profiles:
         if profile.api_key:
             api_key = profile.api_key
-            if is_encrypted(api_key):
-                try:
-                    return decrypt_data(api_key)
-                except Exception:
+            # 自动解密 API key（用于业务逻辑使用）
+            try:
+                if is_encrypted(api_key):
+                    return decrypt_data(api_key, silent=True)
+                else:
                     return api_key
-            return api_key
+            except Exception as e:
+                logger.warning(f"[VertexAIConfig] Failed to decrypt API key: {e}")
+                # 解密失败时返回原值（可能是旧数据）
+                return api_key
 
     return None
 
 
 # ==================== API Endpoints ====================
 
-@router.get("/config", response_model=ImagenConfigResponse, response_model_by_alias=True)
-async def get_imagen_config(
+@router.get("/config", response_model=VertexAIConfigResponse, response_model_by_alias=True)
+async def get_vertex_ai_config(
+    edit_mode: bool = False,  # 编辑模式：True 时解密返回，False 时返回加密值
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Get current Imagen API configuration and capabilities for the authenticated user.
+    Get current Vertex AI configuration and capabilities for the authenticated user.
 
     通过 ProviderFactory.create("google") 获取 GoogleService，调用 get_imagen_capabilities()
 
@@ -214,10 +223,10 @@ async def get_imagen_config(
     try:
         # user_id 已通过依赖注入自动获取
 
-        logger.info(f"[ImagenConfig] Getting configuration for user={user_id}")
+        logger.info(f"[VertexAIConfig] Getting configuration for user={user_id}")
 
-        # ✅ 2. 查询用户的 Imagen 配置
-        user_config = db.query(ImagenConfig).filter(ImagenConfig.user_id == user_id).first()
+        # ✅ 2. 查询用户的 Vertex AI 配置
+        user_config = db.query(VertexAIConfig).filter(VertexAIConfig.user_id == user_id).first()
 
         # Default capabilities (used when no config or no API key)
         default_capabilities = {
@@ -229,8 +238,8 @@ async def get_imagen_config(
 
         if not user_config:
             # Return default configuration if user hasn't set up yet
-            logger.info(f"[ImagenConfig] No configuration found for user={user_id}, returning defaults")
-            return ImagenConfigResponse(
+            logger.info(f"[VertexAIConfig] No configuration found for user={user_id}, returning defaults")
+            return VertexAIConfigResponse(
                 api_mode='gemini_api',
                 capabilities=default_capabilities,
                 gemini_api_configured=False,
@@ -242,7 +251,7 @@ async def get_imagen_config(
                 saved_models=[]
             )
 
-        # ✅ 3. 获取 Google API Key
+        # ✅ 3. 获取 Google API Key（自动解密）
         api_key = await _get_google_api_key(db, user_id)
 
         # ✅ 4. 通过 ProviderFactory 创建 GoogleService 获取 capabilities
@@ -256,29 +265,33 @@ async def get_imagen_config(
                     db=db
                 )
                 capabilities = service.get_imagen_capabilities()
-                logger.info(f"[ImagenConfig] Got capabilities via GoogleService for user={user_id}")
+                logger.info(f"[VertexAIConfig] Got capabilities via GoogleService for user={user_id}")
             except Exception as e:
                 logger.warning(
-                    f"[ImagenConfig] Failed to get capabilities via GoogleService, using defaults: {e}"
+                    f"[VertexAIConfig] Failed to get capabilities via GoogleService, using defaults: {e}"
                 )
 
-        # ✅ 5. 处理 Vertex AI 配置（解密凭证）
+        # ✅ 5. 处理 Vertex AI 配置
         vertex_ai_project_id = user_config.vertex_ai_project_id
         vertex_ai_location = user_config.vertex_ai_location or 'us-central1'
-        vertex_ai_credentials_json = None
-        if user_config.vertex_ai_credentials_json:
+        
+        # 根据 edit_mode 决定是否解密
+        if edit_mode and user_config.vertex_ai_credentials_json:
+            # 编辑模式：解密返回给前端
             try:
                 if is_encrypted(user_config.vertex_ai_credentials_json):
-                    vertex_ai_credentials_json = decrypt_data(
-                        user_config.vertex_ai_credentials_json
-                    )
+                    vertex_ai_credentials_json = decrypt_data(user_config.vertex_ai_credentials_json)
+                    logger.debug(f"[VertexAIConfig] Decrypted credentials for edit mode (user={user_id})")
                 else:
+                    # 如果未加密（旧数据），直接返回
                     vertex_ai_credentials_json = user_config.vertex_ai_credentials_json
             except Exception as e:
-                logger.error(
-                    f"[ImagenConfig] Failed to decrypt credentials for user={user_id}: {e}",
-                    exc_info=True
-                )
+                logger.warning(f"[VertexAIConfig] Failed to decrypt credentials in edit mode: {e}")
+                # 解密失败时返回加密值（前端可以显示错误）
+                vertex_ai_credentials_json = user_config.vertex_ai_credentials_json
+        else:
+            # 非编辑模式：返回加密值（或 None）
+            vertex_ai_credentials_json = user_config.vertex_ai_credentials_json
 
         # ✅ 6. 检查 API 配置状态
         gemini_api_configured = user_config.api_mode == 'gemini_api'
@@ -289,12 +302,12 @@ async def get_imagen_config(
         )
 
         logger.info(
-            f"[ImagenConfig] Configuration retrieved: api_mode={user_config.api_mode}, "
+            f"[VertexAIConfig] Configuration retrieved: api_mode={user_config.api_mode}, "
             f"gemini_configured={gemini_api_configured}, "
             f"vertex_configured={vertex_ai_configured}"
         )
 
-        return ImagenConfigResponse(
+        return VertexAIConfigResponse(
             api_mode=user_config.api_mode,
             capabilities=capabilities,
             gemini_api_configured=gemini_api_configured,
@@ -309,21 +322,21 @@ async def get_imagen_config(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[ImagenConfig] Failed to get configuration: {e}", exc_info=True)
+        logger.error(f"[VertexAIConfig] Failed to get configuration: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to get Imagen configuration: {str(e)}"
+            detail=f"Failed to get Vertex AI configuration: {str(e)}"
         )
 
 
 @router.post("/config")
-async def update_imagen_config(
-    request_body: ImagenConfigUpdateRequest,
+async def update_vertex_ai_config(
+    request_body: VertexAIConfigUpdateRequest,
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Update Imagen API configuration for the authenticated user.
+    Update Vertex AI configuration for the authenticated user.
     
     Args:
         request_body: New configuration settings
@@ -334,7 +347,7 @@ async def update_imagen_config(
     try:
         
         logger.info(
-            f"[ImagenConfig] Updating configuration for user={user_id}, "
+            f"[VertexAIConfig] Updating configuration for user={user_id}, "
             f"api_mode={request_body.apiMode}"
         )
         
@@ -356,11 +369,11 @@ async def update_imagen_config(
                 )
         
         # Query or create user configuration
-        user_config = db.query(ImagenConfig).filter(ImagenConfig.user_id == user_id).first()
+        user_config = db.query(VertexAIConfig).filter(VertexAIConfig.user_id == user_id).first()
         
         if not user_config:
             # Create new configuration
-            user_config = ImagenConfig(user_id=user_id)
+            user_config = VertexAIConfig(user_id=user_id)
             db.add(user_config)
         
         # Update configuration
@@ -370,24 +383,68 @@ async def update_imagen_config(
             user_config.vertex_ai_project_id = request_body.vertexAiProjectId
             user_config.vertex_ai_location = request_body.vertexAiLocation or 'us-central1'
             
-            # Encrypt credentials JSON before storing
+            # 保存 credentials JSON（加密存储）
             if request_body.vertexAiCredentialsJson:
-                try:
-                    encrypted_json = encrypt_data(request_body.vertexAiCredentialsJson)
-                    user_config.vertex_ai_credentials_json = encrypted_json
-                except Exception as e:
-                    logger.error(f"[ImagenConfig] Failed to encrypt credentials: {e}")
-                    raise HTTPException(
-                        status_code=500,
-                        detail="Failed to encrypt credentials"
-                    )
+                # 判断是否已经是加密的
+                if is_encrypted(request_body.vertexAiCredentialsJson):
+                    # 如果已经是加密的，可能是前端传递回来的加密值（用户没有修改）
+                    # 检查是否与数据库中的值相同
+                    existing_encrypted = user_config.vertex_ai_credentials_json
+                    if existing_encrypted == request_body.vertexAiCredentialsJson:
+                        # 用户没有修改凭证，保持加密状态
+                        logger.debug(f"[VertexAIConfig] Credentials unchanged, keeping encrypted value (user={user_id})")
+                        # 不需要更新，保持原值
+                    else:
+                        # 不同的加密值，直接保存（可能是从其他地方传递的加密值）
+                        user_config.vertex_ai_credentials_json = request_body.vertexAiCredentialsJson
+                        logger.debug(f"[VertexAIConfig] Saved encrypted credentials (different encrypted value) (user={user_id})")
+                else:
+                    # 明文凭证（用户输入的新凭证或修改过的凭证），加密后保存
+                    try:
+                        # 先检查是否与数据库中解密后的值相同（避免不必要的加密操作）
+                        existing_encrypted = user_config.vertex_ai_credentials_json
+                        if existing_encrypted:
+                            try:
+                                if is_encrypted(existing_encrypted):
+                                    existing_decrypted = decrypt_data(existing_encrypted, silent=True)
+                                    if existing_decrypted == request_body.vertexAiCredentialsJson:
+                                        # 用户没有修改凭证，保持加密状态
+                                        logger.debug(f"[VertexAIConfig] Credentials unchanged (decrypted comparison), keeping encrypted value (user={user_id})")
+                                        # 不需要更新，保持原值
+                                    else:
+                                        # 新的凭证，加密后保存
+                                        encrypted_credentials = encrypt_data(request_body.vertexAiCredentialsJson)
+                                        user_config.vertex_ai_credentials_json = encrypted_credentials
+                                        logger.info(f"[VertexAIConfig] Encrypted and saved new credentials (user={user_id})")
+                                else:
+                                    # 数据库中是明文（旧数据），加密后保存
+                                    encrypted_credentials = encrypt_data(request_body.vertexAiCredentialsJson)
+                                    user_config.vertex_ai_credentials_json = encrypted_credentials
+                                    logger.info(f"[VertexAIConfig] Encrypted and saved credentials (migrated from plaintext) (user={user_id})")
+                            except Exception as e:
+                                # 解密失败，可能是密钥不匹配，当作新凭证处理
+                                logger.warning(f"[VertexAIConfig] Failed to decrypt existing credentials for comparison: {e}")
+                                encrypted_credentials = encrypt_data(request_body.vertexAiCredentialsJson)
+                                user_config.vertex_ai_credentials_json = encrypted_credentials
+                                logger.info(f"[VertexAIConfig] Encrypted and saved new credentials (decryption failed) (user={user_id})")
+                        else:
+                            # 数据库中没有凭证，加密后保存
+                            encrypted_credentials = encrypt_data(request_body.vertexAiCredentialsJson)
+                            user_config.vertex_ai_credentials_json = encrypted_credentials
+                            logger.info(f"[VertexAIConfig] Encrypted and saved new credentials (first time) (user={user_id})")
+                    except Exception as e:
+                        logger.error(f"[VertexAIConfig] Failed to encrypt credentials: {e}")
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Failed to encrypt credentials: {str(e)}"
+                        )
             
             # Save model configurations (hidden_models and saved_models)
             # Always update these fields if provided (even if empty array)
             if hasattr(request_body, 'hiddenModels') and request_body.hiddenModels is not None:
                 user_config.hidden_models = request_body.hiddenModels
                 logger.info(
-                    f"[ImagenConfig] Updated hidden_models for user={user_id}: {len(request_body.hiddenModels)} models"
+                    f"[VertexAIConfig] Updated hidden_models for user={user_id}: {len(request_body.hiddenModels)} models"
                 )
             elif request_body.apiMode == 'vertex_ai':
                 # If not provided but in vertex_ai mode, initialize as empty array
@@ -397,7 +454,7 @@ async def update_imagen_config(
             if hasattr(request_body, 'savedModels') and request_body.savedModels is not None:
                 user_config.saved_models = request_body.savedModels
                 logger.info(
-                    f"[ImagenConfig] Saved {len(request_body.savedModels)} model configurations for user={user_id}"
+                    f"[VertexAIConfig] Saved {len(request_body.savedModels)} model configurations for user={user_id}"
                 )
             elif request_body.apiMode == 'vertex_ai':
                 # If not provided but in vertex_ai mode, initialize as empty array
@@ -416,16 +473,56 @@ async def update_imagen_config(
         db.refresh(user_config)
         
         logger.info(
-            f"[ImagenConfig] Configuration updated successfully: "
+            f"[VertexAIConfig] Configuration updated successfully: "
             f"api_mode={request_body.apiMode}, user={user_id}"
         )
         
-        # Get updated configuration
-        updated_config = await get_imagen_config(request, db)
+        # Build response with updated configuration
+        # Get capabilities (reuse logic from get_vertex_ai_config)
+        default_capabilities = {
+            "supported_models": ["imagen-3.0-generate-001"],
+            "max_images": 8,
+            "supported_aspect_ratios": ["1:1", "3:4", "4:3", "9:16", "16:9"],
+            "person_generation_modes": ["dont_allow", "allow_adult"]
+        }
+        
+        capabilities = default_capabilities
+        api_key = await _get_google_api_key(db, user_id)
+        if api_key:
+            try:
+                service = ProviderFactory.create(
+                    provider="google",
+                    api_key=api_key,
+                    user_id=user_id,
+                    db=db
+                )
+                capabilities = service.get_imagen_capabilities()
+            except Exception as e:
+                logger.warning(f"[VertexAIConfig] Failed to get capabilities, using defaults: {e}")
+        
+        # Build updated config response
+        # 注意：update 后返回时，应该返回加密值（非编辑模式），因为这是保存后的响应
+        # 如果前端需要编辑，应该再次调用 get_vertex_ai_config(edit_mode=True)
+        updated_config = VertexAIConfigResponse(
+            api_mode=user_config.api_mode,
+            capabilities=capabilities,
+            gemini_api_configured=user_config.api_mode == 'gemini_api',
+            vertex_ai_configured=(
+                user_config.api_mode == 'vertex_ai' and
+                bool(user_config.vertex_ai_project_id) and
+                bool(user_config.vertex_ai_credentials_json)
+            ),
+            vertex_ai_project_id=user_config.vertex_ai_project_id,
+            vertex_ai_location=user_config.vertex_ai_location or 'us-central1',
+            # 返回加密值（非编辑模式），前端如果需要编辑应该再次调用 get_vertex_ai_config(edit_mode=True)
+            vertex_ai_credentials_json=user_config.vertex_ai_credentials_json,
+            hidden_models=user_config.hidden_models or [],
+            saved_models=user_config.saved_models or []
+        )
         
         return {
             "success": True,
-            "message": f"Imagen configuration updated to {request_body.apiMode} mode",
+            "message": f"Vertex AI configuration updated to {request_body.apiMode} mode",
             "config": updated_config
         }
         
@@ -433,24 +530,24 @@ async def update_imagen_config(
         raise
     except Exception as e:
         logger.error(
-            f"[ImagenConfig] Failed to update configuration: {e}",
+            f"[VertexAIConfig] Failed to update configuration: {e}",
             exc_info=True
         )
         db.rollback()
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to update Imagen configuration: {str(e)}"
+            detail=f"Failed to update Vertex AI configuration: {str(e)}"
         )
 
 
 @router.post("/test-connection", response_model=TestConnectionResponse)
-async def test_imagen_connection(
+async def test_vertex_ai_connection(
     request_body: TestConnectionRequest,
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Test connection to Imagen API with provided credentials.
+    Test connection to Vertex AI API with provided credentials.
 
     架构说明：
     此端点直接使用 GeminiAPIImageGenerator/VertexAIImageGenerator 而非通过 GoogleService，
@@ -466,7 +563,7 @@ async def test_imagen_connection(
     try:
         
         logger.info(
-            f"[ImagenConfig] Testing connection for user={user_id}, "
+            f"[VertexAIConfig] Testing connection for user={user_id}, "
             f"api_mode={request_body.apiMode}"
         )
         
@@ -538,7 +635,7 @@ async def test_imagen_connection(
         raise
     except ConfigurationError as e:
         logger.warning(
-            f"[ImagenConfig] Configuration error during connection test: {e}"
+            f"[VertexAIConfig] Configuration error during connection test: {e}"
         )
         return TestConnectionResponse(
             success=False,
@@ -547,7 +644,7 @@ async def test_imagen_connection(
         )
     except Exception as e:
         logger.error(
-            f"[ImagenConfig] Connection test failed: {e}",
+            f"[VertexAIConfig] Connection test failed: {e}",
             exc_info=True
         )
         return TestConnectionResponse(
@@ -586,7 +683,7 @@ async def verify_vertex_ai_connection(
         # user_id 已通过依赖注入自动获取
         
         logger.info(
-            f"[ImagenConfig] Verifying Vertex AI connection: "
+            f"[VertexAIConfig] Verifying Vertex AI connection: "
             f"project={request_body.projectId}, location={request_body.location}"
         )
         
@@ -597,15 +694,18 @@ async def verify_vertex_ai_connection(
             import tempfile
             import json
         except ImportError as e:
-            logger.error(f"[ImagenConfig] Failed to import Google GenAI SDK: {e}")
+            logger.error(f"[VertexAIConfig] Failed to import Google GenAI SDK: {e}")
             raise HTTPException(
                 status_code=500,
                 detail="Google GenAI SDK not available"
             )
         
+        # 直接使用 credentials JSON（测试时使用明文）
+        credentials_json_to_use = request_body.credentialsJson
+        
         # Create temporary credentials file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
-            temp_file.write(request_body.credentialsJson)
+            temp_file.write(credentials_json_to_use)
             temp_credentials_path = temp_file.name
         
         try:
@@ -634,7 +734,7 @@ async def verify_vertex_ai_connection(
                 ))
             
             logger.info(
-                f"[ImagenConfig] Successfully listed {len(models)} models from Vertex AI"
+                f"[VertexAIConfig] Successfully listed {len(models)} models from Vertex AI"
             )
             
             return VerifyVertexAIResponse(
@@ -648,13 +748,13 @@ async def verify_vertex_ai_connection(
             try:
                 os.unlink(temp_credentials_path)
             except Exception as e:
-                logger.warning(f"[ImagenConfig] Failed to delete temp credentials file: {e}")
+                logger.warning(f"[VertexAIConfig] Failed to delete temp credentials file: {e}")
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(
-            f"[ImagenConfig] Vertex AI verification failed: {e}",
+            f"[VertexAIConfig] Vertex AI verification failed: {e}",
             exc_info=True
         )
         return VerifyVertexAIResponse(

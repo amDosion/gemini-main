@@ -79,7 +79,7 @@ async def orchestrate(
         try:
             # 从数据库获取 Google API key
             from ...models.db_models import UserSettings, ConfigProfile
-            from ...core.encryption import decrypt_api_key
+            # 统一使用明文存储，不需要解密
             
             settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
             active_profile_id = settings.active_profile_id if settings else None
@@ -94,7 +94,7 @@ async def orchestrate(
                 if active_profile_id:
                     for profile in matching_profiles:
                         if profile.id == active_profile_id and profile.api_key:
-                            api_key = decrypt_api_key(profile.api_key)
+                            api_key = profile.api_key  # 直接使用，不解密
                             google_service = ProviderFactory.create(
                                 provider='google',
                                 api_key=api_key,
@@ -107,7 +107,7 @@ async def orchestrate(
                 if not google_service:
                     for profile in matching_profiles:
                         if profile.api_key:
-                            api_key = decrypt_api_key(profile.api_key)
+                            api_key = profile.api_key  # 直接使用，不解密
                             google_service = ProviderFactory.create(
                                 provider='google',
                                 api_key=api_key,
@@ -321,7 +321,7 @@ async def execute_image_edit_workflow(
         
         # 获取 GoogleService
         from ...models.db_models import UserSettings, ConfigProfile
-        from ...core.encryption import decrypt_api_key
+        # 统一使用明文存储，不需要解密
         
         settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
         active_profile_id = settings.active_profile_id if settings else None
@@ -341,13 +341,13 @@ async def execute_image_edit_workflow(
         if active_profile_id:
             for profile in matching_profiles:
                 if profile.id == active_profile_id and profile.api_key:
-                    api_key = decrypt_api_key(profile.api_key)
+                    api_key = profile.api_key  # 直接使用，不解密
                     break
         
         if not api_key:
             for profile in matching_profiles:
                 if profile.api_key:
-                    api_key = decrypt_api_key(profile.api_key)
+                    api_key = profile.api_key  # 直接使用，不解密
                     break
         
         if not api_key:
@@ -409,7 +409,7 @@ async def execute_excel_analysis_workflow(
         
         # 获取 GoogleService
         from ...models.db_models import UserSettings, ConfigProfile
-        from ...core.encryption import decrypt_api_key
+        # 统一使用明文存储，不需要解密
         
         settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
         active_profile_id = settings.active_profile_id if settings else None
@@ -429,13 +429,13 @@ async def execute_excel_analysis_workflow(
         if active_profile_id:
             for profile in matching_profiles:
                 if profile.id == active_profile_id and profile.api_key:
-                    api_key = decrypt_api_key(profile.api_key)
+                    api_key = profile.api_key  # 直接使用，不解密
                     break
         
         if not api_key:
             for profile in matching_profiles:
                 if profile.api_key:
-                    api_key = decrypt_api_key(profile.api_key)
+                    api_key = profile.api_key  # 直接使用，不解密
                     break
         
         if not api_key:

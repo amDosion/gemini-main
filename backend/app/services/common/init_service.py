@@ -24,7 +24,7 @@ from ...models.db_models import (
     MessageIndex,
     MessageAttachment,
     Persona,
-    ImagenConfig
+    VertexAIConfig
 )
 from ...utils.message_utils import get_message_table_class_by_name
 from .persona_init_service import DEFAULT_PERSONAS, ensure_personas_initialized
@@ -292,21 +292,21 @@ async def _query_personas(user_id: str, db: Session) -> Dict[str, Any]:
         return {"personas": DEFAULT_PERSONAS.copy(), "error": str(e)}
 
 
-async def _query_imagen_config(user_id: str, db: Session) -> Dict[str, Any]:
+async def _query_vertex_ai_config(user_id: str, db: Session) -> Dict[str, Any]:
     """
-    查询 Imagen 配置数据（异步包装）
+    查询 Vertex AI 配置数据（异步包装）
     
     Returns:
-        包含 imagenConfig 的字典
+        包含 vertexAiConfig 的字典
     """
     try:
-        logger.info(f"[InitService] 查询 Imagen Config...")
-        imagen_config = db.query(ImagenConfig).filter(ImagenConfig.user_id == user_id).first()
+        logger.info(f"[InitService] 查询 Vertex AI Config...")
+        vertex_ai_config = db.query(VertexAIConfig).filter(VertexAIConfig.user_id == user_id).first()
         
-        if imagen_config:
-            config_data = imagen_config.to_dict()
-            logger.info(f"[InitService] Imagen Config 加载成功: api_mode={config_data.get('apiMode')}")
-            return {"imagenConfig": config_data, "error": None}
+        if vertex_ai_config:
+            config_data = vertex_ai_config.to_dict()
+            logger.info(f"[InitService] Vertex AI Config 加载成功: api_mode={config_data.get('apiMode')}")
+            return {"vertexAiConfig": config_data, "error": None}
         else:
             # 返回默认配置
             logger.info(f"[InitService] 无 Imagen 配置，返回默认值")
@@ -369,16 +369,16 @@ async def get_init_data(user_id: str, db: Session) -> Dict[str, Any]:
         storage_task = _query_storage_configs(user_id, db)
         sessions_task = _query_sessions(user_id, db)
         personas_task = _query_personas(user_id, db)
-        imagen_task = _query_imagen_config(user_id, db)
+        vertex_ai_task = _query_vertex_ai_config(user_id, db)
         
         # 并行执行所有查询，设置超时
-        profiles_result, storage_result, sessions_result, personas_result, imagen_result = await asyncio.wait_for(
+        profiles_result, storage_result, sessions_result, personas_result, vertex_ai_result = await asyncio.wait_for(
             asyncio.gather(
                 profiles_task,
                 storage_task,
                 sessions_task,
                 personas_task,
-                imagen_task,
+                vertex_ai_task,
                 return_exceptions=True  # 不让单个查询失败影响整体
             ),
             timeout=QUERY_TIMEOUT
@@ -420,14 +420,14 @@ async def get_init_data(user_id: str, db: Session) -> Dict[str, Any]:
             if isinstance(personas_result, Exception):
                 logger.warning(f"[InitService] Personas 查询异常，使用默认值: {personas_result}")
         
-        # 处理 Imagen Config 结果
-        if isinstance(imagen_result, dict) and not imagen_result.get("error"):
-            result["imagenConfig"] = imagen_result["imagenConfig"]
+        # 处理 Vertex AI Config 结果
+        if isinstance(vertex_ai_result, dict) and not vertex_ai_result.get("error"):
+            result["vertexAiConfig"] = vertex_ai_result["vertexAiConfig"]
         else:
-            # Imagen Config 失败不算 partialFailures，因为有默认值
-            if isinstance(imagen_result, Exception):
-                logger.warning(f"[InitService] Imagen Config 查询异常，使用默认值: {imagen_result}")
-            result["imagenConfig"] = {
+            # Vertex AI Config 失败不算 partialFailures，因为有默认值
+            if isinstance(vertex_ai_result, Exception):
+                logger.warning(f"[InitService] Vertex AI Config 查询异常，使用默认值: {vertex_ai_result}")
+            result["vertexAiConfig"] = {
                 "apiMode": "gemini_api",
                 "vertexAiProjectId": None,
                 "vertexAiLocation": "us-central1",

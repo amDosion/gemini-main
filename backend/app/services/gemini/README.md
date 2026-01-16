@@ -36,66 +36,234 @@ Google Gemini Provider 服务模块 - 提供完整的 Google AI 服务集成。
 
 ## 目录结构
 
+### API 实现分类标注
+
+| 标注 | 说明 |
+|------|------|
+| `[Gemini API]` | 使用 API Key 认证的 Gemini API 实现 |
+| `[Vertex AI]` | 使用服务账号认证的 Vertex AI 实现 |
+| `[Hybrid]` | 支持两种 API 的协调器/适配器 |
+| `[Common]` | API 无关的通用组件 |
+
 ```
-gemini/
-├── __init__.py                 # 模块导出
-├── google_service.py           # 主协调器 (Main Coordinator)
+gemini/                                         # 共 91 个 Python 文件
+├── __init__.py                                 # [Common] 模块导出
+├── google_service.py                           # [Hybrid] 主协调器 (Main Coordinator)
 │
-├── # === Core Components ===
-├── sdk_initializer.py          # SDK 初始化
-├── model_manager.py            # 模型列表管理
-├── message_converter.py        # 消息格式转换
-├── response_parser.py          # 响应解析
-├── parameter_validation.py     # 参数验证
-├── platform_routing.py         # 平台路由
+├── # ═══════════════════════════════════════════════════════════════════════
+├── # 核心组件 (Core Components)
+├── # ═══════════════════════════════════════════════════════════════════════
+├── sdk_initializer.py                          # [Hybrid] SDK 初始化 - 支持 Gemini API 和 Vertex AI
+├── client_pool.py                              # [Hybrid] 统一客户端池管理
+├── model_manager.py                            # [Common] 模型列表管理
+├── message_converter.py                        # [Common] 消息格式转换
+├── response_parser.py                          # [Common] 响应解析
+├── parameter_validation.py                     # [Common] 参数验证
+├── platform_routing.py                         # [Common] 平台路由
+├── config_builder.py                           # [Common] 配置构建
 │
-├── # === Chat Services ===
-├── chat_handler.py             # 聊天处理
-├── chat_session_manager.py     # 会话管理
+├── # ═══════════════════════════════════════════════════════════════════════
+├── # 聊天服务 (Chat Services)
+├── # ═══════════════════════════════════════════════════════════════════════
+├── chat_handler.py                             # [Common] 聊天处理
+├── chat_session_manager.py                     # [Common] 会话管理
 │
-├── # === Image Generation (Imagen) ===
-├── image_generator.py          # 图像生成入口
-├── imagen_coordinator.py       # Imagen 协调器
-├── imagen_base.py              # 基础类定义
-├── imagen_common.py            # 共享工具和异常
-├── imagen_config.py            # 配置管理
-├── imagen_gemini_api.py        # Gemini API 实现
-├── imagen_vertex_ai.py         # Vertex AI 实现
+├── # ═══════════════════════════════════════════════════════════════════════
+├── # 图像生成 (Image Generation - Imagen)
+├── # ═══════════════════════════════════════════════════════════════════════
+├── image_generator.py                          # [Hybrid] 图像生成入口 - 使用 ImagenCoordinator
+├── imagen_coordinator.py                       # [Hybrid] Imagen 协调器 - Factory 模式选择 API 实现
+├── imagen_base.py                              # [Common] BaseImageGenerator 抽象基类
+├── imagen_common.py                            # [Common] 共享工具和异常类 (ConfigurationError 等)
+├── imagen_config.py                            # [Common] Pydantic 配置模型
+├── imagen_gemini_api.py                        # [Gemini API] ⭐ GeminiAPIImageGenerator - 使用 api_key 认证
+├── imagen_vertex_ai.py                         # [Vertex AI] ⭐ VertexAIImageGenerator - 使用服务账号认证
 │
-├── # === Image Editing ===
-├── image_edit_coordinator.py   # 图像编辑协调器
-├── image_edit_base.py          # 基础类定义
-├── image_edit_common.py        # 共享工具
-├── image_edit_gemini_api.py    # Gemini API 实现
-├── image_edit_vertex_ai.py     # Vertex AI 实现
-├── simple_image_edit_service.py         # 简单编辑服务
-├── conversational_image_edit_service.py # 对话式编辑服务
+├── # ═══════════════════════════════════════════════════════════════════════
+├── # 图像编辑 (Image Editing)
+├── # ═══════════════════════════════════════════════════════════════════════
+├── image_edit_coordinator.py                   # [Hybrid] 图像编辑协调器 - 智能路由编辑请求
+├── image_edit_base.py                          # [Common] BaseImageEditor 抽象基类
+├── image_edit_common.py                        # [Common] 共享工具类 (NotSupportedError 等)
+├── image_edit_gemini_api.py                    # [Gemini API] ⭐ GeminiAPIImageEditor - STUB (图片编辑不支持!)
+├── image_edit_vertex_ai.py                     # [Vertex AI] ⭐ VertexAIImageEditor - 完整图片编辑实现
+├── simple_image_edit_service.py                # [Common] 简单编辑服务 - 使用 generateContent
+├── conversational_image_edit_service.py        # [Common] 对话式编辑服务 - 使用 Chat SDK
 │
-├── # === Specialized Services ===
-├── expand_service.py           # 图像扩展/外扩 (Outpainting)
-├── upscale_service.py          # 图像放大
-├── segmentation_service.py     # 图像分割
-├── tryon_service.py            # 虚拟试穿
-├── pdf_extractor.py            # PDF 结构化提取
+├── # ═══════════════════════════════════════════════════════════════════════
+├── # 专业服务 (Specialized Services)
+├── # ═══════════════════════════════════════════════════════════════════════
+├── expand_service.py                           # [Common] 图像扩展/外扩 (Outpainting)
+├── upscale_service.py                          # [Common] 图像放大
+├── segmentation_service.py                     # [Common] 图像分割
+├── tryon_service.py                            # [Hybrid] 虚拟试穿 - Vertex AI 优先，Gemini API 降级
+├── pdf_extractor.py                            # [Common] PDF 结构化提取
 │
-├── # === Handler Services ===
-├── file_handler.py             # 文件上传/下载
-├── function_handler.py         # 函数调用和工具集成
-├── schema_handler.py           # JSON Schema 响应处理
-├── token_handler.py            # Token 计数和成本估算
+├── # ═══════════════════════════════════════════════════════════════════════
+├── # Handler 服务 (Handler Services)
+├── # ═══════════════════════════════════════════════════════════════════════
+├── file_handler.py                             # [Common] 文件上传/下载
+├── function_handler.py                         # [Common] 函数调用和工具集成
+├── schema_handler.py                           # [Common] JSON Schema 响应处理
+├── token_handler.py                            # [Common] Token 计数和成本估算
+├── browser.py                                  # [Common] 浏览器工具
 │
-├── # === Mode System ===
-├── mode_registry.py            # Google 模式注册表
-├── mode_initialization.py      # 模式初始化
+├── # ═══════════════════════════════════════════════════════════════════════
+├── # 模式系统 (Mode System)
+├── # ═══════════════════════════════════════════════════════════════════════
+├── mode_registry.py                            # [Common] Google 模式注册表
+├── mode_initialization.py                      # [Common] 模式初始化
 │
-├── # === Official SDK Adapter ===
-├── official_sdk_adapter.py     # 官方 SDK 适配器
+├── # ═══════════════════════════════════════════════════════════════════════
+├── # 官方 SDK 适配器 (Official SDK Adapter)
+├── # ═══════════════════════════════════════════════════════════════════════
+├── official_sdk_adapter.py                     # [Hybrid] 官方 SDK 适配器 - 支持 use_vertex 标志
 │
-├── # === Subdirectories ===
-├── agent/                      # Agent Engine 高级功能
-├── handlers/                   # 模式处理器
-└── shared/                     # 共享组件
+├── # ═══════════════════════════════════════════════════════════════════════
+├── # agent/ - Agent Engine 高级功能（35 个文件）
+├── # ═══════════════════════════════════════════════════════════════════════
+├── agent/
+│   ├── __init__.py                             # [Common] 模块导出
+│   │
+│   ├── # --- Official SDK Compatibility Layer ---
+│   ├── client.py                               # [Hybrid] ⭐ Official GenAI SDK 兼容客户端
+│   ├── models.py                               # [Hybrid] Models API 包装器
+│   ├── interactions.py                         # [Hybrid] Interactions API 包装器 (Deep Research)
+│   ├── interactions_service.py                 # [Vertex AI] Vertex AI Interactions Service
+│   ├── types.py                                # [Common] SDK 类型定义
+│   ├── common.py                               # [Common] 公共基类和工具
+│   ├── version.py                              # [Common] 版本信息
+│   │
+│   ├── # --- Agent Engine Core ---
+│   ├── agent_executor.py                       # [Common] Agent 执行器
+│   ├── agent_registry.py                       # [Common] Agent 注册表
+│   ├── agent_card.py                           # [Common] Agent Card 管理
+│   ├── agent_matcher.py                        # [Common] Agent 匹配器（能力匹配、负载均衡）
+│   ├── agent_with_tools.py                     # [Common] 带工具的 Agent
+│   │
+│   ├── # --- Multi-Agent Patterns ---
+│   ├── orchestrator.py                         # [Common] 智能体编排器
+│   ├── task_decomposer.py                      # [Common] 智能任务分解器
+│   ├── execution_graph.py                      # [Common] 执行图 (DAG) 管理
+│   ├── coordinator_agent.py                    # [Common] 协调代理 (Dispatcher Pattern)
+│   ├── sequential_agent.py                     # [Common] 顺序代理 (Pipeline Pattern)
+│   ├── parallel_agent.py                       # [Common] 并行代理 (Fan-Out/Gather Pattern)
+│   │
+│   ├── # --- Memory & Code Execution ---
+│   ├── memory_manager.py                       # [Common] 记忆管理
+│   ├── memory_bank_service.py                  # [Vertex AI] ⭐ Vertex AI Memory Bank Service
+│   ├── code_executor.py                        # [Common] 代码执行器
+│   ├── sandbox_manager.py                      # [Vertex AI] ⭐ Vertex AI Sandbox 管理
+│   │
+│   ├── # --- Tools & Protocols ---
+│   ├── tool_registry.py                        # [Common] 工具注册表
+│   ├── a2a_protocol.py                         # [Common] Agent-to-Agent 协议
+│   ├── live_api.py                             # [Common] 实时 API 处理
+│   │
+│   ├── # --- ADK Integration ---
+│   ├── adk_runner.py                           # [Common] ADK 运行器
+│   ├── adk_agent.py                            # [Common] ADK Agent 封装
+│   ├── adk_integration.py                      # [Common] ADK 集成
+│   ├── adk_samples_importer.py                 # [Common] ADK 示例导入器
+│   ├── workflow_template_service.py            # [Common] 工作流模板服务
+│   │
+│   ├── # --- tools/ 子目录 ---
+│   ├── tools/
+│   │   ├── __init__.py                         # [Common] 工具模块导出
+│   │   ├── excel_tools.py                      # [Common] Excel 处理工具
+│   │   └── image_tools.py                      # [Common] 图像处理工具
+│   │
+│   └── # --- workflows/ 子目录 ---
+│       workflows/
+│       ├── __init__.py                         # [Common] 工作流模块导出
+│       ├── image_edit_workflow.py              # [Common] 图像编辑工作流
+│       └── excel_analysis_workflow.py          # [Common] Excel 分析工作流
+│
+├── # ═══════════════════════════════════════════════════════════════════════
+├── # handlers/ - 模式处理器（4 个文件）
+├── # ═══════════════════════════════════════════════════════════════════════
+├── handlers/
+│   ├── __init__.py                             # [Common] 模块导出
+│   ├── outpainting_handler.py                  # [Common] 图像外扩处理器 - 委托给 image_edit_coordinator
+│   ├── inpainting_handler.py                   # [Common] 图像修复处理器 - 委托给 image_edit_coordinator
+│   └── virtual_tryon_handler.py                # [Common] 虚拟试穿处理器 - 委托给 image_edit_coordinator
+│
+├── # ═══════════════════════════════════════════════════════════════════════
+├── # shared/ - 共享组件（4 个文件）
+├── # ═══════════════════════════════════════════════════════════════════════
+├── shared/
+│   ├── __init__.py                             # [Common] 模块导出
+│   ├── adapters.py                             # [Common] LegacyToOfficialAdapter, OfficialToLegacyAdapter
+│   ├── config.py                               # [Common] GeminiConfig 配置管理
+│   └── utils.py                                # [Common] detect_mime_type, validate_api_key, retry_with_backoff
+│
+└── # ═══════════════════════════════════════════════════════════════════════
+    # genai_agent/ - GenAI Agent 服务（7 个文件）
+    # ═══════════════════════════════════════════════════════════════════════
+    genai_agent/
+    ├── __init__.py                             # [Common] 模块导出
+    ├── client.py                               # [Gemini API] ⭐ GenAI Client 池管理 - 使用 api_key 认证
+    ├── service.py                              # [Common] GenAIAgentService 主服务类
+    ├── research_agent.py                       # [Common] ResearchAgent 研究智能体
+    ├── advanced_features.py                    # [Common] AdvancedResearchAgent 高级研究智能体
+    ├── stream_handler.py                       # [Common] StreamHandler 流式事件处理
+    ├── tools.py                                # [Common] ToolManager 工具集成管理
+    └── types.py                                # [Common] 类型定义
 ```
+
+### 文件统计
+
+| 分类 | 文件数 | 说明 |
+|------|--------|------|
+| **[Gemini API]** | 3 | 使用 API Key 认证的专用实现 |
+| **[Vertex AI]** | 4 | 使用服务账号认证的专用实现 |
+| **[Hybrid]** | 10 | 支持两种 API 的协调器/适配器 |
+| **[Common]** | 74 | API 无关的通用组件 |
+| **总计** | **91** | |
+
+### 关键实现差异
+
+| 特性 | Gemini API | Vertex AI |
+|------|------------|-----------|
+| **认证方式** | API Key | 服务账号 (credentials JSON) |
+| **客户端创建** | `Client(api_key=...)` | `Client(vertexai=True, project=..., location=..., credentials=...)` |
+| **图像生成** | ✅ 支持 | ✅ 支持 |
+| **图像编辑** | ❌ 不支持 (STUB) | ✅ 完整支持 |
+| **虚拟试穿** | ⚠️ 备用方案 | ✅ 优先使用 |
+| **Memory Bank** | ❌ 不支持 | ✅ 支持 |
+| **Sandbox** | ❌ 不支持 | ✅ 支持 |
+| **Interactions API** | ⚠️ 有限支持 | ✅ 完整支持 |
+
+### 关键文件详解
+
+#### Gemini API 专用文件（3 个）
+| 文件 | 类名 | 说明 |
+|------|------|------|
+| `imagen_gemini_api.py` | `GeminiAPIImageGenerator` | 使用 `Client(api_key=...)` 进行图像生成 |
+| `image_edit_gemini_api.py` | `GeminiAPIImageEditor` | **STUB** - 始终抛出 `NotSupportedError` |
+| `genai_agent/client.py` | `get_genai_client()` | GenAI 客户端池管理，使用 api_key |
+
+#### Vertex AI 专用文件（4 个）
+| 文件 | 类名 | 说明 |
+|------|------|------|
+| `imagen_vertex_ai.py` | `VertexAIImageGenerator` | 使用 `Client(vertexai=True, ...)` 进行图像生成 |
+| `image_edit_vertex_ai.py` | `VertexAIImageEditor` | 完整的图像编辑实现（inpainting, outpainting, product-image） |
+| `agent/memory_bank_service.py` | `VertexAiMemoryBankService` | Vertex AI Memory Bank 服务 |
+| `agent/sandbox_manager.py` | `SandboxManager` | Vertex AI Sandbox 管理 |
+
+#### Hybrid 混合文件（10 个）
+| 文件 | 类名 | 说明 |
+|------|------|------|
+| `google_service.py` | `GoogleService` | 主协调器，统一入口 |
+| `sdk_initializer.py` | `SDKInitializer` | 支持两种 API 的 SDK 初始化 |
+| `client_pool.py` | `GeminiClientPool` | 统一客户端池管理 |
+| `imagen_coordinator.py` | `ImagenCoordinator` | Factory 模式选择 API 实现 |
+| `image_edit_coordinator.py` | `ImageEditCoordinator` | 智能路由编辑请求 |
+| `image_generator.py` | `ImageGenerator` | 使用 ImagenCoordinator 的包装器 |
+| `tryon_service.py` | `TryOnService` | Vertex AI 优先，Gemini API 降级 |
+| `official_sdk_adapter.py` | `OfficialSDKAdapter` | 支持 `use_vertex` 标志 |
+| `agent/client.py` | `Client` | Official SDK 兼容客户端 |
+| `agent/models.py` | `Models` | Models API 包装器 |
 
 ## 核心组件
 

@@ -1,16 +1,10 @@
 import os
-from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
 
-# 尽量从 backend/.env 加载环境变量
-_backend_env = Path(__file__).resolve().parents[2] / ".env"
-if _backend_env.exists():
-    load_dotenv(dotenv_path=_backend_env)
-else:
-    load_dotenv()  # 回退：从当前工作目录向上查找 .env
+# 导入统一的环境变量加载模块（确保 .env 文件已加载）
+from .env_loader import _ENV_LOADED  # noqa: F401
 
 # 从环境变量中读取 DATABASE_URL（必须设置，仅支持 PostgreSQL）
 DATABASE_URL = os.getenv("DATABASE_URL")

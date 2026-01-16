@@ -55,7 +55,7 @@ def get_vertex_ai_credentials_from_db(
     从数据库获取 Vertex AI 配置和 credentials（统一方法）
     
     遵循与 ImagenCoordinator 和 ImageEditCoordinator 相同的模式：
-    1. 查询 ImagenConfig（不筛选 api_mode）
+    1. 查询 VertexAIConfig（不筛选 api_mode）
     2. 检查 api_mode 是否为 'vertex_ai'
     3. 解密 vertex_ai_credentials_json
     4. 创建 service_account.Credentials 对象
@@ -95,36 +95,36 @@ def get_vertex_ai_credentials_from_db(
         # 需要向上 4 级到 app/，然后进入 models/ 或 core/
         # 路径：app/services/gemini/agent/client.py -> app/models/db_models.py
         # 使用相对导入：....models.db_models（4个点表示向上4级）
-        from ....models.db_models import ImagenConfig
+        from ....models.db_models import VertexAIConfig
         from ....core.encryption import decrypt_data
         
-        # 查询 ImagenConfig（不筛选 api_mode，与 ImagenCoordinator 保持一致）
-        imagen_config = db.query(ImagenConfig).filter(
-            ImagenConfig.user_id == user_id
+        # 查询 VertexAIConfig（不筛选 api_mode，与 ImagenCoordinator 保持一致）
+        vertex_ai_config = db.query(VertexAIConfig).filter(
+            VertexAIConfig.user_id == user_id
         ).first()
         
-        if not imagen_config:
-            logger.debug(f"[get_vertex_ai_credentials_from_db] No ImagenConfig found for user_id={user_id}")
+        if not vertex_ai_config:
+            logger.debug(f"[get_vertex_ai_credentials_from_db] No VertexAIConfig found for user_id={user_id}")
             return None, None, None
         
         # 检查 api_mode 是否为 vertex_ai
-        if imagen_config.api_mode != 'vertex_ai':
+        if vertex_ai_config.api_mode != 'vertex_ai':
             logger.debug(
-                f"[get_vertex_ai_credentials_from_db] ImagenConfig exists but api_mode is "
-                f"'{imagen_config.api_mode}', not 'vertex_ai' (user_id={user_id})"
+                f"[get_vertex_ai_credentials_from_db] VertexAIConfig exists but api_mode is "
+                f"'{vertex_ai_config.api_mode}', not 'vertex_ai' (user_id={user_id})"
             )
             return None, None, None
         
         # 获取 project 和 location（如果没有提供）
-        resolved_project = project or imagen_config.vertex_ai_project_id
-        resolved_location = location or imagen_config.vertex_ai_location or 'us-central1'
+        resolved_project = project or vertex_ai_config.vertex_ai_project_id
+        resolved_location = location or vertex_ai_config.vertex_ai_location or 'us-central1'
         
         # 尝试获取并解密 service account credentials
         credentials = None
-        if imagen_config.vertex_ai_credentials_json:
+        if vertex_ai_config.vertex_ai_credentials_json:
             try:
                 # 直接解密（decrypt_data 会自动处理加密/未加密的情况）
-                credentials_json = decrypt_data(imagen_config.vertex_ai_credentials_json)
+                credentials_json = decrypt_data(vertex_ai_config.vertex_ai_credentials_json)
                 
                 # 创建 credentials 对象
                 from google.oauth2 import service_account

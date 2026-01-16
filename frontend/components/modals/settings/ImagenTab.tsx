@@ -47,7 +47,8 @@ export const ImagenTab: React.FC<ImagenTabProps> = ({
             try {
                 setIsLoading(true);
                 
-                const data = await db.request<ImagenConfigResponse>('/imagen/config');
+                // 编辑模式：传递 edit_mode=true 以获取解密后的凭证
+                const data = await db.request<ImagenConfigResponse>('/vertex-ai/config?edit_mode=true');
                 
                 // Initialize Vertex AI configuration from API response
                 setImagenConfig({
@@ -125,7 +126,7 @@ export const ImagenTab: React.FC<ImagenTabProps> = ({
         setVerifyError(null);
 
         try {
-            const response = await db.request<VerifyVertexAIResponse>('/imagen/verify-vertex-ai', {
+            const response = await db.request<VerifyVertexAIResponse>('/vertex-ai/verify-vertex-ai', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -160,7 +161,8 @@ export const ImagenTab: React.FC<ImagenTabProps> = ({
                 // Restore saved models selection from database if available
                 // First, try to load saved configuration
                 try {
-                    const configData = await db.request<ImagenConfigResponse>('/imagen/config');
+                    // 编辑模式：传递 edit_mode=true 以获取解密后的凭证
+                    const configData = await db.request<ImagenConfigResponse>('/vertex-ai/config?edit_mode=true');
                     if (configData.savedModels && configData.savedModels.length > 0) {
                         // Restore selected models from savedModels
                         const savedModelIds = configData.savedModels.map((sm: ModelConfig) => sm.id);
@@ -247,7 +249,7 @@ export const ImagenTab: React.FC<ImagenTabProps> = ({
                 savedModels: selectedModelConfigs  // Save selected models as ModelConfig[]
             };
 
-            await db.request('/imagen/config', {
+            await db.request('/vertex-ai/config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody)

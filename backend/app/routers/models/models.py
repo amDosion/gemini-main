@@ -41,8 +41,6 @@ def get_db():
 
 # ==================== Helper Functions ====================
 
-# ==================== Helper Functions ====================
-
 def filter_models_by_mode(models: List[ModelConfig], mode: str) -> List[ModelConfig]:
     """
     根据 App Mode 过滤模型列表（后端过滤逻辑）
@@ -152,10 +150,40 @@ async def get_provider_credentials(
     Raises:
         HTTPException: 如果未找到 API Key
     """
+    # 导入解密函数
+    from ...core.encryption import decrypt_data, is_encrypted
+    
+    def _decrypt_api_key(api_key: str, silent: bool = False) -> str:
+        """
+        解密 API Key（如果已加密）
+        
+        Args:
+            api_key: API Key（可能是明文或已加密）
+            silent: 如果为 True，解密失败时不记录错误（用于兼容性检查）
+        
+        Returns:
+            解密后的 API Key（如果未加密则原样返回）
+        """
+        if not api_key:
+            return api_key
+        
+        # 如果未加密，直接返回
+        if not is_encrypted(api_key):
+            return api_key
+        
+        # 尝试解密
+        try:
+            return decrypt_data(api_key, silent=silent)
+        except Exception as e:
+            if not silent:
+                logger.warning(f"[Models] Failed to decrypt API key: {e}")
+            # 解密失败时返回原值（可能是旧数据或密钥不匹配）
+            return api_key
+    
     # 1. 优先使用请求参数（用于验证连接）
     if request_api_key:
         logger.info(f"[Models] Using API key from request parameter for {provider}")
-        # ✅ 验证时：使用请求参数中的 baseUrl（如果提供）
+        # 请求参数通常是明文，直接使用
         return request_api_key, request_base_url
 
     # 2. 从数据库获取（正常使用）
@@ -172,23 +200,8 @@ async def get_provider_credentials(
         ).first()
         if active_profile and active_profile.api_key:
             logger.info(f"[Models] Using API key from active profile '{active_profile.name}' for {provider}")
-            # ✅ 解密 API key（如果加密）
-            api_key = active_profile.api_key
-            try:
-                from ...core.encryption import decrypt_data, is_encrypted
-                if is_encrypted(api_key):
-                    api_key = decrypt_data(api_key, silent=True)
-                    logger.debug(f"[Models] Decrypted API key for profile '{active_profile.name}'")
-            except ValueError as e:
-                logger.warning(
-                    f"[Models] ENCRYPTION_KEY not configured. "
-                    f"Cannot decrypt API key for profile '{active_profile.name}' (using as-is)."
-                )
-            except Exception as e:
-                logger.debug(
-                    f"[Models] Failed to decrypt API key (may be unencrypted): "
-                    f"{type(e).__name__} - This may be normal for unencrypted legacy data"
-                )
+            # ✅ 自动解密 API key（用于业务逻辑使用）
+            api_key = _decrypt_api_key(active_profile.api_key, silent=True)
             # ✅ 直接使用数据库中的 base_url（已经是完整的 URL）
             return api_key, active_profile.base_url
 
@@ -199,23 +212,8 @@ async def get_provider_credentials(
     ).first()
     if any_profile and any_profile.api_key:
         logger.info(f"[Models] Using API key from profile '{any_profile.name}' for {provider}")
-        # ✅ 解密 API key（如果加密）
-        api_key = any_profile.api_key
-        try:
-            from ...core.encryption import decrypt_data, is_encrypted
-            if is_encrypted(api_key):
-                api_key = decrypt_data(api_key, silent=True)
-                logger.debug(f"[Models] Decrypted API key for profile '{any_profile.name}'")
-        except ValueError as e:
-            logger.warning(
-                f"[Models] ENCRYPTION_KEY not configured. "
-                f"Cannot decrypt API key for profile '{any_profile.name}' (using as-is)."
-            )
-        except Exception as e:
-            logger.debug(
-                f"[Models] Failed to decrypt API key (may be unencrypted): "
-                f"{type(e).__name__} - This may be normal for unencrypted legacy data"
-            )
+        # ✅ 自动解密 API key（用于业务逻辑使用）
+        api_key = _decrypt_api_key(any_profile.api_key, silent=True)
         # ✅ 直接使用数据库中的 base_url（已经是完整的 URL）
         return api_key, any_profile.base_url
 

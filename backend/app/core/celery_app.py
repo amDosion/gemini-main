@@ -4,10 +4,9 @@ Celery 配置和初始化
 """
 import os
 from celery import Celery
-from dotenv import load_dotenv
 
-# 加载环境变量
-load_dotenv()
+# 导入统一的环境变量加载模块（确保 .env 文件已加载）
+from .env_loader import _ENV_LOADED  # noqa: F401
 
 # Redis 配置
 REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')

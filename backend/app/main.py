@@ -21,6 +21,9 @@ import platform
 import signal
 from pathlib import Path
 
+# 导入统一的环境变量加载模块（确保 .env 文件已加载，必须在其他导入之前）
+from .core.env_loader import _ENV_LOADED  # noqa: F401
+
 # Import logger and progress tracker
 try:
     from .core.logger import setup_logger, LOG_PREFIXES
@@ -215,134 +218,26 @@ async def lifespan(app: FastAPI):
     """
     supervisor_task: asyncio.Task | None = None
     cleanup_task: asyncio.Task | None = None
-    key_service_process: subprocess.Popen | None = None
 
-    # Startup
-    # ✅ 自动启动 Key Service（方案 D：Client 进程 + Key Service）
-    # 如果启动失败，会自动回退到文件存储（向后兼容）
+    # ✅ 初始化密钥（从 .env 文件读取）
     try:
-        import os
-        # 检查是否应该启动 Key Service（可通过环境变量控制）
-        auto_start_key_service = os.getenv('AUTO_START_KEY_SERVICE', 'true').lower() == 'true'
+        from .core.encryption import EncryptionKeyManager
+        from .core.jwt_utils import JWTSecretManager
         
-        if auto_start_key_service:
-            # 启动 Key Service 子进程
-            try:
-                # 获取 Python 解释器路径
-                python_exe = sys.executable
-                
-                # 计算项目根目录
-                # 从 backend/app/main.py 向上查找项目根目录
-                current_file = Path(__file__).resolve()
-                
-                # 尝试从 backend/app/main.py 向上 2 级（项目根目录）
-                project_root = current_file.parents[2]  # backend/app/main.py -> 项目根目录
-                key_service_path = project_root / 'backend' / 'services' / 'key_service' / 'main.py'
-                
-                # 如果不存在，尝试从 backend 目录的父目录（兼容 uvicorn app.main:app 方式）
-                if not key_service_path.exists():
-                    backend_dir = current_file.parents[1]  # backend/app/main.py -> backend/app -> backend
-                    project_root = backend_dir.parent  # backend -> 项目根目录
-                    key_service_path = project_root / 'backend' / 'services' / 'key_service' / 'main.py'
-                
-                if not key_service_path.exists():
-                    logger.warning(f"{LOG_PREFIXES['warning']} Key Service 模块未找到: {key_service_path}，将使用文件存储")
-                    key_service_process = None
-                else:
-                    key_service_module = 'backend.services.key_service.main'
-                    
-                    # 设置环境变量，确保 Python 能找到 backend 模块
-                    env = os.environ.copy()
-                    # 将项目根目录添加到 PYTHONPATH
-                    pythonpath = env.get('PYTHONPATH', '')
-                    if pythonpath:
-                        pythonpath = f"{project_root}{os.pathsep}{pythonpath}"
-                    else:
-                        pythonpath = str(project_root)
-                    env['PYTHONPATH'] = pythonpath
-                    
-                    logger.debug(f"[KeyService] 项目根目录: {project_root}")
-                    logger.debug(f"[KeyService] PYTHONPATH: {pythonpath}")
-                    logger.debug(f"[KeyService] Key Service 路径: {key_service_path}")
-                    
-                    # 启动 Key Service 子进程
-                    key_service_process = subprocess.Popen(
-                        [python_exe, '-m', key_service_module],
-                        cwd=str(project_root),
-                        env=env,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == 'Windows' else 0
-                    )
-                
-                # 等待 Key Service 启动（最多等待 3 秒）
-                if key_service_process:
-                    import time
-                    max_wait = 3.0
-                    wait_interval = 0.1
-                    waited = 0.0
-                    
-                    while waited < max_wait:
-                        if key_service_process.poll() is not None:
-                            # 进程已退出，启动失败
-                            stderr_output = key_service_process.stderr.read().decode('utf-8', errors='ignore') if key_service_process.stderr else ''
-                            logger.warning(
-                                f"{LOG_PREFIXES['warning']} Key Service 启动失败，将使用文件存储: {stderr_output[:200]}"
-                            )
-                            key_service_process = None
-                            break
-                    
-                        # 检查 Key Service 是否已就绪（检查 Socket 文件或端口文件）
-                        from .core.key_service_client import KEY_SERVICE_CLIENT_SOCKET
-                        import platform as plat
-                        
-                        is_ready = False
-                        if plat.system() == 'Windows':
-                            port_file = KEY_SERVICE_CLIENT_SOCKET.parent / "gemini_key_service_client.port"
-                            if port_file.exists():
-                                is_ready = True
-                        else:
-                            if KEY_SERVICE_CLIENT_SOCKET.exists():
-                                is_ready = True
-                        
-                        if is_ready:
-                            logger.info(f"{LOG_PREFIXES['success']} Key Service 已自动启动（进程 ID: {key_service_process.pid}）")
-                            break
-                        
-                        time.sleep(wait_interval)
-                        waited += wait_interval
-                    
-                    if waited >= max_wait and key_service_process and key_service_process.poll() is None:
-                        # 超时但进程仍在运行，假设启动成功（可能启动较慢）
-                        logger.info(f"{LOG_PREFIXES['info']} Key Service 正在启动（进程 ID: {key_service_process.pid}），稍后会自动连接...")
-                
-            except Exception as e:
-                logger.warning(f"{LOG_PREFIXES['warning']} 无法自动启动 Key Service，将使用文件存储: {e}")
-                if key_service_process:
-                    try:
-                        key_service_process.terminate()
-                        key_service_process.wait(timeout=2)
-                    except:
-                        pass
-                key_service_process = None
+        # 确保 ENCRYPTION_KEY 已读取（从 .env 文件）
+        encryption_key = EncryptionKeyManager.get_or_create_key()
+        # 显示前 8 个字符和后 4 个字符，中间用 ... 代替
+        masked_key = f"{encryption_key[:8]}...{encryption_key[-4:]}" if len(encryption_key) > 12 else encryption_key
+        logger.info(f"{LOG_PREFIXES['success']} ENCRYPTION_KEY 已初始化（长度: {len(encryption_key)}, 值: {masked_key}）")
         
-        # 初始化 Key Service Client（尝试连接 Key Service 或回退到文件存储）
-        try:
-            from .core.key_service_client import initialize_key_service_client
-            client_token = os.getenv('KEY_SERVICE_CLIENT_TOKEN', 'default_token_change_me')
-            initialize_key_service_client(client_token)
-            # 日志已在 initialize_key_service_client 中输出
-        except Exception as e:
-            logger.warning(f"{LOG_PREFIXES['warning']} Key Service Client initialization failed (will use file storage): {e}")
-            
+        # 确保 JWT_SECRET_KEY 已读取（从 .env 文件）
+        jwt_secret = JWTSecretManager.get_or_create_secret()
+        # 显示前 8 个字符和后 4 个字符，中间用 ... 代替
+        masked_secret = f"{jwt_secret[:8]}...{jwt_secret[-4:]}" if len(jwt_secret) > 12 else jwt_secret
+        logger.info(f"{LOG_PREFIXES['success']} JWT_SECRET_KEY 已初始化（长度: {len(jwt_secret)}, 值: {masked_secret}）")
     except Exception as e:
-        logger.warning(f"{LOG_PREFIXES['warning']} Key Service 自动启动失败，将使用文件存储: {e}")
-        if key_service_process:
-            try:
-                key_service_process.terminate()
-            except:
-                pass
-        key_service_process = None
+        logger.error(f"{LOG_PREFIXES['error']} 密钥初始化失败: {e}")
+        raise
     
     # ✅ 初始化系统配置
     try:
@@ -518,14 +413,10 @@ async def lifespan(app: FastAPI):
         browser_cleanup_task = asyncio.create_task(_browser_session_cleanup())
         logger.info(f"{LOG_PREFIXES['info']} Browser session cleanup task started")
 
-    # 将 key_service_process 保存到 app.state，以便在 shutdown 时访问
-    app.state.key_service_process = key_service_process
 
     yield
 
     # Shutdown
-    # 从 app.state 获取 key_service_process
-    key_service_process = getattr(app.state, 'key_service_process', None)
     # ✅ 停止定期清理任务
     if cleanup_task:
         cleanup_task.cancel()
@@ -551,29 +442,6 @@ async def lifespan(app: FastAPI):
         supervisor_task.cancel()
         await asyncio.gather(supervisor_task, return_exceptions=True)
 
-    # ✅ 停止 Key Service 子进程（如果已启动）
-    if key_service_process:
-        logger.info(f"{LOG_PREFIXES['info']} 正在停止 Key Service（进程 ID: {key_service_process.pid}）...")
-        try:
-            if platform.system() == 'Windows':
-                # Windows 使用 terminate
-                key_service_process.terminate()
-            else:
-                # Unix/Linux 发送 SIGTERM
-                key_service_process.send_signal(signal.SIGTERM)
-            
-            # 等待进程结束（最多等待 5 秒）
-            try:
-                key_service_process.wait(timeout=5)
-                logger.info(f"{LOG_PREFIXES['success']} Key Service 已停止")
-            except subprocess.TimeoutExpired:
-                # 超时，强制终止
-                logger.warning(f"{LOG_PREFIXES['warning']} Key Service 未在 5 秒内停止，强制终止...")
-                key_service_process.kill()
-                key_service_process.wait()
-                logger.info(f"{LOG_PREFIXES['success']} Key Service 已强制停止")
-        except Exception as e:
-            logger.error(f"{LOG_PREFIXES['error']} 停止 Key Service 时出错: {e}")
 
     if WORKER_POOL_AVAILABLE:
         logger.info(f"{LOG_PREFIXES['info']} Stopping upload worker pool...")
@@ -661,6 +529,7 @@ logger.info("=" * 60)
 
 # Configure CORS
 # 注意：使用 httpOnly Cookie 时，allow_origins 不能为 "*"
+# 环境变量已通过 env_loader 统一加载，直接使用 os.getenv 即可
 import os
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:21573,http://127.0.0.1:21573").split(",")
 app.add_middleware(

@@ -29,7 +29,6 @@ from .function_handler import FunctionHandler
 from .schema_handler import SchemaHandler
 from .token_handler import TokenHandler
 from .official_sdk_adapter import OfficialSDKAdapter
-# Note: get_interactions_manager is imported lazily to avoid circular import
 from .expand_service import ExpandService
 from .upscale_service import UpscaleService
 from .segmentation_service import SegmentationService

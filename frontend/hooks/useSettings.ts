@@ -214,7 +214,14 @@ export const useSettings = (
         protocol as ApiProtocol,
         providerId
       );
-    } catch (error) {
+    } catch (error: any) {
+      // ✅ 静默处理 401 错误（用户未登录或 token 过期）
+      const errorMessage = error?.message || String(error || '');
+      if (errorMessage.includes('401') || errorMessage.includes('Unauthorized') || errorMessage.includes('Authentication required')) {
+        // 用户未登录，静默失败，不打印错误
+        return;
+      }
+      // 其他错误正常打印
       console.error('Failed to load settings:', error);
       // Keep the previous state unchanged if loading fails
     }
@@ -228,6 +235,13 @@ export const useSettings = (
   // Check cache expiry on window focus
   useEffect(() => {
     const handleFocus = () => {
+      // ✅ 检查用户是否已登录（通过检查 token）
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        // 用户未登录，不刷新设置
+        return;
+      }
+      
       // Only refresh if cache is expired and we have settings loaded
       if (fullSettings && isCacheExpired(cacheTimestamp)) {
         refreshSettings();

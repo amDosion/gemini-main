@@ -85,68 +85,17 @@ export const Header: React.FC<HeaderProps> = ({
     // Get Current Profile
     const activeProfile = profiles.find(p => p.id === activeProfileId);
 
-    // Filter models based on the current App Mode and search query
+    // Filter models based on search query
+    // ✅ visibleModels 已经从 useModels hook 返回，已经根据 appMode 过滤过了
+    // 这里只需要根据搜索查询进一步过滤
     const filteredModels = useMemo(() => {
-        return visibleModels.filter(m => {
-            const id = m.id.toLowerCase();
-            const caps = m.capabilities;
-
-            switch (appMode) {
-                case 'video-gen':
-                    return id.includes('veo') || id.includes('sora') || id.includes('video') || id.includes('luma');
-                case 'audio-gen':
-                    return id.includes('tts') || id.includes('audio') || id.includes('speech');
-                case 'image-gen':
-                    // 文生图模式：排除 edit 模型（如 qwen-image-edit-plus），它们需要输入图片
-                    // 只包含纯文生图模型：-t2i 系列、z-image 系列、dall-e、flux、midjourney、wanx、imagen
-                    // 注意：wan2.6-image 不在此列表中，因为它的纯文生图模式需要流式输出，应放在 image-edit 模式
-                    if (id.includes('edit')) return false; // 排除所有编辑模型
-                    return (id.includes('dall') || id.includes('wanx') || id.includes('flux') || id.includes('midjourney') || id.includes('-t2i') || id.includes('z-image') || id.includes('imagen'));
-                case 'image-chat-edit':
-                case 'image-mask-edit':
-                case 'image-inpainting':
-                case 'image-background-edit':
-                case 'image-recontext':
-                case 'image-outpainting':
-                    // 图像编辑模式：需要 vision 能力，但排除以下模型：
-                    // 1. 视频生成模型（veo）
-                    // 2. 纯文生图模型（wanx, wan2.x-t2i, z-image, dall-e, flux, midjourney, imagen-*）
-                    // 保留：多模态对话模型、图像编辑专用模型（如 wan2.6-image, qwen-image-edit, gemini-*-image-*）
-                    if (!caps.vision || id.includes('veo')) return false;
-
-                    // 排除纯文生图模型（这些模型只能生成，不能编辑）
-                    const isTextToImageOnly =
-                        id.includes('wanx') ||           // 通义万相纯生成模型
-                        id.includes('-t2i') ||           // 文生图后缀（wan2.6-t2i, wanx2.0-t2i 等）
-                        id.includes('z-image-turbo') ||  // 通义 z-image-turbo 纯生成模型
-                        id.includes('dall') ||           // DALL-E 系列
-                        id.includes('flux') ||           // Flux 系列
-                        id.includes('midjourney') ||     // Midjourney
-                        (id.startsWith('imagen-') && !id.includes('edit')); // Imagen 纯生成模型（排除 imagen-edit）
-
-                    return !isTextToImageOnly;
-                case 'virtual-try-on':
-                    // 虚拟试衣需要视觉能力的模型,排除视频生成专用模型
-                    return caps.vision && !id.includes('veo');
-                case 'deep-research':
-                    // 深度研究需要搜索或推理能力
-                    return caps.search || caps.reasoning;
-                case 'pdf-extract':
-                    // PDF extraction can use any model that supports function calling / text generation
-                    // We exclude specialized media generation models
-                    return !id.includes('veo') && !id.includes('tts') && !id.includes('wanx') && !id.includes('imagen') && !id.includes('-t2i') && !id.includes('z-image');
-                case 'chat':
-                default:
-                    // Standard chat: Exclude specialized video/audio generators unless they are multimodal
-                    return !id.includes('veo') && !id.includes('tts') && !id.includes('wanx') && !id.includes('-t2i') && !id.includes('z-image');
-            }
-        }).filter(m => {
-            // Apply search filter
-            if (!modelSearchQuery.trim()) return true;
-            const query = modelSearchQuery.toLowerCase();
-            return m.name.toLowerCase().includes(query) || m.id.toLowerCase().includes(query);
-        });
-    }, [visibleModels, appMode, modelSearchQuery]);
+        if (!modelSearchQuery.trim()) return visibleModels;
+        
+        const query = modelSearchQuery.toLowerCase();
+        return visibleModels.filter(m => 
+            m.name.toLowerCase().includes(query) || m.id.toLowerCase().includes(query)
+        );
+    }, [visibleModels, modelSearchQuery]);
 
     const renderCapabilities = (model: ModelConfig) => {
         const id = model.id.toLowerCase();

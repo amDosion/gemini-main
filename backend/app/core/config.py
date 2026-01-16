@@ -4,14 +4,9 @@
 import os
 from pathlib import Path
 from pydantic_settings import BaseSettings
-from dotenv import load_dotenv
 
-# 尽量从 backend/.env 加载环境变量（避免因启动目录不同导致读取不到 Redis/DB 配置）
-_backend_env = Path(__file__).resolve().parents[2] / ".env"
-if _backend_env.exists():
-    load_dotenv(dotenv_path=_backend_env)
-else:
-    load_dotenv()
+# 导入统一的环境变量加载模块（确保 .env 文件已加载）
+from .env_loader import _ENV_LOADED  # noqa: F401
 
 
 class Settings(BaseSettings):
@@ -40,7 +35,7 @@ class Settings(BaseSettings):
 
     # 认证配置
     allow_registration: bool = os.getenv("ALLOW_REGISTRATION", "false").lower() == "true"
-    # 注意：jwt_secret_key 不再从环境变量读取，由 jwt_secret_manager.py 管理
+    # 注意：jwt_secret_key 不再从环境变量读取，由 jwt_utils.py 管理
     # 保留此字段仅用于向后兼容，实际使用 jwt_utils.py 中的 JWT_SECRET_KEY
     jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     jwt_refresh_token_expire_days: int = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))

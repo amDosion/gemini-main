@@ -69,13 +69,15 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
     // Sidebar header icon and extra header
     const sidebarHeaderIcon = <Clock size={14} />;
     
-    const sidebarExtraHeader = (
+    // ✅ 使用 useMemo 缓存 sidebarExtraHeader，确保在 historyBatches 变化时更新
+    const sidebarExtraHeader = useMemo(() => (
         <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-500">
             {historyBatches.length}
         </span>
-    );
+    ), [historyBatches.length]);
 
-    const sidebarContent = (
+    // ✅ 使用 useMemo 缓存 sidebarContent，确保在 historyBatches 或 selectedMsgId 变化时更新
+    const sidebarContent = useMemo(() => (
         <div className="p-3 space-y-3">
             {historyBatches.map((msg, i) => {
                 const firstImage = msg.attachments?.[0]?.url;
@@ -131,7 +133,7 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
                 </div>
             )}
         </div>
-    );
+    ), [historyBatches, activeBatchMessage?.id]);
 
     const handleDownload = async (url: string) => {
         // 判断 URL 类型

@@ -8,7 +8,7 @@ Key Service - 独立的密钥管理服务进程
 4. 提供管理员工具访问接口
 
 使用方式：
-    python -m backend.services.key_service.main
+    python -m backend.app.key.key_service
 """
 
 import socket
@@ -66,31 +66,29 @@ def initialize_keys(
             logger.warning("[KeyService] 密钥已初始化，跳过重复初始化")
             return
         
-        # 从环境变量或启动参数加载
+        # 从环境变量或启动参数加载（从 .env 文件）
         _encryption_key = encryption_key or os.getenv('ENCRYPTION_KEY')
         _jwt_secret_key = jwt_secret_key or os.getenv('JWT_SECRET_KEY')
         
-        # 如果 ENCRYPTION_KEY 未设置，尝试从文件加载（向后兼容）
+        # 如果 ENCRYPTION_KEY 未设置，自动生成
         if not _encryption_key:
             try:
-                from backend.app.core.encryption_key_manager import EncryptionKeyManager
-                file_key = EncryptionKeyManager.load_key_from_file()
-                if file_key:
-                    _encryption_key = file_key
-                    logger.info("[KeyService] 从文件加载 ENCRYPTION_KEY")
+                from ..core.encryption import EncryptionKeyManager
+                _encryption_key = EncryptionKeyManager.get_or_create_key()
+                logger.info("[KeyService] 自动生成 ENCRYPTION_KEY")
             except Exception as e:
-                logger.warning(f"[KeyService] 从文件加载 ENCRYPTION_KEY 失败: {e}")
+                logger.error(f"[KeyService] 自动生成 ENCRYPTION_KEY 失败: {e}")
+                raise RuntimeError("ENCRYPTION_KEY 无法生成，无法启动 Key Service")
         
-        # 如果 JWT_SECRET_KEY 未设置，尝试从文件加载（向后兼容）
+        # 如果 JWT_SECRET_KEY 未设置，自动生成
         if not _jwt_secret_key:
             try:
-                from backend.app.core.jwt_secret_manager import JWTSecretManager
-                file_key = JWTSecretManager.get_or_create_secret()
-                if file_key and file_key != "your-super-secret-key-change-in-production":
-                    _jwt_secret_key = file_key
-                    logger.info("[KeyService] 从文件加载 JWT_SECRET_KEY")
+                from ..core.jwt_utils import JWTSecretManager
+                _jwt_secret_key = JWTSecretManager.get_or_create_secret()
+                logger.info("[KeyService] 自动生成 JWT_SECRET_KEY")
             except Exception as e:
-                logger.warning(f"[KeyService] 从文件加载 JWT_SECRET_KEY 失败: {e}")
+                logger.error(f"[KeyService] 自动生成 JWT_SECRET_KEY 失败: {e}")
+                raise RuntimeError("JWT_SECRET_KEY 无法生成，无法启动 Key Service")
         
         if not _encryption_key:
             raise RuntimeError("ENCRYPTION_KEY 未设置，无法启动 Key Service")

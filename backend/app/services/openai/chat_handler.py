@@ -110,7 +110,9 @@ class ChatHandler:
             流式响应块
         """
         try:
-            logger.info(f"[OpenAI ChatHandler] Stream chat request: model={model}, messages={len(messages)}")
+            # ✅ 记录 max_tokens 以便调试
+            max_tokens_info = f", max_tokens={kwargs.get('max_tokens', 'default')}" if 'max_tokens' in kwargs else ""
+            logger.info(f"[OpenAI ChatHandler] Stream chat request: model={model}, messages={len(messages)}{max_tokens_info}")
             
             # Call OpenAI API with streaming
             stream = await self.client.chat.completions.create(
@@ -154,6 +156,39 @@ class ChatHandler:
                     )
         
         except Exception as e:
+            # ✅ 改进错误处理：对于 402 错误（积分不足），提供更友好的错误信息
+            error_str = str(e)
+            if "402" in error_str or "credits" in error_str.lower() or "afford" in error_str.lower():
+                # 提取错误详情
+                if "but can only afford" in error_str:
+                    # 解析可负担的 tokens
+                    try:
+                        import re
+                        match = re.search(r"can only afford (\d+)", error_str)
+                        if match:
+                            affordable = int(match.group(1))
+                            requested_match = re.search(r"requested up to (\d+) tokens", error_str)
+                            requested = int(requested_match.group(1)) if requested_match else None
+                            
+                            logger.error(
+                                f"[OpenAI ChatHandler] Credit limit exceeded: "
+                                f"requested={requested} tokens, affordable={affordable} tokens. "
+                                f"Please reduce max_tokens or add credits to your account."
+                            )
+                            # 抛出更友好的错误
+                            error_msg = (
+                                f"Insufficient credits: You requested {requested} tokens but can only afford {affordable}. "
+                                f"Please reduce max_tokens in your request or add credits to your OpenRouter account."
+                            )
+                            yield {
+                                "content": "",
+                                "chunk_type": "error",
+                                "error": error_msg
+                            }
+                            return
+                    except Exception:
+                        pass
+            
             logger.error(f"[OpenAI ChatHandler] Stream error: {e}", exc_info=True)
             # Yield error chunk
             yield {

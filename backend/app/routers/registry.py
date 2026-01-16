@@ -26,7 +26,7 @@ from .user import (
     profiles_router, sessions_router, personas_router, init_router
 )
 from .models import (
-    models_router, providers_router, ollama_models_router, imagen_config_router
+    models_router, providers_router, ollama_models_router, vertex_ai_config_router
 )
 # 特殊提供商路由已统一到 core/chat.py 和 core/modes.py
 # from .providers import google_chat_router, tongyi_image_router
@@ -100,7 +100,7 @@ def register_routers(app: FastAPI):
     app.include_router(models_router)
     app.include_router(providers_router)
     app.include_router(ollama_models_router)
-    app.include_router(imagen_config_router)
+    app.include_router(vertex_ai_config_router)
     
     # ==================== 核心路由（统一入口，放在最后以确保优先级）====================
     app.include_router(chat)  # 统一聊天路由 /api/modes/{provider}/chat
@@ -120,7 +120,7 @@ def register_routers(app: FastAPI):
         "tools: browse, pdf, code_execution, memory_bank, a2a, live_api, adk; "
         "ai: embedding, research, research_stream, interactions, multi_agent; "
         "user: profiles, sessions, personas, init; "
-        "models: models, providers, ollama_models, imagen_config)"
+        "models: models, providers, ollama_models, vertex_ai_config)"
     )
 
 
