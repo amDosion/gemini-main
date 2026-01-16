@@ -49,3 +49,26 @@ backend/.hypothesis/
 
 # Kiro specs directory (排除 .kiro/specs 目录)
 .kiro/specs/
+
+# Git 配置分析文档（临时文件）
+GIT_CONFIG_ANALYSIS.md
+GIT_CONFIG_FIX_REPORT.md
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Build outputs
+dist/
+build/
+*.egg-info/
