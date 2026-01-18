@@ -49,3 +49,13 @@ backend/.hypothesis/
 
 # Kiro specs directory (排除 .kiro/specs 目录)
 .kiro/specs/
+
+# Temporary Claude working directory files (临时工作目录文件，不应提交)
+**/tmpclaude-*
+backend/app/tmpclaude-*
+backend/tmpclaude-*
+
+# Cursor debug log files (调试日志文件，不应提交)
+.cursor/erron/
+.cursor/erron/**
+*.log.md

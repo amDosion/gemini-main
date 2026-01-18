@@ -37,7 +37,7 @@
 **问题 1: 密码明文存储在 Git 配置中**
 
 ```ini
-user.password=chuan1127
+user.password=*** (已删除，不应在配置文件中存储密码)
 ```
 
 **位置**: `C:/Users/12180/.gitconfig` (全局配置)
@@ -94,7 +94,7 @@ branch.master.vscode-merge-base=origin/master  # 出现两次
 #### 全局配置 (C:/Users/12180/.gitconfig)
 - `user.name=Dosion`
 - `user.email=121802744@qq.com`
-- `user.password=chuan1127` ⚠️ **需要删除**
+- `user.password=***` ⚠️ **已删除（不应在配置文件中存储密码）**
 - `credential.helper=store`
 - `safe.directory=D:/vue-admin`
 - `safe.directory=D:/`
