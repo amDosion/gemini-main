@@ -5,22 +5,13 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.orm import Session
 import logging
 
-from ...core.database import SessionLocal
+from ...core.database import SessionLocal, get_db
 from ...core.dependencies import require_current_user
 from ...services.common.init_service import get_init_data
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["init"])
-
-
-def get_db():
-    """数据库会话依赖"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 @router.get("/init")

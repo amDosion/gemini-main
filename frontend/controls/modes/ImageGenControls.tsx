@@ -8,7 +8,7 @@
  * - OpenAI：比例、高级选项（不显示分辨率，图片数量固定为1）
  */
 import React, { useState, useMemo, useEffect } from 'react';
-import { Palette, Layers, Ratio, Maximize2, Sliders, User, FileImage, Hash, Sparkles, Wand2 } from 'lucide-react';
+import { Palette, Layers, Ratio, Maximize2, FileImage, Hash, Sparkles, Wand2 } from 'lucide-react';
 import { ImageGenControlsProps } from '../types';
 import { AdvancedToggle } from '../shared';
 import {
@@ -33,7 +33,7 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
     // Imagen advanced parameters
     negativePrompt, setNegativePrompt,
     seed, setSeed,
-    guidanceScale, setGuidanceScale,
+    // guidanceScale removed - not officially documented by Google Imagen
     // personGeneration removed - API uses default (allow_adult)
     outputMimeType, setOutputMimeType,
     outputCompressionQuality, setOutputCompressionQuality,
@@ -92,8 +92,7 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
       setNegativePrompt={setNegativePrompt}
       seed={seed}
       setSeed={setSeed}
-      guidanceScale={guidanceScale}
-      setGuidanceScale={setGuidanceScale}
+      // guidanceScale removed - not officially documented by Google Imagen
       // personGeneration removed - API uses default (allow_adult)
       outputMimeType={outputMimeType}
       setOutputMimeType={setOutputMimeType}
@@ -125,8 +124,7 @@ interface GenericImageGenControlsProps {
   setNegativePrompt?: (v: string) => void;
   seed?: number;
   setSeed?: (v: number) => void;
-  guidanceScale?: number;
-  setGuidanceScale?: (v: number) => void;
+  // guidanceScale removed - not officially documented by Google Imagen
   // personGeneration removed - API uses default (allow_adult)
   outputMimeType?: string;
   setOutputMimeType?: (v: string) => void;
@@ -148,7 +146,7 @@ const GenericImageGenControls: React.FC<GenericImageGenControlsProps> = ({
   // Imagen advanced parameters
   negativePrompt, setNegativePrompt,
   seed, setSeed,
-  guidanceScale = DEFAULT_CONTROLS.guidanceScale, setGuidanceScale,
+  // guidanceScale removed - not officially documented by Google Imagen
   // personGeneration removed - API uses default (allow_adult)
   outputMimeType = DEFAULT_CONTROLS.outputMimeType, setOutputMimeType,
   outputCompressionQuality = DEFAULT_CONTROLS.outputCompressionQuality, setOutputCompressionQuality,
@@ -159,8 +157,8 @@ const GenericImageGenControls: React.FC<GenericImageGenControlsProps> = ({
   const [showAspectMenu, setShowAspectMenu] = useState(false);
   const [showResMenu, setShowResMenu] = useState(false);
   // personGeneration menu removed
+  // guidanceScale menu removed - not officially documented by Google Imagen
   const [showFormatMenu, setShowFormatMenu] = useState(false);
-  const [showGuidanceMenu, setShowGuidanceMenu] = useState(false);
   const [showSeedMenu, setShowSeedMenu] = useState(false);
   const [showQualityMenu, setShowQualityMenu] = useState(false);
 
@@ -351,27 +349,7 @@ const GenericImageGenControls: React.FC<GenericImageGenControlsProps> = ({
         </div>
       )}
 
-      {/* Google Imagen 工具栏按钮: Guidance */}
-      {isGoogle && setGuidanceScale && (
-        <div className="relative">
-          <button onClick={() => setShowGuidanceMenu(!showGuidanceMenu)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/50 text-slate-300 hover:bg-slate-800 border border-transparent hover:border-slate-600 transition-all">
-            <Sliders size={14} className="text-purple-400" />
-            {guidanceScale?.toFixed(1)}
-          </button>
-          {showGuidanceMenu && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setShowGuidanceMenu(false)} />
-              <div className="absolute bottom-full left-0 mb-2 w-44 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-20 p-3 animate-[fadeIn_0.1s_ease-out]">
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-[10px] font-medium text-slate-400 uppercase">Guidance</label>
-                  <span className="text-xs text-slate-300 font-mono">{guidanceScale?.toFixed(1)}</span>
-                </div>
-                <input type="range" min="1.0" max="20.0" step="0.5" value={guidanceScale || 7.5} onChange={(e) => setGuidanceScale(parseFloat(e.target.value))} className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer" />
-              </div>
-            </>
-          )}
-        </div>
-      )}
+      {/* Google Imagen Guidance 按钮已移除 - 官方文档未记录此参数 */}
 
       {/* Google Imagen 工具栏按钮: Seed */}
       {isGoogle && setSeed && (

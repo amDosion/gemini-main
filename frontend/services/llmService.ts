@@ -144,6 +144,25 @@ export class LLMService {
       this._cachedHistory = history;
       this._cachedModelConfig = modelConfig;
       if (options) {
+          // ✅ 详细日志：记录 image-gen 模式下设置的 options
+          if (options.imageAspectRatio || options.numberOfImages || options.imageResolution) {
+              console.log('========== [llmService.startNewChat] 设置图片生成参数 ==========');
+              console.log('[startNewChat] Model:', modelConfig.id);
+              console.log('[startNewChat] 传入的 Options:', {
+                  numberOfImages: options.numberOfImages,
+                  imageAspectRatio: options.imageAspectRatio,
+                  imageResolution: options.imageResolution,
+                  imageStyle: options.imageStyle,
+                  negativePrompt: options.negativePrompt,
+                  seed: options.seed,
+                  // guidanceScale removed - not officially documented by Google Imagen
+                  outputMimeType: options.outputMimeType,
+                  outputCompressionQuality: options.outputCompressionQuality,
+                  enhancePrompt: options.enhancePrompt,
+              });
+              console.log('[startNewChat] 完整 Options 对象:', JSON.stringify(options, null, 2));
+              console.log('========== [llmService.startNewChat] 参数设置结束 ==========');
+          }
           this._cachedOptions = options;
       }
   }
@@ -213,15 +232,37 @@ export class LLMService {
       }
   }
 
-  // --- Media Operations (Delegated to MediaFactory) ---
+  // --- Media Operations (通过 UnifiedProviderClient 处理) ---
 
   public async generateImage(prompt: string, referenceImages: Attachment[] = []): Promise<ImageGenerationResult[]> {
-      // 调试日志：检查配置
-      console.log('[llmService.generateImage] 配置检查:', {
-          hasBaseUrl: !!this.baseUrl,
-          baseUrl: this.baseUrl?.substring(0, 30) || 'empty',
-          providerId: this.providerId
+      // ✅ 详细日志：记录图片生成请求的参数
+      console.log('========== [llmService.generateImage] 图片生成请求开始 ==========');
+      console.log('[llmService.generateImage] Provider ID:', this.providerId);
+      console.log('[llmService.generateImage] Model ID:', this._cachedModelConfig?.id);
+      console.log('[llmService.generateImage] Prompt:', prompt.substring(0, 100) + (prompt.length > 100 ? '...' : ''));
+      console.log('[llmService.generateImage] 附件数量:', referenceImages.length);
+      console.log('[llmService.generateImage] 传递给 Provider 的 Options (_cachedOptions):', {
+        numberOfImages: this._cachedOptions.numberOfImages,
+        imageAspectRatio: this._cachedOptions.imageAspectRatio,
+        imageResolution: this._cachedOptions.imageResolution,
+        imageStyle: this._cachedOptions.imageStyle,
+        negativePrompt: this._cachedOptions.negativePrompt,
+        seed: this._cachedOptions.seed,
+        // guidanceScale removed - not officially documented by Google Imagen
+        outputMimeType: this._cachedOptions.outputMimeType,
+        outputCompressionQuality: this._cachedOptions.outputCompressionQuality,
+        enhancePrompt: this._cachedOptions.enhancePrompt,
+        enableSearch: this._cachedOptions.enableSearch,
+        enableThinking: this._cachedOptions.enableThinking,
+        enableCodeExecution: this._cachedOptions.enableCodeExecution,
+        enableUrlContext: this._cachedOptions.enableUrlContext,
+        enableBrowser: this._cachedOptions.enableBrowser,
+        enableResearch: this._cachedOptions.enableResearch,
+        googleCacheMode: this._cachedOptions.googleCacheMode,
+        baseUrl: this.baseUrl,
       });
+      console.log('[llmService.generateImage] 完整 _cachedOptions 对象:', JSON.stringify(this._cachedOptions, null, 2));
+      console.log('========== [llmService.generateImage] 图片生成请求参数结束 ==========');
       
       // 直接使用 currentProvider，由 LLMFactory 负责提供商路由
       // 注意：多轮编辑的连续性由前端 ImageEditView 的 CONTINUITY LOGIC 处理

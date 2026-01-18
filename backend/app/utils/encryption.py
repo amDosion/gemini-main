@@ -3,11 +3,13 @@ Encryption utilities for secure storage configuration management.
 
 This module provides functions to encrypt/decrypt sensitive configuration fields
 and mask sensitive data in logs.
+
+NOTE: This module now uses the unified encryption key management from core.encryption
+instead of maintaining its own separate STORAGE_ENCRYPTION_KEY.
 """
 
-import os
 import logging
-from typing import Dict, Any, Optional, Set
+from typing import Dict, Any, Set
 from cryptography.fernet import Fernet, InvalidToken
 
 logger = logging.getLogger(__name__)
@@ -28,36 +30,25 @@ SENSITIVE_FIELDS: Set[str] = {
 
 def _get_encryption_key() -> bytes:
     """
-    Get encryption key from environment variable.
-    
-    If STORAGE_ENCRYPTION_KEY is not set, generates a new key and provides
-    instructions to save it.
-    
+    Get encryption key using the unified key manager.
+
+    Uses the centralized EncryptionKeyManager from core.encryption to ensure
+    consistent key management across the application.
+
     Returns:
         bytes: Fernet encryption key
-        
+
     Raises:
         ValueError: If the key format is invalid
     """
-    key_str = os.getenv("STORAGE_ENCRYPTION_KEY")
-    
-    if not key_str:
-        # Generate a new key
-        new_key = Fernet.generate_key()
-        key_str = new_key.decode('utf-8')
-        
-        logger.warning(
-            "STORAGE_ENCRYPTION_KEY not found in environment. "
-            "Generated a new key. Please add this to your .env file:\n"
-            f"STORAGE_ENCRYPTION_KEY={key_str}\n"
-            "⚠️  IMPORTANT: Save this key securely. Without it, you cannot decrypt existing configurations!"
-        )
-        
-        return new_key
-    
     try:
+        # Import from the unified encryption module
+        from ..core.encryption import get_encryption_key
+
+        key_str = get_encryption_key()
         return key_str.encode('utf-8')
     except Exception as e:
+        logger.error(f"Failed to get encryption key from unified key manager: {e}")
         raise ValueError(f"Invalid encryption key format: {e}")
 
 

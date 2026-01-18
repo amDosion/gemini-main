@@ -5,7 +5,6 @@
  * - 后端通过 ProviderConfig 统一管理所有 Provider 配置
  * - 前端通过 /api/providers/templates API 获取配置（在应用启动时预加载）
  * - 所有 Provider 统一使用 UnifiedProviderClient（通过后端统一处理）
- * - OpenAIProvider 已废弃，内部也委托给 UnifiedProviderClient
  * 
  * 优势：
  * - 单一数据源：配置由后端 ProviderConfig 统一管理
@@ -21,7 +20,6 @@
 import { ApiProtocol } from '../types/types';
 import { ILLMProvider } from './providers/interfaces';
 import { UnifiedProviderClient } from './providers/UnifiedProviderClient';
-import { OpenAIProvider } from './providers/openai/OpenAIProvider'; // 保留用于向后兼容
 import { getProviderTemplates, AIProviderConfig } from './providers';
 
 export class LLMFactory {
@@ -64,10 +62,8 @@ export class LLMFactory {
   /**
    * 根据后端配置动态创建 Provider 实例（同步）
    * 
- * 逻辑：
- * 1. 所有 Provider 统一使用 UnifiedProviderClient（通过后端统一处理）
- * 2. OpenAIProvider 保留用于向后兼容，但内部也委托给 UnifiedProviderClient
- * 3. 如果后端配置不存在，使用默认逻辑（向后兼容）
+   * 逻辑：
+   * 所有 Provider 统一使用 UnifiedProviderClient（通过后端统一处理）
    * 
    * @param protocol The API protocol (google, openai)
    * @param providerId The specific provider ID (e.g., 'deepseek', 'tongyi')
@@ -79,33 +75,8 @@ export class LLMFactory {
       return this.instances.get(cacheKey)!;
     }
 
-    let provider: ILLMProvider;
-
-    // ✅ 尝试从后端配置获取信息
-    const config = this.findProviderConfig(providerId);
-
-    if (config) {
-      // ✅ 基于后端配置创建 Provider
-      // 注意：OpenAIProvider 内部也委托给 UnifiedProviderClient，但保留用于向后兼容
-      // 所有 Provider 统一使用 UnifiedProviderClient（通过后端统一处理）
-      if (protocol === 'openai' && (providerId === 'openai' || providerId === 'custom')) {
-        // ✅ 保留 OpenAIProvider 用于向后兼容（内部已委托给 UnifiedProviderClient）
-        provider = new OpenAIProvider();
-      } else {
-        // ✅ 其他情况统一使用 UnifiedProviderClient（通过后端统一处理）
-        provider = new UnifiedProviderClient(providerId);
-      }
-    } else {
-      // ✅ 配置不存在，使用默认逻辑（向后兼容）
-      // 所有 Provider 统一使用 UnifiedProviderClient（通过后端统一处理）
-      if (protocol === 'openai' && (providerId === 'openai' || providerId === 'custom')) {
-        // ✅ 保留 OpenAIProvider 用于向后兼容（内部已委托给 UnifiedProviderClient）
-        provider = new OpenAIProvider();
-      } else {
-        // 默认使用 UnifiedProviderClient（通过后端统一处理）
-        provider = new UnifiedProviderClient(providerId);
-      }
-    }
+    // ✅ 所有 Provider 统一使用 UnifiedProviderClient（通过后端统一处理）
+    const provider: ILLMProvider = new UnifiedProviderClient(providerId);
 
     this.instances.set(cacheKey, provider);
     return provider;

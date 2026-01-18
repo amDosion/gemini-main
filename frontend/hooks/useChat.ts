@@ -58,6 +58,38 @@ export const useChat = (
       const enhancedOptions = options.enableResearch
         ? { ...options, enableSearch: true }
         : options;
+      
+      // ✅ 详细日志：记录 image-gen 模式下传递给 llmService 的参数
+      if (mode === 'image-gen') {
+        console.log('========== [useChat.sendMessage] image-gen 模式参数传递 ==========');
+        console.log('[useChat] 接收到的 Options (原始):', {
+          numberOfImages: options.numberOfImages,
+          imageAspectRatio: options.imageAspectRatio,
+          imageResolution: options.imageResolution,
+          imageStyle: options.imageStyle,
+          negativePrompt: options.negativePrompt,
+          seed: options.seed,
+          // guidanceScale removed - not officially documented by Google Imagen
+          outputMimeType: options.outputMimeType,
+          outputCompressionQuality: options.outputCompressionQuality,
+          enhancePrompt: options.enhancePrompt,
+        });
+        console.log('[useChat] Enhanced Options (传递给 llmService):', {
+          numberOfImages: enhancedOptions.numberOfImages,
+          imageAspectRatio: enhancedOptions.imageAspectRatio,
+          imageResolution: enhancedOptions.imageResolution,
+          imageStyle: enhancedOptions.imageStyle,
+          negativePrompt: enhancedOptions.negativePrompt,
+          seed: enhancedOptions.seed,
+          // guidanceScale removed - not officially documented by Google Imagen
+          outputMimeType: enhancedOptions.outputMimeType,
+          outputCompressionQuality: enhancedOptions.outputCompressionQuality,
+          enhancePrompt: enhancedOptions.enhancePrompt,
+        });
+        console.log('[useChat] 完整 Enhanced Options:', JSON.stringify(enhancedOptions, null, 2));
+        console.log('========== [useChat.sendMessage] image-gen 参数传递结束 ==========');
+      }
+      
       llmService.startNewChat(contextHistory, currentModel, enhancedOptions);
 
       // 2. Create User Message (before preprocessing)

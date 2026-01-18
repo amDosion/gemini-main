@@ -203,7 +203,8 @@ const InputArea: React.FC<InputAreaProps> = ({
       limitImageSize: false
     };
 
-    onSend(input, {
+    // ✅ 构建 ChatOptions 对象
+    const chatOptions: ChatOptions = {
       enableSearch: controls.enableSearch,
       enableThinking: controls.enableThinking,
       enableCodeExecution: controls.enableCodeExecution,
@@ -224,7 +225,7 @@ const InputArea: React.FC<InputAreaProps> = ({
       pdfExtractTemplate: mode === 'pdf-extract' ? currentPdfTemplate : undefined,
       pdfAdditionalInstructions: mode === 'pdf-extract' ? controls.pdfAdditionalInstructions.trim() : undefined,
       // Google Imagen Advanced Parameters
-      guidanceScale: controls.guidanceScale,
+      // guidanceScale removed - not officially documented by Google Imagen
       outputMimeType: controls.outputMimeType,
       outputCompressionQuality: controls.outputCompressionQuality,
       enhancePrompt: controls.enhancePrompt,
@@ -233,7 +234,40 @@ const InputArea: React.FC<InputAreaProps> = ({
         thinkingSummaries: controls.thinkingSummaries,
         researchMode: controls.researchMode  // ✅ 传递工作模式（vertex-ai 或 gemini-api）
       } : undefined,
-    }, processedAttachments, mode);
+    };
+    
+    // ✅ 详细日志：记录 image-gen 模式下用户选择的参数
+    if (mode === 'image-gen') {
+      console.log('========== [InputArea] image-gen 模式用户选择参数 ==========');
+      console.log('[InputArea] 当前模式:', mode);
+      console.log('[InputArea] 用户输入:', input.substring(0, 100) + (input.length > 100 ? '...' : ''));
+      console.log('[InputArea] 用户选择的图片生成参数:', {
+        numberOfImages: chatOptions.numberOfImages,
+        imageAspectRatio: chatOptions.imageAspectRatio,
+        imageResolution: chatOptions.imageResolution,
+        imageStyle: chatOptions.imageStyle,
+        negativePrompt: chatOptions.negativePrompt,
+        seed: chatOptions.seed,
+        // guidanceScale removed - not officially documented by Google Imagen
+        outputMimeType: chatOptions.outputMimeType,
+        outputCompressionQuality: chatOptions.outputCompressionQuality,
+        enhancePrompt: chatOptions.enhancePrompt,
+      });
+      console.log('[InputArea] 其他选项:', {
+        enableSearch: chatOptions.enableSearch,
+        enableThinking: chatOptions.enableThinking,
+        enableCodeExecution: chatOptions.enableCodeExecution,
+        enableUrlContext: chatOptions.enableUrlContext,
+        enableBrowser: chatOptions.enableBrowser,
+        enableResearch: chatOptions.enableResearch,
+        googleCacheMode: chatOptions.googleCacheMode,
+      });
+      console.log('[InputArea] 附件数量:', processedAttachments.length);
+      console.log('[InputArea] 完整 ChatOptions:', JSON.stringify(chatOptions, null, 2));
+      console.log('========== [InputArea] image-gen 模式参数记录结束 ==========');
+    }
+    
+    onSend(input, chatOptions, processedAttachments, mode);
 
     setInput('');
     updateAttachments([]);
@@ -315,8 +349,7 @@ const InputArea: React.FC<InputAreaProps> = ({
             setNegativePrompt={controls.setNegativePrompt}
             seed={controls.seed}
             setSeed={controls.setSeed}
-            guidanceScale={controls.guidanceScale}
-            setGuidanceScale={controls.setGuidanceScale}
+            // guidanceScale removed - not officially documented by Google Imagen
             outputMimeType={controls.outputMimeType}
             setOutputMimeType={controls.setOutputMimeType}
             outputCompressionQuality={controls.outputCompressionQuality}

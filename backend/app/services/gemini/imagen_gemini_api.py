@@ -153,7 +153,8 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
         
         aspect_ratio = kwargs.get('aspect_ratio', '1:1')
         include_rai_reason = kwargs.get('include_rai_reason', True)
-        output_mime_type = kwargs.get('output_mime_type', 'image/jpeg')
+        # Default to PNG format for best quality (no compression)
+        output_mime_type = kwargs.get('output_mime_type', 'image/png')
         
         config_kwargs = {
             "number_of_images": number_of_images,
@@ -167,6 +168,11 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
         if image_size and image_size in VALID_IMAGE_SIZES:
             config_kwargs["image_size"] = image_size
         
+        # Add compression quality for JPEG (default 100 = no compression)
+        if output_mime_type == 'image/jpeg':
+            compression_quality = kwargs.get('output_compression_quality', 100)
+            config_kwargs["output_compression_quality"] = compression_quality
+        
         logger.info(f"[GeminiAPIImageGenerator] Config: {config_kwargs}")
         
         return genai_types.GenerateImagesConfig(**config_kwargs)
@@ -177,7 +183,7 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
         **kwargs
     ) -> List[Dict[str, Any]]:
         """Process Gemini API response and extract images."""
-        output_mime_type = kwargs.get('output_mime_type', 'image/jpeg')
+        output_mime_type = kwargs.get('output_mime_type', 'image/png')
         results = []
         
         for idx, generated_image in enumerate(response.generated_images):

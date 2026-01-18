@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 import logging
 
-from ...core.database import SessionLocal
+from ...core.database import SessionLocal, get_db
 from ...core.config import settings
 from ...models.db_models import StorageConfig, ActiveStorage, UploadTask
 from ...services.storage.storage_service import StorageService
@@ -25,25 +25,16 @@ from ...core.user_scoped_query import UserScopedQuery
 router = APIRouter(prefix="/api/storage", tags=["storage"])
 logger = logging.getLogger(__name__)
 
-# 项目内临时文件目录
-# 获取当前文件所在目录，然后定位到 backend/temp/
-TEMP_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "temp")
+# 导入路径工具
+from ...core.path_utils import get_temp_dir, get_temp_dir_relative, resolve_relative_path, ensure_relative_path
 
-# 确保临时目录存在
-os.makedirs(TEMP_DIR, exist_ok=True)
+# 项目内临时文件目录（使用统一的路径工具）
+TEMP_DIR = get_temp_dir()
 
 # Startup log to verify TEMP_DIR (只记录一次)
 if not hasattr(router, '_temp_dir_logged'):
     logger.info(f"[Storage Router] TEMP_DIR initialized: {TEMP_DIR}")
     router._temp_dir_logged = True
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 def _mask_url(url: str) -> str:
@@ -406,15 +397,15 @@ async def process_upload_task(task_id: str, _db: Session = None):
     try:
         task = db.query(UploadTask).filter(UploadTask.id == task_id).first()
         if not task:
-            print(f"[UploadTask] 任务不存在: {task_id}")
+            logger.warning(f"[UploadTask] 任务不存在: {task_id}")
             return
         
         # ✅ 详细日志：确认任务数据
-        print(f"[UploadTask] 开始处理任务: {task_id}")
-        print(f"  - 文件名: {task.filename}")
-        print(f"  - session_id: {task.session_id[:8] if task.session_id else 'None'}...")
-        print(f"  - message_id: {task.message_id[:8] if task.message_id else 'None'}...")
-        print(f"  - attachment_id: {task.attachment_id[:8] if task.attachment_id else 'None'}...")
+        logger.info(f"[UploadTask] 开始处理任务: {task_id}")
+        logger.info(f"  - 文件名: {task.filename}")
+        logger.info(f"  - session_id: {task.session_id[:8] if task.session_id else 'None'}...")
+        logger.info(f"  - message_id: {task.message_id[:8] if task.message_id else 'None'}...")
+        logger.info(f"  - attachment_id: {task.attachment_id[:8] if task.attachment_id else 'None'}...")
         
         # 1. 更新状态为 uploading
         task.status = 'uploading'
@@ -442,30 +433,38 @@ async def process_upload_task(task_id: str, _db: Session = None):
         image_content = None
         temp_path = None
         
-        if task.source_file_path and os.path.exists(task.source_file_path):
-            # 模式 1: 从本地文件读取
-            print(f"[UploadTask] 读取本地文件: {task.source_file_path}")
-            with open(task.source_file_path, 'rb') as f:
-                image_content = f.read()
-            temp_path = task.source_file_path
+        if task.source_file_path:
+            # 模式 1: 从本地文件读取（使用统一的路径解析）
+            file_path = resolve_relative_path(task.source_file_path)
+            if os.path.exists(file_path):
+                logger.info(f"[UploadTask] 读取本地文件: {ensure_relative_path(task.source_file_path)}")
+                with open(file_path, 'rb') as f:
+                    image_content = f.read()
+                temp_path = file_path
+            else:
+                raise Exception(f"文件不存在: {task.source_file_path}")
         elif task.source_url:
             # 模式 2: 从 URL 下载
-            print(f"[UploadTask] 下载图片: {task.source_url}")
+            logger.info(f"[UploadTask] 下载图片: {task.source_url}")
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(task.source_url)
                 response.raise_for_status()
                 image_content = response.content
             
-            # 保存到项目内临时目录 (backend/temp/)
-            temp_path = os.path.join(TEMP_DIR, f"upload_{task_id}_{task.filename}")
-            with open(temp_path, 'wb') as f:
+            # 保存到项目内临时目录（使用相对路径存储）
+            filename_with_id = f"upload_{task_id}_{task.filename}"
+            temp_path_abs = os.path.join(TEMP_DIR, filename_with_id)
+            temp_path_rel = f"{get_temp_dir_relative()}/{filename_with_id}"
+            
+            with open(temp_path_abs, 'wb') as f:
                 f.write(image_content)
-            print(f"[UploadTask] 临时文件: {temp_path}")
+            logger.info(f"[UploadTask] 临时文件: {temp_path_rel}")
+            temp_path = temp_path_abs
         else:
             raise Exception("没有可用的图片来源")
         
         # 4. 上传到云存储
-        print(f"[UploadTask] 上传到云存储: {config.provider}")
+        logger.info(f"[UploadTask] 上传到云存储: {config.provider}")
         result = await StorageService.upload_file(
             filename=task.filename,
             content=image_content,
@@ -478,9 +477,9 @@ async def process_upload_task(task_id: str, _db: Session = None):
         if temp_path and os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
-                print(f"[UploadTask] 临时文件已删除: {temp_path}")
+                logger.info(f"[UploadTask] 临时文件已删除: {temp_path}")
             except Exception as e:
-                print(f"[UploadTask] 删除临时文件失败: {e}")
+                logger.warning(f"[UploadTask] 删除临时文件失败: {e}")
         
         # 6. 更新任务状态
         if result.get('success'):
@@ -488,7 +487,7 @@ async def process_upload_task(task_id: str, _db: Session = None):
             task.target_url = result.get('url')
             task.completed_at = int(datetime.now().timestamp() * 1000)
             db.commit()  # ✅ 先提交任务状态，确保上传成功被记录
-            print(f"[UploadTask] 上传成功: {task.target_url}")
+            logger.info(f"[UploadTask] 上传成功: {task.target_url}")
             
             # 7. 更新数据库中的会话消息（即使失败也不影响任务状态）
             if task.session_id and task.message_id and task.attachment_id:
@@ -501,15 +500,15 @@ async def process_upload_task(task_id: str, _db: Session = None):
                         task.target_url
                     )
                 except Exception as e:
-                    print(f"[UploadTask] ⚠️ 更新会话附件 URL 失败（任务已完成）: {e}")
+                    logger.warning(f"[UploadTask] ⚠️ 更新会话附件 URL 失败（任务已完成）: {e}")
         else:
             task.status = 'failed'
             task.error_message = result.get('error', '上传失败')
             db.commit()
-            print(f"[UploadTask] 上传失败: {task.error_message}")
+            logger.error(f"[UploadTask] 上传失败: {task.error_message}")
         
     except Exception as e:
-        print(f"[UploadTask] 任务失败: {str(e)}")
+        logger.error(f"[UploadTask] 任务失败: {str(e)}")
         try:
             task.status = 'failed'
             task.error_message = str(e)
@@ -542,7 +541,7 @@ async def update_session_attachment_url(
     from ...models.db_models import MessageAttachment
     import asyncio
     
-    print(f"[UploadTask] 开始更新附件 URL: session={session_id[:8]}..., msg={message_id[:8]}..., att={attachment_id[:8]}...")
+    logger.info(f"[UploadTask] 开始更新附件 URL: session={session_id[:8]}..., msg={message_id[:8]}..., att={attachment_id[:8]}...")
     
     for attempt in range(max_retries):
         try:
@@ -611,13 +610,12 @@ async def upload_file_async(
     }
     """
     def log(msg: str, level: str = "info"):
-        print(msg, flush=True)
-        try:
-            import sys
-            sys.stderr.write(msg + "\n")
-            sys.stderr.flush()
-        except Exception:
-            pass
+        """
+        统一的日志输出函数
+        
+        只使用 logger 输出，避免重复日志
+        logger 已经配置了格式和 handler，会自动输出到控制台
+        """
         getattr(logger, level, logger.info)(msg)
     user_query = UserScopedQuery(db, user_id)
 
@@ -669,9 +667,8 @@ async def upload_file_async(
     # Absolute path for file system operations
     temp_path_abs = os.path.join(TEMP_DIR, filename_with_id)
 
-    # Relative path for database storage (cross-platform, use forward slashes)
-    # Note: TEMP_DIR is backend/app/temp/, so relative path should be backend/app/temp/
-    temp_path_rel = f"backend/app/temp/{filename_with_id}"
+    # Relative path for database storage (使用统一的路径工具)
+    temp_path_rel = f"{get_temp_dir_relative()}/{filename_with_id}"
 
     file_content = await file.read()
     with open(temp_path_abs, 'wb') as f:

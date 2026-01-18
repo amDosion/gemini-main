@@ -407,11 +407,26 @@ class SimpleImageEditService:
         if 'raw' in reference_images:
             raw_img = reference_images['raw']
             if isinstance(raw_img, str):
-                # Base64 字符串
-                reference_images_list.append({
-                    'url': f"data:image/png;base64,{raw_img}" if not raw_img.startswith('data:') else raw_img,
-                    'mimeType': 'image/png'
-                })
+                # 字符串格式：根据 URL 类型处理
+                # 修复：先检查 HTTP URL，避免错误地将 HTTP URL 当作 base64 处理
+                if raw_img.startswith('http://') or raw_img.startswith('https://'):
+                    # HTTP URL：直接传递，后端会下载
+                    reference_images_list.append({
+                        'url': raw_img,
+                        'mimeType': 'image/png'
+                    })
+                elif raw_img.startswith('data:'):
+                    # Data URL：直接使用
+                    reference_images_list.append({
+                        'url': raw_img,
+                        'mimeType': 'image/png'
+                    })
+                else:
+                    # 其他字符串（纯 base64）：添加 data URL 前缀
+                    reference_images_list.append({
+                        'url': f"data:image/png;base64,{raw_img}",
+                        'mimeType': 'image/png'
+                    })
             elif isinstance(raw_img, dict):
                 # 字典格式（包含 url、mimeType 等）
                 reference_images_list.append(raw_img)

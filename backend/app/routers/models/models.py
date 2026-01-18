@@ -11,7 +11,7 @@ from typing import List, Optional, Tuple, Any
 import logging
 import time
 
-from ...core.database import SessionLocal
+from ...core.database import SessionLocal, get_db
 from ...models.db_models import ConfigProfile, UserSettings
 from ...services.common.model_capabilities import ModelConfig
 from ...core.dependencies import require_current_user, get_cache
@@ -26,17 +26,6 @@ router = APIRouter(prefix="/api/models", tags=["models"])
 # Format: {provider: {"models": [ModelConfig, ...], "timestamp": float}}
 _model_cache: dict[str, dict[str, Any]] = {}
 _cache_ttl = 3600  # 1 hour in seconds
-
-
-# ==================== Database Dependency ====================
-
-def get_db():
-    """获取数据库会话"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 # ==================== Helper Functions ====================

@@ -27,7 +27,7 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
   const [loraConfig, setLoraConfig] = useState<LoraConfig>({ alpha: 0.6 });
 
   // Google Imagen Advanced Parameters
-  const [guidanceScale, setGuidanceScale] = useState(DEFAULT_CONTROLS.guidanceScale);
+  // guidanceScale removed - not officially documented by Google Imagen
   // personGeneration parameter removed - API uses default (allow_adult)
   const [outputMimeType, setOutputMimeType] = useState(DEFAULT_CONTROLS.outputMimeType);
   const [outputCompressionQuality, setOutputCompressionQuality] = useState(DEFAULT_CONTROLS.outputCompressionQuality);
@@ -93,7 +93,7 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
     loraConfig, setLoraConfig,
 
     // Google Imagen Advanced Parameters
-    guidanceScale, setGuidanceScale,
+    // guidanceScale removed - not officially documented by Google Imagen
     // personGeneration removed - API uses default (allow_adult)
     outputMimeType, setOutputMimeType,
     outputCompressionQuality, setOutputCompressionQuality,

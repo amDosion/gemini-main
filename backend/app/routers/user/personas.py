@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from typing import List
 import logging
 
-from ...core.database import SessionLocal
+from ...core.database import SessionLocal, get_db
 from ...models.db_models import Persona as DBPersona
 from ...core.dependencies import require_current_user
 from ...core.user_scoped_query import UserScopedQuery
@@ -15,14 +15,6 @@ from ...services.common.persona_init_service import DEFAULT_PERSONAS, create_def
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["personas"])
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 # ==================== 角色管理 ====================

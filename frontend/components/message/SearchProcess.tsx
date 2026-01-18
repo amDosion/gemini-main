@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { Globe } from 'lucide-react';
+import DOMPurify from 'dompurify';
 
 interface SearchProcessProps {
   queries: string[];
@@ -31,9 +32,9 @@ export const SearchProcess: React.FC<SearchProcessProps> = ({ queries, entryPoin
         !entryPoint && <div className="text-xs text-slate-500 italic pl-3">Analyzing search results...</div>
         )}
         {entryPoint && (
-            <div 
+            <div
                 className="mt-2 overflow-hidden rounded bg-white text-black"
-                dangerouslySetInnerHTML={{ __html: entryPoint }} 
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(entryPoint) }}
             />
         )}
     </div>

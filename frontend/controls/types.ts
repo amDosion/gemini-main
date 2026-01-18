@@ -88,11 +88,9 @@ export interface ImageGenControlsProps {
   setNegativePrompt?: (v: string) => void;
   seed?: number;
   setSeed?: (v: number) => void;
-  guidanceScale?: number;
-  setGuidanceScale?: (v: number) => void;
+  // guidanceScale removed - not officially documented by Google Imagen
   // personGeneration removed - API uses default (allow_adult)
   outputMimeType?: string;
-
   setOutputMimeType?: (v: string) => void;
   outputCompressionQuality?: number;
   setOutputCompressionQuality?: (v: number) => void;
@@ -227,8 +225,7 @@ export interface ControlsState {
   setLoraConfig: (v: LoraConfig) => void;
 
   // Imagen advanced parameters
-  guidanceScale: number;
-  setGuidanceScale: (v: number) => void;
+  // guidanceScale removed - not officially documented by Google Imagen
   // personGeneration removed - API uses default (allow_adult)
   outputMimeType: string;
   setOutputMimeType: (v: string) => void;

@@ -265,7 +265,7 @@ async def logout(
                 
                 logger.info(f"[Logout] ✅ 用户 {user_id} 登出成功 (IP: {ip_address})")
             except Exception as e:
-                print(f"[Logout] Error revoking tokens: {e}")
+                logger.error(f"[Logout] Error revoking tokens: {e}")
                 pass  # Token 可能已无效，忽略错误
     
     return {"message": "Logged out successfully"}

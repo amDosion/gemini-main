@@ -57,7 +57,12 @@
       "Bash(test:*)",
       "Bash(del \"D:\\\\gemini-main\\\\gemini-main\\\\backend\\\\app\\\\services\\\\storage_service.py\")",
       "Bash(del \"d:\\\\gemini-main\\\\gemini-main\\\\backend\\\\test_browse_debug.py\")",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(gh pr list:*)",
+      "Bash(winget install:*)",
+      "Bash(\"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" --version)",
+      "Bash(\"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" pr list)",
+      "Bash(\"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" auth login --web)"
     ]
   }
 }

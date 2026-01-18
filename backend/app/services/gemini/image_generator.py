@@ -94,29 +94,51 @@ class ImageGenerator:
             logger.error(f"[ImageGenerator] Image generation error: {e}", exc_info=True)
             raise
     
+    # Parameter name mapping (camelCase -> snake_case)
+    PARAM_MAPPING = {
+        'numberOfImages': 'number_of_images',
+        'imageAspectRatio': 'aspect_ratio',
+        'aspectRatio': 'aspect_ratio',
+        'imageResolution': 'image_size',
+        'outputMimeType': 'output_mime_type',
+        'negativePrompt': 'negative_prompt',
+        # imageStyle maps to image_style (no change needed, already snake_case compatible)
+    }
+    
     def _convert_parameters_for_api(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Convert parameters based on current API mode.
-        
-        Note: person_generation parameter has been removed. The API will use
-        its default value (allow_adult), which allows normal adult and children
-        images without NSFW content.
+        Convert camelCase parameters to snake_case for Google SDK compatibility.
+        Also removes deprecated parameters.
         
         Args:
-            kwargs: Original parameters
-        
+            kwargs: Parameters that may be in camelCase or snake_case format
+            
         Returns:
-            Parameters with converted values
+            Dictionary with all parameters converted to snake_case
         """
-        # Remove person_generation if present (should not be sent to API)
-        if 'person_generation' in kwargs:
-            logger.info(
-                f"[ImageGenerator] Removing person_generation parameter "
-                f"(using API default: allow_adult)"
-            )
-            del kwargs['person_generation']
+        result = {}
         
-        return kwargs
+        for key, value in kwargs.items():
+            # Skip deprecated parameters
+            if key == 'person_generation':
+                logger.info(
+                    "[ImageGenerator] Removing person_generation parameter "
+                    "(using API default: allow_adult)"
+                )
+                continue
+            
+            # Convert camelCase to snake_case if mapping exists
+            new_key = self.PARAM_MAPPING.get(key, key)
+            
+            # If both versions exist, camelCase takes priority (first occurrence wins)
+            if new_key not in result:
+                result[new_key] = value
+        
+        # Set default output_mime_type to PNG if not specified
+        if 'output_mime_type' not in result:
+            result['output_mime_type'] = 'image/png'
+        
+        return result
     
     async def generate_image_stream(
         self,

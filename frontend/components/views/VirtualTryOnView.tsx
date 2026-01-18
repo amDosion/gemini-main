@@ -290,31 +290,16 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
             
             console.log('[handleGenerateMaskPreview] 图片转换完成，Base64 长度:', imageBase64.length);
             
-            // ===== 调用掩码预览生成 =====
-            const { generateMaskPreview } = await import('../../services/providers/google/media/virtual-tryon');
+            // ===== 掩码预览功能已移除 =====
+            // 注意: google provider 目录已删除，掩码预览功能需要通过后端 API 实现
+            // 当前暂时禁用此功能，等待后端 API 支持
+            console.warn('[handleGenerateMaskPreview] 掩码预览功能暂时不可用: google provider 目录已删除');
+            showWarning('掩码预览功能暂时不可用，请直接进行虚拟试穿');
             
-            // 将 tryOnTarget 映射到完整的服装类型描述
-            const targetClothingMap: Record<string, string> = {
-                'upper': 'upper body clothing',
-                'lower': 'lower body clothing',
-                'full': 'full body clothing'
-            };
-            const targetClothing = targetClothingMap[currentTryOnTarget] || 'upper body clothing';
-            
-            console.log(`[handleGenerateMaskPreview] 生成掩码预览: ${targetClothing}, Alpha: ${maskAlpha}, Threshold: ${maskThreshold}`);
-
-            const previewUrl = await generateMaskPreview(
-                imageBase64,  // ✅ 使用转换后的 Base64
-                targetClothing,
-                apiKey,
-                activeModelConfig?.id,  // ✅ 传递当前选择的模型 ID
-                maskAlpha,
-                maskThreshold
-            );
-            
-            setMaskPreviewUrl(previewUrl);
-            setShowMaskPreview(true);
-            console.log('[handleGenerateMaskPreview] 掩码预览生成成功');
+            // TODO: 实现通过后端 API 生成掩码预览
+            // 可以通过 UnifiedProviderClient 或直接调用后端 API
+            // 例如: POST /api/modes/google/virtual-tryon-mask-preview
+            throw new Error('掩码预览功能暂时不可用，请直接进行虚拟试穿');
         } catch (error) {
             console.error('[handleGenerateMaskPreview] 生成失败:', error);
             // 掩码预览生成失败

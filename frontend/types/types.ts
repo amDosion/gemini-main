@@ -168,7 +168,7 @@ export interface ChatOptions {
   topK?: number; // Top-k sampling parameter
   baseUrl?: string; // Custom base URL for API requests
   // Imagen-specific advanced parameters
-  guidanceScale?: number; // Guidance strength (1.0-20.0)
+  // guidanceScale removed - not officially documented by Google Imagen
   // personGeneration parameter removed - API uses default (allow_adult)
   outputMimeType?: string; // Output format (image/jpeg, image/png)
   outputCompressionQuality?: number; // JPEG compression quality (1-100)

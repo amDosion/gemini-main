@@ -217,6 +217,7 @@ class VertexAIImageGenerator(BaseImageGenerator):
             # Build Gemini configuration
             aspect_ratio = kwargs.get('aspect_ratio', '1:1')
             image_size = kwargs.get('image_size', '1K')
+            # Default to PNG format for best quality (no compression)
             output_mime_type = kwargs.get('output_mime_type', 'image/png')
             number_of_images = min(max(kwargs.get('number_of_images', 1), 1), 8)
             
@@ -300,7 +301,8 @@ class VertexAIImageGenerator(BaseImageGenerator):
         
         aspect_ratio = kwargs.get('aspect_ratio', '1:1')
         include_rai_reason = kwargs.get('include_rai_reason', True)
-        output_mime_type = kwargs.get('output_mime_type', 'image/jpeg')
+        # Default to PNG format for best quality (no compression)
+        output_mime_type = kwargs.get('output_mime_type', 'image/png')
         
         config_kwargs = {
             "number_of_images": number_of_images,
@@ -314,6 +316,11 @@ class VertexAIImageGenerator(BaseImageGenerator):
         if image_size and image_size in VALID_IMAGE_SIZES:
             config_kwargs["image_size"] = image_size
         
+        # Add compression quality for JPEG (default 100 = no compression)
+        if output_mime_type == 'image/jpeg':
+            compression_quality = kwargs.get('output_compression_quality', 100)
+            config_kwargs["output_compression_quality"] = compression_quality
+        
         logger.info(f"[VertexAIImageGenerator] Config: {config_kwargs}")
         
         return genai_types.GenerateImagesConfig(**config_kwargs)
@@ -324,7 +331,7 @@ class VertexAIImageGenerator(BaseImageGenerator):
         **kwargs
     ) -> List[Dict[str, Any]]:
         """Process Vertex AI response and extract images."""
-        output_mime_type = kwargs.get('output_mime_type', 'image/jpeg')
+        output_mime_type = kwargs.get('output_mime_type', 'image/png')
         results = []
         
         for idx, generated_image in enumerate(response.generated_images):

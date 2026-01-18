@@ -279,6 +279,8 @@ export const GOOGLE_GEN_2K_RESOLUTIONS: Record<string, string> = {
 };
 
 // Google 4K 分辨率 (基准 4096×4096)
+// 注意：此映射表保留供未来使用，当前 Google Imagen API 官方文档仅支持最大 2K 分辨率
+// 4K 选项已从 GOOGLE_GEN_RESOLUTION_TIERS 中移除
 export const GOOGLE_GEN_4K_RESOLUTIONS: Record<string, string> = {
   '1:1': "4096*4096",
   '2:3': "2730*4096",
@@ -371,11 +373,11 @@ export const Z_IMAGE_RESOLUTION_TIERS: ResolutionTierOption[] = [
   { label: "2K (2048×2048 base)", value: "2K", baseResolution: "2048×2048" },
 ];
 
-// Google 分辨率档位（3 档位）
+// Google 分辨率档位（2 档位）
+// 注意：4K 档位已移除 - Google Imagen API 官方文档仅支持最大 2K 分辨率
 export const GOOGLE_GEN_RESOLUTION_TIERS: ResolutionTierOption[] = [
   { label: "1K Standard (1024×1024 base)", value: "1K", baseResolution: "1024×1024" },
   { label: "2K High (2048×2048 base)", value: "2K", baseResolution: "2048×2048" },
-  { label: "4K Ultra (4096×4096 base)", value: "4K", baseResolution: "4096×4096" },
 ];
 
 // 通义文生图分辨率选项（旧版，保留兼容）
@@ -456,12 +458,11 @@ export const DEFAULT_CONTROLS = {
   outPaintingMode: "scale" as const,
   offsetPixels: { left: 0, right: 0, top: 0, bottom: 0 },
   // Google Imagen 高级参数默认值
-  guidanceScale: 7.5,
-  // personGeneration 参数已移除 - 使用 API 默认值 (allow_adult)
+  // guidanceScale 已移除 - 官方文档未记录此参数
+  // personGeneration 已移除 - 使用 API 默认值 (allow_adult)
   outputMimeType: "image/png",
   outputCompressionQuality: 80,
   enhancePrompt: false,
-
 };
 
 // ============================================
@@ -488,10 +489,10 @@ function getResolutionMap(
   tier: string
 ): Record<string, string> {
   if (provider === 'google') {
+    // 注意：4K 档位已移除 - Google Imagen API 官方文档仅支持最大 2K 分辨率
     switch (tier) {
       case '1K': return GOOGLE_GEN_1K_RESOLUTIONS;
       case '2K': return GOOGLE_GEN_2K_RESOLUTIONS;
-      case '4K': return GOOGLE_GEN_4K_RESOLUTIONS;
       default: return GOOGLE_GEN_1K_RESOLUTIONS;
     }
   }

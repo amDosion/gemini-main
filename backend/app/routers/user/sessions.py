@@ -17,7 +17,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from ...core.database import SessionLocal
+from ...core.database import SessionLocal, get_db
 from ...models.db_models import (
     ChatSession as DBChatSession,
     MessageIndex,
@@ -34,14 +34,6 @@ from ...core.user_scoped_query import UserScopedQuery
 
 
 router = APIRouter(prefix="/api", tags=["sessions"])
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 # ==================== v3 辅助函数 ====================

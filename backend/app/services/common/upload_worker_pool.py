@@ -491,17 +491,12 @@ class UploadWorkerPool:
 
     def _get_project_root(self):
         """
-        获取项目根目录（相对于当前文件位置）
+        获取项目根目录（使用统一的路径工具）
+        
         用于 Docker 部署：所有路径都基于项目根目录的相对路径
         """
-        # 从当前文件位置计算项目根目录
-        # upload_worker_pool.py 位于: backend/app/services/common/
-        # 向上三级到项目根目录
-        current_file = os.path.abspath(__file__)
-        backend_app = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))  # backend/app
-        backend = os.path.dirname(backend_app)  # backend
-        project_root = os.path.dirname(backend)  # project root
-        return project_root
+        from ...core.path_utils import get_project_root
+        return get_project_root()
 
     async def _get_file_content(self, task: UploadTask, worker_name: str) -> bytes:
         """
@@ -510,25 +505,22 @@ class UploadWorkerPool:
         所有路径都使用相对路径（相对于项目根目录），兼容 Docker 部署
         路径格式：backend/app/temp/...
         """
+        from ...core.path_utils import resolve_relative_path, ensure_relative_path
+        
         if task.source_file_path:
             source_path = task.source_file_path
-            project_root = self._get_project_root()
-
-            # 如果已经是绝对路径，直接使用
-            if os.path.isabs(source_path):
-                file_path = source_path
-            else:
-                # 所有路径都基于项目根目录的相对路径
-                # 格式：backend/app/temp/...
-                file_path = os.path.join(project_root, source_path)
+            
+            # 使用统一的路径解析工具
+            file_path = resolve_relative_path(source_path)
 
             if os.path.exists(file_path):
-                rel_path = os.path.relpath(file_path, project_root) if os.path.isabs(file_path) else source_path
+                # 显示相对路径（用于日志）
+                rel_path = ensure_relative_path(source_path)
                 log_print(f"[{worker_name}] 📂 Read from local file: {rel_path}")
                 with open(file_path, 'rb') as f:
                     return f.read()
             else:
-                rel_path = os.path.relpath(file_path, project_root) if os.path.isabs(file_path) else source_path
+                rel_path = ensure_relative_path(source_path)
                 log_print(f"[{worker_name}] ❌ File not found: {rel_path} (abs: {file_path})", "ERROR")
                 raise Exception(f"File not found for source_file_path={source_path}")
         elif task.source_url:
@@ -585,27 +577,19 @@ class UploadWorkerPool:
         # Delete temp file (使用相对路径，兼容 Docker 部署)
         # 路径格式：backend/app/temp/...
         if task.source_file_path:
-            source_path = task.source_file_path
-            project_root = self._get_project_root()
+            from ...core.path_utils import resolve_relative_path, ensure_relative_path
             
-            # 如果已经是绝对路径，直接使用
-            if os.path.isabs(source_path):
-                file_path = source_path
-            else:
-                # 所有路径都基于项目根目录的相对路径
-                # 格式：backend/app/temp/...
-                file_path = os.path.join(project_root, source_path)
+            source_path = task.source_file_path
+            file_path = resolve_relative_path(source_path)
+            rel_path = ensure_relative_path(source_path)
 
             if os.path.exists(file_path):
                 try:
                     os.remove(file_path)
-                    rel_path = os.path.relpath(file_path, project_root) if os.path.isabs(file_path) else source_path
                     log_print(f"[{worker_name}] 🗑️ Temp file deleted: {rel_path}")
                 except Exception as e:
-                    rel_path = os.path.relpath(file_path, project_root) if os.path.isabs(file_path) else source_path
                     log_print(f"[{worker_name}] ⚠️ Failed to delete temp file ({rel_path}): {e}", "WARNING")
             else:
-                rel_path = os.path.relpath(file_path, project_root) if os.path.isabs(file_path) else source_path
                 log_print(f"[{worker_name}] ⚠️ Temp file not found: {rel_path}", "WARNING")
 
         # 更新会话附件

@@ -8,7 +8,7 @@ from datetime import datetime
 from pydantic import BaseModel
 from typing import List, Optional
 
-from ...core.database import SessionLocal
+from ...core.database import SessionLocal, get_db
 from ...models.db_models import ConfigProfile as DBConfigProfile, UserSettings
 from ...core.dependencies import require_current_user
 from ...core.user_scoped_query import UserScopedQuery
@@ -71,13 +71,6 @@ def _decrypt_api_key(api_key: str, silent: bool = False) -> str:
         # 解密失败时返回原值（可能是旧数据或密钥不匹配）
         return api_key
 
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 class ConfigProfilePayload(BaseModel):
     id: str

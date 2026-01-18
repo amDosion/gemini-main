@@ -394,6 +394,37 @@ export class UnifiedProviderClient implements ILLMProvider {
         extra
       };
       
+      // ✅ 详细日志：记录发送给后端的参数（特别是 image-gen 模式）
+      if (mode === 'image-gen') {
+        console.log('========== [UnifiedProviderClient] image-gen 模式请求参数 ==========');
+        console.log('[image-gen] Provider:', this.id);
+        console.log('[image-gen] Model ID:', modelId);
+        console.log('[image-gen] Prompt:', prompt.substring(0, 100) + (prompt.length > 100 ? '...' : ''));
+        console.log('[image-gen] 用户选择的参数 (options):', {
+          numberOfImages: options.numberOfImages,
+          imageAspectRatio: options.imageAspectRatio,
+          imageResolution: options.imageResolution,
+          imageStyle: options.imageStyle,
+          negativePrompt: options.negativePrompt,
+          seed: options.seed,
+          // guidanceScale removed - not officially documented by Google Imagen
+          outputMimeType: options.outputMimeType,
+          outputCompressionQuality: options.outputCompressionQuality,
+          enhancePrompt: options.enhancePrompt,
+          enableSearch: options.enableSearch,
+          enableThinking: options.enableThinking,
+          enableCodeExecution: options.enableCodeExecution,
+          enableUrlContext: options.enableUrlContext,
+          enableBrowser: options.enableBrowser,
+          enableResearch: options.enableResearch,
+          googleCacheMode: options.googleCacheMode,
+          baseUrl: options.baseUrl,
+        });
+        console.log('[image-gen] 完整请求体 (requestBody):', JSON.stringify(requestBody, null, 2));
+        console.log('[image-gen] 附件数量:', attachments.length);
+        console.log('========== [UnifiedProviderClient] image-gen 请求参数结束 ==========');
+      }
+      
       // ✅ 构建请求头，添加 Authorization header
       const headers: HeadersInit = {
         'Content-Type': 'application/json'
@@ -404,7 +435,12 @@ export class UnifiedProviderClient implements ILLMProvider {
       }
       
       // ✅ 统一路由: /api/modes/{provider}/{mode}
-      const response = await fetch(`/api/modes/${this.id}/${mode}`, {
+      const url = `/api/modes/${this.id}/${mode}`;
+      if (mode === 'image-gen') {
+        console.log('[image-gen] 请求 URL:', url);
+      }
+      
+      const response = await fetch(url, {
         method: 'POST',
         headers,
         credentials: 'include',
