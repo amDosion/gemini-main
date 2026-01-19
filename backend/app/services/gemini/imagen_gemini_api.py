@@ -109,37 +109,95 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
         Returns:
             List of generated images
         """
+        import time
+        import sys
+        start_time = time.time()
+        
+        logger.info(f"[GeminiAPIImageGenerator] ========== 开始生成图片 ==========")
+        print(f"[GeminiAPIImageGenerator] ========== 开始生成图片 ==========", file=sys.stderr, flush=True)
+        logger.info(f"[GeminiAPIImageGenerator] 📥 请求参数:")
+        print(f"[GeminiAPIImageGenerator] 📥 请求参数:", file=sys.stderr, flush=True)
+        logger.info(f"[GeminiAPIImageGenerator]     - model: {model}")
+        print(f"[GeminiAPIImageGenerator]     - model: {model}", file=sys.stderr, flush=True)
+        logger.info(f"[GeminiAPIImageGenerator]     - prompt: {prompt[:100] + '...' if len(prompt) > 100 else prompt}")
+        print(f"[GeminiAPIImageGenerator]     - prompt: {prompt[:100] + '...' if len(prompt) > 100 else prompt}", file=sys.stderr, flush=True)
+        logger.info(f"[GeminiAPIImageGenerator]     - prompt长度: {len(prompt)}")
+        print(f"[GeminiAPIImageGenerator]     - prompt长度: {len(prompt)}", file=sys.stderr, flush=True)
+        for key, value in kwargs.items():
+            if key in ['number_of_images', 'aspect_ratio', 'image_size', 'output_mime_type', 'image_style']:
+                logger.info(f"[GeminiAPIImageGenerator]     - {key}: {value}")
+                print(f"[GeminiAPIImageGenerator]     - {key}: {value}", file=sys.stderr, flush=True)
+        
         self._ensure_initialized()
+        logger.info(f"[GeminiAPIImageGenerator] ✅ 客户端已初始化")
+        print(f"[GeminiAPIImageGenerator] ✅ 客户端已初始化", file=sys.stderr, flush=True)
+        
+        logger.info(f"[GeminiAPIImageGenerator] 🔄 [步骤1] 验证参数...")
+        print(f"[GeminiAPIImageGenerator] 🔄 [步骤1] 验证参数...", file=sys.stderr, flush=True)
         self.validate_parameters(**kwargs)
+        logger.info(f"[GeminiAPIImageGenerator] ✅ [步骤1] 参数验证通过")
+        print(f"[GeminiAPIImageGenerator] ✅ [步骤1] 参数验证通过", file=sys.stderr, flush=True)
         
-        logger.info(f"[GeminiAPIImageGenerator] Generating image: model={model}, prompt={prompt[:50]}...")
-        
-        # Build configuration
-        config = self._build_config(**kwargs)
+        logger.info(f"[GeminiAPIImageGenerator] 🔄 [步骤2] 构建配置...")
+        print(f"[GeminiAPIImageGenerator] 🔄 [步骤2] 构建配置...", file=sys.stderr, flush=True)
+        config = self._build_config(model=model, **kwargs)
+        logger.info(f"[GeminiAPIImageGenerator] ✅ [步骤2] 配置构建完成")
+        print(f"[GeminiAPIImageGenerator] ✅ [步骤2] 配置构建完成", file=sys.stderr, flush=True)
         
         # Apply style to prompt if specified
         image_style = kwargs.get('image_style')
         effective_prompt = prompt
         if image_style and image_style.lower() != "none":
             effective_prompt = f"{prompt}, style: {image_style}"
-            logger.info(f"[GeminiAPIImageGenerator] Applied style: {image_style}")
+            logger.info(f"[GeminiAPIImageGenerator] ✅ 应用样式: {image_style}")
+            print(f"[GeminiAPIImageGenerator] ✅ 应用样式: {image_style}", file=sys.stderr, flush=True)
         
         try:
+            logger.info(f"[GeminiAPIImageGenerator] 🔄 [步骤3] 调用 Gemini API generate_images()...")
+            print(f"[GeminiAPIImageGenerator] 🔄 [步骤3] 调用 Gemini API generate_images()...", file=sys.stderr, flush=True)
+            logger.info(f"[GeminiAPIImageGenerator]     - model: {model}")
+            print(f"[GeminiAPIImageGenerator]     - model: {model}", file=sys.stderr, flush=True)
+            logger.info(f"[GeminiAPIImageGenerator]     - effective_prompt长度: {len(effective_prompt)}")
+            print(f"[GeminiAPIImageGenerator]     - effective_prompt长度: {len(effective_prompt)}", file=sys.stderr, flush=True)
+            
+            api_start = time.time()
             # Call Gemini API
             response = self._client.models.generate_images(
                 model=model,
                 prompt=effective_prompt,
                 config=config
             )
+            api_time = (time.time() - api_start) * 1000
+            logger.info(f"[GeminiAPIImageGenerator] ✅ [步骤3] API调用完成 (耗时: {api_time:.2f}ms)")
+            print(f"[GeminiAPIImageGenerator] ✅ [步骤3] API调用完成 (耗时: {api_time:.2f}ms)", file=sys.stderr, flush=True)
             
             if not response.generated_images:
+                logger.error(f"[GeminiAPIImageGenerator] ❌ API未返回图片")
+                print(f"[GeminiAPIImageGenerator] ❌ API未返回图片", file=sys.stderr, flush=True)
                 raise APIError("No images generated", api_type="gemini_api")
             
-            # Process results
-            return self._process_response(response, **kwargs)
+            logger.info(f"[GeminiAPIImageGenerator]     - 返回图片数量: {len(response.generated_images)}")
+            print(f"[GeminiAPIImageGenerator]     - 返回图片数量: {len(response.generated_images)}", file=sys.stderr, flush=True)
+            
+            logger.info(f"[GeminiAPIImageGenerator] 🔄 [步骤4] 处理响应结果...")
+            print(f"[GeminiAPIImageGenerator] 🔄 [步骤4] 处理响应结果...", file=sys.stderr, flush=True)
+            results = self._process_response(response, **kwargs)
+            process_time = (time.time() - start_time) * 1000
+            logger.info(f"[GeminiAPIImageGenerator] ✅ [步骤4] 响应处理完成 (耗时: {process_time:.2f}ms)")
+            print(f"[GeminiAPIImageGenerator] ✅ [步骤4] 响应处理完成 (耗时: {process_time:.2f}ms)", file=sys.stderr, flush=True)
+            logger.info(f"[GeminiAPIImageGenerator]     - 最终返回图片数量: {len(results)}")
+            print(f"[GeminiAPIImageGenerator]     - 最终返回图片数量: {len(results)}", file=sys.stderr, flush=True)
+            
+            total_time = (time.time() - start_time) * 1000
+            logger.info(f"[GeminiAPIImageGenerator] ========== 图片生成完成 (总耗时: {total_time:.2f}ms) ==========")
+            print(f"[GeminiAPIImageGenerator] ========== 图片生成完成 (总耗时: {total_time:.2f}ms) ==========", file=sys.stderr, flush=True)
+            
+            return results
             
         except Exception as e:
-            logger.error(f"[GeminiAPIImageGenerator] Generation failed: {e}")
+            total_time = (time.time() - start_time) * 1000
+            logger.error(f"[GeminiAPIImageGenerator] ❌ 生成失败 (耗时: {total_time:.2f}ms): {e}", exc_info=True)
+            print(f"[GeminiAPIImageGenerator] ❌ 生成失败 (耗时: {total_time:.2f}ms): {e}", file=sys.stderr, flush=True)
             raise APIError(
                 f"Image generation failed: {e}",
                 api_type="gemini_api",
@@ -164,9 +222,31 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
         }
         
         # Add optional parameters
+        # ⚠️ 注意：某些模型（如 imagen-4.0-generate-001）不支持 image_size 参数
+        # 如果传递了不支持的参数，API 会返回 "sampleImageSize is not adjustable" 错误
+        # 解决方案：只对支持该参数的模型传递 image_size
         image_size = kwargs.get('image_size')
+        model = kwargs.get('model', '')
+        
+        # 检查模型是否支持 image_size 参数
+        # imagen-4.0-generate-001 不支持 image_size（会报错 "sampleImageSize is not adjustable"）
+        # imagen-3.0-generate-002 支持 image_size
+        models_that_do_not_support_image_size = [
+            'imagen-4.0-generate-001',
+            'imagen-4.0',  # 所有 4.0 版本都不支持
+        ]
+        
         if image_size and image_size in VALID_IMAGE_SIZES:
-            config_kwargs["image_size"] = image_size
+            # 检查模型是否在不支持列表中
+            if any(unsupported_model in model for unsupported_model in models_that_do_not_support_image_size):
+                logger.warning(
+                    f"[GeminiAPIImageGenerator] Model {model} does not support image_size parameter, "
+                    f"skipping to avoid 'sampleImageSize is not adjustable' error"
+                )
+            else:
+                # 对支持的模型传递 image_size 参数
+                config_kwargs["image_size"] = image_size
+                logger.info(f"[GeminiAPIImageGenerator] Using image_size={image_size} for model={model}")
         
         # Add compression quality for JPEG (default 100 = no compression)
         if output_mime_type == 'image/jpeg':

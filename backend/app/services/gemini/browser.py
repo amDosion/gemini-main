@@ -770,8 +770,10 @@ def execute_tool(tool_name: str, **kwargs) -> str:
 def cleanup():
     """
     Clean up resources (close browser, etc.)
+    
+    注意：此函数在模块卸载时调用，会关闭所有用户的浏览器会话
     """
-    close_driver()
+    close_all_drivers()  # ✅ 使用 close_all_drivers() 而不是 close_driver()，避免警告
 
 
 # Auto-cleanup on module unload

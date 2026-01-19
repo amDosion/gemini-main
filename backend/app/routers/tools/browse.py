@@ -300,7 +300,10 @@ async def browse_progress_stream(operation_id: str, request: Request):
 
 
 @router.post("/browse", response_model=BrowseResponse)
-async def browse_webpage(request: BrowseRequest):
+async def browse_webpage(
+    request: BrowseRequest,
+    user_id: str = Depends(require_current_user)
+):
     """
     Browse a webpage and return its content as markdown along with a screenshot.
 
@@ -312,6 +315,7 @@ async def browse_webpage(request: BrowseRequest):
 
     Args:
         request: BrowseRequest containing the URL to browse
+        user_id: User ID (自动注入，从认证 token 中提取)
 
     Returns:
         BrowseResponse with markdown content, title, and optional screenshot
@@ -323,7 +327,7 @@ async def browse_webpage(request: BrowseRequest):
     operation_id = request.operation_id or str(uuid.uuid4())
     
     if _logger and _LOG_PREFIXES:
-        _logger.info(f"{_LOG_PREFIXES['request']} Received browse request for URL: {url} (operation_id: {operation_id})")
+        _logger.info(f"{_LOG_PREFIXES['request']} Received browse request for URL: {url} (operation_id: {operation_id}, user: {user_id})")
 
     try:
         # Send initial progress
@@ -340,7 +344,7 @@ async def browse_webpage(request: BrowseRequest):
         if _SELENIUM_AVAILABLE and _selenium_browse:
             try:
                 if _logger and _LOG_PREFIXES:
-                    _logger.info(f"{_LOG_PREFIXES['selenium']} Attempting to browse with Selenium: {url}")
+                    _logger.info(f"{_LOG_PREFIXES['selenium']} Attempting to browse with Selenium: {url} (user: {user_id})")
                 
                 if _progress_tracker:
                     await _progress_tracker.send_progress(
@@ -361,9 +365,10 @@ async def browse_webpage(request: BrowseRequest):
                         progress=30
                     )
                 
+                # ✅ 传递 user_id 以实现会话隔离
                 content = _selenium_browse(url, steps=[
                     {"action": "wait", "seconds": 2}
-                ])
+                ], user_id=user_id)
 
                 # Extract title (we need to get it from the original HTML)
                 if _progress_tracker:

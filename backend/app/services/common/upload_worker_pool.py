@@ -22,6 +22,7 @@ from ...core.database import SessionLocal
 from ...core.config import settings
 from ...models.db_models import UploadTask, StorageConfig, ActiveStorage, ChatSession
 from ..storage.storage_service import StorageService
+from ...utils.encryption import decrypt_config
 from .redis_queue_service import redis_queue
 
 logger = logging.getLogger(__name__)
@@ -79,32 +80,47 @@ class UploadWorkerPool:
         logger.warning("=" * 80)
         logger.warning("[WorkerPool] STARTING UPLOAD WORKER POOL...")
         logger.warning("=" * 80)
+        print("=" * 80, file=sys.stderr, flush=True)
+        print("[WorkerPool] STARTING UPLOAD WORKER POOL...", file=sys.stderr, flush=True)
+        print("=" * 80, file=sys.stderr, flush=True)
 
         # 连接 Redis
         logger.warning(f"[WorkerPool] Connecting to Redis: {settings.redis_host}:{settings.redis_port}")
+        print(f"[WorkerPool] Connecting to Redis: {settings.redis_host}:{settings.redis_port}", file=sys.stderr, flush=True)
         try:
             await redis_queue.connect()
             logger.warning("[WorkerPool] Redis connected successfully")
+            print("[WorkerPool] Redis connected successfully", file=sys.stderr, flush=True)
         except Exception as e:
             logger.error(f"[WorkerPool] Redis connection failed: {e}")
+            print(f"[WorkerPool] Redis connection failed: {e}", file=sys.stderr, flush=True)
             self._running = False
             raise
 
         # 恢复中断任务
         logger.warning("[WorkerPool] Recovering interrupted tasks...")
+        print("[WorkerPool] Recovering interrupted tasks...", file=sys.stderr, flush=True)
         recovered_count = await self._recover_tasks()
         logger.warning(f"[WorkerPool] Recovered {recovered_count} tasks")
+        print(f"[WorkerPool] Recovered {recovered_count} tasks", file=sys.stderr, flush=True)
 
         # 启动 Workers
         logger.warning(f"[WorkerPool] Starting {self.num_workers} workers...")
+        print(f"[WorkerPool] Starting {self.num_workers} workers...", file=sys.stderr, flush=True)
         for i in range(self.num_workers):
             worker = asyncio.create_task(self._worker_loop(i))
             self._workers.append(worker)
+            logger.warning(f"[WorkerPool] Worker-{i} task created")
+            print(f"[WorkerPool] Worker-{i} task created", file=sys.stderr, flush=True)
 
         logger.warning(f"[WorkerPool] All {self.num_workers} workers started successfully")
         logger.warning("=" * 80)
         logger.warning("[WorkerPool] WORKER POOL READY")
         logger.warning("=" * 80)
+        print(f"[WorkerPool] All {self.num_workers} workers started successfully", file=sys.stderr, flush=True)
+        print("=" * 80, file=sys.stderr, flush=True)
+        print("[WorkerPool] WORKER POOL READY", file=sys.stderr, flush=True)
+        print("=" * 80, file=sys.stderr, flush=True)
 
         # 周期性补偿：把 DB 中 pending 且不在 Redis 队列的任务补回队列
         if self._reconcile_interval_s > 0:
@@ -181,16 +197,17 @@ class UploadWorkerPool:
                 task.retry_count = task.retry_count or 0
 
                 # 无有效来源的任务无法处理，直接标记失败（避免永远 pending）
-                if not task.source_file_path and not task.source_url:
+                # ✅ 修复：检查所有source类型（包括source_ai_url和source_attachment_id）
+                if not any([task.source_file_path, task.source_url, task.source_ai_url, task.source_attachment_id]):
                     task.status = 'failed'
-                    task.error_message = "任务缺少 source_file_path/source_url，无法处理"
+                    task.error_message = "任务缺少 source（source_file_path/source_url/source_ai_url/source_attachment_id），无法处理"
                     task.completed_at = int(datetime.now().timestamp() * 1000)
                     failed_pending += 1
                     try:
                         await redis_queue.append_task_log(
                             task.id,
                             level="error",
-                            message="task has no source_file_path/source_url; marked as failed during reconcile",
+                            message="task has no source (source_file_path/source_url/source_ai_url/source_attachment_id); marked as failed during reconcile",
                             source="reconcile",
                         )
                     except Exception:
@@ -318,18 +335,35 @@ class UploadWorkerPool:
         """Worker 主循环"""
         worker_name = f"Worker-{worker_id}"
         logger.warning(f"[{worker_name}] Started, listening for tasks...")
+        print(f"[{worker_name}] Started, listening for tasks...", file=sys.stderr, flush=True)
 
         while self._running:
             try:
                 # 从 Redis 队列获取任务（阻塞等待）
+                logger.debug(f"[{worker_name}] Waiting for task from Redis queue (timeout=5s)...")
+                # ✅ 添加详细日志：每10次超时输出一次，避免日志过多
+                if not hasattr(self, '_wait_count'):
+                    self._wait_count = {}
+                if worker_name not in self._wait_count:
+                    self._wait_count[worker_name] = 0
+                self._wait_count[worker_name] += 1
+                
+                if self._wait_count[worker_name] % 10 == 0:
+                    logger.info(f"[{worker_name}] Still waiting for tasks... (waited {self._wait_count[worker_name] * 5}s)")
+                    print(f"[{worker_name}] Still waiting for tasks... (waited {self._wait_count[worker_name] * 5}s)", file=sys.stderr, flush=True)
+                
                 task_id = await redis_queue.dequeue(timeout=5)
 
                 if task_id is None:
                     # 超时，继续等待
                     continue
+                
+                # ✅ 重置等待计数
+                self._wait_count[worker_name] = 0
 
                 # ========== 收到任务 ==========
-                logger.warning(f"[{worker_name}] Got task: {task_id[:8]}...")
+                logger.warning(f"[{worker_name}] ✅ Got task: {task_id[:8]}...")
+                print(f"[{worker_name}] ✅ Got task: {task_id[:8]}...", file=sys.stderr, flush=True)
                 await redis_queue.append_task_log(
                     task_id,
                     level="info",
@@ -361,7 +395,10 @@ class UploadWorkerPool:
 
                     # 处理任务
                     log_print(f"[{worker_name}] 🔄 开始处理任务: {task_id[:8]}...")
+                    print(f"[{worker_name}] 🔄 开始处理任务: {task_id[:8]}...", file=sys.stderr, flush=True)
                     await self._process_task(task_id, worker_name)
+                    log_print(f"[{worker_name}] ✅ 任务处理完成: {task_id[:8]}...")
+                    print(f"[{worker_name}] ✅ 任务处理完成: {task_id[:8]}...", file=sys.stderr, flush=True)
 
                 finally:
                     # 释放锁
@@ -381,10 +418,13 @@ class UploadWorkerPool:
 
     async def _process_task(self, task_id: str, worker_name: str):
         """处理单个任务"""
+        print(f"[{worker_name}] ========== 开始处理任务 ==========", file=sys.stderr, flush=True)
+        print(f"[{worker_name}] Task ID: {task_id[:8]}...", file=sys.stderr, flush=True)
         db = SessionLocal()
         try:
             # ========== 步骤 1: 查询任务详情 ==========
             log_print(f"[{worker_name}] 📋 查询任务详情: {task_id[:8]}...")
+            print(f"[{worker_name}] 📋 查询任务详情: {task_id[:8]}...", file=sys.stderr, flush=True)
             task = db.query(UploadTask).filter(UploadTask.id == task_id).first()
 
             if not task:
@@ -419,7 +459,9 @@ class UploadWorkerPool:
 
             # ========== 步骤 3: 读取文件内容 ==========
             log_print(f"[{worker_name}] 📂 读取文件内容...")
+            print(f"[{worker_name}] 📂 读取文件内容...", file=sys.stderr, flush=True)
             content = await self._get_file_content(task, worker_name)
+            print(f"[{worker_name}] ✅ 文件内容读取完成，大小: {len(content) / 1024:.2f} KB", file=sys.stderr, flush=True)
             
             # ✅ 新增: 如果返回None → 表示复用附件，无需上传
             if content is None:
@@ -466,9 +508,13 @@ class UploadWorkerPool:
 
             # ========== 步骤 5: 执行上传 ==========
             log_print(f"[{worker_name}] ☁️ 开始上传到云存储...")
+            print(f"[{worker_name}] ☁️ 开始上传到云存储...", file=sys.stderr, flush=True)
             log_print(f"    - 提供商: {config.provider}")
             log_print(f"    - 文件名: {task.filename}")
             log_print(f"    - 文件大小: {file_size / 1024:.2f} KB")
+            print(f"    - 提供商: {config.provider}", file=sys.stderr, flush=True)
+            print(f"    - 文件名: {task.filename}", file=sys.stderr, flush=True)
+            print(f"    - 文件大小: {file_size / 1024:.2f} KB", file=sys.stderr, flush=True)
             await redis_queue.append_task_log(
                 task_id,
                 level="info",
@@ -478,6 +524,7 @@ class UploadWorkerPool:
             )
             
             upload_start = datetime.now()
+            print(f"[{worker_name}] 🔄 调用 StorageService.upload_file()...", file=sys.stderr, flush=True)
             result = await StorageService.upload_file(
                 filename=task.filename,
                 content=content,
@@ -486,6 +533,8 @@ class UploadWorkerPool:
                 config=config.config
             )
             upload_duration = (datetime.now() - upload_start).total_seconds()
+            print(f"[{worker_name}] ✅ StorageService.upload_file() 完成 (耗时: {upload_duration:.2f}s)", file=sys.stderr, flush=True)
+            print(f"[{worker_name}] ✅ 上传结果: {result[:80] + '...' if len(result) > 80 else result}", file=sys.stderr, flush=True)
 
             # ========== 步骤 6: 处理上传结果 ==========
             if result.get('success'):
@@ -656,7 +705,7 @@ class UploadWorkerPool:
         return mime_type, base64_str
 
     def _get_storage_config(self, db, storage_id: Optional[str], session_id: Optional[str] = None):
-        """获取存储配置"""
+        """获取存储配置（自动解密敏感字段）"""
         if storage_id:
             config = db.query(StorageConfig).filter(StorageConfig.id == storage_id).first()
         else:
@@ -676,7 +725,26 @@ class UploadWorkerPool:
             else:
                 return None
 
-        return config if config and config.enabled else None
+        if not config or not config.enabled:
+            return None
+        
+        # ⚠️ 重要：解密配置中的敏感字段（accessKeyId, accessKeySecret 等）
+        # 因为前端保存时使用 encrypt_config() 加密，后端使用时必须解密
+        try:
+            decrypted_config_dict = decrypt_config(config.config)
+            # 创建一个临时对象或修改原对象的 config 字段
+            # 由于 config.config 是 JSON 字段，我们需要创建一个新的对象或直接修改
+            # 最简单的方式是创建一个新的 StorageConfig 对象，但只修改 config 字段
+            # 或者直接修改原对象的 config 字段（因为它是 JSON 类型，可以修改）
+            config.config = decrypted_config_dict
+            logger.debug(f"[UploadWorkerPool] 已解密存储配置: {config.id} (provider={config.provider})")
+        except Exception as e:
+            logger.error(f"[UploadWorkerPool] 解密存储配置失败: {e}")
+            # 如果解密失败，可能是未加密的历史数据，继续使用原配置
+            # 但记录警告日志
+            logger.warning(f"[UploadWorkerPool] 使用未解密的配置（可能是历史数据）: {config.id}")
+        
+        return config
 
     async def _handle_success(self, db, task: UploadTask, url: str, worker_name: str):
         """处理成功"""

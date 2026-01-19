@@ -82,9 +82,18 @@ async def get_provider_credentials(
     Raises:
         HTTPException: 如果未找到 API Key
     """
+    import time
+    import sys
+    start_time = time.time()
+    
+    logger.info(f"[CredentialManager] 🔄 开始获取凭证: provider={provider}, user_id={user_id[:8]}...")
+    print(f"[CredentialManager] 🔄 开始获取凭证: provider={provider}, user_id={user_id[:8]}...", file=sys.stderr, flush=True)
+    
     # 1. 优先使用请求参数（用于测试/验证连接场景）
     if request_api_key and request_api_key.strip():
-        logger.info(f"[CredentialManager] Using API key from request parameter for {provider} (test/override mode)")
+        elapsed = (time.time() - start_time) * 1000
+        logger.info(f"[CredentialManager] ✅ 使用请求参数中的 API key (耗时: {elapsed:.2f}ms)")
+        print(f"[CredentialManager] ✅ 使用请求参数中的 API key (耗时: {elapsed:.2f}ms)", file=sys.stderr, flush=True)
         return request_api_key, request_base_url
     
     # 2. 从数据库获取（正常使用）
@@ -109,18 +118,25 @@ async def get_provider_credentials(
     if active_profile_id:
         for profile in matching_profiles:
             if profile.id == active_profile_id and profile.api_key:
-                logger.info(f"[CredentialManager] Using API key from active profile '{profile.name}' for {provider}")
+                elapsed = (time.time() - start_time) * 1000
+                logger.info(f"[CredentialManager] ✅ 使用激活配置 '{profile.name}' (耗时: {elapsed:.2f}ms)")
+                print(f"[CredentialManager] ✅ 使用激活配置 '{profile.name}' (耗时: {elapsed:.2f}ms)", file=sys.stderr, flush=True)
                 decrypted_key = _decrypt_api_key(profile.api_key)
                 return decrypted_key, profile.base_url
     
     # 回退：使用第一个匹配 provider 的配置
     for profile in matching_profiles:
         if profile.api_key:
-            logger.info(f"[CredentialManager] Using API key from profile '{profile.name}' for {provider} (fallback)")
+            elapsed = (time.time() - start_time) * 1000
+            logger.info(f"[CredentialManager] ✅ 使用配置 '{profile.name}' (回退, 耗时: {elapsed:.2f}ms)")
+            print(f"[CredentialManager] ✅ 使用配置 '{profile.name}' (回退, 耗时: {elapsed:.2f}ms)", file=sys.stderr, flush=True)
             decrypted_key = _decrypt_api_key(profile.api_key)
             return decrypted_key, profile.base_url
     
     # 所有配置都没有 API Key，返回 401 错误
+    elapsed = (time.time() - start_time) * 1000
+    logger.error(f"[CredentialManager] ❌ 未找到 API Key (耗时: {elapsed:.2f}ms)")
+    print(f"[CredentialManager] ❌ 未找到 API Key (耗时: {elapsed:.2f}ms)", file=sys.stderr, flush=True)
     raise HTTPException(
         status_code=401,
         detail=f"API Key not found for provider: {provider}. "

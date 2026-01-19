@@ -63,7 +63,42 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
         return historyBatches[0];
     }, [selectedMsgId, historyBatches]);
 
-    const displayImages = (activeBatchMessage?.attachments || []).filter(att => att.url && att.url.length > 0);
+    const displayImages = useMemo(() => {
+        return (activeBatchMessage?.attachments || []).filter(att => att.url && att.url.length > 0);
+    }, [activeBatchMessage?.attachments]);
+    
+    // ✅ 详细日志：记录显示图片时使用的URL类型
+    useEffect(() => {
+        if (displayImages.length > 0) {
+            console.log('[ImageGenView] ========== 显示图片URL类型分析 ==========');
+            displayImages.forEach((att, idx) => {
+                const urlType = att.url?.startsWith('data:') ? 'Base64 Data URL (AI原始返回)' :
+                               att.url?.startsWith('blob:') ? 'Blob URL (处理后的本地URL)' :
+                               att.url?.startsWith('http://') || att.url?.startsWith('https://') ? 
+                                 (att.uploadStatus === 'completed' ? '云存储URL (已上传完成)' : 'HTTP临时URL (AI原始返回)') :
+                               '未知类型';
+                
+                const hasCloudUrl = att.uploadStatus === 'completed' && 
+                                   (att.url?.startsWith('http://') || att.url?.startsWith('https://'));
+                
+                console.log(`[ImageGenView] 图片 ${idx + 1}/${displayImages.length}:`, {
+                    attachmentId: att.id?.substring(0, 8) + '...',
+                    displayUrlType: urlType,
+                    displayUrl: att.url ? (att.url.length > 80 ? att.url.substring(0, 80) + '...' : att.url) : 'N/A',
+                    uploadStatus: att.uploadStatus,
+                    hasCloudUrl: hasCloudUrl,
+                    cloudUrl: hasCloudUrl ? (att.url!.length > 80 ? att.url!.substring(0, 80) + '...' : att.url!) : 'N/A',
+                    tempUrl: att.tempUrl ? (att.tempUrl.length > 80 ? att.tempUrl.substring(0, 80) + '...' : att.tempUrl) : 'N/A',
+                    source: hasCloudUrl ? '云存储URL (处理后的永久URL)' : 
+                           urlType.includes('Base64') ? 'AI返回的原始Base64地址' :
+                           urlType.includes('Blob') ? '处理后的Blob URL (从HTTP临时URL转换)' :
+                           urlType.includes('HTTP临时URL') ? 'AI返回的HTTP临时地址' : '未知来源',
+                    note: '前端<img>标签将使用此URL进行显示'
+                });
+            });
+            console.log('[ImageGenView] ============================================');
+        }
+    }, [displayImages]);
     const isBatchError = activeBatchMessage?.isError;
 
     // Sidebar header icon and extra header
@@ -167,24 +202,24 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
 
     // Main content area
     const mainContent = (
-        <div className="flex-1 w-full h-full overflow-y-auto p-6 relative custom-scrollbar">
-            {/* 棋盘格背景 - 与 ImageEditView 和 ImageExpandView 保持一致 */}
-            <div
-                className="absolute inset-0 opacity-20 pointer-events-none"
-                style={{
-                    backgroundImage: `
-                        linear-gradient(45deg, #334155 25%, transparent 25%), 
-                        linear-gradient(-45deg, #334155 25%, transparent 25%), 
-                        linear-gradient(45deg, transparent 75%, #334155 75%), 
-                        linear-gradient(-45deg, transparent 75%, #334155 75%)
-                    `,
-                    backgroundSize: '20px 20px',
-                    backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
-                }}
-            />
-            <div className="min-h-full flex flex-col items-center justify-center relative z-10">
+        <div className="flex-1 w-full h-full overflow-y-auto relative custom-scrollbar">
+            <div className="min-h-full flex flex-col items-center justify-center p-6 relative z-10">
+                {/* 棋盘格背景 - 使用伪元素层，不影响内容透明度 */}
+                <div
+                    className="absolute inset-0 opacity-20 pointer-events-none"
+                    style={{
+                        backgroundImage: `
+                            linear-gradient(45deg, #334155 25%, transparent 25%), 
+                            linear-gradient(-45deg, #334155 25%, transparent 25%), 
+                            linear-gradient(45deg, transparent 75%, #334155 75%), 
+                            linear-gradient(-45deg, transparent 75%, #334155 75%)
+                        `,
+                        backgroundSize: '20px 20px',
+                        backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
+                    }}
+                />
                 {loadingState !== 'idle' ? (
-                    <div className="flex-1 flex flex-col items-center gap-6 p-8 rounded-3xl bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 shadow-2xl">
+                    <div className="flex flex-col items-center gap-6 p-8 rounded-3xl bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 shadow-2xl">
                         <div className="relative">
                             <div className="w-20 h-20 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin"></div>
                             <div className="absolute inset-0 flex items-center justify-center text-xs font-mono text-emerald-400 font-bold">GEN</div>

@@ -120,7 +120,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="absolute inset-0 z-50 bg-slate-950 flex flex-col md:flex-row overflow-hidden animate-[fadeIn_0.2s_ease-out]">
+    <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col md:flex-row overflow-hidden animate-[fadeIn_0.2s_ease-out]">
 
       {/* Sidebar / Top Nav */}
       <div className="w-full md:w-64 bg-slate-900/50 border-b md:border-b-0 md:border-r border-slate-800 p-2 md:p-4 flex flex-col shrink-0">

@@ -585,168 +585,159 @@ async def upload_file_async(
     db: Session = Depends(get_db)
 ):
     """
-    异步上传文件到云存储（Redis + 数据库队列）
+    异步上传文件到云存储（使用 AttachmentService 统一处理）
 
-    使用 Redis 队列 + Worker 池架构：
+    使用 AttachmentService.process_user_upload() 统一处理：
     1. 保存文件到临时目录
-    2. 创建数据库记录（持久化）
-    3. 任务 ID 入队 Redis（调度）
-    4. 立即返回 task_id（不阻塞）
+    2. 创建 MessageAttachment 记录
+    3. 创建 UploadTask 记录
+    4. 任务 ID 入队 Redis（调度）
+    5. 立即返回 task_id（不阻塞）
 
     请求参数（multipart/form-data）：
     - file: 要上传的文件
     - priority: 优先级 (high/normal/low，默认 normal)
-    - session_id: 会话 ID（用于更新数据库）
-    - message_id: 消息 ID
-    - attachment_id: 附件 ID
+    - session_id: 会话 ID（必需）
+    - message_id: 消息 ID（必需）
+    - attachment_id: 附件 ID（可选，如果不提供则自动生成）
     - storage_id: 云存储配置 ID（可选）
 
     返回：
     {
         "task_id": "task-xxx",
+        "attachment_id": "att-xxx",
         "status": "pending",
         "priority": "normal",
         "queue_position": 5
     }
     """
-    def log(msg: str, level: str = "info"):
-        """
-        统一的日志输出函数
-        
-        只使用 logger 输出，避免重复日志
-        logger 已经配置了格式和 handler，会自动输出到控制台
-        """
-        getattr(logger, level, logger.info)(msg)
-    user_query = UserScopedQuery(db, user_id)
-
-    resolved_storage_id = storage_id
-    if storage_id:
-        config = user_query.get(StorageConfig, storage_id)
-    else:
-        active = db.query(ActiveStorage).filter(ActiveStorage.user_id == user_id).first()
-        if not active or not active.storage_id:
-            raise HTTPException(status_code=400, detail="未设置存储配置")
-        resolved_storage_id = active.storage_id
-        config = user_query.get(StorageConfig, resolved_storage_id)
-
-    if not config:
-        raise HTTPException(status_code=404, detail="存储配置不存在或无权访问")
-
-    if not config.enabled:
-        raise HTTPException(status_code=400, detail="存储配置已禁用")
-
+    import time
+    start_time = time.time()
+    
+    logger.info(f"[UploadAsync] ========== 开始处理异步上传请求 ==========")
+    logger.info(f"[UploadAsync] 📥 请求参数:")
+    logger.info(f"[UploadAsync]     - filename: {file.filename}")
+    logger.info(f"[UploadAsync]     - content_type: {file.content_type}")
+    logger.info(f"[UploadAsync]     - session_id: {session_id[:8] if session_id else 'None'}...")
+    logger.info(f"[UploadAsync]     - message_id: {message_id[:8] if message_id else 'None'}...")
+    logger.info(f"[UploadAsync]     - attachment_id: {attachment_id[:8] + '...' if attachment_id else 'None'}")
+    logger.info(f"[UploadAsync]     - storage_id: {storage_id[:8] + '...' if storage_id else 'None'}")
+    logger.info(f"[UploadAsync]     - priority: {priority}")
+    logger.info(f"[UploadAsync]     - user_id: {user_id[:8]}...")
+    
+    # ✅ 验证必需参数
+    if not session_id or not message_id:
+        logger.error(f"[UploadAsync] ❌ 验证失败: session_id 和 message_id 是必需的参数")
+        raise HTTPException(
+            status_code=400, 
+            detail="session_id 和 message_id 是必需的参数"
+        )
+    logger.info(f"[UploadAsync] ✅ 参数验证通过")
+    
+    # ✅ 使用 AttachmentService 统一处理用户上传
+    from ...services.common.attachment_service import AttachmentService
+    
+    # ✅ 详细日志：步骤1 - 保存文件到临时目录
+    logger.info(f"[UploadAsync] 🔄 [步骤1] 保存文件到临时目录...")
     task_id = str(uuid.uuid4())
-
-    # ✅ 详细日志：记录接收到的所有参数
-    log(f"[UploadAsync] 接收到上传请求: {task_id[:8]}...")
-    log(f"  - 文件名: {file.filename}")
-    log(f"  - 优先级: {priority}")
-    log(f"  - session_id: {session_id[:8] if session_id else 'None'}...")
-    log(f"  - message_id: {message_id[:8] if message_id else 'None'}...")
-    log(f"  - attachment_id: {attachment_id[:8] if attachment_id else 'None'}...")
-    log(f"  - user_id: {user_id}")
-    log(f"  - storage_id: {resolved_storage_id[:8] if resolved_storage_id else 'None'}...")
-
-    await redis_queue.append_task_log(
-        task_id,
-        level="info",
-        message="upload request received",
-        source="api",
-        extra={
-            "filename": file.filename,
-            "priority": priority,
-            "session_id": session_id,
-            "message_id": message_id,
-            "attachment_id": attachment_id,
-        },
-    )
-
-    # 1. Save file to project temp directory (backend/app/temp/)
     filename_with_id = f"upload_{task_id}_{file.filename}"
-
-    # Absolute path for file system operations
     temp_path_abs = os.path.join(TEMP_DIR, filename_with_id)
-
-    # Relative path for database storage (使用统一的路径工具)
     temp_path_rel = f"{get_temp_dir_relative()}/{filename_with_id}"
-
+    
+    logger.info(f"[UploadAsync]     - 临时文件路径: {temp_path_abs}")
+    logger.info(f"[UploadAsync]     - 相对路径: {temp_path_rel}")
+    
     file_content = await file.read()
+    file_size = len(file_content)
+    logger.info(f"[UploadAsync]     - 文件大小: {file_size / 1024:.2f} KB")
+    
     with open(temp_path_abs, 'wb') as f:
         f.write(file_content)
-
-    log(f"[UploadAsync] File saved: {temp_path_abs}")
-    log(f"[UploadAsync] DB path (relative): {temp_path_rel}")
-    await redis_queue.append_task_log(
-        task_id,
-        level="info",
-        message="temp file saved",
-        source="api",
-        extra={"temp_path": temp_path_abs, "db_path": temp_path_rel, "size_bytes": len(file_content)},
-    )
-
-    # 2. Create database record (use RELATIVE path)
-    task = UploadTask(
-        id=task_id,
+    
+    step1_time = (time.time() - start_time) * 1000
+    logger.info(f"[UploadAsync] ✅ [步骤1] 文件已保存 (耗时: {step1_time:.2f}ms)")
+    
+    # ✅ 详细日志：步骤2 - 获取存储配置ID
+    logger.info(f"[UploadAsync] 🔄 [步骤2] 获取存储配置ID...")
+    resolved_storage_id = storage_id
+    if not resolved_storage_id:
+        logger.info(f"[UploadAsync]     - 未提供 storage_id，查询激活的配置...")
+        active = db.query(ActiveStorage).filter(ActiveStorage.user_id == user_id).first()
+        if active and active.storage_id:
+            resolved_storage_id = active.storage_id
+            logger.info(f"[UploadAsync]     - 找到激活的存储配置: {resolved_storage_id[:8]}...")
+        else:
+            logger.error(f"[UploadAsync] ❌ 未设置存储配置")
+            raise HTTPException(status_code=400, detail="未设置存储配置")
+    else:
+        logger.info(f"[UploadAsync]     - 使用提供的 storage_id: {resolved_storage_id[:8]}...")
+    
+    # ✅ 详细日志：验证存储配置
+    logger.info(f"[UploadAsync] 🔄 [步骤2] 验证存储配置...")
+    user_query = UserScopedQuery(db, user_id)
+    config = user_query.get(StorageConfig, resolved_storage_id)
+    if not config:
+        logger.error(f"[UploadAsync] ❌ 存储配置不存在或无权访问: {resolved_storage_id[:8]}...")
+        raise HTTPException(status_code=404, detail="存储配置不存在或无权访问")
+    if not config.enabled:
+        logger.error(f"[UploadAsync] ❌ 存储配置已禁用: {resolved_storage_id[:8]}...")
+        raise HTTPException(status_code=400, detail="存储配置已禁用")
+    logger.info(f"[UploadAsync] ✅ [步骤2] 存储配置验证通过: {resolved_storage_id[:8]}...")
+    
+    # ✅ 详细日志：步骤3 - 使用 AttachmentService 处理用户上传
+    logger.info(f"[UploadAsync] 🔄 [步骤3] 调用 AttachmentService.process_user_upload()...")
+    attachment_service = AttachmentService(db)
+    result = await attachment_service.process_user_upload(
+        file_path=temp_path_rel,  # 相对路径
+        filename=file.filename,
+        mime_type=file.content_type or 'application/octet-stream',
         session_id=session_id,
         message_id=message_id,
-        attachment_id=attachment_id,
-        source_file_path=temp_path_rel,  # Use relative path
-        filename=file.filename,
-        storage_id=resolved_storage_id,
-        priority=priority,
-        retry_count=0,
-        status='pending',
-        created_at=int(datetime.now().timestamp() * 1000)
+        user_id=user_id,
+        storage_id=resolved_storage_id,  # ✅ 传递存储配置ID
+        priority=priority  # ✅ 传递优先级
     )
-
-    db.add(task)
-    db.commit()
-
-    log(f"[UploadAsync] 任务已创建: {task_id[:8]}...")
-    await redis_queue.append_task_log(
-        task_id,
-        level="info",
-        message="db record created (upload_tasks)",
-        source="api",
-    )
-
-    # 3. 入队 Redis（调度）
-    enqueue_error: str | None = None
-    try:
-        # 确保 Redis 连接已建立
-        if redis_queue._redis is None:
-            log("[UploadAsync] Redis 连接未初始化，尝试连接...")
-            await redis_queue.connect()
-
-        queue_position = await redis_queue.enqueue(task_id, priority)
-        log(f"[UploadAsync] 已入队 Redis，位置: {queue_position}")
-        await redis_queue.append_task_log(
-            task_id,
-            level="info",
-            message=f"enqueued to redis (position={queue_position})",
-            source="api",
-        )
-    except Exception as e:
-        enqueue_error = f"Redis 入队失败: {e}"
-        log(f"[UploadAsync] ❌ {enqueue_error}", "error")
-        # 即使 Redis 入队失败，任务也已保存到数据库
-        # Worker 池会在启动时恢复这些任务
-        queue_position = -1
-        try:
-            task.error_message = enqueue_error
+    step3_time = (time.time() - start_time) * 1000
+    logger.info(f"[UploadAsync] ✅ [步骤3] AttachmentService 处理完成 (耗时: {step3_time:.2f}ms)")
+    logger.info(f"[UploadAsync]     - attachment_id: {result['attachment_id'][:8]}...")
+    logger.info(f"[UploadAsync]     - task_id: {result.get('task_id', 'None')[:8] + '...' if result.get('task_id') else 'None'}")
+    logger.info(f"[UploadAsync]     - status: {result['status']}")
+    
+    # ✅ 详细日志：步骤4 - 如果提供了 attachment_id，更新记录（向后兼容）
+    if attachment_id and attachment_id != result['attachment_id']:
+        logger.info(f"[UploadAsync] 🔄 [步骤4] 更新 attachment_id (向后兼容)...")
+        logger.info(f"[UploadAsync]     - 提供的 attachment_id: {attachment_id[:8]}...")
+        logger.info(f"[UploadAsync]     - 生成的 attachment_id: {result['attachment_id'][:8]}...")
+        from ...models.db_models import MessageAttachment
+        attachment = db.query(MessageAttachment).filter_by(
+            id=result['attachment_id']
+        ).first()
+        if attachment:
+            # 更新为提供的 attachment_id（如果前端已经创建了记录）
+            attachment.id = attachment_id
             db.commit()
-        except Exception:
-            db.rollback()
-        await redis_queue.append_task_log(
-            task_id,
-            level="error",
-            message=enqueue_error,
-            source="api",
-        )
-
+            result['attachment_id'] = attachment_id
+            logger.info(f"[UploadAsync] ✅ [步骤4] attachment_id 已更新")
+        else:
+            logger.warning(f"[UploadAsync] ⚠️ [步骤4] 未找到附件记录，跳过更新")
+    else:
+        logger.info(f"[UploadAsync] ⏭️ [步骤4] 跳过 attachment_id 更新（未提供或已匹配）")
+    
+    # 注意：AttachmentService._submit_upload_task() 已经入队 Redis
+    # 这里不需要再次入队，只需要返回结果
+    queue_position = 0  # AttachmentService 已入队，位置由 Worker Pool 管理
+    enqueue_error = None
+    
+    total_time = (time.time() - start_time) * 1000
+    logger.info(f"[UploadAsync] ========== 异步上传请求处理完成 (总耗时: {total_time:.2f}ms) ==========")
+    logger.info(f"[UploadAsync]     - attachment_id: {result['attachment_id'][:8]}...")
+    logger.info(f"[UploadAsync]     - task_id: {result.get('task_id', 'None')[:8] + '...' if result.get('task_id') else 'None'}")
+    logger.info(f"[UploadAsync]     - status: {result['status']}")
+    
     return {
-        "task_id": task_id,
-        "status": "pending",
+        "task_id": result.get('task_id'),
+        "attachment_id": result['attachment_id'],
+        "status": result['status'],
         "priority": priority,
         "queue_position": queue_position,
         "enqueued": queue_position != -1,

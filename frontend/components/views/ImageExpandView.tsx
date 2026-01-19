@@ -330,7 +330,8 @@ export const ImageExpandView = memo(({
             console.log('========== [ImageExpandView] handleSend 开始 ==========');
             console.log('[handleSend] 用户上传的附件数量:', attachments.length);
 
-            // 使用统一的附件处理函数
+            // ✅ 根据设计文档，前端只负责传递附件元数据，后端统一处理
+            // 使用简化版的 processUserAttachments（只做基本元数据整理）
             const finalAttachments = await processUserAttachments(
                 attachments,
                 activeImageUrl,

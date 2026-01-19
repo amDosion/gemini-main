@@ -42,7 +42,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   className = '',
 }) => {
   return (
-    <div className={`fixed inset-0 bg-[#0f172a] flex items-center justify-center ${className}`}>
+    <div className={`fixed inset-0 z-40 bg-[#0f172a] flex items-center justify-center ${className}`}>
       <div className="flex flex-col items-center gap-6 max-w-md p-6">
         {/* 欢迎图标 */}
         <div 

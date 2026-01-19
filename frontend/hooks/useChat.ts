@@ -184,6 +184,36 @@ export const useChat = (
         ...(result.textResponse && { textResponse: result.textResponse })
       };
 
+      // ✅ 详细日志：记录附件显示使用的URL类型
+      if (displayModelMessage.attachments && displayModelMessage.attachments.length > 0) {
+        console.log('[useChat] ========== 附件显示URL类型分析 ==========');
+        displayModelMessage.attachments.forEach((att, idx) => {
+          const urlType = att.url?.startsWith('data:') ? 'Base64 Data URL (AI原始返回)' :
+                         att.url?.startsWith('blob:') ? 'Blob URL (处理后的本地URL)' :
+                         att.url?.startsWith('http://') || att.url?.startsWith('https://') ? 
+                           (att.uploadStatus === 'completed' ? '云存储URL (已上传完成)' : 'HTTP临时URL (AI原始返回)') :
+                         '未知类型';
+          
+          const hasCloudUrl = att.uploadStatus === 'completed' && 
+                             (att.url?.startsWith('http://') || att.url?.startsWith('https://'));
+          
+          console.log(`[useChat] 附件 ${idx + 1}/${displayModelMessage.attachments.length}:`, {
+            attachmentId: att.id?.substring(0, 8) + '...',
+            displayUrlType: urlType,
+            displayUrl: att.url ? (att.url.length > 80 ? att.url.substring(0, 80) + '...' : att.url) : 'N/A',
+            uploadStatus: att.uploadStatus,
+            hasCloudUrl: hasCloudUrl,
+            cloudUrl: hasCloudUrl ? (att.url!.length > 80 ? att.url!.substring(0, 80) + '...' : att.url!) : 'N/A',
+            tempUrl: att.tempUrl ? (att.tempUrl.length > 80 ? att.tempUrl.substring(0, 80) + '...' : att.tempUrl) : 'N/A',
+            source: hasCloudUrl ? '云存储URL (处理后的永久URL)' : 
+                   att.url?.startsWith('data:') ? 'AI返回的Base64 (原始地址)' :
+                   att.url?.startsWith('blob:') ? '处理后的Blob URL (临时本地URL)' :
+                   att.url?.startsWith('http') ? 'AI返回的HTTP临时URL (原始地址)' : '未知来源'
+          });
+        });
+        console.log('[useChat] ============================================');
+      }
+
       setMessages(prev => prev.map(msg => msg.id === modelMessageId ? displayModelMessage : msg));
 
       // 10. Handle upload task (if any)
@@ -208,6 +238,30 @@ export const useChat = (
 
           updateSessionMessages(currentSessionId, dbMessages);
           console.log('[useChat] 上传任务已提交，已保存到数据库（pending）');
+          
+          // ✅ 详细日志：记录保存到数据库的附件URL类型
+          console.log('[useChat] ========== 数据库保存的附件URL类型分析 ==========');
+          if (dbModelMessage.attachments && dbModelMessage.attachments.length > 0) {
+            dbModelMessage.attachments.forEach((att, idx) => {
+              const urlType = att.url?.startsWith('data:') ? 'Base64 Data URL' :
+                             att.url?.startsWith('blob:') ? 'Blob URL' :
+                             att.url?.startsWith('http://') || att.url?.startsWith('https://') ? 
+                               (att.uploadStatus === 'completed' ? '云存储URL' : 'HTTP临时URL') :
+                             '空URL';
+              
+              console.log(`[useChat] 数据库附件 ${idx + 1}/${dbModelMessage.attachments.length}:`, {
+                attachmentId: att.id?.substring(0, 8) + '...',
+                urlType: urlType,
+                url: att.url ? (att.url.length > 60 ? att.url.substring(0, 60) + '...' : att.url) : '空',
+                uploadStatus: att.uploadStatus,
+                uploadTaskId: att.uploadTaskId ? att.uploadTaskId.substring(0, 8) + '...' : 'N/A',
+                tempUrl: att.tempUrl ? (att.tempUrl.length > 60 ? att.tempUrl.substring(0, 60) + '...' : att.tempUrl) : 'N/A',
+                note: att.uploadStatus === 'pending' ? '等待上传完成后，url将更新为云存储URL' : 
+                     att.uploadStatus === 'completed' ? '已上传完成，url是云存储URL' : '上传状态未知'
+              });
+            });
+          }
+          console.log('[useChat] ============================================');
         }).catch(err => {
           console.error('[useChat] 上传任务失败:', err);
         });

@@ -63,6 +63,18 @@ def process_upload(self, task_id: str):
 
         if not config or not config.enabled:
             raise Exception("存储配置不可用")
+        
+        # ⚠️ 重要：解密配置中的敏感字段（accessKeyId, accessKeySecret 等）
+        # 因为前端保存时使用 encrypt_config() 加密，后端使用时必须解密
+        try:
+            from app.utils.encryption import decrypt_config
+            decrypted_config_dict = decrypt_config(config.config)
+            config.config = decrypted_config_dict
+            print(f"[Celery] 已解密存储配置: {config.id} (provider={config.provider})")
+        except Exception as e:
+            print(f"[Celery] 解密存储配置失败: {e}")
+            # 如果解密失败，可能是未加密的历史数据，继续使用原配置
+            print(f"[Celery] 使用未解密的配置（可能是历史数据）: {config.id}")
 
         # 4. 获取图片内容
         image_content = None

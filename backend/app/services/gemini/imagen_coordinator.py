@@ -83,13 +83,24 @@ class ImagenCoordinator:
         Raises:
             ConfigurationError: If configuration is invalid
         """
+        import time
+        start_time = time.time()
+        
         global _vertex_ai_usage_count, _gemini_api_usage_count, _fallback_count
         
+        import sys
         api_mode = self._config.get('api_mode', 'gemini_api')
+        logger.info(f"[ImagenCoordinator] 🔄 获取生成器...")
+        print(f"[ImagenCoordinator] 🔄 获取生成器...", file=sys.stderr, flush=True)
+        logger.info(f"[ImagenCoordinator]     - api_mode: {api_mode}")
+        print(f"[ImagenCoordinator]     - api_mode: {api_mode}", file=sys.stderr, flush=True)
+        logger.info(f"[ImagenCoordinator]     - user_id: {self._user_id[:8] + '...' if self._user_id else 'None'}")
+        print(f"[ImagenCoordinator]     - user_id: {self._user_id[:8] + '...' if self._user_id else 'None'}", file=sys.stderr, flush=True)
         
         # Return cached generator if available
         if api_mode in self._generator_cache:
-            logger.debug(f"[ImagenCoordinator] Using cached {api_mode} generator")
+            logger.info(f"[ImagenCoordinator] ✅ 使用缓存的 {api_mode} 生成器")
+            print(f"[ImagenCoordinator] ✅ 使用缓存的 {api_mode} 生成器", file=sys.stderr, flush=True)
             
             # Increment usage counter
             if api_mode == 'vertex_ai':
@@ -97,32 +108,56 @@ class ImagenCoordinator:
             else:
                 _gemini_api_usage_count += 1
             
-            return self._generator_cache[api_mode]
+            generator = self._generator_cache[api_mode]
+            generator_type = type(generator).__name__
+            logger.info(f"[ImagenCoordinator]     - 生成器类型: {generator_type}")
+            print(f"[ImagenCoordinator]     - 生成器类型: {generator_type}", file=sys.stderr, flush=True)
+            elapsed = (time.time() - start_time) * 1000
+            logger.info(f"[ImagenCoordinator] ✅ 获取生成器完成 (耗时: {elapsed:.2f}ms)")
+            print(f"[ImagenCoordinator] ✅ 获取生成器完成 (耗时: {elapsed:.2f}ms)", file=sys.stderr, flush=True)
+            return generator
         
         # Create new generator
+        logger.info(f"[ImagenCoordinator] 🔄 创建新的 {api_mode} 生成器...")
+        print(f"[ImagenCoordinator] 🔄 创建新的 {api_mode} 生成器...", file=sys.stderr, flush=True)
         try:
             if api_mode == 'vertex_ai':
+                logger.info(f"[ImagenCoordinator]     - 使用 Vertex AI 模式")
+                print(f"[ImagenCoordinator]     - 使用 Vertex AI 模式", file=sys.stderr, flush=True)
                 generator = self._create_vertex_ai_generator()
                 _vertex_ai_usage_count += 1
             else:
+                logger.info(f"[ImagenCoordinator]     - 使用 Gemini API 模式")
+                print(f"[ImagenCoordinator]     - 使用 Gemini API 模式", file=sys.stderr, flush=True)
                 generator = self._create_gemini_api_generator()
                 _gemini_api_usage_count += 1
             
+            generator_type = type(generator).__name__
+            logger.info(f"[ImagenCoordinator] ✅ 生成器创建完成: {generator_type}")
+            print(f"[ImagenCoordinator] ✅ 生成器创建完成: {generator_type}", file=sys.stderr, flush=True)
+            
             # Cache the generator
             self._generator_cache[api_mode] = generator
-            logger.info(f"[ImagenCoordinator] Created and cached {api_mode} generator")
+            logger.info(f"[ImagenCoordinator] ✅ 生成器已缓存")
+            print(f"[ImagenCoordinator] ✅ 生成器已缓存", file=sys.stderr, flush=True)
             
+            elapsed = (time.time() - start_time) * 1000
+            logger.info(f"[ImagenCoordinator] ✅ 获取生成器完成 (耗时: {elapsed:.2f}ms)")
+            print(f"[ImagenCoordinator] ✅ 获取生成器完成 (耗时: {elapsed:.2f}ms)", file=sys.stderr, flush=True)
             return generator
             
         except Exception as e:
-            logger.error(f"[ImagenCoordinator] Failed to create {api_mode} generator: {e}")
+            logger.error(f"[ImagenCoordinator] ❌ 创建 {api_mode} 生成器失败: {e}", exc_info=True)
             
             # Fallback to Gemini API if Vertex AI fails
             if api_mode == 'vertex_ai':
-                logger.warning("[ImagenCoordinator] Falling back to Gemini API due to Vertex AI failure")
+                logger.warning("[ImagenCoordinator] ⚠️ Vertex AI 失败，降级到 Gemini API")
                 _fallback_count += 1
                 _gemini_api_usage_count += 1
-                return self._create_gemini_api_generator()
+                fallback_generator = self._create_gemini_api_generator()
+                fallback_type = type(fallback_generator).__name__
+                logger.info(f"[ImagenCoordinator] ✅ 降级生成器创建完成: {fallback_type}")
+                return fallback_generator
             
             raise
     

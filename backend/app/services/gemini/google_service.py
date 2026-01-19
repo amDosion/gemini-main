@@ -399,10 +399,40 @@ class GoogleService(BaseProviderService):
             model: Model to use (must be provided by caller, no default)
             **kwargs: Additional parameters
         """
-        logger.info(f"[Google Service] Delegating image generation to ImageGenerator: model={model}, prompt='{prompt[:50]}...'")
-        logger.info(f"[Google Service] Additional parameters: {list(kwargs.keys())}")
+        import time
+        import sys
+        start_time = time.time()
         
-        return await self.image_generator.generate_image(prompt, model, **kwargs)
+        logger.info(f"[GoogleService] ========== 开始图片生成 ==========")
+        print(f"[GoogleService] ========== 开始图片生成 ==========", file=sys.stderr, flush=True)
+        logger.info(f"[GoogleService] 📥 请求参数:")
+        print(f"[GoogleService] 📥 请求参数:", file=sys.stderr, flush=True)
+        logger.info(f"[GoogleService]     - model: {model}")
+        print(f"[GoogleService]     - model: {model}", file=sys.stderr, flush=True)
+        logger.info(f"[GoogleService]     - prompt: {prompt[:100] + '...' if len(prompt) > 100 else prompt}")
+        print(f"[GoogleService]     - prompt: {prompt[:100] + '...' if len(prompt) > 100 else prompt}", file=sys.stderr, flush=True)
+        logger.info(f"[GoogleService]     - prompt长度: {len(prompt)}")
+        print(f"[GoogleService]     - prompt长度: {len(prompt)}", file=sys.stderr, flush=True)
+        logger.info(f"[GoogleService]     - 额外参数: {list(kwargs.keys())}")
+        print(f"[GoogleService]     - 额外参数: {list(kwargs.keys())}", file=sys.stderr, flush=True)
+        for key, value in kwargs.items():
+            if key in ['number_of_images', 'aspect_ratio', 'image_size', 'output_mime_type', 'image_style']:
+                logger.info(f"[GoogleService]     - {key}: {value}")
+                print(f"[GoogleService]     - {key}: {value}", file=sys.stderr, flush=True)
+        
+        logger.info(f"[GoogleService] 🔄 委托给 ImageGenerator.generate_image()...")
+        print(f"[GoogleService] 🔄 委托给 ImageGenerator.generate_image()...", file=sys.stderr, flush=True)
+        result = await self.image_generator.generate_image(prompt, model, **kwargs)
+        
+        total_time = (time.time() - start_time) * 1000
+        logger.info(f"[GoogleService] ✅ 图片生成完成 (耗时: {total_time:.2f}ms)")
+        print(f"[GoogleService] ✅ 图片生成完成 (耗时: {total_time:.2f}ms)", file=sys.stderr, flush=True)
+        logger.info(f"[GoogleService]     - 返回图片数量: {len(result) if isinstance(result, list) else 'N/A'}")
+        print(f"[GoogleService]     - 返回图片数量: {len(result) if isinstance(result, list) else 'N/A'}", file=sys.stderr, flush=True)
+        logger.info(f"[GoogleService] ========== 图片生成流程结束 ==========")
+        print(f"[GoogleService] ========== 图片生成流程结束 ==========", file=sys.stderr, flush=True)
+        
+        return result
     
     async def edit_image(
         self,

@@ -319,8 +319,13 @@ export const ImageEditView = memo(({
     // Sync initial attachments
     useEffect(() => {
         if (initialAttachments && initialAttachments.length > 0) {
+            console.log('[ImageEditView] 同步 initialAttachments:', initialAttachments);
             setActiveAttachments(initialAttachments);
             setActiveImageUrl(getStableCanvasUrlFromAttachment(initialAttachments[0]));
+        } else if (initialAttachments === undefined && activeAttachments.length === 0) {
+            // 如果 initialAttachments 被清空（undefined），且当前没有附件，保持空状态
+            // 但如果已经有附件（例如从消息中恢复），不要清空
+            console.log('[ImageEditView] initialAttachments 为 undefined，但保持当前附件状态');
         }
     }, [initialAttachments, getStableCanvasUrlFromAttachment]);
 
@@ -408,11 +413,35 @@ export const ImageEditView = memo(({
             // 优先查找用户消息中的图片（对话式编辑的原始图片）
             const lastUserMsg = [...messages].reverse().find(m => m.role === Role.USER && m.attachments?.length);
             if (lastUserMsg && lastUserMsg.attachments?.[0]?.url) {
+                const att = lastUserMsg.attachments[0];
+                const urlType = att.url?.startsWith('data:') ? 'Base64 Data URL' :
+                              att.url?.startsWith('blob:') ? 'Blob URL' :
+                              att.url?.startsWith('http://') || att.url?.startsWith('https://') ? 
+                                (att.uploadStatus === 'completed' ? '云存储URL' : 'HTTP临时URL') :
+                              '未知类型';
+                console.log('[ImageEditView] 从用户消息中提取原始图片:', {
+                    urlType: urlType,
+                    url: att.url ? (att.url.length > 60 ? att.url.substring(0, 60) + '...' : att.url) : 'N/A',
+                    uploadStatus: att.uploadStatus,
+                    source: urlType.includes('云存储URL') ? '云存储URL (处理后的永久URL)' : 'AI返回的原始地址或处理后的URL'
+                });
                 setActiveImageUrl(lastUserMsg.attachments[0].url);
             } else {
                 // 如果没有用户消息，从模型消息中获取（编辑后的图片）
                 const lastModelMsg = [...messages].reverse().find(m => m.role === Role.MODEL && m.attachments?.length);
                 if (lastModelMsg && lastModelMsg.attachments?.[0]?.url) {
+                    const att = lastModelMsg.attachments[0];
+                    const urlType = att.url?.startsWith('data:') ? 'Base64 Data URL' :
+                                  att.url?.startsWith('blob:') ? 'Blob URL' :
+                                  att.url?.startsWith('http://') || att.url?.startsWith('https://') ? 
+                                    (att.uploadStatus === 'completed' ? '云存储URL' : 'HTTP临时URL') :
+                                  '未知类型';
+                    console.log('[ImageEditView] 从模型消息中提取编辑后的图片:', {
+                        urlType: urlType,
+                        url: att.url ? (att.url.length > 60 ? att.url.substring(0, 60) + '...' : att.url) : 'N/A',
+                        uploadStatus: att.uploadStatus,
+                        source: urlType.includes('云存储URL') ? '云存储URL (处理后的永久URL)' : 'AI返回的原始地址或处理后的URL'
+                    });
                     setActiveImageUrl(lastModelMsg.attachments[0].url);
                 }
             }
@@ -425,6 +454,30 @@ export const ImageEditView = memo(({
             if (lastMsg.id !== lastProcessedMsgId) {
                 // If it's a model response with an image
                 if (lastMsg.role === Role.MODEL && lastMsg.attachments && lastMsg.attachments.length > 0 && lastMsg.attachments[0].url) {
+                    const att = lastMsg.attachments[0];
+                    const urlType = att.url?.startsWith('data:') ? 'Base64 Data URL (AI原始返回)' :
+                                  att.url?.startsWith('blob:') ? 'Blob URL (处理后的本地URL)' :
+                                  att.url?.startsWith('http://') || att.url?.startsWith('https://') ? 
+                                    (att.uploadStatus === 'completed' ? '云存储URL (已上传完成)' : 'HTTP临时URL (AI原始返回)') :
+                                  '未知类型';
+                    
+                    console.log('[ImageEditView] ========== 从最新消息中提取附件用于显示 ==========');
+                    console.log('[ImageEditView] 提取的附件信息:', {
+                        messageId: lastMsg.id.substring(0, 8) + '...',
+                        attachmentId: att.id?.substring(0, 8) + '...',
+                        displayUrlType: urlType,
+                        displayUrl: att.url ? (att.url.length > 80 ? att.url.substring(0, 80) + '...' : att.url) : 'N/A',
+                        uploadStatus: att.uploadStatus,
+                        hasCloudUrl: att.uploadStatus === 'completed' && (att.url?.startsWith('http://') || att.url?.startsWith('https://')),
+                        tempUrl: att.tempUrl ? (att.tempUrl.length > 80 ? att.tempUrl.substring(0, 80) + '...' : att.tempUrl) : 'N/A',
+                        source: urlType.includes('云存储URL') ? '云存储URL (处理后的永久URL)' :
+                               urlType.includes('Base64') ? 'AI返回的原始Base64地址' :
+                               urlType.includes('Blob') ? '处理后的Blob URL (从HTTP临时URL转换)' :
+                               urlType.includes('HTTP临时URL') ? 'AI返回的HTTP临时地址' : '未知来源',
+                        note: '前端显示将使用此URL'
+                    });
+                    console.log('[ImageEditView] ============================================');
+                    
                     setActiveImageUrl(lastMsg.attachments[0].url);
                     setLastProcessedMsgId(lastMsg.id);
                 } else if (lastMsg.isError) {
@@ -442,22 +495,8 @@ export const ImageEditView = memo(({
             console.log('[handleSend] 选择的编辑模式:', editMode);
             console.log('[handleSend] 用户上传的附件数量:', attachments.length);
             
-            // 详细日志：附件状态
-            attachments.forEach((att, index) => {
-                const urlType = att.url?.startsWith('blob:') ? 'Blob' : 
-                               att.url?.startsWith('data:') ? 'Base64' : 
-                               att.url?.startsWith('http') ? 'HTTP' : 'Other';
-                const tempUrlType = att.tempUrl?.startsWith('blob:') ? 'Blob' : 
-                                   att.tempUrl?.startsWith('data:') ? 'Base64' : 
-                                   att.tempUrl?.startsWith('http') ? 'HTTP' : 'None';
-                console.log(`[handleSend] 附件[${index}]:`, {
-                    id: att.id?.substring(0, 8) + '...',
-                    urlType,
-                    tempUrlType,
-                    uploadStatus: att.uploadStatus
-                });
-            });
-            // 使用统一的附件处理函数
+            // ✅ 根据设计文档，前端只负责传递附件元数据，后端统一处理
+            // 使用简化版的 processUserAttachments（只做基本元数据整理）
             const finalAttachments = await processUserAttachments(
                 attachments,
                 activeImageUrl,
@@ -629,7 +668,10 @@ export const ImageEditView = memo(({
             mode={editMode}
             setMode={setAppMode}
             initialPrompt={initialPrompt}
-            // Sync State
+            // ✅ 同时传递 initialAttachments 和 activeAttachments
+            // initialAttachments: 用于初始化（当组件首次挂载或模式切换时）
+            // activeAttachments: 用于受控模式（实时同步状态）
+            initialAttachments={initialAttachments}
             activeAttachments={activeAttachments}
             onAttachmentsChange={setActiveAttachments}
             providerId={providerId}

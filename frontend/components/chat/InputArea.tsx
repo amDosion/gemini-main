@@ -83,10 +83,21 @@ const InputArea: React.FC<InputAreaProps> = ({
 
   useEffect(() => {
     if (initialAttachments !== undefined) {
+      console.log('[InputArea] 同步 initialAttachments:', initialAttachments);
       updateAttachments(initialAttachments);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialAttachments]);
+
+  // ✅ 新增：当 activeAttachments prop 变化时，同步到本地状态（如果使用受控模式）
+  // 注意：这主要用于外部状态变化时（例如从 initialAttachments 同步到 activeAttachments）
+  useEffect(() => {
+    if (activeAttachments !== undefined && onAttachmentsChange) {
+      // 受控模式：activeAttachments 由父组件管理，不需要同步
+      // 但我们需要确保 attachments 变量使用最新的 activeAttachments
+      console.log('[InputArea] activeAttachments 已更新（受控模式）:', activeAttachments);
+    }
+  }, [activeAttachments, onAttachmentsChange]);
 
   // Note: Mode-specific parameter adjustments are handled in useControlsState hook
 

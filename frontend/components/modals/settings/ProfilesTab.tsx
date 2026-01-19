@@ -311,7 +311,16 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
                     );
                 })}
                 {safeProfiles.length === 0 && (
-                    <div className="text-center py-10 text-slate-500 italic">No saved profiles. Create one to get started.</div>
+                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                        <div className="text-slate-400 mb-4 text-sm">还没有配置任何提供商</div>
+                        <button
+                            onClick={onCreateNew}
+                            className="flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors shadow-lg shadow-indigo-500/20"
+                        >
+                            <PlusCircle size={18} />
+                            <span>创建第一个配置</span>
+                        </button>
+                    </div>
                 )}
             </div>
         </div>

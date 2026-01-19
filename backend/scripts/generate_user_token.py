@@ -17,7 +17,7 @@ sys.path.insert(0, str(project_root))
 
 from backend.app.core.database import SessionLocal
 from backend.app.models.db_models import User, RefreshToken
-from backend.app.services.auth_service import AuthService
+from backend.app.services.common.auth_service import AuthService
 from backend.app.core.config import settings
 
 # 配置日志

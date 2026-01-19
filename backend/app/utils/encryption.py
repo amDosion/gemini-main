@@ -90,13 +90,19 @@ def encrypt_config(config: Dict[str, Any]) -> Dict[str, Any]:
                 encrypted_config[field] = encrypt_config(value)
             elif field in SENSITIVE_FIELDS and isinstance(value, str):
                 # Encrypt sensitive string fields
-                try:
-                    encrypted_bytes = fernet.encrypt(value.encode('utf-8'))
-                    encrypted_config[field] = encrypted_bytes.decode('utf-8')
-                except Exception as e:
-                    logger.error(f"Failed to encrypt field '{field}': {e}")
-                    # Keep original value if encryption fails
+                # ✅ 检查是否已经加密，避免重复加密
+                if is_encrypted(value):
+                    # 已经加密，直接使用
                     encrypted_config[field] = value
+                else:
+                    # 未加密，进行加密
+                    try:
+                        encrypted_bytes = fernet.encrypt(value.encode('utf-8'))
+                        encrypted_config[field] = encrypted_bytes.decode('utf-8')
+                    except Exception as e:
+                        logger.error(f"Failed to encrypt field '{field}': {e}")
+                        # Keep original value if encryption fails
+                        encrypted_config[field] = value
             else:
                 # Keep non-sensitive fields unchanged
                 encrypted_config[field] = value
@@ -142,18 +148,27 @@ def decrypt_config(config: Dict[str, Any]) -> Dict[str, Any]:
                 decrypted_config[field] = decrypt_config(value)
             elif field in SENSITIVE_FIELDS and isinstance(value, str):
                 # Decrypt sensitive string fields
-                try:
-                    decrypted_bytes = fernet.decrypt(value.encode('utf-8'))
-                    decrypted_config[field] = decrypted_bytes.decode('utf-8')
-                except InvalidToken:
-                    logger.warning(
-                        f"Field '{field}' appears to be unencrypted or encrypted with a different key. "
-                        "Using value as-is."
+                # ✅ 检查是否已加密，避免对明文进行解密尝试
+                if is_encrypted(value):
+                    # 已加密，尝试解密
+                    try:
+                        decrypted_bytes = fernet.decrypt(value.encode('utf-8'))
+                        decrypted_config[field] = decrypted_bytes.decode('utf-8')
+                    except InvalidToken:
+                        logger.warning(
+                            f"Field '{field}' appears to be encrypted with a different key. "
+                            "Using value as-is."
+                        )
+                        # 如果解密失败（可能是不同的密钥），保持原值
+                        decrypted_config[field] = value
+                    except Exception as e:
+                        logger.error(f"Failed to decrypt field '{field}': {e}")
+                        decrypted_config[field] = value
+                else:
+                    # 未加密（可能是历史数据），直接使用
+                    logger.debug(
+                        f"Field '{field}' is not encrypted (likely historical data). Using value as-is."
                     )
-                    # If decryption fails, assume it's already decrypted
-                    decrypted_config[field] = value
-                except Exception as e:
-                    logger.error(f"Failed to decrypt field '{field}': {e}")
                     decrypted_config[field] = value
             else:
                 # Keep non-sensitive fields unchanged

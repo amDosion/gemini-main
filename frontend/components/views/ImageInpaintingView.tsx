@@ -382,6 +382,8 @@ export const ImageInpaintingView = memo(({
 
     const handleSend = useCallback(async (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => {
         try {
+            // ✅ 根据设计文档，前端只负责传递附件元数据，后端统一处理
+            // 使用简化版的 processUserAttachments（只做基本元数据整理）
             const finalAttachments = await processUserAttachments(
                 attachments,
                 activeImageUrl,

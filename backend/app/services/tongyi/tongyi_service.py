@@ -167,11 +167,28 @@ class TongyiService(BaseProviderService):
         Returns:
             图片生成结果列表
         """
+        import time
+        start_time = time.time()
+        
+        logger.info(f"[TongyiService] ========== 开始图片生成 ==========")
+        logger.info(f"[TongyiService] 📥 请求参数:")
+        logger.info(f"[TongyiService]     - model: {model}")
+        logger.info(f"[TongyiService]     - prompt: {prompt[:100] + '...' if len(prompt) > 100 else prompt}")
+        logger.info(f"[TongyiService]     - prompt长度: {len(prompt)}")
+        for key, value in kwargs.items():
+            if key in ['aspectRatio', 'aspect_ratio', 'imageResolution', 'resolution', 'numberOfImages', 'num_images', 'imageStyle', 'style']:
+                logger.info(f"[TongyiService]     - {key}: {value}")
+        
+        logger.info(f"[TongyiService] 🔄 [步骤1] 初始化 ImageGenerationService...")
         if self._image_generation_service is None:
             from .image_generation import ImageGenerationService, ImageGenerationRequest
             self._image_generation_service = ImageGenerationService(self.api_key)
+            logger.info(f"[TongyiService] ✅ [步骤1] ImageGenerationService 已初始化")
+        else:
+            logger.info(f"[TongyiService] ✅ [步骤1] ImageGenerationService 已存在，复用实例")
 
         # 构建请求参数
+        logger.info(f"[TongyiService] 🔄 [步骤2] 构建 ImageGenerationRequest...")
         from .image_generation import ImageGenerationRequest
         request = ImageGenerationRequest(
             model_id=model,
@@ -183,18 +200,37 @@ class TongyiService(BaseProviderService):
             seed=kwargs.get("seed"),
             style=kwargs.get("imageStyle") or kwargs.get("style")
         )
+        logger.info(f"[TongyiService] ✅ [步骤2] 请求参数构建完成:")
+        logger.info(f"[TongyiService]     - model_id: {request.model_id}")
+        logger.info(f"[TongyiService]     - aspect_ratio: {request.aspect_ratio}")
+        logger.info(f"[TongyiService]     - resolution: {request.resolution}")
+        logger.info(f"[TongyiService]     - num_images: {request.num_images}")
 
         # 直接调用 ImageGenerationService
+        logger.info(f"[TongyiService] 🔄 [步骤3] 调用 ImageGenerationService.generate()...")
+        service_start = time.time()
         results = await self._image_generation_service.generate(request)
+        service_time = (time.time() - service_start) * 1000
+        logger.info(f"[TongyiService] ✅ [步骤3] ImageGenerationService 调用完成 (耗时: {service_time:.2f}ms)")
+        logger.info(f"[TongyiService]     - 返回结果数量: {len(results)}")
 
         # 转换为统一格式
+        logger.info(f"[TongyiService] 🔄 [步骤4] 转换结果格式...")
         formatted_results = []
-        for result in results:
-            formatted_results.append({
+        for idx, result in enumerate(results):
+            formatted_result = {
                 "url": result.url,
                 "revised_prompt": getattr(result, "revised_prompt", None),
                 "mime_type": getattr(result, "mime_type", "image/png")
-            })
+            }
+            formatted_results.append(formatted_result)
+            url_type = "HTTP" if result.url and result.url.startswith('http') else "其他"
+            logger.info(f"[TongyiService]     - 第 {idx+1} 张图片: URL类型={url_type}, mime_type={formatted_result['mime_type']}")
+        
+        total_time = (time.time() - start_time) * 1000
+        logger.info(f"[TongyiService] ✅ [步骤4] 格式转换完成 (耗时: {total_time:.2f}ms)")
+        logger.info(f"[TongyiService] ========== 图片生成完成 (总耗时: {total_time:.2f}ms) ==========")
+        logger.info(f"[TongyiService]     - 最终返回图片数量: {len(formatted_results)}")
 
         return formatted_results
     

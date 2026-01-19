@@ -9,38 +9,26 @@ import { v4 as uuidv4 } from 'uuid';
 
 export class ImageEditHandler extends BaseHandler {
   protected async doExecute(context: ExecutionContext): Promise<HandlerResult> {
-    // 将 attachments 数组转换为 referenceImages 字典格式
-    // 注意：如果有 File 对象且有 HTTP URL，直接传递 URL（后端会自己下载，避免 Base64 占用空间）
-    // 如果没有 HTTP URL 但有 File 对象，才需要转换为 Base64
+    // ✅ 根据设计文档，前端只负责传递附件元数据，后端统一处理
+    // 不再进行 Base64 转换，后端会处理所有 URL 类型（Base64、Blob URL、HTTP URL）
     const referenceImages: Record<string, Attachment> = {};
     
     // 处理第一个附件作为 raw（基础图片）
     if (context.attachments.length > 0) {
-      let rawAttachment = context.attachments[0];
+      const rawAttachment = context.attachments[0];
       
-      // 如果有 File 对象，优先使用 HTTP URL（后端会自己下载）
-      // 只有在没有 HTTP URL 的情况下，才转换为 Base64
-      if (rawAttachment.file && !isHttpUrl(rawAttachment.url)) {
-        // 如果没有 HTTP URL，但有 File 对象，需要转换为 Base64
-        // 这种情况通常发生在 Blob URL 或 Base64 URL 的场景
-        if (!(rawAttachment as any).base64Data) {
-          try {
-            const { fileToBase64 } = await import('./attachmentUtils');
-            const base64Data = await fileToBase64(rawAttachment.file);
-            rawAttachment = {
-              ...rawAttachment,
-              url: rawAttachment.url || base64Data,
-              base64Data: base64Data
-            } as Attachment & { base64Data: string };
-            console.log('[ImageEditHandler] ✅ 已将 File 对象转换为 Base64 Data URL（无 HTTP URL）');
-          } catch (error) {
-            console.warn('[ImageEditHandler] ⚠️ File 转 Base64 失败:', error);
-          }
-        }
-      } else if (isHttpUrl(rawAttachment.url)) {
-        // 有 HTTP URL，直接传递 URL（后端会自己下载）
-        console.log('[ImageEditHandler] ✅ 使用 HTTP URL，后端将自行下载:', rawAttachment.url.substring(0, 60));
-      }
+      // ✅ 直接传递附件元数据，后端会处理：
+      // - HTTP URL → 后端自己下载
+      // - Base64 URL → 后端创建临时代理 URL
+      // - Blob URL → 后端会通过其他方式处理（如果需要）
+      // - File 对象 → 前端上传到后端，后端统一处理
+      console.log('[ImageEditHandler] ✅ 传递附件元数据给后端处理:', {
+        urlType: rawAttachment.url?.startsWith('blob:') ? 'Blob' : 
+                 rawAttachment.url?.startsWith('data:') ? 'Base64' : 
+                 rawAttachment.url?.startsWith('http') ? 'HTTP' : 'Other',
+        hasFile: !!rawAttachment.file,
+        uploadStatus: rawAttachment.uploadStatus
+      });
       
       referenceImages.raw = rawAttachment;
     }
@@ -101,10 +89,12 @@ export class ImageEditHandler extends BaseHandler {
     }
 
     const uploadTask = async () => {
-      // ✅ 后端已创建附件记录和上传任务，直接返回
+      // ✅ 后端已创建附件记录和上传任务（AI 返回的图片）
       const dbAttachments = displayAttachments;
       
-      // 处理用户上传的附件（上传到云存储）
+      // ✅ 处理用户上传的附件
+      // 注意：用户上传的文件仍然需要前端通过 FormData 上传到后端
+      // 但后端现在使用 AttachmentService.process_user_upload() 统一处理
       const dbUserAttachments = await Promise.all(
         context.attachments.map(async (att) => {
           // 如果已经上传到云存储，直接返回
@@ -112,7 +102,8 @@ export class ImageEditHandler extends BaseHandler {
             return att;
           }
           
-          // 如果有 File 对象，上传到云存储
+          // ✅ 如果有 File 对象，上传到后端（后端会统一处理）
+          // 后端 /api/storage/upload-async 现在使用 AttachmentService.process_user_upload()
           if (att.file) {
             try {
               const result = await storageUpload.uploadFileAsync(att.file, {
@@ -122,8 +113,14 @@ export class ImageEditHandler extends BaseHandler {
                 storageId: context.storageId,
               });
               
+              console.log('[ImageEditHandler] ✅ 用户附件已提交到后端统一处理:', {
+                attachmentId: result.attachmentId || att.id,
+                taskId: result.taskId
+              });
+              
               return {
                 ...att,
+                id: result.attachmentId || att.id,  // 使用后端返回的 attachmentId
                 uploadStatus: result.taskId ? 'pending' : 'failed',
                 uploadTaskId: result.taskId || undefined,
               } as Attachment;
@@ -133,7 +130,8 @@ export class ImageEditHandler extends BaseHandler {
             }
           }
           
-          // 其他情况，保持原样
+          // ✅ 其他情况（URL 类型），后端 modes.py 会处理
+          // 不需要前端转换，直接传递元数据
           return att;
         })
       );

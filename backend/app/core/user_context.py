@@ -78,15 +78,27 @@ def require_user_id(request: Request) -> str:
     Raises:
         HTTPException: 401 Unauthorized（未认证或 token 无效）
     """
+    import logging
+    import sys
+    logger = logging.getLogger(__name__)
+    
+    # 记录认证尝试
+    logger.info(f"[Auth] 🔐 开始认证检查: {request.method} {request.url.path}")
+    print(f"[Auth] 🔐 开始认证检查: {request.method} {request.url.path}", file=sys.stderr, flush=True)
+    
     user_id = get_current_user_id(request)
     
     if not user_id:
+        logger.warning(f"[Auth] ❌ 认证失败: 未提供有效 token")
+        print(f"[Auth] ❌ 认证失败: 未提供有效 token", file=sys.stderr, flush=True)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",
             headers={"WWW-Authenticate": "Bearer"}
         )
     
+    logger.info(f"[Auth] ✅ 认证成功: user_id={user_id[:8]}...")
+    print(f"[Auth] ✅ 认证成功: user_id={user_id[:8]}...", file=sys.stderr, flush=True)
     return user_id
 
 

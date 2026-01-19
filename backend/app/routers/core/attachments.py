@@ -159,9 +159,30 @@ async def resolve_continuity(
       "taskId": null
     }
     """
+    import time
+    start_time = time.time()
+    
     try:
+        # ✅ 详细日志：记录请求信息
+        url_type = "Blob" if request_body.activeImageUrl.startswith("blob:") else \
+                   "Base64" if request_body.activeImageUrl.startswith("data:") else \
+                   "HTTP" if request_body.activeImageUrl.startswith("http") else "未知"
+        logger.info(
+            f"[Attachments] ========== 开始解析CONTINUITY附件 =========="
+        )
+        logger.info(
+            f"[Attachments] 📥 请求参数: "
+            f"user_id={user_id[:8]}..., "
+            f"session_id={request_body.sessionId[:8] if request_body.sessionId else 'None'}..., "
+            f"activeImageUrl类型={url_type}, "
+            f"activeImageUrl长度={len(request_body.activeImageUrl)}, "
+            f"messages数量={len(request_body.messages) if request_body.messages else 0}"
+        )
+        
         attachment_service = AttachmentService(db)
         
+        # ✅ 详细日志：调用解析方法
+        logger.info(f"[Attachments] 🔍 调用 AttachmentService.resolve_continuity_attachment()...")
         resolved = await attachment_service.resolve_continuity_attachment(
             active_image_url=request_body.activeImageUrl,
             session_id=request_body.sessionId,
@@ -169,8 +190,35 @@ async def resolve_continuity(
             messages=request_body.messages or []
         )
         
+        elapsed_time = (time.time() - start_time) * 1000  # 转换为毫秒
+        
         if not resolved:
+            logger.warning(f"[Attachments] ❌ 未找到匹配的附件 (耗时: {elapsed_time:.2f}ms)")
             raise HTTPException(status_code=404, detail="Attachment not found")
+        
+        # ✅ 详细日志：显示解析结果
+        has_cloud_url = resolved["status"] == "completed" and resolved["url"] and resolved["url"].startswith("http")
+        logger.info(
+            f"[Attachments] ✅ CONTINUITY附件解析成功 (耗时: {elapsed_time:.2f}ms):"
+        )
+        logger.info(
+            f"[Attachments]     - attachment_id: {resolved['attachment_id'][:8]}..."
+        )
+        logger.info(
+            f"[Attachments]     - status: {resolved['status']}"
+        )
+        logger.info(
+            f"[Attachments]     - hasCloudUrl: {has_cloud_url}"
+        )
+        logger.info(
+            f"[Attachments]     - url: {resolved['url'][:80] + '...' if resolved['url'] and len(resolved['url']) > 80 else resolved['url'] or 'None'}"
+        )
+        logger.info(
+            f"[Attachments]     - taskId: {resolved.get('task_id', 'None')[:8] + '...' if resolved.get('task_id') else 'None'}"
+        )
+        logger.info(
+            f"[Attachments] ========== CONTINUITY附件解析完成 =========="
+        )
         
         return {
             "attachmentId": resolved["attachment_id"],
@@ -179,9 +227,12 @@ async def resolve_continuity(
             "taskId": resolved.get("task_id")
         }
     except HTTPException:
+        elapsed_time = (time.time() - start_time) * 1000
+        logger.error(f"[Attachments] ❌ HTTP异常 (耗时: {elapsed_time:.2f}ms)")
         raise
     except Exception as e:
-        logger.error(f"[Attachments] Failed to resolve continuity: {e}", exc_info=True)
+        elapsed_time = (time.time() - start_time) * 1000
+        logger.error(f"[Attachments] ❌ 解析失败 (耗时: {elapsed_time:.2f}ms): {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 

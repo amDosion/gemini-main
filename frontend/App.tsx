@@ -445,9 +445,43 @@ const AppContent: React.FC = () => {
     return <ErrorView error={initError} onRetry={retry} />;
   }
 
+  // --- 准备 SettingsModal（需要在所有地方都能访问） ---
+  const settingsModal = isSettingsOpen && (
+    <SettingsModal
+      isOpen={isSettingsOpen}
+      onClose={() => setIsSettingsOpen(false)}
+      profiles={profiles}
+      activeProfileId={activeProfileId}
+      onSaveProfile={saveProfile}
+      onDeleteProfile={deleteProfile}
+      onActivateProfile={activateProfile}
+
+      storageConfigs={storageConfigs}
+      activeStorageId={activeStorageId}
+      onSaveStorage={handleSaveStorage}
+      onDeleteStorage={handleDeleteStorage}
+      onActivateStorage={handleActivateStorage}
+
+      initialApiKey={config.apiKey}
+      initialBaseUrl={config.baseUrl}
+      hiddenModelIds={hiddenModelIds}
+      initialTab={settingsInitialTab}
+    />
+  );
+
   // --- Early Return for Unconfigured State ---
-  if (isConfigReady && !initData?.activeProfile) {
-    return <WelcomeScreen onOpenSettings={() => handleOpenSettings('profiles')} />;
+  // 新用户没有配置时，显示欢迎界面
+  // 点击"打开设置"时，直接进入编辑器标签页创建第一个配置
+  // ✅ 使用 activeProfileFromSettings 而不是 initData?.activeProfile
+  // 因为 saveProfile 会更新 useSettings 的状态，但不会自动更新 initData
+  // ✅ 同时渲染 SettingsModal，确保点击"打开设置"时能正常显示
+  if (isConfigReady && !activeProfileFromSettings) {
+    return (
+      <>
+        <WelcomeScreen onOpenSettings={() => handleOpenSettings('editor')} />
+        {settingsModal}
+      </>
+    );
   }
 
   // --- 主应用内容 ---
@@ -502,28 +536,7 @@ const AppContent: React.FC = () => {
         onDeletePersona={deletePersona}
         onRefreshPersonas={refreshPersonas}
 
-        settings={isSettingsOpen && (
-          <SettingsModal
-            isOpen={isSettingsOpen}
-            onClose={() => setIsSettingsOpen(false)}
-            profiles={profiles}
-            activeProfileId={activeProfileId}
-            onSaveProfile={saveProfile}
-            onDeleteProfile={deleteProfile}
-            onActivateProfile={activateProfile}
-
-            storageConfigs={storageConfigs}
-            activeStorageId={activeStorageId}
-            onSaveStorage={handleSaveStorage}
-            onDeleteStorage={handleDeleteStorage}
-            onActivateStorage={handleActivateStorage}
-
-            initialApiKey={config.apiKey}
-            initialBaseUrl={config.baseUrl}
-            hiddenModelIds={hiddenModelIds}
-            initialTab={settingsInitialTab}
-          />
-        )}
+        settings={settingsModal}
       >
         {renderView()}
       </AppLayout>
