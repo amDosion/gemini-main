@@ -26,6 +26,7 @@ from ...core.dependencies import require_current_user
 from ...core.credential_manager import get_provider_credentials
 from ...core.mode_method_mapper import get_service_method, is_streaming_mode, is_image_edit_mode
 from ...services.common.provider_factory import ProviderFactory
+from ...services.common.attachment_service import AttachmentService
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,9 @@ class ModeOptions(BaseModel):
     number_of_images: Optional[int] = None
     frontend_session_id: Optional[str] = None
     sessionId: Optional[str] = None  # Alias for frontend_session_id
+    message_id: Optional[str] = None  # 消息ID（用于附件关联）
+    # ✅ Edit模式新增字段
+    activeImageUrl: Optional[str] = None  # CONTINUITY LOGIC用
     # Other options
     negativePrompt: Optional[str] = None
     guidanceScale: Optional[float] = None
@@ -240,6 +244,39 @@ async def handle_mode(
             # 将 URL 路径中的 mode 参数传递给 edit_image 方法
             params["mode"] = mode
         
+        # ✅ **新增**：处理 Edit 模式的 CONTINUITY LOGIC
+        # 如果提供了 activeImageUrl，使用 AttachmentService 解析
+        if method_name == "edit_image" and request_body.options and request_body.options.activeImageUrl:
+            attachment_service = AttachmentService(db)
+            
+            # 获取会话ID和消息列表
+            session_id = request_body.options.frontend_session_id or request_body.options.sessionId
+            if session_id:
+                # 从 extra 中获取 messages，如果为空则从数据库查询
+                messages = []
+                if request_body.extra and "messages" in request_body.extra:
+                    messages = request_body.extra["messages"]
+                elif session_id:
+                    # 从数据库查询会话的所有消息（用于CONTINUITY LOGIC查找附件）
+                    from ...models.db_models import Message
+                    db_messages = db.query(Message).filter_by(session_id=session_id).order_by(Message.timestamp.asc()).all()
+                    messages = [msg.to_dict() for msg in db_messages if hasattr(msg, 'to_dict')]
+                
+                # 解析 CONTINUITY 附件
+                resolved = await attachment_service.resolve_continuity_attachment(
+                    active_image_url=request_body.options.activeImageUrl,
+                    session_id=session_id,
+                    user_id=user_id,
+                    messages=messages
+                )
+                
+                if resolved:
+                    # 将解析的附件添加到 reference_images
+                    if "reference_images" not in params:
+                        params["reference_images"] = {}
+                    params["reference_images"]["raw"] = resolved["url"]
+                    logger.info(f"[Modes] CONTINUITY attachment resolved: {resolved['attachment_id'][:8]}...")
+        
         # **特殊处理**：对于需要文件数据的方法（pdf-extract, virtual-try-on, segment-clothing 等）
         # 从 attachments 中提取数据
         if request_body.attachments:
@@ -295,7 +332,76 @@ async def handle_mode(
         # ✅ 6. 调用服务方法（服务内部会分发到子服务）
         result = await method(**params)
 
-        # ✅ 7. 返回响应
+        # ✅ 7. **新增**：处理图片生成和编辑的结果（使用 AttachmentService）
+        # 对于 image-gen 和 image-edit 模式，处理返回的图片
+        if method_name in ["generate_image", "edit_image"]:
+            attachment_service = AttachmentService(db)
+            
+            # 获取会话ID和消息ID
+            session_id = None
+            message_id = None
+            if request_body.options:
+                session_id = request_body.options.frontend_session_id or request_body.options.sessionId
+                message_id = request_body.options.message_id
+            
+            # ✅ 如果缺少 messageId，记录警告但继续处理（不阻塞）
+            if not message_id:
+                logger.warning(f"[Modes] Missing message_id for {method_name}, attachment will not be saved to database")
+            
+            if session_id and message_id:
+                processed_images = []
+                
+                # 处理返回的图片列表
+                # 结果格式可能是 List[Dict] 或 List[ImageGenerationResult]
+                images = result if isinstance(result, list) else result.get("images", []) if isinstance(result, dict) else []
+                
+                for img in images:
+                    # 提取图片URL和MIME类型
+                    # 支持多种格式：Dict 或 ImageGenerationResult
+                    if isinstance(img, dict):
+                        ai_url = img.get("url") or img.get("image")
+                        mime_type = img.get("mimeType") or img.get("mime_type", "image/png")
+                        filename = img.get("filename")  # ✅ 提取 filename（如果有）
+                    else:
+                        # ImageGenerationResult 对象
+                        ai_url = img.url if hasattr(img, "url") else None
+                        mime_type = img.mime_type if hasattr(img, "mime_type") else "image/png"
+                        filename = img.filename if hasattr(img, "filename") else None
+                    
+                    if not ai_url:
+                        logger.warning(f"[Modes] Image result missing URL: {img}")
+                        continue
+                    
+                    # 使用 AttachmentService 处理AI返回的图片
+                    prefix = "generated" if method_name == "generate_image" else "edited"
+                    processed = await attachment_service.process_ai_result(
+                        ai_url=ai_url,
+                        mime_type=mime_type,
+                        session_id=session_id,
+                        message_id=message_id,
+                        user_id=user_id,
+                        prefix=prefix
+                    )
+                    
+                    # ✅ 构建响应格式（包含完整字段）
+                    processed_images.append({
+                        "url": processed["display_url"],  # 显示URL（前端立即显示）
+                        "attachmentId": processed["attachment_id"],
+                        "uploadStatus": processed["status"],
+                        "taskId": processed["task_id"],
+                        "mimeType": mime_type,  # ✅ 新增：MIME类型
+                        "filename": filename or f"{prefix}-{processed['attachment_id'][:8]}.png"  # ✅ 新增：文件名（修复：使用正确的格式）
+                    })
+                
+                # 更新结果
+                if isinstance(result, dict):
+                    result["images"] = processed_images
+                else:
+                    result = processed_images
+                
+                logger.info(f"[Modes] Processed {len(processed_images)} images with AttachmentService")
+        
+        # ✅ 8. 返回响应
         logger.info(f"[Modes] Success: provider={provider}, mode={mode}")
         return ModeResponse(
             success=True,

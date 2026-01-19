@@ -234,7 +234,11 @@ export class LLMService {
 
   // --- Media Operations (通过 UnifiedProviderClient 处理) ---
 
-  public async generateImage(prompt: string, referenceImages: Attachment[] = []): Promise<ImageGenerationResult[]> {
+  public async generateImage(
+    prompt: string, 
+    referenceImages: Attachment[] = [],
+    options?: Partial<ChatOptions>  // ✅ 新增：接收 options（包含 sessionId 和 messageId）
+  ): Promise<ImageGenerationResult[]> {
       // ✅ 详细日志：记录图片生成请求的参数
       console.log('========== [llmService.generateImage] 图片生成请求开始 ==========');
       console.log('[llmService.generateImage] Provider ID:', this.providerId);
@@ -268,11 +272,17 @@ export class LLMService {
       // 注意：多轮编辑的连续性由前端 ImageEditView 的 CONTINUITY LOGIC 处理
       // 前端会自动将当前画布上的图片转换为 Base64 附件传递，不需要后端维护历史
       // API Key 现在由后端从数据库获取，不再从前端传递
+      // ✅ 合并传入的 options（包含 sessionId 和 messageId）和缓存的 options
+      const mergedOptions = {
+        ...this._cachedOptions,
+        ...options  // 传入的 options 优先（包含 sessionId 和 messageId）
+      };
+      
       return this.currentProvider.generateImage(
           this._cachedModelConfig!.id,
           prompt,
           referenceImages,
-          this._cachedOptions,
+          mergedOptions,  // ✅ 使用合并后的 options
           '', // API Key - now managed by backend
           this.baseUrl
       );

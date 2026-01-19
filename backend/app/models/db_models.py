@@ -757,6 +757,8 @@ class UploadTask(Base):
     attachment_id = Column(String, nullable=True)  # 关联的附件ID
     source_url = Column(String, nullable=True)  # 源URL（DashScope临时URL，可选）
     source_file_path = Column(String, nullable=True)  # 源文件路径（本地临时文件）
+    source_ai_url = Column(Text, nullable=True)  # 【新增】AI返回URL（Base64或HTTP）
+    source_attachment_id = Column(String, nullable=True)  # 【新增】复用已有附件ID
     target_url = Column(String, nullable=True)  # 目标URL（云存储永久URL）
     filename = Column(String, nullable=False)  # 文件名
     storage_id = Column(String, nullable=True)  # 使用的存储配置ID
@@ -776,6 +778,8 @@ class UploadTask(Base):
             "attachmentId": self.attachment_id,
             "sourceUrl": self.source_url,
             "sourceFilePath": self.source_file_path,
+            "sourceAiUrl": self.source_ai_url,
+            "sourceAttachmentId": self.source_attachment_id,
             "targetUrl": self.target_url,
             "filename": self.filename,
             "storageId": self.storage_id,

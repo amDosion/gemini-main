@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # 导入所有路由模块
-from .core import chat, modes
+from .core import chat, modes, attachments
 from .system import health_router, metrics_router, dashscope_proxy_router, file_search_router
 from .storage import storage_router
 from .tools import (
@@ -105,6 +105,7 @@ def register_routers(app: FastAPI):
     # ==================== 核心路由（统一入口，放在最后以确保优先级）====================
     app.include_router(chat)  # 统一聊天路由 /api/modes/{provider}/chat
     app.include_router(modes)  # 统一模式路由 /api/modes/{provider}/{mode}
+    app.include_router(attachments.router)  # 附件路由 /api/temp-images/{attachment_id}, /api/attachments/*
     
     # ==================== 认证路由（可选）====================
     if AUTH_ROUTER_AVAILABLE and auth_router:

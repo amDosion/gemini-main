@@ -16,6 +16,7 @@ from typing import Optional, List
 from datetime import datetime
 import logging
 import httpx
+import base64
 
 from ...core.database import SessionLocal
 from ...core.config import settings
@@ -266,9 +267,9 @@ class UploadWorkerPool:
                 task.retry_count = task.retry_count or 0
 
                 # 无有效来源的任务无法处理，直接标记失败（避免永远 pending）
-                if not task.source_file_path and not task.source_url:
+                if not any([task.source_file_path, task.source_url, task.source_ai_url, task.source_attachment_id]):
                     task.status = 'failed'
-                    task.error_message = "任务缺少 source_file_path/source_url，无法恢复入队"
+                    task.error_message = "任务缺少 source（source_file_path/source_url/source_ai_url/source_attachment_id），无法恢复入队"
                     task.completed_at = int(datetime.now().timestamp() * 1000)
                     await redis_queue.append_task_log(
                         task.id,
@@ -401,6 +402,8 @@ class UploadWorkerPool:
             log_print(f"    - 重试次数: {task.retry_count or 0}")
             log_print(f"    - 文件路径: {task.source_file_path or 'None'}")
             log_print(f"    - 源 URL: {task.source_url[:50] + '...' if task.source_url else 'None'}")
+            log_print(f"    - AI URL: {task.source_ai_url[:50] + '...' if task.source_ai_url else 'None'}")
+            log_print(f"    - 复用附件ID: {task.source_attachment_id or 'None'}")
 
             # ========== 步骤 2: 更新状态为 uploading ==========
             log_print(f"[{worker_name}] 🔄 更新任务状态: pending → uploading")
@@ -417,6 +420,40 @@ class UploadWorkerPool:
             # ========== 步骤 3: 读取文件内容 ==========
             log_print(f"[{worker_name}] 📂 读取文件内容...")
             content = await self._get_file_content(task, worker_name)
+            
+            # ✅ 新增: 如果返回None → 表示复用附件，无需上传
+            if content is None:
+                log_print(f"[{worker_name}] ✅ 附件复用，无需上传")
+                
+                # 查询已有附件并复用其云URL
+                from ...models.db_models import MessageAttachment
+                existing = db.query(MessageAttachment).filter_by(
+                    id=task.source_attachment_id
+                ).first()
+                
+                if existing and existing.url:
+                    # 更新任务状态
+                    task.target_url = existing.url
+                    task.status = 'completed'
+                    task.completed_at = int(datetime.now().timestamp() * 1000)
+                    db.commit()
+                    
+                    # 更新当前附件的URL（指向同一云URL）
+                    current_attachment = db.query(MessageAttachment).filter_by(
+                        id=task.attachment_id
+                    ).first()
+                    if current_attachment:
+                        current_attachment.url = existing.url
+                        current_attachment.upload_status = 'completed'
+                        db.commit()
+                        log_print(f"[{worker_name}] ✅ 附件URL已更新: {task.attachment_id[:8]}...")
+                    
+                    await self._handle_success(db, task, existing.url, worker_name)
+                else:
+                    raise Exception(f"Failed to reuse attachment: {task.source_attachment_id}")
+                
+                return  # 复用完成，无需上传
+            
             file_size = len(content)
             log_print(f"[{worker_name}] ✅ 文件读取成功，大小: {file_size / 1024:.2f} KB")
 
@@ -498,15 +535,25 @@ class UploadWorkerPool:
         from ...core.path_utils import get_project_root
         return get_project_root()
 
-    async def _get_file_content(self, task: UploadTask, worker_name: str) -> bytes:
+    async def _get_file_content(self, task: UploadTask, worker_name: str) -> Optional[bytes]:
         """
         Get file content from local file or URL
+        
+        支持4种source类型:
+        1. source_file_path: 本地文件路径
+        2. source_url: HTTP URL
+        3. source_ai_url: AI返回URL（Base64或HTTP）【新增】
+        4. source_attachment_id: 复用已有附件ID【新增】
+        
+        返回None表示无需上传（复用已有附件）
         
         所有路径都使用相对路径（相对于项目根目录），兼容 Docker 部署
         路径格式：backend/app/temp/...
         """
         from ...core.path_utils import resolve_relative_path, ensure_relative_path
+        from ...models.db_models import MessageAttachment
         
+        # 类型1: source_file_path（已有）
         if task.source_file_path:
             source_path = task.source_file_path
             
@@ -523,14 +570,90 @@ class UploadWorkerPool:
                 rel_path = ensure_relative_path(source_path)
                 log_print(f"[{worker_name}] ❌ File not found: {rel_path} (abs: {file_path})", "ERROR")
                 raise Exception(f"File not found for source_file_path={source_path}")
+        
+        # 类型2: source_url（已有）
         elif task.source_url:
             log_print(f"[{worker_name}] 🌐 Download from URL: {task.source_url[:50]}...")
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(task.source_url)
                 response.raise_for_status()
                 return response.content
+        
+        # 【新增】类型3: source_ai_url
+        elif task.source_ai_url:
+            ai_url = task.source_ai_url
+            log_print(f"[{worker_name}] 🤖 Process AI URL: {ai_url[:50]}...")
+            
+            # 判断是Base64 Data URL还是HTTP URL
+            if ai_url.startswith('data:'):
+                # Base64 Data URL
+                log_print(f"[{worker_name}] 📦 Decoding Base64 Data URL...")
+                mime_type, base64_str = self._parse_data_url(ai_url)
+                image_bytes = base64.b64decode(base64_str)
+                log_print(f"[{worker_name}] ✅ Base64 decoded, size: {len(image_bytes) / 1024:.2f} KB")
+                return image_bytes
+            else:
+                # HTTP URL（Tongyi临时URL）
+                log_print(f"[{worker_name}] 🌐 Download from AI HTTP URL...")
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.get(ai_url)
+                    response.raise_for_status()
+                    return response.content
+        
+        # 【新增】类型4: source_attachment_id
+        elif task.source_attachment_id:
+            log_print(f"[{worker_name}] 🔄 Reusing attachment: {task.source_attachment_id[:8]}...")
+            
+            # 需要数据库会话，从外部传入
+            from ...models.db_models import MessageAttachment
+            # 注意: 这里需要从外部传入db，但为了兼容性，我们创建一个新的会话
+            reuse_db = SessionLocal()
+            try:
+                # 查询已有附件
+                existing = reuse_db.query(MessageAttachment).filter_by(
+                    id=task.source_attachment_id
+                ).first()
+            
+                if not existing:
+                    raise Exception(f"Attachment {task.source_attachment_id} not found")
+                
+                # 如果已有云URL且状态完成 → 无需重新上传
+                if existing.url and existing.upload_status == 'completed':
+                    # 直接复用云URL
+                    log_print(f"[{worker_name}] ✅ Attachment already uploaded, reusing cloud URL: {existing.url[:50]}...")
+                    # 注意: task 和 current_attachment 需要使用传入的 db，这里我们返回 None
+                    # 实际的状态更新在 _process_task 中处理
+                    return None  # 特殊标记：无需上传
+                else:
+                    raise Exception(f"Attachment {task.source_attachment_id} not uploaded yet")
+            finally:
+                reuse_db.close()
+        
         else:
-            raise Exception("No file source available (both source_file_path and source_url are empty)")
+            raise Exception("No file source available (all source fields are empty)")
+    
+    def _parse_data_url(self, data_url: str) -> tuple[str, str]:
+        """
+        解析Data URL
+        
+        返回: (mime_type, base64_str)
+        """
+        if not data_url.startswith('data:'):
+            raise ValueError("Invalid data URL")
+        
+        # 格式: data:image/png;base64,iVBORw0KGgo...
+        parts = data_url.split(',', 1)
+        if len(parts) != 2:
+            raise ValueError("Invalid data URL format")
+        
+        header = parts[0]  # data:image/png;base64
+        base64_str = parts[1]
+        
+        # 提取MIME类型
+        mime_match = header.split(':')[1].split(';')[0]
+        mime_type = mime_match if mime_match else 'image/png'
+        
+        return mime_type, base64_str
 
     def _get_storage_config(self, db, storage_id: Optional[str], session_id: Optional[str] = None):
         """获取存储配置"""

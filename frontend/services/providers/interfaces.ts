@@ -24,9 +24,13 @@ export interface StreamUpdate {
 }
 
 export interface ImageGenerationResult {
-  url: string;
+  url: string;  // 显示URL（可能是 /api/temp-images/{attachment_id} 或 HTTP URL）
   mimeType: string;
   filename?: string; // Optional filename for generated images
+  // ✅ 新增字段（后端统一附件处理）
+  attachmentId?: string;  // 附件ID
+  uploadStatus?: 'pending' | 'completed' | 'failed';  // 上传状态
+  taskId?: string;  // 上传任务ID
   thoughts?: Array<{ type: 'text' | 'image'; content: string }>; // 思考过程（thoughts）
   text?: string; // 文本响应
 }

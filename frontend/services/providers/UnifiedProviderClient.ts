@@ -471,6 +471,20 @@ export class UnifiedProviderClient implements ILLMProvider {
         throw new Error(`Invalid response format: ${JSON.stringify(data)}`);
       }
       
+      // ✅ 处理图片生成和编辑结果（后端已处理，返回标准化格式）
+      // 对于 image-gen 和 image-edit 模式，后端返回 { images: [...] }
+      if ((mode === 'image-gen' || mode.startsWith('image-')) && data.data.images) {
+        // 将后端格式转换为 ImageGenerationResult[]
+        return data.data.images.map((img: any) => ({
+          url: img.url,  // 显示URL（可能是 /api/temp-images/{attachment_id} 或 HTTP URL）
+          mimeType: img.mimeType || 'image/png',
+          filename: img.filename,
+          attachmentId: img.attachmentId,
+          uploadStatus: img.uploadStatus,
+          taskId: img.taskId
+        } as ImageGenerationResult));
+      }
+      
       return data.data;
     } catch (error) {
       console.error(`[UnifiedProviderClient] Mode execution error for ${this.id}/${mode}:`, error);

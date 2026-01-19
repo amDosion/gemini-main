@@ -604,7 +604,8 @@ export const fetchAttachmentStatus = async (
       headers['Authorization'] = `Bearer ${token}`;
     }
     
-    const response = await fetch(`/api/sessions/${sessionId}/attachments/${attachmentId}`, {
+    // ✅ 使用新的统一附件API端点
+    const response = await fetch(`/api/attachments/${attachmentId}/cloud-url`, {
       headers,
       credentials: 'include',  // 发送认证 Cookie（向后兼容）
     });
@@ -660,11 +661,66 @@ export const prepareAttachmentForApi = async (
   console.log('[prepareAttachmentForApi] 开始准备附件, imageUrl 类型:', isBase64Url(imageUrl) ? 'Base64' : isBlobUrl(imageUrl) ? 'Blob' : 'HTTP');
 
   try {
-    // 步骤 1: 尝试从历史消息中查找已有附件
+    // ✅ 步骤 1: 优先使用后端统一CONTINUITY API（如果sessionId可用）
+    if (sessionId) {
+      try {
+        const headers: HeadersInit = {};
+        const token = getAccessToken();
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        headers['Content-Type'] = 'application/json';
+
+        const response = await fetch('/api/attachments/resolve-continuity', {
+          method: 'POST',
+          headers,
+          credentials: 'include',
+          body: JSON.stringify({
+            activeImageUrl: imageUrl,
+            sessionId: sessionId,
+            messages: messages  // 可选，后端也可以从数据库查询
+          })
+        });
+
+        if (response.ok) {
+          const resolved = await response.json();
+          console.log('[prepareAttachmentForApi] ✅ 后端CONTINUITY API解析成功:', {
+            attachmentId: resolved.attachmentId,
+            status: resolved.status,
+            hasUrl: !!resolved.url
+          });
+
+          const reusedAttachment: Attachment = {
+            id: resolved.attachmentId,
+            mimeType: 'image/png', // 默认，可根据需要改进
+            name: `${filePrefix}-${Date.now()}.png`,
+            url: resolved.url,
+            uploadStatus: resolved.status as 'pending' | 'uploading' | 'completed' | 'failed',
+            uploadTaskId: resolved.taskId
+          };
+
+          // 如果已上传完成，直接返回
+          if (resolved.status === 'completed' && resolved.url) {
+            console.log('[prepareAttachmentForApi] ✅ 附件已上传完成，使用云URL');
+            return reusedAttachment;
+          }
+
+          // 如果待上传，返回待上传状态
+          console.log('[prepareAttachmentForApi] ✅ 附件待上传，返回待上传状态');
+          return reusedAttachment;
+        } else {
+          console.log('[prepareAttachmentForApi] ⚠️ 后端CONTINUITY API返回错误:', response.status);
+        }
+      } catch (apiError) {
+        console.warn('[prepareAttachmentForApi] ⚠️ 后端CONTINUITY API调用失败，降级到前端查找:', apiError);
+      }
+    }
+
+    // ✅ 步骤 2: 降级方案 - 前端查找（向后兼容）
     const found = findAttachmentByUrl(imageUrl, messages);
 
     if (found) {
-      console.log('[prepareAttachmentForApi] ✅ 找到历史附件');
+      console.log('[prepareAttachmentForApi] ✅ 前端查找找到历史附件');
       const { attachment: existingAttachment } = found;
       let finalUrl = existingAttachment.url;
       let finalUploadStatus = existingAttachment.uploadStatus || 'pending';

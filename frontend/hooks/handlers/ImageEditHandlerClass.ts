@@ -1,8 +1,9 @@
 import { BaseHandler } from './BaseHandler';
 import { ExecutionContext, HandlerResult } from './types';
 import { Attachment } from '../../types/types';
+import { ImageGenerationResult } from '../../services/providers/interfaces';
 import { llmService } from '../../services/llmService';
-import { processMediaResult, isHttpUrl } from './attachmentUtils';
+import { isHttpUrl } from './attachmentUtils';
 import { storageUpload } from '../../services/storage/storageUpload';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -52,12 +53,13 @@ export class ImageEditHandler extends BaseHandler {
       }
     }
     
-    // 传递模式参数和 sessionId（用于对话式编辑）
-    // 将 sessionId 添加到 options 中，以便后端使用
+    // 传递模式参数、sessionId 和 messageId（用于对话式编辑和附件保存）
+    // 将 sessionId 和 messageId 添加到 options 中，以便后端使用
     const editOptions = {
       ...context.options,
       frontend_session_id: context.sessionId,  // 传递前端会话 ID
-      sessionId: context.sessionId  // 向后兼容
+      sessionId: context.sessionId,  // 向后兼容
+      message_id: context.modelMessageId  // ✅ 新增：后端需要 messageId 来创建附件记录
     };
     
     const results = await llmService.editImage(
@@ -72,12 +74,16 @@ export class ImageEditHandler extends BaseHandler {
     const thoughts = firstResult?.thoughts || [];
     const textResponse = firstResult?.text;
 
-    // 使用统一的媒体处理函数
-    const processed = await Promise.all(
-      results.map(res => processMediaResult(res, context, 'edited'))
-    );
-
-    const displayAttachments: Attachment[] = processed.map(p => p.displayAttachment);
+    // ✅ 后端已处理图片（返回 attachmentId, uploadStatus, taskId）
+    // 直接使用后端返回的结果，不需要再次处理
+    const displayAttachments: Attachment[] = results.map((res: ImageGenerationResult) => ({
+      id: res.attachmentId || uuidv4(),  // 使用后端返回的 attachmentId
+      mimeType: res.mimeType || 'image/png',
+      name: res.filename || `edited-${Date.now()}.png`,
+      url: res.url,  // 显示URL（可能是 /api/temp-images/{attachment_id} 或 HTTP URL）
+      uploadStatus: res.uploadStatus || 'pending',
+      uploadTaskId: res.taskId
+    } as Attachment));
     
     // 构建内容：包含 thoughts 和 text（如果有）
     let content = `Edited images for: "${context.text}"`;
@@ -95,8 +101,8 @@ export class ImageEditHandler extends BaseHandler {
     }
 
     const uploadTask = async () => {
-      // 处理 AI 生成的图片
-      const dbAttachments = await Promise.all(processed.map(p => p.dbAttachmentPromise));
+      // ✅ 后端已创建附件记录和上传任务，直接返回
+      const dbAttachments = displayAttachments;
       
       // 处理用户上传的附件（上传到云存储）
       const dbUserAttachments = await Promise.all(
