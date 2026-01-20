@@ -4,6 +4,7 @@ import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '..
 import { Image as ImageIcon, Maximize2, Crop, Download, Layers, Clock, AlertCircle, Grid, X, History, Expand } from 'lucide-react';
 import InputArea from '../chat/InputArea';
 import { GenViewLayout } from '../common/GenViewLayout';
+import { getUrlType } from '../../hooks/handlers/attachmentUtils';
 
 interface ImageGenViewProps {
     messages: Message[];
@@ -72,11 +73,7 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
         if (displayImages.length > 0) {
             console.log('[ImageGenView] ========== 显示图片URL类型分析 ==========');
             displayImages.forEach((att, idx) => {
-                const urlType = att.url?.startsWith('data:') ? 'Base64 Data URL (AI原始返回)' :
-                               att.url?.startsWith('blob:') ? 'Blob URL (处理后的本地URL)' :
-                               att.url?.startsWith('http://') || att.url?.startsWith('https://') ? 
-                                 (att.uploadStatus === 'completed' ? '云存储URL (已上传完成)' : 'HTTP临时URL (AI原始返回)') :
-                               '未知类型';
+                const urlType = getUrlType(att.url, att.uploadStatus);
                 
                 const hasCloudUrl = att.uploadStatus === 'completed' && 
                                    (att.url?.startsWith('http://') || att.url?.startsWith('https://'));

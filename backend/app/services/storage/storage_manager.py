@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
 from ...models.db_models import StorageConfig, ActiveStorage
-from ...utils.encryption import encrypt_config, decrypt_config, mask_sensitive_fields
+from ...core.encryption import encrypt_config, decrypt_config, mask_sensitive_fields
 from ...core.user_scoped_query import UserScopedQuery
 from .storage_service import StorageService
 

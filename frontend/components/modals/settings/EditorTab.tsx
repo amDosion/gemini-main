@@ -107,37 +107,62 @@ export const EditorTab: React.FC<EditorTabProps> = ({
     // Initialize Form
     useEffect(() => {
         if (initialData) {
-            // 编辑现有配置：加载所有数据
-            setFormData({ ...initialData });
+            // ✅ 编辑现有配置：需要获取解密后的 API Key 以便验证连接
+            // 如果 initialData 中的 apiKey 是加密的（以 gAAAAA 开头），需要重新获取解密版本
+            const loadDecryptedProfile = async () => {
+                try {
+                    // ✅ 使用 edit_mode=true 获取解密后的配置
+                    const decryptedProfiles = await db.getProfiles(true);
+                    const decryptedProfile = decryptedProfiles.find(p => p.id === initialData.id);
+                    
+                    if (decryptedProfile) {
+                        // ✅ 使用解密后的配置（包含解密的 API Key）
+                        setFormData({ ...decryptedProfile });
+                        setVerifiedModels(decryptedProfile.savedModels || []);
+                        
+                        console.log('[EditorTab] Loaded decrypted profile for editing:', {
+                            id: decryptedProfile.id.substring(0, 8) + '...',
+                            name: decryptedProfile.name,
+                            hasDecryptedApiKey: !!decryptedProfile.apiKey && !decryptedProfile.apiKey.startsWith('gAAAAA'),
+                            savedModelsCount: decryptedProfile.savedModels?.length || 0,
+                            timestamp: new Date().toISOString()
+                        });
+                    } else {
+                        // 如果找不到，使用原始数据（可能是新创建的配置）
+                        setFormData({ ...initialData });
+                        setVerifiedModels(initialData.savedModels || []);
+                        console.warn('[EditorTab] Profile not found in decrypted list, using initialData');
+                    }
+                } catch (error) {
+                    console.error('[EditorTab] Failed to load decrypted profile:', error);
+                    // 降级：使用原始数据
+                    setFormData({ ...initialData });
+                    setVerifiedModels(initialData.savedModels || []);
+                }
+            };
             
-            // ✅ 从 savedModels 加载已保存的模型列表
-            // 用户可以看到之前的选择，并在此基础上修改
-            setVerifiedModels(initialData.savedModels || []);
-            
-            console.log('[EditorTab] Loaded existing profile:', {
-                id: initialData.id.substring(0, 8) + '...',
-                name: initialData.name,
-                savedModelsCount: initialData.savedModels?.length || 0,
-                timestamp: new Date().toISOString()
-            });
+            loadDecryptedProfile();
         } else if (!initialData && providerTemplates.length > 0) {
             // 创建新配置：初始化空白表单
-            const googleTemplate = providerTemplates.find(p => p.id === 'google');
+            // ✅ 使用第一个 Provider Template 作为默认配置
+            const firstTemplate = providerTemplates[0];
+            const googleTemplate = providerTemplates.find(p => p.id === 'google') || firstTemplate;
             
-            console.log('[EditorTab] Initializing new profile with Google template:', {
-                templateFound: !!googleTemplate,
+            console.log('[EditorTab] Initializing new profile with template:', {
+                templateId: googleTemplate.id,
+                templateName: googleTemplate.name,
                 baseUrl: googleTemplate?.baseUrl,
                 timestamp: new Date().toISOString()
             });
             
             setFormData({
                 id: uuidv4(),
-                name: 'New Configuration',
-                providerId: 'google',
+                name: `${googleTemplate.name} Config`,  // ✅ 使用 Provider Template 名称作为默认配置名称
+                providerId: googleTemplate.id,
                 apiKey: '',
                 baseUrl: googleTemplate?.baseUrl || '',  // ✅ 使用 Template 的 baseUrl
-                protocol: 'google',
-                isProxy: false,
+                protocol: googleTemplate.protocol,
+                isProxy: !!googleTemplate.isCustom,
                 hiddenModels: [],
                 cachedModelCount: 0,
                 savedModels: [],
@@ -152,10 +177,22 @@ export const EditorTab: React.FC<EditorTabProps> = ({
     const handleVerify = async () => {
         if (!formData) return;
         
+        // ✅ 验证连接时，必须使用明文 API Key
+        // formData.apiKey 在 EditorTab 中应该是解密的（通过 edit_mode=true 加载）
+        // 如果仍然是加密的（以 gAAAAA 开头），验证会失败
+        const apiKeyToVerify = formData.apiKey;
+        if (apiKeyToVerify && apiKeyToVerify.startsWith('gAAAAA')) {
+            console.error('[EditorTab] ⚠️ API Key is still encrypted! Cannot verify connection.');
+            setVerifyError('API Key is encrypted. Please reload the configuration.');
+            setIsVerifying(false);
+            return;
+        }
+        
         console.log('[EditorTab] Starting verification:', {
             providerId: formData.providerId,
             protocol: formData.protocol,
             hasApiKey: !!formData.apiKey,
+            isEncrypted: formData.apiKey?.startsWith('gAAAAA'),
             baseUrl: formData.baseUrl
         });
         
@@ -165,12 +202,12 @@ export const EditorTab: React.FC<EditorTabProps> = ({
 
         try {
             // ✅ 统一通过后端 API 验证
-            // 前端只负责传递 URL 和 Key，后端负责调用 Provider API
+            // 前端只负责传递 URL 和 Key（明文），后端负责调用 Provider API
             const providerInstance = LLMFactory.getProvider(formData.protocol as ApiProtocol, formData.providerId);
             console.log('[EditorTab] Provider instance created:', providerInstance.id);
             
             const models = await providerInstance.getAvailableModels(
-                formData.apiKey,
+                apiKeyToVerify,  // ✅ 使用明文 API Key 验证
                 formData.baseUrl
             );
             
@@ -227,6 +264,8 @@ export const EditorTab: React.FC<EditorTabProps> = ({
 
         // ✅ 保存完整的 ModelConfig 对象数组到数据库
         // 后端会直接存储完整对象，前端加载时可以直接使用，无需再次调用 API
+        // ✅ 重要：formData.apiKey 此时应该是明文（因为 EditorTab 中加载时已解密）
+        // 后端会检查：如果是明文则加密保存，如果已经是加密的则直接保存
         const profileToSave: ConfigProfile = {
             ...formData,
             updatedAt: Date.now(),

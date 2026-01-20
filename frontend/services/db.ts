@@ -134,8 +134,11 @@ class ApiDB {
     }
 
     // ==================== Profiles ====================
-    async getProfiles(): Promise<ConfigProfile[]> {
-        return this.request<ConfigProfile[]>('/profiles');
+    async getProfiles(editMode: boolean = false): Promise<ConfigProfile[]> {
+        // ✅ editMode=true 时，后端会解密 API Key 返回（用于 EditorTab 编辑）
+        // editMode=false 时，返回加密的 API Key（用于 ProfilesTab 显示）
+        const url = editMode ? '/profiles?edit_mode=true' : '/profiles';
+        return this.request<ConfigProfile[]>(url);
     }
 
     async saveProfile(profile: ConfigProfile): Promise<void> {

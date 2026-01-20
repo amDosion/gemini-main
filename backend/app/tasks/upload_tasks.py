@@ -67,7 +67,7 @@ def process_upload(self, task_id: str):
         # ⚠️ 重要：解密配置中的敏感字段（accessKeyId, accessKeySecret 等）
         # 因为前端保存时使用 encrypt_config() 加密，后端使用时必须解密
         try:
-            from app.utils.encryption import decrypt_config
+            from app.core.encryption import decrypt_config
             decrypted_config_dict = decrypt_config(config.config)
             config.config = decrypted_config_dict
             print(f"[Celery] 已解密存储配置: {config.id} (provider={config.provider})")

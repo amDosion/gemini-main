@@ -21,6 +21,7 @@ from ...services.storage.storage_manager import StorageManager
 from ...services.common.redis_queue_service import redis_queue
 from ...core.dependencies import require_current_user
 from ...core.user_scoped_query import UserScopedQuery
+from ...core.encryption import decrypt_config
 
 router = APIRouter(prefix="/api/storage", tags=["storage"])
 logger = logging.getLogger(__name__)
@@ -265,6 +266,8 @@ async def upload_to_active_storage_async(content: bytes, filename: str, content_
     异步上传文件到当前激活的存储配置
 
     供其他异步模块（如 chat_handler）调用
+    
+    使用 StorageManager 统一管理配置，实现配置获取、解密和上传的统一处理。
 
     Args:
         content: 文件内容（字节）
@@ -280,26 +283,12 @@ async def upload_to_active_storage_async(content: bytes, filename: str, content_
         resolved_user_id = user_id or "default"
         logger.info(f"[Storage] Async upload for user: {resolved_user_id}, file: {filename}")
 
-        # 获取当前激活的存储配置
-        active = db.query(ActiveStorage).filter(ActiveStorage.user_id == resolved_user_id).first()
-        if not active or not active.storage_id:
-            logger.warning(f"[Storage] No active storage for user: {resolved_user_id}")
-            return {"success": False, "error": "未设置存储配置"}
-
-        config = db.query(StorageConfig).filter(StorageConfig.id == active.storage_id).first()
-        if not config:
-            return {"success": False, "error": "存储配置不存在"}
-
-        if not config.enabled:
-            return {"success": False, "error": "存储配置已禁用"}
-
-        # 使用 StorageService 上传（支持多种存储类型）
-        result = await StorageService.upload_file(
+        # ✅ 使用 StorageManager 统一管理配置和上传
+        manager = StorageManager(db, resolved_user_id)
+        result = await manager.upload_file(
             filename=filename,
             content=content,
-            content_type=content_type,
-            provider=config.provider,
-            config=config.config
+            content_type=content_type
         )
 
         if result.get('success'):
@@ -308,6 +297,9 @@ async def upload_to_active_storage_async(content: bytes, filename: str, content_
             logger.error(f"[Storage] Upload failed: {result.get('error', 'Unknown error')}")
 
         return result
+    except HTTPException as e:
+        logger.error(f"[Storage] Async upload HTTP error: {e.detail}")
+        return {"success": False, "error": e.detail}
     except Exception as e:
         logger.error(f"[Storage] Async upload error: {e}")
         return {"success": False, "error": str(e)}
@@ -411,23 +403,16 @@ async def process_upload_task(task_id: str, _db: Session = None):
         task.status = 'uploading'
         db.commit()
         
-        # 2. 获取存储配置
-        if task.storage_id:
-            config = db.query(StorageConfig).filter(StorageConfig.id == task.storage_id).first()
-        else:
-            active = None
-            if task.session_id:
-                session = db.query(ChatSession).filter(ChatSession.id == task.session_id).first()
-                if session:
-                    active = db.query(ActiveStorage).filter(ActiveStorage.user_id == session.user_id).first()
-            if not active:
-                active = db.query(ActiveStorage).filter(ActiveStorage.user_id == "default").first()
-            if not active or not active.storage_id:
-                raise Exception("未设置存储配置")
-            config = db.query(StorageConfig).filter(StorageConfig.id == active.storage_id).first()
+        # 2. 获取用户ID和存储配置
+        # ✅ 使用 StorageManager 统一管理配置
+        user_id = "default"
+        if task.session_id:
+            session = db.query(ChatSession).filter(ChatSession.id == task.session_id).first()
+            if session:
+                user_id = session.user_id
         
-        if not config or not config.enabled:
-            raise Exception("存储配置不可用")
+        # ✅ 使用 StorageManager 统一管理配置和上传
+        manager = StorageManager(db, user_id)
         
         # 3. 获取图片内容
         image_content = None
@@ -464,13 +449,13 @@ async def process_upload_task(task_id: str, _db: Session = None):
             raise Exception("没有可用的图片来源")
         
         # 4. 上传到云存储
-        logger.info(f"[UploadTask] 上传到云存储: {config.provider}")
-        result = await StorageService.upload_file(
+        # ✅ 使用 StorageManager 统一管理上传（自动处理配置获取、解密和上传）
+        logger.info(f"[UploadTask] 上传到云存储（使用 StorageManager）")
+        result = await manager.upload_file(
             filename=task.filename,
             content=image_content,
             content_type='image/png',
-            provider=config.provider,
-            config=config.config
+            storage_id=task.storage_id  # 如果指定了 storage_id，使用指定的配置
         )
         
         # 5. 删除临时文件

@@ -4,6 +4,7 @@ Encryption utilities for sensitive data storage.
 This module provides:
 1. Encryption/decryption functions for sensitive data (API keys, credentials)
 2. ENCRYPTION_KEY management (generation, storage, retrieval)
+3. Configuration dictionary encryption/decryption (for storage configs)
 
 ENCRYPTION_KEY 用于加密 JWT Secret Key 和其他敏感数据（如 API keys）。
 作为"主密钥"，它比 JWT Secret Key 更重要，需要安全的管理机制。
@@ -21,8 +22,8 @@ import os
 import base64
 import json
 from pathlib import Path
-from typing import Optional
-from cryptography.fernet import Fernet
+from typing import Optional, Dict, Any, Set
+from cryptography.fernet import Fernet, InvalidToken
 import logging
 
 logger = logging.getLogger(__name__)
@@ -296,6 +297,10 @@ def is_encrypted(data: str) -> bool:
     通过尝试实际解密来判断数据是否加密，而不是仅检查 base64 格式。
     这样可以避免将明文 API key（可能是 base64 格式）误判为加密数据。
     
+    支持两种加密格式：
+    1. Fernet token（直接 Fernet 加密，以 'gAAAAA' 开头）- 用于 encrypt_config()
+    2. Base64 编码的 Fernet token（双重编码）- 用于 encrypt_data()
+    
     Args:
         data: Data to check
     
@@ -318,13 +323,220 @@ def is_encrypted(data: str) -> bool:
     try:
         key = _get_encryption_key_bytes()
         fernet = Fernet(key)
-        encrypted_bytes = base64.b64decode(data.encode())
-        # 尝试解密（不抛出异常，只检查是否成功）
-        fernet.decrypt(encrypted_bytes)
-        return True
+        
+        # 尝试两种格式：
+        # 1. 直接 Fernet token（encrypt_config 使用）
+        try:
+            fernet.decrypt(data.encode('utf-8'))
+            return True
+        except Exception:
+            pass
+        
+        # 2. Base64 编码的 Fernet token（encrypt_data 使用）
+        try:
+            encrypted_bytes = base64.b64decode(data.encode())
+            fernet.decrypt(encrypted_bytes)
+            return True
+        except (ValueError, base64.binascii.Error):
+            pass
+        
+        return False
     except (ValueError, base64.binascii.Error):
         # ENCRYPTION_KEY 未设置或 base64 解码失败，不是加密数据
         return False
     except Exception:
         # 解密失败（密钥不匹配、数据格式错误等），不是加密数据
         return False
+
+
+# ==================== 配置字典加密/解密功能 ====================
+
+# Sensitive fields that should be encrypted in configuration dictionaries
+SENSITIVE_FIELDS: Set[str] = {
+    "token",
+    "accessKeyId",
+    "accessKeySecret",
+    "secretId",
+    "secretKey",
+    "clientSecret",
+    "refreshToken",
+    "apiKey",
+    "password",
+}
+
+
+def encrypt_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Encrypt sensitive fields in a configuration dictionary.
+    
+    Only encrypts fields listed in SENSITIVE_FIELDS. Other fields are left unchanged.
+    Handles nested dictionaries recursively.
+    
+    Args:
+        config: Configuration dictionary to encrypt
+        
+    Returns:
+        Dict with sensitive fields encrypted
+        
+    Example:
+        >>> config = {"token": "secret123", "domain": "example.com"}
+        >>> encrypted = encrypt_config(config)
+        >>> encrypted["domain"]
+        'example.com'
+        >>> encrypted["token"]  # Will be encrypted string
+        'gAAAAAB...'
+    """
+    if not config:
+        return config
+    
+    try:
+        key = _get_encryption_key_bytes()
+        fernet = Fernet(key)
+        
+        encrypted_config = {}
+        
+        for field, value in config.items():
+            if value is None:
+                encrypted_config[field] = value
+            elif isinstance(value, dict):
+                # Recursively encrypt nested dictionaries
+                encrypted_config[field] = encrypt_config(value)
+            elif field in SENSITIVE_FIELDS and isinstance(value, str):
+                # Encrypt sensitive string fields
+                # ✅ 检查是否已经加密，避免重复加密
+                if is_encrypted(value):
+                    # 已经加密，直接使用
+                    encrypted_config[field] = value
+                else:
+                    # 未加密，进行加密
+                    try:
+                        encrypted_bytes = fernet.encrypt(value.encode('utf-8'))
+                        encrypted_config[field] = encrypted_bytes.decode('utf-8')
+                    except Exception as e:
+                        logger.error(f"[Encryption] Failed to encrypt field '{field}': {e}")
+                        # Keep original value if encryption fails
+                        encrypted_config[field] = value
+            else:
+                # Keep non-sensitive fields unchanged
+                encrypted_config[field] = value
+        
+        return encrypted_config
+        
+    except Exception as e:
+        logger.error(f"[Encryption] Encryption failed: {e}")
+        # Return original config if encryption fails
+        return config
+
+
+def decrypt_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Decrypt sensitive fields in a configuration dictionary.
+    
+    Only decrypts fields listed in SENSITIVE_FIELDS. Other fields are left unchanged.
+    Handles nested dictionaries recursively.
+    
+    Args:
+        config: Configuration dictionary to decrypt
+        
+    Returns:
+        Dict with sensitive fields decrypted
+        
+    Raises:
+        ValueError: If decryption fails due to invalid key or corrupted data
+    """
+    if not config:
+        return config
+    
+    try:
+        key = _get_encryption_key_bytes()
+        fernet = Fernet(key)
+        
+        decrypted_config = {}
+        
+        for field, value in config.items():
+            if value is None:
+                decrypted_config[field] = value
+            elif isinstance(value, dict):
+                # Recursively decrypt nested dictionaries
+                decrypted_config[field] = decrypt_config(value)
+            elif field in SENSITIVE_FIELDS and isinstance(value, str):
+                # Decrypt sensitive string fields
+                # ✅ 检查是否已加密，避免对明文进行解密尝试
+                if is_encrypted(value):
+                    # 已加密，尝试解密
+                    try:
+                        decrypted_bytes = fernet.decrypt(value.encode('utf-8'))
+                        decrypted_config[field] = decrypted_bytes.decode('utf-8')
+                    except InvalidToken:
+                        logger.warning(
+                            f"[Encryption] Field '{field}' appears to be encrypted with a different key. "
+                            "Using value as-is."
+                        )
+                        # 如果解密失败（可能是不同的密钥），保持原值
+                        decrypted_config[field] = value
+                    except Exception as e:
+                        logger.error(f"[Encryption] Failed to decrypt field '{field}': {e}")
+                        decrypted_config[field] = value
+                else:
+                    # 未加密（可能是历史数据），直接使用
+                    logger.debug(
+                        f"[Encryption] Field '{field}' is not encrypted (likely historical data). Using value as-is."
+                    )
+                    decrypted_config[field] = value
+            else:
+                # Keep non-sensitive fields unchanged
+                decrypted_config[field] = value
+        
+        return decrypted_config
+        
+    except Exception as e:
+        logger.error(f"[Encryption] Decryption failed: {e}")
+        # Return original config if decryption fails
+        return config
+
+
+def mask_sensitive_fields(config: Dict[str, Any], mask: str = "***") -> Dict[str, Any]:
+    """
+    Mask sensitive fields in a configuration dictionary for safe logging.
+    
+    Replaces sensitive field values with a mask string. Handles nested dictionaries.
+    
+    Args:
+        config: Configuration dictionary to mask
+        mask: String to use for masking (default: "***")
+        
+    Returns:
+        Dict with sensitive fields masked
+        
+    Example:
+        >>> config = {"token": "secret123", "domain": "example.com"}
+        >>> masked = mask_sensitive_fields(config)
+        >>> masked
+        {'token': '***', 'domain': 'example.com'}
+    """
+    if not config:
+        return config
+    
+    masked_config = {}
+    
+    for field, value in config.items():
+        if value is None:
+            masked_config[field] = value
+        elif isinstance(value, dict):
+            # Recursively mask nested dictionaries
+            masked_config[field] = mask_sensitive_fields(value, mask)
+        elif field in SENSITIVE_FIELDS:
+            # Mask sensitive fields
+            if isinstance(value, str) and len(value) > 0:
+                # Show first 3 characters for debugging, mask the rest
+                if len(value) <= 3:
+                    masked_config[field] = mask
+                else:
+                    masked_config[field] = value[:3] + mask
+            else:
+                masked_config[field] = mask
+        else:
+            # Keep non-sensitive fields unchanged
+            masked_config[field] = value
+    
+    return masked_config

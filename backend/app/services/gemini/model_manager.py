@@ -83,11 +83,23 @@ class ModelManager:
                 data = json.loads(stdout)
             except json.JSONDecodeError as e:
                 logger.error(f"[Model Manager] Failed to parse JSON response: {e}")
+                logger.error(f"[Model Manager] Raw response (first 500 chars): {stdout[:500]}")
                 raise ValueError(f"Invalid JSON response from Google API: {e}")
             
+            # ✅ 检查是否有错误响应
+            if 'error' in data:
+                error_info = data.get('error', {})
+                error_message = error_info.get('message', 'Unknown error')
+                error_code = error_info.get('code', 'Unknown code')
+                logger.error(f"[Model Manager] Google API returned an error: {error_code} - {error_message}")
+                raise ValueError(f"Google API error ({error_code}): {error_message}")
+            
+            # ✅ 检查响应格式
             if 'models' not in data or not isinstance(data['models'], list):
                 logger.error(f"[Model Manager] Invalid response format")
-                raise ValueError("Invalid response format: missing 'models' array")
+                logger.error(f"[Model Manager] Response keys: {list(data.keys())}")
+                logger.error(f"[Model Manager] Response content (first 1000 chars): {json.dumps(data, indent=2)[:1000]}")
+                raise ValueError(f"Invalid response format: missing 'models' array. Response keys: {list(data.keys())}")
             
             # 构建 ModelConfig
             model_configs = []

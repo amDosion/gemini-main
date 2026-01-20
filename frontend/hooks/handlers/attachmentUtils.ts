@@ -1129,3 +1129,43 @@ export const submitUploadTaskToBackend = async (
     return '';
   }
 };
+
+/**
+ * 获取URL类型（统一函数）
+ * 
+ * 用于统一判断URL类型，支持所有URL类型包括：
+ * - Base64 Data URL (data:image/png;base64,...)
+ * - Blob URL (blob:http://localhost:xxx)
+ * - 临时代理URL (/api/temp-images/{id})
+ * - HTTP/HTTPS URL (http://... 或 https://...)
+ * - 空URL ('' 或 undefined)
+ * 
+ * @param url - URL字符串
+ * @param uploadStatus - 上传状态（可选，用于区分云存储URL和HTTP临时URL）
+ * @returns URL类型描述字符串
+ */
+export const getUrlType = (url: string | undefined, uploadStatus?: string): string => {
+  if (!url) {
+    return '空URL';
+  }
+  
+  if (url.startsWith('data:')) {
+    return 'Base64 Data URL (AI原始返回)';
+  }
+  
+  if (url.startsWith('blob:')) {
+    return 'Blob URL (处理后的本地URL)';
+  }
+  
+  if (url.startsWith('/api/temp-images/')) {
+    return '临时代理URL (后端创建)';
+  }
+  
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return uploadStatus === 'completed' 
+      ? '云存储URL (已上传完成)' 
+      : 'HTTP临时URL (AI原始返回)';
+  }
+  
+  return '未知类型';
+};

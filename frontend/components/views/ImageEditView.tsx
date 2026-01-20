@@ -7,7 +7,7 @@ import { useImageCanvas } from '../../hooks/useImageCanvas';
 import { ImageCanvasControls } from '../common/ImageCanvasControls';
 import { ImageCompare } from '../common/ImageCompare';
 import { GenViewLayout } from '../common/GenViewLayout';
-import { processUserAttachments } from '../../hooks/handlers/attachmentUtils';
+import { processUserAttachments, getUrlType } from '../../hooks/handlers/attachmentUtils';
 import { ThinkingBlock } from '../message/ThinkingBlock';
 import { useToastContext } from '../../contexts/ToastContext';
 
@@ -414,11 +414,7 @@ export const ImageEditView = memo(({
             const lastUserMsg = [...messages].reverse().find(m => m.role === Role.USER && m.attachments?.length);
             if (lastUserMsg && lastUserMsg.attachments?.[0]?.url) {
                 const att = lastUserMsg.attachments[0];
-                const urlType = att.url?.startsWith('data:') ? 'Base64 Data URL' :
-                              att.url?.startsWith('blob:') ? 'Blob URL' :
-                              att.url?.startsWith('http://') || att.url?.startsWith('https://') ? 
-                                (att.uploadStatus === 'completed' ? '云存储URL' : 'HTTP临时URL') :
-                              '未知类型';
+                const urlType = getUrlType(att.url, att.uploadStatus);
                 console.log('[ImageEditView] 从用户消息中提取原始图片:', {
                     urlType: urlType,
                     url: att.url ? (att.url.length > 60 ? att.url.substring(0, 60) + '...' : att.url) : 'N/A',
@@ -431,11 +427,7 @@ export const ImageEditView = memo(({
                 const lastModelMsg = [...messages].reverse().find(m => m.role === Role.MODEL && m.attachments?.length);
                 if (lastModelMsg && lastModelMsg.attachments?.[0]?.url) {
                     const att = lastModelMsg.attachments[0];
-                    const urlType = att.url?.startsWith('data:') ? 'Base64 Data URL' :
-                                  att.url?.startsWith('blob:') ? 'Blob URL' :
-                                  att.url?.startsWith('http://') || att.url?.startsWith('https://') ? 
-                                    (att.uploadStatus === 'completed' ? '云存储URL' : 'HTTP临时URL') :
-                                  '未知类型';
+                    const urlType = getUrlType(att.url, att.uploadStatus);
                     console.log('[ImageEditView] 从模型消息中提取编辑后的图片:', {
                         urlType: urlType,
                         url: att.url ? (att.url.length > 60 ? att.url.substring(0, 60) + '...' : att.url) : 'N/A',
@@ -455,11 +447,7 @@ export const ImageEditView = memo(({
                 // If it's a model response with an image
                 if (lastMsg.role === Role.MODEL && lastMsg.attachments && lastMsg.attachments.length > 0 && lastMsg.attachments[0].url) {
                     const att = lastMsg.attachments[0];
-                    const urlType = att.url?.startsWith('data:') ? 'Base64 Data URL (AI原始返回)' :
-                                  att.url?.startsWith('blob:') ? 'Blob URL (处理后的本地URL)' :
-                                  att.url?.startsWith('http://') || att.url?.startsWith('https://') ? 
-                                    (att.uploadStatus === 'completed' ? '云存储URL (已上传完成)' : 'HTTP临时URL (AI原始返回)') :
-                                  '未知类型';
+                    const urlType = getUrlType(att.url, att.uploadStatus);
                     
                     console.log('[ImageEditView] ========== 从最新消息中提取附件用于显示 ==========');
                     console.log('[ImageEditView] 提取的附件信息:', {

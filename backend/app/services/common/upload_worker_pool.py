@@ -22,7 +22,7 @@ from ...core.database import SessionLocal
 from ...core.config import settings
 from ...models.db_models import UploadTask, StorageConfig, ActiveStorage, ChatSession
 from ..storage.storage_service import StorageService
-from ...utils.encryption import decrypt_config
+from ...core.encryption import decrypt_config
 from .redis_queue_service import redis_queue
 
 logger = logging.getLogger(__name__)
@@ -461,11 +461,12 @@ class UploadWorkerPool:
             log_print(f"[{worker_name}] 📂 读取文件内容...")
             print(f"[{worker_name}] 📂 读取文件内容...", file=sys.stderr, flush=True)
             content = await self._get_file_content(task, worker_name)
-            print(f"[{worker_name}] ✅ 文件内容读取完成，大小: {len(content) / 1024:.2f} KB", file=sys.stderr, flush=True)
             
             # ✅ 新增: 如果返回None → 表示复用附件，无需上传
+            # ✅ Bug修复: 在检查 None 之后再记录文件大小，避免 TypeError
             if content is None:
                 log_print(f"[{worker_name}] ✅ 附件复用，无需上传")
+                print(f"[{worker_name}] ✅ 附件复用，无需上传", file=sys.stderr, flush=True)
                 
                 # 查询已有附件并复用其云URL
                 from ...models.db_models import MessageAttachment
@@ -496,8 +497,10 @@ class UploadWorkerPool:
                 
                 return  # 复用完成，无需上传
             
+            # ✅ Bug修复: 只有在 content 不是 None 时才记录文件大小
             file_size = len(content)
             log_print(f"[{worker_name}] ✅ 文件读取成功，大小: {file_size / 1024:.2f} KB")
+            print(f"[{worker_name}] ✅ 文件内容读取完成，大小: {file_size / 1024:.2f} KB", file=sys.stderr, flush=True)
 
             # ========== 步骤 4: 获取存储配置 ==========
             log_print(f"[{worker_name}] ⚙️ 获取存储配置...")
@@ -534,7 +537,10 @@ class UploadWorkerPool:
             )
             upload_duration = (datetime.now() - upload_start).total_seconds()
             print(f"[{worker_name}] ✅ StorageService.upload_file() 完成 (耗时: {upload_duration:.2f}s)", file=sys.stderr, flush=True)
-            print(f"[{worker_name}] ✅ 上传结果: {result[:80] + '...' if len(result) > 80 else result}", file=sys.stderr, flush=True)
+            # ✅ Bug修复: result 是字典，需要转换为字符串再截断，或只显示关键信息
+            result_str = str(result)
+            result_preview = result_str[:80] + '...' if len(result_str) > 80 else result_str
+            print(f"[{worker_name}] ✅ 上传结果: {result_preview}", file=sys.stderr, flush=True)
 
             # ========== 步骤 6: 处理上传结果 ==========
             if result.get('success'):

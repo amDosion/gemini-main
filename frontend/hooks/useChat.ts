@@ -16,6 +16,7 @@ import { storageUpload } from '../services/storage/storageUpload';
 import { strategyRegistry, preprocessorRegistry } from './handlers/strategyConfig';
 import { PollingManager } from './handlers/PollingManager';
 import { ExecutionContext, StreamUpdate } from './handlers/types';
+import { getUrlType } from './handlers/attachmentUtils';
 
 export const useChat = (
   currentSessionId: string | null,
@@ -188,11 +189,7 @@ export const useChat = (
       if (displayModelMessage.attachments && displayModelMessage.attachments.length > 0) {
         console.log('[useChat] ========== 附件显示URL类型分析 ==========');
         displayModelMessage.attachments.forEach((att, idx) => {
-          const urlType = att.url?.startsWith('data:') ? 'Base64 Data URL (AI原始返回)' :
-                         att.url?.startsWith('blob:') ? 'Blob URL (处理后的本地URL)' :
-                         att.url?.startsWith('http://') || att.url?.startsWith('https://') ? 
-                           (att.uploadStatus === 'completed' ? '云存储URL (已上传完成)' : 'HTTP临时URL (AI原始返回)') :
-                         '未知类型';
+          const urlType = getUrlType(att.url, att.uploadStatus);
           
           const hasCloudUrl = att.uploadStatus === 'completed' && 
                              (att.url?.startsWith('http://') || att.url?.startsWith('https://'));
@@ -243,11 +240,7 @@ export const useChat = (
           console.log('[useChat] ========== 数据库保存的附件URL类型分析 ==========');
           if (dbModelMessage.attachments && dbModelMessage.attachments.length > 0) {
             dbModelMessage.attachments.forEach((att, idx) => {
-              const urlType = att.url?.startsWith('data:') ? 'Base64 Data URL' :
-                             att.url?.startsWith('blob:') ? 'Blob URL' :
-                             att.url?.startsWith('http://') || att.url?.startsWith('https://') ? 
-                               (att.uploadStatus === 'completed' ? '云存储URL' : 'HTTP临时URL') :
-                             '空URL';
+              const urlType = getUrlType(att.url, att.uploadStatus);
               
               console.log(`[useChat] 数据库附件 ${idx + 1}/${dbModelMessage.attachments.length}:`, {
                 attachmentId: att.id?.substring(0, 8) + '...',
