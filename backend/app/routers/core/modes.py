@@ -115,7 +115,9 @@ def convert_attachments_to_reference_images(attachments: Optional[List[Attachmen
         attachments: 附件列表
         
     Returns:
-        reference_images 字典，格式：{'raw': base64_image, 'mask': base64_mask, ...}
+        reference_images 字典，格式：
+        - 如果只有 URL：{'raw': 'data:image/png;base64,...'}
+        - 如果有 attachment_id：{'raw': {'url': 'data:image/png;base64,...', 'attachment_id': 'xxx', 'mimeType': 'image/png'}}
     """
     if not attachments:
         return {}
@@ -136,19 +138,30 @@ def convert_attachments_to_reference_images(attachments: Optional[List[Attachmen
         if not image_data:
             continue
         
+        # ✅ 如果有 attachment_id，传递字典格式（包含 attachment_id 和 url）
+        # 如果没有 attachment_id，传递字符串格式（向后兼容）
+        if attachment.id:
+            ref_data = {
+                'url': image_data,
+                'attachment_id': attachment.id,
+                'mimeType': attachment.mimeType or 'image/png'
+            }
+        else:
+            ref_data = image_data  # 向后兼容：只传递 URL 字符串
+        
         # 根据 role 设置键名
         if attachment.role == 'mask':
-            reference_images['mask'] = image_data
+            reference_images['mask'] = ref_data
         else:
             # 默认作为 raw 图片（如果还没有 raw）
             if 'raw' not in reference_images:
-                reference_images['raw'] = image_data
+                reference_images['raw'] = ref_data
             else:
                 # 如果有多个非 mask 图片，使用列表或追加
                 if isinstance(reference_images.get('raw'), list):
-                    reference_images['raw'].append(image_data)
+                    reference_images['raw'].append(ref_data)
                 else:
-                    reference_images['raw'] = [reference_images['raw'], image_data]
+                    reference_images['raw'] = [reference_images['raw'], ref_data]
     
     return reference_images
 
@@ -372,6 +385,40 @@ async def handle_mode(
         if request_body.attachments:
             logger.info(f"[Modes]     - 处理 attachments: {len(request_body.attachments)} 个")
             reference_images = convert_attachments_to_reference_images(request_body.attachments)
+            
+            # ✅ 如果有 attachment_id，查找数据库中的附件信息
+            if reference_images and 'raw' in reference_images:
+                raw_data = reference_images['raw']
+                if isinstance(raw_data, dict) and 'attachment_id' in raw_data:
+                    attachment_id = raw_data['attachment_id']
+                    
+                    # 从数据库查询附件信息
+                    from ...models.db_models import MessageAttachment
+                    db_attachment = db.query(MessageAttachment).filter_by(
+                        id=attachment_id,
+                        user_id=user_id
+                    ).first()
+                    
+                    if db_attachment:
+                        logger.info(f"[Modes] ✅ 找到数据库中的附件: attachment_id={attachment_id[:8]}...")
+                        logger.info(f"[Modes]     - upload_status: {db_attachment.upload_status}")
+                        logger.info(f"[Modes]     - has_url: {bool(db_attachment.url)}")
+                        logger.info(f"[Modes]     - has_temp_url: {bool(db_attachment.temp_url)}")
+                        
+                        # ✅ 如果已上传完成，优先使用 url（云端永久 URL）
+                        if db_attachment.upload_status == 'completed' and db_attachment.url:
+                            raw_data['url'] = db_attachment.url
+                            logger.info(f"[Modes]     - 使用云存储 URL: {db_attachment.url[:60]}...")
+                        # ✅ 如果未上传完成，使用 temp_url（Base64）
+                        elif db_attachment.temp_url:
+                            raw_data['url'] = db_attachment.temp_url
+                            logger.info(f"[Modes]     - 使用临时 URL (Base64)")
+                        
+                        # 更新 reference_images
+                        reference_images['raw'] = raw_data
+                    else:
+                        logger.warning(f"[Modes] ⚠️ 未找到数据库中的附件: attachment_id={attachment_id[:8]}...")
+            
             if reference_images:
                 params["reference_images"] = reference_images
                 logger.info(f"[Modes]     - 已转换 reference_images: {len(reference_images)} 个")

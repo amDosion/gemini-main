@@ -37,15 +37,15 @@
 
 ### 2.2 问题点
 
-1. **问题 1：Base64 URL 被不必要查询**
-   - **位置**：`attachmentUtils.ts:385-388`
-   - **问题**：`!isHttpUrl(currentUrl)` 对 Base64 URL 为 true，触发查询
+1. **问题 1：Base64 URL 和 Blob URL 被不必要查询**
+   - **位置**：`attachmentUtils.ts:378-411`（`tryFetchCloudUrl` 函数）
+   - **问题**：`!isHttpUrl(currentUrl)` 对 Base64 URL 和 Blob URL 为 true，触发查询
    - **影响**：不必要的网络请求和延迟
 
 2. **问题 2：异步查询导致延迟**
-   - **位置**：`useImageHandlers.ts:57-68`
-   - **问题**：如果 `uploadStatus === 'pending'`，会异步查询后端
-   - **影响**：在查询完成前，可能使用临时 URL，导致延迟
+   - **位置**：`useImageHandlers.ts:37-86`（`handleEditImage` 函数）
+   - **问题**：如果 `uploadStatus === 'pending'`，会异步查询后端，阻塞 `setInitialAttachments` 的调用
+   - **影响**：在查询完成前，无法设置初始附件，导致显示延迟
 
 3. **问题 3：HTTP 临时 URL 过期风险**
    - **位置**：`useImageHandlers.ts:51`
@@ -58,9 +58,14 @@
 
 ### 3.1 设计原则
 
-1. **优先使用本地数据**：Base64 URL 和 HTTP URL 应该直接使用，不查询后端
-2. **延迟查询**：只有在必要时（如上传已完成且有云 URL）才查询后端
-3. **降级策略**：如果 HTTP URL 不可用，尝试使用 Base64 URL
+1. **立即显示**：无论 URL 类型（Base64 或 HTTP URL），都应该立即显示，不等待查询
+   - 🚀 **加速显示**：立即使用传入的 URL，不等待查询后端
+2. **异步查询**：查询后端应该在后台进行，不阻塞初始显示
+   - 🚀 **加速显示**：查询在后台异步进行，不阻塞初始显示
+3. **查询目的明确**：查询是为了获取永久云存储 URL（如果上传已完成），用于后续 API 调用，而不是为了验证 URL 是否可用
+   - 🏗️ **有意设计**：查询目的明确，避免不必要的验证请求
+4. **降级策略**：如果 HTTP URL 不可用，尝试使用 Base64 URL
+   - 🏗️ **有意设计**：提升可靠性，确保图片能够显示
 
 ### 3.2 核心设计
 
@@ -83,8 +88,9 @@ export const tryFetchCloudUrl = async (
   }
 
   // ✅ 优化：只有 HTTP URL 且状态为 pending 时才查询
+  // 注意：currentStatus === undefined 时不会匹配 'pending'，因此不会触发查询
   const needFetch = sessionId && (
-    currentStatus === 'pending' && 
+    currentStatus === 'pending' &&  // ✅ undefined 不会匹配，不会触发查询
     isHttpUrl(currentUrl)  // ✅ 只对 HTTP URL 查询
   );
 
@@ -97,13 +103,18 @@ export const tryFetchCloudUrl = async (
 ```
 
 **优势**：
-- ✅ Base64 URL 不触发查询，立即使用
-- ✅ Blob URL 不触发查询，立即使用
-- ✅ 只有 HTTP URL 且 pending 时才查询
+- ✅ Base64 URL 不触发查询，立即使用（🚀 加速显示）
+- ✅ Blob URL 不触发查询，立即使用（🚀 加速显示）
+- ✅ 只有 HTTP URL 且 pending 时才查询（🔄 避免多次查询）
 
 #### 设计 2：优化 useImageHandlers 逻辑
 
-**目标**：优先使用传入的 URL，延迟查询后端
+**目标**：立即显示图片，异步查询后端获取永久云存储 URL
+
+**关键理解**：
+- **查询目的**：获取永久云存储 URL（如果上传已完成），用于后续 API 调用，**不是**为了验证 URL 是否可用
+- **HTTP URL 处理**：HTTP URL（包括 AI 提供商返回的临时 URL）可以立即显示，不需要等待查询
+- **立即显示**：无论 URL 类型，都应该立即调用 `setInitialAttachments`，使用传入的 URL
 
 **实现**：
 ```typescript
@@ -119,23 +130,32 @@ const handleEditImage = useCallback(async (url: string) => {
       id: found.attachment.id,
       mimeType: found.attachment.mimeType || 'image/png',
       name: found.attachment.name || 'Reference Image',
-      url: url, // ✅ 优先使用传入的 URL
+      url: url, // ✅ 优先使用传入的 URL（无论是 Base64 还是 HTTP URL）
       tempUrl: found.attachment.tempUrl,
       uploadStatus: found.attachment.uploadStatus
     };
 
-    // ✅ 优化：只有 HTTP URL 且 pending 时才查询，Base64 URL 直接使用
-    const shouldFetchCloudUrl = found.attachment.uploadStatus === 'pending' && 
-                                currentSessionId && 
-                                isHttpUrl(url);  // ✅ 只对 HTTP URL 查询
+    // ✅ 立即设置，不等待查询
+    setInitialAttachments([newAttachment]);
+    setInitialPrompt("Make it look like...");
 
-    if (shouldFetchCloudUrl) {
-      // 异步查询，但不阻塞显示
-      tryFetchCloudUrl(...).then(cloudResult => {
+    // ✅ 异步查询后端（不阻塞显示）
+    // 目的：获取永久云存储 URL（如果上传已完成），用于后续 API 调用
+    // 注意：HTTP URL（包括临时 URL）可以立即显示，不需要等待查询
+    if (found.attachment.uploadStatus === 'pending' && currentSessionId) {
+      tryFetchCloudUrl(
+        currentSessionId,
+        found.attachment.id,
+        found.attachment.url,
+        found.attachment.uploadStatus
+      ).then(cloudResult => {
         if (cloudResult) {
-          // 可选：更新 URL（如果用户还在查看）
-          // 但不应该影响初始显示
+          // 可选：更新 URL（但不影响已显示的图片）
+          // 只有在需要永久 URL 时才更新（比如用于后续 API 调用）
+          console.log('[handleEditImage] 永久云 URL 查询成功，可用于后续 API 调用');
         }
+      }).catch(err => {
+        console.warn('[handleEditImage] 云 URL 查询失败，使用原始 URL:', err);
       });
     }
   } else {
@@ -145,49 +165,61 @@ const handleEditImage = useCallback(async (url: string) => {
       name: 'Reference Image',
       url: url  // ✅ 直接使用传入的 URL
     };
+    setInitialAttachments([newAttachment]);
+    setInitialPrompt("Make it look like...");
   }
-
-  // ✅ 立即设置，不等待查询
-  setInitialAttachments([newAttachment]);
-  setInitialPrompt("Make it look like...");
   // ...
 }, [messages, currentSessionId, ...]);
 ```
 
 **优势**：
-- ✅ 立即设置 `initialAttachments`，不等待查询
-- ✅ Base64 URL 直接使用，不查询
-- ✅ HTTP URL 直接使用，查询在后台进行
+- ✅ **立即显示**：无论 URL 类型（Base64 或 HTTP URL），都立即调用 `setInitialAttachments`（🚀 加速显示）
+- ✅ **不阻塞**：查询在后台异步进行，不影响图片显示（🚀 加速显示）
+- ✅ **HTTP URL 直接使用**：HTTP URL（包括临时 URL）可以立即显示，不需要等待查询（🔄 避免多次查询）
+- ✅ **查询目的明确**：查询是为了获取永久云存储 URL，而不是验证 URL 是否可用（🏗️ 有意设计）
 
 #### 设计 3：降级策略
 
 **目标**：如果 HTTP URL 不可用，尝试使用 Base64 URL
 
-**实现**：
+**实现方式**（推荐：方案 C - 失败时降级）：
 ```typescript
 // 在 useImageHandlers 中
 if (found) {
   // 优先使用传入的 URL
   let displayUrl = url;
+  let fallbackUrl: string | undefined;
   
-  // 如果传入的是 HTTP URL，且不可用，尝试使用 tempUrl 中的 Base64
+  // 如果传入的是 HTTP URL，且 tempUrl 是 Base64，保存作为备选
   if (isHttpUrl(url) && found.attachment.tempUrl && isBase64Url(found.attachment.tempUrl)) {
-    // 可选：验证 HTTP URL 是否可用
-    // 如果不可用，使用 Base64 URL
-    displayUrl = found.attachment.tempUrl;
+    fallbackUrl = found.attachment.tempUrl;  // 保存 Base64 URL 作为备选
+    // 优先使用 HTTP URL，如果失败，在 <img> 的 onError 中切换到 Base64 URL
   }
   
   newAttachment = {
     id: found.attachment.id,
-    url: displayUrl,  // ✅ 使用优化后的 URL
+    url: displayUrl,  // ✅ 优先使用 HTTP URL
+    tempUrl: fallbackUrl,  // ✅ 保存 Base64 URL 作为备选
     // ...
   };
 }
+
+// 在 ImageEditView/ImageExpandView 中
+<img 
+  src={attachment.url} 
+  onError={() => {
+    // 如果 HTTP URL 失败，切换到 Base64 URL
+    if (attachment.tempUrl && isBase64Url(attachment.tempUrl)) {
+      setImageUrl(attachment.tempUrl);
+    }
+  }}
+/>
 ```
 
 **优势**：
-- ✅ 如果 HTTP URL 不可用，自动降级到 Base64 URL
-- ✅ 提升可靠性
+- ✅ 避免额外的网络请求（不预先验证 HTTP URL）（🔄 避免多次查询）
+- ✅ 如果 HTTP URL 不可用，自动降级到 Base64 URL（🏗️ 有意设计）
+- ✅ 提升可靠性，不影响初始显示性能（🚀 加速显示）
 
 ---
 
@@ -389,6 +421,54 @@ const handleEditImage = useCallback(async (url: string) => {
 
 ---
 
-## 九、更新日志
+## 九、设计意图分类说明
+
+### 9.1 设计意图分类
+
+本文档中的所有设计决策都明确标注了设计意图：
+
+- 🚀 **加速显示**：为了提升用户体验，减少延迟，立即显示图片
+- 🏗️ **有意设计**：架构设计决策，确保系统稳定性和可靠性
+- 🔄 **避免多次查询**：避免不必要的后端查询，减少网络请求
+
+### 9.2 关键设计决策
+
+#### 决策 1：立即显示，不等待查询（🚀 加速显示）
+
+**原因**：提升用户体验，减少延迟
+
+**实现**：
+- Base64 URL 和 HTTP URL 都立即使用，不等待查询
+- 查询在后台异步进行，不阻塞初始显示
+
+#### 决策 2：后端上传后不更新前端会话（🏗️ 有意设计，🔄 避免多次查询）
+
+**原因**：
+- 避免前端重新渲染，提升性能
+- 保持原始 URL，避免查询后端获取云存储 URL
+- 重载后自动使用永久云存储 URL
+
+**实现**：
+- 后端上传完成后，只更新数据库，不更新前端会话
+- 前端保持原始 URL（Base64 或 HTTP 临时 URL）用于显示
+- 重载后，`cleanAttachmentsForDb` 会清空临时 URL，只保留永久云存储 URL
+
+#### 决策 3：重载后使用永久云存储 URL（🏗️ 有意设计，🔄 避免多次查询）
+
+**原因**：
+- 临时 URL（Base64、Blob URL）在重载后会失效
+- 永久云存储 URL 可以持久化，重载后仍然可用
+
+**实现**：
+- `cleanAttachmentsForDb` 清空 Base64 和 Blob URL，保留永久云存储 URL
+- 重载后，从数据库加载，只有永久云存储 URL 被保留
+- 前端自动使用永久云存储 URL 显示
+
+---
+
+## 十、更新日志
 
 - **2024-01-18**：创建设计文档，基于需求文档设计优化方案
+- **2024-01-21**：更新文档，修正行号、补充边界情况处理、明确降级策略实现方式、补充 findAttachmentByUrl 两级匹配策略说明
+- **2024-01-21**：明确查询后端的真正目的（获取永久云存储 URL，而不是验证 URL 是否可用），强调 HTTP URL 应该立即显示，查询应该异步进行
+- **2024-01-21**：补充设计意图分类说明，明确区分加速显示、有意设计、避免多次查询的设计决策

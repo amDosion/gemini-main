@@ -743,7 +743,7 @@ class ConversationalImageEditService:
                         'mimeType': 'image/png'
                     })
             elif isinstance(raw_img, dict):
-                # Attachment 对象（字典格式）：需要提取正确的字段
+                # ✅ 处理字典格式（包含 attachment_id 和 url）
                 processed_img = {}
                 
                 # 优先级 1: googleFileUri（如果已上传到 Google Files API）
@@ -770,6 +770,11 @@ class ConversationalImageEditService:
                 elif raw_img.get('tempUrl'):
                     processed_img['url'] = raw_img['tempUrl']
                     processed_img['mimeType'] = raw_img.get('mimeType', 'image/png')
+                
+                # ✅ 如果有 attachment_id，也传递（用于日志和调试）
+                if 'attachment_id' in raw_img:
+                    processed_img['attachment_id'] = raw_img['attachment_id']
+                    logger.info(f"[ConversationalImageEdit] 处理附件: attachment_id={raw_img['attachment_id'][:8]}...")
                 
                 # 如果提取到了有效数据，添加到列表
                 if processed_img:

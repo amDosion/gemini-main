@@ -381,19 +381,30 @@ export const tryFetchCloudUrl = async (
   currentUrl: string | undefined,
   currentStatus: string | undefined
 ): Promise<{ url: string; uploadStatus: string } | null> => {
-  // 检查是否需要查询后端
+  // ✅ 优化：Base64 URL 和 Blob URL 直接使用，不查询后端（🚀 加速显示）
+  if (currentUrl) {
+    if (isBase64Url(currentUrl)) {
+      console.log('[tryFetchCloudUrl] Base64 URL，直接使用，不查询后端');
+      return null;
+    }
+    if (isBlobUrl(currentUrl)) {
+      console.log('[tryFetchCloudUrl] Blob URL，直接使用，不查询后端');
+      return null;
+    }
+  }
+
+  // ✅ 优化：只有 HTTP URL 且状态为 pending 时才查询（🔄 避免多次查询）
+  // 注意：currentStatus === undefined 时不会匹配 'pending'，因此不会触发查询
   const needFetch = sessionId && (
-    currentStatus === 'pending' || 
-    !isHttpUrl(currentUrl)
+    currentStatus === 'pending' && 
+    isHttpUrl(currentUrl)  // ✅ 只对 HTTP URL 查询
   );
 
   if (!needFetch) {
     return null;
   }
 
-  console.log('[tryFetchCloudUrl] 查询后端, 原因:', 
-    currentStatus === 'pending' ? 'uploadStatus=pending' : 'url不是HTTP URL'
-  );
+  console.log('[tryFetchCloudUrl] 查询后端, 原因: uploadStatus=pending 且是 HTTP URL');
 
   const backendData = await fetchAttachmentStatus(sessionId, attachmentId);
 

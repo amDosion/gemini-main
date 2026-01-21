@@ -268,6 +268,18 @@ class TongyiService(BaseProviderService):
         if not raw_image:
             raise ValueError("reference_images must contain 'raw' key with image URL")
         
+        # ✅ 处理字典格式（包含 attachment_id 和 url）
+        if isinstance(raw_image, dict):
+            image_url = raw_image.get("url")
+            if not image_url:
+                raise ValueError("reference_images['raw'] dict must contain 'url' key")
+            # 记录 attachment_id（如果存在）
+            if "attachment_id" in raw_image:
+                logger.info(f"[TongyiService.edit_image] 处理附件: attachment_id={raw_image['attachment_id'][:8]}...")
+        else:
+            # 向后兼容：字符串格式
+            image_url = raw_image
+        
         # 构建编辑选项
         from .image_edit import ImageEditOptions
         options = ImageEditOptions(
@@ -283,7 +295,7 @@ class TongyiService(BaseProviderService):
         result = await self._image_edit_service.edit(
             model=model,
             prompt=prompt,
-            image_url=raw_image,
+            image_url=image_url,
             options=options
         )
         
@@ -329,6 +341,18 @@ class TongyiService(BaseProviderService):
         if not raw_image:
             raise ValueError("reference_images must contain 'raw' key with image URL")
         
+        # ✅ 处理字典格式（包含 attachment_id 和 url）
+        if isinstance(raw_image, dict):
+            image_url = raw_image.get("url")
+            if not image_url:
+                raise ValueError("reference_images['raw'] dict must contain 'url' key")
+            # 记录 attachment_id（如果存在）
+            if "attachment_id" in raw_image:
+                logger.info(f"[TongyiService.expand_image] 处理附件: attachment_id={raw_image['attachment_id'][:8]}...")
+        else:
+            # 向后兼容：字符串格式
+            image_url = raw_image
+        
         # 构建扩展参数
         from .image_expand import ImageExpandService
         expand_mode = kwargs.get("mode", "scale")
@@ -346,7 +370,7 @@ class TongyiService(BaseProviderService):
         
         # 调用扩展服务
         result = self._image_expand_service.execute_with_fallback(
-            image_url=raw_image,
+            image_url=image_url,
             api_key=self.api_key,
             parameters=parameters
         )

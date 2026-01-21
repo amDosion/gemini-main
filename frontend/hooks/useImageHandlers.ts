@@ -2,7 +2,7 @@
 import { useCallback, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { AppMode, Attachment, Message, ModelConfig } from '../types/types';
-import { findAttachmentByUrl, tryFetchCloudUrl } from './handlers/attachmentUtils';
+import { findAttachmentByUrl, tryFetchCloudUrl, isHttpUrl } from './handlers/attachmentUtils';
 
 interface UseImageHandlersProps {
   messages: Message[];
@@ -48,23 +48,33 @@ export const useImageHandlers = ({
         id: found.attachment.id,
         mimeType: found.attachment.mimeType || 'image/png',
         name: found.attachment.name || 'Reference Image',
-        url: url, // 保留原始 URL 用于显示和匹配
+        url: url, // ✅ 优先使用传入的 URL（无论是 Base64 还是 HTTP URL）（🚀 加速显示）
         tempUrl: found.attachment.tempUrl,
         uploadStatus: found.attachment.uploadStatus
       };
 
-      // 如果 uploadStatus 是 pending，查询后端获取云 URL
-      if (found.attachment.uploadStatus === 'pending' && currentSessionId) {
-        const cloudResult = await tryFetchCloudUrl(
+      // ✅ 优化：只有 HTTP URL 且 pending 时才查询，Base64 URL 直接使用（🔄 避免多次查询）
+      // 查询目的：获取永久云存储 URL（如果上传已完成），用于后续 API 调用（🏗️ 有意设计）
+      const shouldFetchCloudUrl = found.attachment.uploadStatus === 'pending' && 
+                                   currentSessionId && 
+                                   isHttpUrl(url);  // ✅ 只对 HTTP URL 查询
+
+      if (shouldFetchCloudUrl) {
+        // ✅ 异步查询，但不阻塞显示（🚀 加速显示）
+        tryFetchCloudUrl(
           currentSessionId,
           found.attachment.id,
           found.attachment.url,
           found.attachment.uploadStatus
-        );
-        if (cloudResult) {
-          newAttachment.url = cloudResult.url;
-          newAttachment.uploadStatus = 'completed';
-        }
+        ).then(cloudResult => {
+          if (cloudResult) {
+            // 可选：如果查询成功，可以更新 URL（但不影响初始显示）
+            // 查询目的是获取永久云存储 URL，用于后续 API 调用
+            console.log('[handleEditImage] 永久云 URL 查询成功，可用于后续 API 调用');
+          }
+        }).catch(err => {
+          console.warn('[handleEditImage] 云 URL 查询失败，使用原始 URL:', err);
+        });
       }
     } else {
       // 未找到原附件，创建新附件
@@ -72,11 +82,11 @@ export const useImageHandlers = ({
         id: uuidv4(),
         mimeType: 'image/png',
         name: 'Reference Image',
-        url: url
+        url: url  // ✅ 直接使用传入的 URL
       };
     }
 
-
+    // ✅ 立即设置，不等待查询（🚀 加速显示）
     setInitialAttachments([newAttachment]);
     setInitialPrompt("Make it look like...");
     if (activeModelConfig && !activeModelConfig.capabilities.vision) {
@@ -125,23 +135,33 @@ export const useImageHandlers = ({
         id: found.attachment.id,
         mimeType: found.attachment.mimeType || mimeType,
         name: found.attachment.name || `expand-source-${Date.now()}.${extension}`,
-        url: url, // 保留原始 URL 用于显示
+        url: url, // ✅ 优先使用传入的 URL（无论是 Base64 还是 HTTP URL）（🚀 加速显示）
         tempUrl: found.attachment.tempUrl,
         uploadStatus: found.attachment.uploadStatus
       };
 
-      // 如果 uploadStatus 是 pending，查询后端获取云 URL
-      if (found.attachment.uploadStatus === 'pending' && currentSessionId) {
-        const cloudResult = await tryFetchCloudUrl(
+      // ✅ 优化：只有 HTTP URL 且 pending 时才查询，Base64 URL 直接使用（🔄 避免多次查询）
+      // 查询目的：获取永久云存储 URL（如果上传已完成），用于后续 API 调用（🏗️ 有意设计）
+      const shouldFetchCloudUrl = found.attachment.uploadStatus === 'pending' && 
+                                   currentSessionId && 
+                                   isHttpUrl(url);  // ✅ 只对 HTTP URL 查询
+
+      if (shouldFetchCloudUrl) {
+        // ✅ 异步查询，但不阻塞显示（🚀 加速显示）
+        tryFetchCloudUrl(
           currentSessionId,
           found.attachment.id,
           found.attachment.url,
           found.attachment.uploadStatus
-        );
-        if (cloudResult) {
-          newAttachment.url = cloudResult.url;
-          newAttachment.uploadStatus = 'completed';
-        }
+        ).then(cloudResult => {
+          if (cloudResult) {
+            // 可选：如果查询成功，可以更新 URL（但不影响初始显示）
+            // 查询目的是获取永久云存储 URL，用于后续 API 调用
+            console.log('[handleExpandImage] 永久云 URL 查询成功，可用于后续 API 调用');
+          }
+        }).catch(err => {
+          console.warn('[handleExpandImage] 云 URL 查询失败，使用原始 URL:', err);
+        });
       }
     } else {
       // 未找到原附件，创建新附件
@@ -149,11 +169,11 @@ export const useImageHandlers = ({
         id: uuidv4(),
         mimeType: mimeType,
         name: `expand-source-${Date.now()}.${extension}`,
-        url: url
+        url: url  // ✅ 直接使用传入的 URL
       };
     }
 
-
+    // ✅ 立即设置，不等待查询（🚀 加速显示）
     setInitialAttachments([newAttachment]);
     setInitialPrompt(undefined); // Clear prompt as outpainting often just needs settings
   }, [messages, currentSessionId, setAppMode, setInitialAttachments, setInitialPrompt]);

@@ -42,6 +42,74 @@
 - ✅ 直接使用 Base64 或 HTTP URL，避免 Blob URL 生命周期问题
 - ✅ 后端已经处理上传任务，前端无需处理
 
+### 重载网页后的 URL 处理
+
+**关键设计**：
+- ✅ 重载后，临时 URL（Base64、Blob URL）会失效
+- ✅ 重载后，只有永久云存储 URL（`uploadStatus === 'completed'`）会被保留
+- ✅ 前端自动使用永久云存储 URL 显示
+
+**处理流程**：
+```
+1. 保存到数据库时（cleanAttachmentsForDb）
+   ↓
+2. Base64 URL → 清空（体积太大）
+   ↓
+3. Blob URL → 清空（页面刷新后失效）
+   ↓
+4. HTTP URL（uploadStatus === 'completed'）→ 保留（永久云存储 URL）
+   ↓
+5. 重载网页
+   ↓
+6. 从数据库加载会话和消息
+   ↓
+7. 只有永久云存储 URL 被保留
+   ↓
+8. 前端使用永久云存储 URL 显示
+```
+
+**代码验证**：
+- ✅ `cleanAttachmentsForDb`（`attachmentUtils.ts:110-119`）：清空 Base64 和 Blob URL
+- ✅ `cleanAttachmentsForDb`（`attachmentUtils.ts:124-126`）：保留 `uploadStatus === 'completed'` 的 HTTP URL
+- ✅ `prepareSessions`（`useSessions.ts:45-59`）：恢复失效的 Blob URL（使用 tempUrl 中的云存储 URL）
+
+### 后端上传后前端会话更新策略
+
+**关键设计**：
+- ✅ 后端上传完成后，只更新数据库，不更新前端会话
+- ✅ 前端保持原始 URL（Base64 或 HTTP 临时 URL）用于显示
+- ✅ 避免前端重新渲染，提升用户体验
+- ✅ 重载后自动使用永久云存储 URL
+
+**处理流程**：
+```
+1. AI 生成图片，返回 Base64 或 HTTP 临时 URL
+   ↓
+2. 前端立即显示（使用原始 URL）
+   ↓
+3. 后端异步上传到云存储
+   ↓
+4. 上传完成后，只更新数据库（url 字段更新为云存储 URL）
+   ↓
+5. 前端会话不更新，保持原始 URL
+   ↓
+6. 用户点击 Edit/Expand 按钮
+   ↓
+7. 使用原始 URL（Base64 或 HTTP 临时 URL）显示
+   ↓
+8. 重载网页后，使用永久云存储 URL 显示
+```
+
+**代码验证**：
+- ✅ `BaseHandler.ts:199`：注释明确说明"只更新数据库，不调用 context.onProgressUpdate()，避免前端重新渲染"
+- ✅ `BaseHandler.ts:241-247`：`context.onProgressUpdate` 被注释掉
+- ✅ `useChat.ts:236`：只在初始保存时调用 `updateSessionMessages`，上传完成后不更新
+
+**优势**：
+- ✅ 避免不必要的查询：保持原始 URL，不需要查询后端
+- ✅ 避免前端重新渲染：不更新会话，不会触发重新渲染
+- ✅ 重载后自动优化：重载后自动使用永久云存储 URL
+
 ### URL 类型说明
 
 **后端返回的 `display_url` 类型**（已验证）：
@@ -762,6 +830,216 @@ const displayAttachments: Attachment[] = results.map((res: ImageGenerationResult
 
 ---
 
+## 🔄 重载网页和会话更新策略
+
+### 重载网页后的 URL 处理
+
+**设计原则**：
+- ✅ 重载后，临时 URL（Base64、Blob URL）会失效
+- ✅ 重载后，只有永久云存储 URL（`uploadStatus === 'completed'`）会被保留
+- ✅ 前端自动使用永久云存储 URL 显示
+
+**处理流程**：
+
+#### 步骤 1：保存到数据库时的清理（cleanAttachmentsForDb）
+
+**代码位置**：`attachmentUtils.ts:98-166`
+
+**清理规则**：
+```typescript
+// 1. Blob URL：清空（页面刷新后失效）
+if (isBlobUrl(url)) {
+  cleaned.url = '';
+  cleaned.uploadStatus = 'pending';
+}
+
+// 2. Base64 URL：清空（体积太大，不适合数据库）
+else if (isBase64Url(url)) {
+  cleaned.url = '';
+  cleaned.uploadStatus = 'pending';
+}
+
+// 3. HTTP URL：根据状态处理
+else if (isHttpUrl(url)) {
+  // 3.1 如果 uploadStatus === 'completed'，保留（永久云存储 URL）
+  if (cleaned.uploadStatus === 'completed') {
+    // ✅ 保留永久云存储 URL
+  }
+  // 3.2 如果有 uploadTaskId，保留（上传进行中）
+  else if (uploadTaskId) {
+    cleaned.uploadStatus = 'pending';
+  }
+  // 3.3 如果是临时 URL（包含 /temp/ 或 expires=），清空
+  else if (url.includes('/temp/') || url.includes('expires=')) {
+    cleaned.url = '';
+    cleaned.uploadStatus = 'pending';
+  }
+}
+```
+
+**结果**：
+- ✅ 只有永久云存储 URL（`uploadStatus === 'completed'`）会被保留
+- ✅ Base64 URL 和 Blob URL 会被清空
+- ✅ 临时 HTTP URL 会被清空
+
+#### 步骤 2：重载后从数据库加载（prepareSessions）
+
+**代码位置**：`useSessions.ts:34-78`
+
+**恢复逻辑**：
+```typescript
+const recoveredAttachments = message.attachments.map(att => {
+  // 检查 url 是否是 Blob URL（页面刷新后已失效）
+  if (att.url && att.url.startsWith('blob:')) {
+    // 如果有 tempUrl（云存储 URL），使用它替代失效的 Blob URL
+    if (att.tempUrl && att.tempUrl.startsWith('http')) {
+      return {
+        ...att,
+        url: att.tempUrl, // ✅ 替换为云存储 URL
+        uploadStatus: 'completed' as const
+      };
+    }
+  }
+  
+  // 其他类型的 URL（Base64, HTTP）不需要恢复
+  return att;
+});
+```
+
+**结果**：
+- ✅ 重载后，只有永久云存储 URL 会被保留
+- ✅ 如果 Blob URL 失效，使用 `tempUrl` 中的云存储 URL 替换
+- ✅ Base64 URL 已被清空，无法恢复（需要重新生成或查询后端）
+
+#### 步骤 3：前端显示
+
+**流程**：
+```
+1. 重载网页
+   ↓
+2. 从数据库加载会话和消息
+   ↓
+3. cleanAttachmentsForDb 已清空 Base64 和 Blob URL
+   ↓
+4. 只有永久云存储 URL（uploadStatus === 'completed'）被保留
+   ↓
+5. prepareSessions 恢复 Blob URL（如果有 tempUrl）
+   ↓
+6. 前端显示：使用永久云存储 URL
+```
+
+**验证**：
+- ✅ `cleanAttachmentsForDb` 会清空 Base64 和 Blob URL
+- ✅ 只有 `uploadStatus === 'completed'` 的 HTTP URL 会被保留
+- ✅ `prepareSessions` 会恢复失效的 Blob URL（使用 tempUrl）
+- ✅ 重载后，前端使用永久云存储 URL 显示
+
+---
+
+### 后端上传后前端会话更新策略
+
+**设计原则**：
+- ✅ 后端上传完成后，只更新数据库，不更新前端会话
+- ✅ 前端保持原始 URL（Base64 或 HTTP 临时 URL）用于显示
+- ✅ 避免前端重新渲染，提升用户体验
+- ✅ 重载后自动使用永久云存储 URL
+
+**处理流程**：
+
+#### 步骤 1：后端异步上传
+
+**代码位置**：`BaseHandler.ts:180-263`
+
+**上传流程**：
+```typescript
+// 1. 提交异步上传任务
+const taskId = await storageUpload.uploadFileAsync(file, {...});
+
+// 2. 启动轮询，检查上传状态
+context.pollingManager.startPolling(taskId, {
+  onSuccess: async (taskId, result) => {
+    // ✅ 只更新数据库，不调用 context.onProgressUpdate()
+    await db.updateAttachmentUrl(
+      context.sessionId,
+      messageId,
+      attachment.id,
+      result.url  // 永久云存储 URL
+    );
+    
+    // ❌ 不调用 context.onProgressUpdate()，避免前端重新渲染
+    // context.onProgressUpdate?.({
+    //   attachmentId: attachment.id,
+    //   status: 'completed',
+    //   progress: 100
+    // });
+  }
+});
+```
+
+**结果**：
+- ✅ 数据库中的 `url` 字段更新为永久云存储 URL
+- ✅ 前端会话不更新，保持原始 URL（Base64 或 HTTP 临时 URL）
+- ✅ 前端不会重新渲染
+
+#### 步骤 2：前端保持原始 URL
+
+**代码位置**：`useChat.ts:217-237`
+
+**处理逻辑**：
+```typescript
+// 1. 初始保存时，使用原始 URL
+const dbModelMessage: Message = {
+  content: result.content,
+  attachments: dbAttachments  // ✅ 包含原始 URL（Base64 或 HTTP 临时 URL）
+};
+
+// 2. 保存到数据库
+updateSessionMessages(currentSessionId, dbMessages);
+
+// 3. 后端上传完成后，只更新数据库，不更新前端会话
+// ✅ 前端会话保持原始 URL
+```
+
+**结果**：
+- ✅ 前端会话中的附件保持原始 URL（Base64 或 HTTP 临时 URL）
+- ✅ 用户点击 Edit/Expand 按钮时，使用原始 URL 显示
+- ✅ 不需要查询后端，避免延迟
+
+#### 步骤 3：重载后自动使用云存储 URL
+
+**流程**：
+```
+1. 后端上传完成，更新数据库（url 字段更新为云存储 URL）
+   ↓
+2. 前端会话保持原始 URL（Base64 或 HTTP 临时 URL）
+   ↓
+3. 用户点击 Edit/Expand 按钮
+   ↓
+4. 使用原始 URL 显示（立即显示，无需查询）
+   ↓
+5. 重载网页
+   ↓
+6. 从数据库加载会话和消息
+   ↓
+7. cleanAttachmentsForDb 已清空 Base64 和 Blob URL
+   ↓
+8. 只有永久云存储 URL（uploadStatus === 'completed'）被保留
+   ↓
+9. 前端使用永久云存储 URL 显示
+```
+
+**验证**：
+- ✅ `BaseHandler.ts:199`：注释明确说明"只更新数据库，不调用 context.onProgressUpdate()，避免前端重新渲染"
+- ✅ `BaseHandler.ts:241-247`：`context.onProgressUpdate` 被注释掉
+- ✅ `useChat.ts:236`：只在初始保存时调用 `updateSessionMessages`，上传完成后不更新
+
+**优势**：
+- ✅ 避免不必要的查询：保持原始 URL，不需要查询后端
+- ✅ 避免前端重新渲染：不更新会话，不会触发重新渲染
+- ✅ 重载后自动优化：重载后自动使用永久云存储 URL
+
+---
+
 ## 🔍 已知问题和优化建议
 
 ### 问题 1：uploadStatus 条件判断不完整
@@ -832,7 +1110,21 @@ const reusedAttachment: Attachment = {
 
 ## 📚 相关文档
 
+- `ATTACHMENT_SCENARIOS_COMPLETE.md` - 完整的附件处理场景文档（所有提供商、所有场景）
+- `CODE_ANALYSIS_AND_OPTIMIZATION.md` - 代码分析与优化建议
+- `requirements.md` - 需求文档
+- `design.md` - 设计文档
+- `tasks.md` - 任务文档
 - `docs/IMAGE_MODE_SWITCH_FLOW_ANALYSIS.md` - 详细的问题分析和修复方案
-- `docs/TEMP_IMAGES_AUTHENTICATION_FIX_PLAN.md` - 临时图片认证方案
 - `docs/前端图片显示与跨模式流程完整分析.md` - 前端图片显示流程分析
+
+---
+
+## 📝 更新日志
+
+- **2024-01-18**：创建文档，基于代码分析生成完整流程图
+- **2024-01-18**：更新文档，合并验证报告，补充架构说明和代码验证结果
+- **2024-01-18**：更新 ASCII 流程图，修正 URL 类型描述，添加临时代理 URL 说明
+- **2024-01-18**：更新文档，明确 URL 类型定义，澄清临时代理 URL 的角色
+- **2024-01-21**：补充重载网页后的 URL 处理说明，补充后端上传后前端会话更新策略说明，验证重载后使用永久云存储 URL 的逻辑
 

@@ -27,12 +27,17 @@
 1. 在函数开头添加 Base64 URL 和 Blob URL 检查
 2. 如果是 Base64 URL 或 Blob URL，直接返回 null，不查询后端
 3. 优化查询条件：只对 HTTP URL 且 `uploadStatus === 'pending'` 时查询
+4. 处理 `uploadStatus === undefined` 的情况（不触发查询，因为 `undefined === 'pending'` 为 false）
 
 **验收标准**：
-- ✅ Base64 URL 不触发 `tryFetchCloudUrl` 查询
-- ✅ Blob URL 不触发 `tryFetchCloudUrl` 查询
-- ✅ 只有 HTTP URL 且 pending 时才查询
+- ✅ Base64 URL 不触发 `tryFetchCloudUrl` 查询（🚀 加速显示）
+- ✅ Blob URL 不触发 `tryFetchCloudUrl` 查询（🚀 加速显示）
+- ✅ 只有 HTTP URL 且 pending 时才查询（🔄 避免多次查询）
 - ✅ 所有现有测试通过
+
+**设计意图**：
+- 🚀 **加速显示**：Base64 URL 和 Blob URL 直接使用，不查询后端
+- 🔄 **避免多次查询**：只有 HTTP URL 且 pending 时才查询，避免不必要的请求
 
 **依赖**：无
 
@@ -52,15 +57,23 @@
 **位置**：第 37-86 行（handleEditImage）和第 88-159 行（handleExpandImage）
 
 **具体修改**：
-1. 优化查询条件：只对 HTTP URL 且 pending 时查询
-2. 将查询改为异步，不阻塞 `setInitialAttachments` 的调用
-3. 优先使用传入的 URL，查询结果作为可选更新
+1. **立即显示**：无论 URL 类型（Base64 或 HTTP URL），都应该立即调用 `setInitialAttachments`，使用传入的 URL
+2. **异步查询**：将查询改为异步（使用 `.then()` 而不是 `await`），不阻塞 `setInitialAttachments`
+3. **查询目的明确**：查询是为了获取永久云存储 URL（如果上传已完成），用于后续 API 调用，而不是为了验证 HTTP URL 是否可用
+4. **HTTP URL 处理**：HTTP URL（包括 AI 提供商返回的临时 URL）应该直接使用，可以立即显示，不需要等待查询
 
 **验收标准**：
-- ✅ 点击按钮后，图片立即显示（< 100ms）
-- ✅ Base64 URL 不触发查询
-- ✅ HTTP URL 直接使用，查询在后台进行
+- ✅ 点击按钮后，图片立即显示（< 100ms）（🚀 加速显示）
+- ✅ Base64 URL 直接使用，不触发查询（🚀 加速显示）
+- ✅ HTTP URL（包括临时 URL）直接使用，立即显示，不等待查询（🔄 避免多次查询）
+- ✅ 查询在后台异步进行，不阻塞 `setInitialAttachments`（🚀 加速显示）
+- ✅ 查询目的：获取永久云存储 URL（如果上传已完成），用于后续 API 调用（🏗️ 有意设计）
 - ✅ 所有现有测试通过
+
+**设计意图**：
+- 🚀 **加速显示**：立即使用传入的 URL，不等待查询后端；查询在后台异步进行，不阻塞初始显示
+- 🔄 **避免多次查询**：HTTP URL（包括临时 URL）直接使用，不需要查询验证
+- 🏗️ **有意设计**：查询目的明确（获取永久云存储 URL，而不是验证 URL 是否可用）
 
 **依赖**：TASK-001
 
@@ -80,14 +93,20 @@
 **位置**：第 45-68 行
 
 **具体修改**：
-1. 检查传入的 URL 是否可用
-2. 如果 HTTP URL 不可用，且 `tempUrl` 是 Base64 URL，使用 Base64 URL
-3. 添加错误处理，如果都不可用，显示友好提示
+1. 优先使用传入的 HTTP URL
+2. 如果 HTTP URL 失败（通过 `<img>` 的 `onError` 事件检测），自动切换到 Base64 URL
+3. 保存 Base64 URL 到 `tempUrl` 字段，作为备选
+4. 在 ImageEditView/ImageExpandView 中添加 `onError` 处理，实现自动降级
+5. 添加错误处理，如果都不可用，显示友好提示
 
 **验收标准**：
-- ✅ 如果 HTTP URL 不可用，自动降级到 Base64 URL
+- ✅ 如果 HTTP URL 不可用，自动降级到 Base64 URL（🏗️ 有意设计）
 - ✅ 如果都不可用，显示友好错误提示
 - ✅ 所有现有测试通过
+
+**设计意图**：
+- 🏗️ **有意设计**：降级策略提升可靠性，确保图片能够显示
+- 🔄 **避免多次查询**：不预先验证 HTTP URL，避免额外的网络请求
 
 **依赖**：TASK-002
 
@@ -129,6 +148,34 @@
 5. **场景 5：性能测试**
    - 测量点击按钮到图片显示的时间
    - 验证：< 100ms
+
+6. **场景 6：Blob URL**
+   - GEN 模式生成图片（转换为 Blob URL，如果存在）
+   - 立即点击 Edit 按钮
+   - 验证：图片立即显示，不触发后端查询
+
+7. **场景 7：uploadStatus === undefined**
+   - GEN 模式生成图片（uploadStatus 未设置）
+   - 立即点击 Edit 按钮
+   - 验证：图片立即显示，不触发后端查询（因为 `undefined === 'pending'` 为 false）
+
+8. **场景 8：findAttachmentByUrl 两级匹配 - 精确匹配**
+   - GEN 模式生成图片（Base64 URL）
+   - 清空 messages 中的 URL，保留 tempUrl
+   - 点击 Edit 按钮
+   - 验证：通过 tempUrl 精确匹配找到附件
+
+9. **场景 9：findAttachmentByUrl 两级匹配 - Blob URL 兜底**
+   - GEN 模式生成图片（转换为 Blob URL）
+   - 清空 messages 中的 URL 和 tempUrl
+   - 点击 Edit 按钮
+   - 验证：通过兜底策略找到最近的有效云端图片附件（如果存在）
+
+10. **场景 10：HTTP URL 降级到 Base64 URL**
+    - GEN 模式生成图片（HTTP 临时 URL，tempUrl 中有 Base64 URL）
+    - HTTP 临时 URL 不可用（模拟过期）
+    - 点击 Edit 按钮
+    - 验证：优先使用 HTTP URL，如果失败，自动切换到 Base64 URL
 
 **验收标准**：
 - ✅ 所有测试场景通过
@@ -217,6 +264,7 @@ TASK-004 (测试验证)
   - Base64 URL 不触发查询
   - Blob URL 不触发查询
   - HTTP URL 且 pending 时触发查询
+  - uploadStatus === undefined 时不触发查询
 
 - ✅ `useImageHandlers` 函数测试
   - Base64 URL 直接使用
@@ -283,6 +331,50 @@ TASK-004 (测试验证)
 
 ---
 
-## 十、更新日志
+## 十、设计意图分类说明
+
+### 10.1 设计意图分类
+
+本文档中的所有任务都明确标注了设计意图：
+
+- 🚀 **加速显示**：为了提升用户体验，减少延迟，立即显示图片
+- 🏗️ **有意设计**：架构设计决策，确保系统稳定性和可靠性
+- 🔄 **避免多次查询**：避免不必要的后端查询，减少网络请求
+
+### 10.2 关键设计决策
+
+#### 决策 1：立即显示，不等待查询（🚀 加速显示）
+
+**任务**：TASK-001, TASK-002
+
+**原因**：提升用户体验，减少延迟
+
+**实现**：
+- Base64 URL 和 HTTP URL 都立即使用，不等待查询
+- 查询在后台异步进行，不阻塞初始显示
+
+#### 决策 2：后端上传后不更新前端会话（🏗️ 有意设计，🔄 避免多次查询）
+
+**说明**：此决策已在架构层面实现，不在当前任务范围内
+
+**原因**：
+- 避免前端重新渲染，提升性能
+- 保持原始 URL，避免查询后端获取云存储 URL
+- 重载后自动使用永久云存储 URL
+
+#### 决策 3：重载后使用永久云存储 URL（🏗️ 有意设计，🔄 避免多次查询）
+
+**说明**：此决策已在架构层面实现，不在当前任务范围内
+
+**原因**：
+- 临时 URL（Base64、Blob URL）在重载后会失效
+- 永久云存储 URL 可以持久化，重载后仍然可用
+
+---
+
+## 十一、更新日志
 
 - **2024-01-18**：创建任务文档，基于需求文档和设计文档制定实施计划
+- **2024-01-21**：更新文档，补充 Blob URL 测试场景、uploadStatus 边界情况测试、findAttachmentByUrl 两级匹配测试、HTTP URL 降级测试，明确降级策略实现方式
+- **2024-01-21**：明确查询后端的真正目的（获取永久云存储 URL，而不是验证 URL 是否可用），强调 HTTP URL 应该立即显示，查询应该异步进行，不阻塞 `setInitialAttachments`
+- **2024-01-21**：补充设计意图分类说明，明确区分加速显示、有意设计、避免多次查询的设计决策
