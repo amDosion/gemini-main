@@ -18,6 +18,10 @@ interface AppLayoutProps {
     onSelectSession: (id: string) => void;
     onDeleteSession?: (id: string) => void;
     onUpdateSessionTitle?: (id: string, newTitle: string) => void;
+    // 滚动加载相关
+    hasMoreSessions?: boolean;
+    isLoadingMore?: boolean;
+    loadMoreSessions?: () => void;
     // RightSidebar Props
     isRightSidebarOpen: boolean;
     setIsRightSidebarOpen: (v: boolean) => void;
@@ -69,6 +73,9 @@ export const AppLayout: React.FC<AppLayoutProps> = (props) => {
                 onOpenSettings={() => props.onOpenSettings('profiles')}
                 cacheStatus={props.cacheStatus}
                 onRefreshSessions={props.onRefreshSessions}
+                hasMoreSessions={props.hasMoreSessions}
+                isLoadingMore={props.isLoadingMore}
+                loadMoreSessions={props.loadMoreSessions}
             />
 
             {/* Main Content Container (Right Side) */}
