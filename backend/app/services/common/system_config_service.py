@@ -240,7 +240,8 @@ def initialize_system_configs(db: Session) -> None:
                 allow_registration=False,
                 max_login_attempts=5,
                 max_login_attempts_per_ip=10,
-                login_lockout_duration=900
+                login_lockout_duration=900,
+                enable_logging=True  # 默认启用日志显示
             )
             db.add(system_config)
             db.commit()

@@ -173,9 +173,11 @@ class UploadWorkerPool:
                 pass
             self._worker_task = None
 
-        await redis_queue.disconnect()
+        # TASK-002: 不再断开 Redis 连接，因为使用全局连接池
+        # 连接由应用级别的全局连接池管理，在应用关闭时统一关闭
+        # await redis_queue.disconnect()  # 已移除
 
-        logger.warning("[WorkerPool] Worker pool stopped")
+        logger.warning("[WorkerPool] Worker pool stopped (Redis connection maintained by global pool)")
 
     async def _reconcile_loop(self):
         """周期性补偿入队（只处理 pending，不动 uploading）。"""

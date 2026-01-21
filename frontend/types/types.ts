@@ -258,6 +258,8 @@ export interface InitData {
   
   // Session related
   sessions: ChatSession[];
+  sessionsTotal?: number;  // ✅ 总会话数量（用于分页）
+  sessionsHasMore?: boolean;  // ✅ 是否还有更多会话（用于滚动加载）
   
   // Persona related
   personas: Persona[];

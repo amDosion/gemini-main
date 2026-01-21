@@ -8,6 +8,7 @@ and PDF structured data extraction to be used with the Gemini AI frontend.
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, File, UploadFile, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, HttpUrl
 from typing import Optional, Dict, Any, List
@@ -266,6 +267,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"{LOG_PREFIXES['warning']} Failed to initialize system config: {e}")
     
+    # ✅ TASK-002: 初始化全局 Redis 连接池
+    try:
+        from .services.common.redis_queue_service import GlobalRedisConnectionPool
+        global_redis_pool = GlobalRedisConnectionPool.get_instance()
+        await global_redis_pool.initialize()
+        logger.info(f"{LOG_PREFIXES['success']} Global Redis connection pool initialized")
+    except Exception as e:
+        logger.error(f"{LOG_PREFIXES['error']} Failed to initialize global Redis connection pool: {e}")
+        logger.error("WARNING: Application will continue but Redis operations may fail!")
+        import traceback
+        traceback.print_exc()
+    
     # ✅ 启动时清理过期的 refresh_tokens
     try:
         from .core.database import SessionLocal
@@ -453,6 +466,15 @@ async def lifespan(app: FastAPI):
             logger.info(f"{LOG_PREFIXES['success']} Upload worker pool stopped gracefully")
         except Exception as e:
             logger.error(f"{LOG_PREFIXES['error']} Error stopping upload worker pool: {e}")
+    
+    # ✅ TASK-002: 关闭全局 Redis 连接池
+    try:
+        from .services.common.redis_queue_service import GlobalRedisConnectionPool
+        global_redis_pool = GlobalRedisConnectionPool.get_instance()
+        await global_redis_pool.close()
+        logger.info(f"{LOG_PREFIXES['success']} Global Redis connection pool closed")
+    except Exception as e:
+        logger.error(f"{LOG_PREFIXES['error']} Error closing global Redis connection pool: {e}")
 
 # Create FastAPI app with lifespan
 app = FastAPI(
@@ -553,6 +575,13 @@ logger.info(startup_separator)
 # 环境变量已通过 env_loader 统一加载，直接使用 os.getenv 即可
 import os
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:21573,http://127.0.0.1:21573").split(",")
+
+# ✅ 启用响应压缩（GZip），减少 API 响应体积
+app.add_middleware(
+    GZipMiddleware,
+    minimum_size=1000,  # 只压缩大于 1KB 的响应
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,  # 生产环境必须指定具体域名

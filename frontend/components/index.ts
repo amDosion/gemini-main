@@ -15,3 +15,4 @@ export { LoadingSpinner } from './common/LoadingSpinner';
 export { ErrorView } from './common/ErrorView';
 export { WelcomeScreen } from './common/WelcomeScreen';
 export { ToastContainer } from './common/Toast';
+export { SkeletonLoader } from './common/SkeletonLoader';

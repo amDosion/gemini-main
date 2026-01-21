@@ -1407,6 +1407,9 @@ class SystemConfig(Base):
     max_login_attempts_per_ip = Column(Integer, nullable=False, default=10)  # 单个IP的最大登录尝试次数
     login_lockout_duration = Column(Integer, nullable=False, default=900)  # 登录失败后锁定时间（秒）
 
+    # 日志配置
+    enable_logging = Column(Boolean, nullable=False, default=True)  # 是否启用日志显示（True=显示，False=不显示）
+
     # 时间戳
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -1418,6 +1421,7 @@ class SystemConfig(Base):
             "maxLoginAttempts": self.max_login_attempts,
             "maxLoginAttemptsPerIp": self.max_login_attempts_per_ip,
             "loginLockoutDuration": self.login_lockout_duration,
+            "enableLogging": self.enable_logging,
             "createdAt": self.created_at.isoformat() if self.created_at else None,
             "updatedAt": self.updated_at.isoformat() if self.updated_at else None
         }

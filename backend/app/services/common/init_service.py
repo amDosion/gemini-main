@@ -260,6 +260,238 @@ async def _query_sessions(user_id: str, db: Session) -> Dict[str, Any]:
         return {"sessions": [], "error": str(e)}
 
 
+async def _query_sessions_with_first_messages(user_id: str, db: Session, limit: int = 20) -> Dict[str, Any]:
+    """
+    查询会话列表 + 第一个会话的完整消息
+    
+    注意：
+    1. 返回最近的 N 个会话元数据（用于左侧 Sidebar）
+    2. 第一个会话必须包含完整消息（不能分页，用于右侧 ChatView）
+    3. 其他会话的 messages 为空数组（按需加载）
+    
+    Returns:
+        {
+            "sessions": [...],
+            "total": int,
+            "hasMore": bool
+        }
+    """
+    try:
+        logger.info(f"[InitService] 查询 Sessions（包含第一个会话的完整消息，limit={limit}）...")
+        
+        # ✅ 查询会话列表（按更新时间排序）
+        from sqlalchemy import func
+        sessions = db.query(ChatSession).filter(
+            ChatSession.user_id == user_id
+        ).order_by(
+            ChatSession.created_at.desc()  # 按创建时间排序，获取最新的会话
+        ).limit(limit).all()
+        
+        if not sessions:
+            logger.info(f"[InitService] Sessions 加载成功: 0 个会话")
+            return {
+                "sessions": [],
+                "total": 0,
+                "hasMore": False,
+                "error": None
+            }
+        
+        # ✅ 查询总会话数量（用于分页）
+        total_count = db.query(ChatSession).filter(
+            ChatSession.user_id == user_id
+        ).count()
+        
+        # ✅ 批量查询每个会话的消息数量（用于显示）
+        session_ids = [s.id for s in sessions]
+        message_counts = db.query(
+            MessageIndex.session_id,
+            func.count(MessageIndex.id).label('count')
+        ).filter(
+            MessageIndex.session_id.in_(session_ids),
+            MessageIndex.user_id == user_id
+        ).group_by(MessageIndex.session_id).all()
+        
+        message_count_map = {mc.session_id: mc.count for mc in message_counts}
+        
+        # ✅ 获取第一个会话的完整消息（不能分页）
+        first_session = sessions[0]
+        first_session_messages = []
+        
+        # 查询第一个会话的所有消息索引
+        first_indexes = db.query(MessageIndex).filter(
+            MessageIndex.session_id == first_session.id,
+            MessageIndex.user_id == user_id
+        ).order_by(MessageIndex.seq.asc()).all()
+        
+        if first_indexes:
+            # 收集所有 message_ids 和 table_names
+            first_message_ids = set()
+            first_table_message_ids: Dict[str, set] = defaultdict(set)
+            
+            for idx in first_indexes:
+                first_message_ids.add(idx.id)
+                first_table_message_ids[idx.table_name].add(idx.id)
+            
+            # 按 table_name 批量查询各模式表
+            first_messages_by_table: Dict[str, Dict[str, Any]] = {}
+            
+            for table_name, msg_ids in first_table_message_ids.items():
+                if not msg_ids:
+                    continue
+                try:
+                    table_class = get_message_table_class_by_name(table_name)
+                    messages = db.query(table_class).filter(
+                        table_class.id.in_(list(msg_ids))
+                    ).all()
+                    first_messages_by_table[table_name] = {msg.id: msg for msg in messages}
+                except ValueError as e:
+                    logger.warning(f"[InitService] 未知表名: {table_name}, 错误: {e}")
+                    continue
+            
+            # 批量查询所有附件
+            first_attachments_by_message: Dict[str, List[MessageAttachment]] = defaultdict(list)
+            
+            if first_message_ids:
+                all_attachments = db.query(MessageAttachment).filter(
+                    MessageAttachment.message_id.in_(list(first_message_ids)),
+                    MessageAttachment.user_id == user_id
+                ).all()
+                
+                for att in all_attachments:
+                    first_attachments_by_message[att.message_id].append(att)
+            
+            # 组装第一个会话的消息
+            first_session_messages = assemble_messages_v3(
+                first_session.id,
+                first_indexes,
+                first_messages_by_table,
+                first_attachments_by_message
+            )
+        
+        # ✅ 组装会话结果
+        sessions_result = []
+        for idx, session in enumerate(sessions):
+            session_dict = {
+                "id": session.id,
+                "title": session.title,
+                "createdAt": session.created_at,
+                "personaId": session.persona_id,
+                "mode": session.mode,
+                "messageCount": message_count_map.get(session.id, 0)
+            }
+            
+            if idx == 0:
+                # ✅ 第一个会话包含完整消息
+                session_dict["messages"] = first_session_messages
+            else:
+                # ✅ 其他会话 messages 为空数组
+                session_dict["messages"] = []
+            
+            sessions_result.append(session_dict)
+        
+        has_more = total_count > limit
+        
+        logger.info(f"[InitService] Sessions 加载成功: {len(sessions_result)} 个会话（第一个包含 {len(first_session_messages)} 条消息）")
+        
+        return {
+            "sessions": sessions_result,
+            "total": total_count,
+            "hasMore": has_more,
+            "error": None
+        }
+    except Exception as e:
+        logger.error(f"[InitService] Sessions 加载失败: {e}")
+        return {
+            "sessions": [],
+            "total": 0,
+            "hasMore": False,
+            "error": str(e)
+        }
+
+
+async def _query_sessions_metadata_only(user_id: str, db: Session, limit: int = 20, offset: int = 0) -> Dict[str, Any]:
+    """
+    查询会话元数据（仅元数据，不包含消息）
+    
+    用于滚动加载更多会话（惰性加载）
+    
+    Returns:
+        {
+            "sessions": [...],  # messages 为空数组
+            "total": int,
+            "hasMore": bool
+        }
+    """
+    try:
+        logger.info(f"[InitService] 查询 Sessions 元数据（limit={limit}, offset={offset}）...")
+        
+        # ✅ 查询会话列表（按创建时间排序）
+        from sqlalchemy import func
+        sessions = db.query(ChatSession).filter(
+            ChatSession.user_id == user_id
+        ).order_by(
+            ChatSession.created_at.desc()
+        ).offset(offset).limit(limit).all()
+        
+        if not sessions:
+            return {
+                "sessions": [],
+                "total": 0,
+                "hasMore": False,
+                "error": None
+            }
+        
+        # ✅ 查询总会话数量
+        total_count = db.query(ChatSession).filter(
+            ChatSession.user_id == user_id
+        ).count()
+        
+        # ✅ 批量查询每个会话的消息数量
+        session_ids = [s.id for s in sessions]
+        message_counts = db.query(
+            MessageIndex.session_id,
+            func.count(MessageIndex.id).label('count')
+        ).filter(
+            MessageIndex.session_id.in_(session_ids),
+            MessageIndex.user_id == user_id
+        ).group_by(MessageIndex.session_id).all()
+        
+        message_count_map = {mc.session_id: mc.count for mc in message_counts}
+        
+        # ✅ 组装会话结果（messages 为空数组）
+        sessions_result = []
+        for session in sessions:
+            session_dict = {
+                "id": session.id,
+                "title": session.title,
+                "createdAt": session.created_at,
+                "personaId": session.persona_id,
+                "mode": session.mode,
+                "messageCount": message_count_map.get(session.id, 0),
+                "messages": []  # ✅ 滚动加载的会话 messages 为空数组
+            }
+            sessions_result.append(session_dict)
+        
+        has_more = (offset + limit) < total_count
+        
+        logger.info(f"[InitService] Sessions 元数据加载成功: {len(sessions_result)} 个会话")
+        
+        return {
+            "sessions": sessions_result,
+            "total": total_count,
+            "hasMore": has_more,
+            "error": None
+        }
+    except Exception as e:
+        logger.error(f"[InitService] Sessions 元数据加载失败: {e}")
+        return {
+            "sessions": [],
+            "total": 0,
+            "hasMore": False,
+            "error": str(e)
+        }
+
+
 async def _query_personas(user_id: str, db: Session) -> Dict[str, Any]:
     """
     查询 Personas 数据（仅查询数据库，不执行初始化）

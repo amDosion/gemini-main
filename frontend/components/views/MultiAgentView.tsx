@@ -1,12 +1,17 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, lazy, Suspense } from 'react';
 import MessageItem from '../chat/MessageItem';
 import InputArea from '../chat/InputArea';
 import { Message, ModelConfig, AppMode, ChatOptions, Attachment, Role } from '../../types/types';
-import { MultiAgentWorkflowEditorReactFlow as MultiAgentWorkflowEditor } from '../multiagent';
 import type { WorkflowNode, WorkflowEdge, ExecutionStatus } from '../multiagent/types';
 import { GenViewLayout } from '../common/GenViewLayout';
 import { X, Network, MessageSquare } from 'lucide-react';
 import { useToastContext } from '../../contexts/ToastContext';
+import { LoadingSpinner } from '../common/LoadingSpinner';
+
+// ✅ 懒加载 MultiAgentWorkflowEditor 组件
+const MultiAgentWorkflowEditor = lazy(() => 
+  import('../multiagent').then(m => ({ default: m.MultiAgentWorkflowEditorReactFlow }))
+);
 
 interface MultiAgentViewProps {
     messages: Message[];
@@ -283,14 +288,16 @@ export const MultiAgentView: React.FC<MultiAgentViewProps> = React.memo(({
                     {/* 主内容区 */}
                     <div className="flex-1 overflow-hidden">
                         {viewMode === 'editor' ? (
-                            <MultiAgentWorkflowEditor
-                                onExecute={handleWorkflowExecute}
-                                onSave={async (workflow) => {
-                                    // 工作流保存功能（可以保存为模板）
-                                    console.log('[MultiAgentView] Saving workflow:', workflow);
-                                }}
-                                executionStatus={executionStatus}
-                            />
+                            <Suspense fallback={<LoadingSpinner />}>
+                                <MultiAgentWorkflowEditor
+                                    onExecute={handleWorkflowExecute}
+                                    onSave={async (workflow) => {
+                                        // 工作流保存功能（可以保存为模板）
+                                        console.log('[MultiAgentView] Saving workflow:', workflow);
+                                    }}
+                                    executionStatus={executionStatus}
+                                />
+                            </Suspense>
                         ) : (
                             <div className="h-full overflow-y-auto custom-scrollbar">
                                 {messages.length === 0 ? (

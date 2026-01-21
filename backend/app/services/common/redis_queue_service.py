@@ -6,6 +6,7 @@ Redis 队列服务
 - 滑动窗口限流
 - 分布式锁
 - 原子操作
+- 全局连接池管理（TASK-002）
 """
 
 import redis.asyncio as redis
@@ -14,10 +15,151 @@ import time
 import json
 from typing import Optional, Dict, Any
 import logging
+import threading
 
 from ...core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+class GlobalRedisConnectionPool:
+    """
+    全局 Redis 连接池管理器（TASK-002）
+    
+    在应用级别管理 Redis 连接，避免 Worker Pool 重启时频繁重建连接。
+    - 应用启动时初始化连接池
+    - 应用关闭时关闭连接池
+    - 支持健康检查和自动重连
+    """
+    
+    _instance: Optional['GlobalRedisConnectionPool'] = None
+    _lock = threading.Lock()
+    
+    def __init__(self):
+        self.redis_url = settings.redis_url
+        self._redis: Optional[redis.Redis] = None
+        self._initialized = False
+        self._health_check_interval = 30  # 健康检查间隔（秒）
+        self._health_check_task: Optional[asyncio.Task] = None
+    
+    @classmethod
+    def get_instance(cls) -> 'GlobalRedisConnectionPool':
+        """获取全局单例"""
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = cls()
+        return cls._instance
+    
+    async def initialize(self):
+        """初始化全局连接池"""
+        if self._initialized:
+            logger.warning("[GlobalRedisPool] 连接池已初始化，跳过重复初始化")
+            return
+        
+        try:
+            # 隐藏密码的 URL 用于日志
+            safe_url = self.redis_url
+            if '@' in safe_url:
+                parts = safe_url.split('@')
+                safe_url = parts[0].rsplit(':', 1)[0] + ':***@' + parts[1]
+            
+            logger.info(f"[GlobalRedisPool] 正在初始化全局连接池: {safe_url}")
+            
+            # 创建连接池（使用连接池参数）
+            self._redis = await redis.from_url(
+                self.redis_url,
+                encoding="utf-8",
+                decode_responses=True,
+                max_connections=10,  # 最大连接数
+                retry_on_timeout=True,  # 超时重试
+                health_check_interval=30,  # 健康检查间隔
+            )
+            
+            # 测试连接
+            await self._redis.ping()
+            
+            self._initialized = True
+            logger.info(f"[GlobalRedisPool] ✅ 全局连接池初始化成功: {safe_url}")
+            
+            # 启动健康检查任务
+            self._start_health_check()
+            
+        except Exception as e:
+            logger.error(f"[GlobalRedisPool] ❌ 连接池初始化失败: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+    
+    async def close(self):
+        """关闭全局连接池"""
+        if not self._initialized:
+            return
+        
+        # 停止健康检查任务
+        if self._health_check_task:
+            self._health_check_task.cancel()
+            try:
+                await self._health_check_task
+            except asyncio.CancelledError:
+                pass
+            self._health_check_task = None
+        
+        if self._redis:
+            try:
+                await self._redis.close()
+                logger.info("[GlobalRedisPool] ✅ 全局连接池已关闭")
+            except Exception as e:
+                logger.error(f"[GlobalRedisPool] ❌ 关闭连接池时出错: {e}")
+            finally:
+                self._redis = None
+                self._initialized = False
+    
+    def get_connection(self) -> Optional[redis.Redis]:
+        """获取 Redis 连接（从全局连接池）"""
+        if not self._initialized:
+            logger.warning("[GlobalRedisPool] 连接池未初始化，返回 None")
+            return None
+        return self._redis
+    
+    async def health_check(self) -> bool:
+        """健康检查"""
+        if not self._initialized or self._redis is None:
+            return False
+        
+        try:
+            await self._redis.ping()
+            return True
+        except Exception as e:
+            logger.warning(f"[GlobalRedisPool] 健康检查失败: {e}")
+            return False
+    
+    def _start_health_check(self):
+        """启动健康检查任务"""
+        async def _check_loop():
+            while True:
+                try:
+                    await asyncio.sleep(self._health_check_interval)
+                    if not await self.health_check():
+                        logger.warning("[GlobalRedisPool] 连接健康检查失败，尝试重连...")
+                        # 尝试重连
+                        try:
+                            await self._redis.close()
+                        except Exception:
+                            pass
+                        await self.initialize()
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.error(f"[GlobalRedisPool] 健康检查任务出错: {e}")
+                    await asyncio.sleep(self._health_check_interval)
+        
+        self._health_check_task = asyncio.create_task(_check_loop())
+        logger.info("[GlobalRedisPool] 健康检查任务已启动")
+    
+    def is_initialized(self) -> bool:
+        """检查连接池是否已初始化"""
+        return self._initialized
 
 
 class RedisQueueService:
@@ -48,41 +190,55 @@ class RedisQueueService:
         self.rate_limit = settings.upload_queue_rate_limit
         self.rate_window = 1  # 1秒窗口
         self._redis: Optional[redis.Redis] = None
+        self._global_pool = GlobalRedisConnectionPool.get_instance()
 
     async def connect(self):
-        """连接 Redis"""
+        """
+        连接 Redis（使用全局连接池）
+        
+        TASK-002: 现在使用全局连接池，而不是创建独立连接
+        """
+        # 如果全局连接池未初始化，先初始化
+        if not self._global_pool.is_initialized():
+            logger.info("[RedisQueue] 全局连接池未初始化，正在初始化...")
+            await self._global_pool.initialize()
+        
+        # 从全局连接池获取连接
+        self._redis = self._global_pool.get_connection()
+        
+        if self._redis is None:
+            raise RuntimeError("无法从全局连接池获取 Redis 连接")
+        
+        # 测试连接
         try:
-            # 隐藏密码的 URL 用于日志
-            safe_url = self.redis_url
-            if '@' in safe_url:
-                # redis://:password@host:port/db -> redis://:***@host:port/db
-                parts = safe_url.split('@')
-                safe_url = parts[0].rsplit(':', 1)[0] + ':***@' + parts[1]
-            
-            logger.info(f"[RedisQueue] 正在连接: {safe_url}")
-            
-            self._redis = await redis.from_url(
-                self.redis_url,
-                encoding="utf-8",
-                decode_responses=True
-            )
-            
-            # 测试连接
             await self._redis.ping()
-            
-            logger.info(f"[RedisQueue] ✅ 已连接: {safe_url}")
+            logger.info("[RedisQueue] ✅ 已从全局连接池获取连接")
         except Exception as e:
-            logger.error(f"[RedisQueue] ❌ 连接失败: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
+            logger.error(f"[RedisQueue] ❌ 连接测试失败: {e}")
+            # 尝试重新初始化连接池
+            try:
+                await self._global_pool.close()
+                await self._global_pool.initialize()
+                self._redis = self._global_pool.get_connection()
+                if self._redis:
+                    await self._redis.ping()
+                    logger.info("[RedisQueue] ✅ 重连成功")
+                else:
+                    raise RuntimeError("重连后仍无法获取连接")
+            except Exception as reconnect_error:
+                logger.error(f"[RedisQueue] ❌ 重连失败: {reconnect_error}")
+                raise
 
     async def disconnect(self):
-        """断开连接"""
-        if self._redis:
-            await self._redis.close()
-            self._redis = None
-            logger.info("[RedisQueue] 已断开")
+        """
+        断开连接（TASK-002: 不再关闭连接，因为使用全局连接池）
+        
+        注意：现在不会真正断开连接，因为连接由全局连接池管理
+        只有在应用关闭时才会关闭连接池
+        """
+        # 只清除本地引用，不断开全局连接池的连接
+        self._redis = None
+        logger.debug("[RedisQueue] 已清除本地连接引用（全局连接池保持连接）")
 
     def _task_log_key(self, task_id: str) -> str:
         return f"{self.TASK_LOG_PREFIX}{task_id}"

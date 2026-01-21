@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 
 import { AppMode, Attachment, Role } from './types/types';
@@ -8,16 +8,19 @@ import { llmService } from './services/llmService';
 // Cleaner Imports via Barrel Files
 import {
   AppLayout,
-  ChatView,
-  AgentView,
-  MultiAgentView,
-  StudioView,
+  ChatView,  // ✅ 保持同步加载（默认模式）
   SettingsModal,
   ImageModal,
   LoadingSpinner,
   ErrorView,
   WelcomeScreen
 } from './components';
+
+// ✅ 懒加载非关键视图组件（命名导出需要转换为默认导出）
+const AgentView = lazy(() => import('./components/views/AgentView').then(m => ({ default: m.AgentView })));
+const MultiAgentView = lazy(() => import('./components/views/MultiAgentView').then(m => ({ default: m.MultiAgentView })));
+const StudioView = lazy(() => import('./components/views/StudioView').then(m => ({ default: m.StudioView })));
+const LiveAPIView = lazy(() => import('./components/live/LiveAPIView').then(m => ({ default: m.LiveAPIView })));
 
 // Import Auth Components
 import { LoginPage, RegisterPage } from './components/auth';
@@ -62,7 +65,7 @@ const AppContent: React.FC = () => {
 
 
   // --- UI State ---
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'profiles' | 'editor'>('profiles');
 
@@ -161,8 +164,13 @@ const AppContent: React.FC = () => {
     // 缓存相关
     cacheStatus,
     refreshSessions,
+    // ✅ 滚动加载相关
+    hasMoreSessions,
+    isLoadingMore,
+    loadMoreSessions,
   } = useSessions(initData ? {
-    sessions: initData.sessions
+    sessions: initData.sessions,
+    sessionsHasMore: initData.sessionsHasMore
   } : undefined);
 
 
@@ -378,31 +386,36 @@ const AppContent: React.FC = () => {
 
     if (appMode === 'deep-research') {
       return (
-        <AgentView
-          {...commonProps}
-          isLoadingModels={isLoadingModels}
-          visibleModels={visibleModels}
-          apiKey={config.apiKey}
-          protocol={config.protocol}
-          onPromptSelect={handleWelcomePrompt}
-          onOpenSettings={() => handleOpenSettings('profiles')}
-          appMode={appMode}
-        />
+        <Suspense fallback={<LoadingSpinner />}>
+          <AgentView
+            {...commonProps}
+            isLoadingModels={isLoadingModels}
+            visibleModels={visibleModels}
+            apiKey={config.apiKey}
+            protocol={config.protocol}
+            onPromptSelect={handleWelcomePrompt}
+            onOpenSettings={() => handleOpenSettings('profiles')}
+            appMode={appMode}
+          />
+        </Suspense>
       );
     } else if (appMode === 'multi-agent') {
       return (
-        <MultiAgentView
-          {...commonProps}
-          isLoadingModels={isLoadingModels}
-          visibleModels={visibleModels}
-          apiKey={config.apiKey}
-          protocol={config.protocol}
-          onPromptSelect={handleWelcomePrompt}
-          onOpenSettings={() => handleOpenSettings('profiles')}
-          appMode={appMode}
-        />
+        <Suspense fallback={<LoadingSpinner />}>
+          <MultiAgentView
+            {...commonProps}
+            isLoadingModels={isLoadingModels}
+            visibleModels={visibleModels}
+            apiKey={config.apiKey}
+            protocol={config.protocol}
+            onPromptSelect={handleWelcomePrompt}
+            onOpenSettings={() => handleOpenSettings('profiles')}
+            appMode={appMode}
+          />
+        </Suspense>
       );
     } else if (appMode === 'chat') {
+      // ✅ ChatView 保持同步加载（默认模式）
       return (
         <ChatView
           {...commonProps}
@@ -417,15 +430,17 @@ const AppContent: React.FC = () => {
       );
     } else {
       return (
-        <StudioView
-          key={appMode}
-          {...commonProps}
-          mode={appMode}
-          visibleModels={visibleModels}
-          initialPrompt={initialPrompt}
-          initialAttachments={initialAttachments}
-          onDeleteMessage={handleDeleteMessage}
-        />
+        <Suspense fallback={<LoadingSpinner />}>
+          <StudioView
+            key={appMode}
+            {...commonProps}
+            mode={appMode}
+            visibleModels={visibleModels}
+            initialPrompt={initialPrompt}
+            initialAttachments={initialAttachments}
+            onDeleteMessage={handleDeleteMessage}
+          />
+        </Suspense>
       );
     }
   };
@@ -506,6 +521,10 @@ const AppContent: React.FC = () => {
         onSelectSession={setCurrentSessionId}
         onDeleteSession={deleteSession}
         onUpdateSessionTitle={updateSessionTitle}
+        // ✅ 滚动加载相关
+        hasMoreSessions={hasMoreSessions}
+        isLoadingMore={isLoadingMore}
+        loadMoreSessions={loadMoreSessions}
 
         isLoadingModels={isLoadingModels}
         isModelMenuOpen={isModelMenuOpen}

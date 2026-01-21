@@ -1,10 +1,11 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Plus, MessageSquare, X, Settings, Wand2, Crop, Expand, Video, Mic, Trash2, Edit2, Check, ChevronRight, FileText, Shirt, Search, Network } from 'lucide-react';
 import { ChatSession, AppMode } from '../../types/types';
 import { CacheIndicator } from '../common/CacheIndicator';
 import { CacheStatusInfo } from '../../hooks/useCacheStatus';
 import { SearchInput } from '../common/SearchInput';
+import { LoadingSpinner } from '../common/LoadingSpinner';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -19,6 +20,10 @@ interface SidebarProps {
   // 缓存相关（可选）
   cacheStatus?: CacheStatusInfo;
   onRefreshSessions?: () => void;
+  // ✅ 滚动加载相关
+  hasMoreSessions?: boolean;
+  isLoadingMore?: boolean;
+  loadMoreSessions?: () => void;
 }
 
 const getModeIcon = (mode?: AppMode) => {
@@ -64,6 +69,9 @@ const Sidebar: React.FC<SidebarProps> = ({
   onOpenSettings,
   cacheStatus,
   onRefreshSessions,
+  hasMoreSessions = false,
+  isLoadingMore = false,
+  loadMoreSessions,
 }) => {
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -71,6 +79,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchInput, setSearchInput] = useState<string>('');
+  const sidebarRef = useRef<HTMLDivElement>(null); // ✅ 滚动容器引用
 
   // Filter sessions based on search query (only after search button clicked)
   const filteredSessions = useMemo(() => {
@@ -131,6 +140,30 @@ const Sidebar: React.FC<SidebarProps> = ({
     setEditingSessionId(null);
     setEditingTitle('');
   };
+
+  // ✅ 滚动监听：当滚动到底部时触发加载更多
+  useEffect(() => {
+    const handleScroll = () => {
+      const sidebar = sidebarRef.current;
+      if (!sidebar || !hasMoreSessions || isLoadingMore || !loadMoreSessions) return;
+
+      // 检查是否滚动到底部（距离底部 100px 内）
+      const scrollTop = sidebar.scrollTop;
+      const scrollHeight = sidebar.scrollHeight;
+      const clientHeight = sidebar.clientHeight;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+
+      if (distanceFromBottom < 100) {
+        loadMoreSessions();
+      }
+    };
+
+    const sidebar = sidebarRef.current;
+    if (sidebar) {
+      sidebar.addEventListener('scroll', handleScroll);
+      return () => sidebar.removeEventListener('scroll', handleScroll);
+    }
+  }, [hasMoreSessions, isLoadingMore, loadMoreSessions]);
 
   return (
     <>
@@ -202,7 +235,10 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           {/* Session List */}
-          <div className="flex-1 overflow-y-auto px-3 space-y-1 scrollbar-thin scrollbar-thumb-slate-700">
+          <div 
+            ref={sidebarRef}
+            className="flex-1 overflow-y-auto px-3 space-y-1 scrollbar-thin scrollbar-thumb-slate-700"
+          >
             <div className="flex items-center justify-between px-4 mb-2">
               <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 History{searchQuery ? ` (${filteredSessions.length})` : ''}
@@ -339,6 +375,28 @@ const Sidebar: React.FC<SidebarProps> = ({
             ) : filteredSessions.length === 0 && (
               <div className="text-center text-slate-600 text-sm py-10 italic">
                 No matching conversations.
+              </div>
+            )}
+
+            {/* ✅ 滚动加载指示器 */}
+            {!searchQuery && hasMoreSessions && (
+              <div className="py-4 text-center">
+                {isLoadingMore ? (
+                  <LoadingSpinner />
+                ) : (
+                  <button
+                    onClick={loadMoreSessions}
+                    className="text-xs text-slate-500 hover:text-slate-400 transition-colors"
+                  >
+                    加载更多会话...
+                  </button>
+                )}
+              </div>
+            )}
+
+            {!searchQuery && !hasMoreSessions && sessions.length > 0 && (
+              <div className="py-4 text-center text-xs text-slate-600">
+                已加载全部会话
               </div>
             )}
           </div>

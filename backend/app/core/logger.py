@@ -8,7 +8,10 @@ and proper formatting for better debugging and monitoring.
 import logging
 import sys
 import os
+import threading
+import time
 from datetime import datetime
+from typing import Optional
 
 # 全部使用 ASCII 前缀，避免表情符号在部分环境下显示异常
 LOG_PREFIXES = {
@@ -48,6 +51,107 @@ class FlushingStreamHandler(logging.StreamHandler):
                 self.stream.flush()
         except Exception:
             self.handleError(record)
+
+
+class DatabaseLoggingFilter(logging.Filter):
+    """
+    日志过滤器：根据数据库配置决定是否显示日志
+    
+    从 SystemConfig 表中读取 enable_logging 字段（布尔值）：
+    - True: 显示日志
+    - False: 不显示日志
+    
+    使用缓存机制，避免每次都查询数据库（缓存时间：30秒）
+    """
+    
+    def __init__(self):
+        super().__init__()
+        self._cached_value: Optional[bool] = None
+        self._cache_timestamp: float = 0
+        self._cache_ttl: float = 30.0  # 缓存时间：30秒
+        self._lock = threading.Lock()
+        self._default_value: bool = True  # 默认值：显示日志（向后兼容）
+    
+    def _get_enable_logging_from_db(self) -> bool:
+        """
+        从数据库读取 enable_logging 配置
+        
+        Returns:
+            bool: True 表示显示日志，False 表示不显示日志
+        """
+        try:
+            from .database import SessionLocal
+            from ..models.db_models import SystemConfig
+            
+            db = SessionLocal()
+            try:
+                config = db.query(SystemConfig).filter(SystemConfig.id == 1).first()
+                if config and hasattr(config, 'enable_logging'):
+                    return bool(config.enable_logging)
+                # 如果字段不存在，返回默认值
+                return self._default_value
+            finally:
+                db.close()
+        except Exception as e:
+            # 如果查询失败（数据库未初始化、表不存在等），返回默认值
+            # 不记录错误，避免循环依赖
+            return self._default_value
+    
+    def _get_cached_value(self) -> bool:
+        """
+        获取缓存的配置值，如果缓存过期则重新查询数据库
+        
+        Returns:
+            bool: enable_logging 配置值
+        """
+        current_time = time.time()
+        
+        with self._lock:
+            # 检查缓存是否有效
+            if (self._cached_value is not None and 
+                current_time - self._cache_timestamp < self._cache_ttl):
+                return self._cached_value
+            
+            # 缓存过期或不存在，重新查询数据库
+            try:
+                self._cached_value = self._get_enable_logging_from_db()
+                self._cache_timestamp = current_time
+                return self._cached_value
+            except Exception:
+                # 查询失败，使用默认值
+                return self._default_value
+    
+    def filter(self, record: logging.LogRecord) -> bool:
+        """
+        过滤日志记录
+        
+        Args:
+            record: 日志记录
+            
+        Returns:
+            bool: True 表示允许记录，False 表示不允许记录
+        """
+        # 从数据库读取配置（带缓存）
+        enable_logging = self._get_cached_value()
+        
+        # 如果 enable_logging 为 False，不显示日志
+        if not enable_logging:
+            return False
+        
+        # 如果 enable_logging 为 True，显示日志
+        return True
+    
+    def refresh_cache(self):
+        """
+        手动刷新缓存（用于配置更新后立即生效）
+        """
+        with self._lock:
+            self._cached_value = None
+            self._cache_timestamp = 0
+
+
+# 全局日志过滤器实例
+_logging_filter = DatabaseLoggingFilter()
 
 
 def setup_logger(name: str = "backend", level: int = logging.INFO) -> logging.Logger:
@@ -91,6 +195,9 @@ def setup_logger(name: str = "backend", level: int = logging.INFO) -> logging.Lo
             datefmt='%Y-%m-%d %H:%M:%S'
         )
         console_handler.setFormatter(formatter)
+        
+        # ✅ 添加数据库日志过滤器
+        console_handler.addFilter(_logging_filter)
 
         # Add handler to logger
         logger.addHandler(console_handler)
@@ -140,6 +247,9 @@ def setup_root_logger(level: int = logging.INFO) -> None:
         )
         console_handler.setFormatter(formatter)
         
+        # ✅ 添加数据库日志过滤器
+        console_handler.addFilter(_logging_filter)
+        
         root_logger.addHandler(console_handler)
     else:
         # Just set level if handler already exists
@@ -185,3 +295,17 @@ def ensure_service_loggers():
 
 # 在模块导入时确保服务 logger 配置正确
 ensure_service_loggers()
+
+
+def refresh_logging_config_cache():
+    """
+    刷新日志配置缓存
+    
+    当 SystemConfig.enable_logging 在数据库中更新后，调用此函数可以立即生效
+    而不需要等待缓存过期（默认30秒）
+    
+    使用场景：
+    - 在更新 SystemConfig.enable_logging 后调用
+    - 在系统配置管理界面更新后调用
+    """
+    _logging_filter.refresh_cache()

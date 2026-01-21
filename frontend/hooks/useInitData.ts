@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { InitData } from '../types/types';
 import { apiClient } from '../services/apiClient';
 import { LLMFactory } from '../services/LLMFactory';
@@ -26,7 +26,8 @@ const BASE_RETRY_DELAY = 1000; // 1 second
  * @returns An object containing the initial data, loading and error states, and a retry function.
  */
 export const useInitData = (isAuthenticated: boolean): UseInitDataReturn => {
-  const [initData, setInitData] = useState<InitData | null>(null);
+  const [criticalData, setCriticalData] = useState<Partial<InitData> | null>(null);
+  const [nonCriticalData, setNonCriticalData] = useState<Partial<InitData> | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
   const [isConfigReady, setIsConfigReady] = useState<boolean>(false);
@@ -47,7 +48,8 @@ export const useInitData = (isAuthenticated: boolean): UseInitDataReturn => {
     if (!isAuthenticated) {
       // If the user is not authenticated, do nothing.
       // Reset state in case of logout.
-      setInitData(null);
+      setCriticalData(null);
+      setNonCriticalData(null);
       setIsLoading(false);
       setError(null);
       setIsConfigReady(false);
@@ -68,30 +70,37 @@ export const useInitData = (isAuthenticated: boolean): UseInitDataReturn => {
         abortControllerRef.current = new AbortController();
 
         try {
-          const data = await apiClient.get<InitData>('/api/init');
-
+          // ✅ 步骤 1：先加载关键数据（阻塞渲染）
+          const critical = await apiClient.get<Partial<InitData>>('/api/init/critical');
+          
           // Check if component is still mounted before updating state
           if (!isMountedRef.current) {
             return;
           }
 
-          if (data?._metadata?.partialFailures?.length) {
-            console.warn(
-              'Partial failures encountered during init:',
-              data._metadata.partialFailures
-            );
-          }
+          setCriticalData(critical);
+          setError(null);
           
-          setInitData(data);
-          setError(null); // Clear error on success
+          // ✅ 步骤 2：关键数据加载完成后，立即渲染
+          // Header 可以显示提供商和模型选择器
+          // chat 模式可以正常工作
           
-          // ✅ 初始化 LLMFactory（从后端加载 Provider 配置）
-          try {
-            await LLMFactory.initialize();
-          } catch (error) {
-            console.warn('[useInitData] Failed to initialize LLMFactory:', error);
-            // 不阻塞主流程，即使 LLMFactory 初始化失败也继续
-          }
+          // ✅ 步骤 3：后台加载非关键数据（不阻塞渲染）
+          apiClient.get<Partial<InitData>>('/api/init/non-critical')
+            .then(nonCritical => {
+              if (isMountedRef.current) {
+                setNonCriticalData(nonCritical);
+              }
+            })
+            .catch(err => {
+              console.warn('[useInitData] 非关键数据加载失败:', err);
+              // 非关键数据失败不影响主流程
+            });
+          
+          // ✅ 步骤 4：后台异步初始化 LLMFactory（不阻塞渲染）
+          LLMFactory.initialize().catch(err => {
+            console.warn('[useInitData] LLMFactory 初始化失败:', err);
+          });
           
           // Data successfully fetched, exit the retry loop.
           return; 
@@ -138,6 +147,23 @@ export const useInitData = (isAuthenticated: boolean): UseInitDataReturn => {
       }
     };
   }, [isAuthenticated, retryTrigger]);
+
+  // ✅ 合并关键数据和非关键数据
+  const initData = useMemo(() => {
+    if (!criticalData) return null;
+    return {
+      ...criticalData,
+      ...nonCriticalData,
+      // 如果非关键数据还未加载，使用空数组作为默认值
+      sessions: nonCriticalData?.sessions || [],
+      personas: nonCriticalData?.personas || [],
+      storageConfigs: nonCriticalData?.storageConfigs || [],
+      activeStorageId: nonCriticalData?.activeStorageId || null,
+      imagenConfig: nonCriticalData?.imagenConfig || null,
+      sessionsTotal: nonCriticalData?.sessionsTotal || 0,
+      sessionsHasMore: nonCriticalData?.sessionsHasMore || false
+    } as InitData;
+  }, [criticalData, nonCriticalData]);
 
   return { initData, isLoading, error, isConfigReady, retry };
 };

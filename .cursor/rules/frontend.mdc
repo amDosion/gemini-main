@@ -1,0 +1,1016 @@
+# 前端开发规范 (Frontend Development Rules)
+
+> 本文档定义 React 19 + TypeScript + Vite 前端的开发规范。
+
+---
+
+## 一、项目结构
+
+```
+frontend/
+├── components/              # 组件层
+│   ├── auth/               # 认证组件
+│   │   ├── LoginPage.tsx
+│   │   ├── RegisterPage.tsx
+│   │   └── ProtectedRoute.tsx
+│   ├── chat/               # 聊天组件
+│   │   ├── MessageItem.tsx
+│   │   ├── InputArea.tsx
+│   │   └── PromptInput.tsx
+│   ├── common/             # 通用组件
+│   │   ├── LoadingSpinner.tsx
+│   │   ├── ErrorView.tsx
+│   │   └── Toast.tsx
+│   ├── layout/             # 布局组件
+│   │   ├── AppLayout.tsx
+│   │   ├── Header.tsx
+│   │   └── Sidebar.tsx
+│   ├── message/            # 消息组件
+│   │   ├── ThinkingBlock.tsx
+│   │   ├── SearchProcess.tsx
+│   │   └── AttachmentGrid.tsx
+│   ├── modals/             # 模态框
+│   ├── views/              # 视图（页面级）
+│   └── index.ts            # Barrel export
+├── hooks/                  # 自定义 Hooks
+│   ├── handlers/           # 策略处理器
+│   │   ├── StrategyRegistry.ts
+│   │   ├── ChatHandlerClass.ts
+│   │   └── ImageGenHandlerClass.ts
+│   ├── useChat.ts
+│   ├── useSettings.ts
+│   ├── useSessions.ts
+│   └── useModels.ts
+├── services/               # 业务服务层
+│   ├── apiClient.ts       # API 客户端
+│   ├── llmService.ts      # LLM 服务
+│   ├── db.ts              # 数据库 API
+│   └── auth.ts            # 认证服务
+├── types/                  # TypeScript 类型
+│   ├── types.ts           # 核心业务类型
+│   └── storage.ts         # 存储配置类型
+├── utils/                  # 工具函数
+│   ├── errorHandler.ts
+│   └── fileValidation.ts
+├── contexts/               # React Context
+│   └── ToastContext.tsx
+├── App.tsx                 # 主应用组件
+└── main.tsx                # 入口文件
+```
+
+---
+
+## 二、组件开发规范
+
+### 2.1 函数组件模板
+
+```typescript
+import React, { useState, useCallback, useMemo } from 'react'
+import type { Message, Attachment } from '../types/types'
+
+// Props 接口定义
+interface MessageItemProps {
+  message: Message
+  onImageClick?: (url: string) => void
+  loading?: boolean
+  className?: string
+}
+
+// 函数组件
+const MessageItem: React.FC<MessageItemProps> = ({
+  message,
+  onImageClick,
+  loading = false,
+  className = ''
+}) => {
+  // 1. Hooks（按顺序：useState, useCallback, useMemo, useEffect）
+  const [expanded, setExpanded] = useState(false)
+
+  // 2. 事件处理（使用 useCallback 稳定引用）
+  const handleClick = useCallback(() => {
+    if (onImageClick && message.attachments?.[0]?.url) {
+      onImageClick(message.attachments[0].url)
+    }
+  }, [onImageClick, message.attachments])
+
+  const handleToggle = useCallback(() => {
+    setExpanded(prev => !prev)
+  }, [])
+
+  // 3. 计算值（使用 useMemo 缓存）
+  const formattedContent = useMemo(() => {
+    return message.content.trim()
+  }, [message.content])
+
+  // 4. 条件渲染
+  if (loading) {
+    return <LoadingSpinner />
+  }
+
+  // 5. 主渲染
+  return (
+    <div className={`message-item ${className}`}>
+      <div className="message-content" onClick={handleClick}>
+        {formattedContent}
+      </div>
+      {message.attachments && message.attachments.length > 0 && (
+        <AttachmentGrid
+          attachments={message.attachments}
+          expanded={expanded}
+          onToggle={handleToggle}
+        />
+      )}
+    </div>
+  )
+}
+
+// 使用 memo 优化重渲染
+export default React.memo(MessageItem)
+```
+
+### 2.2 组件分类
+
+**展示组件（Presentational）：**
+```typescript
+// 只负责 UI 渲染，无状态逻辑
+interface ButtonProps {
+  label: string
+  onClick: () => void
+  variant?: 'primary' | 'secondary'
+  disabled?: boolean
+}
+
+const Button: React.FC<ButtonProps> = ({
+  label,
+  onClick,
+  variant = 'primary',
+  disabled = false
+}) => (
+  <button
+    className={`btn btn-${variant}`}
+    onClick={onClick}
+    disabled={disabled}
+  >
+    {label}
+  </button>
+)
+```
+
+**容器组件（Container）：**
+```typescript
+// 负责状态管理和业务逻辑
+const ChatContainer: React.FC = () => {
+  const { messages, sendMessage, loadingState } = useChat(...)
+  const { settings } = useSettings()
+
+  const handleSend = useCallback(async (text: string) => {
+    await sendMessage(text, [])
+  }, [sendMessage])
+
+  return (
+    <ChatView
+      messages={messages}
+      onSend={handleSend}
+      loading={loadingState === 'loading'}
+    />
+  )
+}
+```
+
+### 2.3 组件组织
+
+```typescript
+// components/index.ts - Barrel export
+export { default as MessageItem } from './chat/MessageItem'
+export { default as InputArea } from './chat/InputArea'
+export { default as LoadingSpinner } from './common/LoadingSpinner'
+export { default as ErrorView } from './common/ErrorView'
+
+// 使用
+import { MessageItem, LoadingSpinner } from '../components'
+```
+
+---
+
+## 三、Hook 开发规范
+
+### 3.1 自定义 Hook 模板
+
+```typescript
+// hooks/useChat.ts
+
+import { useState, useCallback, useRef, useEffect } from 'react'
+import type { Message, Attachment, LoadingState } from '../types/types'
+
+interface UseChatOptions {
+  sessionId: string | null
+  onSessionUpdate?: (id: string, messages: Message[]) => void
+}
+
+interface UseChatReturn {
+  messages: Message[]
+  setMessages: React.Dispatch<React.SetStateAction<Message[]>>
+  loadingState: LoadingState
+  sendMessage: (text: string, attachments: Attachment[]) => Promise<void>
+  stopGeneration: () => void
+}
+
+export const useChat = (options: UseChatOptions): UseChatReturn => {
+  const { sessionId, onSessionUpdate } = options
+
+  // 状态
+  const [messages, setMessages] = useState<Message[]>([])
+  const [loadingState, setLoadingState] = useState<LoadingState>('idle')
+
+  // Ref（不触发重渲染的值）
+  const abortControllerRef = useRef<AbortController | null>(null)
+
+  // 发送消息
+  const sendMessage = useCallback(async (
+    text: string,
+    attachments: Attachment[]
+  ) => {
+    if (!sessionId || loadingState === 'loading') return
+
+    setLoadingState('loading')
+    abortControllerRef.current = new AbortController()
+
+    try {
+      // 添加用户消息
+      const userMessage: Message = {
+        id: crypto.randomUUID(),
+        role: 'user',
+        content: text,
+        attachments,
+        timestamp: Date.now()
+      }
+      setMessages(prev => [...prev, userMessage])
+
+      // 调用 API...
+      const response = await llmService.sendMessage(text, {
+        signal: abortControllerRef.current.signal
+      })
+
+      // 添加模型响应
+      const modelMessage: Message = {
+        id: crypto.randomUUID(),
+        role: 'model',
+        content: response.content,
+        timestamp: Date.now()
+      }
+      setMessages(prev => [...prev, modelMessage])
+
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        console.error('[useChat] Send failed:', error)
+      }
+    } finally {
+      setLoadingState('idle')
+      abortControllerRef.current = null
+    }
+  }, [sessionId, loadingState])
+
+  // 停止生成
+  const stopGeneration = useCallback(() => {
+    abortControllerRef.current?.abort()
+    setLoadingState('idle')
+  }, [])
+
+  // 同步到父组件
+  useEffect(() => {
+    if (sessionId && onSessionUpdate) {
+      onSessionUpdate(sessionId, messages)
+    }
+  }, [sessionId, messages, onSessionUpdate])
+
+  return {
+    messages,
+    setMessages,
+    loadingState,
+    sendMessage,
+    stopGeneration
+  }
+}
+```
+
+### 3.2 策略模式 Hook
+
+```typescript
+// hooks/handlers/StrategyRegistry.ts
+
+import type { AppMode } from '../../types/types'
+
+interface BaseHandler {
+  process(context: ExecutionContext): Promise<void>
+}
+
+class StrategyRegistry {
+  private strategies: Map<AppMode, BaseHandler> = new Map()
+
+  register(mode: AppMode, handler: BaseHandler): void {
+    this.strategies.set(mode, handler)
+  }
+
+  get(mode: AppMode): BaseHandler {
+    const handler = this.strategies.get(mode)
+    if (!handler) {
+      // 回退到默认处理器
+      return this.strategies.get('chat')!
+    }
+    return handler
+  }
+
+  has(mode: AppMode): boolean {
+    return this.strategies.has(mode)
+  }
+}
+
+// 使用
+const registry = new StrategyRegistry()
+registry.register('chat', new ChatHandler())
+registry.register('image-gen', new ImageGenHandler())
+registry.register('video-gen', new VideoGenHandler())
+
+// 在 Hook 中
+const handler = registry.get(currentMode)
+await handler.process(context)
+```
+
+### 3.3 Hook 规则
+
+```typescript
+// ✅ 正确：Hook 在组件顶层调用
+const MyComponent: React.FC = () => {
+  const [value, setValue] = useState('')
+  const { data } = useQuery()
+
+  // ...
+}
+
+// ❌ 错误：条件调用 Hook
+const MyComponent: React.FC = ({ condition }) => {
+  if (condition) {
+    const [value, setValue] = useState('')  // 错误！
+  }
+}
+
+// ✅ 正确：条件逻辑在 Hook 内部
+const useConditionalData = (condition: boolean) => {
+  const [data, setData] = useState(null)
+
+  useEffect(() => {
+    if (condition) {
+      fetchData().then(setData)
+    }
+  }, [condition])
+
+  return data
+}
+```
+
+---
+
+## 四、状态管理规范
+
+### 4.1 组件内状态
+
+```typescript
+// 简单状态
+const [isOpen, setIsOpen] = useState(false)
+
+// 复杂状态
+interface FormState {
+  email: string
+  password: string
+  errors: Record<string, string>
+}
+
+const [formState, setFormState] = useState<FormState>({
+  email: '',
+  password: '',
+  errors: {}
+})
+
+// 更新嵌套状态
+const updateEmail = useCallback((email: string) => {
+  setFormState(prev => ({ ...prev, email }))
+}, [])
+```
+
+### 4.2 Context 状态共享
+
+```typescript
+// contexts/ToastContext.tsx
+
+interface Toast {
+  id: string
+  message: string
+  type: 'success' | 'error' | 'warning' | 'info'
+}
+
+interface ToastContextType {
+  toasts: Toast[]
+  showToast: (message: string, type: Toast['type']) => void
+  hideToast: (id: string) => void
+}
+
+const ToastContext = createContext<ToastContextType | null>(null)
+
+export const ToastProvider: React.FC<PropsWithChildren> = ({ children }) => {
+  const [toasts, setToasts] = useState<Toast[]>([])
+
+  const showToast = useCallback((message: string, type: Toast['type']) => {
+    const id = crypto.randomUUID()
+    setToasts(prev => [...prev, { id, message, type }])
+
+    // 自动消失
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id))
+    }, 5000)
+  }, [])
+
+  const hideToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id))
+  }, [])
+
+  return (
+    <ToastContext.Provider value={{ toasts, showToast, hideToast }}>
+      {children}
+    </ToastContext.Provider>
+  )
+}
+
+// Hook 封装
+export const useToast = () => {
+  const context = useContext(ToastContext)
+  if (!context) {
+    throw new Error('useToast must be used within ToastProvider')
+  }
+  return context
+}
+```
+
+### 4.3 跨窗口同步
+
+```typescript
+// 使用 BroadcastChannel API
+const useCrossWindowSync = (channelName: string) => {
+  const channelRef = useRef<BroadcastChannel | null>(null)
+
+  useEffect(() => {
+    if (typeof BroadcastChannel !== 'undefined') {
+      channelRef.current = new BroadcastChannel(channelName)
+
+      channelRef.current.onmessage = (event) => {
+        // 处理来自其他窗口的消息
+        handleSyncMessage(event.data)
+      }
+    }
+
+    return () => {
+      channelRef.current?.close()
+    }
+  }, [channelName])
+
+  const broadcast = useCallback((data: any) => {
+    channelRef.current?.postMessage(data)
+  }, [])
+
+  return { broadcast }
+}
+```
+
+---
+
+## 五、API 调用规范
+
+### 5.1 API 客户端
+
+```typescript
+// services/apiClient.ts
+
+class ApiClient {
+  private baseUrl = '/api'
+
+  private async request<T>(
+    url: string,
+    options: RequestInit = {}
+  ): Promise<T> {
+    const token = localStorage.getItem('access_token')
+
+    const response = await fetch(`${this.baseUrl}${url}`, {
+      ...options,
+      headers: {
+        'Authorization': token ? `Bearer ${token}` : '',
+        'Content-Type': 'application/json',
+        ...options.headers
+      }
+    })
+
+    // 自动刷新 token
+    if (response.status === 401) {
+      const refreshed = await this.refreshToken()
+      if (refreshed) {
+        return this.request<T>(url, options)
+      }
+      // 刷新失败，跳转登录
+      window.location.href = '/login'
+      throw new Error('Session expired')
+    }
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new ApiError(response.status, error)
+    }
+
+    return response.json()
+  }
+
+  async get<T>(url: string): Promise<T> {
+    return this.request<T>(url)
+  }
+
+  async post<T>(url: string, data: any): Promise<T> {
+    return this.request<T>(url, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    })
+  }
+
+  async put<T>(url: string, data: any): Promise<T> {
+    return this.request<T>(url, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    })
+  }
+
+  async delete<T>(url: string): Promise<T> {
+    return this.request<T>(url, {
+      method: 'DELETE'
+    })
+  }
+
+  private async refreshToken(): Promise<boolean> {
+    try {
+      const refreshToken = localStorage.getItem('refresh_token')
+      if (!refreshToken) return false
+
+      const response = await fetch(`${this.baseUrl}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken })
+      })
+
+      if (response.ok) {
+        const { accessToken } = await response.json()
+        localStorage.setItem('access_token', accessToken)
+        return true
+      }
+
+      return false
+    } catch {
+      return false
+    }
+  }
+}
+
+export const apiClient = new ApiClient()
+```
+
+### 5.2 数据库 API
+
+```typescript
+// services/db.ts
+
+import { apiClient } from './apiClient'
+import type { ChatSession, ConfigProfile, Persona } from '../types/types'
+
+class ApiDB {
+  // Sessions
+  async getSessions(): Promise<ChatSession[]> {
+    return apiClient.get<ChatSession[]>('/sessions')
+  }
+
+  async createSession(title: string, mode: string): Promise<ChatSession> {
+    return apiClient.post<ChatSession>('/sessions', { title, mode })
+  }
+
+  async updateSession(id: string, data: Partial<ChatSession>): Promise<void> {
+    return apiClient.put<void>(`/sessions/${id}`, data)
+  }
+
+  async deleteSession(id: string): Promise<void> {
+    return apiClient.delete<void>(`/sessions/${id}`)
+  }
+
+  // Profiles
+  async getProfiles(): Promise<ConfigProfile[]> {
+    return apiClient.get<ConfigProfile[]>('/profiles')
+  }
+
+  async saveProfile(profile: Partial<ConfigProfile>): Promise<ConfigProfile> {
+    if (profile.id) {
+      return apiClient.put<ConfigProfile>(`/profiles/${profile.id}`, profile)
+    }
+    return apiClient.post<ConfigProfile>('/profiles', profile)
+  }
+
+  // Personas
+  async getPersonas(): Promise<Persona[]> {
+    return apiClient.get<Persona[]>('/personas')
+  }
+}
+
+export const apiDB = new ApiDB()
+```
+
+### 5.3 错误处理
+
+```typescript
+// utils/errorHandler.ts
+
+interface ErrorHandlerResult {
+  code: string
+  message: string
+  suggestions: string[]
+}
+
+export function handleError(error: any): ErrorHandlerResult {
+  // 网络错误
+  if (error instanceof TypeError && error.message === 'Failed to fetch') {
+    return {
+      code: 'NETWORK_ERROR',
+      message: '网络连接失败',
+      suggestions: [
+        '检查网络连接',
+        '检查后端服务是否运行',
+        '检查防火墙设置'
+      ]
+    }
+  }
+
+  // API 错误
+  if (error instanceof ApiError) {
+    switch (error.status) {
+      case 401:
+        return {
+          code: 'UNAUTHORIZED',
+          message: '身份验证失败',
+          suggestions: ['请重新登录']
+        }
+      case 429:
+        return {
+          code: 'RATE_LIMITED',
+          message: 'API 调用过于频繁',
+          suggestions: ['请稍后重试']
+        }
+      default:
+        return {
+          code: error.data?.code || 'API_ERROR',
+          message: error.data?.message || '请求失败',
+          suggestions: []
+        }
+    }
+  }
+
+  // 未知错误
+  return {
+    code: 'UNKNOWN',
+    message: error.message || '未知错误',
+    suggestions: []
+  }
+}
+
+// 使用
+try {
+  await apiClient.post('/chat', data)
+} catch (error) {
+  const result = handleError(error)
+  showToast(result.message, 'error')
+  console.error(`[API] ${result.code}: ${result.message}`)
+}
+```
+
+---
+
+## 六、类型定义规范
+
+### 6.1 核心业务类型
+
+```typescript
+// types/types.ts
+
+// 枚举
+export enum Role {
+  USER = 'user',
+  MODEL = 'model',
+  SYSTEM = 'system'
+}
+
+// 联合类型
+export type AppMode =
+  | 'chat'
+  | 'image-gen'
+  | 'image-chat-edit'
+  | 'video-gen'
+  | 'audio-gen'
+  | 'deep-research'
+  | 'multi-agent'
+
+export type LoadingState = 'idle' | 'loading' | 'error'
+
+// 接口
+export interface Message {
+  id: string
+  role: Role
+  content: string
+  attachments?: Attachment[]
+  groundingMetadata?: GroundingMetadata
+  timestamp: number
+  mode?: AppMode
+}
+
+export interface Attachment {
+  id: string
+  fileUri?: string
+  mimeType: string
+  name: string
+  url?: string
+  tempUrl?: string
+  uploadStatus?: 'pending' | 'uploading' | 'completed' | 'failed'
+}
+
+export interface ChatOptions {
+  enableSearch?: boolean
+  enableThinking?: boolean
+  enableCodeExecution?: boolean
+  temperature?: number
+  maxTokens?: number
+}
+
+export interface ChatSession {
+  id: string
+  title: string
+  messages: Message[]
+  createdAt: number
+  mode?: AppMode
+  personaId?: string
+}
+
+export interface ConfigProfile {
+  id: string
+  name: string
+  providerId: string
+  hasApiKey: boolean
+  baseUrl?: string
+  createdAt?: string
+}
+
+export interface Persona {
+  id: string
+  name: string
+  description: string
+  systemPrompt: string
+  icon: string
+  category: string
+}
+```
+
+### 6.2 组件 Props 类型
+
+```typescript
+// Props 命名规范：组件名 + Props
+interface MessageItemProps {
+  message: Message
+  onImageClick?: (url: string) => void
+  className?: string
+}
+
+// 事件处理器类型
+type ClickHandler = (event: React.MouseEvent<HTMLButtonElement>) => void
+type ChangeHandler = (event: React.ChangeEvent<HTMLInputElement>) => void
+type SubmitHandler = (event: React.FormEvent<HTMLFormElement>) => void
+
+// 泛型组件
+interface ListProps<T> {
+  items: T[]
+  renderItem: (item: T, index: number) => React.ReactNode
+  keyExtractor: (item: T) => string
+}
+
+const List = <T,>({ items, renderItem, keyExtractor }: ListProps<T>) => (
+  <ul>
+    {items.map((item, index) => (
+      <li key={keyExtractor(item)}>
+        {renderItem(item, index)}
+      </li>
+    ))}
+  </ul>
+)
+```
+
+### 6.3 类型工具
+
+```typescript
+// 可选所有属性
+type PartialMessage = Partial<Message>
+
+// 必选所有属性
+type RequiredMessage = Required<Message>
+
+// 选择属性
+type MessagePreview = Pick<Message, 'id' | 'content'>
+
+// 排除属性
+type MessageWithoutTimestamp = Omit<Message, 'timestamp'>
+
+// 条件类型
+type ExtractAttachments<T> = T extends { attachments: infer A } ? A : never
+
+// 映射类型
+type ReadonlyMessage = {
+  readonly [K in keyof Message]: Message[K]
+}
+```
+
+---
+
+## 七、样式规范
+
+### 7.1 Tailwind CSS 使用
+
+```tsx
+// 基础样式
+<div className="bg-slate-800 border border-indigo-500/50 rounded-lg p-4">
+  <h3 className="text-white font-semibold mb-2">Title</h3>
+  <p className="text-slate-300 text-sm">Description</p>
+</div>
+
+// 响应式设计
+<div className="w-full md:w-1/2 lg:w-1/3">
+  {/* 移动端全宽，平板半宽，桌面三分之一 */}
+</div>
+
+// 深色模式
+<div className="bg-white dark:bg-slate-900 text-black dark:text-white">
+  {/* 自动适应主题 */}
+</div>
+
+// 状态变化
+<button className="
+  bg-indigo-600
+  hover:bg-indigo-700
+  active:bg-indigo-800
+  focus:ring-2 focus:ring-indigo-500
+  disabled:opacity-50 disabled:cursor-not-allowed
+">
+  Submit
+</button>
+
+// 动画
+<div className="
+  transition-all duration-300 ease-in-out
+  transform hover:scale-105
+">
+  Hover me
+</div>
+```
+
+### 7.2 样式组织
+
+```tsx
+// 提取重复样式为常量
+const buttonStyles = {
+  primary: 'bg-indigo-600 hover:bg-indigo-700 text-white',
+  secondary: 'bg-slate-600 hover:bg-slate-700 text-white',
+  outline: 'border border-indigo-500 text-indigo-500 hover:bg-indigo-50'
+}
+
+// 条件样式（使用 clsx 或手动）
+import clsx from 'clsx'
+
+<button className={clsx(
+  'px-4 py-2 rounded-lg font-medium',
+  buttonStyles[variant],
+  disabled && 'opacity-50 cursor-not-allowed'
+)}>
+  {label}
+</button>
+
+// 或不使用 clsx
+<button className={`
+  px-4 py-2 rounded-lg font-medium
+  ${buttonStyles[variant]}
+  ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
+`.trim()}>
+  {label}
+</button>
+```
+
+---
+
+## 八、测试规范
+
+### 8.1 组件测试
+
+```typescript
+// __tests__/MessageItem.test.tsx
+
+import { render, screen, fireEvent } from '@testing-library/react'
+import MessageItem from '../components/chat/MessageItem'
+
+const mockMessage = {
+  id: '1',
+  role: 'user',
+  content: 'Hello, world!',
+  timestamp: Date.now()
+}
+
+describe('MessageItem', () => {
+  it('renders message content', () => {
+    render(<MessageItem message={mockMessage} />)
+    expect(screen.getByText('Hello, world!')).toBeInTheDocument()
+  })
+
+  it('calls onImageClick when clicking attachment', () => {
+    const onImageClick = vi.fn()
+    const messageWithAttachment = {
+      ...mockMessage,
+      attachments: [{ id: '1', url: 'image.jpg', mimeType: 'image/jpeg', name: 'test.jpg' }]
+    }
+
+    render(
+      <MessageItem
+        message={messageWithAttachment}
+        onImageClick={onImageClick}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('img'))
+    expect(onImageClick).toHaveBeenCalledWith('image.jpg')
+  })
+})
+```
+
+### 8.2 Hook 测试
+
+```typescript
+// __tests__/useChat.test.ts
+
+import { renderHook, act } from '@testing-library/react'
+import { useChat } from '../hooks/useChat'
+
+describe('useChat', () => {
+  it('initializes with empty messages', () => {
+    const { result } = renderHook(() =>
+      useChat({ sessionId: '1', onSessionUpdate: vi.fn() })
+    )
+
+    expect(result.current.messages).toEqual([])
+    expect(result.current.loadingState).toBe('idle')
+  })
+
+  it('sends message and updates state', async () => {
+    const { result } = renderHook(() =>
+      useChat({ sessionId: '1', onSessionUpdate: vi.fn() })
+    )
+
+    await act(async () => {
+      await result.current.sendMessage('Hello', [])
+    })
+
+    expect(result.current.messages.length).toBeGreaterThan(0)
+  })
+})
+```
+
+---
+
+## 九、最佳实践清单
+
+### 9.1 必须遵循
+
+- [ ] 使用 TypeScript 类型注解
+- [ ] Props 接口使用 `ComponentNameProps` 命名
+- [ ] 事件处理函数使用 `handle` 前缀
+- [ ] 使用 `useCallback` 稳定回调引用
+- [ ] 使用 `useMemo` 缓存昂贵计算
+- [ ] API 调用统一使用 `apiClient`
+- [ ] 错误处理使用 `handleError` 工具函数
+
+### 9.2 推荐遵循
+
+- [ ] 使用 `React.memo` 优化纯展示组件
+- [ ] 使用 Tailwind CSS 原子类
+- [ ] 复杂状态使用 `useReducer`
+- [ ] Context 拆分避免不必要重渲染
+- [ ] 编写组件测试
+- [ ] 使用 Barrel export 组织导出
+
+### 9.3 禁止行为
+
+- [ ] 禁止在条件语句中调用 Hook
+- [ ] 禁止直接修改 state（使用 setState）
+- [ ] 禁止在渲染期间产生副作用
+- [ ] 禁止使用 `any` 类型（除非必要）
+- [ ] 禁止内联样式（使用 Tailwind）

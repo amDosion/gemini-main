@@ -493,9 +493,35 @@ async def create_or_update_session(
 
 
 
+@router.get("/sessions/{session_id}")
+async def get_session(
+    session_id: str,
+    user_id: str = Depends(require_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    获取单个会话的完整数据（包含消息内容）
+    
+    用于用户选择会话时按需加载消息（不能分页，必须完整）
+    
+    返回：
+    {
+        "id": str,
+        "title": str,
+        "messages": [...],  # 完整消息列表（不能分页）
+        "createdAt": int,
+        "personaId": str | null,
+        "mode": str | null
+    }
+    """
+    return await get_session_by_id(session_id, user_id, db)
+
+
 async def get_session_by_id(session_id: str, user_id: str, db: Session) -> Dict[str, Any]:
     """
     获取单个会话的完整数据 (v3 架构)
+    
+    内部辅助函数，用于按需加载会话的完整消息（不能分页）
     """
     user_query = UserScopedQuery(db, user_id)
     session = user_query.get(DBChatSession, session_id)

@@ -6,10 +6,12 @@ import { db } from '../services/db';
 import { cachedDb } from '../services/cachedDb';
 import { cleanAttachmentsForDb } from './handlers/attachmentUtils';
 import { useCacheStatus, CacheStatusInfo } from './useCacheStatus';
+import { apiClient } from '../services/apiClient';
 
 export const useSessions = (
   initialData?: {
     sessions: ChatSession[];
+    sessionsHasMore?: boolean;
   }
 ) => {
   // ✅ 使用 initialData 初始化状态（如果提供）
@@ -19,6 +21,8 @@ export const useSessions = (
   );
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasMoreSessions, setHasMoreSessions] = useState(false); // ✅ 是否还有更多会话
+  const [isLoadingMore, setIsLoadingMore] = useState(false); // ✅ 是否正在加载更多
 
   // ✅ 使用 ref 标记是否已经从 initialData 初始化过，避免无限循环
   const isInitializedFromPropsRef = useRef(false);
@@ -102,6 +106,47 @@ export const useSessions = (
       setIsLoading(false);
     }
   }, [prepareSessions]); // ✅ 移除 cacheStatus 依赖
+
+  // ✅ 从 initialData 中获取 sessionsHasMore
+  useEffect(() => {
+    if (initialData?.sessionsHasMore !== undefined) {
+      setHasMoreSessions(initialData.sessionsHasMore);
+    }
+  }, [initialData?.sessionsHasMore]);
+
+  // ✅ 滚动加载更多会话
+  const loadMoreSessions = useCallback(async () => {
+    if (isLoadingMore || !hasMoreSessions) return;
+    
+    try {
+      setIsLoadingMore(true);
+      const offset = sessions.length;
+      const result = await apiClient.get<{
+        sessions: ChatSession[];
+        total: number;
+        hasMore: boolean;
+      }>(`/api/init/sessions/more?offset=${offset}&limit=20`);
+      
+      if (result.sessions.length > 0) {
+        // ✅ 滚动加载的会话 messages 为空数组，需要准备
+        const preparedSessions = prepareSessions(
+          result.sessions.map(s => ({
+            ...s,
+            messages: s.messages || []  // 确保 messages 存在
+          }))
+        );
+        setSessions(prev => [...prev, ...preparedSessions]);
+        setHasMoreSessions(result.hasMore);
+      } else {
+        setHasMoreSessions(false);
+      }
+    } catch (error) {
+      console.error('[useSessions] 加载更多会话失败:', error);
+      setHasMoreSessions(false);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [sessions.length, hasMoreSessions, isLoadingMore, prepareSessions]);
 
   // ? 处理 initialData：恢复 Blob URL 和设置 currentSessionId
   // ?? 优先使用 initData.sessions，缺失时回退到 /sessions
@@ -328,5 +373,9 @@ export const useSessions = (
     // 缓存相关
     cacheStatus,
     refreshSessions,
+    // ✅ 滚动加载相关
+    hasMoreSessions,
+    isLoadingMore,
+    loadMoreSessions,
   };
 };

@@ -1,0 +1,893 @@
+# Cursor Rules - Gemini Chat 多提供商 AI 应用
+
+> 本项目是一个多提供商 AI 聊天应用，支持 Google Gemini、OpenAI、阿里云通义千问等 20+ AI 提供商。
+> 前端使用 React 19 + TypeScript + Vite，后端使用 FastAPI + SQLAlchemy + PostgreSQL。
+
+---
+
+## 一、项目概述
+
+### 1.1 项目架构
+
+```
+cursor-Attachment/
+├── frontend/           # React 前端应用
+│   ├── components/    # UI 组件
+│   ├── hooks/         # 自定义 Hooks
+│   ├── services/      # 业务服务层
+│   ├── types/         # TypeScript 类型定义
+│   └── utils/         # 工具函数
+├── backend/           # FastAPI 后端应用
+│   └── app/
+│       ├── core/      # 核心基础设施
+│       ├── models/    # 数据库模型
+│       ├── routers/   # API 路由
+│       ├── services/  # 业务服务层
+│       └── utils/     # 工具函数
+└── docs/              # 项目文档
+```
+
+### 1.2 核心技术栈
+
+**前端:**
+- React 19.2+ / TypeScript 5.2+
+- Vite 6.4+ (构建工具)
+- Tailwind CSS 3.4+ (样式)
+- React Router 7.11+ (路由)
+- React Flow / @xyflow/react (流程图)
+
+**后端:**
+- FastAPI 0.109+ (Web 框架)
+- SQLAlchemy 2.0+ (ORM)
+- PostgreSQL (数据库)
+- Redis 5.0+ (缓存/队列)
+- Pydantic 2.6+ (数据验证)
+
+**AI SDK:**
+- google-genai 1.55+ (Google Gemini)
+- openai 1.12+ (OpenAI)
+- dashscope 1.17+ (阿里云通义千问)
+
+---
+
+## 二、代码风格和命名规范
+
+### 2.1 命名约定
+
+| 对象类型 | 前端规范 | 后端规范 | 示例 |
+|---------|---------|---------|------|
+| 文件名（组件） | PascalCase | - | `MessageItem.tsx` |
+| 文件名（Hook） | camelCase + use前缀 | - | `useChat.ts` |
+| 文件名（服务/工具） | camelCase | snake_case | `llmService.ts` / `auth_service.py` |
+| 类名 | PascalCase | PascalCase | `LLMService` / `AuthService` |
+| 函数/方法 | camelCase | snake_case | `handleSubmit` / `verify_password` |
+| 变量 | camelCase | snake_case | `isLoading` / `user_id` |
+| 常量 | UPPER_CASE | UPPER_CASE | `MAX_RETRIES` |
+| 数据库表名 | - | snake_case | `config_profiles` |
+| 数据库字段 | - | snake_case | `created_at` |
+| API 响应字段 | camelCase | camelCase (在 to_dict) | `apiKey`, `userId` |
+
+### 2.2 前端命名约定
+
+```typescript
+// 布尔值使用 is/has/can/should 前缀
+const isAuthenticated = true
+const hasError = false
+const canEdit = true
+
+// 事件处理函数使用 handle 前缀
+const handleClick = () => {}
+const handleSubmit = (e: FormEvent) => {}
+const handleModeSwitch = (mode: AppMode) => {}
+
+// 状态变量使用 [value, setValue] 模式
+const [messages, setMessages] = useState<Message[]>([])
+const [isLoading, setIsLoading] = useState(false)
+
+// 异步操作使用 fetch/load 前缀
+const fetchModels = async () => {}
+const loadSessions = async () => {}
+
+// Props 接口使用 Props 后缀
+interface MessageItemProps {
+  message: Message
+  onImageClick?: (url: string) => void
+}
+```
+
+### 2.3 后端命名约定
+
+```python
+# 类使用 PascalCase
+class AuthService:
+    def __init__(self, db: Session):
+        self.db = db
+
+# 函数使用 snake_case
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    pass
+
+# 私有成员使用 _ 前缀
+class ProviderFactory:
+    _providers: Dict[str, Type[BaseProviderService]] = {}
+    _client_cache: Dict[str, BaseProviderService] = {}
+
+# 异常类使用 Error 后缀
+class AuthError(Exception):
+    pass
+
+class EmailExistsError(AuthError):
+    pass
+```
+
+---
+
+## 三、后端开发规范
+
+### 3.1 路由设计规范
+
+**统一使用 FastAPI 依赖注入进行认证：**
+
+```python
+# ✅ 正确：使用依赖注入
+from ..core.dependencies import require_current_user
+
+@router.post("/{provider}/chat")
+async def chat_with_provider(
+    provider: str,
+    request: ChatRequest,
+    user_id: str = Depends(require_current_user),  # 自动注入
+    db: Session = Depends(get_db)
+):
+    # user_id 已自动注入，无需手动调用
+    pass
+
+# ❌ 错误：手动调用认证
+@router.post("/{provider}/chat")
+async def chat_with_provider(request: Request):
+    from ..core.user_context import require_user_id
+    user_id = require_user_id(request)  # 不推荐
+```
+
+**路由分层结构：**
+```
+/api/auth/          # 认证相关（登录、注册、刷新令牌）
+/api/modes/         # 核心 AI 功能（聊天、生成）
+/api/sessions/      # 会话管理
+/api/models/        # 模型管理
+/api/storage/       # 存储管理
+/api/tools/         # 工具集（浏览器、PDF、代码执行）
+```
+
+### 3.2 服务层设计
+
+**使用工厂模式创建提供商服务：**
+
+```python
+# 创建服务实例
+service = ProviderFactory.create(
+    provider="google",
+    api_key=api_key,     # 已解密的明文 API Key
+    api_url=base_url,
+    user_id=user_id,
+    db=db
+)
+
+# 调用服务方法
+result = await service.chat(messages, model, options)
+```
+
+**服务层职责分离：**
+- **路由层**：认证、参数验证、调用服务
+- **服务层**：业务逻辑实现
+- **数据层**：数据库操作
+
+### 3.3 数据库模型规范
+
+```python
+from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Text, Boolean
+from sqlalchemy.orm import relationship
+from datetime import datetime
+import uuid
+
+class ConfigProfile(Base):
+    __tablename__ = "config_profiles"
+
+    # 主键使用 UUID
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    # 外键关联用户
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+
+    # 业务字段
+    name = Column(String(100), nullable=False)
+    provider_id = Column(String(50), nullable=False, index=True)
+    api_key = Column(Text)  # 加密存储
+    base_url = Column(String(500))
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # 关系
+    user = relationship("User", back_populates="config_profiles")
+
+    def to_dict(self) -> dict:
+        """转换为前端格式（camelCase）"""
+        return {
+            "id": self.id,
+            "userId": self.user_id,
+            "name": self.name,
+            "providerId": self.provider_id,
+            "baseUrl": self.base_url,
+            "createdAt": self.created_at.isoformat() if self.created_at else None
+        }
+```
+
+### 3.4 API Key 解密流程
+
+**重要：API Key 在 credential_manager.py 统一解密**
+
+```python
+# backend/app/core/credential_manager.py
+
+async def get_provider_credentials(
+    provider: str,
+    db: Session,
+    user_id: str,
+    request_api_key: Optional[str] = None
+) -> Tuple[str, Optional[str]]:
+    """
+    获取提供商凭证（API Key 和 Base URL）
+
+    优先级：
+    1. 请求参数（用于测试/覆盖）
+    2. 数据库配置（自动解密）
+    """
+    # 从数据库获取配置
+    profile = db.query(ConfigProfile).filter(
+        ConfigProfile.user_id == user_id,
+        ConfigProfile.provider_id == provider
+    ).first()
+
+    if profile and profile.api_key:
+        # 自动解密 API Key
+        api_key = _decrypt_api_key(profile.api_key)
+        return api_key, profile.base_url
+
+    raise HTTPException(status_code=401, detail="API Key not found")
+```
+
+### 3.5 错误处理规范
+
+```python
+# 使用结构化错误类
+from ..services.common.errors import (
+    ProviderError,
+    APIKeyError,
+    RateLimitError,
+    TimeoutError
+)
+
+@router.post("/endpoint")
+async def endpoint():
+    try:
+        # 业务逻辑
+        pass
+    except ProviderError as e:
+        # 返回结构化错误信息
+        raise HTTPException(
+            status_code=500,
+            detail=e.to_dict()  # 包含 code, message, recoverable 等
+        )
+    except ConfigurationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# 错误层级
+# ProviderError (基类)
+# ├── ClientCreationError
+# ├── OperationError
+# │   ├── APIKeyError
+# │   ├── RateLimitError
+# │   ├── ModelNotFoundError
+# │   └── TimeoutError
+# └── ConfigurationError
+```
+
+### 3.6 日志规范
+
+```python
+from ..core.logger import get_logger, LOG_PREFIXES
+
+logger = get_logger(__name__)
+
+# 使用结构化前缀
+logger.info(f"{LOG_PREFIXES['success']} Operation completed")  # [OK]
+logger.error(f"{LOG_PREFIXES['error']} Failed: {e}")          # [ERROR]
+logger.warning(f"{LOG_PREFIXES['warning']} Deprecated")       # [WARN]
+
+# 日志级别选择
+# - DEBUG: 详细调试信息
+# - INFO: 正常操作记录
+# - WARNING: 潜在问题
+# - ERROR: 错误信息
+```
+
+---
+
+## 四、前端开发规范
+
+### 4.1 组件设计规范
+
+**函数组件 + TypeScript：**
+
+```typescript
+interface MessageItemProps {
+  message: Message
+  onImageClick?: (url: string) => void
+  loading?: boolean
+}
+
+const MessageItem: React.FC<MessageItemProps> = ({
+  message,
+  onImageClick,
+  loading = false
+}) => {
+  const [expanded, setExpanded] = useState(false)
+
+  const handleClick = useCallback(() => {
+    if (onImageClick && message.attachments?.[0]?.url) {
+      onImageClick(message.attachments[0].url)
+    }
+  }, [onImageClick, message.attachments])
+
+  return (
+    <div className="message-item">
+      {/* 组件内容 */}
+    </div>
+  )
+}
+
+export default MessageItem
+```
+
+**组件分层：**
+```
+components/
+├── auth/          # 认证相关组件
+├── chat/          # 聊天界面组件
+├── common/        # 通用组件（Loading, Error, Toast）
+├── layout/        # 布局组件
+├── message/       # 消息相关组件
+├── modals/        # 模态框组件
+├── views/         # 视图组件（页面级）
+└── workspaces/    # 工作区组件
+```
+
+### 4.2 Hook 设计规范
+
+**自定义 Hook 模式：**
+
+```typescript
+// hooks/useChat.ts
+export const useChat = (
+  currentSessionId: string | null,
+  updateSessionMessages: (id: string, msgs: Message[]) => void
+) => {
+  const [messages, setMessages] = useState<Message[]>([])
+  const [loadingState, setLoadingState] = useState<LoadingState>('idle')
+
+  const sendMessage = useCallback(async (text: string, attachments: Attachment[]) => {
+    // 发送消息逻辑
+  }, [/* 依赖项 */])
+
+  const stopGeneration = useCallback(() => {
+    // 停止生成逻辑
+  }, [])
+
+  return {
+    messages,
+    setMessages,
+    loadingState,
+    sendMessage,
+    stopGeneration
+  }
+}
+```
+
+**策略模式处理不同模式：**
+
+```typescript
+// hooks/handlers/StrategyRegistry.ts
+class StrategyRegistry {
+  private strategies: Map<AppMode, BaseHandler> = new Map()
+
+  register(mode: AppMode, handler: BaseHandler) {
+    this.strategies.set(mode, handler)
+  }
+
+  get(mode: AppMode): BaseHandler {
+    return this.strategies.get(mode) || this.strategies.get('chat')!
+  }
+}
+
+// 使用
+const registry = new StrategyRegistry()
+registry.register('chat', new ChatHandler())
+registry.register('image-gen', new ImageGenHandler())
+```
+
+### 4.3 状态管理规范
+
+**优先使用 React 内置状态管理：**
+
+```typescript
+// 组件内状态
+const [isLoading, setIsLoading] = useState(false)
+
+// 跨组件共享状态（Context）
+const ToastContext = createContext<ToastContextType | null>(null)
+
+export const ToastProvider: React.FC<PropsWithChildren> = ({ children }) => {
+  const [toasts, setToasts] = useState<Toast[]>([])
+
+  const showToast = useCallback((message: string, type: ToastType) => {
+    // 添加 toast
+  }, [])
+
+  return (
+    <ToastContext.Provider value={{ toasts, showToast }}>
+      {children}
+    </ToastContext.Provider>
+  )
+}
+
+export const useToast = () => {
+  const context = useContext(ToastContext)
+  if (!context) throw new Error('useToast must be used within ToastProvider')
+  return context
+}
+```
+
+### 4.4 API 调用规范
+
+```typescript
+// services/apiClient.ts
+class ApiClient {
+  private async request<T>(url: string, options: RequestOptions): Promise<T> {
+    const token = localStorage.getItem('access_token')
+
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...options.headers
+      }
+    })
+
+    if (response.status === 401) {
+      // 自动刷新 token 并重试
+      await this.refreshToken()
+      return this.request<T>(url, options)
+    }
+
+    if (!response.ok) {
+      throw new ApiError(response.status, await response.json())
+    }
+
+    return response.json()
+  }
+}
+
+// 使用
+const apiClient = new ApiClient()
+const sessions = await apiClient.get<ChatSession[]>('/api/sessions')
+```
+
+### 4.5 样式规范
+
+**使用 Tailwind CSS：**
+
+```tsx
+// ✅ 正确：使用 Tailwind 实用类
+<div className="bg-slate-800 border border-indigo-500/50 rounded-lg p-4">
+  <h3 className="text-white font-semibold mb-2">Title</h3>
+  <p className="text-slate-300">Description</p>
+</div>
+
+// ✅ 响应式设计
+<div className="w-full md:w-1/2 lg:w-1/3">
+  {/* 内容 */}
+</div>
+
+// ✅ 深色模式支持
+<div className="bg-white dark:bg-slate-900">
+  {/* 内容 */}
+</div>
+
+// ❌ 避免：内联样式
+<div style={{ backgroundColor: '#1e293b' }}>
+  {/* 不推荐 */}
+</div>
+```
+
+### 4.6 类型定义规范
+
+```typescript
+// types/types.ts
+
+// 使用 enum 定义固定值
+enum Role {
+  USER = 'user',
+  MODEL = 'model',
+  SYSTEM = 'system'
+}
+
+// 使用 type 定义联合类型
+type AppMode =
+  | 'chat'
+  | 'image-gen'
+  | 'video-gen'
+  | 'deep-research'
+
+// 使用 interface 定义对象类型
+interface Message {
+  id: string
+  role: Role
+  content: string
+  attachments?: Attachment[]
+  timestamp: number
+  mode?: AppMode
+}
+
+// 可选属性使用 ?
+interface ChatOptions {
+  enableSearch?: boolean
+  enableThinking?: boolean
+  temperature?: number
+}
+```
+
+---
+
+## 五、认证和安全规范
+
+### 5.1 JWT 认证流程
+
+```mermaid
+graph TD
+    A[用户登录] --> B[生成 access_token + refresh_token]
+    B --> C[存储 token 到 localStorage]
+    C --> D[API 请求携带 Authorization: Bearer token]
+    D --> E{Token 有效?}
+    E -->|是| F[处理请求]
+    E -->|否| G[刷新 token]
+    G --> H{刷新成功?}
+    H -->|是| D
+    H -->|否| I[重定向到登录页]
+```
+
+### 5.2 认证依赖注入
+
+```python
+# backend/app/core/dependencies.py
+
+def require_current_user(request: Request) -> str:
+    """
+    强制认证依赖 - 未认证抛出 401
+    """
+    return require_user_id(request)
+
+def get_current_user_optional(request: Request) -> Optional[str]:
+    """
+    可选认证依赖 - 未认证返回 None
+    """
+    return get_current_user_id(request)
+
+# 使用
+@router.get("/profile")
+async def get_profile(user_id: str = Depends(require_current_user)):
+    pass
+
+@router.get("/public")
+async def get_public(user_id: Optional[str] = Depends(get_current_user_optional)):
+    if user_id:
+        # 已登录用户
+        pass
+    else:
+        # 未登录用户
+        pass
+```
+
+### 5.3 API Key 安全
+
+- **存储加密**：使用 Fernet 对称加密存储 API Key
+- **统一解密**：在 `credential_manager.py` 统一解密
+- **传输安全**：HTTPS + Bearer Token
+- **用户隔离**：所有查询加 `user_id` 过滤
+
+```python
+# 加密存储
+from ..core.encryption import encrypt_data
+
+encrypted_key = encrypt_data(api_key)
+profile.api_key = encrypted_key  # 存储加密后的值
+
+# 解密使用
+from ..core.credential_manager import get_provider_credentials
+
+api_key, base_url = await get_provider_credentials(
+    provider="google",
+    db=db,
+    user_id=user_id
+)
+# api_key 是已解密的明文
+```
+
+---
+
+## 六、数据库设计规范
+
+### 6.1 表设计原则
+
+1. **主键**：使用 UUID 字符串
+2. **外键**：关联 `user_id` 实现用户隔离
+3. **索引**：常用查询字段建立索引
+4. **时间戳**：`created_at` 和 `updated_at`
+5. **软删除**：使用 `deleted_at` 而非物理删除
+
+### 6.2 核心表结构
+
+```
+users                   # 用户账户
+├── id (PK)
+├── email (UK)
+├── password_hash
+└── created_at
+
+config_profiles         # AI 提供商配置
+├── id (PK)
+├── user_id (FK → users)
+├── provider_id
+├── api_key (加密)
+├── base_url
+└── created_at
+
+chat_sessions          # 聊天会话
+├── id (PK)
+├── user_id (FK → users)
+├── title
+├── mode
+└── created_at
+
+message_index          # 消息索引（路由层）
+├── id (PK)
+├── user_id (FK → users)
+├── session_id (FK → chat_sessions)
+├── mode
+├── table_name         # 指向具体消息表
+└── seq
+
+messages_chat          # 普通聊天消息
+├── id (PK)
+├── role
+├── content
+└── metadata_json
+```
+
+### 6.3 查询优化
+
+```python
+# 复合索引
+Index("idx_user_session", "user_id", "session_id")
+Index("idx_user_provider", "user_id", "provider_id")
+
+# 查询时总是加 user_id 过滤
+sessions = db.query(ChatSession).filter(
+    ChatSession.user_id == user_id
+).order_by(ChatSession.created_at.desc()).all()
+```
+
+---
+
+## 七、最佳实践
+
+### 7.1 代码组织
+
+1. **避免循环导入**：使用延迟导入或接口抽象
+2. **单一职责**：每个模块/类只负责一件事
+3. **依赖注入**：使用 FastAPI Depends / React Context
+4. **错误边界**：前端使用 ErrorBoundary，后端使用异常处理
+
+### 7.2 性能优化
+
+**后端：**
+- 数据库连接池：`pool_size=10, max_overflow=20`
+- 服务实例缓存：`ProviderFactory._client_cache`
+- 异步 I/O：使用 `async/await`
+
+**前端：**
+- 组件记忆：`React.memo`, `useMemo`, `useCallback`
+- 代码分割：Vite `manualChunks`
+- 懒加载：`React.lazy` + `Suspense`
+
+### 7.3 错误处理
+
+```typescript
+// 前端
+try {
+  const result = await apiClient.post('/api/chat', data)
+  return result
+} catch (error) {
+  const handled = handleError(error)  // 结构化错误
+  showToast(handled.message, 'error')
+  console.error(`[Service] ${handled.code}: ${handled.message}`)
+}
+```
+
+```python
+# 后端
+try:
+    result = await service.operation()
+    return result
+except ProviderError as e:
+    logger.error(f"[ERROR] {e.code}: {e.message}")
+    raise HTTPException(status_code=500, detail=e.to_dict())
+```
+
+### 7.4 测试规范
+
+```python
+# 后端单元测试
+import pytest
+from fastapi.testclient import TestClient
+
+def test_login_success(client: TestClient):
+    response = client.post("/api/auth/login", json={
+        "email": "test@example.com",
+        "password": "password123"
+    })
+    assert response.status_code == 200
+    assert "access_token" in response.json()
+```
+
+```typescript
+// 前端测试
+import { render, screen, fireEvent } from '@testing-library/react'
+import { MessageItem } from './MessageItem'
+
+describe('MessageItem', () => {
+  it('renders message content', () => {
+    render(<MessageItem message={mockMessage} />)
+    expect(screen.getByText(mockMessage.content)).toBeInTheDocument()
+  })
+})
+```
+
+---
+
+## 八、常见问题排查
+
+### 8.1 认证问题
+
+| 问题 | 原因 | 解决方案 |
+|-----|------|---------|
+| 401 Unauthorized | Token 过期或无效 | 检查 token 刷新逻辑 |
+| API Key 无效 | 解密失败或配置错误 | 检查 ENCRYPTION_KEY 环境变量 |
+| CORS 错误 | 跨域配置问题 | 检查后端 CORS 中间件配置 |
+
+### 8.2 数据库问题
+
+| 问题 | 原因 | 解决方案 |
+|-----|------|---------|
+| 连接超时 | 连接池耗尽 | 增加 pool_size 或优化查询 |
+| 数据不存在 | user_id 过滤 | 确保查询条件正确 |
+| 外键约束 | 删除顺序错误 | 先删除子表记录 |
+
+### 8.3 流式响应问题
+
+| 问题 | 原因 | 解决方案 |
+|-----|------|---------|
+| 响应中断 | 连接超时 | 增加客户端超时时间 |
+| 乱码 | 编码问题 | 确保使用 UTF-8 |
+| 丢失数据 | 缓冲区问题 | 使用 FlushingStreamHandler |
+
+---
+
+## 九、开发环境配置
+
+### 9.1 环境变量
+
+```bash
+# .env
+DATABASE_URL=postgresql://user:pass@localhost/gemini_chat
+ENCRYPTION_KEY=<Fernet 密钥>
+JWT_SECRET_KEY=<64字节 base64>
+CORS_ORIGINS=http://localhost:21573
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+# 可选
+GCP_PROJECT_ID=<Vertex AI 项目>
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/credentials.json
+ALLOW_REGISTRATION=true
+```
+
+### 9.2 启动命令
+
+```bash
+# 开发环境（前后端并行）
+npm run dev
+
+# 仅前端
+npm run vite
+
+# 仅后端
+cd backend && python -m uvicorn app.main:app --port 21574 --reload
+
+# 生产构建
+npm run build
+```
+
+### 9.3 端口配置
+
+| 服务 | 端口 | 说明 |
+|-----|------|------|
+| 前端 | 21573 | Vite 开发服务器 |
+| 后端 | 21574 | FastAPI 服务 |
+| Redis | 6379 | 缓存服务 |
+| PostgreSQL | 5432 | 数据库 |
+
+---
+
+## 十、Git 提交规范
+
+### 10.1 提交消息格式
+
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+**类型 (type):**
+- `feat`: 新功能
+- `fix`: 修复 Bug
+- `docs`: 文档更新
+- `style`: 代码格式（不影响功能）
+- `refactor`: 重构
+- `perf`: 性能优化
+- `test`: 测试相关
+- `chore`: 构建/工具相关
+
+**示例:**
+```
+feat(auth): add JWT refresh token mechanism
+
+- Implement automatic token refresh on 401 response
+- Add refresh_token table in database
+- Update frontend apiClient to handle token refresh
+
+Closes #123
+```
+
+### 10.2 分支规范
+
+- `master/main`: 主分支，生产代码
+- `develop`: 开发分支
+- `feature/*`: 功能分支
+- `fix/*`: 修复分支
+- `release/*`: 发布分支
+
+---
+
+## 十一、参考文档
+
+- [统一后端认证处理方案](docs/统一后端认证处理方案.md)
+- [API Key 解密完整流程图](docs/API_KEY解密完整流程图.md)
+- [FastAPI 官方文档](https://fastapi.tiangolo.com/)
+- [React 官方文档](https://react.dev/)
+- [Tailwind CSS 文档](https://tailwindcss.com/docs)

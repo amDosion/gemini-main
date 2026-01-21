@@ -693,14 +693,27 @@ async def upload_file_async(
         logger.info(f"[UploadAsync] 🔄 [步骤4] 更新 attachment_id (向后兼容)...")
         logger.info(f"[UploadAsync]     - 提供的 attachment_id: {attachment_id[:8]}...")
         logger.info(f"[UploadAsync]     - 生成的 attachment_id: {result['attachment_id'][:8]}...")
-        from ...models.db_models import MessageAttachment
+        from ...models.db_models import MessageAttachment, UploadTask
+        
         attachment = db.query(MessageAttachment).filter_by(
             id=result['attachment_id']
         ).first()
         if attachment:
-            # 更新为提供的 attachment_id（如果前端已经创建了记录）
+            # 更新 MessageAttachment.id
             attachment.id = attachment_id
             db.commit()
+            
+            # ✅ 新增：同步更新 UploadTask.attachment_id
+            upload_task = db.query(UploadTask).filter_by(
+                attachment_id=result['attachment_id']
+            ).first()
+            if upload_task:
+                upload_task.attachment_id = attachment_id
+                db.commit()
+                logger.info(f"[UploadAsync] ✅ [步骤4] UploadTask.attachment_id 已同步更新")
+            else:
+                logger.warning(f"[UploadAsync] ⚠️ [步骤4] 未找到 UploadTask 记录，跳过同步更新")
+            
             result['attachment_id'] = attachment_id
             logger.info(f"[UploadAsync] ✅ [步骤4] attachment_id 已更新")
         else:
