@@ -50,7 +50,13 @@ export interface ILLMProvider {
   
   // API Key is now managed by backend for UnifiedProviderClient
   // Other providers may still require apiKey parameter
-  getAvailableModels(apiKey?: string, baseUrl?: string): Promise<ModelConfig[]>;
+  /**
+   * Get available models for this provider
+   * @param apiKey - Optional API key (for verification/testing)
+   * @param baseUrl - Optional base URL
+   * @param useCache - Whether to use cached models (default: true)
+   */
+  getAvailableModels(apiKey?: string, baseUrl?: string, useCache?: boolean): Promise<ModelConfig[]>;
   
   sendMessageStream(
     modelId: string,

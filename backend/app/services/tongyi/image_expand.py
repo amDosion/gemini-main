@@ -12,9 +12,12 @@ from typing import Optional, Tuple
 from dataclasses import dataclass
 import requests
 import time
+import logging
 
 # 导入独立的上传服务
 from .file_upload import upload_bytes_to_dashscope
+
+logger = logging.getLogger(__name__)
 
 # DashScope API 配置
 DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com"
@@ -36,16 +39,16 @@ class ImageExpandService:
     def download_image(url: str) -> Optional[bytes]:
         """下载图片"""
         try:
-            print(f"[OutPainting] 下载图片: {url[:60]}...")
+            logger.info(f"[OutPainting] 下载图片: {url[:60]}...")
             response = requests.get(url, timeout=30)
             if response.status_code == 200:
-                print(f"[OutPainting] 下载成功，大小: {len(response.content)} bytes")
+                logger.info(f"[OutPainting] 下载成功，大小: {len(response.content)} bytes")
                 return response.content
             else:
-                print(f"[OutPainting] 下载失败: HTTP {response.status_code}")
+                logger.warning(f"[OutPainting] 下载失败: HTTP {response.status_code}")
                 return None
         except Exception as e:
-            print(f"[OutPainting] 下载异常: {str(e)}")
+            logger.error(f"[OutPainting] 下载异常: {str(e)}")
             return None
 
     @staticmethod
@@ -155,7 +158,7 @@ class ImageExpandService:
             "parameters": parameters
         }
         
-        print(f"[OutPainting] 提交任务，参数: {parameters}")
+        logger.info(f"[OutPainting] 提交任务，参数: {parameters}")
         
         try:
             response = requests.post(submit_url, headers=headers, json=body, timeout=30)
@@ -167,14 +170,14 @@ class ImageExpandService:
                     error_msg = error_data.get("message", error_msg)
                 except:
                     pass
-                print(f"[OutPainting] 提交失败: {error_msg}")
+                logger.error(f"[OutPainting] 提交失败: {error_msg}")
                 return False, None, error_msg
             
             task_id = response.json().get("output", {}).get("task_id")
             if not task_id:
                 return False, None, "未获取到任务 ID"
             
-            print(f"[OutPainting] 任务已提交: {task_id}")
+            logger.info(f"[OutPainting] 任务已提交: {task_id}")
             return True, task_id, None
             
         except requests.Timeout:
@@ -210,7 +213,7 @@ class ImageExpandService:
                 
                 if task_status == "SUCCEEDED":
                     output_url = task_data.get("output", {}).get("output_image_url")
-                    print(f"[OutPainting] 任务成功: {output_url}")
+                    logger.info(f"[OutPainting] 任务成功: {output_url}")
                     return OutPaintingResult(
                         success=True,
                         task_id=task_id,
@@ -219,16 +222,16 @@ class ImageExpandService:
                 elif task_status == "FAILED":
                     error_msg = task_data.get("output", {}).get("message", "任务失败")
                     error_code = task_data.get("output", {}).get("code", "")
-                    print(f"[OutPainting] 任务失败: {error_code} - {error_msg}")
+                    logger.error(f"[OutPainting] 任务失败: {error_code} - {error_msg}")
                     return OutPaintingResult(
                         success=False,
                         task_id=task_id,
                         error=f"{error_code}: {error_msg}"
                     )
                 else:
-                    print(f"[OutPainting] 任务处理中: {task_status} ({i+1}/{max_retries})")
+                    logger.debug(f"[OutPainting] 任务处理中: {task_status} ({i+1}/{max_retries})")
             except Exception as e:
-                print(f"[OutPainting] 轮询异常: {str(e)}")
+                logger.error(f"[OutPainting] 轮询异常: {str(e)}")
                 continue
         
         return OutPaintingResult(
@@ -257,12 +260,12 @@ class ImageExpandService:
         Returns:
             OutPaintingResult
         """
-        print(f"[OutPainting] 原始图片 URL: {image_url}")
+        logger.info(f"[OutPainting] 原始图片 URL: {image_url}")
         
         # ✅ 检测是否是 oss:// URL，如果是则需要启用 OssResourceResolve
         is_oss_url = image_url.startswith("oss://")
         if is_oss_url:
-            print(f"[OutPainting] 检测到 oss:// URL，启用 OssResourceResolve")
+            logger.info(f"[OutPainting] 检测到 oss:// URL，启用 OssResourceResolve")
         
         # 1. 首次提交任务
         success, task_id, error_msg = self.submit_task(
@@ -298,7 +301,7 @@ class ImageExpandService:
         2. 上传到 DashScope OSS（使用独立的上传服务）
         3. 使用 oss:// URL 重新提交任务
         """
-        print(f"[OutPainting] 图片下载失败，尝试备用方案（上传到 DashScope OSS）...")
+        logger.info(f"[OutPainting] 图片下载失败，尝试备用方案（上传到 DashScope OSS）...")
         
         # 1. 下载图片
         image_data = self.download_image(original_url)
@@ -306,14 +309,14 @@ class ImageExpandService:
             return OutPaintingResult(success=False, error="备用方案失败：无法下载原图")
         
         # 2. 上传到 DashScope OSS（使用独立的上传服务）
-        print(f"[OutPainting] 图片大小: {len(image_data)} bytes，上传到 DashScope OSS...")
+        logger.info(f"[OutPainting] 图片大小: {len(image_data)} bytes，上传到 DashScope OSS...")
         filename = f"expand-{int(time.time())}.png"
         upload_result = upload_bytes_to_dashscope(image_data, filename, api_key)
         if not upload_result.success:
             return OutPaintingResult(success=False, error=f"备用方案失败：{upload_result.error}")
         
         # 3. 使用 oss:// URL 重新提交任务
-        print(f"[OutPainting] 使用 DashScope OSS URL 重新提交: {upload_result.oss_url}")
+        logger.info(f"[OutPainting] 使用 DashScope OSS URL 重新提交: {upload_result.oss_url}")
         success, task_id, error_msg = self.submit_task(upload_result.oss_url, api_key, parameters, use_oss_resolve=True)
         
         if not success:

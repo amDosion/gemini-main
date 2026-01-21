@@ -35,7 +35,16 @@ from .models import (
 try:
     from .auth import router as auth_router
     AUTH_ROUTER_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    import traceback
+    logger.error(f"[Registry] Failed to import auth router: {e}")
+    logger.error(f"[Registry] Traceback: {traceback.format_exc()}")
+    AUTH_ROUTER_AVAILABLE = False
+    auth_router = None
+except Exception as e:
+    import traceback
+    logger.error(f"[Registry] Unexpected error importing auth router: {e}")
+    logger.error(f"[Registry] Traceback: {traceback.format_exc()}")
     AUTH_ROUTER_AVAILABLE = False
     auth_router = None
 
@@ -110,9 +119,18 @@ def register_routers(app: FastAPI):
     # ==================== 认证路由（可选）====================
     if AUTH_ROUTER_AVAILABLE and auth_router:
         app.include_router(auth_router)
-        logger.info("Auth router registered")
+        logger.info("✅ Auth router registered successfully")
+        # 验证路由是否注册
+        auth_routes = [r for r in app.routes if hasattr(r, 'path') and '/api/auth' in r.path]
+        if auth_routes:
+            logger.info(f"   Registered {len(auth_routes)} auth routes:")
+            for route in auth_routes[:5]:  # 只显示前5个
+                logger.info(f"   - {route.methods if hasattr(route, 'methods') else 'N/A'} {route.path if hasattr(route, 'path') else 'N/A'}")
+        else:
+            logger.warning("   ⚠️  WARNING: No auth routes found after registration!")
     else:
-        logger.warning("Auth router not available")
+        logger.warning("⚠️  Auth router not available (AUTH_ROUTER_AVAILABLE=%s, auth_router=%s)", 
+                      AUTH_ROUTER_AVAILABLE, auth_router is not None)
     
     logger.info(
         "API routes registered (core: chat, modes; "

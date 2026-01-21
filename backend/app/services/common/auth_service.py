@@ -20,11 +20,7 @@ from ...core.jwt_utils import (
     generate_csrf_token,
     TokenPayload
 )
-from .system_config_service import (
-    get_system_config_bool,
-    get_system_config_int,
-    get_client_ip
-)
+from .system_config_service import get_system_config, get_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -145,16 +141,21 @@ class AuthService:
 
     def is_registration_enabled(self) -> bool:
         """检查注册功能是否启用（从数据库读取）"""
-        # 优先从数据库读取，如果不存在则使用环境变量作为回退
-        db_value = get_system_config_bool(self.db, "allow_registration")
-        if db_value is not None:
-            return db_value
-        # 回退到环境变量
-        return settings.allow_registration
+        try:
+            config = get_system_config(self.db)
+            result = config.allow_registration
+            logger.info(f"[AuthService] 从数据库读取 allow_registration: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"[AuthService] 读取系统配置失败: {e}", exc_info=True)
+            # 如果读取失败，默认返回 False（不允许注册）
+            return False
 
     def get_config(self) -> AuthConfigResponse:
         """获取认证配置"""
-        return AuthConfigResponse(allow_registration=self.is_registration_enabled())
+        allow_registration = self.is_registration_enabled()
+        logger.info(f"[AuthService] 返回认证配置: allow_registration={allow_registration}")
+        return AuthConfigResponse(allow_registration=allow_registration)
 
     def _check_ip_blocked(self, ip_address: str) -> bool:
         """检查 IP 是否被封禁"""
@@ -228,9 +229,10 @@ class AuthService:
             (is_allowed, error_message)
         """
         # 获取配置
-        max_attempts = get_system_config_int(self.db, "max_login_attempts", 5)
-        max_ip_attempts = get_system_config_int(self.db, "max_login_attempts_per_ip", 10)
-        lockout_duration = get_system_config_int(self.db, "login_lockout_duration", 900)  # 15分钟
+        config = get_system_config(self.db)
+        max_attempts = config.max_login_attempts
+        max_ip_attempts = config.max_login_attempts_per_ip
+        lockout_duration = config.login_lockout_duration
         
         # 计算时间窗口（最近 lockout_duration 秒）
         time_window = datetime.now(timezone.utc) - timedelta(seconds=lockout_duration)

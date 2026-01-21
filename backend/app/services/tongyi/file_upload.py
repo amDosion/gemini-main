@@ -18,8 +18,11 @@ DashScope 临时文件上传服务
 import requests
 import base64
 import time
+import logging
 from typing import Optional
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 # DashScope API 配置
 DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com"
@@ -148,24 +151,24 @@ def upload_bytes_to_dashscope(
     Returns:
         DashScopeUploadResult: 包含 oss:// URL 的上传结果
     """
-    print(f"[DashScope Upload] 开始上传二进制数据: {len(image_data)} bytes")
+    logger.info(f"[DashScope Upload] 开始上传二进制数据: {len(image_data)} bytes")
     
     # 1. 获取上传凭证
     success, policy_data, error = _get_upload_policy(api_key, model)
     if not success:
-        print(f"[DashScope Upload] {error}")
+        logger.error(f"[DashScope Upload] {error}")
         return DashScopeUploadResult(success=False, error=error)
     
-    print("[DashScope Upload] ✅ 获取上传凭证成功")
+    logger.info("[DashScope Upload] ✅ 获取上传凭证成功")
     
     # 2. 上传到 OSS
     success, oss_url, error = _upload_to_oss(image_data, filename, policy_data)
     if not success:
-        print(f"[DashScope Upload] {error}")
+        logger.error(f"[DashScope Upload] {error}")
         return DashScopeUploadResult(success=False, error=error)
     
-    print(f"[DashScope Upload] ✅ 上传成功: {oss_url}")
-    print("[DashScope Upload] ⏱️  有效期 48 小时")
+    logger.info(f"[DashScope Upload] ✅ 上传成功: {oss_url}")
+    logger.info("[DashScope Upload] ⏱️  有效期 48 小时")
     
     return DashScopeUploadResult(success=True, oss_url=oss_url)
 
@@ -187,11 +190,11 @@ def upload_to_dashscope(
         DashScopeUploadResult: 包含 oss:// URL 的上传结果
     """
     try:
-        print("[DashScope Upload] 开始上传到临时存储...")
-        print(f"[DashScope Upload] 模型: {model}")
+        logger.info("[DashScope Upload] 开始上传到临时存储...")
+        logger.info(f"[DashScope Upload] 模型: {model}")
         
         # 步骤 1: 获取上传凭证
-        print("[DashScope Upload] 步骤 1: 获取上传凭证...")
+        logger.info("[DashScope Upload] 步骤 1: 获取上传凭证...")
         policy_url = f"{DASHSCOPE_BASE_URL}/api/v1/uploads"
         
         policy_response = requests.get(
@@ -209,7 +212,7 @@ def upload_to_dashscope(
         
         if policy_response.status_code != 200:
             error_text = policy_response.text
-            print(f"[DashScope Upload] 获取凭证失败: {error_text}")
+            logger.error(f"[DashScope Upload] 获取凭证失败: {error_text}")
             return DashScopeUploadResult(
                 success=False,
                 error=f"获取上传凭证失败: {error_text}"
@@ -222,10 +225,10 @@ def upload_to_dashscope(
                 error="上传凭证数据为空"
             )
         
-        print("[DashScope Upload] ✅ 获取上传凭证成功")
+        logger.info("[DashScope Upload] ✅ 获取上传凭证成功")
         
         # 步骤 2: 转换图片为二进制数据
-        print("[DashScope Upload] 步骤 2: 转换图片为二进制数据...")
+        logger.info("[DashScope Upload] 步骤 2: 转换图片为二进制数据...")
         
         if image_url.startswith("data:"):
             # Base64 数据 URL
@@ -258,10 +261,10 @@ def upload_to_dashscope(
                     error=f"下载图片失败: {str(e)}"
                 )
         
-        print(f"[DashScope Upload] ✅ 图片转换完成: {len(image_data)} bytes")
+        logger.info(f"[DashScope Upload] ✅ 图片转换完成: {len(image_data)} bytes")
         
         # 步骤 3: 上传到 OSS
-        print("[DashScope Upload] 步骤 3: 上传到 OSS...")
+        logger.info("[DashScope Upload] 步骤 3: 上传到 OSS...")
         key = f"{policy_data['upload_dir']}/{file_name}"
         
         # 确定 Content-Type
@@ -292,16 +295,16 @@ def upload_to_dashscope(
         
         if upload_response.status_code != 200:
             error_text = upload_response.text
-            print(f"[DashScope Upload] 上传失败: {error_text}")
+            logger.error(f"[DashScope Upload] 上传失败: {error_text}")
             return DashScopeUploadResult(
                 success=False,
                 error=f"上传失败: {error_text}"
             )
         
         oss_url = f"oss://{key}"
-        print("[DashScope Upload] ✅ 上传成功!")
-        print(f"[DashScope Upload] OSS URL: {oss_url}")
-        print("[DashScope Upload] ⏱️  有效期 48 小时")
+        logger.info("[DashScope Upload] ✅ 上传成功!")
+        logger.info(f"[DashScope Upload] OSS URL: {oss_url}")
+        logger.info("[DashScope Upload] ⏱️  有效期 48 小时")
         
         return DashScopeUploadResult(
             success=True,
@@ -309,7 +312,7 @@ def upload_to_dashscope(
         )
         
     except Exception as e:
-        print(f"[DashScope Upload] 错误: {str(e)}")
+        logger.error(f"[DashScope Upload] 错误: {str(e)}")
         return DashScopeUploadResult(
             success=False,
             error=str(e)

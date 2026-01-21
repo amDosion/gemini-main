@@ -5,7 +5,7 @@
 以及附件相关的API端点
 """
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import Response, RedirectResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -41,6 +41,7 @@ class CloudUrlResponse(BaseModel):
 @router.get("/temp-images/{attachment_id}")
 async def get_temp_image(
     attachment_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: str = Depends(require_current_user)
 ):
@@ -57,21 +58,79 @@ async def get_temp_image(
         - Base64 Data URL: 解码后的图片字节流
         - HTTP URL: 重定向到该URL
     """
-    # 查询附件
-    attachment = db.query(MessageAttachment).filter_by(
-        id=attachment_id,
-        user_id=current_user  # ✅ 权限检查：验证用户是否有权限访问该附件
+    # ✅ 记录请求详情（包括 token 来源，用于诊断 user_id 不一致问题）
+    auth_header = request.headers.get("Authorization")
+    cookie_token = request.cookies.get("access_token")
+    
+    token_source = "未知"
+    if auth_header:
+        token_source = "Authorization header"
+    elif cookie_token:
+        token_source = "Cookie (access_token)"
+    else:
+        token_source = "无 token"
+    
+    logger.info(
+        f"[TempImage] 收到请求: attachment_id={attachment_id[:8]}..., "
+        f"user_id={current_user[:8]}..., "
+        f"token来源={token_source}, "
+        f"有Authorization header={'是' if auth_header else '否'}, "
+        f"有Cookie token={'是' if cookie_token else '否'}"
+    )
+    
+    # ✅ 先查询附件（不限制 user_id），用于诊断
+    attachment_any = db.query(MessageAttachment).filter_by(
+        id=attachment_id
     ).first()
-
-    if not attachment:
+    
+    if not attachment_any:
+        logger.warning(f"[TempImage] ❌ 附件不存在: attachment_id={attachment_id[:8]}...")
         raise HTTPException(status_code=404, detail="Attachment not found")
+    
+    # ✅ 详细比较 user_id（用于诊断）
+    attachment_user_id = attachment_any.user_id or ""
+    current_user_id = current_user or ""
+    
+    logger.info(
+        f"[TempImage] 🔍 权限检查详情: "
+        f"attachment.user_id长度={len(attachment_user_id)}, "
+        f"current_user长度={len(current_user_id)}, "
+        f"是否相等={attachment_user_id == current_user_id}, "
+        f"attachment.user_id完整值={repr(attachment_user_id)}, "
+        f"current_user完整值={repr(current_user_id)}"
+    )
+    
+    # ✅ 检查 user_id 是否匹配
+    if attachment_user_id != current_user_id:
+        logger.warning(
+            f"[TempImage] ❌ 权限检查失败: "
+            f"attachment.user_id={repr(attachment_user_id)}, "
+            f"current_user={repr(current_user_id)}, "
+            f"差异位置: {_find_first_diff(attachment_user_id, current_user_id) if attachment_user_id and current_user_id else 'N/A'}"
+        )
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    
+    attachment = attachment_any
+    logger.info(
+        f"[TempImage] ✅ 附件找到: "
+        f"user_id={attachment.user_id[:8]}..., "
+        f"temp_url={'存在' if attachment.temp_url else 'None'}, "
+        f"url={'存在' if attachment.url else 'None'}, "
+        f"upload_status={attachment.upload_status}"
+    )
 
     # 检查temp_url
     if not attachment.temp_url:
         # temp_url为空 → 可能已上传完成，返回云URL重定向
         if attachment.url and attachment.upload_status == 'completed':
+            logger.info(f"[TempImage] ✅ 上传已完成，重定向到云URL: {attachment.url[:80]}...")
             return RedirectResponse(url=attachment.url)
         else:
+            logger.warning(
+                f"[TempImage] ❌ Temp URL不可用: "
+                f"url={'存在' if attachment.url else 'None'}, "
+                f"upload_status={attachment.upload_status}"
+            )
             raise HTTPException(status_code=404, detail="Temp URL not available")
 
     # 判断temp_url类型
@@ -105,6 +164,19 @@ async def get_temp_image(
     
     else:
         raise HTTPException(status_code=400, detail="Invalid temp URL format")
+
+
+def _find_first_diff(s1: str, s2: str) -> str:
+    """找到两个字符串第一个不同的位置（用于诊断）"""
+    if not s1 or not s2:
+        return f"s1长度={len(s1)}, s2长度={len(s2)}"
+    min_len = min(len(s1), len(s2))
+    for i in range(min_len):
+        if s1[i] != s2[i]:
+            return f"位置{i}: '{s1[i]}' vs '{s2[i]}'"
+    if len(s1) != len(s2):
+        return f"长度不同: {len(s1)} vs {len(s2)}"
+    return "完全相同"
 
 
 def parse_data_url(data_url: str) -> tuple[str, str]:

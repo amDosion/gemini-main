@@ -13,15 +13,27 @@ export const usePersonas = (
   const [personas, setPersonas] = useState<Persona[]>(
     initialData?.personas || []
   );
-  const [activePersonaId, setActivePersonaId] = useState<string>('general');
+  // ✅ 初始化时，如果有 personas 数据，使用第一个的 id；否则为空字符串
+  const [activePersonaId, setActivePersonaId] = useState<string>(
+    initialData?.personas && initialData.personas.length > 0 
+      ? initialData.personas[0].id 
+      : ''
+  );
 
   // ✅ 当 initialData 更新时，同步更新 personas
   useEffect(() => {
     if (initialData?.personas) {
       setPersonas(initialData.personas);
-      // 如果当前 activePersonaId 不在新的 personas 中，重置为第一个
-      if (initialData.personas.length > 0 && !initialData.personas.find(p => p.id === activePersonaId)) {
-        setActivePersonaId(initialData.personas[0].id);
+      // ✅ 如果当前 activePersonaId 不在新的 personas 中，重置为第一个
+      if (initialData.personas.length > 0) {
+        const currentPersonaExists = initialData.personas.find(p => p.id === activePersonaId);
+        if (!currentPersonaExists) {
+          // 直接使用第一个 Persona
+          setActivePersonaId(initialData.personas[0].id);
+        }
+      } else {
+        // 如果没有 Personas，清空 activePersonaId
+        setActivePersonaId('');
       }
     }
   }, [initialData?.personas, activePersonaId]);

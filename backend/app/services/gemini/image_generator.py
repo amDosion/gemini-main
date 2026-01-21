@@ -47,10 +47,11 @@ class ImageGenerator:
         self._user_id = user_id
         self._db = db
         
-        # Initialize coordinator with user context
-        self._coordinator = ImagenCoordinator(user_id=user_id, db=db)
+        # ✅ 初始化 coordinator 时传递已解密的 API Key（如果提供）
+        # 这样 coordinator 就不需要从数据库重新加载和解密
+        self._coordinator = ImagenCoordinator(user_id=user_id, db=db, api_key=api_key)
         
-        logger.info(f"[ImageGenerator] Initialized with coordinator-based architecture, user_id={user_id}")
+        logger.info(f"[ImageGenerator] Initialized with coordinator-based architecture, user_id={user_id}, api_key_provided={api_key is not None}")
     
     async def generate_image(
         self,
@@ -81,63 +82,46 @@ class ImageGenerator:
             List of dicts with url, mimeType, index, size, and optional safety_attributes
         """
         import time
-        import sys
         start_time = time.time()
         
         logger.info(f"[ImageGenerator] ========== 开始图片生成 ==========")
-        print(f"[ImageGenerator] ========== 开始图片生成 ==========", file=sys.stderr, flush=True)
         logger.info(f"[ImageGenerator] 📥 请求参数:")
-        print(f"[ImageGenerator] 📥 请求参数:", file=sys.stderr, flush=True)
         logger.info(f"[ImageGenerator]     - model: {model}")
-        print(f"[ImageGenerator]     - model: {model}", file=sys.stderr, flush=True)
         logger.info(f"[ImageGenerator]     - prompt: {prompt[:100] + '...' if len(prompt) > 100 else prompt}")
-        print(f"[ImageGenerator]     - prompt: {prompt[:100] + '...' if len(prompt) > 100 else prompt}", file=sys.stderr, flush=True)
         logger.info(f"[ImageGenerator]     - prompt长度: {len(prompt)}")
-        print(f"[ImageGenerator]     - prompt长度: {len(prompt)}", file=sys.stderr, flush=True)
         logger.info(f"[ImageGenerator]     - user_id: {self._user_id[:8] + '...' if self._user_id else 'None'}")
-        print(f"[ImageGenerator]     - user_id: {self._user_id[:8] + '...' if self._user_id else 'None'}", file=sys.stderr, flush=True)
         for key, value in kwargs.items():
             if key in ['number_of_images', 'aspect_ratio', 'image_size', 'output_mime_type', 'image_style']:
                 logger.info(f"[ImageGenerator]     - {key}: {value}")
-                print(f"[ImageGenerator]     - {key}: {value}", file=sys.stderr, flush=True)
         
         try:
             # Convert parameters based on API mode
             logger.info(f"[ImageGenerator] 🔄 [步骤1] 转换参数格式...")
-            print(f"[ImageGenerator] 🔄 [步骤1] 转换参数格式...", file=sys.stderr, flush=True)
             kwargs = self._convert_parameters_for_api(kwargs)
             logger.info(f"[ImageGenerator] ✅ [步骤1] 参数转换完成")
-            print(f"[ImageGenerator] ✅ [步骤1] 参数转换完成", file=sys.stderr, flush=True)
             
             # Get the appropriate generator from coordinator
             logger.info(f"[ImageGenerator] 🔄 [步骤2] 从 Coordinator 获取生成器...")
-            print(f"[ImageGenerator] 🔄 [步骤2] 从 Coordinator 获取生成器...", file=sys.stderr, flush=True)
             generator = self._coordinator.get_generator()
             generator_type = type(generator).__name__
             logger.info(f"[ImageGenerator] ✅ [步骤2] 生成器获取完成: {generator_type}")
-            print(f"[ImageGenerator] ✅ [步骤2] 生成器获取完成: {generator_type}", file=sys.stderr, flush=True)
             
             # Delegate to the generator
             logger.info(f"[ImageGenerator] 🔄 [步骤3] 委托给生成器.generate_image()...")
-            print(f"[ImageGenerator] 🔄 [步骤3] 委托给生成器.generate_image()...", file=sys.stderr, flush=True)
             delegate_start = time.time()
             result = await generator.generate_image(prompt, model, **kwargs)
             delegate_time = (time.time() - delegate_start) * 1000
             logger.info(f"[ImageGenerator] ✅ [步骤3] 生成器调用完成 (耗时: {delegate_time:.2f}ms)")
-            print(f"[ImageGenerator] ✅ [步骤3] 生成器调用完成 (耗时: {delegate_time:.2f}ms)", file=sys.stderr, flush=True)
             
             total_time = (time.time() - start_time) * 1000
             logger.info(f"[ImageGenerator] ========== 图片生成完成 (总耗时: {total_time:.2f}ms) ==========")
-            print(f"[ImageGenerator] ========== 图片生成完成 (总耗时: {total_time:.2f}ms) ==========", file=sys.stderr, flush=True)
             logger.info(f"[ImageGenerator]     - 返回图片数量: {len(result) if isinstance(result, list) else 'N/A'}")
-            print(f"[ImageGenerator]     - 返回图片数量: {len(result) if isinstance(result, list) else 'N/A'}", file=sys.stderr, flush=True)
             
             return result
             
         except Exception as e:
             total_time = (time.time() - start_time) * 1000
             logger.error(f"[ImageGenerator] ❌ 图片生成失败 (耗时: {total_time:.2f}ms): {e}", exc_info=True)
-            print(f"[ImageGenerator] ❌ 图片生成失败 (耗时: {total_time:.2f}ms): {e}", file=sys.stderr, flush=True)
             raise
     
     # Parameter name mapping (camelCase -> snake_case)

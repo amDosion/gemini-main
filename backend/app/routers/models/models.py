@@ -350,20 +350,22 @@ async def get_available_models(
                     ttl=3600
                 )
                 was_cached = True
-                logger.info(f"[Models] Returned cached models in {time.time() - start_time:.2f}s")
                 # 转换回 ModelConfig 对象（用于过滤）
                 from ...services.common.model_capabilities import ModelConfig
                 models = [ModelConfig(**m) for m in cached_models_dict]
+                logger.info(f"[Models] ✅ 返回缓存模型: {len(models)} 个模型 (耗时: {time.time() - start_time:.2f}s)")
             except Exception as e:
                 logger.warning(f"[Models] 缓存获取失败，使用直接查询: {e}")
                 models_dict = await fetch_models()
                 from ...services.common.model_capabilities import ModelConfig
                 models = [ModelConfig(**m) for m in models_dict]
+                logger.info(f"[Models] ✅ 直接查询结果: {len(models)} 个模型")
         else:
             # 不使用缓存，直接获取
             models_dict = await fetch_models()
             from ...services.common.model_capabilities import ModelConfig
             models = [ModelConfig(**m) for m in models_dict]
+            logger.info(f"[Models] ✅ 直接查询结果（无缓存）: {len(models)} 个模型")
 
         # ✅ 应用模式过滤（如果指定了 mode 参数）
         filtered_models = models
@@ -376,7 +378,13 @@ async def get_available_models(
         models_dict = [model.model_dump() for model in filtered_models]
 
         elapsed = time.time() - start_time
-        logger.info(f"[Models] Request completed in {elapsed:.2f}s")
+        logger.info(f"[Models] ========== 请求完成 ==========")
+        logger.info(f"[Models] 提供商: {provider}")
+        logger.info(f"[Models] 最终返回模型数: {len(filtered_models)} 个")
+        logger.info(f"[Models] 是否使用缓存: {was_cached}")
+        logger.info(f"[Models] 是否应用模式过滤: {mode if mode else '否'}")
+        logger.info(f"[Models] 总耗时: {elapsed:.2f}s")
+        logger.info(f"[Models] =================================")
 
         return {
             "models": models_dict,
@@ -393,17 +401,63 @@ async def get_available_models(
 
 
 @router.delete("/{provider}/cache")
-async def clear_model_cache(provider: str):
-    """Clear cached models for a provider."""
+async def clear_model_cache(
+    provider: str,
+    user_id: str = Depends(require_current_user),
+    cache = Depends(get_cache)
+):
+    """
+    Clear cached models for a provider (Redis cache).
+    
+    Clears Redis cache for the specified provider.
+    Uses wildcard to clear cache for all users of this provider.
+    """
+    from ...services.common.cache_service import CacheService
+    cache_service: CacheService = cache
+    
+    # 清除内存缓存（向后兼容）
     clear_cache(provider)
-    return {"message": f"Cache cleared for provider: {provider}"}
+    
+    # 清除Redis缓存 - 使用通配符匹配所有用户的该provider缓存
+    # 缓存键格式: cache:models:{provider}:{user_id}
+    # 使用通配符: cache:models:{provider}:*
+    cache_pattern = f"cache:models:{provider}:*"
+    deleted = await cache_service.delete(cache_pattern)
+    
+    logger.info(f"[Models] ✅ Cleared Redis cache for {provider}: deleted {deleted} keys (pattern: {cache_pattern})")
+    
+    return {
+        "message": f"Cache cleared for provider: {provider}",
+        "redis_keys_deleted": deleted,
+        "pattern": cache_pattern
+    }
 
 
 @router.delete("/cache")
-async def clear_all_model_cache():
-    """Clear all cached models."""
+async def clear_all_model_cache(cache = Depends(get_cache)):
+    """
+    Clear all cached models (Redis cache).
+    
+    Clears all Redis cache entries for models.
+    """
+    from ...services.common.cache_service import CacheService
+    cache_service: CacheService = cache
+    
+    # 清除内存缓存（向后兼容）
     clear_cache()
-    return {"message": "All model cache cleared"}
+    
+    # 清除所有Redis模型缓存
+    # 缓存键格式: cache:models:*
+    cache_pattern = "cache:models:*"
+    deleted = await cache_service.delete(cache_pattern)
+    
+    logger.info(f"[Models] ✅ Cleared all Redis model cache: deleted {deleted} keys (pattern: {cache_pattern})")
+    
+    return {
+        "message": "All model cache cleared",
+        "redis_keys_deleted": deleted,
+        "pattern": cache_pattern
+    }
 
 
 @router.get("/cache/status")

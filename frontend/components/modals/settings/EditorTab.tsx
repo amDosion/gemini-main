@@ -206,9 +206,11 @@ export const EditorTab: React.FC<EditorTabProps> = ({
             const providerInstance = LLMFactory.getProvider(formData.protocol as ApiProtocol, formData.providerId);
             console.log('[EditorTab] Provider instance created:', providerInstance.id);
             
+            // ✅ 验证连接时强制不使用缓存，确保获取最新数据
             const models = await providerInstance.getAvailableModels(
                 apiKeyToVerify,  // ✅ 使用明文 API Key 验证
-                formData.baseUrl
+                formData.baseUrl,
+                false  // useCache = false，强制刷新
             );
             
             console.log('[EditorTab] Models received:', {

@@ -65,7 +65,7 @@ ON message_attachments(session_id, user_id);
 
 -- 用户+分类索引：优化 Persona 分类查询
 CREATE INDEX IF NOT EXISTS idx_persona_user_category 
-ON personas(user_id, category);
+ON user_ai_personas(user_id, category);
 
 -- ============================================================================
 -- 6. ConfigProfile 表索引优化

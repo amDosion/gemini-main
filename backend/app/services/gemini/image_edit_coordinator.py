@@ -172,6 +172,7 @@ class ImageEditCoordinator:
                     # For Gemini API mode, get API key from ConfigProfile
                     if user_config.api_mode == 'gemini_api':
                         from ...models.db_models import ConfigProfile
+                        from ...core.encryption import decrypt_data, is_encrypted
                         
                         # Find Google provider config for this user
                         google_profile = self._db.query(ConfigProfile).filter(
@@ -179,9 +180,23 @@ class ImageEditCoordinator:
                             ConfigProfile.provider_id == 'google'
                         ).first()
                         
-                        if google_profile:
-                            config['gemini_api_key'] = google_profile.api_key
-                            logger.info(f"[ImageEditCoordinator] Using Gemini API key from ConfigProfile for user={self._user_id}")
+                        if google_profile and google_profile.api_key:
+                            # ✅ 解密 API Key（如果已加密）
+                            api_key = google_profile.api_key
+                            if is_encrypted(api_key):
+                                try:
+                                    api_key = decrypt_data(api_key, silent=True)
+                                    logger.debug(f"[ImageEditCoordinator] Successfully decrypted Gemini API key from ConfigProfile")
+                                except Exception as e:
+                                    logger.error(f"[ImageEditCoordinator] Failed to decrypt API key from ConfigProfile: {e}")
+                                    # 解密失败时，不设置 gemini_api_key，让系统回退到环境变量
+                                    api_key = None
+                            
+                            if api_key:
+                                config['gemini_api_key'] = api_key
+                                logger.info(f"[ImageEditCoordinator] Using Gemini API key from ConfigProfile for user={self._user_id}")
+                            else:
+                                logger.warning(f"[ImageEditCoordinator] Failed to decrypt API key from ConfigProfile for user={self._user_id}, will fall back to environment")
                         else:
                             logger.warning(f"[ImageEditCoordinator] No Google ConfigProfile found for user={self._user_id}, will fall back to environment")
                     

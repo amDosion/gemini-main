@@ -27,7 +27,6 @@ from ...models.db_models import (
     VertexAIConfig
 )
 from ...utils.message_utils import get_message_table_class_by_name
-from .persona_init_service import DEFAULT_PERSONAS, ensure_personas_initialized
 
 logger = logging.getLogger(__name__)
 
@@ -263,19 +262,18 @@ async def _query_sessions(user_id: str, db: Session) -> Dict[str, Any]:
 
 async def _query_personas(user_id: str, db: Session) -> Dict[str, Any]:
     """
-    查询 Personas 数据（异步包装）
+    查询 Personas 数据（仅查询数据库，不执行初始化）
     
-    如果用户没有 Personas，会自动初始化默认 Personas。
+    ✅ 重构后：登录时只从数据库加载，不执行初始化
+    初始化只在用户注册时执行
     
     Returns:
         包含 personas 的字典
     """
     try:
-        logger.info(f"[InitService] 查询 Personas...")
+        logger.info(f"[InitService] 查询 Personas（用户: {user_id[:8]}...）...")
         
-        # 确保用户有 Personas（如果没有则初始化）
-        ensure_personas_initialized(user_id, db)
-        
+        # ✅ 只查询数据库，不执行初始化
         user_query = UserScopedQuery(db, user_id)
         personas = user_query.get_all(Persona)
         
@@ -284,12 +282,12 @@ async def _query_personas(user_id: str, db: Session) -> Dict[str, Any]:
             logger.info(f"[InitService] Personas 加载成功: {len(personas_data)} 个角色")
             return {"personas": personas_data, "error": None}
         else:
-            # 如果初始化后仍然没有（不应该发生），返回默认值
-            logger.warning(f"[InitService] 初始化后仍无 Personas，使用默认值")
-            return {"personas": DEFAULT_PERSONAS.copy(), "error": None}
+            # ✅ 如果用户没有 Personas，返回空数组（前端会处理）
+            logger.info(f"[InitService] 用户 {user_id[:8]}... 暂无 Personas（可能尚未注册或注册时初始化失败）")
+            return {"personas": [], "error": None}
     except Exception as e:
-        logger.warning(f"[InitService] Personas 加载失败，使用默认值: {e}")
-        return {"personas": DEFAULT_PERSONAS.copy(), "error": str(e)}
+        logger.error(f"[InitService] Personas 加载失败: {e}", exc_info=True)
+        return {"personas": [], "error": str(e)}
 
 
 async def _query_vertex_ai_config(user_id: str, db: Session) -> Dict[str, Any]:
@@ -354,7 +352,7 @@ async def get_init_data(user_id: str, db: Session) -> Dict[str, Any]:
         "storageConfigs": [],
         "activeStorageId": None,
         "sessions": [],
-        "personas": DEFAULT_PERSONAS.copy(),
+        "personas": [],  # ✅ 重构后：默认返回空数组，不返回默认 Personas
         "imagenConfig": None,
         "cachedModels": None,
         "_metadata": {

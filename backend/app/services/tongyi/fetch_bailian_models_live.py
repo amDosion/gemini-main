@@ -12,7 +12,10 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 import re
 import json
+import logging
 from typing import List, Dict, Tuple, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class BailianModelScraper:
@@ -28,15 +31,15 @@ class BailianModelScraper:
         
     def fetch_page(self) -> str:
         """获取页面HTML内容"""
-        print(f"正在获取页面: {self.base_url}")
+        logger.info(f"正在获取页面: {self.base_url}")
         try:
             response = requests.get(self.base_url, headers=self.headers, timeout=60)
             response.raise_for_status()
             response.encoding = 'utf-8'
-            print(f"页面获取成功，内容长度: {len(response.text)} 字符")
+            logger.info(f"页面获取成功，内容长度: {len(response.text)} 字符")
             return response.text
         except requests.RequestException as e:
-            print(f"获取页面失败: {e}")
+            logger.error(f"获取页面失败: {e}")
             return ""
     
     def is_model_name(self, text: str) -> bool:
@@ -94,7 +97,7 @@ class BailianModelScraper:
         """从表格中提取模型信息"""
         models = []
         tables = soup.find_all('table')
-        print(f"找到 {len(tables)} 个表格")
+        logger.info(f"找到 {len(tables)} 个表格")
         
         current_section = "未分类"
         
@@ -324,11 +327,11 @@ class BailianModelScraper:
         
         # 从表格提取
         table_models = self.extract_from_tables(soup)
-        print(f"从表格提取: {len(table_models)} 个")
+        logger.info(f"从表格提取: {len(table_models)} 个")
         
         # 从文本提取（补充）
         text_models = self.extract_from_text(soup)
-        print(f"从文本提取: {len(text_models)} 个")
+        logger.info(f"从文本提取: {len(text_models)} 个")
         
         # 合并去重
         seen = set()
@@ -347,7 +350,7 @@ class BailianModelScraper:
                     "_main_category": main_cat
                 })
         
-        print(f"去重后: {len(all_models)} 个")
+        logger.info(f"去重后: {len(all_models)} 个")
         
         # 按主分类分组
         categorized = {
@@ -409,13 +412,13 @@ class BailianModelScraper:
             ws.column_dimensions['C'].width = 65
         
         wb.save(output_path)
-        print(f"Excel已保存: {output_path}")
+        logger.info(f"Excel已保存: {output_path}")
     
     def save_to_json(self, models: Dict[str, List[Dict]], output_path: str):
         """保存到JSON"""
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(models, f, ensure_ascii=False, indent=2)
-        print(f"JSON已保存: {output_path}")
+        logger.info(f"JSON已保存: {output_path}")
     
     def save_to_csv(self, models: Dict[str, List[Dict]], output_path: str):
         """保存到CSV"""
@@ -431,7 +434,7 @@ class BailianModelScraper:
         
         df = pd.DataFrame(all_rows)
         df.to_csv(output_path, index=False, encoding='utf-8-sig')
-        print(f"CSV已保存: {output_path}")
+        logger.info(f"CSV已保存: {output_path}")
 
 
 def main():
@@ -443,11 +446,17 @@ def main():
     
     args = parser.parse_args()
     
+    # 配置日志（脚本模式）
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
     scraper = BailianModelScraper()
     models = scraper.scrape()
     
     if not models or all(len(v) == 0 for v in models.values()):
-        print("未能获取模型列表")
+        logger.warning("未能获取模型列表")
         return
     
     if args.format == 'excel' or args.format == 'all':
@@ -459,12 +468,12 @@ def main():
     if args.format == 'csv' or args.format == 'all':
         scraper.save_to_csv(models, f"{args.output}.csv")
     
-    print("\n=== 统计 ===")
+    logger.info("\n=== 统计 ===")
     total = 0
     for cat, lst in models.items():
-        print(f"{cat}: {len(lst)} 个")
+        logger.info(f"{cat}: {len(lst)} 个")
         total += len(lst)
-    print(f"总计: {total} 个")
+    logger.info(f"总计: {total} 个")
 
 
 if __name__ == "__main__":

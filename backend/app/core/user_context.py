@@ -32,7 +32,11 @@ def get_current_user_id(request: Request) -> Optional[str]:
     Returns:
         用户 ID 或 None（如果未认证）
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     token = None
+    token_source = None
     
     try:
         # ✅ 1. 优先从 Authorization header 获取 token
@@ -41,13 +45,17 @@ def get_current_user_id(request: Request) -> Optional[str]:
             parts = auth_header.split()
             if len(parts) == 2 and parts[0].lower() == "bearer":
                 token = parts[1]
+                token_source = "Authorization header"
         
         # 2. 如果 Authorization header 中没有，尝试从 Cookie 获取（向后兼容）
         if not token:
             token = request.cookies.get("access_token")
+            if token:
+                token_source = "Cookie (access_token)"
         
         # 3. 如果都没有 token，返回 None
         if not token:
+            logger.debug(f"[UserContext] 未找到 token (路径: {request.url.path})")
             return None
         
         # 解码 token
@@ -55,13 +63,19 @@ def get_current_user_id(request: Request) -> Optional[str]:
         
         # 验证 token 类型
         if payload.type != "access":
+            logger.warning(f"[UserContext] Token 类型错误: {payload.type} (路径: {request.url.path})")
             return None
         
-        return payload.sub
+        user_id = payload.sub
+        logger.debug(f"[UserContext] 提取 user_id: {user_id[:8]}... (来源: {token_source}, 路径: {request.url.path})")
         
-    except JWTError:
+        return user_id
+        
+    except JWTError as e:
+        logger.warning(f"[UserContext] JWT 解码失败 (来源: {token_source}, 路径: {request.url.path}): {e}")
         return None
-    except Exception:
+    except Exception as e:
+        logger.error(f"[UserContext] 提取 user_id 时发生错误 (路径: {request.url.path}): {e}", exc_info=True)
         return None
 
 
@@ -78,27 +92,15 @@ def require_user_id(request: Request) -> str:
     Raises:
         HTTPException: 401 Unauthorized（未认证或 token 无效）
     """
-    import logging
-    import sys
-    logger = logging.getLogger(__name__)
-    
-    # 记录认证尝试
-    logger.info(f"[Auth] 🔐 开始认证检查: {request.method} {request.url.path}")
-    print(f"[Auth] 🔐 开始认证检查: {request.method} {request.url.path}", file=sys.stderr, flush=True)
-    
     user_id = get_current_user_id(request)
     
     if not user_id:
-        logger.warning(f"[Auth] ❌ 认证失败: 未提供有效 token")
-        print(f"[Auth] ❌ 认证失败: 未提供有效 token", file=sys.stderr, flush=True)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",
             headers={"WWW-Authenticate": "Bearer"}
         )
     
-    logger.info(f"[Auth] ✅ 认证成功: user_id={user_id[:8]}...")
-    print(f"[Auth] ✅ 认证成功: user_id={user_id[:8]}...", file=sys.stderr, flush=True)
     return user_id
 
 

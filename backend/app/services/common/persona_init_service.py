@@ -12,7 +12,7 @@ from ...core.user_scoped_query import UserScopedQuery
 
 logger = logging.getLogger(__name__)
 
-# 默认 Personas 列表（从前端 personas.ts 迁移）
+# 默认 Personas 列表
 DEFAULT_PERSONAS: List[Dict[str, Any]] = [
     {
         "id": "general",
@@ -152,11 +152,16 @@ If the user asks for a '360 view' or 'character sheet', specify multiple angles 
 
 def create_default_personas(user_id: str, db: Session) -> int:
     """
-    为用户创建默认 Personas（不检查是否已存在，直接创建）
+    为用户创建默认 Personas（每个用户独立的 Persona ID）
     
     这个函数用于：
     - 新用户注册时初始化
     - 重置 Personas 为默认值
+    
+    Persona ID 格式：{user_id}:{persona_key}
+    例如：gemini2026_abc123:general
+    
+    这样确保每个用户都有自己独立的 Personas，不会冲突。
     
     Args:
         user_id: 用户 ID
@@ -166,11 +171,31 @@ def create_default_personas(user_id: str, db: Session) -> int:
         int: 创建的 Personas 数量
     """
     import time
+    from sqlalchemy.exc import IntegrityError
+    
     current_timestamp = int(time.time() * 1000)  # 毫秒时间戳
     
+    user_query = UserScopedQuery(db, user_id)
+    existing_personas = user_query.get_all(Persona)
+    # ✅ 使用完整的 id（包含 user_id 前缀）来检查
+    existing_ids = {p.id for p in existing_personas}
+    
+    created_count = 0
+    personas_to_add = []
+    
+    # ✅ 先收集需要创建的 Personas
     for persona_data in DEFAULT_PERSONAS:
+        persona_key = persona_data["id"]  # 业务标识（如 "general"）
+        # ✅ 生成用户唯一的 Persona ID：{user_id}:{persona_key}
+        persona_id = f"{user_id}:{persona_key}"
+        
+        # 检查是否已存在，避免重复创建（处理并发情况）
+        if persona_id in existing_ids:
+            logger.debug(f"[PersonaInit] Persona {persona_id} 已存在，跳过创建")
+            continue
+        
         persona = Persona(
-            id=persona_data["id"],
+            id=persona_id,  # ✅ 使用用户唯一的 ID
             user_id=user_id,
             name=persona_data["name"],
             description=persona_data.get("description", ""),
@@ -180,11 +205,38 @@ def create_default_personas(user_id: str, db: Session) -> int:
             created_at=current_timestamp,
             updated_at=current_timestamp
         )
-        db.add(persona)
+        personas_to_add.append(persona)
     
-    db.commit()
-    logger.info(f"[PersonaInit] ✅ 为用户 {user_id} 创建了 {len(DEFAULT_PERSONAS)} 个默认 Personas")
-    return len(DEFAULT_PERSONAS)
+    # ✅ 批量添加并提交，捕获并发冲突
+    if personas_to_add:
+        try:
+            for persona in personas_to_add:
+                db.add(persona)
+            db.commit()
+            created_count = len(personas_to_add)
+            logger.info(f"[PersonaInit] ✅ 为用户 {user_id} 创建了 {created_count} 个默认 Personas")
+        except IntegrityError as e:
+            # ✅ 捕获主键冲突（并发插入）
+            db.rollback()
+            logger.warning(f"[PersonaInit] 并发冲突：用户 {user_id} 的 Personas 可能已由其他请求创建: {e}")
+            # 重新查询确认实际创建的数量
+            user_query = UserScopedQuery(db, user_id)
+            updated_personas = user_query.get_all(Persona)
+            updated_ids = {p.id for p in updated_personas}
+            # 计算实际新增的数量
+            created_count = len(updated_ids - existing_ids)
+            if created_count > 0:
+                logger.info(f"[PersonaInit] 确认用户 {user_id} 实际新增了 {created_count} 个 Personas（并发创建）")
+            else:
+                logger.info(f"[PersonaInit] 用户 {user_id} 的所有 Personas 已存在（并发创建）")
+        except Exception as e:
+            db.rollback()
+            logger.error(f"[PersonaInit] ❌ 提交 Personas 时出错: {e}", exc_info=True)
+            raise
+    else:
+        logger.info(f"[PersonaInit] 用户 {user_id} 的所有默认 Personas 已存在，无需创建")
+    
+    return created_count
 
 
 def initialize_default_personas(user_id: str, db: Session) -> bool:
@@ -206,16 +258,27 @@ def initialize_default_personas(user_id: str, db: Session) -> bool:
         user_query = UserScopedQuery(db, user_id)
         existing_personas = user_query.get_all(Persona)
         
-        # 如果用户已有 Personas，不进行初始化（避免覆盖用户自定义数据）
-        if existing_personas:
+        # 如果用户已有所有默认 Personas，不进行初始化（避免覆盖用户自定义数据）
+        if existing_personas and len(existing_personas) >= len(DEFAULT_PERSONAS):
             logger.info(f"[PersonaInit] 用户 {user_id} 已有 {len(existing_personas)} 个 Personas，跳过初始化")
             return False
         
-        # 使用通用函数创建默认 Personas
-        create_default_personas(user_id, db)
-        return True
+        # ✅ 使用通用函数创建默认 Personas（函数内部会检查并跳过已存在的）
+        created_count = create_default_personas(user_id, db)
+        return created_count > 0
         
     except Exception as e:
+        # ✅ 捕获 IntegrityError（主键冲突），这是并发情况下的正常现象
+        from sqlalchemy.exc import IntegrityError
+        if isinstance(e, IntegrityError) or (hasattr(e, 'orig') and isinstance(e.orig, Exception) and 'UniqueViolation' in str(e.orig)):
+            db.rollback()
+            logger.warning(f"[PersonaInit] 用户 {user_id} 的 Personas 可能已由其他请求创建（并发冲突）: {e}")
+            # 重新查询确认
+            user_query = UserScopedQuery(db, user_id)
+            existing_personas = user_query.get_all(Persona)
+            if existing_personas:
+                logger.info(f"[PersonaInit] 确认用户 {user_id} 已有 {len(existing_personas)} 个 Personas")
+                return False
         db.rollback()
         logger.error(f"[PersonaInit] ❌ 为用户 {user_id} 初始化 Personas 失败: {e}", exc_info=True)
         raise

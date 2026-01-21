@@ -58,16 +58,18 @@ class ImagenCoordinator:
     for performance.
     """
     
-    def __init__(self, user_id: Optional[str] = None, db: Optional[Session] = None):
+    def __init__(self, user_id: Optional[str] = None, db: Optional[Session] = None, api_key: Optional[str] = None):
         """
         Initialize coordinator with configuration.
         
         Args:
             user_id: User ID for loading user-specific configuration
             db: Database session for loading user configuration
+            api_key: Optional pre-decrypted API key (if provided, will be used instead of loading from database)
         """
         self._user_id = user_id
         self._db = db
+        self._provided_api_key = api_key  # ✅ 保存传入的已解密 API Key
         self._config = self._load_config()
         self._generator_cache: Dict[str, BaseImageGenerator] = {}
         
@@ -88,19 +90,14 @@ class ImagenCoordinator:
         
         global _vertex_ai_usage_count, _gemini_api_usage_count, _fallback_count
         
-        import sys
         api_mode = self._config.get('api_mode', 'gemini_api')
         logger.info(f"[ImagenCoordinator] 🔄 获取生成器...")
-        print(f"[ImagenCoordinator] 🔄 获取生成器...", file=sys.stderr, flush=True)
         logger.info(f"[ImagenCoordinator]     - api_mode: {api_mode}")
-        print(f"[ImagenCoordinator]     - api_mode: {api_mode}", file=sys.stderr, flush=True)
         logger.info(f"[ImagenCoordinator]     - user_id: {self._user_id[:8] + '...' if self._user_id else 'None'}")
-        print(f"[ImagenCoordinator]     - user_id: {self._user_id[:8] + '...' if self._user_id else 'None'}", file=sys.stderr, flush=True)
         
         # Return cached generator if available
         if api_mode in self._generator_cache:
             logger.info(f"[ImagenCoordinator] ✅ 使用缓存的 {api_mode} 生成器")
-            print(f"[ImagenCoordinator] ✅ 使用缓存的 {api_mode} 生成器", file=sys.stderr, flush=True)
             
             # Increment usage counter
             if api_mode == 'vertex_ai':
@@ -111,39 +108,31 @@ class ImagenCoordinator:
             generator = self._generator_cache[api_mode]
             generator_type = type(generator).__name__
             logger.info(f"[ImagenCoordinator]     - 生成器类型: {generator_type}")
-            print(f"[ImagenCoordinator]     - 生成器类型: {generator_type}", file=sys.stderr, flush=True)
             elapsed = (time.time() - start_time) * 1000
             logger.info(f"[ImagenCoordinator] ✅ 获取生成器完成 (耗时: {elapsed:.2f}ms)")
-            print(f"[ImagenCoordinator] ✅ 获取生成器完成 (耗时: {elapsed:.2f}ms)", file=sys.stderr, flush=True)
             return generator
         
         # Create new generator
         logger.info(f"[ImagenCoordinator] 🔄 创建新的 {api_mode} 生成器...")
-        print(f"[ImagenCoordinator] 🔄 创建新的 {api_mode} 生成器...", file=sys.stderr, flush=True)
         try:
             if api_mode == 'vertex_ai':
                 logger.info(f"[ImagenCoordinator]     - 使用 Vertex AI 模式")
-                print(f"[ImagenCoordinator]     - 使用 Vertex AI 模式", file=sys.stderr, flush=True)
                 generator = self._create_vertex_ai_generator()
                 _vertex_ai_usage_count += 1
             else:
                 logger.info(f"[ImagenCoordinator]     - 使用 Gemini API 模式")
-                print(f"[ImagenCoordinator]     - 使用 Gemini API 模式", file=sys.stderr, flush=True)
                 generator = self._create_gemini_api_generator()
                 _gemini_api_usage_count += 1
             
             generator_type = type(generator).__name__
             logger.info(f"[ImagenCoordinator] ✅ 生成器创建完成: {generator_type}")
-            print(f"[ImagenCoordinator] ✅ 生成器创建完成: {generator_type}", file=sys.stderr, flush=True)
             
             # Cache the generator
             self._generator_cache[api_mode] = generator
             logger.info(f"[ImagenCoordinator] ✅ 生成器已缓存")
-            print(f"[ImagenCoordinator] ✅ 生成器已缓存", file=sys.stderr, flush=True)
             
             elapsed = (time.time() - start_time) * 1000
             logger.info(f"[ImagenCoordinator] ✅ 获取生成器完成 (耗时: {elapsed:.2f}ms)")
-            print(f"[ImagenCoordinator] ✅ 获取生成器完成 (耗时: {elapsed:.2f}ms)", file=sys.stderr, flush=True)
             return generator
             
         except Exception as e:
@@ -200,19 +189,40 @@ class ImagenCoordinator:
                     
                     # For Gemini API mode, get API key from ConfigProfile
                     if user_config.api_mode == 'gemini_api':
-                        from ...models.db_models import ConfigProfile
-                        
-                        # Find Google provider config for this user
-                        google_profile = self._db.query(ConfigProfile).filter(
-                            ConfigProfile.user_id == self._user_id,
-                            ConfigProfile.provider_id == 'google'
-                        ).first()
-                        
-                        if google_profile:
-                            config['gemini_api_key'] = google_profile.api_key
-                            logger.info(f"[ImagenCoordinator] Using Gemini API key from ConfigProfile for user={self._user_id}")
+                        # ✅ 优先使用传入的已解密 API Key（来自 credential_manager）
+                        if self._provided_api_key:
+                            config['gemini_api_key'] = self._provided_api_key
+                            logger.info(f"[ImagenCoordinator] Using provided pre-decrypted API key for user={self._user_id}")
                         else:
-                            logger.warning(f"[ImagenCoordinator] No Google ConfigProfile found for user={self._user_id}, will fall back to environment")
+                            # 回退：从数据库加载并解密
+                            from ...models.db_models import ConfigProfile
+                            from ...core.encryption import decrypt_data, is_encrypted
+                            
+                            # Find Google provider config for this user
+                            google_profile = self._db.query(ConfigProfile).filter(
+                                ConfigProfile.user_id == self._user_id,
+                                ConfigProfile.provider_id == 'google'
+                            ).first()
+                            
+                            if google_profile and google_profile.api_key:
+                                # ✅ 解密 API Key（如果已加密）
+                                api_key = google_profile.api_key
+                                if is_encrypted(api_key):
+                                    try:
+                                        api_key = decrypt_data(api_key, silent=True)
+                                        logger.debug(f"[ImagenCoordinator] Successfully decrypted Gemini API key from ConfigProfile")
+                                    except Exception as e:
+                                        logger.error(f"[ImagenCoordinator] Failed to decrypt API key from ConfigProfile: {e}")
+                                        # 解密失败时，不设置 gemini_api_key，让系统回退到环境变量
+                                        api_key = None
+                                
+                                if api_key:
+                                    config['gemini_api_key'] = api_key
+                                    logger.info(f"[ImagenCoordinator] Using Gemini API key from ConfigProfile for user={self._user_id}")
+                                else:
+                                    logger.warning(f"[ImagenCoordinator] Failed to decrypt API key from ConfigProfile for user={self._user_id}, will fall back to environment")
+                            else:
+                                logger.warning(f"[ImagenCoordinator] No Google ConfigProfile found for user={self._user_id}, will fall back to environment")
                     
                     # Validate configuration completeness
                     if user_config.api_mode == 'vertex_ai':
@@ -250,7 +260,12 @@ class ImagenCoordinator:
         config['api_mode'] = 'vertex_ai' if use_vertex_ai else 'gemini_api'
         
         # Gemini API configuration
-        config['gemini_api_key'] = os.getenv('GEMINI_API_KEY')
+        # ✅ 优先使用传入的已解密 API Key（来自 credential_manager）
+        if self._provided_api_key:
+            config['gemini_api_key'] = self._provided_api_key
+            logger.info(f"[ImagenCoordinator] Using provided pre-decrypted API key (fallback to env)")
+        else:
+            config['gemini_api_key'] = os.getenv('GEMINI_API_KEY')
         
         # Vertex AI configuration
         config['vertex_ai_project_id'] = os.getenv('GOOGLE_CLOUD_PROJECT')

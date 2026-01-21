@@ -684,7 +684,7 @@ class GoogleChatSession(Base):
 
 class Persona(Base):
     """角色表 - 存储AI角色配置"""
-    __tablename__ = "personas"
+    __tablename__ = "user_ai_personas"
 
     id = Column(String, primary_key=True, index=True)  # UUID字符串
     user_id = Column(String, nullable=False, index=True)  # 用户ID
@@ -1394,22 +1394,30 @@ class A2AEvent(Base):
 
 
 class SystemConfig(Base):
-    """系统配置表 - 存储系统级别的配置（如注册开关等）"""
+    """系统配置表 - 存储系统级别的配置（单例模式，只有一行数据）"""
     __tablename__ = "system_config"
 
-    id = Column(String, primary_key=True, index=True, default=generate_uuid)
-    key = Column(String, unique=True, nullable=False, index=True)  # 配置键（如 'allow_registration'）
-    value = Column(Text, nullable=False)  # 配置值（JSON 字符串）
-    description = Column(Text, nullable=True)  # 配置描述
+    id = Column(Integer, primary_key=True, default=1)  # 固定为 1，单例模式
+
+    # 注册相关配置
+    allow_registration = Column(Boolean, nullable=False, default=False)  # 是否允许用户注册
+
+    # 登录安全配置
+    max_login_attempts = Column(Integer, nullable=False, default=5)  # 单个邮箱的最大登录失败次数
+    max_login_attempts_per_ip = Column(Integer, nullable=False, default=10)  # 单个IP的最大登录尝试次数
+    login_lockout_duration = Column(Integer, nullable=False, default=900)  # 登录失败后锁定时间（秒）
+
+    # 时间戳
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     def to_dict(self):
         return {
             "id": self.id,
-            "key": self.key,
-            "value": self.value,
-            "description": self.description,
+            "allowRegistration": self.allow_registration,
+            "maxLoginAttempts": self.max_login_attempts,
+            "maxLoginAttemptsPerIp": self.max_login_attempts_per_ip,
+            "loginLockoutDuration": self.login_lockout_duration,
             "createdAt": self.created_at.isoformat() if self.created_at else None,
             "updatedAt": self.updated_at.isoformat() if self.updated_at else None
         }

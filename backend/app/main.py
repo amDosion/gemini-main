@@ -230,10 +230,8 @@ async def lifespan(app: FastAPI):
         # 确保所有服务 logger 配置正确
         ensure_service_loggers()
         logger.info(f"{LOG_PREFIXES['success']} Logger configuration ensured in lifespan")
-        print(f"{LOG_PREFIXES['success']} Logger configuration ensured in lifespan", file=sys.stderr, flush=True)
     except Exception as e:
         logger.warning(f"{LOG_PREFIXES['warning']} Failed to ensure logger configuration: {e}")
-        print(f"{LOG_PREFIXES['warning']} Failed to ensure logger configuration: {e}", file=sys.stderr, flush=True)
 
     # ✅ 初始化密钥（从 .env 文件读取）
     try:
@@ -245,17 +243,14 @@ async def lifespan(app: FastAPI):
         # 显示前 8 个字符和后 4 个字符，中间用 ... 代替
         masked_key = f"{encryption_key[:8]}...{encryption_key[-4:]}" if len(encryption_key) > 12 else encryption_key
         logger.info(f"{LOG_PREFIXES['success']} ENCRYPTION_KEY 已初始化（长度: {len(encryption_key)}, 值: {masked_key}）")
-        print(f"{LOG_PREFIXES['success']} ENCRYPTION_KEY 已初始化（长度: {len(encryption_key)}, 值: {masked_key}）", file=sys.stderr, flush=True)
         
         # 确保 JWT_SECRET_KEY 已读取（从 .env 文件）
         jwt_secret = JWTSecretManager.get_or_create_secret()
         # 显示前 8 个字符和后 4 个字符，中间用 ... 代替
         masked_secret = f"{jwt_secret[:8]}...{jwt_secret[-4:]}" if len(jwt_secret) > 12 else jwt_secret
         logger.info(f"{LOG_PREFIXES['success']} JWT_SECRET_KEY 已初始化（长度: {len(jwt_secret)}, 值: {masked_secret}）")
-        print(f"{LOG_PREFIXES['success']} JWT_SECRET_KEY 已初始化（长度: {len(jwt_secret)}, 值: {masked_secret}）", file=sys.stderr, flush=True)
     except Exception as e:
         logger.error(f"{LOG_PREFIXES['error']} 密钥初始化失败: {e}")
-        print(f"{LOG_PREFIXES['error']} 密钥初始化失败: {e}", file=sys.stderr, flush=True)
         raise
     
     # ✅ 初始化系统配置
@@ -266,12 +261,10 @@ async def lifespan(app: FastAPI):
         try:
             initialize_system_configs(db)
             logger.info(f"{LOG_PREFIXES['success']} System configuration initialized")
-            print(f"{LOG_PREFIXES['success']} System configuration initialized", file=sys.stderr, flush=True)
         finally:
             db.close()
     except Exception as e:
         logger.warning(f"{LOG_PREFIXES['warning']} Failed to initialize system config: {e}")
-        print(f"{LOG_PREFIXES['warning']} Failed to initialize system config: {e}", file=sys.stderr, flush=True)
     
     # ✅ 启动时清理过期的 refresh_tokens
     try:
@@ -293,12 +286,10 @@ async def lifespan(app: FastAPI):
             db.commit()
             if deleted_count > 0:
                 logger.info(f"{LOG_PREFIXES['success']} Cleaned up {deleted_count} expired/revoked refresh tokens on startup")
-                print(f"{LOG_PREFIXES['success']} Cleaned up {deleted_count} expired/revoked refresh tokens on startup", file=sys.stderr, flush=True)
         finally:
             db.close()
     except Exception as e:
         logger.warning(f"{LOG_PREFIXES['warning']} Failed to cleanup refresh tokens: {e}")
-        print(f"{LOG_PREFIXES['warning']} Failed to cleanup refresh tokens: {e}", file=sys.stderr, flush=True)
     
     # ✅ 启动定期清理任务（每 24 小时清理一次）
     async def _periodic_cleanup_tokens():
@@ -340,10 +331,8 @@ async def lifespan(app: FastAPI):
     # 启动后台清理任务
     cleanup_task = asyncio.create_task(_periodic_cleanup_tokens())
     logger.info(f"{LOG_PREFIXES['success']} Periodic refresh token cleanup task started")
-    print(f"{LOG_PREFIXES['success']} Periodic refresh token cleanup task started", file=sys.stderr, flush=True)
     # Validate provider configurations
     logger.info(f"{LOG_PREFIXES['info']} Validating provider configurations...")
-    print(f"{LOG_PREFIXES['info']} Validating provider configurations...", file=sys.stderr, flush=True)
     try:
         from .services.common.provider_config import ProviderConfig
         validation_results = ProviderConfig.validate_all_configs()
@@ -351,80 +340,61 @@ async def lifespan(app: FastAPI):
         if invalid_providers:
             warning_msg = f"{LOG_PREFIXES['warning']} Some providers have invalid configurations: {', '.join(invalid_providers)}"
             logger.warning(warning_msg)
-            print(warning_msg, file=sys.stderr, flush=True)
         else:
             logger.info(f"{LOG_PREFIXES['success']} All provider configurations validated successfully")
-            print(f"{LOG_PREFIXES['success']} All provider configurations validated successfully", file=sys.stderr, flush=True)
     except Exception as e:
         logger.error(f"{LOG_PREFIXES['error']} Failed to validate provider configurations: {e}")
-        print(f"{LOG_PREFIXES['error']} Failed to validate provider configurations: {e}", file=sys.stderr, flush=True)
         logger.error("WARNING: Application will continue but some providers may not work correctly!")
-        print("WARNING: Application will continue but some providers may not work correctly!", file=sys.stderr, flush=True)
     
     if WORKER_POOL_AVAILABLE:
-        logger.info(f"{LOG_PREFIXES['info']} Starting upload worker pool...")
-        print(f"{LOG_PREFIXES['info']} Starting upload worker pool...", file=sys.stderr, flush=True)
+        logger.info(f"{LOG_PREFIXES['info']} Starting upload worker pool (on-demand mode)...")
         try:
             await worker_pool.start()
-            logger.info(f"{LOG_PREFIXES['success']} Upload worker pool started successfully")
-            print(f"{LOG_PREFIXES['success']} Upload worker pool started successfully", file=sys.stderr, flush=True)
+            logger.info(f"{LOG_PREFIXES['success']} Upload worker pool started successfully (on-demand mode)")
 
-            # 启动后验证
-            await asyncio.sleep(1)  # 等待 Workers 初始化
-
-            if not worker_pool._running:
-                raise RuntimeError("Worker pool started but _running flag is False")
-
-            if len(worker_pool._workers) == 0:
-                raise RuntimeError("Worker pool started but no workers are running")
-
-            logger.warning(f"{LOG_PREFIXES['success']} Worker pool startup verification passed")
-            print(f"{LOG_PREFIXES['success']} Worker pool startup verification passed", file=sys.stderr, flush=True)
+            # 启动后验证（按需调用模式）
+            # 注意：按需调用模式下，如果没有 pending 任务，Worker 不会启动
+            # 所以不再检查 _workers 列表，只检查基础设施是否就绪
+            logger.warning(f"{LOG_PREFIXES['success']} Worker pool startup verification passed (on-demand mode)")
+            logger.info(f"{LOG_PREFIXES['info']} Workers will start on-demand when tasks are submitted")
 
         except Exception as e:
             logger.error(f"{LOG_PREFIXES['error']} Failed to start upload worker pool: {e}")
-            print(f"{LOG_PREFIXES['error']} Failed to start upload worker pool: {e}", file=sys.stderr, flush=True)
             logger.error("WARNING: Application will continue but async uploads will NOT work!")
-            print("WARNING: Application will continue but async uploads will NOT work!", file=sys.stderr, flush=True)
             import traceback
             traceback.print_exc()
             # 不抛出异常，允许应用继续启动（但异步上传将不可用）
     else:
         logger.warning(f"{LOG_PREFIXES['warning']} Upload worker pool not available, async uploads will not work")
-        print(f"{LOG_PREFIXES['warning']} Upload worker pool not available, async uploads will not work", file=sys.stderr, flush=True)
 
-    # 后台守护：如果 WorkerPool 启动失败/运行中断，自动重试启动（避免只能靠重启服务）
+    # 后台守护：确保 WorkerPool 的 reconciler 在运行（按需调用模式）
+    # 注意：按需调用模式下，Worker 会按需启动/退出，不需要检查 Worker 是否在运行
+    # 只需要确保 reconciler 在运行，以便恢复可能遗漏的任务
     if WORKER_POOL_AVAILABLE:
         async def _worker_pool_supervisor():
             backoff_s = 1.0
             while True:
                 try:
-                    # 1) 如果标记为 running，但所有 worker task 都已结束，视为失活，重启
-                    if worker_pool._running:
-                        alive = sum(1 for t in worker_pool._workers if not t.done())
-                        if alive == 0 and len(worker_pool._workers) > 0:
-                            logger.error(
-                                f"{LOG_PREFIXES['error']} Worker pool has no alive workers; restarting..."
-                            )
-                            try:
-                                await worker_pool.stop()
-                            except Exception as e:
-                                logger.error(f"{LOG_PREFIXES['error']} Error stopping dead worker pool: {e}")
+                    # 按需调用模式下，只需检查 reconciler 是否在运行
+                    # 如果 reconciler 停止了，重新启动 worker pool
+                    if worker_pool._reconciler is None or worker_pool._reconciler.done():
+                        logger.warning(f"{LOG_PREFIXES['warning']} Worker pool reconciler not running; restarting pool...")
+                        try:
+                            await worker_pool.stop()
+                        except Exception as e:
+                            logger.error(f"{LOG_PREFIXES['error']} Error stopping worker pool: {e}")
 
-                    # 2) 未运行则尝试启动
-                    if not worker_pool._running:
-                        logger.warning(f"{LOG_PREFIXES['warning']} Worker pool not running; retrying start...")
                         await worker_pool.start()
-                        logger.info(f"{LOG_PREFIXES['success']} Worker pool started by supervisor")
+                        logger.info(f"{LOG_PREFIXES['success']} Worker pool restarted by supervisor (on-demand mode)")
                         backoff_s = 1.0
 
-                    await asyncio.sleep(5.0)
+                    await asyncio.sleep(30.0)  # 按需模式下，检查间隔可以更长
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
                     logger.error(f"{LOG_PREFIXES['error']} Worker pool supervisor error: {e}")
                     await asyncio.sleep(backoff_s)
-                    backoff_s = min(backoff_s * 2.0, 30.0)
+                    backoff_s = min(backoff_s * 2.0, 60.0)
 
         supervisor_task = asyncio.create_task(_worker_pool_supervisor())
 
@@ -513,10 +483,8 @@ try:
     from .core.logger import ensure_service_loggers
     ensure_service_loggers()
     logger.info(f"{LOG_PREFIXES['info']} Service loggers configured")
-    print(f"{LOG_PREFIXES['info']} Service loggers configured", file=sys.stderr, flush=True)
 except Exception as e:
     logger.warning(f"{LOG_PREFIXES['warning']} Failed to configure service loggers: {e}")
-    print(f"{LOG_PREFIXES['warning']} Failed to configure service loggers: {e}", file=sys.stderr, flush=True)
 
 # Register all API routes (统一注册)
 if ROUTER_REGISTRY_AVAILABLE:
@@ -562,70 +530,23 @@ else:
 # Log module availability on startup
 startup_separator = "=" * 60
 logger.info(startup_separator)
-print(startup_separator, file=sys.stderr, flush=True)
 logger.info(">>> Gemini Chat Backend Starting...")
-print(">>> Gemini Chat Backend Starting...", file=sys.stderr, flush=True)
 logger.info(startup_separator)
-print(startup_separator, file=sys.stderr, flush=True)
 selenium_status = '[YES]' if SELENIUM_AVAILABLE else '[NO]'
 logger.info(f"Selenium Available: {selenium_status}")
-print(f"Selenium Available: {selenium_status}", file=sys.stderr, flush=True)
 pdf_status = '[YES]' if PDF_EXTRACTION_AVAILABLE else '[NO]'
 logger.info(f"PDF Extraction Available: {pdf_status}")
-print(f"PDF Extraction Available: {pdf_status}", file=sys.stderr, flush=True)
 embedding_status = '[YES]' if EMBEDDING_AVAILABLE else '[NO]'
 logger.info(f"Embedding Service Available: {embedding_status}")
-print(f"Embedding Service Available: {embedding_status}", file=sys.stderr, flush=True)
 worker_status = '[YES]' if WORKER_POOL_AVAILABLE else '[NO]'
 logger.info(f"Upload Worker Pool Available: {worker_status}")
-print(f"Upload Worker Pool Available: {worker_status}", file=sys.stderr, flush=True)
 router_status = '[YES]' if ROUTER_REGISTRY_AVAILABLE else '[NO]'
 logger.info(f"Router Registry Available: {router_status}")
-print(f"Router Registry Available: {router_status}", file=sys.stderr, flush=True)
 logger.info(startup_separator)
-print(startup_separator, file=sys.stderr, flush=True)
 
 # ============================================================================
-# Request Logging Middleware
+# Request Logging Middleware - REMOVED (Debug code should not be in production)
 # ============================================================================
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-import time
-
-class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """记录所有请求的中间件，用于调试"""
-    async def dispatch(self, request: Request, call_next):
-        import sys
-        start_time = time.time()
-        
-        # 记录请求信息
-        logger.info(f"[Request] ========== 收到请求 ==========")
-        print(f"[Request] ========== 收到请求 ==========", file=sys.stderr, flush=True)
-        logger.info(f"[Request] 📥 {request.method} {request.url.path}")
-        print(f"[Request] 📥 {request.method} {request.url.path}", file=sys.stderr, flush=True)
-        logger.info(f"[Request]     - Query: {dict(request.query_params)}")
-        print(f"[Request]     - Query: {dict(request.query_params)}", file=sys.stderr, flush=True)
-        auth_status = '已设置' if request.headers.get('Authorization') else '未设置'
-        logger.info(f"[Request]     - Headers: Authorization={auth_status}")
-        print(f"[Request]     - Headers: Authorization={auth_status}", file=sys.stderr, flush=True)
-        cookie_status = '已设置' if request.cookies.get('access_token') else '未设置'
-        logger.info(f"[Request]     - Cookies: access_token={cookie_status}")
-        print(f"[Request]     - Cookies: access_token={cookie_status}", file=sys.stderr, flush=True)
-        
-        try:
-            response = await call_next(request)
-            process_time = (time.time() - start_time) * 1000
-            logger.info(f"[Request] ✅ 请求处理完成 (耗时: {process_time:.2f}ms, 状态码: {response.status_code})")
-            print(f"[Request] ✅ 请求处理完成 (耗时: {process_time:.2f}ms, 状态码: {response.status_code})", file=sys.stderr, flush=True)
-            return response
-        except Exception as e:
-            process_time = (time.time() - start_time) * 1000
-            logger.error(f"[Request] ❌ 请求处理异常 (耗时: {process_time:.2f}ms): {e}", exc_info=True)
-            print(f"[Request] ❌ 请求处理异常 (耗时: {process_time:.2f}ms): {e}", file=sys.stderr, flush=True)
-            raise
-
-# 添加请求日志中间件（在 CORS 之前，确保能记录所有请求）
-app.add_middleware(RequestLoggingMiddleware)
 
 # Configure CORS
 # 注意：使用 httpOnly Cookie 时，allow_origins 不能为 "*"

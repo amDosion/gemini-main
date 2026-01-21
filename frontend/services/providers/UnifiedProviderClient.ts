@@ -48,7 +48,7 @@ export class UnifiedProviderClient implements ILLMProvider {
    *
    * Backend returns complete ModelConfig objects with capabilities.
    */
-  async getAvailableModels(apiKey?: string, baseUrl?: string): Promise<ModelConfig[]> {
+  async getAvailableModels(apiKey?: string, baseUrl?: string, useCache: boolean = true): Promise<ModelConfig[]> {
     try {
       // Build query parameters
       const params = new URLSearchParams();
@@ -58,6 +58,8 @@ export class UnifiedProviderClient implements ILLMProvider {
       if (baseUrl) {
         params.append('baseUrl', baseUrl);
       }
+      // ✅ 添加 useCache 参数，验证连接时应该使用 false 强制刷新
+      params.append('useCache', String(useCache));
 
       // Call backend API with timeout protection
       const queryString = params.toString();

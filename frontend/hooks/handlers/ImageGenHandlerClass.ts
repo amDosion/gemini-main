@@ -28,7 +28,7 @@ export class ImageGenHandler extends BaseHandler {
         id: res.attachmentId || uuidv4(),  // 使用后端返回的 attachmentId
         mimeType: res.mimeType || 'image/png',
         name: res.filename || `generated-${Date.now()}.png`,
-        url: res.url,  // 显示URL（可能是 /api/temp-images/{attachment_id} 或 HTTP URL）
+        url: res.url,  // 显示URL（Base64 Data URL 或 HTTP URL，临时代理 URL 不再返回）
         uploadStatus: res.uploadStatus || 'pending',
         uploadTaskId: res.taskId
       } as Attachment));

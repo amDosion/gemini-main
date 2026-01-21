@@ -107,7 +107,6 @@ class ProviderFactory:
         start_time = time.time()
         
         logger.info(f"[ProviderFactory] 🔄 开始创建服务: provider={provider}, user_id={user_id[:8] + '...' if user_id else 'None'}")
-        print(f"[ProviderFactory] 🔄 开始创建服务: provider={provider}, user_id={user_id[:8] + '...' if user_id else 'None'}", file=sys.stderr, flush=True)
         
         # Generate request ID if not provided
         if not request_id:
@@ -116,17 +115,14 @@ class ProviderFactory:
         # Ensure providers are registered
         if not cls._initialized:
             logger.info(f"[ProviderFactory] 🔄 自动注册提供商...")
-            print(f"[ProviderFactory] 🔄 自动注册提供商...", file=sys.stderr, flush=True)
             cls._auto_register()
             logger.info(f"[ProviderFactory] ✅ 提供商注册完成")
-            print(f"[ProviderFactory] ✅ 提供商注册完成", file=sys.stderr, flush=True)
         
         # Check cache first
         cache_key = f"{provider}:{api_key}"
         if cache_key in cls._client_cache:
             elapsed = (time.time() - start_time) * 1000
             logger.info(f"[ProviderFactory] ✅ 使用缓存服务 (耗时: {elapsed:.2f}ms)")
-            print(f"[ProviderFactory] ✅ 使用缓存服务 (耗时: {elapsed:.2f}ms)", file=sys.stderr, flush=True)
             return cls._client_cache[cache_key]
         
         # Validate provider exists
@@ -175,11 +171,8 @@ class ProviderFactory:
             elapsed = (time.time() - start_time) * 1000
             service_type = type(service).__name__
             logger.info(f"[ProviderFactory] ✅ 服务创建完成 (耗时: {elapsed:.2f}ms)")
-            print(f"[ProviderFactory] ✅ 服务创建完成 (耗时: {elapsed:.2f}ms)", file=sys.stderr, flush=True)
             logger.info(f"[ProviderFactory]     - service类型: {service_type}")
-            print(f"[ProviderFactory]     - service类型: {service_type}", file=sys.stderr, flush=True)
             logger.info(f"[ProviderFactory]     - 已缓存: {cache_key}")
-            print(f"[ProviderFactory]     - 已缓存: {cache_key}", file=sys.stderr, flush=True)
             return service
             
         except Exception as e:

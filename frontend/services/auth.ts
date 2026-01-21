@@ -131,12 +131,16 @@ class AuthService {
       signal: AbortSignal.timeout(10000), // 10秒超时
     });
     if (!response.ok) {
+      console.error('[AuthService] 获取配置失败:', response.status, response.statusText);
       throw new Error('Failed to fetch auth config');
     }
     const data = await response.json();
-    return {
+    console.log('[AuthService] 获取到的配置:', data);
+    const result = {
       allowRegistration: data.allow_registration,
     };
+    console.log('[AuthService] 解析后的配置:', result);
+    return result;
   }
 
   /**

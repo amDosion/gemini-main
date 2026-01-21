@@ -1,33 +1,12 @@
 """
 系统配置服务 - 管理系统级别的配置（如注册开关等）
 """
-import json
 import logging
 from sqlalchemy.orm import Session
-from typing import Optional, Any, Dict
+from typing import Optional, Dict, Any
 from ...models.db_models import SystemConfig
 
 logger = logging.getLogger(__name__)
-
-# 默认配置
-DEFAULT_CONFIGS = {
-    "allow_registration": {
-        "value": "false",  # 默认关闭注册
-        "description": "是否允许用户注册"
-    },
-    "max_login_attempts": {
-        "value": "5",  # 最大登录尝试次数
-        "description": "单个IP或邮箱的最大登录失败次数"
-    },
-    "login_lockout_duration": {
-        "value": "900",  # 15分钟（秒）
-        "description": "登录失败后锁定时间（秒）"
-    },
-    "max_login_attempts_per_ip": {
-        "value": "10",  # 单个IP的最大尝试次数
-        "description": "单个IP地址的最大登录尝试次数（包括所有邮箱）"
-    }
-}
 
 
 def is_private_ip(ip: str) -> bool:
@@ -246,124 +225,82 @@ async def get_ip_info(ip: str) -> Optional[Dict[str, Any]]:
 
 def initialize_system_configs(db: Session) -> None:
     """
-    初始化系统配置（如果不存在则创建默认配置）
-    
+    初始化系统配置（如果不存在则创建默认配置，单例模式）
+
     Args:
         db: 数据库会话
     """
     try:
-        for key, config_data in DEFAULT_CONFIGS.items():
-            existing = db.query(SystemConfig).filter(SystemConfig.key == key).first()
-            if not existing:
-                system_config = SystemConfig(
-                    key=key,
-                    value=config_data["value"],
-                    description=config_data["description"]
-                )
-                db.add(system_config)
-                logger.info(f"[SystemConfig] 初始化配置: {key} = {config_data['value']}")
-        
-        db.commit()
-        logger.info("[SystemConfig] ✅ 系统配置初始化完成")
+        # 检查是否已存在配置（单例模式，id=1）
+        existing = db.query(SystemConfig).filter(SystemConfig.id == 1).first()
+        if not existing:
+            # 创建默认配置
+            system_config = SystemConfig(
+                id=1,
+                allow_registration=False,
+                max_login_attempts=5,
+                max_login_attempts_per_ip=10,
+                login_lockout_duration=900
+            )
+            db.add(system_config)
+            db.commit()
+            logger.info("[SystemConfig] ✅ 系统配置初始化完成（使用默认值）")
+        else:
+            logger.debug("[SystemConfig] 系统配置已存在，跳过初始化")
     except Exception as e:
         db.rollback()
         logger.error(f"[SystemConfig] ❌ 初始化系统配置失败: {e}", exc_info=True)
         raise
 
 
-def get_system_config(db: Session, key: str, default: Optional[str] = None) -> Optional[str]:
+def get_system_config(db: Session) -> SystemConfig:
     """
-    获取系统配置值
-    
+    获取系统配置（单例模式）
+
     Args:
         db: 数据库会话
-        key: 配置键
-        default: 默认值（如果配置不存在）
-    
+
     Returns:
-        配置值（字符串），如果不存在则返回 default
+        SystemConfig 对象
     """
-    try:
-        config = db.query(SystemConfig).filter(SystemConfig.key == key).first()
-        if config:
-            return config.value
-        return default
-    except Exception as e:
-        logger.error(f"[SystemConfig] 获取配置失败 {key}: {e}", exc_info=True)
-        return default
+    config = db.query(SystemConfig).filter(SystemConfig.id == 1).first()
+    if not config:
+        # 如果不存在，先初始化
+        initialize_system_configs(db)
+        config = db.query(SystemConfig).filter(SystemConfig.id == 1).first()
+    return config
 
 
-def get_system_config_bool(db: Session, key: str, default: bool = False) -> bool:
+def update_system_config(db: Session, **kwargs) -> SystemConfig:
     """
-    获取系统配置值（布尔类型）
-    
+    更新系统配置
+
     Args:
         db: 数据库会话
-        key: 配置键
-        default: 默认值
-    
-    Returns:
-        配置值（布尔类型）
-    """
-    value = get_system_config(db, key)
-    if value is None:
-        return default
-    return value.lower() in ("true", "1", "yes", "on")
+        **kwargs: 要更新的配置字段，例如：
+            - allow_registration: bool
+            - max_login_attempts: int
+            - max_login_attempts_per_ip: int
+            - login_lockout_duration: int
 
-
-def get_system_config_int(db: Session, key: str, default: int = 0) -> int:
-    """
-    获取系统配置值（整数类型）
-    
-    Args:
-        db: 数据库会话
-        key: 配置键
-        default: 默认值
-    
-    Returns:
-        配置值（整数类型）
-    """
-    value = get_system_config(db, key)
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except (ValueError, TypeError):
-        logger.warning(f"[SystemConfig] 配置 {key} 的值 '{value}' 无法转换为整数，使用默认值 {default}")
-        return default
-
-
-def set_system_config(db: Session, key: str, value: str, description: Optional[str] = None) -> SystemConfig:
-    """
-    设置系统配置值
-    
-    Args:
-        db: 数据库会话
-        key: 配置键
-        value: 配置值
-        description: 配置描述（可选）
-    
     Returns:
         更新后的 SystemConfig 对象
     """
     try:
-        config = db.query(SystemConfig).filter(SystemConfig.key == key).first()
-        if config:
-            config.value = value
-            if description:
-                config.description = description
-        else:
-            config = SystemConfig(
-                key=key,
-                value=value,
-                description=description or DEFAULT_CONFIGS.get(key, {}).get("description")
-            )
-            db.add(config)
-        
+        config = get_system_config(db)
+
+        # 更新传入的字段
+        for key, value in kwargs.items():
+            if hasattr(config, key):
+                setattr(config, key, value)
+                logger.info(f"[SystemConfig] 更新配置: {key} = {value}")
+            else:
+                logger.warning(f"[SystemConfig] 未知配置字段: {key}")
+
         db.commit()
-        logger.info(f"[SystemConfig] 更新配置: {key} = {value}")
+        db.refresh(config)
         return config
     except Exception as e:
         db.rollback()
-        logger.error(f"[SystemConfig] ❌ 设置配置失败 {key}: {e}", exc_info=True)
+        logger.error(f"[SystemConfig] ❌ 更新配置失败: {e}", exc_info=True)
         raise

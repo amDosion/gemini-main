@@ -1,6 +1,7 @@
 """
 认证路由 - 处理用户注册、登录、登出、令牌刷新等
 """
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone, timedelta
@@ -29,6 +30,8 @@ from ...services.common.system_config_service import (
     get_ip_info
 )
 from ...models.db_models import IPLoginHistory
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -82,10 +85,14 @@ def clear_auth_cookies(response: Response) -> None:
 @router.get("/config", response_model=AuthConfigResponse)
 async def get_auth_config(db: Session = Depends(get_db)):
     """获取认证配置（注册开关状态）"""
+    logger.info("[Auth] 收到获取配置请求")
     auth_service = AuthService(db)
     try:
-        return auth_service.get_config()
+        config = auth_service.get_config()
+        logger.info(f"[Auth] 成功返回配置: allow_registration={config.allow_registration}")
+        return config
     except Exception as e:
+        logger.error(f"[Auth] 获取配置失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to get auth config: {str(e)}")
 
 
@@ -149,8 +156,6 @@ async def register(
             ensure_personas_initialized(result.user.id, db)
         except Exception as e:
             # Personas 初始化失败不应该阻止注册，只记录警告
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning(f"Failed to initialize default personas for new user {result.user.id}: {e}")
         
         # ✅ 返回用户信息和 token，前端存储在 localStorage

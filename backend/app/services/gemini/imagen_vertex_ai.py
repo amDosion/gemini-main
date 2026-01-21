@@ -153,59 +153,43 @@ class VertexAIImageGenerator(BaseImageGenerator):
         start_time = time.time()
         
         logger.info(f"[VertexAIImageGenerator] ========== 开始生成图片 ==========")
-        print(f"[VertexAIImageGenerator] ========== 开始生成图片 ==========", file=sys.stderr, flush=True)
         logger.info(f"[VertexAIImageGenerator] 📥 请求参数:")
-        print(f"[VertexAIImageGenerator] 📥 请求参数:", file=sys.stderr, flush=True)
         logger.info(f"[VertexAIImageGenerator]     - model: {model}")
-        print(f"[VertexAIImageGenerator]     - model: {model}", file=sys.stderr, flush=True)
         logger.info(f"[VertexAIImageGenerator]     - prompt: {prompt[:100] + '...' if len(prompt) > 100 else prompt}")
-        print(f"[VertexAIImageGenerator]     - prompt: {prompt[:100] + '...' if len(prompt) > 100 else prompt}", file=sys.stderr, flush=True)
         logger.info(f"[VertexAIImageGenerator]     - prompt长度: {len(prompt)}")
-        print(f"[VertexAIImageGenerator]     - prompt长度: {len(prompt)}", file=sys.stderr, flush=True)
         for key, value in kwargs.items():
             if key in ['number_of_images', 'aspect_ratio', 'image_size', 'output_mime_type', 'image_style']:
                 logger.info(f"[VertexAIImageGenerator]     - {key}: {value}")
-                print(f"[VertexAIImageGenerator]     - {key}: {value}", file=sys.stderr, flush=True)
         
         self._ensure_initialized()
         logger.info(f"[VertexAIImageGenerator] ✅ 客户端已初始化")
-        print(f"[VertexAIImageGenerator] ✅ 客户端已初始化", file=sys.stderr, flush=True)
         
         logger.info(f"[VertexAIImageGenerator] 🔄 [步骤1] 验证参数...")
-        print(f"[VertexAIImageGenerator] 🔄 [步骤1] 验证参数...", file=sys.stderr, flush=True)
         self.validate_parameters(**kwargs)
         logger.info(f"[VertexAIImageGenerator] ✅ [步骤1] 参数验证通过")
-        print(f"[VertexAIImageGenerator] ✅ [步骤1] 参数验证通过", file=sys.stderr, flush=True)
         
         # Extract short model name from full path if needed
         # e.g., "publishers/google/models/gemini-3-pro-image-preview" -> "gemini-3-pro-image-preview"
         short_model_name = model.split('/')[-1] if '/' in model else model
         logger.info(f"[VertexAIImageGenerator] 🔄 [步骤2] 提取模型名称: {short_model_name}")
-        print(f"[VertexAIImageGenerator] 🔄 [步骤2] 提取模型名称: {short_model_name}", file=sys.stderr, flush=True)
         
         # Check if this is a model that uses generate_content API
         uses_generate_content = short_model_name in GENERATE_CONTENT_MODELS
         logger.info(f"[VertexAIImageGenerator] 🔄 [步骤3] 检查API类型...")
-        print(f"[VertexAIImageGenerator] 🔄 [步骤3] 检查API类型...", file=sys.stderr, flush=True)
         logger.info(f"[VertexAIImageGenerator]     - 使用 generate_content API: {uses_generate_content}")
-        print(f"[VertexAIImageGenerator]     - 使用 generate_content API: {uses_generate_content}", file=sys.stderr, flush=True)
         
         if uses_generate_content:
             # Use generate_content for Gemini/Veo models
             logger.info(f"[VertexAIImageGenerator] 🔄 [步骤4] 使用 Gemini generate_content API...")
-            print(f"[VertexAIImageGenerator] 🔄 [步骤4] 使用 Gemini generate_content API...", file=sys.stderr, flush=True)
             results = await self._generate_with_gemini(short_model_name, prompt, **kwargs)
         else:
             # Use generate_images for Imagen models
             logger.info(f"[VertexAIImageGenerator] 🔄 [步骤4] 使用 Imagen generate_images API...")
-            print(f"[VertexAIImageGenerator] 🔄 [步骤4] 使用 Imagen generate_images API...", file=sys.stderr, flush=True)
             results = await self._generate_with_imagen(short_model_name, prompt, **kwargs)
         
         total_time = (time.time() - start_time) * 1000
         logger.info(f"[VertexAIImageGenerator] ========== 图片生成完成 (总耗时: {total_time:.2f}ms) ==========")
-        print(f"[VertexAIImageGenerator] ========== 图片生成完成 (总耗时: {total_time:.2f}ms) ==========", file=sys.stderr, flush=True)
         logger.info(f"[VertexAIImageGenerator]     - 返回图片数量: {len(results)}")
-        print(f"[VertexAIImageGenerator]     - 返回图片数量: {len(results)}", file=sys.stderr, flush=True)
         
         return results
     
@@ -217,20 +201,15 @@ class VertexAIImageGenerator(BaseImageGenerator):
     ) -> List[Dict[str, Any]]:
         """Generate images using Imagen models (generate_images API)."""
         import time
-        import sys
         start_time = time.time()
         
         logger.info(f"[VertexAIImageGenerator] 🔄 [Imagen] 开始使用 Imagen API 生成图片...")
-        print(f"[VertexAIImageGenerator] 🔄 [Imagen] 开始使用 Imagen API 生成图片...", file=sys.stderr, flush=True)
         logger.info(f"[VertexAIImageGenerator]     - model: {model}")
-        print(f"[VertexAIImageGenerator]     - model: {model}", file=sys.stderr, flush=True)
         
         # Build configuration (传递 model 参数以便检查是否支持 image_size)
         logger.info(f"[VertexAIImageGenerator] 🔄 [Imagen] 构建配置...")
-        print(f"[VertexAIImageGenerator] 🔄 [Imagen] 构建配置...", file=sys.stderr, flush=True)
         config = self._build_config(model=model, **kwargs)
         logger.info(f"[VertexAIImageGenerator] ✅ [Imagen] 配置构建完成")
-        print(f"[VertexAIImageGenerator] ✅ [Imagen] 配置构建完成", file=sys.stderr, flush=True)
         
         # Apply style to prompt if specified
         image_style = kwargs.get('image_style')
@@ -238,15 +217,11 @@ class VertexAIImageGenerator(BaseImageGenerator):
         if image_style and image_style.lower() != "none":
             effective_prompt = f"{prompt}, style: {image_style}"
             logger.info(f"[VertexAIImageGenerator] ✅ [Imagen] 应用样式: {image_style}")
-            print(f"[VertexAIImageGenerator] ✅ [Imagen] 应用样式: {image_style}", file=sys.stderr, flush=True)
         
         try:
             logger.info(f"[VertexAIImageGenerator] 🔄 [Imagen] 调用 Vertex AI generate_images()...")
-            print(f"[VertexAIImageGenerator] 🔄 [Imagen] 调用 Vertex AI generate_images()...", file=sys.stderr, flush=True)
             logger.info(f"[VertexAIImageGenerator]     - model: {model}")
-            print(f"[VertexAIImageGenerator]     - model: {model}", file=sys.stderr, flush=True)
             logger.info(f"[VertexAIImageGenerator]     - effective_prompt长度: {len(effective_prompt)}")
-            print(f"[VertexAIImageGenerator]     - effective_prompt长度: {len(effective_prompt)}", file=sys.stderr, flush=True)
             
             api_start = time.time()
             # Call Vertex AI generate_images API
@@ -257,24 +232,18 @@ class VertexAIImageGenerator(BaseImageGenerator):
             )
             api_time = (time.time() - api_start) * 1000
             logger.info(f"[VertexAIImageGenerator] ✅ [Imagen] API调用完成 (耗时: {api_time:.2f}ms)")
-            print(f"[VertexAIImageGenerator] ✅ [Imagen] API调用完成 (耗时: {api_time:.2f}ms)", file=sys.stderr, flush=True)
             
             if not response.generated_images:
                 logger.error(f"[VertexAIImageGenerator] ❌ [Imagen] API未返回图片")
-                print(f"[VertexAIImageGenerator] ❌ [Imagen] API未返回图片", file=sys.stderr, flush=True)
                 raise APIError("No images generated", api_type="vertex_ai")
             
             logger.info(f"[VertexAIImageGenerator]     - 返回图片数量: {len(response.generated_images)}")
-            print(f"[VertexAIImageGenerator]     - 返回图片数量: {len(response.generated_images)}", file=sys.stderr, flush=True)
             
             logger.info(f"[VertexAIImageGenerator] 🔄 [Imagen] 处理响应结果...")
-            print(f"[VertexAIImageGenerator] 🔄 [Imagen] 处理响应结果...", file=sys.stderr, flush=True)
             results = self._process_response(response, **kwargs)
             process_time = (time.time() - start_time) * 1000
             logger.info(f"[VertexAIImageGenerator] ✅ [Imagen] 响应处理完成 (耗时: {process_time:.2f}ms)")
-            print(f"[VertexAIImageGenerator] ✅ [Imagen] 响应处理完成 (耗时: {process_time:.2f}ms)", file=sys.stderr, flush=True)
             logger.info(f"[VertexAIImageGenerator]     - 最终返回图片数量: {len(results)}")
-            print(f"[VertexAIImageGenerator]     - 最终返回图片数量: {len(results)}", file=sys.stderr, flush=True)
             
             return results
             
@@ -295,18 +264,14 @@ class VertexAIImageGenerator(BaseImageGenerator):
     ) -> List[Dict[str, Any]]:
         """Generate images using Gemini image models (generate_content API)."""
         import time
-        import sys
         start_time = time.time()
         
         logger.info(f"[VertexAIImageGenerator] 🔄 [Gemini] 开始使用 Gemini generate_content API 生成图片...")
-        print(f"[VertexAIImageGenerator] 🔄 [Gemini] 开始使用 Gemini generate_content API 生成图片...", file=sys.stderr, flush=True)
         logger.info(f"[VertexAIImageGenerator]     - model: {model}")
-        print(f"[VertexAIImageGenerator]     - model: {model}", file=sys.stderr, flush=True)
         
         try:
             # Build Gemini configuration
             logger.info(f"[VertexAIImageGenerator] 🔄 [Gemini] 构建配置...")
-            print(f"[VertexAIImageGenerator] 🔄 [Gemini] 构建配置...", file=sys.stderr, flush=True)
             aspect_ratio = kwargs.get('aspect_ratio', '1:1')
             image_size = kwargs.get('image_size', '1K')
             # Default to PNG format for best quality (no compression)
@@ -314,13 +279,9 @@ class VertexAIImageGenerator(BaseImageGenerator):
             number_of_images = min(max(kwargs.get('number_of_images', 1), 1), 8)
             
             logger.info(f"[VertexAIImageGenerator]     - aspect_ratio: {aspect_ratio}")
-            print(f"[VertexAIImageGenerator]     - aspect_ratio: {aspect_ratio}", file=sys.stderr, flush=True)
             logger.info(f"[VertexAIImageGenerator]     - image_size: {image_size}")
-            print(f"[VertexAIImageGenerator]     - image_size: {image_size}", file=sys.stderr, flush=True)
             logger.info(f"[VertexAIImageGenerator]     - output_mime_type: {output_mime_type}")
-            print(f"[VertexAIImageGenerator]     - output_mime_type: {output_mime_type}", file=sys.stderr, flush=True)
             logger.info(f"[VertexAIImageGenerator]     - number_of_images: {number_of_images}")
-            print(f"[VertexAIImageGenerator]     - number_of_images: {number_of_images}", file=sys.stderr, flush=True)
             
             # Apply style to prompt if specified
             image_style = kwargs.get('image_style')
@@ -328,7 +289,6 @@ class VertexAIImageGenerator(BaseImageGenerator):
             if image_style and image_style.lower() != "none":
                 effective_prompt = f"{prompt}, style: {image_style}"
                 logger.info(f"[VertexAIImageGenerator] ✅ [Gemini] 应用样式: {image_style}")
-                print(f"[VertexAIImageGenerator] ✅ [Gemini] 应用样式: {image_style}", file=sys.stderr, flush=True)
             
             # Create content parts
             text_part = genai_types.Part.from_text(text=effective_prompt)
@@ -354,15 +314,12 @@ class VertexAIImageGenerator(BaseImageGenerator):
             )
             
             logger.info(f"[VertexAIImageGenerator] ✅ [Gemini] 配置构建完成")
-            print(f"[VertexAIImageGenerator] ✅ [Gemini] 配置构建完成", file=sys.stderr, flush=True)
             
             # Generate images (may need multiple calls for multiple images)
             logger.info(f"[VertexAIImageGenerator] 🔄 [Gemini] 开始生成 {number_of_images} 张图片...")
-            print(f"[VertexAIImageGenerator] 🔄 [Gemini] 开始生成 {number_of_images} 张图片...", file=sys.stderr, flush=True)
             results = []
             for i in range(number_of_images):
                 logger.info(f"[VertexAIImageGenerator] 🔄 [Gemini] 生成第 {i+1}/{number_of_images} 张图片...")
-                print(f"[VertexAIImageGenerator] 🔄 [Gemini] 生成第 {i+1}/{number_of_images} 张图片...", file=sys.stderr, flush=True)
                 api_start = time.time()
                 response = self._client.models.generate_content(
                     model=model,
@@ -371,7 +328,6 @@ class VertexAIImageGenerator(BaseImageGenerator):
                 )
                 api_time = (time.time() - api_start) * 1000
                 logger.info(f"[VertexAIImageGenerator] ✅ [Gemini] 第 {i+1} 张图片API调用完成 (耗时: {api_time:.2f}ms)")
-                print(f"[VertexAIImageGenerator] ✅ [Gemini] 第 {i+1} 张图片API调用完成 (耗时: {api_time:.2f}ms)", file=sys.stderr, flush=True)
                 
                 # Extract image from response
                 if response.candidates:
@@ -391,21 +347,16 @@ class VertexAIImageGenerator(BaseImageGenerator):
                                     }
                                     results.append(result)
                                     logger.info(f"[VertexAIImageGenerator] ✅ [Gemini] 第 {len(results)} 张图片处理完成 (大小: {image_size_kb:.2f} KB)")
-                                    print(f"[VertexAIImageGenerator] ✅ [Gemini] 第 {len(results)} 张图片处理完成 (大小: {image_size_kb:.2f} KB)", file=sys.stderr, flush=True)
                 else:
                     logger.warning(f"[VertexAIImageGenerator] ⚠️ [Gemini] 第 {i+1} 张图片API未返回candidates")
-                    print(f"[VertexAIImageGenerator] ⚠️ [Gemini] 第 {i+1} 张图片API未返回candidates", file=sys.stderr, flush=True)
             
             if not results:
                 logger.error(f"[VertexAIImageGenerator] ❌ [Gemini] 未生成任何图片")
-                print(f"[VertexAIImageGenerator] ❌ [Gemini] 未生成任何图片", file=sys.stderr, flush=True)
                 raise APIError("No images generated from Gemini model", api_type="vertex_ai")
             
             total_time = (time.time() - start_time) * 1000
             logger.info(f"[VertexAIImageGenerator] ✅ [Gemini] 生成完成 (总耗时: {total_time:.2f}ms)")
-            print(f"[VertexAIImageGenerator] ✅ [Gemini] 生成完成 (总耗时: {total_time:.2f}ms)", file=sys.stderr, flush=True)
             logger.info(f"[VertexAIImageGenerator]     - 最终返回图片数量: {len(results)}")
-            print(f"[VertexAIImageGenerator]     - 最终返回图片数量: {len(results)}", file=sys.stderr, flush=True)
             return results
             
         except Exception as e:

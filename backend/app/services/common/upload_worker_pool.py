@@ -46,7 +46,7 @@ def log_print(message: str, level: str = "INFO"):
 
 class UploadWorkerPool:
     """
-    上传 Worker 池
+    上传 Worker 池（按需调用模式）
 
     使用 Redis 队列 + 数据库持久化架构：
     - Redis BRPOP 阻塞等待任务（无轮询，0 CPU）
@@ -54,75 +54,100 @@ class UploadWorkerPool:
     - 分布式锁防止重复处理
     - 自动重试（指数退避）
     - 死信队列处理最终失败
+
+    按需调用特性：
+    - 没有任务时不运行任何 Worker
+    - 任务入队时懒启动 Worker
+    - 队列为空且无 pending 任务时 Worker 自动退出
     """
 
     def __init__(self):
-        self.num_workers = settings.upload_queue_workers
+        self.max_workers = settings.upload_queue_workers  # 最大并发数（目前单 Worker 模式）
         self.max_retries = settings.upload_queue_max_retries
         self.base_retry_delay = settings.upload_queue_retry_delay
+        self.idle_timeout = 10  # 队列空闲超时（秒），超时后 Worker 退出
 
         self._running = False
-        self._workers: List[asyncio.Task] = []
+        self._worker_task: Optional[asyncio.Task] = None  # 单 Worker 任务
+        self._lock = asyncio.Lock()  # 保护 Worker 启动逻辑
         self._reconciler: asyncio.Task | None = None
-        # 周期性补偿入队：避免“必须重启才触发恢复”
+        # 周期性补偿入队：避免"必须重启才触发恢复"
         self._reconcile_interval_s: float = float(os.getenv("UPLOAD_QUEUE_RECONCILE_INTERVAL", "15"))
         self._reconcile_limit: int = int(os.getenv("UPLOAD_QUEUE_RECONCILE_LIMIT", "500"))
 
+    async def ensure_worker_running(self):
+        """
+        确保有 Worker 在运行（懒启动）
+
+        由 _submit_upload_task() 调用，入队后触发
+        如果 Worker 没有运行或已完成，启动新的 Worker
+        """
+        async with self._lock:
+            # 如果 Worker 没有运行，或者已完成，启动新的
+            if self._worker_task is None or self._worker_task.done():
+                self._running = True
+                self._worker_task = asyncio.create_task(self._worker_loop())
+                logger.warning("[WorkerPool] ✅ Worker 已启动（按需）")
+
+    async def _has_pending_tasks(self) -> bool:
+        """检查数据库中是否还有 pending/uploading 任务"""
+        db = SessionLocal()
+        try:
+            count = db.query(UploadTask).filter(
+                UploadTask.status.in_(['pending', 'uploading'])
+            ).count()
+            return count > 0
+        finally:
+            db.close()
+
     async def start(self):
-        """启动 Worker 池"""
+        """
+        启动 Worker 池（按需调用模式）
+
+        只进行：
+        1. 连接 Redis
+        2. 恢复中断任务
+        3. 如果有 pending 任务，启动 Worker
+
+        不再预创建 Worker，Worker 会在任务入队时按需启动
+        """
         if self._running:
             logger.warning("[WorkerPool] Worker pool already running")
             return
 
-        self._running = True
-
         # 使用 WARNING 级别确保日志可见
         logger.warning("=" * 80)
-        logger.warning("[WorkerPool] STARTING UPLOAD WORKER POOL...")
+        logger.warning("[WorkerPool] STARTING UPLOAD WORKER POOL (ON-DEMAND MODE)...")
         logger.warning("=" * 80)
-        print("=" * 80, file=sys.stderr, flush=True)
-        print("[WorkerPool] STARTING UPLOAD WORKER POOL...", file=sys.stderr, flush=True)
-        print("=" * 80, file=sys.stderr, flush=True)
 
         # 连接 Redis
         logger.warning(f"[WorkerPool] Connecting to Redis: {settings.redis_host}:{settings.redis_port}")
-        print(f"[WorkerPool] Connecting to Redis: {settings.redis_host}:{settings.redis_port}", file=sys.stderr, flush=True)
         try:
             await redis_queue.connect()
             logger.warning("[WorkerPool] Redis connected successfully")
-            print("[WorkerPool] Redis connected successfully", file=sys.stderr, flush=True)
         except Exception as e:
             logger.error(f"[WorkerPool] Redis connection failed: {e}")
-            print(f"[WorkerPool] Redis connection failed: {e}", file=sys.stderr, flush=True)
-            self._running = False
             raise
 
         # 恢复中断任务
         logger.warning("[WorkerPool] Recovering interrupted tasks...")
-        print("[WorkerPool] Recovering interrupted tasks...", file=sys.stderr, flush=True)
         recovered_count = await self._recover_tasks()
         logger.warning(f"[WorkerPool] Recovered {recovered_count} tasks")
-        print(f"[WorkerPool] Recovered {recovered_count} tasks", file=sys.stderr, flush=True)
 
-        # 启动 Workers
-        logger.warning(f"[WorkerPool] Starting {self.num_workers} workers...")
-        print(f"[WorkerPool] Starting {self.num_workers} workers...", file=sys.stderr, flush=True)
-        for i in range(self.num_workers):
-            worker = asyncio.create_task(self._worker_loop(i))
-            self._workers.append(worker)
-            logger.warning(f"[WorkerPool] Worker-{i} task created")
-            print(f"[WorkerPool] Worker-{i} task created", file=sys.stderr, flush=True)
+        # 如果有 pending 任务，启动 Worker
+        if await self._has_pending_tasks():
+            logger.warning("[WorkerPool] Found pending tasks, starting worker...")
+            await self.ensure_worker_running()
+        else:
+            logger.warning("[WorkerPool] No pending tasks, worker will start on-demand")
 
-        logger.warning(f"[WorkerPool] All {self.num_workers} workers started successfully")
         logger.warning("=" * 80)
-        logger.warning("[WorkerPool] WORKER POOL READY")
+        logger.warning("[WorkerPool] WORKER POOL READY (ON-DEMAND MODE)")
         logger.warning("=" * 80)
-        print(f"[WorkerPool] All {self.num_workers} workers started successfully", file=sys.stderr, flush=True)
-        print("=" * 80, file=sys.stderr, flush=True)
-        print("[WorkerPool] WORKER POOL READY", file=sys.stderr, flush=True)
-        print("=" * 80, file=sys.stderr, flush=True)
 
         # 周期性补偿：把 DB 中 pending 且不在 Redis 队列的任务补回队列
+        # 注意：reconciler 仍然需要运行，但它只补偿入队，不启动 Worker
+        # Worker 会在 _submit_upload_task() 中按需启动
         if self._reconcile_interval_s > 0:
             self._reconciler = asyncio.create_task(self._reconcile_loop())
             logger.warning(
@@ -139,13 +164,15 @@ class UploadWorkerPool:
             await asyncio.gather(self._reconciler, return_exceptions=True)
             self._reconciler = None
 
-        for worker in self._workers:
-            worker.cancel()
+        # 停止单 Worker（按需调用模式）
+        if self._worker_task and not self._worker_task.done():
+            self._worker_task.cancel()
+            try:
+                await self._worker_task
+            except asyncio.CancelledError:
+                pass
+            self._worker_task = None
 
-        if self._workers:
-            await asyncio.gather(*self._workers, return_exceptions=True)
-
-        self._workers.clear()
         await redis_queue.disconnect()
 
         logger.warning("[WorkerPool] Worker pool stopped")
@@ -167,6 +194,9 @@ class UploadWorkerPool:
                     logger.warning(
                         f"[WorkerPool] Reconcile tick: requeued_pending={requeued}, failed_pending={failed}"
                     )
+                    # ✅ 如果有任务被重新入队，确保 Worker 正在运行
+                    if requeued > 0:
+                        await self.ensure_worker_running()
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -331,39 +361,44 @@ class UploadWorkerPool:
 
         return recovered_uploading + requeued_pending + failed_pending
 
-    async def _worker_loop(self, worker_id: int):
-        """Worker 主循环"""
-        worker_name = f"Worker-{worker_id}"
-        logger.warning(f"[{worker_name}] Started, listening for tasks...")
-        print(f"[{worker_name}] Started, listening for tasks...", file=sys.stderr, flush=True)
+    async def _worker_loop(self):
+        """
+        Worker 主循环（按需调用模式）
+
+        特点：
+        - 处理完所有任务后自动退出
+        - 空闲超时后检查数据库，无 pending 任务则退出
+        """
+        worker_name = "Worker-0"
+        logger.warning(f"[{worker_name}] Started (on-demand mode), processing tasks...")
+
+        idle_count = 0
+        max_idle_count = self.idle_timeout // 5  # 5秒一次检查，idle_timeout=10秒 → 2次
 
         while self._running:
             try:
-                # 从 Redis 队列获取任务（阻塞等待）
-                logger.debug(f"[{worker_name}] Waiting for task from Redis queue (timeout=5s)...")
-                # ✅ 添加详细日志：每10次超时输出一次，避免日志过多
-                if not hasattr(self, '_wait_count'):
-                    self._wait_count = {}
-                if worker_name not in self._wait_count:
-                    self._wait_count[worker_name] = 0
-                self._wait_count[worker_name] += 1
-                
-                if self._wait_count[worker_name] % 10 == 0:
-                    logger.info(f"[{worker_name}] Still waiting for tasks... (waited {self._wait_count[worker_name] * 5}s)")
-                    print(f"[{worker_name}] Still waiting for tasks... (waited {self._wait_count[worker_name] * 5}s)", file=sys.stderr, flush=True)
-                
+                # 从 Redis 队列获取任务（阻塞等待，最多5秒）
                 task_id = await redis_queue.dequeue(timeout=5)
 
                 if task_id is None:
-                    # 超时，继续等待
+                    # 队列为空，增加空闲计数
+                    idle_count += 1
+
+                    # 检查是否还有 pending 任务（数据库中）
+                    if idle_count >= max_idle_count:
+                        if not await self._has_pending_tasks():
+                            logger.warning(f"[{worker_name}] 队列为空且无 pending 任务，Worker 自动退出")
+                            break
+                        else:
+                            # 有 pending 任务但不在队列中，可能需要 reconcile，继续等待
+                            idle_count = 0
                     continue
-                
-                # ✅ 重置等待计数
-                self._wait_count[worker_name] = 0
+
+                # 有任务，重置空闲计数
+                idle_count = 0
 
                 # ========== 收到任务 ==========
                 logger.warning(f"[{worker_name}] ✅ Got task: {task_id[:8]}...")
-                print(f"[{worker_name}] ✅ Got task: {task_id[:8]}...", file=sys.stderr, flush=True)
                 await redis_queue.append_task_log(
                     task_id,
                     level="info",
@@ -395,10 +430,8 @@ class UploadWorkerPool:
 
                     # 处理任务
                     log_print(f"[{worker_name}] 🔄 开始处理任务: {task_id[:8]}...")
-                    print(f"[{worker_name}] 🔄 开始处理任务: {task_id[:8]}...", file=sys.stderr, flush=True)
                     await self._process_task(task_id, worker_name)
                     log_print(f"[{worker_name}] ✅ 任务处理完成: {task_id[:8]}...")
-                    print(f"[{worker_name}] ✅ 任务处理完成: {task_id[:8]}...", file=sys.stderr, flush=True)
 
                 finally:
                     # 释放锁
@@ -414,17 +447,15 @@ class UploadWorkerPool:
                 traceback.print_exc()
                 await asyncio.sleep(1)
 
-        log_print(f"[{worker_name}] 🛑 已停止")
+        self._running = False
+        log_print(f"[{worker_name}] 🛑 已退出（按需调用模式）")
 
     async def _process_task(self, task_id: str, worker_name: str):
         """处理单个任务"""
-        print(f"[{worker_name}] ========== 开始处理任务 ==========", file=sys.stderr, flush=True)
-        print(f"[{worker_name}] Task ID: {task_id[:8]}...", file=sys.stderr, flush=True)
         db = SessionLocal()
         try:
             # ========== 步骤 1: 查询任务详情 ==========
             log_print(f"[{worker_name}] 📋 查询任务详情: {task_id[:8]}...")
-            print(f"[{worker_name}] 📋 查询任务详情: {task_id[:8]}...", file=sys.stderr, flush=True)
             task = db.query(UploadTask).filter(UploadTask.id == task_id).first()
 
             if not task:
@@ -459,14 +490,12 @@ class UploadWorkerPool:
 
             # ========== 步骤 3: 读取文件内容 ==========
             log_print(f"[{worker_name}] 📂 读取文件内容...")
-            print(f"[{worker_name}] 📂 读取文件内容...", file=sys.stderr, flush=True)
             content = await self._get_file_content(task, worker_name)
             
             # ✅ 新增: 如果返回None → 表示复用附件，无需上传
             # ✅ Bug修复: 在检查 None 之后再记录文件大小，避免 TypeError
             if content is None:
                 log_print(f"[{worker_name}] ✅ 附件复用，无需上传")
-                print(f"[{worker_name}] ✅ 附件复用，无需上传", file=sys.stderr, flush=True)
                 
                 # 查询已有附件并复用其云URL
                 from ...models.db_models import MessageAttachment
@@ -500,24 +529,30 @@ class UploadWorkerPool:
             # ✅ Bug修复: 只有在 content 不是 None 时才记录文件大小
             file_size = len(content)
             log_print(f"[{worker_name}] ✅ 文件读取成功，大小: {file_size / 1024:.2f} KB")
-            print(f"[{worker_name}] ✅ 文件内容读取完成，大小: {file_size / 1024:.2f} KB", file=sys.stderr, flush=True)
 
             # ========== 步骤 4: 获取存储配置 ==========
             log_print(f"[{worker_name}] ⚙️ 获取存储配置...")
+            log_print(f"    - storage_id: {task.storage_id[:8] + '...' if task.storage_id else 'None'}")
+            log_print(f"    - session_id: {task.session_id[:8] + '...' if task.session_id else 'None'}")
             config = self._get_storage_config(db, task.storage_id, task.session_id)
             if not config:
-                raise Exception("存储配置不可用")
+                error_msg = (
+                    f"存储配置不可用。"
+                    f"请检查：1) 是否已配置存储（Settings → Storage），"
+                    f"2) 存储配置是否已启用，"
+                    f"3) 是否设置了激活存储。"
+                    f"任务信息: storage_id={task.storage_id[:8] if task.storage_id else 'None'}..., "
+                    f"session_id={task.session_id[:8] if task.session_id else 'None'}..."
+                )
+                log_print(f"[{worker_name}] ❌ {error_msg}", level="ERROR")
+                raise Exception(error_msg)
             log_print(f"[{worker_name}] ✅ 存储配置: {config.name} ({config.provider})")
 
             # ========== 步骤 5: 执行上传 ==========
             log_print(f"[{worker_name}] ☁️ 开始上传到云存储...")
-            print(f"[{worker_name}] ☁️ 开始上传到云存储...", file=sys.stderr, flush=True)
             log_print(f"    - 提供商: {config.provider}")
             log_print(f"    - 文件名: {task.filename}")
             log_print(f"    - 文件大小: {file_size / 1024:.2f} KB")
-            print(f"    - 提供商: {config.provider}", file=sys.stderr, flush=True)
-            print(f"    - 文件名: {task.filename}", file=sys.stderr, flush=True)
-            print(f"    - 文件大小: {file_size / 1024:.2f} KB", file=sys.stderr, flush=True)
             await redis_queue.append_task_log(
                 task_id,
                 level="info",
@@ -527,7 +562,6 @@ class UploadWorkerPool:
             )
             
             upload_start = datetime.now()
-            print(f"[{worker_name}] 🔄 调用 StorageService.upload_file()...", file=sys.stderr, flush=True)
             result = await StorageService.upload_file(
                 filename=task.filename,
                 content=content,
@@ -536,11 +570,9 @@ class UploadWorkerPool:
                 config=config.config
             )
             upload_duration = (datetime.now() - upload_start).total_seconds()
-            print(f"[{worker_name}] ✅ StorageService.upload_file() 完成 (耗时: {upload_duration:.2f}s)", file=sys.stderr, flush=True)
             # ✅ Bug修复: result 是字典，需要转换为字符串再截断，或只显示关键信息
             result_str = str(result)
             result_preview = result_str[:80] + '...' if len(result_str) > 80 else result_str
-            print(f"[{worker_name}] ✅ 上传结果: {result_preview}", file=sys.stderr, flush=True)
 
             # ========== 步骤 6: 处理上传结果 ==========
             if result.get('success'):
@@ -714,34 +746,54 @@ class UploadWorkerPool:
         """获取存储配置（自动解密敏感字段）"""
         if storage_id:
             config = db.query(StorageConfig).filter(StorageConfig.id == storage_id).first()
+            if not config:
+                logger.warning(f"[UploadWorkerPool] 指定的存储配置不存在: {storage_id}")
+                return None
+            if not config.enabled:
+                logger.warning(f"[UploadWorkerPool] 指定的存储配置已禁用: {storage_id}")
+                return None
         else:
             user_id = None
             if session_id:
                 session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
                 if session:
                     user_id = session.user_id
+                    logger.debug(f"[UploadWorkerPool] 从会话获取 user_id: {user_id[:8] if user_id else 'None'}...")
+                else:
+                    logger.warning(f"[UploadWorkerPool] 会话不存在: {session_id[:8] if session_id else 'None'}...")
 
             if user_id:
                 active = db.query(ActiveStorage).filter(ActiveStorage.user_id == user_id).first()
+                if active:
+                    logger.debug(f"[UploadWorkerPool] 找到用户激活存储: user_id={user_id[:8]}..., storage_id={active.storage_id[:8] if active.storage_id else 'None'}...")
+                else:
+                    logger.warning(f"[UploadWorkerPool] 用户未设置激活存储: user_id={user_id[:8]}...")
             else:
+                logger.debug(f"[UploadWorkerPool] 尝试使用默认存储配置")
                 active = db.query(ActiveStorage).filter(ActiveStorage.user_id == "default").first()
 
             if active and active.storage_id:
                 config = db.query(StorageConfig).filter(StorageConfig.id == active.storage_id).first()
+                if not config:
+                    logger.warning(f"[UploadWorkerPool] 激活存储配置不存在: storage_id={active.storage_id[:8]}...")
+                    return None
             else:
+                logger.warning(f"[UploadWorkerPool] 未找到激活存储配置 (user_id={user_id[:8] if user_id else 'None'}..., session_id={session_id[:8] if session_id else 'None'}...)")
                 return None
 
-        if not config or not config.enabled:
+        if not config.enabled:
+            logger.warning(f"[UploadWorkerPool] 存储配置已禁用: {config.id[:8] if config else 'None'}...")
             return None
         
         # ⚠️ 重要：解密配置中的敏感字段（accessKeyId, accessKeySecret 等）
         # 因为前端保存时使用 encrypt_config() 加密，后端使用时必须解密
+        # ✅ Bug修复：不能直接修改 SQLAlchemy 模型对象，否则 db.commit() 会将明文写回数据库
+        # 解决方案：从 session 中分离对象（expunge），然后修改副本
         try:
             decrypted_config_dict = decrypt_config(config.config)
-            # 创建一个临时对象或修改原对象的 config 字段
-            # 由于 config.config 是 JSON 字段，我们需要创建一个新的对象或直接修改
-            # 最简单的方式是创建一个新的 StorageConfig 对象，但只修改 config 字段
-            # 或者直接修改原对象的 config 字段（因为它是 JSON 类型，可以修改）
+            # 从 session 中分离对象，避免修改被持久化
+            db.expunge(config)
+            # 现在可以安全地修改 config.config，因为对象已从 session 中分离
             config.config = decrypted_config_dict
             logger.debug(f"[UploadWorkerPool] 已解密存储配置: {config.id} (provider={config.provider})")
         except Exception as e:
@@ -749,6 +801,8 @@ class UploadWorkerPool:
             # 如果解密失败，可能是未加密的历史数据，继续使用原配置
             # 但记录警告日志
             logger.warning(f"[UploadWorkerPool] 使用未解密的配置（可能是历史数据）: {config.id}")
+            # 即使解密失败，也要 expunge 以避免意外修改
+            db.expunge(config)
         
         return config
 
@@ -928,11 +982,21 @@ class UploadWorkerPool:
         ).first()
         
         if attachment:
+            log_print(
+                f"[{worker_name}] 📋 更新前附件状态: "
+                f"user_id={attachment.user_id[:8] if attachment.user_id else 'None'}..., "
+                f"temp_url={'存在' if attachment.temp_url else 'None'}, "
+                f"url={'存在' if attachment.url else 'None'}, "
+                f"upload_status={attachment.upload_status}"
+            )
             attachment.url = url
             attachment.upload_status = 'completed'
-            attachment.temp_url = None
+            attachment.temp_url = None  # ✅ 清空 temp_url，因为已上传到云存储
             db.commit()
-            log_print(f"[{worker_name}] ✅ 附件表已更新: {attachment_id[:8]}...")
+            log_print(
+                f"[{worker_name}] ✅ 附件表已更新: {attachment_id[:8]}... "
+                f"(url={url[:50] if url else 'None'}..., status=completed, temp_url=cleared)"
+            )
         else:
             log_print(f"[{worker_name}] ⚠️ 附件不存在: {attachment_id[:8]}...", "WARNING")
 

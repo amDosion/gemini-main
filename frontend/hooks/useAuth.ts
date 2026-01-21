@@ -36,9 +36,13 @@ export function useAuth(): UseAuthReturn {
             // 尝试获取用户信息
             const [currentUser, config] = await Promise.all([
               authService.getCurrentUser(),
-              authService.getConfig().catch(() => ({ allowRegistration: false }))
+              authService.getConfig().catch((err) => {
+                console.error('[useAuth] 获取配置失败:', err);
+                return { allowRegistration: false };
+              })
             ]);
             setUser(currentUser);
+            console.log('[useAuth] 设置 allowRegistration:', config.allowRegistration);
             setAllowRegistration(config.allowRegistration);
           } catch (err) {
             console.warn('Auth token invalid, attempting refresh:', err);
@@ -71,7 +75,11 @@ export function useAuth(): UseAuthReturn {
           }
         } else {
           // 没有 token，设置为未登录状态
-          const config = await authService.getConfig().catch(() => ({ allowRegistration: false }));
+          const config = await authService.getConfig().catch((err) => {
+            console.error('[useAuth] 获取配置失败（未登录）:', err);
+            return { allowRegistration: false };
+          });
+          console.log('[useAuth] 设置 allowRegistration（未登录）:', config.allowRegistration);
           setAllowRegistration(config.allowRegistration);
           setUser(null);
         }

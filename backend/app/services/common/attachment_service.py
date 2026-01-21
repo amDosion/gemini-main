@@ -16,6 +16,7 @@ import logging
 
 from ...models.db_models import MessageAttachment, UploadTask
 from .redis_queue_service import redis_queue
+from .upload_worker_pool import worker_pool
 
 logger = logging.getLogger(__name__)
 
@@ -196,20 +197,15 @@ class AttachmentService:
         logger.info(f"[AttachmentService] 🔄 [步骤1] 生成附件ID: {attachment_id[:8]}...")
         logger.info(f"[AttachmentService]     - filename: {filename}")
 
-        # ✅ 详细日志：步骤2 - 创建临时代理URL
-        logger.info(f"[AttachmentService] 🔄 [步骤2] 创建临时代理URL...")
-        display_url = ai_url
+        # ✅ 步骤2 - 直接使用原始 URL（Base64 或 HTTP）
+        # 不再创建临时端点，直接返回 Base64 供前端立即显示
+        logger.info(f"[AttachmentService] 🔄 [步骤2] 设置显示URL...")
+        display_url = ai_url  # ✅ 直接返回原始 URL（Base64 或 HTTP）
         if ai_url.startswith('data:'):
-            # Base64 Data URL → 创建临时代理端点
-            # 方案: 创建一个临时的下载端点 /api/temp-images/{attachment_id}
-            # 该端点从temp_url字段读取Base64并返回图片字节流
-            display_url = f"/api/temp-images/{attachment_id}"
-            logger.info(f"[AttachmentService]     - Base64 URL，创建临时代理端点: {display_url}")
-        # 如果是HTTP URL（Tongyi），直接使用
+            logger.info(f"[AttachmentService]     - Base64 Data URL，直接返回供前端显示")
         else:
-            display_url = ai_url
             logger.info(f"[AttachmentService]     - HTTP URL，直接使用: {display_url[:80] + '...' if len(display_url) > 80 else display_url}")
-        logger.info(f"[AttachmentService] ✅ [步骤2] 临时代理URL已创建")
+        logger.info(f"[AttachmentService] ✅ [步骤2] 显示URL已设置")
 
         # ✅ 详细日志：步骤3 - 创建附件记录
         logger.info(f"[AttachmentService] 🔄 [步骤3] 创建附件记录...")
@@ -250,7 +246,7 @@ class AttachmentService:
 
         return {
             'attachment_id': attachment_id,
-            'display_url': display_url,  # ✅ 显示URL（HTTP，绝不是Base64）
+            'display_url': display_url,  # ✅ 显示URL（Base64 Data URL 或 HTTP URL）
             'cloud_url': '',             # ✅ 云URL（空，待上传完成）
             'status': 'pending',
             'task_id': task_id
@@ -564,6 +560,12 @@ class AttachmentService:
             step2_time = (time.time() - start_time) * 1000
             logger.info(f"[AttachmentService] ✅ [步骤2] 任务已入队Redis (耗时: {step2_time:.2f}ms)")
             logger.info(f"[AttachmentService]     - queue_position: {queue_position}")
+
+            # ✅ 步骤3: 确保Worker正在运行（按需启动）
+            logger.info(f"[AttachmentService] 🔄 [步骤3] 确保Worker正在运行...")
+            await worker_pool.ensure_worker_running()
+            step3_time = (time.time() - start_time) * 1000
+            logger.info(f"[AttachmentService] ✅ [步骤3] Worker已启动/运行中 (耗时: {step3_time:.2f}ms)")
         except Exception as e:
             step2_time = (time.time() - start_time) * 1000
             logger.error(f"[AttachmentService] ❌ [步骤2] Redis入队失败 (耗时: {step2_time:.2f}ms): {e}")
