@@ -7,13 +7,16 @@ interface ModeSelectorProps {
   mode: AppMode;
   setMode: (mode: AppMode) => void;
   currentModel?: ModelConfig;
-  visibleModels?: ModelConfig[];  // 新增：所有可见模型列表，用于判断模式可用性
+  visibleModels?: ModelConfig[];  // 当前模式下可见的模型列表
+  allVisibleModels?: ModelConfig[];  // ✅ 新增：完整模型列表（不按模式过滤），用于判断模式可用性
 }
 
-export const ModeSelector: React.FC<ModeSelectorProps> = ({ mode, setMode, currentModel, visibleModels = [] }) => {
-  // 基于 visibleModels 计算每个模式是否有兼容的模型
+export const ModeSelector: React.FC<ModeSelectorProps> = ({ mode, setMode, currentModel, visibleModels = [], allVisibleModels = [] }) => {
+  // ✅ 基于 allVisibleModels（完整模型列表）计算每个模式是否有兼容的模型
+  // 这确保模式可用性判断不受当前模式过滤的影响
   const modeAvailability = useMemo(() => {
-    const models = visibleModels.length > 0 ? visibleModels : (currentModel ? [currentModel] : []);
+    // 优先使用完整模型列表，其次使用当前模式的模型列表，最后使用当前模型
+    const models = allVisibleModels.length > 0 ? allVisibleModels : (visibleModels.length > 0 ? visibleModels : (currentModel ? [currentModel] : []));
     
     // 检查是否有文生图模型
     // 1. 专门的图像生成模型（通过 ID 关键词识别）
@@ -78,14 +81,13 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({ mode, setMode, curre
       'audio-gen': hasAudioModels || true,  // 音频通常有默认支持
       'pdf-extract': hasPdfModels
     };
-  }, [visibleModels, currentModel]);
+  }, [allVisibleModels, visibleModels, currentModel]);
 
   const modes = [
     { id: 'chat', label: 'Chat', icon: MessageSquare, disabled: !modeAvailability.chat, color: 'bg-indigo-600' },
     { id: 'deep-research', label: 'Deep Research', icon: Search, disabled: !modeAvailability['deep-research'], color: 'bg-blue-600' },
     { id: 'multi-agent', label: 'Multi-Agent', icon: Network, disabled: !modeAvailability['multi-agent'], color: 'bg-teal-600' },
     { id: 'image-gen', label: 'Gen', icon: Wand2, disabled: !modeAvailability['image-gen'], color: 'bg-emerald-600' },
-    // 图片编辑模式：拆分为独立的模式
     { id: 'image-chat-edit', label: 'Chat Edit', icon: MessageSquare, disabled: !modeAvailability['image-chat-edit'], color: 'bg-pink-600' },
     { id: 'image-mask-edit', label: 'Mask', icon: Crop, disabled: !modeAvailability['image-mask-edit'], color: 'bg-pink-500' },
     { id: 'image-inpainting', label: 'Inpaint', icon: Wand2, disabled: !modeAvailability['image-inpainting'], color: 'bg-pink-400' },

@@ -202,6 +202,161 @@ def get_model_name(model_id: str) -> str:
     return " ".join(word.capitalize() for word in name.split())
 
 
+def get_model_description(provider: str, model_id: str) -> str:
+    """
+    Generate a meaningful description from model ID.
+    
+    Args:
+        provider: Provider identifier (google, tongyi, etc.)
+        model_id: Model ID
+    
+    Returns:
+        Human-readable description
+    """
+    lower_id = model_id.lower()
+    
+    # Google models
+    if provider.lower() == "google":
+        # Imagen models (image generation)
+        if "imagen" in lower_id:
+            if "4.0" in lower_id:
+                if "ultra" in lower_id:
+                    return "Advanced image generation model with high quality output"
+                elif "fast" in lower_id:
+                    return "Fast image generation model optimized for speed"
+                else:
+                    return "Latest image generation model with enhanced quality"
+            elif "3.0" in lower_id:
+                if "capability" in lower_id:
+                    return "Image editing and manipulation capabilities"
+                else:
+                    return "High-quality image generation model"
+            else:
+                return "Image generation model for creating images from text"
+        
+        # Veo models (video generation)
+        if "veo" in lower_id:
+            if "3.1" in lower_id:
+                if "fast" in lower_id:
+                    return "Fast video generation model optimized for speed"
+                else:
+                    return "Latest video generation model with enhanced quality"
+            elif "3.0" in lower_id:
+                if "fast" in lower_id:
+                    return "Fast video generation model optimized for speed"
+                else:
+                    return "Video generation model for creating videos from text"
+            elif "2.0" in lower_id:
+                return "Video generation model for creating videos from text"
+            else:
+                return "Video generation model for creating videos from text"
+        
+        # Gemini Image models (multimodal image generation/editing)
+        if "gemini" in lower_id and ("image" in lower_id or "-i-" in lower_id):
+            if "3" in lower_id and "pro" in lower_id:
+                return "Advanced multimodal image generation and editing with reasoning"
+            elif "2.5" in lower_id:
+                return "Fast multimodal image generation and editing"
+            elif "2.0" in lower_id:
+                return "Multimodal image generation and editing"
+            else:
+                return "Multimodal image generation and editing model"
+        
+        # Gemini models (chat/multimodal)
+        if "gemini" in lower_id:
+            if "3.0" in lower_id or "3-" in lower_id:
+                if "pro" in lower_id:
+                    return "Advanced multimodal model with vision, search, and reasoning"
+                else:
+                    return "Latest multimodal model with enhanced capabilities"
+            elif "2.5" in lower_id:
+                if "pro" in lower_id:
+                    return "Advanced multimodal model with vision, search, and reasoning"
+                elif "flash" in lower_id:
+                    # 检查是否有特殊变体（lite, preview等）
+                    if "lite" in lower_id:
+                        return "Lightweight fast multimodal model with vision and search"
+                    elif "preview" in lower_id:
+                        return "Preview version - Fast multimodal model with vision and search"
+                    else:
+                        return "Fast multimodal model with vision and search"
+                else:
+                    return "Multimodal model with advanced capabilities"
+            elif "2.0" in lower_id:
+                if "flash" in lower_id:
+                    if "exp" in lower_id:
+                        return "Experimental fast multimodal model"
+                    else:
+                        return "Fast multimodal model with vision capabilities"
+                else:
+                    return "Multimodal model with standard capabilities"
+            elif "1.5" in lower_id:
+                if "pro" in lower_id:
+                    return "Advanced multimodal model with large context window (1M tokens)"
+                elif "flash" in lower_id:
+                    return "Fast multimodal model with standard capabilities"
+                else:
+                    return "Multimodal model with standard capabilities"
+            elif "pro" in lower_id:
+                return "Advanced multimodal model with enhanced capabilities"
+            elif "flash" in lower_id:
+                return "Fast multimodal model optimized for speed"
+            else:
+                return "Multimodal AI model for text and vision tasks"
+        
+        # Embedding models
+        if "embedding" in lower_id or "gecko" in lower_id:
+            return "Text embedding for semantic search and similarity"
+        
+        # Deep Research models
+        if "deep-research" in lower_id:
+            if "pro" in lower_id:
+                return "Advanced research model with search and reasoning capabilities"
+            else:
+                return "Research model with search and reasoning capabilities"
+        
+        # Thinking models
+        if "thinking" in lower_id:
+            return "Advanced reasoning model with thinking capabilities"
+        
+        # Code models
+        if "code" in lower_id:
+            return "Specialized model for code generation and optimization"
+        
+        # Nano-Banana models
+        if "nano-banana" in lower_id:
+            if "pro" in lower_id:
+                return "Advanced multimodal model with vision, search, and reasoning"
+            else:
+                return "Multimodal model with vision and search capabilities"
+        
+        # Default for Google models
+        return f"AI model for various tasks"
+    
+    # Qwen/Tongyi models
+    elif provider.lower() in ["tongyi", "qwen"]:
+        if "qwen" in lower_id:
+            if "vl" in lower_id or lower_id.endswith("-vl"):
+                return "Qwen Vision-Language Model - Multimodal model with vision capabilities"
+            elif "coder" in lower_id:
+                return "Qwen Coder - Code generation and optimization model"
+            elif "deep-research" in lower_id:
+                return "Qwen Deep Research - Research model with search and reasoning"
+            elif "thinking" in lower_id:
+                return "Qwen Thinking - Advanced reasoning model"
+            elif "wanx" in lower_id or "wan2" in lower_id:
+                return "Qwen WanX - Image generation model"
+            elif "image-edit" in lower_id:
+                return "Qwen Image Edit - Image editing model"
+            else:
+                return f"Qwen AI model: {model_id}"
+        else:
+            return f"Tongyi AI model: {model_id}"
+    
+    # Default
+    return f"{provider.capitalize()} AI model: {model_id}"
+
+
 def get_context_window(provider: str, model_id: str) -> Optional[int]:
     """
     Get context window size for a model.
@@ -248,7 +403,7 @@ def build_model_config(provider: str, model_id: str) -> ModelConfig:
     return ModelConfig(
         id=model_id,
         name=get_model_name(model_id),
-        description=f"{provider.capitalize()} model: {model_id}",
+        description=get_model_description(provider, model_id),
         capabilities=get_model_capabilities(provider, model_id),
         context_window=get_context_window(provider, model_id)
     )

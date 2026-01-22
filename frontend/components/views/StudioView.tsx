@@ -25,7 +25,8 @@ interface StudioViewProps {
   onSend: (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => void;
   onStop: () => void;
   activeModelConfig?: ModelConfig;
-  visibleModels?: ModelConfig[];  // 新增：所有可见模型列表
+  visibleModels?: ModelConfig[];  // 当前模式下可见的模型列表
+  allVisibleModels?: ModelConfig[];  // ✅ 新增：完整模型列表（不按模式过滤），用于 ModeSelector 判断模式可用性
   initialPrompt?: string;
   initialAttachments?: Attachment[];
   onEditImage?: (url: string) => void;

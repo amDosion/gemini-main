@@ -367,10 +367,34 @@ class ImagenCoordinator:
         Get capabilities of the current API mode.
         
         Returns:
-            Capabilities dictionary
+            Capabilities dictionary with standardized format:
+            - supported_models: List of supported model IDs
+            - max_images: Maximum number of images per request
+            - supported_aspect_ratios: List of supported aspect ratios
+            - person_generation_modes: List of supported person generation modes
         """
         generator = self.get_generator()
-        return generator.get_capabilities()
+        capabilities = generator.get_capabilities()
+        
+        # Ensure all required fields are present
+        if 'supported_models' not in capabilities:
+            # Try to get from generator if available
+            if hasattr(generator, 'get_supported_models'):
+                try:
+                    capabilities['supported_models'] = generator.get_supported_models()
+                except Exception as e:
+                    logger.warning(f"[ImagenCoordinator] Failed to get supported_models: {e}")
+                    capabilities['supported_models'] = []
+        
+        # Ensure supported_aspect_ratios field exists (standardize from aspect_ratios)
+        if 'supported_aspect_ratios' not in capabilities and 'aspect_ratios' in capabilities:
+            capabilities['supported_aspect_ratios'] = capabilities['aspect_ratios']
+        
+        # Ensure person_generation_modes field exists
+        if 'person_generation_modes' not in capabilities:
+            capabilities['person_generation_modes'] = ['dont_allow', 'allow_adult']
+        
+        return capabilities
     
     def reload_config(self) -> None:
         """

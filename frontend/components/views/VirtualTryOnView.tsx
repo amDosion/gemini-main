@@ -24,6 +24,7 @@ interface VirtualTryOnViewProps {
     onStop: () => void;
     activeModelConfig?: ModelConfig;
     visibleModels?: ModelConfig[];  // 新增
+    allVisibleModels?: ModelConfig[];  // 新增：完整模型列表
     initialPrompt?: string;
     initialAttachments?: Attachment[];
     providerId?: string;
@@ -68,6 +69,7 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
     onStop,
     activeModelConfig,
     visibleModels = [],
+    allVisibleModels = [],  // 新增
     initialPrompt,
     initialAttachments,
     providerId,
@@ -742,6 +744,7 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
                     onStop={onStop}
                     currentModel={activeModelConfig}
                     visibleModels={visibleModels}
+                    allVisibleModels={allVisibleModels}  // 传递完整模型列表
                     mode="virtual-try-on"
                     setMode={setAppMode}
                     initialPrompt={initialPrompt}

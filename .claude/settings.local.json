@@ -62,7 +62,8 @@
       "Bash(winget install:*)",
       "Bash(\"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" --version)",
       "Bash(\"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" pr list)",
-      "Bash(\"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" auth login --web)"
+      "Bash(\"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" auth login --web)",
+      "Bash(if not exist \"D:\\\\gemini-main\\\\cursor-Attachment\\\\.cursor\\\\rules\\\\frontend.mdc\" echo.)"
     ]
   }
 }

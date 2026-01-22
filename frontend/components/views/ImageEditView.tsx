@@ -19,7 +19,8 @@ interface ImageEditViewProps {
     onSend: (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => void;
     onStop: () => void;
     activeModelConfig?: ModelConfig;
-    visibleModels?: ModelConfig[];  // 新增
+    visibleModels?: ModelConfig[];  // 当前模式下可见的模型列表
+    allVisibleModels?: ModelConfig[];  // ✅ 新增：完整模型列表
     initialPrompt?: string;
     initialAttachments?: Attachment[];
     onExpandImage?: (url: string) => void; // Added prop
@@ -239,6 +240,7 @@ export const ImageEditView = memo(({
     onStop,
     activeModelConfig,
     visibleModels = [],
+    allVisibleModels = [],  // ✅ 新增
     initialPrompt,
     initialAttachments,
     onExpandImage,
@@ -653,6 +655,7 @@ export const ImageEditView = memo(({
             onStop={onStop}
             currentModel={activeModelConfig}
             visibleModels={visibleModels}
+            allVisibleModels={allVisibleModels}  // ✅ 传递完整模型列表
             mode={editMode}
             setMode={setAppMode}
             initialPrompt={initialPrompt}

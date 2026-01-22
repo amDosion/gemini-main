@@ -11,6 +11,7 @@ interface AgentViewProps {
     messages: Message[];
     isLoadingModels: boolean;
     visibleModels: ModelConfig[];
+    allVisibleModels?: ModelConfig[];  // ✅ 新增：完整模型列表
     apiKey: string;
     protocol: string;
     onPromptSelect: (text: string, mode: AppMode, modelId: string, requiredCap: string) => void;
@@ -30,6 +31,7 @@ export const AgentView: React.FC<AgentViewProps> = React.memo(({
     messages,
     isLoadingModels,
     visibleModels,
+    allVisibleModels = [],  // ✅ 新增
     apiKey,
     protocol,
     onPromptSelect,
@@ -271,12 +273,13 @@ export const AgentView: React.FC<AgentViewProps> = React.memo(({
             {/* 输入区域（底部固定） */}
             <div className="relative z-20 shrink-0">
                 <div className="absolute bottom-full w-full h-12 bg-gradient-to-t from-slate-950 to-transparent pointer-events-none" />
-                <InputArea 
-                    onSend={onSend} 
-                    isLoading={loadingState !== 'idle'} 
+                <InputArea
+                    onSend={onSend}
+                    isLoading={loadingState !== 'idle'}
                     onStop={onStop}
                     currentModel={activeModelConfig}
                     visibleModels={visibleModels}
+                    allVisibleModels={allVisibleModels}  // ✅ 传递完整模型列表
                     mode={appMode}
                     setMode={setAppMode}
                     providerId={providerId}

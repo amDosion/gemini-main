@@ -507,19 +507,59 @@ class VertexAIImageGenerator(BaseImageGenerator):
             )
     
     def get_capabilities(self) -> Dict[str, Any]:
-        """Get Vertex AI capabilities."""
+        """
+        Get Vertex AI capabilities.
+        
+        Returns:
+            Dictionary containing:
+            - api_type: 'vertex_ai'
+            - supported_models: List of supported model IDs
+            - max_images: Maximum number of images per request
+            - supported_aspect_ratios: List of supported aspect ratios
+            - aspect_ratios: Same as supported_aspect_ratios (backward compatibility)
+            - image_sizes: List of supported image sizes
+            - person_generation_modes: List of supported person generation modes
+        """
+        # Get supported models dynamically
+        try:
+            supported_models = self.get_supported_models()
+        except Exception as e:
+            logger.warning(f"[VertexAIImageGenerator] Failed to get supported models: {e}, using fallback list")
+            # Fallback to static list if dynamic fetch fails
+            supported_models = [
+                'imagen-4.0-generate-001',
+                'imagen-4.0-fast-generate-001',
+                'imagen-4.0-ultra-generate-001',
+                'imagen-3.0-generate-002',
+                'imagen-3.0-generate-001',
+                'imagen-3.0-fast-generate-001',
+                'gemini-3-pro-image-preview',
+                'gemini-2.5-flash-image-preview',
+                'veo-3.1-generate-preview',
+                'veo-3.1-fast-generate-preview'
+            ]
+        
         return {
             'api_type': 'vertex_ai',
+            'supported_models': supported_models,  # ✅ 新增：支持的模型列表
             'max_images': 4,
-            'aspect_ratios': VALID_ASPECT_RATIOS,
-            'image_sizes': VALID_IMAGE_SIZES
+            'supported_aspect_ratios': VALID_ASPECT_RATIOS,  # ✅ 新增：标准字段名
+            'aspect_ratios': VALID_ASPECT_RATIOS,  # 保留向后兼容
+            'image_sizes': VALID_IMAGE_SIZES,
+            'person_generation_modes': ['dont_allow', 'allow_adult']  # ✅ 新增：根据官方文档，Imagen 4.0 支持 Person generation
         }
     
     def get_supported_models(self) -> List[str]:
         """
-        Get supported models from Vertex AI.
+        Get supported image generation models from Vertex AI.
         
         Returns list of model short names (without 'publishers/google/models/' prefix).
+        
+        Note: Only includes actual image generation models, excludes:
+        - Image editing models (capability-*, ingredients-*)
+        - Image segmentation models (segmentation-*)
+        - Image classification/detection models (classification-*, detection-*)
+        - Special purpose models (product-recontext-*, virtual-try-on-*)
         """
         try:
             self._ensure_initialized()
@@ -527,29 +567,71 @@ class VertexAIImageGenerator(BaseImageGenerator):
             # List all models from Vertex AI
             models_list = self._client.models.list()
             
-            # Extract model names and filter for image-related models
+            # Extract model names and filter for image generation models only
             supported_models = []
+            excluded_keywords = [
+                'capability',  # 编辑模型：imagen-3.0-capability-001
+                'ingredients',  # 编辑模型：imagen-4.0-ingredients-*
+                'segmentation',  # 分割模型：image-segmentation-001
+                'classification',  # 分类模型：imageclassification-*
+                'detection',  # 检测模型：imageobjectdetection-*
+                'recontext',  # 特殊用途：imagen-product-recontext-*
+                'virtual-try-on',  # 特殊用途：virtual-try-on-*
+                'product-recognizer',  # 产品识别
+                'watermarkdetector',  # 水印检测
+                'earth-ai-imagery',  # 地球AI图像（特殊用途）
+            ]
+            
             for model in models_list:
                 model_name = model.name if hasattr(model, 'name') else str(model)
                 
                 # Extract short name from full path
                 short_name = model_name.split('/')[-1] if '/' in model_name else model_name
+                short_name_lower = short_name.lower()
                 
-                # Filter for image generation models
-                if any(keyword in short_name.lower() for keyword in ['imagen', 'image', 'veo']):
+                # Skip excluded models
+                if any(excluded in short_name_lower for excluded in excluded_keywords):
+                    continue
+                
+                # Include only actual image generation models
+                # 1. Imagen generate models (imagen-*-generate-*)
+                if short_name_lower.startswith('imagen-') and 'generate' in short_name_lower:
+                    supported_models.append(short_name)
+                # 2. Gemini image models (gemini-*-image-*)
+                elif 'gemini' in short_name_lower and 'image' in short_name_lower:
+                    supported_models.append(short_name)
+                # 3. Veo video/image generation models (veo-*-generate-*)
+                elif short_name_lower.startswith('veo-') and 'generate' in short_name_lower:
+                    supported_models.append(short_name)
+                # 4. Legacy imagegeneration model (if exists)
+                elif short_name_lower == 'imagegeneration':
                     supported_models.append(short_name)
             
-            logger.info(f"[VertexAIImageGenerator] Found {len(supported_models)} image models")
+            # Sort models for consistent output
+            supported_models.sort()
+            
+            logger.info(f"[VertexAIImageGenerator] Found {len(supported_models)} image generation models")
+            if supported_models:
+                logger.debug(f"[VertexAIImageGenerator] Models: {', '.join(supported_models[:10])}{'...' if len(supported_models) > 10 else ''}")
+            
             return supported_models
             
         except Exception as e:
             logger.warning(f"[VertexAIImageGenerator] Failed to list models dynamically: {e}")
-            # Fallback to static list
+            # Fallback to static list of core generation models
             return [
                 'imagen-4.0-generate-001',
+                'imagen-4.0-fast-generate-001',
+                'imagen-4.0-ultra-generate-001',
+                'imagen-3.0-generate-001',
                 'imagen-3.0-generate-002',
+                'imagen-3.0-fast-generate-001',
                 'gemini-3-pro-image-preview',
                 'gemini-2.5-flash-image-preview',
-                'veo-3.1-generate-preview',
-                'veo-3.1-fast-generate-preview'
+                'gemini-2.5-flash-image',
+                'veo-3.1-generate-001',
+                'veo-3.1-fast-generate-001',
+                'veo-3.0-generate-001',
+                'veo-3.0-fast-generate-001',
+                'veo-2.0-generate-001'
             ]

@@ -31,6 +31,7 @@ interface PdfExtractViewProps {
   onStop: () => void;
   activeModelConfig?: ModelConfig;
   visibleModels?: ModelConfig[];  // 新增
+  allVisibleModels?: ModelConfig[];  // 新增：完整模型列表
   providerId?: string;
   onDeleteMessage?: (messageId: string) => void;
 }
@@ -43,6 +44,7 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
   onStop,
   activeModelConfig,
   visibleModels = [],
+  allVisibleModels = [],  // 新增
   providerId,
   onDeleteMessage
 }) => {
@@ -255,6 +257,7 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
           isLoading={loadingState === 'loading'}
           currentModel={activeModelConfig}
           visibleModels={visibleModels}
+          allVisibleModels={allVisibleModels}  // 传递完整模型列表
           hasActiveContext={false}
           providerId={providerId}
           initialPrompt="Extract details from this document."

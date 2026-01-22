@@ -1,0 +1,126 @@
+---
+description: 测试代码规范 - 适用于所有测试文件
+globs:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.spec.ts"
+  - "**/*.spec.tsx"
+  - "**/tests/**/*.py"
+  - "**/test_*.py"
+  - "**/__tests__/**/*"
+---
+
+# 测试代码规范
+
+## 禁止使用 Emoji
+
+**重要**: 在测试脚本中 **禁止使用任何 Emoji 字符**。
+
+### 原因
+
+Windows 系统的控制台默认编码可能不支持 Emoji，导致：
+- 测试输出乱码
+- 测试脚本执行失败
+- CI/CD 管道中的编码错误
+- 日志文件损坏
+
+### 禁止示例
+
+```python
+# ❌ 禁止
+def test_success():
+    print("✅ Test passed!")
+    assert result == expected, "❌ Failed: values don't match"
+
+# ❌ 禁止
+class TestUser:
+    """🧪 User tests"""
+    pass
+```
+
+```typescript
+// ❌ 禁止
+it('should work ✅', () => {
+  expect(result).toBe(expected);
+});
+
+// ❌ 禁止
+describe('🧪 Component tests', () => {
+  // ...
+});
+```
+
+### 正确示例
+
+```python
+# ✅ 正确
+def test_success():
+    print("[PASS] Test passed!")
+    assert result == expected, "[FAIL] Failed: values don't match"
+
+# ✅ 正确
+class TestUser:
+    """User tests"""
+    pass
+```
+
+```typescript
+// ✅ 正确
+it('should work', () => {
+  expect(result).toBe(expected);
+});
+
+// ✅ 正确
+describe('Component tests', () => {
+  // ...
+});
+```
+
+### 替代方案
+
+| Emoji | 替代文本 |
+|-------|---------|
+| ✅ | `[PASS]`, `[OK]`, `[SUCCESS]` |
+| ❌ | `[FAIL]`, `[ERROR]`, `[FAILED]` |
+| ⚠️ | `[WARN]`, `[WARNING]` |
+| 🧪 | `[TEST]` |
+| 📝 | `[NOTE]` |
+| 🔍 | `[DEBUG]` |
+| ℹ️ | `[INFO]` |
+
+## 其他测试规范
+
+### 测试命名
+- 使用清晰的描述性名称
+- Python: `test_<功能>_<场景>_<预期结果>`
+- TypeScript: `should <行为> when <条件>`
+
+### 测试结构
+```python
+def test_example():
+    # Arrange - 准备
+    data = create_test_data()
+
+    # Act - 执行
+    result = function_under_test(data)
+
+    # Assert - 断言
+    assert result == expected
+```
+
+### Mock 使用
+- Mock 外部依赖（API、数据库）
+- 不要 Mock 被测试的代码本身
+- 清理 Mock（使用 `beforeEach`/`afterEach`）
+
+### 断言信息
+- 提供有意义的错误消息
+- 使用纯 ASCII 字符
+
+```python
+# ✅ 正确
+assert user.name == "test", f"[FAIL] Expected name 'test', got '{user.name}'"
+
+# ❌ 错误
+assert user.name == "test", f"❌ Expected name 'test', got '{user.name}'"
+```

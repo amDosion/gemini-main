@@ -20,6 +20,7 @@ interface ImageExpandViewProps {
     onStop: () => void;
     activeModelConfig?: ModelConfig;
     visibleModels?: ModelConfig[];  // 新增
+    allVisibleModels?: ModelConfig[];  // 新增：完整模型列表
     initialAttachments?: Attachment[];
     providerId?: string;
     sessionId?: string | null;  // ✅ 会话 ID，用于查询附件
@@ -208,6 +209,7 @@ export const ImageExpandView = memo(({
     onStop,
     activeModelConfig,
     visibleModels = [],
+    allVisibleModels = [],  // 新增
     initialAttachments,
     providerId,
     sessionId: currentSessionId  // ✅ 接收 sessionId
@@ -450,6 +452,7 @@ export const ImageExpandView = memo(({
                     onStop={onStop}
                     currentModel={activeModelConfig}
                     visibleModels={visibleModels}
+                    allVisibleModels={allVisibleModels}  // 传递完整模型列表
                     mode="image-outpainting"
                     setMode={setAppMode}
                     // Sync State

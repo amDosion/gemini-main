@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Save, Loader2, X, Image as ImageIcon, RefreshCw, CheckCircle2, AlertTriangle, Check } from 'lucide-react';
+import { Save, Loader2, X, Image as ImageIcon, RefreshCw, CheckCircle2, AlertTriangle, Check, Eye, Search, Brain, Code } from 'lucide-react';
 import { db } from '../../../services/db';
 import { 
     ImagenAPISettings, 
@@ -9,7 +9,7 @@ import {
 import { ModelConfig } from '../../../types/types';
 import { useToastContext } from '../../../contexts/ToastContext';
 
-interface ImagenTabProps {
+interface VertexAIConfigurationProps {
     footerNode?: HTMLDivElement | null;
     onClose: () => void;
 }
@@ -18,6 +18,13 @@ interface VertexAIModel {
     id: string;
     name: string;
     displayName?: string;
+    description?: string;
+    capabilities?: {
+        vision: boolean;
+        search: boolean;
+        reasoning: boolean;
+        coding: boolean;
+    };
 }
 
 interface VerifyVertexAIResponse {
@@ -26,7 +33,7 @@ interface VerifyVertexAIResponse {
     models: VertexAIModel[];
 }
 
-export const ImagenTab: React.FC<ImagenTabProps> = ({
+export const VertexAIConfiguration: React.FC<VertexAIConfigurationProps> = ({
     footerNode,
     onClose
 }) => {
@@ -64,10 +71,18 @@ export const ImagenTab: React.FC<ImagenTabProps> = ({
                 // Restore saved models and display them if available
                 if (data.savedModels && data.savedModels.length > 0) {
                     // Convert ModelConfig[] to VertexAIModel[]
+                    // ✅ 保留 capabilities 和 description 信息
                     const savedModelList: VertexAIModel[] = data.savedModels.map((sm: ModelConfig) => ({
                         id: sm.id,
                         name: sm.name || sm.id,
-                        displayName: sm.name || sm.id
+                        displayName: sm.name || sm.id,
+                        description: sm.description,  // ✅ 保留描述
+                        capabilities: sm.capabilities || {
+                            vision: false,
+                            search: false,
+                            reasoning: false,
+                            coding: false
+                        }
                     }));
                     
                     // Also include hidden models in the display (but unselected)
@@ -93,7 +108,7 @@ export const ImagenTab: React.FC<ImagenTabProps> = ({
                     setSelectedModels(new Set(data.savedModels.map((sm: ModelConfig) => sm.id)));
                 }
             } catch (error: any) {
-                console.error('[ImagenTab] Failed to load Imagen configuration:', error);
+                console.error('[VertexAIConfiguration] Failed to load Imagen configuration:', error);
                 setImagenConfig({
                     apiMode: 'vertex_ai',
                     geminiApiKey: '',
@@ -147,7 +162,14 @@ export const ImagenTab: React.FC<ImagenTabProps> = ({
                     return {
                         id: shortId,
                         name: shortName,
-                        displayName: m.displayName || shortName
+                        displayName: m.displayName || shortName,
+                        description: m.description,  // ✅ 保留后端返回的描述
+                        capabilities: m.capabilities || {
+                            vision: false,
+                            search: false,
+                            reasoning: false,
+                            coding: false
+                        }
                     };
                 });
                 
@@ -158,13 +180,14 @@ export const ImagenTab: React.FC<ImagenTabProps> = ({
                 
                 setVerifiedModels(uniqueModels);
                 
-                // Restore saved models selection from database if available
-                // First, try to load saved configuration
+                // ✅ Verify Connection 时，不使用数据库中的旧模型列表
+                // 只恢复已保存的模型选择状态（哪些模型被选中），但使用最新获取的模型数据
+                // 这样可以确保显示的是最新的模型列表，而不是数据库中的旧数据
                 try {
                     // 编辑模式：传递 edit_mode=true 以获取解密后的凭证
                     const configData = await db.request<ImagenConfigResponse>('/vertex-ai/config?edit_mode=true');
                     if (configData.savedModels && configData.savedModels.length > 0) {
-                        // Restore selected models from savedModels
+                        // 只恢复选中状态，使用最新获取的模型数据
                         const savedModelIds = configData.savedModels.map((sm: ModelConfig) => sm.id);
                         const validSavedModels = savedModelIds.filter(id => 
                             uniqueModels.some(m => m.id === id)
@@ -172,11 +195,11 @@ export const ImagenTab: React.FC<ImagenTabProps> = ({
                         
                         if (validSavedModels.length > 0) {
                             setSelectedModels(new Set(validSavedModels));
-                            return; // Exit early if we restored from saved models
+                            return; // Exit early if we restored selection from saved models
                         }
                     }
                 } catch (e) {
-                    console.warn('[ImagenTab] Failed to load saved config during verification:', e);
+                    console.warn('[VertexAIConfiguration] Failed to load saved config during verification:', e);
                 }
                 
                 // Fallback: use current selection or auto-select image-related models
@@ -201,7 +224,7 @@ export const ImagenTab: React.FC<ImagenTabProps> = ({
                 setVerifyError(response.message || "Connection established, but no models were returned.");
             }
         } catch (e: any) {
-            console.error('[ImagenTab] Verification failed:', e);
+            console.error('[VertexAIConfiguration] Verification failed:', e);
             setVerifyError(e.message || "Connection failed.");
         } finally {
             setIsVerifying(false);
@@ -225,13 +248,19 @@ export const ImagenTab: React.FC<ImagenTabProps> = ({
             setIsSaving(true);
             
             // Convert selected models to ModelConfig format
+            // ✅ 使用从后端返回的 capabilities 和 description，而不是全部 false 或和 name 一样
             const selectedModelConfigs: ModelConfig[] = verifiedModels
                 .filter(m => selectedModels.has(m.id))
                 .map(m => ({
                     id: m.id,
                     name: m.displayName || m.name || m.id,
-                    description: m.displayName || m.name || m.id,
-                    capabilities: { vision: false, search: false, reasoning: false, coding: false },
+                    description: m.description || m.displayName || m.name || m.id,  // ✅ 优先使用后端返回的描述
+                    capabilities: m.capabilities || {
+                        vision: false,
+                        search: false,
+                        reasoning: false,
+                        coding: false
+                    },
                     contextWindow: 0
                 }));
             
@@ -258,7 +287,7 @@ export const ImagenTab: React.FC<ImagenTabProps> = ({
             showSuccess('Vertex AI configuration saved successfully!');
             onClose();
         } catch (error: any) {
-            console.error('[ImagenTab] Failed to save Vertex AI configuration:', error);
+            console.error('[VertexAIConfiguration] Failed to save Vertex AI configuration:', error);
             showError(`Failed to save Vertex AI configuration: ${error.message}`);
         } finally {
             setIsSaving(false);
@@ -438,13 +467,56 @@ export const ImagenTab: React.FC<ImagenTabProps> = ({
                                                             <div className={`text-xs md:text-[11px] font-medium truncate leading-tight flex items-center gap-1 ${
                                                                 isSelected ? 'text-slate-200' : 'text-slate-500'
                                                             }`}>
-                                                                {model.displayName || model.name}
+                                                                {model.id}
                                                                 {isImageModel && (
                                                                     <ImageIcon size={10} className="text-indigo-400 shrink-0" />
                                                                 )}
                                                             </div>
-                                                            <div className="text-[10px] text-slate-600 font-mono truncate leading-tight opacity-70">
-                                                                {model.id}
+                                                            {/* ✅ 显示描述（如果存在且与ID不同，且不包含ID的主要部分） */}
+                                                            {(() => {
+                                                                if (!model.description || model.description === model.id) {
+                                                                    return null;
+                                                                }
+                                                                // 检查描述是否包含ID的主要关键词（避免重复显示）
+                                                                const idWords = model.id.toLowerCase().split(/[-_\s]+/).filter(w => w.length > 2);
+                                                                const descLower = model.description.toLowerCase();
+                                                                const hasMajorOverlap = idWords.some(word => descLower.includes(word));
+                                                                // 如果描述包含ID的主要部分，则不显示描述
+                                                                if (hasMajorOverlap && idWords.length > 2) {
+                                                                    return null;
+                                                                }
+                                                                return (
+                                                                    <div className="text-[10px] text-slate-500 truncate leading-tight mt-0.5 opacity-80">
+                                                                        {model.description}
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                            <div className="flex items-center gap-1.5 mt-0.5">
+                                                                {/* 能力图标 */}
+                                                                {model.capabilities && (
+                                                                    <div className="flex items-center gap-1 shrink-0">
+                                                                        {model.capabilities.vision && (
+                                                                            <div title="Vision">
+                                                                                <Eye size={9} className="text-blue-400" />
+                                                                            </div>
+                                                                        )}
+                                                                        {model.capabilities.search && (
+                                                                            <div title="Search">
+                                                                                <Search size={9} className="text-green-400" />
+                                                                            </div>
+                                                                        )}
+                                                                        {model.capabilities.reasoning && (
+                                                                            <div title="Reasoning">
+                                                                                <Brain size={9} className="text-purple-400" />
+                                                                            </div>
+                                                                        )}
+                                                                        {model.capabilities.coding && (
+                                                                            <div title="Coding">
+                                                                                <Code size={9} className="text-orange-400" />
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     </div>

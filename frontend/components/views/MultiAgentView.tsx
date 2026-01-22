@@ -17,6 +17,7 @@ interface MultiAgentViewProps {
     messages: Message[];
     isLoadingModels: boolean;
     visibleModels: ModelConfig[];
+    allVisibleModels?: ModelConfig[];  // ✅ 新增：完整模型列表
     apiKey: string;
     protocol: string;
     onPromptSelect: (text: string, mode: AppMode, modelId: string, requiredCap: string) => void;
@@ -36,6 +37,7 @@ export const MultiAgentView: React.FC<MultiAgentViewProps> = React.memo(({
     messages,
     isLoadingModels,
     visibleModels,
+    allVisibleModels = [],  // ✅ 新增
     apiKey,
     protocol,
     onPromptSelect,
@@ -333,12 +335,13 @@ export const MultiAgentView: React.FC<MultiAgentViewProps> = React.memo(({
             }
             bottom={
                 viewMode === 'chat' ? (
-                    <InputArea 
-                        onSend={onSend} 
-                        isLoading={loadingState !== 'idle'} 
+                    <InputArea
+                        onSend={onSend}
+                        isLoading={loadingState !== 'idle'}
                         onStop={onStop}
                         currentModel={activeModelConfig}
                         visibleModels={visibleModels}
+                        allVisibleModels={allVisibleModels}  // ✅ 传递完整模型列表
                         mode={appMode}
                         setMode={setAppMode}
                         providerId={providerId}

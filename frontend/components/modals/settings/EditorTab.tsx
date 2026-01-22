@@ -555,11 +555,27 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                                                         </div>
                                                         <div className="min-w-0 flex-1 overflow-hidden">
                                                             <div className={`text-xs md:text-[11px] font-medium truncate leading-tight ${!isHidden ? 'text-slate-200' : 'text-slate-500'}`}>
-                                                                {model.name}
-                                                            </div>
-                                                            <div className="text-[10px] text-slate-600 font-mono truncate leading-tight opacity-70">
                                                                 {model.id}
                                                             </div>
+                                                            {/* ✅ 显示描述（如果存在且与ID不同，且不包含ID的主要部分） */}
+                                                            {(() => {
+                                                                if (!model.description || model.description === model.id) {
+                                                                    return null;
+                                                                }
+                                                                // 检查描述是否包含ID的主要关键词（避免重复显示）
+                                                                const idWords = model.id.toLowerCase().split(/[-_\s]+/).filter(w => w.length > 2);
+                                                                const descLower = model.description.toLowerCase();
+                                                                const hasMajorOverlap = idWords.some(word => descLower.includes(word));
+                                                                // 如果描述包含ID的主要部分，则不显示描述
+                                                                if (hasMajorOverlap && idWords.length > 2) {
+                                                                    return null;
+                                                                }
+                                                                return (
+                                                                    <div className="text-[10px] text-slate-500 truncate leading-tight mt-0.5 opacity-80">
+                                                                        {model.description}
+                                                                    </div>
+                                                                );
+                                                            })()}
                                                         </div>
                                                     </div>
                                                 );

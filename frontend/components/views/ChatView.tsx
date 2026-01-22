@@ -9,6 +9,7 @@ interface ChatViewProps {
     messages: Message[];
     isLoadingModels: boolean;
     visibleModels: ModelConfig[];
+    allVisibleModels?: ModelConfig[];  // ✅ 新增：完整模型列表
     apiKey: string;
     protocol: string;
     onPromptSelect: (text: string, mode: AppMode, modelId: string, requiredCap: string) => void;
@@ -28,6 +29,7 @@ export const ChatView: React.FC<ChatViewProps> = React.memo(({
     messages,
     isLoadingModels,
     visibleModels,
+    allVisibleModels = [],  // ✅ 新增
     apiKey,
     protocol,
     onPromptSelect,
@@ -184,12 +186,13 @@ export const ChatView: React.FC<ChatViewProps> = React.memo(({
             {/* Input Area Overlay */}
             <div className="relative z-20 shrink-0">
                 <div className="absolute bottom-full w-full h-12 bg-gradient-to-t from-slate-950 to-transparent pointer-events-none" />
-                <InputArea 
-                    onSend={onSend} 
-                    isLoading={loadingState !== 'idle'} 
+                <InputArea
+                    onSend={onSend}
+                    isLoading={loadingState !== 'idle'}
                     onStop={onStop} // Pass the real stop handler
                     currentModel={activeModelConfig}
                     visibleModels={visibleModels}
+                    allVisibleModels={allVisibleModels}  // ✅ 传递完整模型列表
                     mode={appMode} // ✅ 修复：使用传入的 appMode 而不是硬编码 "chat"
                     setMode={setAppMode}
                     providerId={providerId}

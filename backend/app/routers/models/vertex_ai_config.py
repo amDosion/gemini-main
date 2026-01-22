@@ -119,11 +119,24 @@ class TestConnectionResponse(BaseModel):
     details: Optional[Dict[str, Any]] = None
 
 
+class ModelCapabilities(BaseModel):
+    """Model capabilities for display"""
+    vision: bool = False
+    search: bool = False
+    reasoning: bool = False
+    coding: bool = False
+    
+    class Config:
+        populate_by_name = True
+
+
 class VertexAIModel(BaseModel):
     """Model information from Vertex AI"""
     id: str
     name: str
     display_name: Optional[str] = Field(default=None, alias='displayName')
+    description: Optional[str] = Field(default=None, description="Model description")
+    capabilities: Optional[ModelCapabilities] = Field(default=None, description="Model capabilities (vision, search, reasoning, coding)")
     
     class Config:
         populate_by_name = True
@@ -307,6 +320,32 @@ async def get_vertex_ai_config(
             f"vertex_configured={vertex_ai_configured}"
         )
 
+        # ✅ 读取时也检查并补充描述（处理旧数据）
+        saved_models = user_config.saved_models or []
+        if saved_models:
+            from ...services.common.model_capabilities import get_model_description
+            enriched_saved_models = []
+            for model_data in saved_models:
+                if isinstance(model_data, dict):
+                    model_id = model_data.get('id', '')
+                    name = model_data.get('name', model_id)
+                    description = model_data.get('description', '')
+                    
+                    # ✅ 如果 description 缺失或和 name 一样，补充描述
+                    if not description or description == name or description == f'Model: {model_id}':
+                        try:
+                            model_data = model_data.copy()  # 避免修改原数据
+                            model_data['description'] = get_model_description('google', model_id)
+                            logger.debug(f"[VertexAIConfig] Enriched description for {model_id} during read")
+                        except Exception as e:
+                            logger.warning(f"[VertexAIConfig] Failed to enrich description for {model_id} during read: {e}")
+                    
+                    enriched_saved_models.append(model_data)
+                else:
+                    enriched_saved_models.append(model_data)
+            
+            saved_models = enriched_saved_models
+
         return VertexAIConfigResponse(
             api_mode=user_config.api_mode,
             capabilities=capabilities,
@@ -316,7 +355,7 @@ async def get_vertex_ai_config(
             vertex_ai_location=vertex_ai_location,
             vertex_ai_credentials_json=vertex_ai_credentials_json,
             hidden_models=user_config.hidden_models or [],
-            saved_models=user_config.saved_models or []
+            saved_models=saved_models  # ✅ 使用补充后的 saved_models
         )
 
     except HTTPException:
@@ -452,9 +491,98 @@ async def update_vertex_ai_config(
                     user_config.hidden_models = []
             
             if hasattr(request_body, 'savedModels') and request_body.savedModels is not None:
-                user_config.saved_models = request_body.savedModels
+                # ✅ 确保保存的模型包含完整的能力信息和描述
+                # 如果前端传递的模型缺少 capabilities 或 description，从 model_capabilities 获取
+                from ...services.common.model_capabilities import get_google_capabilities, build_model_config, get_model_description
+                
+                enriched_saved_models = []
+                for model_data in request_body.savedModels:
+                    # 如果已经是完整的 ModelConfig 格式（包含 capabilities），直接使用
+                    if isinstance(model_data, dict) and 'capabilities' in model_data:
+                        model_id = model_data.get('id', '')
+                        
+                        # 检查 capabilities 是否全部为 False（可能是前端默认值）
+                        caps = model_data.get('capabilities', {})
+                        if not any([caps.get('vision', False), caps.get('search', False), 
+                                   caps.get('reasoning', False), caps.get('coding', False)]):
+                            # 如果全部为 False，尝试从 model_capabilities 获取真实能力
+                            try:
+                                model_caps = get_google_capabilities(model_id)
+                                model_data['capabilities'] = {
+                                    'vision': model_caps.vision,
+                                    'search': model_caps.search,
+                                    'reasoning': model_caps.reasoning,
+                                    'coding': model_caps.coding
+                                }
+                                logger.debug(f"[VertexAIConfig] Enriched capabilities for {model_id}")
+                            except Exception as e:
+                                logger.warning(f"[VertexAIConfig] Failed to enrich capabilities for {model_id}: {e}")
+                        
+                        # ✅ 检查 description 是否和 name 一样，如果是，生成更好的描述
+                        description = model_data.get('description', '')
+                        name = model_data.get('name', model_id)
+                        if not description or description == name or description == f'Model: {model_id}':
+                            try:
+                                model_data['description'] = get_model_description('google', model_id)
+                                logger.debug(f"[VertexAIConfig] Enriched description for {model_id}")
+                            except Exception as e:
+                                logger.warning(f"[VertexAIConfig] Failed to enrich description for {model_id}: {e}")
+                        
+                        enriched_saved_models.append(model_data)
+                    else:
+                        # 如果是简单格式，构建完整的 ModelConfig
+                        model_id = model_data.get('id') if isinstance(model_data, dict) else str(model_data)
+                        try:
+                            model_config = build_model_config('google', model_id)
+                            enriched_saved_models.append({
+                                'id': model_config.id,
+                                'name': model_config.name,
+                                'description': model_config.description,  # ✅ 使用生成的描述
+                                'capabilities': {
+                                    'vision': model_config.capabilities.vision,
+                                    'search': model_config.capabilities.search,
+                                    'reasoning': model_config.capabilities.reasoning,
+                                    'coding': model_config.capabilities.coding
+                                },
+                                'contextWindow': model_config.context_window
+                            })
+                        except Exception as e:
+                            logger.warning(f"[VertexAIConfig] Failed to build model config for {model_id}: {e}")
+                            # Fallback: 使用原始数据，但添加默认 capabilities 和描述
+                            if isinstance(model_data, dict):
+                                model_data['capabilities'] = model_data.get('capabilities', {
+                                    'vision': False,
+                                    'search': False,
+                                    'reasoning': False,
+                                    'coding': False
+                                })
+                                # ✅ 如果没有描述或描述和 name 一样，生成描述
+                                if not model_data.get('description') or model_data.get('description') == model_data.get('name', model_id):
+                                    try:
+                                        model_data['description'] = get_model_description('google', model_id)
+                                    except:
+                                        model_data['description'] = f'Google AI model: {model_id}'
+                                enriched_saved_models.append(model_data)
+                            else:
+                                try:
+                                    desc = get_model_description('google', model_id)
+                                except:
+                                    desc = f'Google AI model: {model_id}'
+                                enriched_saved_models.append({
+                                    'id': model_id,
+                                    'name': model_id,
+                                    'description': desc,
+                                    'capabilities': {
+                                        'vision': False,
+                                        'search': False,
+                                        'reasoning': False,
+                                        'coding': False
+                                    }
+                                })
+                
+                user_config.saved_models = enriched_saved_models
                 logger.info(
-                    f"[VertexAIConfig] Saved {len(request_body.savedModels)} model configurations for user={user_id}"
+                    f"[VertexAIConfig] Saved {len(enriched_saved_models)} model configurations with capabilities for user={user_id}"
                 )
             elif request_body.apiMode == 'vertex_ai':
                 # If not provided but in vertex_ai mode, initialize as empty array
@@ -479,6 +607,8 @@ async def update_vertex_ai_config(
         
         # Build response with updated configuration
         # Get capabilities (reuse logic from get_vertex_ai_config)
+        # ✅ 注意：数据库事务已在上面提交，这里直接获取 capabilities
+        
         default_capabilities = {
             "supported_models": ["imagen-3.0-generate-001"],
             "max_images": 8,
@@ -490,13 +620,24 @@ async def update_vertex_ai_config(
         api_key = await _get_google_api_key(db, user_id)
         if api_key:
             try:
+                # ✅ 创建新的 GoogleService 实例，确保使用最新的配置
+                # 注意：ImageGenerator 内部的 ImagenCoordinator 会从数据库重新加载配置
                 service = ProviderFactory.create(
                     provider="google",
                     api_key=api_key,
                     user_id=user_id,
                     db=db
                 )
+                
+                # ✅ 如果 ImageGenerator 有 reload_config 方法，调用它以确保使用最新配置
+                if hasattr(service, 'image_generator') and hasattr(service.image_generator, '_coordinator'):
+                    coordinator = service.image_generator._coordinator
+                    if hasattr(coordinator, 'reload_config'):
+                        logger.info(f"[VertexAIConfig] Reloading ImagenCoordinator config for user={user_id}")
+                        coordinator.reload_config()
+                
                 capabilities = service.get_imagen_capabilities()
+                logger.info(f"[VertexAIConfig] Got capabilities after config update: supported_models={len(capabilities.get('supported_models', []))}")
             except Exception as e:
                 logger.warning(f"[VertexAIConfig] Failed to get capabilities, using defaults: {e}")
         
@@ -718,19 +859,49 @@ async def verify_vertex_ai_connection(
             # Initialize client
             client = genai.Client()
             
-            # List all models
+            # ✅ List all models - 直接调用 API，不使用缓存，确保获取最新数据
+            # 注意：genai.Client().models.list() 是实时调用 Vertex AI API，不涉及缓存
             models_list = client.models.list()
             
-            # Convert to response format
+            # Import model capabilities and description functions
+            from ...services.common.model_capabilities import get_google_capabilities, get_model_description
+            
+            # Convert to response format with capabilities and description
             models = []
             for model in models_list:
                 model_name = model.name if hasattr(model, 'name') else str(model)
                 display_name = model.display_name if hasattr(model, 'display_name') else model_name
                 
+                # Extract short model ID for capability lookup
+                # e.g., "publishers/google/models/gemini-3-pro-image-preview" -> "gemini-3-pro-image-preview"
+                short_model_id = model_name.split('/')[-1] if '/' in model_name else model_name
+                
+                # Get model capabilities
+                try:
+                    caps = get_google_capabilities(short_model_id)
+                    capabilities = ModelCapabilities(
+                        vision=caps.vision,
+                        search=caps.search,
+                        reasoning=caps.reasoning,
+                        coding=caps.coding
+                    )
+                except Exception as e:
+                    logger.warning(f"[VertexAIConfig] Failed to get capabilities for {short_model_id}: {e}")
+                    capabilities = ModelCapabilities()  # Default: all False
+                
+                # ✅ Get model description
+                try:
+                    description = get_model_description('google', short_model_id)
+                except Exception as e:
+                    logger.warning(f"[VertexAIConfig] Failed to get description for {short_model_id}: {e}")
+                    description = None  # Will use default in frontend
+                
                 models.append(VertexAIModel(
                     id=model_name,
                     name=model_name,
-                    display_name=display_name
+                    display_name=display_name,
+                    description=description,  # ✅ Include description
+                    capabilities=capabilities
                 ))
             
             logger.info(

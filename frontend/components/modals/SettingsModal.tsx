@@ -7,7 +7,7 @@ import { ProfilesTab } from './settings/ProfilesTab';
 import { EditorTab } from './settings/EditorTab';
 import { StorageTab } from './settings/StorageTab';
 import { StorageEditorTab } from './settings/StorageEditorTab';
-import { ImagenTab } from './settings/ImagenTab';
+import { VertexAIConfiguration } from './settings/VertexAIConfiguration';
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -191,7 +191,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
 
           {activeTab === 'imagen' && (
-            <ImagenTab
+            <VertexAIConfiguration
               footerNode={footerNode}
               onClose={onClose}
             />

@@ -1267,10 +1267,10 @@ class GoogleService(BaseProviderService):
 
         Returns:
             Dictionary containing:
-            - supported_models: List of supported model IDs
-            - max_images: Maximum number of images per request
-            - supported_aspect_ratios: List of supported aspect ratios
-            - person_generation_modes: Supported person generation modes
+            - supported_models: List of supported model IDs (required)
+            - max_images: Maximum number of images per request (required)
+            - supported_aspect_ratios: List of supported aspect ratios (required)
+            - person_generation_modes: Supported person generation modes (required)
             - etc.
         """
         if self.use_official_sdk:
@@ -1283,7 +1283,32 @@ class GoogleService(BaseProviderService):
             }
 
         logger.info("[Google Service] Getting Imagen capabilities via ImageGenerator")
-        return self.image_generator.get_capabilities()
+        capabilities = self.image_generator.get_capabilities()
+        
+        # Ensure all required fields are present and standardized
+        if 'supported_models' not in capabilities:
+            # Try to get from image_generator if available
+            if hasattr(self.image_generator, 'get_supported_models'):
+                try:
+                    capabilities['supported_models'] = self.image_generator.get_supported_models()
+                except Exception as e:
+                    logger.warning(f"[Google Service] Failed to get supported_models: {e}")
+                    capabilities['supported_models'] = []
+            else:
+                capabilities['supported_models'] = []
+        
+        # Ensure supported_aspect_ratios field exists (standardize from aspect_ratios)
+        if 'supported_aspect_ratios' not in capabilities:
+            if 'aspect_ratios' in capabilities:
+                capabilities['supported_aspect_ratios'] = capabilities['aspect_ratios']
+            else:
+                capabilities['supported_aspect_ratios'] = ["1:1", "3:4", "4:3", "9:16", "16:9"]
+        
+        # Ensure person_generation_modes field exists
+        if 'person_generation_modes' not in capabilities:
+            capabilities['person_generation_modes'] = ['dont_allow', 'allow_adult']
+        
+        return capabilities
 
     def get_imagen_api_mode(self) -> str:
         """

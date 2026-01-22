@@ -20,6 +20,7 @@ interface ImageInpaintingViewProps {
     onStop: () => void;
     activeModelConfig?: ModelConfig;
     visibleModels?: ModelConfig[];
+    allVisibleModels?: ModelConfig[];  // 新增：完整模型列表
     initialPrompt?: string;
     initialAttachments?: Attachment[];
     onExpandImage?: (url: string) => void;
@@ -212,6 +213,7 @@ export const ImageInpaintingView = memo(({
     onStop,
     activeModelConfig,
     visibleModels = [],
+    allVisibleModels = [],  // 新增
     initialPrompt,
     initialAttachments,
     onExpandImage,
@@ -534,6 +536,7 @@ export const ImageInpaintingView = memo(({
             onStop={onStop}
             currentModel={activeModelConfig}
             visibleModels={visibleModels}
+            allVisibleModels={allVisibleModels}  // 传递完整模型列表
             mode={editMode}
             setMode={setAppMode}
             initialPrompt={initialPrompt}

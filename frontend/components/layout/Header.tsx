@@ -234,7 +234,7 @@ export const Header: React.FC<HeaderProps> = ({
 
                         <div className="flex items-center flex-1">
                             <span className="font-semibold text-slate-200 text-sm leading-none truncate max-w-[150px]">
-                                {activeModelConfig?.name || (activeProfile ? 'Select Model' : 'No Config')}
+                                {activeModelConfig?.id || (activeProfile ? 'Select Model' : 'No Config')}
                             </span>
                             {!isLoadingModels && activeModelConfig && renderCapabilities(activeModelConfig)}
                         </div>
@@ -307,16 +307,32 @@ export const Header: React.FC<HeaderProps> = ({
                                                 <div className="flex-1 min-w-0">
                                                     <div className="flex items-center justify-between mb-0.5">
                                                         <div className="flex items-center gap-2 overflow-hidden w-full">
-                                                            <span className={`text-sm font-medium truncate ${isSelected ? 'text-white' : 'text-slate-300'}`} title={model.name}>
-                                                                {model.name}
+                                                            <span className={`text-sm font-medium truncate ${isSelected ? 'text-white' : 'text-slate-300'}`} title={model.id}>
+                                                                {model.id}
                                                             </span>
                                                             {renderCapabilities(model)}
                                                         </div>
                                                         {isSelected && <Check size={14} className="text-indigo-400 shrink-0 ml-2" />}
                                                     </div>
-                                                    <div className="text-xs text-slate-500 leading-tight truncate" title={model.id}>
-                                                        {model.id}
-                                                    </div>
+                                                    {/* ✅ 显示描述（如果存在且与ID不同，且不包含ID的主要部分） */}
+                                                    {(() => {
+                                                        if (!model.description || model.description === model.id) {
+                                                            return null;
+                                                        }
+                                                        // 检查描述是否包含ID的主要关键词（避免重复显示）
+                                                        const idWords = model.id.toLowerCase().split(/[-_\s]+/).filter(w => w.length > 2);
+                                                        const descLower = model.description.toLowerCase();
+                                                        const hasMajorOverlap = idWords.some(word => descLower.includes(word));
+                                                        // 如果描述包含ID的主要部分，则不显示描述
+                                                        if (hasMajorOverlap && idWords.length > 2) {
+                                                            return null;
+                                                        }
+                                                        return (
+                                                            <div className="text-xs text-slate-500 leading-tight truncate" title={model.description}>
+                                                                {model.description}
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </div>
                                             </button>
                                         );

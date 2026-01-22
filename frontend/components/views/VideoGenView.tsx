@@ -13,6 +13,7 @@ interface VideoGenViewProps {
     onStop: () => void;
     activeModelConfig?: ModelConfig;
     visibleModels?: ModelConfig[];  // 新增
+    allVisibleModels?: ModelConfig[];  // 新增：完整模型列表
     initialPrompt?: string;
 }
 
@@ -24,6 +25,7 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
     onStop,
     activeModelConfig,
     visibleModels = [],
+    allVisibleModels = [],  // 新增
     initialPrompt
 }) => {
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -252,6 +254,7 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
             onStop={onStop}
             currentModel={activeModelConfig}
             visibleModels={visibleModels}
+            allVisibleModels={allVisibleModels}  // 传递完整模型列表
             mode="video-gen"
             setMode={setAppMode}
             initialPrompt={initialPrompt}

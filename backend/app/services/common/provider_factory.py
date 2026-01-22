@@ -213,19 +213,19 @@ class ProviderFactory:
             from ..gemini.google_service import GoogleService
         except ImportError:
             try:
-                from .gemini.google_service import GoogleService
+                from ..gemini.google_service import GoogleService
             except ImportError:
                 GoogleService = None
                 logger.warning("[Provider Factory] GoogleService not available")
         
         try:
-            from .ollama.ollama import OllamaService
+            from ..ollama.ollama import OllamaService
         except ImportError:
             OllamaService = None
             logger.debug("[Provider Factory] OllamaService not available (optional dependency)")
         
         try:
-            from .tongyi.chat import QwenNativeProvider
+            from ..tongyi.chat import QwenNativeProvider
         except ImportError:
             QwenNativeProvider = None
             logger.debug("[Provider Factory] QwenNativeProvider not available (dashscope SDK not installed, optional)")

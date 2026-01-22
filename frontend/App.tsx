@@ -137,6 +137,7 @@ const AppContent: React.FC = () => {
   const {
     availableModels,
     visibleModels,
+    allVisibleModels,  // ✅ 新增：用于 ModeSelector 判断模式可用性
     currentModelId,
     setCurrentModelId,
     activeModelConfig,
@@ -391,6 +392,7 @@ const AppContent: React.FC = () => {
             {...commonProps}
             isLoadingModels={isLoadingModels}
             visibleModels={visibleModels}
+            allVisibleModels={allVisibleModels}  // ✅ 传递完整模型列表
             apiKey={config.apiKey}
             protocol={config.protocol}
             onPromptSelect={handleWelcomePrompt}
@@ -406,6 +408,7 @@ const AppContent: React.FC = () => {
             {...commonProps}
             isLoadingModels={isLoadingModels}
             visibleModels={visibleModels}
+            allVisibleModels={allVisibleModels}  // ✅ 传递完整模型列表
             apiKey={config.apiKey}
             protocol={config.protocol}
             onPromptSelect={handleWelcomePrompt}
@@ -421,6 +424,7 @@ const AppContent: React.FC = () => {
           {...commonProps}
           isLoadingModels={isLoadingModels}
           visibleModels={visibleModels}
+          allVisibleModels={allVisibleModels}  // ✅ 传递完整模型列表
           apiKey={config.apiKey}
           protocol={config.protocol}
           onPromptSelect={handleWelcomePrompt}
@@ -436,6 +440,7 @@ const AppContent: React.FC = () => {
             {...commonProps}
             mode={appMode}
             visibleModels={visibleModels}
+            allVisibleModels={allVisibleModels}  // ✅ 传递完整模型列表
             initialPrompt={initialPrompt}
             initialAttachments={initialAttachments}
             onDeleteMessage={handleDeleteMessage}

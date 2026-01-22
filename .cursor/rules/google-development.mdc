@@ -1,0 +1,205 @@
+---
+description: Google 提供商功能开发规则 - 开发 Gemini 或 ADK 相关功能时必须参考官方 SDK
+globs:
+  - "backend/app/services/gemini/**/*"
+  - "backend/app/routers/ai/**/*"
+  - "backend/app/routers/tools/adk.py"
+  - "backend/app/routers/tools/a2a.py"
+  - "backend/app/routers/tools/live_api.py"
+  - "frontend/services/providers/gemini*"
+  - "frontend/hooks/handlers/*Gemini*"
+  - "frontend/hooks/handlers/*Agent*"
+  - "frontend/hooks/handlers/*Research*"
+---
+
+# Google 提供商功能开发规则
+
+## 重要提示
+
+开发 Google Gemini 或 ADK (Agent Development Kit) 相关功能时，**必须首先参考官方 SDK 文档和示例代码**，确保实现符合最新的 API 规范。
+
+## 官方 SDK 参考位置
+
+### 1. Google Generative AI SDK (核心)
+
+**路径**: `官方SDK/specs/参考/generative-ai-main/generative-ai-main`
+
+适用于：
+- Gemini 聊天功能
+- 图像生成 (Imagen)
+- 图像编辑
+- 视频生成 (Veo)
+- 音频生成
+- PDF 处理
+- 多模态输入处理
+- 流式响应
+- 工具调用 (Function Calling)
+- 代码执行
+- 搜索集成
+
+**关键目录**:
+```
+generative-ai-main/
+├── samples/                    # Python 示例代码
+│   ├── chat.py                # 聊天示例
+│   ├── generate_content.py    # 内容生成
+│   ├── image_generation.py    # 图像生成
+│   ├── video_generation.py    # 视频生成
+│   ├── tool_calling.py        # 工具调用
+│   └── streaming.py           # 流式响应
+├── google/generativeai/       # Python SDK 源码
+└── docs/                      # 文档
+```
+
+### 2. ADK Python SDK (智能体开发)
+
+**路径**: `官方SDK/specs/参考/adk-python-main`
+
+适用于：
+- 智能体 (Agent) 开发
+- 多智能体系统
+- Deep Research 功能
+- A2A (Agent-to-Agent) 协议
+- Memory Bank 记忆系统
+- 工具编排
+
+**关键目录**:
+```
+adk-python-main/
+├── src/google/adk/            # ADK 核心源码
+│   ├── agents/               # 智能体实现
+│   ├── tools/                # 工具定义
+│   ├── memory/               # 记忆系统
+│   └── orchestration/        # 编排逻辑
+├── examples/                  # 示例代码
+└── docs/                      # 文档
+```
+
+### 3. ADK Samples (智能体示例)
+
+**路径**: `官方SDK/specs/参考/adk-samples-main/adk-samples-main`
+
+适用于：
+- 智能体实现参考
+- 多智能体工作流示例
+- A2A 协议实现
+- 最佳实践
+
+**关键目录**:
+```
+adk-samples-main/
+├── python/                    # Python 示例
+│   ├── agents/               # 各类智能体示例
+│   ├── multi_agent/          # 多智能体示例
+│   ├── a2a/                  # A2A 协议示例
+│   └── tools/                # 工具使用示例
+└── docs/                      # 文档
+```
+
+## 开发流程
+
+### 开发 Gemini 基础功能时
+
+1. **首先阅读** `generative-ai-main` 中的相关示例
+2. **了解 API 格式**：请求参数、响应结构
+3. **检查最新变更**：SDK 可能有新功能或废弃的 API
+4. **实现功能**：参考示例代码实现
+5. **测试验证**：确保与官方行为一致
+
+### 开发智能体功能时
+
+1. **首先阅读** `adk-python-main` 源码了解架构
+2. **参考** `adk-samples-main` 中的示例实现
+3. **理解协议**：A2A 协议、工具调用规范
+4. **实现功能**：保持与官方 SDK 一致
+5. **测试验证**：使用官方测试用例验证
+
+## 功能与 SDK 对照表
+
+| 功能 | 参考 SDK | 关键文件/目录 |
+|------|---------|--------------|
+| 聊天/对话 | generative-ai-main | `samples/chat.py` |
+| 流式响应 | generative-ai-main | `samples/streaming.py` |
+| 图像生成 | generative-ai-main | `samples/image_generation.py` |
+| 图像编辑 | generative-ai-main | `samples/image_editing.py` |
+| 视频生成 | generative-ai-main | `samples/video_generation.py` |
+| 工具调用 | generative-ai-main | `samples/tool_calling.py` |
+| 代码执行 | generative-ai-main | `samples/code_execution.py` |
+| 搜索集成 | generative-ai-main | `samples/grounding.py` |
+| 智能体 | adk-python-main | `src/google/adk/agents/` |
+| 多智能体 | adk-samples-main | `python/multi_agent/` |
+| A2A 协议 | adk-samples-main | `python/a2a/` |
+| Memory Bank | adk-python-main | `src/google/adk/memory/` |
+| Deep Research | adk-python-main + samples | `agents/research/` |
+
+## 代码示例
+
+### 参考 SDK 后实现聊天功能
+
+```python
+# 1. 首先查看官方示例
+# 官方SDK/specs/参考/generative-ai-main/generative-ai-main/samples/chat.py
+
+# 2. 在项目中实现
+# backend/app/services/gemini/chat_handler.py
+
+from google import genai
+
+class GeminiChatHandler:
+    async def chat(self, messages, model, options):
+        # 参考官方 SDK 的调用方式
+        client = genai.Client(api_key=self.api_key)
+
+        response = await client.aio.models.generate_content(
+            model=model,
+            contents=self._format_messages(messages),
+            config=genai.types.GenerateContentConfig(
+                temperature=options.get("temperature", 0.7),
+                max_output_tokens=options.get("maxTokens", 8192),
+                # ... 其他参数参考 SDK
+            )
+        )
+
+        return {"content": response.text}
+```
+
+### 参考 SDK 后实现智能体
+
+```python
+# 1. 首先查看官方示例
+# 官方SDK/specs/参考/adk-python-main/examples/
+# 官方SDK/specs/参考/adk-samples-main/adk-samples-main/python/agents/
+
+# 2. 在项目中实现
+# backend/app/services/gemini/agent/agent_executor.py
+
+from google.adk import Agent, Tool
+
+class CustomAgent(Agent):
+    def __init__(self, config):
+        super().__init__(
+            name=config.name,
+            model=config.model,
+            tools=self._setup_tools(config.tools)
+        )
+
+    async def execute(self, task):
+        # 参考官方 SDK 的执行流程
+        pass
+```
+
+## 注意事项
+
+1. **版本兼容性**：确保使用的 API 与 SDK 版本匹配
+2. **参数命名**：使用官方 SDK 中的参数命名（如 `contents` 而非 `messages`）
+3. **错误处理**：参考 SDK 中的错误类型和处理方式
+4. **类型定义**：使用 SDK 提供的类型（如 `genai.types.*`）
+5. **废弃 API**：检查 SDK 中是否有废弃警告
+
+## 更新 SDK 参考
+
+当官方 SDK 更新时：
+1. 更新本地 SDK 副本
+2. 检查 CHANGELOG 了解变更
+3. 更新项目中受影响的代码
+4. 测试确保兼容性

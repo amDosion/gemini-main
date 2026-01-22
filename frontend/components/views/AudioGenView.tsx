@@ -13,6 +13,7 @@ interface AudioGenViewProps {
   onStop: () => void;
   activeModelConfig?: ModelConfig;
   visibleModels?: ModelConfig[];  // 新增
+  allVisibleModels?: ModelConfig[];  // 新增：完整模型列表
   initialPrompt?: string;
 }
 
@@ -260,6 +261,7 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
   onStop,
   activeModelConfig,
   visibleModels = [],
+  allVisibleModels = [],  // 新增
   initialPrompt
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -633,6 +635,7 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
           onStop={onStop}
           currentModel={activeModelConfig}
           visibleModels={visibleModels}
+          allVisibleModels={allVisibleModels}  // 传递完整模型列表
           mode="audio-gen"
           setMode={setAppMode}
           initialPrompt={initialPrompt}

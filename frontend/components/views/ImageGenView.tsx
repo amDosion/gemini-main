@@ -14,7 +14,8 @@ interface ImageGenViewProps {
     onSend: (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => void;
     onStop: () => void;
     activeModelConfig?: ModelConfig;
-    visibleModels?: ModelConfig[];  // 新增
+    visibleModels?: ModelConfig[];  // 当前模式下可见的模型列表
+    allVisibleModels?: ModelConfig[];  // ✅ 新增：完整模型列表
     initialPrompt?: string;
     onEditImage?: (url: string) => void;
     onExpandImage?: (url: string) => void; // Added prop
@@ -30,6 +31,7 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
     onStop,
     activeModelConfig,
     visibleModels = [],
+    allVisibleModels = [],  // ✅ 新增
     initialPrompt,
     onEditImage,
     onExpandImage,
@@ -346,6 +348,7 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
             onStop={onStop}
             currentModel={activeModelConfig}
             visibleModels={visibleModels}
+            allVisibleModels={allVisibleModels}  // ✅ 传递完整模型列表
             mode="image-gen"
             setMode={setAppMode}
             initialPrompt={initialPrompt}

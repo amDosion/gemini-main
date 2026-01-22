@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { ModelConfig, AppMode } from '../types/types';
 import { llmService } from '../services/llmService';
 import { filterModelsByAppMode } from '../utils/modelFilter';
+import { db } from '../services/db';
+import { ImagenConfigResponse } from '../types/imagen-config';
 
 export const useModels = (
     configReady: boolean, 
@@ -26,6 +28,80 @@ export const useModels = (
   const providerChanged = prevProviderIdRef.current !== providerId;
   // ✅ 检测应用模式是否切换
   const appModeChanged = prevAppModeRef.current !== appMode;
+
+  /**
+   * 合并 Vertex AI 模型到 Google 提供商模型列表
+   * @param googleModels Google API 返回的模型列表
+   * @returns 合并后的模型列表
+   */
+  const mergeVertexAIModels = useCallback(async (googleModels: ModelConfig[]): Promise<ModelConfig[]> => {
+    // 只在 Google 提供商时合并
+    if (providerId !== 'google') {
+      return googleModels;
+    }
+
+    try {
+      // 获取 Vertex AI 配置
+      const vertexAIConfig = await db.request<ImagenConfigResponse>('/vertex-ai/config');
+      
+      if (!vertexAIConfig?.savedModels || vertexAIConfig.savedModels.length === 0) {
+        // 没有 Vertex AI 配置或没有保存的模型，直接返回 Google 模型
+        return googleModels;
+      }
+
+      // 创建模型映射（以 ID 为键）
+      const mergedMap = new Map<string, ModelConfig>();
+
+      // 1. 首先添加所有 Google API 模型
+      googleModels.forEach(model => {
+        mergedMap.set(model.id, model);
+      });
+
+      // 2. 然后添加 Vertex AI 保存的模型
+      vertexAIConfig.savedModels.forEach((vertexModel: ModelConfig) => {
+        const existing = mergedMap.get(vertexModel.id);
+        
+        if (existing) {
+          // 模型已存在，合并 capabilities（Vertex AI 的优先级更高）
+          mergedMap.set(vertexModel.id, {
+            ...existing,
+            capabilities: {
+              vision: vertexModel.capabilities?.vision ?? existing.capabilities.vision,
+              search: vertexModel.capabilities?.search ?? existing.capabilities.search,
+              reasoning: vertexModel.capabilities?.reasoning ?? existing.capabilities.reasoning,
+              coding: vertexModel.capabilities?.coding ?? existing.capabilities.coding
+            },
+            // 如果 Vertex AI 模型有更完整的描述，使用它
+            description: vertexModel.description || existing.description,
+            contextWindow: vertexModel.contextWindow || existing.contextWindow
+          });
+        } else {
+          // 新模型，直接添加（确保格式正确）
+          mergedMap.set(vertexModel.id, {
+            id: vertexModel.id,
+            name: vertexModel.name || vertexModel.id,
+            description: vertexModel.description || `Model: ${vertexModel.id}`,
+            capabilities: vertexModel.capabilities || {
+              vision: false,
+              search: false,
+              reasoning: false,
+              coding: false
+            },
+            contextWindow: vertexModel.contextWindow || 0
+          });
+        }
+      });
+
+      const mergedModels = Array.from(mergedMap.values());
+      console.log(`[useModels] Merged ${googleModels.length} Google models with ${vertexAIConfig.savedModels.length} Vertex AI models, result: ${mergedModels.length} models`);
+      
+      return mergedModels;
+    } catch (error) {
+      console.warn('[useModels] Failed to merge Vertex AI models, using Google models only:', error);
+      // 如果合并失败，返回原始 Google 模型列表
+      return googleModels;
+    }
+  }, [providerId]);
 
   // ✅ 根据 appMode 过滤模型（前端过滤，避免每次模式切换都调用 API）
   const filteredModelsByMode = useMemo(() => {
@@ -139,7 +215,12 @@ export const useModels = (
       try {
         // ✅ 不传递 appMode 给后端，总是获取完整模型列表
         // 前端会根据 appMode 进行过滤，避免每次模式切换都调用 API
-        const models = await llmService.getAvailableModels(useCache);
+        let models = await llmService.getAvailableModels(useCache);
+        
+        // ✅ 如果是 Google 提供商，合并 Vertex AI 模型
+        if (providerId === 'google' && models && models.length > 0) {
+          models = await mergeVertexAIModels(models);
+        }
         
         if (models && models.length > 0) {
           setAvailableModels(models);
@@ -175,17 +256,32 @@ export const useModels = (
 
     // ✅ 优先使用缓存，避免不必要的 API 调用
     if (hasValidCachedModels) {
-        setAvailableModels(cachedModels);
-        setIsLoadingModels(false);
-        // ✅ 使用完整模型列表，根据当前 appMode 过滤并选择
-        internalSelectBestModel(cachedModels, providerChanged);
+        // ✅ 如果是 Google 提供商，也需要合并 Vertex AI 模型（即使使用缓存）
+        const processCachedModels = async () => {
+          try {
+            let models = cachedModels;
+            if (providerId === 'google' && models && models.length > 0) {
+              models = await mergeVertexAIModels(models);
+            }
+            setAvailableModels(models);
+            setIsLoadingModels(false);
+            // ✅ 使用完整模型列表，根据当前 appMode 过滤并选择
+            internalSelectBestModel(models, providerChanged);
+          } catch (e) {
+            console.error('[useModels] Failed to process cached models:', e);
+            // 如果处理缓存失败，回退到从 API 获取
+            setIsLoadingModels(false);
+            internalFetchModels(true);
+          }
+        };
+        processCachedModels();
     } else {
       if (cachedModels && cachedModels.length > 0) {
         console.warn('[useModels] Invalid cachedModels format detected, fetching from API instead:', cachedModels[0]);
       }
       internalFetchModels(true);
     }
-  }, [configReady, providerId, cachedModels, hiddenModelIds, internalSelectBestModel, providerChanged]);
+  }, [configReady, providerId, cachedModels, hiddenModelIds, internalSelectBestModel, providerChanged, mergeVertexAIModels]);
 
   /**
    * Forces a refresh of the model list from the provider, bypassing any cache.
@@ -197,7 +293,12 @@ export const useModels = (
 
       try {
         // ✅ 不传递 appMode，获取完整模型列表
-        const models = await llmService.getAvailableModels(false);
+        let models = await llmService.getAvailableModels(false);
+        
+        // ✅ 如果是 Google 提供商，合并 Vertex AI 模型
+        if (providerId === 'google' && models && models.length > 0) {
+          models = await mergeVertexAIModels(models);
+        }
         
         if (models && models.length > 0) {
           setAvailableModels(models);
@@ -214,7 +315,7 @@ export const useModels = (
       } finally {
         setIsLoadingModels(false);
       }
-  }, [internalSelectBestModel]);
+  }, [internalSelectBestModel, providerId, mergeVertexAIModels]);
 
   const activeModelConfig = useMemo(() => {
     const found = availableModels.find(m => m.id === currentModelId);
@@ -228,9 +329,16 @@ export const useModels = (
     return filteredModelsByMode.filter(m => !hiddenModelIds.includes(m.id));
   }, [filteredModelsByMode, hiddenModelIds]);
 
+  // ✅ allVisibleModels: 完整模型列表（只排除隐藏模型，不按模式过滤）
+  // 用于 ModeSelector 判断各模式的可用性
+  const allVisibleModels = useMemo(() => {
+    return availableModels.filter(m => !hiddenModelIds.includes(m.id));
+  }, [availableModels, hiddenModelIds]);
+
   return {
     availableModels,
     visibleModels,
+    allVisibleModels,  // ✅ 新增：用于 ModeSelector 判断模式可用性
     currentModelId,
     setCurrentModelId: setCurrentModelIdWithUserFlag,
     activeModelConfig,
