@@ -91,7 +91,7 @@ export const GenViewLayout: React.FC<GenViewLayoutProps> = React.memo(({
                 {/* Bottom Input Area */}
                 {bottom && (
                     <div className="p-4 md:p-6 bg-gradient-to-t from-slate-950 via-slate-950 to-transparent z-20 shrink-0 border-t border-transparent md:border-none">
-                        <div className="max-w-4xl mx-auto w-full">
+                        <div className="mx-auto w-full">
                             {bottom}
                         </div>
                     </div>

@@ -20,17 +20,19 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({ mode, setMode, curre
     
     // 检查是否有文生图模型
     // 1. 专门的图像生成模型（通过 ID 关键词识别）
-    // 2. Gemini 2.0+ 模型支持原生图像生成（gemini-2.0-flash-exp 等）
+    // 2. Gemini Image 模型（gemini-*-image*）
+    // 3. Nano-Banana 系列（支持图像生成）
     const hasImageGenModels = models.some(m => {
       const id = m.id.toLowerCase();
       // 专门的图像生成模型
       const isImageGenModel = id.includes('dall') || id.includes('wanx') || id.includes('flux') || 
              id.includes('midjourney') || id.includes('-t2i') || id.includes('z-image') || 
              id.includes('imagen');
-      // Gemini 2.0+ 支持原生图像生成
-      const isGeminiImageCapable = (id.includes('gemini-2') || id.includes('gemini-3')) && 
-             (id.includes('flash') || id.includes('pro'));
-      return isImageGenModel || isGeminiImageCapable;
+      // ✅ 修复：支持所有 Gemini Image 模型（不仅仅是 gemini-2/3 且包含 flash/pro）
+      const isGeminiImageModel = id.includes('gemini') && id.includes('image');
+      // ✅ 新增：支持 Nano-Banana 系列
+      const isNanoBananaModel = id.includes('nano-banana');
+      return isImageGenModel || isGeminiImageModel || isNanoBananaModel;
     });
     
     // 检查是否有视觉理解模型（用于图像编辑等）

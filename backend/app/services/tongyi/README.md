@@ -46,7 +46,13 @@ tongyi/
 ├── image_edit.py               # 图像编辑服务 (ImageEditService)
 ├── image_expand.py             # 图像扩展服务 (ImageExpandService)
 ├── file_upload.py              # 文件上传服务
-├── image_service.py            # [已废弃] 原图像服务管理层，保留兼容
+│
+├── # === Prompt Optimizer (新增) ===
+├── prompt_optimizer/           # Prompt 智能优化模块
+│   ├── __init__.py
+│   ├── language_detector.py    # 语言检测（中文/英文）
+│   ├── generation_optimizer.py # 文生图 Prompt 优化
+│   └── edit_optimizer.py       # 图像编辑 Prompt 优化
 │
 ├── # === Model Management ===
 ├── model_manager.py            # 模型管理器
@@ -190,6 +196,89 @@ result = await service.expand_image(
     x_scale=2.0,
     y_scale=1.5
 )
+```
+
+## Prompt 智能优化 (新增)
+
+基于 Qwen-Image 官方参考实现的 Prompt 智能优化功能。
+
+### 功能特性
+
+| 功能 | 描述 |
+|------|------|
+| 语言检测 | 自动检测中文/英文 |
+| 场景分类 | 人像/含文字图/通用图三分类 |
+| LLM 改写 | 使用 Qwen-Plus 智能改写 Prompt |
+| 魔法词组 | 自动追加 "4K, 电影级构图" |
+| 编辑优化 | 使用 Qwen-VL-Max 理解图像优化编辑指令 |
+
+### 文生图 Prompt 优化
+
+```python
+from .prompt_optimizer import GenerationPromptOptimizer
+
+optimizer = GenerationPromptOptimizer(api_key)
+result = await optimizer.optimize(
+    prompt="一只可爱的猫咪",
+    enable_rewrite=True,
+    add_magic_suffix=True
+)
+
+print(result.optimized_prompt)
+# 输出: "一只毛色雪白的英短猫咪，圆润的脸庞...超清，4K，电影级构图"
+print(result.language)  # "zh"
+```
+
+### 编辑 Prompt 优化
+
+```python
+from .prompt_optimizer import EditPromptOptimizer
+
+optimizer = EditPromptOptimizer(api_key)
+result = await optimizer.optimize(
+    prompt="将背景改为海滩",
+    image=image_url,
+    enable_rewrite=True
+)
+
+print(result.optimized_prompt)
+# 输出: "Replace the current background with a sunny beach scene..."
+```
+
+### 在图像生成中使用
+
+```python
+from .image_generation import ImageGenerationRequest, ImageGenerationService
+
+service = ImageGenerationService(api_key)
+request = ImageGenerationRequest(
+    model_id="wan2.6-t2i",
+    prompt="一只可爱的猫咪",
+    enable_prompt_optimize=True,  # 启用 Prompt 优化
+    add_magic_suffix=True
+)
+
+results = await service.generate(request)
+# results[0].optimized_prompt 包含优化后的 Prompt
+```
+
+### 在图像编辑中使用
+
+```python
+from .image_edit import ImageEditService, ImageEditOptions
+
+service = ImageEditService(api_key)
+options = ImageEditOptions(
+    enable_prompt_optimize=True  # 启用编辑 Prompt 优化
+)
+
+result = await service.edit(
+    model="qwen-image-edit-plus",
+    prompt="将背景改为海滩",
+    image_url=image_url,
+    options=options
+)
+# result.optimized_prompt 包含优化后的 Prompt
 ```
 
 ## 基础配置 (base.py)

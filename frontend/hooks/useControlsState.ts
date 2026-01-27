@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AppMode, LoraConfig, ModelConfig } from '../types/types';
-import { DEFAULT_CONTROLS } from '../controls/constants';
+import { DEFAULT_CONTROLS } from '../controls/constants/index';
+import { TRYON_DEFAULTS } from '../controls/constants/tryon';
 import { ControlsState, OffsetPixels } from '../controls/types';
 
 export function useControlsState(mode: AppMode, currentModel?: ModelConfig): ControlsState {
@@ -20,8 +21,8 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
   const [numberOfImages, setNumberOfImages] = useState(DEFAULT_CONTROLS.numberOfImages);
   const [style, setStyle] = useState(DEFAULT_CONTROLS.style);
 
-  // Advanced Settings
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  // Advanced Settings（默认展开）
+  const [showAdvanced, setShowAdvanced] = useState(true);
   const [negativePrompt, setNegativePrompt] = useState(DEFAULT_CONTROLS.negativePrompt);
   const [seed, setSeed] = useState(DEFAULT_CONTROLS.seed);
   const [loraConfig, setLoraConfig] = useState<LoraConfig>({ alpha: 0.6 });
@@ -32,6 +33,10 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
   const [outputMimeType, setOutputMimeType] = useState(DEFAULT_CONTROLS.outputMimeType);
   const [outputCompressionQuality, setOutputCompressionQuality] = useState(DEFAULT_CONTROLS.outputCompressionQuality);
   const [enhancePrompt, setEnhancePrompt] = useState(DEFAULT_CONTROLS.enhancePrompt);
+
+  // TongYi Specific Parameters
+  const [promptExtend, setPromptExtend] = useState(false); // 阿里的 prompt_extend 参数
+  const [addMagicSuffix, setAddMagicSuffix] = useState(true); // 阿里的 add_magic_suffix 参数（默认开启）
 
 
   // Out-Painting
@@ -47,8 +52,9 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
   const [pdfTemplate, setPdfTemplate] = useState(DEFAULT_CONTROLS.pdfTemplate);
   const [pdfAdditionalInstructions, setPdfAdditionalInstructions] = useState(DEFAULT_CONTROLS.pdfAdditionalInstructions);
 
-  // Virtual Try-On
-  const [tryOnTarget, setTryOnTarget] = useState('upper');
+  // Virtual Try-On（官方支持的参数，默认值见 constants/tryon）
+  // output_mime_type 和 output_compression_quality 使用固定默认值，不提供 UI
+  const [baseSteps, setBaseSteps] = useState<number>(TRYON_DEFAULTS.baseSteps);
 
   // Deep Research Controls
   const [thinkingSummaries, setThinkingSummaries] = useState<'auto' | 'none'>('auto');
@@ -56,8 +62,9 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
   const [researchMode, setResearchMode] = useState<'vertex-ai' | 'gemini-api'>('vertex-ai');
 
   // Reset UI state when mode changes (only generic resets, no mode-specific logic)
+  // 高级参数保持默认展开状态
   useEffect(() => {
-    setShowAdvanced(false);
+    setShowAdvanced(true);
   }, [mode]);
 
   // Sync with model capabilities
@@ -99,6 +106,10 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
     outputCompressionQuality, setOutputCompressionQuality,
     enhancePrompt, setEnhancePrompt,
 
+    // TongYi Specific Parameters
+    promptExtend, setPromptExtend,
+    addMagicSuffix, setAddMagicSuffix,
+
 
     // Out-Painting
     outPaintingMode, setOutPaintingMode,
@@ -113,7 +124,7 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
     pdfAdditionalInstructions, setPdfAdditionalInstructions,
 
     // Virtual Try-On
-    tryOnTarget, setTryOnTarget,
+    baseSteps, setBaseSteps,
 
     // Deep Research Controls
     thinkingSummaries, setThinkingSummaries,

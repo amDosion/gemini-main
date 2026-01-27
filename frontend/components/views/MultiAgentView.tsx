@@ -1,10 +1,9 @@
-import React, { useState, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useCallback, useRef, lazy, Suspense } from 'react';
 import MessageItem from '../chat/MessageItem';
-import InputArea from '../chat/InputArea';
 import { Message, ModelConfig, AppMode, ChatOptions, Attachment, Role } from '../../types/types';
 import type { WorkflowNode, WorkflowEdge, ExecutionStatus } from '../multiagent/types';
 import { GenViewLayout } from '../common/GenViewLayout';
-import { X, Network, MessageSquare } from 'lucide-react';
+import { X, Network, MessageSquare, SlidersHorizontal, RotateCcw, Send, Paperclip, FileText } from 'lucide-react';
 import { useToastContext } from '../../contexts/ToastContext';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 
@@ -37,7 +36,7 @@ export const MultiAgentView: React.FC<MultiAgentViewProps> = React.memo(({
     messages,
     isLoadingModels,
     visibleModels,
-    allVisibleModels = [],  // ✅ 新增
+    allVisibleModels = [],
     apiKey,
     protocol,
     onPromptSelect,
@@ -52,11 +51,17 @@ export const MultiAgentView: React.FC<MultiAgentViewProps> = React.memo(({
     setAppMode,
     providerId
 }) => {
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    
     // ✅ Multi-Agent 工作流执行状态
     const [executionStatus, setExecutionStatus] = useState<ExecutionStatus | undefined>(undefined);
     const [isMobileHistoryOpen, setIsMobileHistoryOpen] = useState(false);
     const [viewMode, setViewMode] = useState<'editor' | 'chat'>('editor');
     const { showError } = useToastContext();
+    
+    // ✅ 参数面板状态
+    const [prompt, setPrompt] = useState('');
+    const [activeAttachments, setActiveAttachments] = useState<Attachment[]>([]);
 
     // ✅ Multi-Agent 工作流执行处理
     const handleWorkflowExecute = useCallback(async (workflow: { nodes: WorkflowNode[]; edges: WorkflowEdge[] }) => {
@@ -213,6 +218,145 @@ export const MultiAgentView: React.FC<MultiAgentViewProps> = React.memo(({
         }
     }, [onSend, showError]);
 
+    // ✅ 重置参数
+    const resetParams = useCallback(() => {
+        setPrompt('');
+        setActiveAttachments([]);
+    }, []);
+
+    // ✅ 发送聊天消息
+    const handleGenerate = useCallback(() => {
+        if (!prompt.trim() || loadingState !== 'idle') return;
+        
+        const options: ChatOptions = {
+            enableSearch: false,
+            enableThinking: false,
+            enableCodeExecution: false,
+        };
+        
+        onSend(prompt, options, activeAttachments, appMode);
+        setPrompt('');
+        setActiveAttachments([]);
+    }, [prompt, loadingState, activeAttachments, appMode, onSend]);
+
+    // ✅ 键盘快捷键
+    const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleGenerate();
+        }
+    }, [handleGenerate]);
+
+    // ✅ 聊天模式的参数面板
+    const chatParameterPanel = (
+        <div className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900/50 flex flex-col h-full overflow-hidden">
+            {/* 头部 */}
+            <div className="px-4 py-3 border-b border-slate-800/50 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <SlidersHorizontal size={14} className="text-teal-400" />
+                    <span className="text-xs font-bold text-white">对话参数</span>
+                </div>
+                <button
+                    onClick={resetParams}
+                    className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                    title="重置"
+                >
+                    <RotateCcw size={12} />
+                </button>
+            </div>
+
+            {/* 参数滚动区 */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
+                {/* 模型信息 */}
+                {activeModelConfig && (
+                    <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                        <p className="text-xs text-slate-400">当前模型</p>
+                        <p className="text-sm text-slate-200 font-medium mt-1">{activeModelConfig.name}</p>
+                    </div>
+                )}
+            </div>
+
+            {/* 底部固定区：附件预览 + 提示词 + 发送按钮 */}
+            <div className="border-t border-slate-800 p-3 space-y-2 bg-slate-900/80">
+                {/* 附件预览区 */}
+                {activeAttachments.length > 0 && (
+                    <div className="flex gap-2 flex-wrap">
+                        {activeAttachments.map((att, idx) => (
+                            <div key={idx} className="relative group flex items-center gap-2 bg-slate-800 rounded-lg px-2 py-1">
+                                <FileText size={14} className="text-teal-400" />
+                                <span className="text-xs text-slate-300 max-w-[100px] truncate">{att.name}</span>
+                                <button
+                                    onClick={() => {
+                                        setActiveAttachments(activeAttachments.filter((_, i) => i !== idx));
+                                    }}
+                                    className="p-0.5 hover:bg-red-500/20 rounded text-slate-400 hover:text-red-400 transition-colors"
+                                >
+                                    <X size={12} />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* 上传按钮 + 提示词输入 */}
+                <div className="flex gap-2 items-end">
+                    <label className="p-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 cursor-pointer transition-colors border border-slate-700 flex-shrink-0">
+                        <input
+                            type="file"
+                            accept="image/*,application/pdf,text/*"
+                            multiple
+                            className="hidden"
+                            onChange={(e) => {
+                                const files = Array.from(e.target.files || []);
+                                const newAtts = files.map(file => ({
+                                    id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                    name: file.name,
+                                    mimeType: file.type,
+                                    file: file,
+                                }));
+                                setActiveAttachments([...activeAttachments, ...newAtts]);
+                                e.target.value = '';
+                            }}
+                        />
+                        <Paperclip size={18} className="text-slate-400" />
+                    </label>
+
+                    <textarea
+                        ref={textareaRef}
+                        value={prompt}
+                        onChange={(e) => {
+                            setPrompt(e.target.value);
+                            e.target.style.height = 'auto';
+                            e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
+                        }}
+                        onKeyDown={handleKeyDown}
+                        placeholder="输入消息..."
+                        className="flex-1 min-h-[40px] max-h-[150px] bg-slate-800/80 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20 overflow-y-auto"
+                    />
+                </div>
+
+                {/* 发送按钮 */}
+                <button
+                    onClick={handleGenerate}
+                    disabled={!prompt.trim() || loadingState !== 'idle'}
+                    className="w-full py-2.5 px-4 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white rounded-xl font-medium text-sm flex items-center justify-center gap-2 shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    {loadingState !== 'idle' ? (
+                        <>
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            处理中...
+                        </>
+                    ) : (
+                        <>
+                            <Send size={18} />
+                            发送
+                        </>
+                    )}
+                </button>
+            </div>
+        </div>
+    );
+
     return (
         <GenViewLayout
             sidebarHeaderIcon={<Network size={16} className="text-teal-400" />}
@@ -262,91 +406,82 @@ export const MultiAgentView: React.FC<MultiAgentViewProps> = React.memo(({
                 </div>
             }
             main={
-                <div className="flex-1 flex flex-col h-full relative">
-                    {/* 顶部工具栏 */}
-                    <div className="shrink-0 border-b border-slate-700/50 bg-slate-900/50 backdrop-blur-sm">
-                        <div className="flex items-center justify-between p-3">
-                            <div className="flex items-center gap-3">
-                                <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-                                    <Network size={18} className="text-teal-400" />
-                                    多智能体工作流编排
-                                </h2>
-                                <div className="flex items-center gap-2 text-xs text-slate-400">
-                                    <span className="px-2 py-1 bg-slate-800/50 rounded">
-                                        {viewMode === 'editor' ? '编辑器视图' : '聊天视图'}
-                                    </span>
+                <div className="flex-1 flex flex-row h-full relative">
+                    {/* ========== 左侧：主内容区 ========== */}
+                    <div className="flex-1 flex flex-col h-full">
+                        {/* 顶部工具栏 */}
+                        <div className="shrink-0 border-b border-slate-700/50 bg-slate-900/50 backdrop-blur-sm">
+                            <div className="flex items-center justify-between p-3">
+                                <div className="flex items-center gap-3">
+                                    <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                                        <Network size={18} className="text-teal-400" />
+                                        多智能体工作流编排
+                                    </h2>
+                                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                                        <span className="px-2 py-1 bg-slate-800/50 rounded">
+                                            {viewMode === 'editor' ? '编辑器视图' : '聊天视图'}
+                                        </span>
+                                    </div>
                                 </div>
+                                <button
+                                    onClick={() => setAppMode('chat')}
+                                    className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+                                    title="返回聊天模式"
+                                >
+                                    <X size={18} />
+                                </button>
                             </div>
-                            <button
-                                onClick={() => setAppMode('chat')}
-                                className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
-                                title="返回聊天模式"
-                            >
-                                <X size={18} />
-                            </button>
+                        </div>
+
+                        {/* 主内容区 */}
+                        <div className="flex-1 overflow-hidden">
+                            {viewMode === 'editor' ? (
+                                <Suspense fallback={<LoadingSpinner />}>
+                                    <MultiAgentWorkflowEditor
+                                        onExecute={handleWorkflowExecute}
+                                        onSave={async (workflow) => {
+                                            // 工作流保存功能（可以保存为模板）
+                                            console.log('[MultiAgentView] Saving workflow:', workflow);
+                                        }}
+                                        executionStatus={executionStatus}
+                                    />
+                                </Suspense>
+                            ) : (
+                                <div className="h-full overflow-y-auto custom-scrollbar">
+                                    {messages.length === 0 ? (
+                                        <div className="flex items-center justify-center h-full">
+                                            <div className="text-center text-slate-500">
+                                                <MessageSquare size={48} className="mx-auto mb-4 opacity-50" />
+                                                <p className="text-sm">暂无聊天消息</p>
+                                                <p className="text-xs mt-2 text-slate-600">切换到编辑器视图创建工作流</p>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="w-full max-w-[98%] 2xl:max-w-[1400px] mx-auto min-h-full flex flex-col p-4">
+                                            <div className="flex-1 space-y-4 pb-4">
+                                                {messages.map((msg, idx) => {
+                                                    const isStreaming = loadingState === 'streaming' && idx === messages.length - 1 && msg.role === Role.MODEL;
+                                                    return (
+                                                        <MessageItem 
+                                                            key={msg.id} 
+                                                            message={msg} 
+                                                            onImageClick={onImageClick}
+                                                            onEditImage={onEditImage}
+                                                            isStreaming={isStreaming}
+                                                        />
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
 
-                    {/* 主内容区 */}
-                    <div className="flex-1 overflow-hidden">
-                        {viewMode === 'editor' ? (
-                            <Suspense fallback={<LoadingSpinner />}>
-                                <MultiAgentWorkflowEditor
-                                    onExecute={handleWorkflowExecute}
-                                    onSave={async (workflow) => {
-                                        // 工作流保存功能（可以保存为模板）
-                                        console.log('[MultiAgentView] Saving workflow:', workflow);
-                                    }}
-                                    executionStatus={executionStatus}
-                                />
-                            </Suspense>
-                        ) : (
-                            <div className="h-full overflow-y-auto custom-scrollbar">
-                                {messages.length === 0 ? (
-                                    <div className="flex items-center justify-center h-full">
-                                        <div className="text-center text-slate-500">
-                                            <MessageSquare size={48} className="mx-auto mb-4 opacity-50" />
-                                            <p className="text-sm">暂无聊天消息</p>
-                                            <p className="text-xs mt-2 text-slate-600">切换到编辑器视图创建工作流</p>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="w-full max-w-[98%] 2xl:max-w-[1400px] mx-auto min-h-full flex flex-col p-4">
-                                        <div className="flex-1 space-y-4 pb-4">
-                                            {messages.map((msg, idx) => {
-                                                const isStreaming = loadingState === 'streaming' && idx === messages.length - 1 && msg.role === Role.MODEL;
-                                                return (
-                                                    <MessageItem 
-                                                        key={msg.id} 
-                                                        message={msg} 
-                                                        onImageClick={onImageClick}
-                                                        onEditImage={onEditImage}
-                                                        isStreaming={isStreaming}
-                                                    />
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
+                    {/* ========== 右侧：参数面板（仅聊天模式显示） ========== */}
+                    {viewMode === 'chat' && chatParameterPanel}
                 </div>
-            }
-            bottom={
-                viewMode === 'chat' ? (
-                    <InputArea
-                        onSend={onSend}
-                        isLoading={loadingState !== 'idle'}
-                        onStop={onStop}
-                        currentModel={activeModelConfig}
-                        visibleModels={visibleModels}
-                        allVisibleModels={allVisibleModels}  // ✅ 传递完整模型列表
-                        mode={appMode}
-                        setMode={setAppMode}
-                        providerId={providerId}
-                    />
-                ) : undefined
             }
             isMobileHistoryOpen={isMobileHistoryOpen}
             setIsMobileHistoryOpen={setIsMobileHistoryOpen}

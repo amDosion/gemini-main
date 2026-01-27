@@ -1,14 +1,15 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
-import { Expand, AlertCircle, Layers, User, Bot } from 'lucide-react';
-import InputArea from '../chat/InputArea';
+import { Expand, AlertCircle, Layers, User, Bot, SlidersHorizontal, RotateCcw, Image as ImageIcon, Paperclip, X } from 'lucide-react';
 import { useImageCanvas } from '../../hooks/useImageCanvas';
 import { ImageCanvasControls } from '../common/ImageCanvasControls';
 import { ImageCompare } from '../common/ImageCompare';
 import { GenViewLayout } from '../common/GenViewLayout';
 import { processUserAttachments } from '../../hooks/handlers/attachmentUtils';
 import { useToastContext } from '../../contexts/ToastContext';
+import { useControlsState } from '../../hooks/useControlsState';
+import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
 
 
 interface ImageExpandViewProps {
@@ -254,6 +255,20 @@ export const ImageExpandView = memo(({
     // 对比模式状态
     const [isCompareMode, setIsCompareMode] = useState(false);
 
+    // ✅ 参数面板状态
+    const expandMode: AppMode = 'image-outpainting';
+    const controls = useControlsState(expandMode, activeModelConfig);
+    const [prompt, setPrompt] = useState('');
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    // 重置参数
+    const resetParams = useCallback(() => {
+        controls.setAspectRatio('1:1');
+        controls.setResolution('1K');
+        controls.setNegativePrompt('');
+        controls.setSeed(-1);
+    }, [controls]);
+
     // Pan & Zoom Hook
     const canvas = useImageCanvas({ minZoom: 0.1, maxZoom: 5, zoomStep: 0.2 });
 
@@ -327,30 +342,52 @@ export const ImageExpandView = memo(({
         }
     }, [messages, activeAttachments.length, loadingState, lastProcessedMsgId, activeImageUrl]);
 
-    const handleSend = async (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => {
+    // ✅ 使用参数面板发送扩图请求
+    const handleGenerate = useCallback(async () => {
+        // ✅ 修复：允许画布中有图片时发送（CONTINUITY LOGIC）
+        if (!prompt.trim() || loadingState !== 'idle' || (activeAttachments.length === 0 && !activeImageUrl)) return;
+        
         try {
-            console.log('========== [ImageExpandView] handleSend 开始 ==========');
-            console.log('[handleSend] 用户上传的附件数量:', attachments.length);
-
-            // ✅ 根据设计文档，前端只负责传递附件元数据，后端统一处理
-            // 使用简化版的 processUserAttachments（只做基本元数据整理）
+            console.log('========== [ImageExpandView] handleGenerate 开始 ==========');
+            console.log('[handleGenerate] 用户输入:', prompt);
+            console.log('[handleGenerate] 当前附件数量:', activeAttachments.length);
+            
             const finalAttachments = await processUserAttachments(
-                attachments,
+                activeAttachments,
                 activeImageUrl,
                 messages,
                 currentSessionId,
                 'expand'
             );
 
-            console.log('[handleSend] 最终附件数量:', finalAttachments.length);
-            console.log('========== [ImageExpandView] handleSend 结束 ==========');
-            onSend(text, options, finalAttachments, mode);
+            const options: ChatOptions = {
+                enableSearch: false,
+                enableThinking: false,
+                enableCodeExecution: false,
+                // 扩图参数
+                imageAspectRatio: controls.aspectRatio,
+                imageResolution: controls.resolution,
+                negativePrompt: controls.negativePrompt || undefined,
+                seed: controls.seed !== -1 ? controls.seed : undefined,
+            };
+            
+            console.log('[handleGenerate] 扩图参数:', options);
+            console.log('========== [ImageExpandView] handleGenerate 结束 ==========');
+            onSend(prompt, options, finalAttachments, expandMode);
+            setPrompt(''); // 发送后清空提示词
         } catch (error) {
-            console.error('[ImageExpandView] handleSend 处理附件失败:', error);
+            console.error('[ImageExpandView] handleGenerate 处理附件失败:', error);
             showError('处理附件失败，请重试');
-            return;
         }
-    };
+    }, [prompt, loadingState, activeAttachments, activeImageUrl, messages, currentSessionId, controls, onSend, expandMode, showError]);
+
+    // ✅ 键盘快捷键
+    const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleGenerate();
+        }
+    }, [handleGenerate]);
 
     // Mobile History Toggle
     const [isMobileHistoryOpen, setIsMobileHistoryOpen] = useState(false);
@@ -422,58 +459,153 @@ export const ImageExpandView = memo(({
         if (activeImageUrl) onImageClick(activeImageUrl);
     }, [activeImageUrl, onImageClick]);
 
-    const mainContent = (
-        <ImageExpandMainCanvas
-            loadingState={loadingState}
-            isCompareMode={isCompareMode}
-            activeAttachments={activeAttachments}
-            activeImageUrl={activeImageUrl}
-            originalImageUrl={originalImageUrl}
-            zoom={canvas.zoom}
-            isDragging={canvas.isDragging}
-            canvasStyle={canvas.canvasStyle}
-            onWheel={canvas.handleWheel}
-            onMouseDown={canvas.handleMouseDown}
-            onMouseMove={canvas.handleMouseMove}
-            onMouseUp={canvas.handleMouseUp}
-            onZoomIn={canvas.handleZoomIn}
-            onZoomOut={canvas.handleZoomOut}
-            onReset={canvas.handleReset}
-            onFullscreen={activeImageUrl ? handleFullscreen : undefined}
-            onToggleCompare={originalImageUrl ? toggleCompare : undefined}
-        />
-    );
+    // ✅ 主区域：两栏布局（画布 + 参数面板）
+    const mainContent = useMemo(() => (
+        <div className="flex-1 flex flex-row h-full">
+            {/* ========== 左侧：画布区域 ========== */}
+            <ImageExpandMainCanvas
+                loadingState={loadingState}
+                isCompareMode={isCompareMode}
+                activeAttachments={activeAttachments}
+                activeImageUrl={activeImageUrl}
+                originalImageUrl={originalImageUrl}
+                zoom={canvas.zoom}
+                isDragging={canvas.isDragging}
+                canvasStyle={canvas.canvasStyle}
+                onWheel={canvas.handleWheel}
+                onMouseDown={canvas.handleMouseDown}
+                onMouseMove={canvas.handleMouseMove}
+                onMouseUp={canvas.handleMouseUp}
+                onZoomIn={canvas.handleZoomIn}
+                onZoomOut={canvas.handleZoomOut}
+                onReset={canvas.handleReset}
+                onFullscreen={activeImageUrl ? handleFullscreen : undefined}
+                onToggleCompare={originalImageUrl ? toggleCompare : undefined}
+            />
 
-    // 使用 useMemo 缓存 bottomContent，防止不必要的重新渲染
-    const bottomContent = useMemo(() => (
-                <InputArea
-                    onSend={handleSend}
-                    isLoading={loadingState !== 'idle'}
-                    onStop={onStop}
-                    currentModel={activeModelConfig}
-                    visibleModels={visibleModels}
-                    allVisibleModels={allVisibleModels}  // 传递完整模型列表
-                    mode="image-outpainting"
-                    setMode={setAppMode}
-                    // Sync State
-                    activeAttachments={activeAttachments}
-                    onAttachmentsChange={setActiveAttachments}
-                    providerId={providerId}
-                    // ✅ 当 workspace 中有图片时，允许发送（CONTINUITY LOGIC 会自动使用该图片）
-                    hasActiveContext={!!activeImageUrl}
-                />
-    ), [
-        handleSend,
-        loadingState,
-        onStop,
-        activeModelConfig,
-        visibleModels,
-        setAppMode,
-        activeAttachments,
-        setActiveAttachments,
-        providerId,
-        activeImageUrl
-    ]);
+            {/* ========== 右侧：参数面板 ========== */}
+            <div className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900/50 flex flex-col h-full overflow-hidden">
+                {/* 头部 */}
+                <div className="px-4 py-3 border-b border-slate-800/50 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <SlidersHorizontal size={14} className="text-orange-400" />
+                        <span className="text-xs font-bold text-white">扩图参数</span>
+                    </div>
+                    <button
+                        onClick={resetParams}
+                        className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                        title="重置为默认值"
+                    >
+                        <RotateCcw size={12} />
+                    </button>
+                </div>
+
+                {/* 参数滚动区 - 通过 ModeControlsCoordinator 分发对应的参数组件 */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+                    <ModeControlsCoordinator
+                        mode={expandMode}
+                        providerId={providerId || 'google'}
+                        controls={controls}
+                    />
+                </div>
+
+                {/* 底部固定区：附件预览 + 提示词 + 扩图按钮 */}
+                <div className="border-t border-slate-800 p-3 space-y-2 bg-slate-900/80">
+                    {/* 附件预览区 */}
+                    {activeAttachments.length > 0 && (
+                        <div className="flex gap-2 flex-wrap">
+                            {activeAttachments.map((att, idx) => (
+                                <div key={idx} className="relative group">
+                                    <img 
+                                        src={att.url || att.tempUrl || ''} 
+                                        className="w-12 h-12 rounded-lg object-cover border border-slate-700" 
+                                        alt="待扩图图片"
+                                    />
+                                    <button
+                                        onClick={() => {
+                                            const newAtts = activeAttachments.filter((_, i) => i !== idx);
+                                            setActiveAttachments(newAtts);
+                                            if (newAtts.length === 0) setActiveImageUrl(null);
+                                        }}
+                                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                        <X size={12} className="text-white" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* 提示词输入 */}
+                    <textarea
+                        ref={textareaRef}
+                        value={prompt}
+                        onChange={(e) => {
+                            setPrompt(e.target.value);
+                            e.target.style.height = 'auto';
+                            e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
+                        }}
+                        onKeyDown={handleKeyDown}
+                        placeholder={(activeAttachments.length === 0 && !activeImageUrl) ? "请先上传图片..." : "描述扩展内容..."}
+                        className="w-full min-h-[40px] max-h-[150px] bg-slate-800/80 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 overflow-y-auto"
+                    />
+
+                    {/* 上传按钮 + 扩图按钮 */}
+                    <div className="flex gap-2 items-center">
+                        {/* 上传按钮 */}
+                        <label className="p-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 cursor-pointer transition-colors border border-indigo-500/50 flex-shrink-0 shadow-lg">
+                            <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                        const url = URL.createObjectURL(file);
+                                        const newAtt: Attachment = {
+                                            id: `att-${Date.now()}`,
+                                            name: file.name,
+                                            mimeType: file.type,
+                                            url: url,
+                                            tempUrl: url,
+                                            file: file,
+                                        };
+                                        setActiveAttachments([newAtt]);
+                                        setActiveImageUrl(url);
+                                    }
+                                    e.target.value = '';
+                                }}
+                            />
+                            {activeAttachments.length === 0 ? (
+                                <ImageIcon size={18} className="text-white" />
+                            ) : (
+                                <Paperclip size={18} className="text-white" />
+                            )}
+                        </label>
+
+                        {/* 扩图按钮 */}
+                        <button
+                            onClick={handleGenerate}
+                            disabled={!prompt.trim() || loadingState !== 'idle' || (activeAttachments.length === 0 && !activeImageUrl)}
+                            className="flex-1 py-2.5 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl font-medium text-sm flex items-center justify-center gap-2 shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {loadingState !== 'idle' ? (
+                                <>
+                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    扩图中...
+                                </>
+                            ) : (
+                                <>
+                                    <Expand size={18} />
+                                    {(activeAttachments.length === 0 && !activeImageUrl) ? '请先上传图片' : '开始扩图'}
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    ), [loadingState, isCompareMode, activeAttachments, activeImageUrl, originalImageUrl, canvas, handleFullscreen, toggleCompare, controls, providerId, prompt, handleKeyDown, handleGenerate, resetParams, expandMode]);
 
     return (
         <GenViewLayout
@@ -483,7 +615,6 @@ export const ImageExpandView = memo(({
             sidebarHeaderIcon={<Layers size={14} />}
             sidebar={sidebarContent}
             main={mainContent}
-            bottom={bottomContent}
         />
     );
 }, arePropsEqual);

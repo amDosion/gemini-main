@@ -1,44 +1,76 @@
 """
-Gemini Service Module
+Gemini Service Module (重构版)
 
-This module provides Google Gemini provider services with enhanced capabilities.
+统一的 Google Gemini/Vertex AI 服务模块。
 
-Architecture:
-- google_service.py: Main coordinator
-- sdk_initializer.py: SDK initialization
-- chat_handler.py: Chat operations
-- image_generator.py: Image generation
-- model_manager.py: Model listing
-- file_handler.py: File upload/download operations (NEW)
-- function_handler.py: Function calling and tool integration (NEW)
-- schema_handler.py: Structured JSON response handling (NEW)
-- token_handler.py: Token counting and cost estimation (NEW)
-- message_converter.py: Message format conversion
-- response_parser.py: Response parsing
-- config_builder.py: Configuration building
-- mode_registry.py: Google-specific mode registry (NEW)
-- mode_initialization.py: Mode handler initialization (NEW)
+目录结构:
+├── client_pool.py          # 统一客户端池
+├── google_service.py       # 主服务入口
+│
+├── vertexai/               # Vertex AI 专用服务 (需要 GCP 凭证)
+│   ├── tryon_service.py    # 虚拟试穿
+│   ├── upscale_service.py  # 图片放大
+│   ├── segmentation_service.py  # 图片分割
+│   ├── mask_edit_service.py    # 掩码编辑
+│   └── expand_service.py   # 图像扩展
+│
+├── geminiapi/              # Gemini API 专用服务 (只需 API Key)
+│   ├── imagen_gemini_api.py
+│   └── conversational_image_edit_service.py
+│
+├── common/                 # 公共模块
+├── base/                   # 基类
+├── coordinators/           # 协调器
+└── docs/                   # 文档
 
-New Features (P0):
-- Files API: Multi-modal file processing
-- Function Calling: Tool integration and external API calls
-- JSON Schema Response: Structured output formatting
-- Token Management: Usage tracking and cost control
-- Mode Registry: Google-specific modes (outpainting, inpainting, virtual try-on)
+使用方式:
+    # Vertex AI 服务
+    from .vertexai import tryon_service, upscale_service, segmentation_service
+
+    # Gemini API 服务
+    from .geminiapi import imagen_gemini_api
+
+    # 统一客户端池
+    from .client_pool import get_client_pool
 """
 
+# ==================== 主服务 ====================
 from .google_service import GoogleService
-from .file_handler import FileHandler
-from .function_handler import FunctionHandler, FunctionCallingMode
-from .schema_handler import SchemaHandler, CommonSchemas
-from .token_handler import TokenHandler, TokenCount, ModelPricing, ModelLimits
-from .mode_registry import GoogleModeRegistry, get_global_registry, ModeHandler
-from .mode_initialization import initialize_google_modes, get_registered_modes
+from .client_pool import GeminiClientPool, get_client_pool
+
+# ==================== 公共模块 ====================
+from .common.file_handler import FileHandler
+from .common.function_handler import FunctionHandler, FunctionCallingMode
+from .common.schema_handler import SchemaHandler, CommonSchemas
+from .common.token_handler import TokenHandler, TokenCount, ModelPricing, ModelLimits
+from .common.mode_registry import GoogleModeRegistry, get_global_registry, ModeHandler
+from .common.mode_initialization import initialize_google_modes, get_registered_modes
+
+# ==================== Vertex AI 服务 ====================
+from .vertexai import (
+    TryOnService,
+    TryOnResult,
+    tryon_service,
+    UpscaleService,
+    UpscaleResult,
+    upscale_service,
+    SegmentationService,
+    SegmentResult,
+    segmentation_service,
+    MaskEditService,
+    EditResult,
+    mask_edit_service,
+)
 
 __all__ = [
+    # 主服务
     'GoogleService',
+    'GeminiClientPool',
+    'get_client_pool',
+
+    # 公共模块
     'FileHandler',
-    'FunctionHandler', 
+    'FunctionHandler',
     'FunctionCallingMode',
     'SchemaHandler',
     'CommonSchemas',
@@ -51,4 +83,18 @@ __all__ = [
     'ModeHandler',
     'initialize_google_modes',
     'get_registered_modes',
+
+    # Vertex AI 服务
+    'TryOnService',
+    'TryOnResult',
+    'tryon_service',
+    'UpscaleService',
+    'UpscaleResult',
+    'upscale_service',
+    'SegmentationService',
+    'SegmentResult',
+    'segmentation_service',
+    'MaskEditService',
+    'EditResult',
+    'mask_edit_service',
 ]

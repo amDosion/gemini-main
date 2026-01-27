@@ -241,9 +241,9 @@ export const uploadToCloudStorage = async (
     
     console.log('[uploadToCloudStorage] 提交异步上传任务:', {
       type: isFile ? 'File' : isBase64Url(sourceUrl) ? 'Base64' : isBlobUrl(sourceUrl) ? 'Blob URL' : 'Unknown',
-      messageId: messageId.substring(0, 8) + '...',
-      attachmentId: attachmentId.substring(0, 8) + '...',
-      sessionId: sessionId.substring(0, 8) + '...'
+      messageId: messageId,  // ✅ 不截断 ID，显示完整 ID
+      attachmentId: attachmentId,  // ✅ 不截断 ID，显示完整 ID
+      sessionId: sessionId  // ✅ 不截断 ID，显示完整 ID
     });
 
     // 使用统一函数转换为 File
@@ -916,16 +916,34 @@ export const processUserAttachments = async (
     // 只做基本的元数据整理，确保附件对象包含必要的字段
     // 后端 modes.py 会调用 AttachmentService 处理上传
     const processedAttachments = attachments.map((att, index) => {
+      // ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
+      const formatUrlForLog = (url: string | undefined): string => {
+        if (!url) return 'N/A';
+        if (url.startsWith('data:')) {
+          return `Base64 Data URL (长度: ${url.length} 字符)`;
+        }
+        return url.length > 80 ? url.substring(0, 80) + '...' : url;
+      };
+
+      // ✅ 详细日志：确保 url 字段被正确记录
+      const urlInfo = att.url ? formatUrlForLog(att.url) : 'N/A';
       console.log(`[processUserAttachments] 附件[${index}] 元数据:`, {
-        id: att.id?.substring(0, 8) + '...',
+        id: att.id || 'N/A',  // ✅ 不截断 ID，显示完整 ID
         urlType: att.url?.startsWith('blob:') ? 'Blob' : 
                  att.url?.startsWith('data:') ? 'Base64' : 
                  att.url?.startsWith('http') ? 'HTTP' : 'Other',
+        url: urlInfo,  // ✅ 使用格式化函数处理 URL
+        urlLength: att.url ? att.url.length : 0,  // ✅ 新增：记录 URL 长度
         uploadStatus: att.uploadStatus,
         hasFile: !!att.file,
         mimeType: att.mimeType,
         name: att.name
       });
+      
+      // ✅ 额外日志：确保 url 字段存在（用于调试）
+      if (!att.url && !att.tempUrl) {
+        console.warn(`[processUserAttachments] ⚠️ 附件[${index}] 缺少 URL 字段！`, att);
+      }
 
       // 如果已有 file 对象，保留它（后端可能需要）
       // 但不再进行 Base64 转换，后端会处理
@@ -936,11 +954,14 @@ export const processUserAttachments = async (
 
       // 对于其他情况，直接传递元数据
       // 后端会处理 Base64、Blob URL、HTTP URL 等所有类型
+      const finalUrl = att.url || att.tempUrl || '';
       console.log(`[processUserAttachments] 附件[${index}] ✅ 传递元数据给后端处理`);
+      console.log(`[processUserAttachments] 附件[${index}] 最终 URL:`, formatUrlForLog(finalUrl));
+      
       return {
         ...att,
-        // 确保有 URL（可能是 Blob URL、Base64 或 HTTP URL）
-        url: att.url || att.tempUrl || '',
+        // ✅ 确保有 URL（可能是 Blob URL、Base64 或 HTTP URL）
+        url: finalUrl,
         // 保持原始状态，后端会处理
         uploadStatus: att.uploadStatus || 'pending' as const
       };
@@ -1022,11 +1043,20 @@ export const processMediaResult = async (
                         isBlobUrl(displayUrl) ? 'Blob URL (处理后的本地URL)' :
                         isHttpUrl(displayUrl) ? 'HTTP URL' :
                         '未知类型';
+  // ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
+  const formatUrlForLog = (url: string | undefined): string => {
+    if (!url) return 'N/A';
+    if (url.startsWith('data:')) {
+      return `Base64 Data URL (长度: ${url.length} 字符)`;
+    }
+    return url.length > 80 ? url.substring(0, 80) + '...' : url;
+  };
+
   console.log('[processMediaResult] 显示附件URL类型:', {
-    attachmentId: attachmentId.substring(0, 8) + '...',
+    attachmentId: attachmentId,  // ✅ 不截断 ID，显示完整 ID
     displayUrlType: displayUrlType,
-    displayUrl: displayUrl.length > 80 ? displayUrl.substring(0, 80) + '...' : displayUrl,
-    originalUrl: originalUrl.length > 80 ? originalUrl.substring(0, 80) + '...' : originalUrl,
+    displayUrl: formatUrlForLog(displayUrl),
+    originalUrl: formatUrlForLog(originalUrl),
     source: displayUrlType === 'Base64 Data URL' ? 'AI返回的原始Base64 (直接使用)' :
             displayUrlType === 'Blob URL (处理后的本地URL)' ? '处理后的Blob URL (从HTTP临时URL转换)' :
             '其他类型',
@@ -1056,13 +1086,23 @@ export const processMediaResult = async (
     };
 
     // ✅ 详细日志：记录数据库附件URL类型
+    // ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
+    const formatUrlForLog2 = (url: string | undefined): string => {
+      if (!url) return 'N/A';
+      if (url.startsWith('data:')) {
+        return `Base64 Data URL (长度: ${url.length} 字符)`;
+      }
+      return url.length > 60 ? url.substring(0, 60) + '...' : url;
+    };
+
     console.log('[processMediaResult] 数据库附件URL类型:', {
-      attachmentId: attachmentId.substring(0, 8) + '...',
-      url: dbAttachment.url ? (dbAttachment.url.length > 60 ? dbAttachment.url.substring(0, 60) + '...' : dbAttachment.url) : '空URL',
-      urlType: dbAttachment.url ? (isHttpUrl(dbAttachment.url) ? 'HTTP临时URL (AI原始返回，等待上传完成)' : '空URL') : '空URL',
+      attachmentId: attachmentId,  // ✅ 不截断 ID，显示完整 ID
+      url: formatUrlForLog2(dbAttachment.url),
+      urlType: dbAttachment.url ? (isHttpUrl(dbAttachment.url) ? 'HTTP临时URL (AI原始返回，等待上传完成)' : 
+                                   dbAttachment.url.startsWith('data:') ? 'Base64 Data URL' : '其他') : '空URL',
       uploadStatus: dbAttachment.uploadStatus,
-      uploadTaskId: dbAttachment.uploadTaskId ? dbAttachment.uploadTaskId.substring(0, 8) + '...' : 'N/A',
-      tempUrl: dbAttachment.tempUrl ? (dbAttachment.tempUrl.length > 60 ? dbAttachment.tempUrl.substring(0, 60) + '...' : dbAttachment.tempUrl) : 'N/A',
+      uploadTaskId: dbAttachment.uploadTaskId || 'N/A',  // ✅ 不截断 taskId，显示完整 ID
+      tempUrl: formatUrlForLog2(dbAttachment.tempUrl),
       note: '上传完成后，url将更新为云存储URL，tempUrl保留原始URL用于查找'
     });
     console.log('[processMediaResult] ============================================');
@@ -1094,9 +1134,9 @@ export const submitUploadTaskToBackend = async (
   try {
     console.log('[submitUploadTaskToBackend] 提交上传任务到后端:', {
       filename,
-      sessionId: sessionId.substring(0, 8) + '...',
-      messageId: messageId.substring(0, 8) + '...',
-      attachmentId: attachmentId.substring(0, 8) + '...',
+      sessionId: sessionId,  // ✅ 不截断 ID，显示完整 ID
+      messageId: messageId,  // ✅ 不截断 ID，显示完整 ID
+      attachmentId: attachmentId,  // ✅ 不截断 ID，显示完整 ID
       urlType: imageUrl.startsWith('data:') ? 'Base64' : imageUrl.startsWith('blob:') ? 'Blob' : 'Remote'
     });
 

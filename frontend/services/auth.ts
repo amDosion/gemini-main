@@ -106,6 +106,11 @@ function getHeaders(includeJson = true): HeadersInit {
 class AuthService {
   private baseUrl = '/api/auth';
 
+  // ✅ 配置缓存（避免多个组件同时请求）
+  private configCache: { timestamp: number; data: AuthConfig } | null = null;
+  private configCacheTTL = 30000; // 30秒缓存
+  private configPromise: Promise<AuthConfig> | null = null; // 防止并发请求
+
   constructor() {
     // ✅ 监听其他标签页的 token 刷新
     listenTokenRefresh((accessToken, refreshToken) => {
@@ -124,23 +129,51 @@ class AuthService {
 
   /**
    * 获取认证配置（注册开关状态）- 公开端点，不需要 token
+   * ✅ 使用缓存和请求去重，避免多个组件同时请求
    */
   async getConfig(): Promise<AuthConfig> {
-    const response = await fetch(`${this.baseUrl}/config`, {
-      method: 'GET',
-      signal: AbortSignal.timeout(10000), // 10秒超时
-    });
-    if (!response.ok) {
-      console.error('[AuthService] 获取配置失败:', response.status, response.statusText);
-      throw new Error('Failed to fetch auth config');
+    const now = Date.now();
+
+    // ✅ 检查缓存是否有效
+    if (this.configCache && now - this.configCache.timestamp < this.configCacheTTL) {
+      console.log('[AuthService] Using cached config');
+      return this.configCache.data;
     }
-    const data = await response.json();
-    console.log('[AuthService] 获取到的配置:', data);
-    const result = {
-      allowRegistration: data.allow_registration,
-    };
-    console.log('[AuthService] 解析后的配置:', result);
-    return result;
+
+    // ✅ 如果已有进行中的请求，复用它（防止并发请求）
+    if (this.configPromise) {
+      console.log('[AuthService] Reusing pending config request');
+      return this.configPromise;
+    }
+
+    // ✅ 发起新请求
+    console.log('[AuthService] Fetching config...');
+    this.configPromise = (async () => {
+      try {
+        const response = await fetch(`${this.baseUrl}/config`, {
+          method: 'GET',
+          signal: AbortSignal.timeout(10000), // 10秒超时
+        });
+        if (!response.ok) {
+          console.error('[AuthService] 获取配置失败:', response.status, response.statusText);
+          throw new Error('Failed to fetch auth config');
+        }
+        const data = await response.json();
+        const result: AuthConfig = {
+          allowRegistration: data.allow_registration,
+        };
+
+        // ✅ 更新缓存
+        this.configCache = { timestamp: Date.now(), data: result };
+        console.log('[AuthService] Config fetched and cached:', result);
+        return result;
+      } finally {
+        // ✅ 请求完成，清除 promise 引用
+        this.configPromise = null;
+      }
+    })();
+
+    return this.configPromise;
   }
 
   /**

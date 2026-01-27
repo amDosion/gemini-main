@@ -12,8 +12,8 @@ import asyncio
 from typing import Dict, Any, List, Optional, AsyncIterator
 from sqlalchemy.orm import Session
 
-from .imagen_coordinator import ImagenCoordinator
-from .imagen_common import ContentPolicyError
+from .coordinators.imagen_coordinator import ImagenCoordinator
+from .base.imagen_common import ContentPolicyError
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +132,8 @@ class ImageGenerator:
         'imageResolution': 'image_size',
         'outputMimeType': 'output_mime_type',
         'negativePrompt': 'negative_prompt',
+        'enhancePrompt': 'enhance_prompt',  # ✅ 提示词增强参数（仅 Vertex AI 支持）
+        'outputCompressionQuality': 'output_compression_quality',  # ✅ JPEG 压缩质量
         # imageStyle maps to image_style (no change needed, already snake_case compatible)
     }
     

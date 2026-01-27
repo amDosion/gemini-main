@@ -24,11 +24,8 @@ import sys
 import time
 import platform
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# 获取 logger（不在模块级别配置 basicConfig，避免与全局配置冲突）
+# 当作为独立进程运行时，在 main() 中配置日志
 logger = logging.getLogger(__name__)
 
 # Unix Socket 路径（Windows 使用命名管道路径）
@@ -331,4 +328,9 @@ def main():
         sys.exit(1)
 
 if __name__ == '__main__':
+    # 独立运行时配置日志（避免在模块导入时配置，防止与全局配置冲突）
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
     main()

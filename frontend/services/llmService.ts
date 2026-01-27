@@ -432,16 +432,44 @@ export class LLMService {
       throw new Error("Out-Painting not supported by current provider.");
   }
 
-  public async virtualTryOn(prompt: string, attachments: Attachment[]): Promise<ImageGenerationResult[]> {
+  /**
+   * Virtual Try-On（虚拟试衣）
+   * 
+   * 与 GEN 模式保持一致：传递 sessionId 和 message_id 到后端，
+   * 后端会通过 AttachmentService 创建数据库附件记录和上传任务。
+   * 
+   * @param prompt 提示词（暂不支持）
+   * @param attachments 附件（人物图 + 服装图）
+   * @param options 选项（包含 sessionId、message_id 等）
+   */
+  public async virtualTryOn(
+    prompt: string, 
+    attachments: Attachment[],
+    options?: Partial<ChatOptions>
+  ): Promise<ImageGenerationResult[]> {
+      // ✅ 与 ImageGenHandler 保持一致：合并 options，确保传递 sessionId 和 message_id
+      const mergedOptions = {
+        ...this._cachedOptions,
+        ...options,  // ✅ Handler 传入的 options 优先（包含 sessionId、message_id）
+      };
+      
+      // ✅ 详细日志：记录 virtual-try-on 模式下传递的参数
+      console.log('========== [llmService.virtualTryOn] 参数传递 ==========');
+      console.log('[virtualTryOn] sessionId:', mergedOptions.sessionId || mergedOptions.frontend_session_id || 'N/A');
+      console.log('[virtualTryOn] message_id:', (mergedOptions as any).message_id || 'N/A');
+      console.log('[virtualTryOn] numberOfImages:', mergedOptions.numberOfImages);
+      console.log('[virtualTryOn] attachments:', attachments.length);
+      console.log('========== [llmService.virtualTryOn] 参数传递结束 ==========');
+
       // ✅ 新架构: 使用 UnifiedProviderClient.executeMode('virtual-try-on', ...) 统一处理
       if (this.currentProvider && 'executeMode' in this.currentProvider) {
           const unifiedProvider = this.currentProvider as any;
           const result = await unifiedProvider.executeMode(
               'virtual-try-on',
-              this._cachedOptions.modelId || '',
+              mergedOptions.modelId || '',
               prompt,
               attachments,
-              this._cachedOptions,
+              mergedOptions,  // ✅ 使用合并后的 options（包含 sessionId、message_id）
               {}
           );
           return Array.isArray(result) ? result : [result];

@@ -33,6 +33,7 @@ export interface ImageGenerationResult {
   taskId?: string;  // 上传任务ID
   thoughts?: Array<{ type: 'text' | 'image'; content: string }>; // 思考过程（thoughts）
   text?: string; // 文本响应
+  enhancedPrompt?: string; // ✅ 增强后的提示词（当启用 enhance_prompt 时返回）
 }
 
 export interface VideoGenerationResult {

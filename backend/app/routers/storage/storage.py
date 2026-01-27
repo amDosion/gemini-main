@@ -809,33 +809,69 @@ async def upload_from_url(
     db.add(task)
     db.commit()
 
-    # 入队 Redis
+    # 入队任务（ARQ 或 Redis）
     enqueue_error: str | None = None
+    queue_position: int = -1
+    job_id: str | None = None
+    
+    # 检查是否使用 ARQ 模式
     try:
-        if redis_queue._redis is None:
-            await redis_queue.connect()
-        queue_position = await redis_queue.enqueue(task_id, priority)
-        await redis_queue.append_task_log(
-            task_id,
-            level="info",
-            message=f"enqueued to redis (position={queue_position})",
-            source="api",
-        )
-    except Exception as e:
-        enqueue_error = f"Redis 入队失败: {e}"
+        from ...core.config import settings
+        use_arq = settings.worker_mode.lower() == "arq"
+    except Exception:
+        use_arq = False
+    
+    if use_arq:
+        # 使用 ARQ 入队
         try:
-            task.error_message = enqueue_error
-            db.commit()
-        except Exception:
-            db.rollback()
-        queue_position = -1
+            from ...services.common.arq_queue_service import enqueue_arq_job
+            job_id = await enqueue_arq_job(task_id, priority)
+            if job_id:
+                await redis_queue.append_task_log(
+                    task_id,
+                    level="info",
+                    message=f"enqueued to ARQ (job_id={job_id})",
+                    source="api",
+                )
+            else:
+                enqueue_error = "ARQ 入队失败"
+                task.error_message = enqueue_error
+                db.commit()
+        except Exception as e:
+            enqueue_error = f"ARQ 入队失败: {e}"
+            try:
+                task.error_message = enqueue_error
+                db.commit()
+            except Exception:
+                db.rollback()
+    else:
+        # 使用原有 Redis 队列
+        try:
+            if redis_queue._redis is None:
+                await redis_queue.connect()
+            queue_position = await redis_queue.enqueue(task_id, priority)
+            await redis_queue.append_task_log(
+                task_id,
+                level="info",
+                message=f"enqueued to redis (position={queue_position})",
+                source="api",
+            )
+        except Exception as e:
+            enqueue_error = f"Redis 入队失败: {e}"
+            try:
+                task.error_message = enqueue_error
+                db.commit()
+            except Exception:
+                db.rollback()
+            queue_position = -1
 
     return {
         "task_id": task_id,
         "status": "pending",
         "priority": priority,
-        "queue_position": queue_position,
-        "enqueued": queue_position != -1,
+        "queue_position": queue_position if not use_arq else (0 if job_id else -1),
+        "job_id": job_id if use_arq else None,
+        "enqueued": (queue_position != -1) if not use_arq else (job_id is not None),
         "enqueue_error": enqueue_error
     }
 

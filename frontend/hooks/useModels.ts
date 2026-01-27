@@ -20,10 +20,17 @@ export const useModels = (
   // ✅ 跟踪上一个 providerId 和 appMode，用于检测切换
   const prevProviderIdRef = useRef<string>(providerId);
   const prevAppModeRef = useRef<AppMode>(appMode);
-  
+
   // ✅ 跟踪用户是否手动选择了模型（通过 setCurrentModelId 直接调用）
   const userSelectedModelRef = useRef<boolean>(false);
-  
+
+  // ✅ 用于存储最新的 internalSelectBestModel 函数引用，避免将其加入依赖数组
+  const selectBestModelRef = useRef<(models: ModelConfig[], forceReset: boolean) => void>();
+
+  // ✅ 用于防止 Vertex AI 配置重复请求
+  const vertexAIConfigCacheRef = useRef<{ timestamp: number; data: any } | null>(null);
+  const VERTEX_AI_CACHE_TTL = 30000; // 30秒缓存
+
   // ✅ 检测提供商是否切换
   const providerChanged = prevProviderIdRef.current !== providerId;
   // ✅ 检测应用模式是否切换
@@ -31,6 +38,7 @@ export const useModels = (
 
   /**
    * 合并 Vertex AI 模型到 Google 提供商模型列表
+   * ✅ 使用内存缓存避免重复请求 /api/vertex-ai/config
    * @param googleModels Google API 返回的模型列表
    * @returns 合并后的模型列表
    */
@@ -41,9 +49,28 @@ export const useModels = (
     }
 
     try {
-      // 获取 Vertex AI 配置
-      const vertexAIConfig = await db.request<ImagenConfigResponse>('/vertex-ai/config');
-      
+      // ✅ 检查缓存是否有效（30秒内）
+      const now = Date.now();
+      let vertexAIConfig: ImagenConfigResponse | null = null;
+
+      if (
+        vertexAIConfigCacheRef.current &&
+        now - vertexAIConfigCacheRef.current.timestamp < VERTEX_AI_CACHE_TTL
+      ) {
+        // 使用缓存
+        vertexAIConfig = vertexAIConfigCacheRef.current.data;
+        console.log('[useModels] Using cached Vertex AI config');
+      } else {
+        // 缓存过期或不存在，发起请求
+        console.log('[useModels] Fetching Vertex AI config...');
+        vertexAIConfig = await db.request<ImagenConfigResponse>('/vertex-ai/config');
+        // 更新缓存
+        vertexAIConfigCacheRef.current = {
+          timestamp: now,
+          data: vertexAIConfig
+        };
+      }
+
       if (!vertexAIConfig?.savedModels || vertexAIConfig.savedModels.length === 0) {
         // 没有 Vertex AI 配置或没有保存的模型，直接返回 Google 模型
         return googleModels;
@@ -60,7 +87,7 @@ export const useModels = (
       // 2. 然后添加 Vertex AI 保存的模型
       vertexAIConfig.savedModels.forEach((vertexModel: ModelConfig) => {
         const existing = mergedMap.get(vertexModel.id);
-        
+
         if (existing) {
           // 模型已存在，合并 capabilities（Vertex AI 的优先级更高）
           mergedMap.set(vertexModel.id, {
@@ -94,7 +121,7 @@ export const useModels = (
 
       const mergedModels = Array.from(mergedMap.values());
       console.log(`[useModels] Merged ${googleModels.length} Google models with ${vertexAIConfig.savedModels.length} Vertex AI models, result: ${mergedModels.length} models`);
-      
+
       return mergedModels;
     } catch (error) {
       console.warn('[useModels] Failed to merge Vertex AI models, using Google models only:', error);
@@ -115,13 +142,13 @@ export const useModels = (
           setCurrentModelId("");
           return;
       }
-      
+
       // ✅ 第一步：根据 appMode 过滤模型
       const modeFiltered = filterModelsByAppMode(models, appMode);
-      
+
       // ✅ 第二步：排除隐藏模型
       const visible = modeFiltered.filter(m => !hiddenModelIds.includes(m.id));
-      
+
       if (visible.length === 0) {
           setCurrentModelId("");
           return;
@@ -139,7 +166,7 @@ export const useModels = (
               // 用户选择的模型在新模式下不可用，清除用户选择标志，自动切换
               userSelectedModelRef.current = false;
           }
-          
+
           // ✅ 自动选择第一个可见模型
           // 如果 forceReset 或提供商切换，重置用户选择标志
           if (forceReset || providerChanged) {
@@ -148,6 +175,11 @@ export const useModels = (
           return visible[0].id;
       });
   }, [hiddenModelIds, providerChanged, appMode]);
+
+  // ✅ 同步更新 ref，供 useEffect 使用（避免将函数加入依赖数组）
+  useEffect(() => {
+      selectBestModelRef.current = internalSelectBestModel;
+  }, [internalSelectBestModel]);
 
   // ✅ 包装 setCurrentModelId，标记为用户手动选择
   const setCurrentModelIdWithUserFlag = useCallback((id: string | ((prev: string) => string)) => {
@@ -197,6 +229,7 @@ export const useModels = (
 
   // Main effect to handle model loading and updates
   // ✅ 只在 providerId 变化时重新获取模型，appMode 变化不触发重新获取
+  // ✅ 移除 internalSelectBestModel 依赖，使用 ref 避免 appMode 变化触发重新获取
   useEffect(() => {
     if (!configReady) return;
 
@@ -206,6 +239,8 @@ export const useModels = (
       // ✅ 提供商切换时，重置用户选择标志并清空当前模型选择
       userSelectedModelRef.current = false;
       setCurrentModelId("");
+      // ✅ 提供商切换时，清除 Vertex AI 配置缓存
+      vertexAIConfigCacheRef.current = null;
     }
 
     // Inlined fetchModels logic
@@ -216,17 +251,17 @@ export const useModels = (
         // ✅ 不传递 appMode 给后端，总是获取完整模型列表
         // 前端会根据 appMode 进行过滤，避免每次模式切换都调用 API
         let models = await llmService.getAvailableModels(useCache);
-        
+
         // ✅ 如果是 Google 提供商，合并 Vertex AI 模型
         if (providerId === 'google' && models && models.length > 0) {
           models = await mergeVertexAIModels(models);
         }
-        
+
         if (models && models.length > 0) {
           setAvailableModels(models);
-          // ✅ 使用完整模型列表，根据当前 appMode 过滤并选择
+          // ✅ 使用 ref 调用，避免将 internalSelectBestModel 加入依赖数组
           // 只有在提供商切换或首次加载（!useCache）时才强制重置
-          internalSelectBestModel(models, providerChanged || !useCache);
+          selectBestModelRef.current?.(models, providerChanged || !useCache);
         } else {
           setAvailableModels([]);
           setCurrentModelId("");
@@ -265,8 +300,8 @@ export const useModels = (
             }
             setAvailableModels(models);
             setIsLoadingModels(false);
-            // ✅ 使用完整模型列表，根据当前 appMode 过滤并选择
-            internalSelectBestModel(models, providerChanged);
+            // ✅ 使用 ref 调用，避免将 internalSelectBestModel 加入依赖数组
+            selectBestModelRef.current?.(models, providerChanged);
           } catch (e) {
             console.error('[useModels] Failed to process cached models:', e);
             // 如果处理缓存失败，回退到从 API 获取
@@ -281,7 +316,9 @@ export const useModels = (
       }
       internalFetchModels(true);
     }
-  }, [configReady, providerId, cachedModels, hiddenModelIds, internalSelectBestModel, providerChanged, mergeVertexAIModels]);
+    // ✅ 移除 internalSelectBestModel 依赖，改用 selectBestModelRef
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [configReady, providerId, cachedModels, hiddenModelIds, providerChanged, mergeVertexAIModels]);
 
   /**
    * Forces a refresh of the model list from the provider, bypassing any cache.
@@ -302,8 +339,8 @@ export const useModels = (
         
         if (models && models.length > 0) {
           setAvailableModels(models);
-          // ✅ 使用完整模型列表，根据当前 appMode 过滤并选择
-          internalSelectBestModel(models, true);
+          // ✅ 使用 ref 调用，避免将 internalSelectBestModel 加入依赖数组
+          selectBestModelRef.current?.(models, true);
         } else {
           setAvailableModels([]);
           setCurrentModelId("");
@@ -315,7 +352,9 @@ export const useModels = (
       } finally {
         setIsLoadingModels(false);
       }
-  }, [internalSelectBestModel, providerId, mergeVertexAIModels]);
+  // ✅ 移除 internalSelectBestModel 依赖，改用 selectBestModelRef
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [providerId, mergeVertexAIModels]);
 
   const activeModelConfig = useMemo(() => {
     const found = availableModels.find(m => m.id === currentModelId);

@@ -81,6 +81,13 @@ class ModeOptions(BaseModel):
     negativePrompt: Optional[str] = None
     guidanceScale: Optional[float] = None
     seed: Optional[int] = None
+    # Google Imagen 高级参数
+    outputMimeType: Optional[str] = None
+    outputCompressionQuality: Optional[int] = None
+    enhancePrompt: Optional[bool] = None
+    # TongYi 专用参数
+    promptExtend: Optional[bool] = None  # AI 增强提示词
+    addMagicSuffix: Optional[bool] = None  # 魔法词组
     # Allow additional fields
     class Config:
         extra = "allow"
@@ -218,7 +225,7 @@ async def handle_mode(
         logger.info(f"[Modes] 📥 请求信息:")
         logger.info(f"[Modes]     - provider: {provider}")
         logger.info(f"[Modes]     - mode: {mode}")
-        logger.info(f"[Modes]     - user_id: {user_id[:8]}...")
+        logger.info(f"[Modes]     - user_id: {user_id}")  # ✅ 不截断 ID，显示完整 ID
         logger.info(f"[Modes]     - token来源: {token_source}")
         logger.info(f"[Modes]     - 有Authorization header: {'是' if auth_header else '否'}")
         logger.info(f"[Modes]     - 有Cookie token: {'是' if cookie_token else '否'}")
@@ -332,7 +339,7 @@ async def handle_mode(
             session_id = request_body.options.frontend_session_id or request_body.options.sessionId
             if session_id:
                 logger.info(f"[Modes] 🔍 获取会话ID和消息列表...")
-                logger.info(f"[Modes]     - session_id: {session_id[:8]}...")
+                logger.info(f"[Modes]     - session_id: {session_id}")  # ✅ 不截断 ID，显示完整 ID
                 
                 # 从 extra 中获取 messages，如果为空则从数据库查询
                 messages = []
@@ -366,12 +373,19 @@ async def handle_mode(
                     
                     has_cloud_url = resolved["status"] == "completed" and resolved["url"] and resolved["url"].startswith("http")
                     logger.info(f"[Modes] ✅ CONTINUITY附件解析成功 (耗时: {continuity_elapsed:.2f}ms):")
-                    logger.info(f"[Modes]     - attachment_id: {resolved['attachment_id'][:8]}...")
+                    logger.info(f"[Modes]     - attachment_id: {resolved['attachment_id']}")  # ✅ 不截断 ID，显示完整 ID
                     logger.info(f"[Modes]     - status: {resolved['status']}")
                     logger.info(f"[Modes]     - hasCloudUrl: {has_cloud_url}")
-                    url_display = resolved['url'][:80] + '...' if resolved['url'] and len(resolved['url']) > 80 else resolved['url'] or 'None'
+                    # ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
+                    if resolved.get('url'):
+                        if resolved['url'].startswith('data:'):
+                            url_display = f"Base64 Data URL (长度: {len(resolved['url'])} 字符)"
+                        else:
+                            url_display = resolved['url'][:80] + '...' if len(resolved['url']) > 80 else resolved['url']
+                    else:
+                        url_display = 'None'
                     logger.info(f"[Modes]     - url: {url_display}")
-                    task_id_display = resolved.get('task_id', 'None')[:8] + '...' if resolved.get('task_id') else 'None'
+                    task_id_display = resolved.get('task_id') or 'None'  # ✅ 不截断 task_id，显示完整 ID
                     logger.info(f"[Modes]     - taskId: {task_id_display}")
                     logger.info(f"[Modes]     - 已添加到 reference_images.raw")
                     logger.info(f"[Modes] ========== CONTINUITY LOGIC处理完成 ==========")
@@ -400,7 +414,7 @@ async def handle_mode(
                     ).first()
                     
                     if db_attachment:
-                        logger.info(f"[Modes] ✅ 找到数据库中的附件: attachment_id={attachment_id[:8]}...")
+                        logger.info(f"[Modes] ✅ 找到数据库中的附件: attachment_id={attachment_id}")  # ✅ 不截断 ID，显示完整 ID
                         logger.info(f"[Modes]     - upload_status: {db_attachment.upload_status}")
                         logger.info(f"[Modes]     - has_url: {bool(db_attachment.url)}")
                         logger.info(f"[Modes]     - has_temp_url: {bool(db_attachment.temp_url)}")
@@ -408,16 +422,24 @@ async def handle_mode(
                         # ✅ 如果已上传完成，优先使用 url（云端永久 URL）
                         if db_attachment.upload_status == 'completed' and db_attachment.url:
                             raw_data['url'] = db_attachment.url
-                            logger.info(f"[Modes]     - 使用云存储 URL: {db_attachment.url[:60]}...")
+                            # ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
+                            if db_attachment.url.startswith('data:'):
+                                logger.info(f"[Modes]     - 使用云存储 URL: Base64 Data URL (长度: {len(db_attachment.url)} 字符)")
+                            else:
+                                logger.info(f"[Modes]     - 使用云存储 URL: {db_attachment.url[:80] + '...' if len(db_attachment.url) > 80 else db_attachment.url}")
                         # ✅ 如果未上传完成，使用 temp_url（Base64）
                         elif db_attachment.temp_url:
                             raw_data['url'] = db_attachment.temp_url
-                            logger.info(f"[Modes]     - 使用临时 URL (Base64)")
+                            # ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
+                            if db_attachment.temp_url.startswith('data:'):
+                                logger.info(f"[Modes]     - 使用临时 URL: Base64 Data URL (长度: {len(db_attachment.temp_url)} 字符)")
+                            else:
+                                logger.info(f"[Modes]     - 使用临时 URL: {db_attachment.temp_url[:80] + '...' if len(db_attachment.temp_url) > 80 else db_attachment.temp_url}")
                         
                         # 更新 reference_images
                         reference_images['raw'] = raw_data
                     else:
-                        logger.warning(f"[Modes] ⚠️ 未找到数据库中的附件: attachment_id={attachment_id[:8]}...")
+                        logger.warning(f"[Modes] ⚠️ 未找到数据库中的附件: attachment_id={attachment_id}")  # ✅ 不截断 ID，显示完整 ID
             
             if reference_images:
                 params["reference_images"] = reference_images
@@ -500,7 +522,7 @@ async def handle_mode(
             # 对于图片生成/编辑模式，需要返回友好的错误信息
             if method_name in ["generate_image", "edit_image"]:
                 # 检查是否是 API 相关错误
-                from ...services.gemini.imagen_common import APIError
+                from ...services.gemini.base.imagen_common import APIError
                 if isinstance(method_error, APIError):
                     error_message = str(method_error)
                     # 提取原始错误信息（如果是 API Key 过期等）
@@ -546,8 +568,8 @@ async def handle_mode(
                 session_id = request_body.options.frontend_session_id or request_body.options.sessionId
                 message_id = request_body.options.message_id
             
-            logger.info(f"[Modes]     - session_id: {session_id[:8] + '...' if session_id else 'None'}")
-            logger.info(f"[Modes]     - message_id: {message_id[:8] + '...' if message_id else 'None'}")
+            logger.info(f"[Modes]     - session_id: {session_id or 'None'}")  # ✅ 不截断 ID，显示完整 ID
+            logger.info(f"[Modes]     - message_id: {message_id or 'None'}")  # ✅ 不截断 ID，显示完整 ID
             
             # ✅ 如果缺少 messageId，记录警告但继续处理（不阻塞）
             if not message_id:
@@ -570,11 +592,13 @@ async def handle_mode(
                         ai_url = img.get("url") or img.get("image")
                         mime_type = img.get("mimeType") or img.get("mime_type", "image/png")
                         filename = img.get("filename")  # ✅ 提取 filename（如果有）
+                        enhanced_prompt = img.get("enhancedPrompt")  # ✅ 新增：提取增强后的提示词
                     else:
                         # ImageGenerationResult 对象
                         ai_url = img.url if hasattr(img, "url") else None
                         mime_type = img.mime_type if hasattr(img, "mime_type") else "image/png"
                         filename = img.filename if hasattr(img, "filename") else None
+                        enhanced_prompt = img.enhanced_prompt if hasattr(img, "enhanced_prompt") else None
                     
                     if not ai_url:
                         logger.warning(f"[Modes] ⚠️ 第 {idx+1} 张图片缺少URL，跳过")
@@ -597,19 +621,26 @@ async def handle_mode(
                     )
                     
                     logger.info(f"[Modes] ✅ [步骤7] 第 {idx+1} 张图片处理完成:")
-                    logger.info(f"[Modes]     - attachment_id: {processed['attachment_id'][:8]}...")
+                    logger.info(f"[Modes]     - attachment_id: {processed['attachment_id']}")  # ✅ 不截断 ID，显示完整 ID
                     logger.info(f"[Modes]     - status: {processed['status']}")
-                    logger.info(f"[Modes]     - task_id: {processed.get('task_id', 'None')[:8] + '...' if processed.get('task_id') else 'None'}")
+                    logger.info(f"[Modes]     - task_id: {processed.get('task_id') or 'None'}")  # ✅ 不截断 task_id，显示完整 ID
                     
                     # ✅ 构建响应格式（包含完整字段）
-                    processed_images.append({
+                    image_result = {
                         "url": processed["display_url"],  # 显示URL（前端立即显示）
                         "attachmentId": processed["attachment_id"],
                         "uploadStatus": processed["status"],
                         "taskId": processed["task_id"],
                         "mimeType": mime_type,  # ✅ 新增：MIME类型
                         "filename": filename or f"{prefix}-{processed['attachment_id'][:8]}.png"  # ✅ 新增：文件名（修复：使用正确的格式）
-                    })
+                    }
+                    
+                    # ✅ 新增：添加增强后的提示词（如果有）
+                    if enhanced_prompt:
+                        image_result["enhancedPrompt"] = enhanced_prompt
+                        logger.info(f"[Modes]     - enhancedPrompt: {enhanced_prompt}")
+                    
+                    processed_images.append(image_result)
                 
                 # 更新结果
                 if isinstance(result, dict):

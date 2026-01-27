@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Message,
   Role,
@@ -9,8 +9,7 @@ import {
   PdfExtractionTemplate,
   PdfExtractionResult as PdfExtractionResultType
 } from '../../types/types';
-import { CheckCircle, XCircle, Clock, AlertCircle, Trash2 } from 'lucide-react';
-import InputArea from '../chat/InputArea';
+import { CheckCircle, XCircle, Clock, AlertCircle, Trash2, SlidersHorizontal, RotateCcw, FileText, X, Paperclip, Send } from 'lucide-react';
 import { apiClient } from '../../services/apiClient';
 import { GenViewLayout } from '../common/GenViewLayout';
 import {
@@ -44,10 +43,12 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
   onStop,
   activeModelConfig,
   visibleModels = [],
-  allVisibleModels = [],  // 新增
+  allVisibleModels = [],
   providerId,
   onDeleteMessage
 }) => {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
   // 默认模板（后端不可用时使用）
   const DEFAULT_TEMPLATES: PdfExtractionTemplate[] = [
     { id: 'invoice', name: 'Invoice', description: 'Extract invoice details', icon: '🧾' },
@@ -61,6 +62,10 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [isMobileHistoryOpen, setIsMobileHistoryOpen] = useState(false);
   const [selectedMsgId, setSelectedMsgId] = useState<string | null>(null);
+  
+  // ✅ 参数面板状态
+  const [prompt, setPrompt] = useState('Extract details from this document.');
+  const [activeAttachments, setActiveAttachments] = useState<Attachment[]>([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -128,6 +133,36 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
         return <PdfTableView data={extractedData.data} />;
     }
   }, [extractedData, viewMode]);
+
+  // ✅ 重置参数
+  const resetParams = useCallback(() => {
+    setSelectedTemplate('invoice');
+    setPrompt('Extract details from this document.');
+  }, []);
+
+  // ✅ 发送提取请求
+  const handleGenerate = useCallback(() => {
+    if (loadingState === 'loading' || activeAttachments.length === 0) return;
+    
+    const options: ChatOptions = {
+      enableSearch: false,
+      enableThinking: false,
+      enableCodeExecution: false,
+      pdfTemplate: selectedTemplate,
+    };
+    
+    onSend(prompt, options, activeAttachments, 'pdf-extract');
+    setPrompt(''); // 发送后清空提示词
+    // 不清空附件，以便用户可以重复提取
+  }, [loadingState, activeAttachments, prompt, selectedTemplate, onSend]);
+
+  // ✅ 键盘快捷键
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleGenerate();
+    }
+  }, [handleGenerate]);
 
   // 缓存 sidebarExtraHeader
   const sidebarExtraHeader = useMemo(() => (
@@ -210,62 +245,180 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
         </div>
   ), [historyBatches, activeBatchMessage?.id, onDeleteMessage]);
 
-  // 缓存 mainContent
+  // ✅ 主区域：两栏布局（结果显示 + 参数面板）
   const mainContent = useMemo(() => (
-        <div className="flex-1 w-full h-full overflow-y-auto relative custom-scrollbar bg-slate-950">
-          {extractedData?.success && (
-            <div className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur-sm border-b border-slate-800">
-              <PdfResultToolbar viewMode={viewMode} setViewMode={setViewMode} result={extractedData} />
+    <div className="flex-1 flex flex-row h-full">
+      {/* ========== 左侧：结果显示区域 ========== */}
+      <div className="flex-1 w-full h-full overflow-y-auto relative custom-scrollbar bg-slate-950">
+        {extractedData?.success && (
+          <div className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur-sm border-b border-slate-800">
+            <PdfResultToolbar viewMode={viewMode} setViewMode={setViewMode} result={extractedData} />
+          </div>
+        )}
+
+        <div className="p-4 md:p-6">
+          {loadingState !== 'idle' ? (
+            <div className="flex flex-col items-center justify-center min-h-[400px] gap-6">
+              <div className="relative">
+                <div className="w-20 h-20 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin"></div>
+                <div className="absolute inset-0 flex items-center justify-center text-xs font-mono text-indigo-400 font-bold">PDF</div>
+              </div>
+              <div className="text-center space-y-2">
+                <p className="text-slate-200 font-medium text-lg">正在提取文档数据...</p>
+                <p className="text-slate-500 text-sm">AI 正在分析您的 PDF 文件</p>
+              </div>
+            </div>
+          ) : isBatchError || (extractedData && !extractedData.success) ? (
+            <div className="flex items-center gap-3 p-4 bg-red-900/20 border border-red-900/30 rounded-lg mb-4">
+              <AlertCircle size={20} className="text-red-400 flex-shrink-0" />
+              <p className="text-sm text-red-300">
+                {extractedData?.error || activeBatchMessage?.content || "提取失败，请重试"}
+              </p>
+            </div>
+          ) : extractedData?.success ? (
+            renderResultView()
+          ) : (
+            <PdfEmptyState />
+          )}
+        </div>
+      </div>
+
+      {/* ========== 右侧：参数面板 ========== */}
+      <div className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900/50 flex flex-col h-full overflow-hidden">
+        {/* 头部 */}
+        <div className="px-4 py-3 border-b border-slate-800/50 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <SlidersHorizontal size={14} className="text-indigo-400" />
+            <span className="text-xs font-bold text-white">提取参数</span>
+          </div>
+          <button
+            onClick={resetParams}
+            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+            title="重置为默认值"
+          >
+            <RotateCcw size={12} />
+          </button>
+        </div>
+
+        {/* 参数滚动区 */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
+          {/* 模板选择 */}
+          <div className="space-y-2">
+            <span className="text-xs text-slate-300 font-medium">提取模板</span>
+            <div className="grid grid-cols-2 gap-2">
+              {templates.map((template) => (
+                <button
+                  key={template.id}
+                  onClick={() => setSelectedTemplate(template.id)}
+                  className={`p-2 rounded-lg text-xs font-medium transition-all flex flex-col items-center gap-1 ${
+                    selectedTemplate === template.id
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                  }`}
+                >
+                  <span className="text-lg">{template.icon}</span>
+                  <span>{template.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 模板描述 */}
+          <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
+            <p className="text-xs text-slate-400">
+              {templates.find(t => t.id === selectedTemplate)?.description || '提取文档数据'}
+            </p>
+          </div>
+        </div>
+
+        {/* 底部固定区：附件预览 + 提示词 + 提取按钮 */}
+        <div className="border-t border-slate-800 p-3 space-y-2 bg-slate-900/80">
+          {/* 附件预览区 */}
+          {activeAttachments.length > 0 && (
+            <div className="flex gap-2 flex-wrap">
+              {activeAttachments.map((att, idx) => (
+                <div key={idx} className="relative group flex items-center gap-2 bg-slate-800 rounded-lg px-2 py-1">
+                  <FileText size={14} className="text-indigo-400" />
+                  <span className="text-xs text-slate-300 max-w-[100px] truncate">{att.name}</span>
+                  <button
+                    onClick={() => {
+                      setActiveAttachments(activeAttachments.filter((_, i) => i !== idx));
+                    }}
+                    className="p-0.5 hover:bg-red-500/20 rounded text-slate-400 hover:text-red-400 transition-colors"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
             </div>
           )}
 
-          <div className="p-4 md:p-6">
-            {loadingState !== 'idle' ? (
-              <div className="flex flex-col items-center justify-center min-h-[400px] gap-6">
-                <div className="relative">
-                  <div className="w-20 h-20 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin"></div>
-                  <div className="absolute inset-0 flex items-center justify-center text-xs font-mono text-indigo-400 font-bold">PDF</div>
-                </div>
-                <div className="text-center space-y-2">
-                  <p className="text-slate-200 font-medium text-lg">正在提取文档数据...</p>
-                  <p className="text-slate-500 text-sm">AI 正在分析您的 PDF 文件</p>
-                </div>
-              </div>
-            ) : isBatchError || (extractedData && !extractedData.success) ? (
-              <div className="flex items-center gap-3 p-4 bg-red-900/20 border border-red-900/30 rounded-lg mb-4">
-                <AlertCircle size={20} className="text-red-400 flex-shrink-0" />
-                <p className="text-sm text-red-300">
-                  {extractedData?.error || activeBatchMessage?.content || "提取失败，请重试"}
-                </p>
-              </div>
-            ) : extractedData?.success ? (
-              renderResultView()
-            ) : (
-              <PdfEmptyState />
-            )}
+          {/* 提示词输入 */}
+          <textarea
+            ref={textareaRef}
+            value={prompt}
+            onChange={(e) => {
+              setPrompt(e.target.value);
+              e.target.style.height = 'auto';
+              e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
+            }}
+            onKeyDown={handleKeyDown}
+            placeholder={activeAttachments.length === 0 ? "请先上传 PDF 文件..." : "提取指令..."}
+            className="w-full min-h-[40px] max-h-[150px] bg-slate-800/80 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 overflow-y-auto"
+          />
+
+          {/* 上传按钮 + 提取按钮 */}
+          <div className="flex gap-2 items-center">
+            {/* 上传按钮 */}
+            <label className="p-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 cursor-pointer transition-colors border border-indigo-500/50 flex-shrink-0 shadow-lg">
+              <input
+                type="file"
+                accept=".pdf,application/pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    const newAtt: Attachment = {
+                      id: `att-${Date.now()}`,
+                      name: file.name,
+                      mimeType: file.type,
+                      file: file,
+                    };
+                    setActiveAttachments([newAtt]);
+                  }
+                  e.target.value = '';
+                }}
+              />
+              {activeAttachments.length === 0 ? (
+                <FileText size={18} className="text-white" />
+              ) : (
+                <Paperclip size={18} className="text-white" />
+              )}
+            </label>
+
+            {/* 提取按钮 */}
+            <button
+              onClick={handleGenerate}
+              disabled={loadingState === 'loading' || activeAttachments.length === 0}
+              className="flex-1 py-2.5 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl font-medium text-sm flex items-center justify-center gap-2 shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loadingState === 'loading' ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  提取中...
+                </>
+              ) : (
+                <>
+                  <Send size={18} />
+                  {activeAttachments.length === 0 ? '请先上传 PDF' : '开始提取'}
+                </>
+              )}
+            </button>
           </div>
         </div>
-  ), [loadingState, isBatchError, extractedData, activeBatchMessage?.content, viewMode, renderResultView]);
-
-  // 缓存 bottomContent
-  const bottomContent = useMemo(() => (
-        <InputArea
-          onSend={onSend}
-          onStop={onStop}
-          mode="pdf-extract"
-          setMode={setAppMode}
-          isLoading={loadingState === 'loading'}
-          currentModel={activeModelConfig}
-          visibleModels={visibleModels}
-          allVisibleModels={allVisibleModels}  // 传递完整模型列表
-          hasActiveContext={false}
-          providerId={providerId}
-          initialPrompt="Extract details from this document."
-          pdfTemplates={templates}
-          selectedPdfTemplate={selectedTemplate}
-          onPdfTemplateChange={setSelectedTemplate}
-        />
-  ), [onSend, onStop, setAppMode, loadingState, activeModelConfig, visibleModels, providerId, templates, selectedTemplate]);
+      </div>
+    </div>
+  ), [loadingState, isBatchError, extractedData, activeBatchMessage?.content, viewMode, renderResultView, templates, selectedTemplate, activeAttachments, prompt, handleKeyDown, handleGenerate, resetParams]);
 
   return (
     <GenViewLayout
@@ -276,7 +429,6 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
       sidebarExtraHeader={sidebarExtraHeader}
       sidebar={sidebarContent}
       main={mainContent}
-      bottom={bottomContent}
     />
   );
 };

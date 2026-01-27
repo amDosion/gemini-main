@@ -1,8 +1,7 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
-import { Crop, Wand2, AlertCircle, Layers, User, Bot, Sparkles, Palette, PenTool, MessageSquare } from 'lucide-react';
-import InputArea from '../chat/InputArea';
+import { Wand2, AlertCircle, Layers, User, Bot, Sparkles, SlidersHorizontal, RotateCcw, Paperclip, X, Image as ImageIcon, Send } from 'lucide-react';
 import { useImageCanvas } from '../../hooks/useImageCanvas';
 import { ImageCanvasControls } from '../common/ImageCanvasControls';
 import { ImageCompare } from '../common/ImageCompare';
@@ -10,6 +9,8 @@ import { GenViewLayout } from '../common/GenViewLayout';
 import { processUserAttachments } from '../../hooks/handlers/attachmentUtils';
 import { ThinkingBlock } from '../message/ThinkingBlock';
 import { useToastContext } from '../../contexts/ToastContext';
+import { useControlsState } from '../../hooks/useControlsState';
+import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
 
 interface ImageInpaintingViewProps {
     messages: Message[];
@@ -213,15 +214,16 @@ export const ImageInpaintingView = memo(({
     onStop,
     activeModelConfig,
     visibleModels = [],
-    allVisibleModels = [],  // 新增
+    allVisibleModels = [],
     initialPrompt,
     initialAttachments,
     onExpandImage,
     providerId,
     sessionId: currentSessionId
-}: ImageMaskEditViewProps) => {
+}: ImageInpaintingViewProps) => {
     const { showError } = useToastContext();
     const scrollRef = useRef<HTMLDivElement>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     // State for reference image
     const [activeAttachments, setActiveAttachments] = useState<Attachment[]>([]);
@@ -229,6 +231,18 @@ export const ImageInpaintingView = memo(({
     
     // 固定使用 image-inpainting 模式
     const editMode: AppMode = 'image-inpainting';
+    
+    // ✅ 参数面板状态
+    const controls = useControlsState(editMode, activeModelConfig);
+    const [prompt, setPrompt] = useState(initialPrompt || '');
+
+    // 重置参数
+    const resetParams = useCallback(() => {
+        controls.setAspectRatio('1:1');
+        controls.setResolution('1K');
+        controls.setNegativePrompt('');
+        controls.setSeed(-1);
+    }, [controls]);
     
     // State for thinking block
     const [isThinkingOpen, setIsThinkingOpen] = useState(true);
@@ -382,24 +396,45 @@ export const ImageInpaintingView = memo(({
         }
     }, [messages, activeAttachments.length, loadingState, lastProcessedMsgId, activeImageUrl]);
 
-    const handleSend = useCallback(async (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => {
+    // ✅ 使用参数面板发送请求
+    const handleGenerate = useCallback(async () => {
+        // ✅ 修复：允许画布中有图片时发送（CONTINUITY LOGIC）
+        if (!prompt.trim() || loadingState !== 'idle' || (activeAttachments.length === 0 && !activeImageUrl)) return;
+        
         try {
-            // ✅ 根据设计文档，前端只负责传递附件元数据，后端统一处理
-            // 使用简化版的 processUserAttachments（只做基本元数据整理）
             const finalAttachments = await processUserAttachments(
-                attachments,
+                activeAttachments,
                 activeImageUrl,
                 messages,
                 currentSessionId,
                 'canvas'
             );
-            onSend(text, options, finalAttachments, editMode);
+
+            const options: ChatOptions = {
+                enableSearch: false,
+                enableThinking: false,
+                enableCodeExecution: false,
+                imageAspectRatio: controls.aspectRatio,
+                imageResolution: controls.resolution,
+                negativePrompt: controls.negativePrompt || undefined,
+                seed: controls.seed !== -1 ? controls.seed : undefined,
+            };
+            
+            onSend(prompt, options, finalAttachments, editMode);
+            setPrompt(''); // 发送后清空提示词
         } catch (error) {
-            console.error('[ImageInpaintingView] handleSend 处理附件失败:', error);
+            console.error('[ImageInpaintingView] handleGenerate 处理附件失败:', error);
             showError('处理附件失败，请重试');
-            return;
         }
-    }, [activeImageUrl, messages, currentSessionId, onSend, editMode, showError]);
+    }, [prompt, loadingState, activeAttachments, activeImageUrl, messages, currentSessionId, controls, onSend, editMode, showError]);
+
+    // ✅ 键盘快捷键
+    const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleGenerate();
+        }
+    }, [handleGenerate]);
 
     const [isMobileHistoryOpen, setIsMobileHistoryOpen] = useState(false);
 
@@ -506,45 +541,154 @@ export const ImageInpaintingView = memo(({
         if (activeImageUrl && onExpandImage) onExpandImage(activeImageUrl);
     }, [activeImageUrl, onExpandImage]);
 
-    const mainContent = (
-        <ImageEditMainCanvas
-            loadingState={loadingState}
-            isCompareMode={isCompareMode}
-            activeAttachments={activeAttachments}
-            activeImageUrl={activeImageUrl}
-            originalImageUrl={originalImageUrl}
-            zoom={canvas.zoom}
-            isDragging={canvas.isDragging}
-            canvasStyle={canvas.canvasStyle}
-            onWheel={canvas.handleWheel}
-            onMouseDown={canvas.handleMouseDown}
-            onMouseMove={canvas.handleMouseMove}
-            onMouseUp={canvas.handleMouseUp}
-            onZoomIn={canvas.handleZoomIn}
-            onZoomOut={canvas.handleZoomOut}
-            onReset={canvas.handleReset}
-            onFullscreen={activeImageUrl ? handleFullscreen : undefined}
-            onExpand={onExpandImage && activeImageUrl ? handleExpand : undefined}
-            onToggleCompare={originalImageUrl ? toggleCompare : undefined}
-        />
-    );
+    // ✅ 主区域：两栏布局（画布 + 参数面板）
+    const mainContent = useMemo(() => (
+        <div className="flex-1 flex flex-row h-full">
+            {/* ========== 左侧：画布区域 ========== */}
+            <ImageEditMainCanvas
+                loadingState={loadingState}
+                isCompareMode={isCompareMode}
+                activeAttachments={activeAttachments}
+                activeImageUrl={activeImageUrl}
+                originalImageUrl={originalImageUrl}
+                zoom={canvas.zoom}
+                isDragging={canvas.isDragging}
+                canvasStyle={canvas.canvasStyle}
+                onWheel={canvas.handleWheel}
+                onMouseDown={canvas.handleMouseDown}
+                onMouseMove={canvas.handleMouseMove}
+                onMouseUp={canvas.handleMouseUp}
+                onZoomIn={canvas.handleZoomIn}
+                onZoomOut={canvas.handleZoomOut}
+                onReset={canvas.handleReset}
+                onFullscreen={activeImageUrl ? handleFullscreen : undefined}
+                onExpand={onExpandImage && activeImageUrl ? handleExpand : undefined}
+                onToggleCompare={originalImageUrl ? toggleCompare : undefined}
+            />
 
-    const bottomContent = (
-        <InputArea
-            onSend={handleSend}
-            isLoading={loadingState !== 'idle'}
-            onStop={onStop}
-            currentModel={activeModelConfig}
-            visibleModels={visibleModels}
-            allVisibleModels={allVisibleModels}  // 传递完整模型列表
-            mode={editMode}
-            setMode={setAppMode}
-            initialPrompt={initialPrompt}
-            activeAttachments={activeAttachments}
-            onAttachmentsChange={setActiveAttachments}
-            providerId={providerId}
-        />
-    );
+            {/* ========== 右侧：参数面板 ========== */}
+            <div className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900/50 flex flex-col h-full overflow-hidden">
+                {/* 头部 */}
+                <div className="px-4 py-3 border-b border-slate-800/50 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <SlidersHorizontal size={14} className="text-green-400" />
+                        <span className="text-xs font-bold text-white">修复参数</span>
+                    </div>
+                    <button
+                        onClick={resetParams}
+                        className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                        title="重置为默认值"
+                    >
+                        <RotateCcw size={12} />
+                    </button>
+                </div>
+
+                {/* 参数滚动区 */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+                    <ModeControlsCoordinator
+                        mode={editMode}
+                        providerId={providerId || 'google'}
+                        controls={controls}
+                    />
+                </div>
+
+                {/* 底部固定区：附件预览 + 提示词 + 修复按钮 */}
+                <div className="border-t border-slate-800 p-3 space-y-2 bg-slate-900/80">
+                    {/* 附件预览区 */}
+                    {activeAttachments.length > 0 && (
+                        <div className="flex gap-2 flex-wrap">
+                            {activeAttachments.map((att, idx) => (
+                                <div key={idx} className="relative group">
+                                    <img 
+                                        src={att.url || att.tempUrl || ''} 
+                                        className="w-12 h-12 rounded-lg object-cover border border-slate-700" 
+                                        alt="待修复图片"
+                                    />
+                                    <button
+                                        onClick={() => {
+                                            const newAtts = activeAttachments.filter((_, i) => i !== idx);
+                                            setActiveAttachments(newAtts);
+                                            if (newAtts.length === 0) setActiveImageUrl(null);
+                                        }}
+                                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                        <X size={12} className="text-white" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* 提示词输入 */}
+                    <textarea
+                        ref={textareaRef}
+                        value={prompt}
+                        onChange={(e) => {
+                            setPrompt(e.target.value);
+                            e.target.style.height = 'auto';
+                            e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
+                        }}
+                        onKeyDown={handleKeyDown}
+                        placeholder={(activeAttachments.length === 0 && !activeImageUrl) ? "请先上传图片..." : "描述需要修复的区域..."}
+                        className="w-full min-h-[40px] max-h-[150px] bg-slate-800/80 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 overflow-y-auto"
+                    />
+
+                    {/* 上传按钮 + 修复按钮 */}
+                    <div className="flex gap-2 items-center">
+                        {/* 上传按钮 */}
+                        <label className="p-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 cursor-pointer transition-colors border border-indigo-500/50 flex-shrink-0 shadow-lg">
+                            <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                        const url = URL.createObjectURL(file);
+                                        const newAtt: Attachment = {
+                                            id: `att-${Date.now()}`,
+                                            name: file.name,
+                                            mimeType: file.type,
+                                            url: url,
+                                            tempUrl: url,
+                                            file: file,
+                                        };
+                                        setActiveAttachments([newAtt]);
+                                        setActiveImageUrl(url);
+                                    }
+                                    e.target.value = '';
+                                }}
+                            />
+                            {activeAttachments.length === 0 ? (
+                                <ImageIcon size={18} className="text-white" />
+                            ) : (
+                                <Paperclip size={18} className="text-white" />
+                            )}
+                        </label>
+
+                        {/* 修复按钮 */}
+                        <button
+                            onClick={handleGenerate}
+                            disabled={!prompt.trim() || loadingState !== 'idle' || (activeAttachments.length === 0 && !activeImageUrl)}
+                            className="flex-1 py-2.5 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl font-medium text-sm flex items-center justify-center gap-2 shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {loadingState !== 'idle' ? (
+                                <>
+                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    修复中...
+                                </>
+                            ) : (
+                                <>
+                                    <Wand2 size={18} />
+                                    {(activeAttachments.length === 0 && !activeImageUrl) ? '请先上传图片' : '开始修复'}
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    ), [loadingState, isCompareMode, activeAttachments, activeImageUrl, originalImageUrl, canvas, handleFullscreen, handleExpand, toggleCompare, onExpandImage, controls, providerId, prompt, handleKeyDown, handleGenerate, resetParams, editMode]);
 
     return (
         <GenViewLayout
@@ -554,7 +698,6 @@ export const ImageInpaintingView = memo(({
             sidebarHeaderIcon={<Layers size={14} />}
             sidebar={sidebarContent}
             main={mainContent}
-            bottom={bottomContent}
         />
     );
 }, arePropsEqual);

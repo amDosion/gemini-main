@@ -411,6 +411,7 @@ export class StorageUploadService {
     }
   ): Promise<{
     taskId: string;
+    attachmentId: string;
     status: 'pending' | 'uploading' | 'completed' | 'failed';
     message?: string;
     enqueued?: boolean;
@@ -449,6 +450,7 @@ export class StorageUploadService {
       
       return {
         taskId: result.task_id,
+        attachmentId: result.attachment_id,
         status: result.status,
         message: result.message,
         enqueued: result.enqueued,

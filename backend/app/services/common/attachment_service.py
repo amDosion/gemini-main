@@ -20,6 +20,15 @@ from .upload_worker_pool import worker_pool
 
 logger = logging.getLogger(__name__)
 
+# 检查是否使用 ARQ 模式
+def _is_arq_mode() -> bool:
+    """检查是否使用 ARQ 模式"""
+    try:
+        from ...core.config import settings
+        return settings.worker_mode.lower() == "arq"
+    except Exception:
+        return False
+
 
 class AttachmentService:
     """
@@ -202,7 +211,9 @@ class AttachmentService:
         logger.info(f"[AttachmentService] 🔄 [步骤2] 设置显示URL...")
         display_url = ai_url  # ✅ 直接返回原始 URL（Base64 或 HTTP）
         if ai_url.startswith('data:'):
-            logger.info(f"[AttachmentService]     - Base64 Data URL，直接返回供前端显示")
+            # 不输出BASE64内容，只输出类型和长度
+            base64_length = len(ai_url)
+            logger.info(f"[AttachmentService]     - Base64 Data URL，直接返回供前端显示 (长度: {base64_length} 字符)")
         else:
             logger.info(f"[AttachmentService]     - HTTP URL，直接使用: {display_url[:80] + '...' if len(display_url) > 80 else display_url}")
         logger.info(f"[AttachmentService] ✅ [步骤2] 显示URL已设置")
@@ -241,7 +252,11 @@ class AttachmentService:
         total_time = (time.time() - start_time) * 1000
         logger.info(f"[AttachmentService] ========== AI图片处理完成 (总耗时: {total_time:.2f}ms) ==========")
         logger.info(f"[AttachmentService]     - attachment_id: {attachment_id[:8]}...")
-        logger.info(f"[AttachmentService]     - display_url: {display_url}")
+        # ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
+        if display_url and display_url.startswith('data:'):
+            logger.info(f"[AttachmentService]     - display_url: Base64 Data URL (长度: {len(display_url)} 字符)")
+        else:
+            logger.info(f"[AttachmentService]     - display_url: {display_url[:80] + '...' if display_url and len(display_url) > 80 else display_url or 'None'}")
         logger.info(f"[AttachmentService]     - task_id: {task_id[:8]}...")
 
         return {
@@ -333,9 +348,16 @@ class AttachmentService:
         
         logger.info(f"[AttachmentService] ✅ [步骤2] 找到附件记录:")
         logger.info(f"[AttachmentService]     - upload_status: {attachment.upload_status}")
-        logger.info(f"[AttachmentService]     - url: {attachment.url[:80] + '...' if attachment.url and len(attachment.url) > 80 else attachment.url or 'None'}")
+        # 对于BASE64 URL，只输出类型和长度，不输出内容
+        if attachment.url and attachment.url.startswith('data:'):
+            logger.info(f"[AttachmentService]     - url: Base64 Data URL (长度: {len(attachment.url)} 字符)")
+        else:
+            logger.info(f"[AttachmentService]     - url: {attachment.url[:80] + '...' if attachment.url and len(attachment.url) > 80 else attachment.url or 'None'}")
         logger.info(f"[AttachmentService]     - temp_url: {'存在' if attachment.temp_url else 'None'}")
-        logger.info(f"[AttachmentService]     - temp_url类型: {'Base64' if attachment.temp_url and attachment.temp_url.startswith('data:') else 'HTTP' if attachment.temp_url and attachment.temp_url.startswith('http') else 'None' if not attachment.temp_url else '其他'}")
+        if attachment.temp_url and attachment.temp_url.startswith('data:'):
+            logger.info(f"[AttachmentService]     - temp_url类型: Base64 (长度: {len(attachment.temp_url)} 字符)")
+        else:
+            logger.info(f"[AttachmentService]     - temp_url类型: {'HTTP' if attachment.temp_url and attachment.temp_url.startswith('http') else 'None' if not attachment.temp_url else '其他'}")
 
         # ✅ 详细日志：步骤3 - 检查上传状态
         logger.info(f"[AttachmentService] 🔍 [步骤3] 检查上传状态...")
@@ -346,7 +368,11 @@ class AttachmentService:
             elapsed_time = (time.time() - start_time) * 1000
             logger.info(f"[AttachmentService] ✅ [步骤3] 附件已上传完成，直接复用 (耗时: {elapsed_time:.2f}ms)")
             logger.info(f"[AttachmentService]     - 跳过上传任务创建")
-            logger.info(f"[AttachmentService]     - 返回云URL: {attachment.url[:80] + '...' if len(attachment.url) > 80 else attachment.url}")
+            # 对于BASE64 URL，只输出类型和长度，不输出内容
+            if attachment.url and attachment.url.startswith('data:'):
+                logger.info(f"[AttachmentService]     - 返回云URL: Base64 Data URL (长度: {len(attachment.url)} 字符)")
+            else:
+                logger.info(f"[AttachmentService]     - 返回云URL: {attachment.url[:80] + '...' if len(attachment.url) > 80 else attachment.url}")
             return {
                 'attachment_id': attachment_id,
                 'url': attachment.url,
@@ -547,31 +573,51 @@ class AttachmentService:
         step1_time = (time.time() - start_time) * 1000
         logger.info(f"[AttachmentService] ✅ [步骤1] UploadTask记录已创建并保存到数据库 (耗时: {step1_time:.2f}ms)")
 
-        # ✅ 详细日志：步骤2 - 入队Redis
-        logger.info(f"[AttachmentService] 🔄 [步骤2] 入队Redis...")
-        try:
-            # 确保Redis连接已建立
-            if redis_queue._redis is None:
-                logger.info(f"[AttachmentService]     - Redis连接未建立，正在连接...")
-                await redis_queue.connect()
-                logger.info(f"[AttachmentService]     - Redis连接已建立")
+        # ✅ 详细日志：步骤2 - 入队任务（ARQ 或 Redis）
+        if _is_arq_mode():
+            logger.info(f"[AttachmentService] 🔄 [步骤2] 入队ARQ...")
+            try:
+                from .arq_queue_service import enqueue_arq_job
+                job_id = await enqueue_arq_job(task_id, priority)
+                step2_time = (time.time() - start_time) * 1000
+                if job_id:
+                    logger.info(f"[AttachmentService] ✅ [步骤2] 任务已入队ARQ (耗时: {step2_time:.2f}ms)")
+                    logger.info(f"[AttachmentService]     - job_id: {job_id}")
+                    # ARQ Worker 会自动处理，不需要手动启动
+                else:
+                    logger.error(f"[AttachmentService] ❌ [步骤2] ARQ入队失败 (耗时: {step2_time:.2f}ms)")
+                    logger.error(f"[AttachmentService]     - 任务已保存到数据库，ARQ Worker会在启动时恢复")
+            except Exception as e:
+                step2_time = (time.time() - start_time) * 1000
+                logger.error(f"[AttachmentService] ❌ [步骤2] ARQ入队失败 (耗时: {step2_time:.2f}ms): {e}")
+                logger.error(f"[AttachmentService]     - 任务已保存到数据库，ARQ Worker会在启动时恢复")
+                import traceback
+                traceback.print_exc()
+        else:
+            logger.info(f"[AttachmentService] 🔄 [步骤2] 入队Redis...")
+            try:
+                # 确保Redis连接已建立
+                if redis_queue._redis is None:
+                    logger.info(f"[AttachmentService]     - Redis连接未建立，正在连接...")
+                    await redis_queue.connect()
+                    logger.info(f"[AttachmentService]     - Redis连接已建立")
 
-            queue_position = await redis_queue.enqueue(task_id, priority)
-            step2_time = (time.time() - start_time) * 1000
-            logger.info(f"[AttachmentService] ✅ [步骤2] 任务已入队Redis (耗时: {step2_time:.2f}ms)")
-            logger.info(f"[AttachmentService]     - queue_position: {queue_position}")
+                queue_position = await redis_queue.enqueue(task_id, priority)
+                step2_time = (time.time() - start_time) * 1000
+                logger.info(f"[AttachmentService] ✅ [步骤2] 任务已入队Redis (耗时: {step2_time:.2f}ms)")
+                logger.info(f"[AttachmentService]     - queue_position: {queue_position}")
 
-            # ✅ 步骤3: 确保Worker正在运行（按需启动）
-            logger.info(f"[AttachmentService] 🔄 [步骤3] 确保Worker正在运行...")
-            await worker_pool.ensure_worker_running()
-            step3_time = (time.time() - start_time) * 1000
-            logger.info(f"[AttachmentService] ✅ [步骤3] Worker已启动/运行中 (耗时: {step3_time:.2f}ms)")
-        except Exception as e:
-            step2_time = (time.time() - start_time) * 1000
-            logger.error(f"[AttachmentService] ❌ [步骤2] Redis入队失败 (耗时: {step2_time:.2f}ms): {e}")
-            logger.error(f"[AttachmentService]     - 任务已保存到数据库，Worker Pool会在启动时恢复")
-            # 即使Redis入队失败，任务也已保存到数据库
-            # Worker Pool会在启动时恢复这些任务
+                # ✅ 步骤3: 确保Worker正在运行（按需启动）
+                logger.info(f"[AttachmentService] 🔄 [步骤3] 确保Worker正在运行...")
+                await worker_pool.ensure_worker_running()
+                step3_time = (time.time() - start_time) * 1000
+                logger.info(f"[AttachmentService] ✅ [步骤3] Worker已启动/运行中 (耗时: {step3_time:.2f}ms)")
+            except Exception as e:
+                step2_time = (time.time() - start_time) * 1000
+                logger.error(f"[AttachmentService] ❌ [步骤2] Redis入队失败 (耗时: {step2_time:.2f}ms): {e}")
+                logger.error(f"[AttachmentService]     - 任务已保存到数据库，Worker Pool会在启动时恢复")
+                # 即使Redis入队失败，任务也已保存到数据库
+                # Worker Pool会在启动时恢复这些任务
 
         total_time = (time.time() - start_time) * 1000
         logger.info(f"[AttachmentService] ========== 上传任务创建完成 (总耗时: {total_time:.2f}ms) ==========")

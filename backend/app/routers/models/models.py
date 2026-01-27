@@ -30,6 +30,66 @@ _cache_ttl = 3600  # 1 hour in seconds
 
 # ==================== Helper Functions ====================
 
+"""
+Vertex AI 专用模型分类
+
+基于 Google 官方 SDK 文档定义的模型分类规则：
+- 图像生成 (image-gen): imagen-*-generate-*, gemini-*-image-*
+- 图像编辑 (image-edit): imagen-3.0-capability-001, imagen-4.0-ingredients-preview
+- 图像放大 (image-upscale): imagen-4.0-upscale-preview
+- 图像分割 (image-segmentation): image-segmentation-001
+- 虚拟试衣 (virtual-try-on): virtual-try-on-*, virtual-try-on-preview-*
+- 产品重构 (product-recontext): imagen-product-recontext-*
+"""
+
+# Imagen 图像生成模型（纯文生图，不支持编辑）
+IMAGEN_GENERATE_MODELS = [
+    'imagen-3.0-generate-001',
+    'imagen-3.0-generate-002',
+    'imagen-3.0-fast-generate-001',
+    'imagen-4.0-generate-preview',
+    'imagen-4.0-ultra-generate-preview',
+]
+
+# Imagen 图像编辑模型（支持 mask 编辑、背景替换等）
+IMAGEN_EDIT_MODELS = [
+    'imagen-3.0-capability-001',      # 主要编辑模型
+    'imagen-4.0-ingredients-preview', # 高级编辑模型
+]
+
+# 图像放大模型
+IMAGE_UPSCALE_MODELS = [
+    'imagen-4.0-upscale-preview',
+]
+
+# 图像分割模型
+IMAGE_SEGMENTATION_MODELS = [
+    'image-segmentation-001',
+]
+
+# 虚拟试衣模型
+VIRTUAL_TRY_ON_MODELS = [
+    'virtual-try-on-001',
+    'virtual-try-on-preview-08-04',
+]
+
+# 产品重构模型
+PRODUCT_RECONTEXT_MODELS = [
+    'imagen-product-recontext-preview-06-30',
+]
+
+
+def _matches_model_list(model_id: str, model_list: list) -> bool:
+    """检查模型是否匹配静态模型列表（支持前缀匹配）"""
+    lower_id = model_id.lower()
+    for m in model_list:
+        lower_m = m.lower()
+        # 精确匹配或前缀匹配（处理版本号后缀）
+        if lower_id == lower_m or lower_id.startswith(lower_m.rsplit('-', 1)[0] if '-' in lower_m else lower_m):
+            return True
+    return False
+
+
 def filter_models_by_mode(models: List[ModelConfig], mode: str) -> List[ModelConfig]:
     """
     根据 App Mode 过滤模型列表（后端过滤逻辑）
@@ -59,34 +119,89 @@ def filter_models_by_mode(models: List[ModelConfig], mode: str) -> List[ModelCon
             should_include = any(keyword in model_id for keyword in ['tts', 'audio', 'speech'])
 
         elif mode == 'image-gen':
-            # 纯文生图模式：排除编辑模型，只包含纯生成模型
-            if 'edit' in model_id:
+            # 纯文生图模式：排除编辑、放大、分割、试衣、重构模型
+            if _matches_model_list(model.id, IMAGEN_EDIT_MODELS):
+                should_include = False
+            elif _matches_model_list(model.id, IMAGE_UPSCALE_MODELS):
+                should_include = False
+            elif _matches_model_list(model.id, IMAGE_SEGMENTATION_MODELS):
+                should_include = False
+            elif _matches_model_list(model.id, VIRTUAL_TRY_ON_MODELS):
+                should_include = False
+            elif _matches_model_list(model.id, PRODUCT_RECONTEXT_MODELS):
+                should_include = False
+            elif 'edit' in model_id:
                 should_include = False
             else:
-                should_include = any(keyword in model_id for keyword in [
-                    'dall', 'wanx', 'flux', 'midjourney', '-t2i', 'z-image', 'imagen'
-                ])
+                # 包含 Imagen 生成模型
+                if _matches_model_list(model.id, IMAGEN_GENERATE_MODELS):
+                    should_include = True
+                else:
+                    # 专门的图像生成模型
+                    is_specialized = any(keyword in model_id for keyword in [
+                        'dall', 'wanx', 'flux', 'midjourney', '-t2i', 'z-image'
+                    ]) or ('imagen' in model_id and 'generate' in model_id)
+                    # ✅ 支持 Gemini Image 模型
+                    is_gemini_image = 'gemini' in model_id and 'image' in model_id
+                    # ✅ 支持 Nano-Banana 系列
+                    is_nano_banana = 'nano-banana' in model_id
+                    should_include = is_specialized or is_gemini_image or is_nano_banana
 
-        elif mode in ['image-edit', 'image-outpainting']:
-            # 图像编辑/扩展模式：需要 vision 能力，排除视频和纯文生图模型
-            if not caps.vision or 'veo' in model_id:
+        elif mode == 'image-upscale':
+            # 图像放大模式：只包含放大模型
+            should_include = _matches_model_list(model.id, IMAGE_UPSCALE_MODELS) or 'upscale' in model_id
+
+        elif mode == 'image-segmentation':
+            # 图像分割模式：只包含分割模型
+            should_include = _matches_model_list(model.id, IMAGE_SEGMENTATION_MODELS) or 'segmentation' in model_id
+
+        elif mode == 'product-recontext':
+            # 产品重构模式
+            should_include = _matches_model_list(model.id, PRODUCT_RECONTEXT_MODELS) or 'recontext' in model_id
+
+        elif mode in ['image-edit', 'image-outpainting', 'image-chat-edit', 'image-mask-edit',
+                      'image-inpainting', 'image-background-edit', 'image-recontext']:
+            # 图像编辑模式：支持 Imagen 编辑模型 + Gemini 视觉模型
+            # ✅ 优先包含 Imagen 编辑专用模型
+            if _matches_model_list(model.id, IMAGEN_EDIT_MODELS):
+                should_include = True
+            # ✅ 背景编辑模式包含产品重构模型
+            elif mode in ['image-background-edit', 'image-recontext']:
+                if _matches_model_list(model.id, PRODUCT_RECONTEXT_MODELS):
+                    should_include = True
+                elif 'veo' in model_id or not caps.vision:
+                    should_include = False
+                else:
+                    is_text_to_image_only = any([
+                        'wanx' in model_id, '-t2i' in model_id, 'z-image-turbo' in model_id,
+                        'dall' in model_id, 'flux' in model_id, 'midjourney' in model_id,
+                        _matches_model_list(model.id, IMAGEN_GENERATE_MODELS),
+                        _matches_model_list(model.id, IMAGE_UPSCALE_MODELS),
+                    ])
+                    should_include = not is_text_to_image_only
+            elif 'veo' in model_id or not caps.vision:
                 should_include = False
             else:
                 # 排除纯文生图模型
                 is_text_to_image_only = any([
-                    'wanx' in model_id and '-t2i' in model_id,  # wanx-t2i 系列
-                    'wan2' in model_id and '-t2i' in model_id,  # wan2.x-t2i 系列
-                    'z-image-turbo' in model_id,                 # z-image-turbo
-                    'dall' in model_id,                          # DALL-E
-                    'flux' in model_id,                          # Flux
-                    'midjourney' in model_id,                    # Midjourney
-                    model_id.startswith('imagen-') and 'edit' not in model_id  # Imagen 纯生成
+                    'wanx' in model_id, '-t2i' in model_id, 'z-image-turbo' in model_id,
+                    'dall' in model_id, 'flux' in model_id, 'midjourney' in model_id,
+                    _matches_model_list(model.id, IMAGEN_GENERATE_MODELS),
+                    _matches_model_list(model.id, IMAGE_UPSCALE_MODELS),
                 ])
                 should_include = not is_text_to_image_only
 
         elif mode == 'virtual-try-on':
-            # 虚拟试衣：需要 vision 能力，排除视频生成
-            should_include = caps.vision and 'veo' not in model_id
+            # 虚拟试衣模式：优先虚拟试衣专用模型
+            if _matches_model_list(model.id, VIRTUAL_TRY_ON_MODELS):
+                should_include = True
+            elif 'try-on' in model_id or 'tryon' in model_id:
+                should_include = True
+            else:
+                # 回退到有视觉能力的模型
+                should_include = (caps.vision and 'veo' not in model_id and
+                                 not _matches_model_list(model.id, IMAGE_UPSCALE_MODELS) and
+                                 not _matches_model_list(model.id, IMAGE_SEGMENTATION_MODELS))
 
         elif mode == 'deep-research':
             # 深度研究：需要搜索或推理能力
@@ -94,13 +209,18 @@ def filter_models_by_mode(models: List[ModelConfig], mode: str) -> List[ModelCon
 
         elif mode == 'pdf-extract':
             # PDF 提取：排除专用媒体生成模型
-            excluded_keywords = ['veo', 'tts', 'wanx', 'imagen', '-t2i', 'z-image']
+            excluded_keywords = ['veo', 'tts', 'wanx', 'imagen', '-t2i', 'z-image',
+                               'segmentation', 'upscale', 'try-on']
             should_include = not any(keyword in model_id for keyword in excluded_keywords)
 
         elif mode == 'chat' or not mode:
-            # 标准聊天：排除专用视频/音频/图像生成模型
-            excluded_keywords = ['veo', 'tts', 'wanx', '-t2i', 'z-image']
-            should_include = not any(keyword in model_id for keyword in excluded_keywords)
+            # 标准聊天：排除所有专用媒体模型
+            excluded_keywords = ['veo', 'tts', 'wanx', '-t2i', 'z-image', 'imagen',
+                               'segmentation', 'upscale', 'try-on', 'recontext']
+            embedding_keywords = ['embedding', 'aqa']
+            is_media = any(keyword in model_id for keyword in excluded_keywords)
+            is_embedding = any(keyword in model_id for keyword in embedding_keywords)
+            should_include = not is_media and not is_embedding
 
         else:
             # 未知模式：不过滤

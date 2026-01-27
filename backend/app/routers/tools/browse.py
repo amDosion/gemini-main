@@ -23,7 +23,7 @@ async def stop_browser_session(
     """
     try:
 
-        from ...services.gemini.browser import close_driver
+        from ...services.gemini.common.browser import close_driver
         close_driver(user_id=user_id)
 
         if _logger:
@@ -44,7 +44,7 @@ async def get_browser_sessions(
     """
     try:
 
-        from ...services.gemini.browser import get_active_sessions
+        from ...services.gemini.common.browser import get_active_sessions
         sessions = get_active_sessions()
 
         if _logger:

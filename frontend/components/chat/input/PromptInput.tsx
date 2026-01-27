@@ -105,24 +105,28 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       });
   };
 
-  // 扩图模式禁用输入框
+  // 扩图、试衣模式禁用提示词输入（试衣后续开放时仅需取消禁用即可）
   const isOutPaintingMode = mode === 'image-outpainting';
+  const isTryOnMode = mode === 'virtual-try-on';
+  const isPromptDisabled = isOutPaintingMode || isTryOnMode;
   
-  // Determine placeholder text
+  // Determine placeholder text (chat mode uses ChatInputArea, so this is for other modes)
   const isImageEditMode = mode === 'image-chat-edit' || mode === 'image-mask-edit' || 
                           mode === 'image-inpainting' || mode === 'image-background-edit' || 
                           mode === 'image-recontext';
-  const placeholderText = mode === 'chat' ? "Message Gemini... (Attach PDFs, Images, etc.)" :
-      mode === 'image-gen' ? "Describe the image you want to generate..." :
+  const placeholderText = mode === 'image-gen' ? "Describe the image you want to generate..." :
       isImageEditMode ? (hasActiveContext ? "Enter instructions to edit the image..." : "Attach an image to edit...") :
       mode === 'image-outpainting' ? "扩图模式无需输入提示词" :
+      mode === 'virtual-try-on' ? "试衣模式暂不支持提示词（后续开放）" :
       mode === 'video-gen' ? "Describe the video you want to generate..." :
       "Enter text...";
   
-  // 发送按钮禁用逻辑：扩图模式只需要有图片即可
+  // 发送按钮禁用逻辑：扩图需图片；试衣需人物+服装（hasActiveContext）；其他需输入或附件
   const isSendDisabled = isOutPaintingMode 
-      ? (!hasAttachments && !hasActiveContext)  // 扩图模式：只需要有图片
-      : (!input.trim() && !hasAttachments && !hasActiveContext);  // 其他模式：需要输入或附件
+      ? (!hasAttachments && !hasActiveContext)
+      : isTryOnMode
+      ? !hasActiveContext
+      : (!input.trim() && !hasAttachments && !hasActiveContext);
 
   return (
     <div 
@@ -163,9 +167,9 @@ export const PromptInput: React.FC<PromptInputProps> = ({
         ref={fileInputRef} 
         onChange={onFileSelect} 
         className="hidden" 
-        multiple={mode === 'chat' || isImageEditMode} 
-        // Expanded accept list for document processing
-        accept={mode !== 'chat' ? "image/*,video/*,audio/*" : "image/*,video/*,audio/*,application/pdf,text/plain,text/csv,text/html,application/json"} 
+        multiple={isImageEditMode} 
+        // Accept list for non-chat modes (chat mode uses ChatInputArea with expanded accept list)
+        accept="image/*,video/*,audio/*" 
       />
       <button 
           onClick={() => fileInputRef.current?.click()}
@@ -234,9 +238,9 @@ export const PromptInput: React.FC<PromptInputProps> = ({
               placeholder={placeholderText}
               onFocus={() => setIsFocused(true)}
               onBlur={() => setIsFocused(false)}
-              disabled={isOutPaintingMode}
+              disabled={isPromptDisabled}
               className={`relative z-10 w-full bg-transparent border-none resize-y min-h-[44px] max-h-[400px] p-3 text-sm font-sans leading-relaxed focus:ring-0 scrollbar-hide outline-none text-transparent caret-white selection:bg-indigo-500/30 selection:text-white placeholder:text-slate-500 ${
-                  isOutPaintingMode ? 'cursor-not-allowed opacity-60' : ''
+                  isPromptDisabled ? 'cursor-not-allowed opacity-60' : ''
               }`}
               rows={1}
               style={{ 
@@ -257,6 +261,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
            <button 
               onClick={handleSend}
               disabled={isSendDisabled}
+              title={mode === 'virtual-try-on' ? '生成试穿' : undefined}
               className={`p-3 rounded-full transition-all duration-300 shadow-lg mb-0.5 ${
                   isSendDisabled
                   ? 'bg-slate-700 text-slate-500 cursor-not-allowed'

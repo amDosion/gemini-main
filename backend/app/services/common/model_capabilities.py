@@ -37,15 +37,14 @@ def get_google_capabilities(model_id: str) -> Capabilities:
     - *-thinking-*: vision=true, reasoning=true, search=false
     - gemini-2.5-pro, gemini-3.0-pro: vision=true, search=true, reasoning=true
     - deep-research-* (Deep Research models): search=true, reasoning=true
-      - deep-research-pro-preview-12-2025: search=true, reasoning=true
-      - deep-research-pro: search=true, reasoning=true
     - nano-banana-* (Nano-Banana series): vision=true, search=true, reasoning varies
-      - nano-banana-pro-* (Nano-Banana Pro): vision=true, search=true, reasoning=true
-      - nano-banana-* (Standard): vision=true, search=true, reasoning=false
-    - gemini-*-image-* (Image generation/editing models): vision=true, search=true, reasoning varies
-      - gemini-3-pro-image-preview: vision=true, search=true, reasoning=true
-      - gemini-2.5-flash-image: vision=true, search=true, reasoning=false
-    - imagen-*: vision=true only
+    - gemini-*-image-* (Image generation/editing models): vision=true, search=true
+    - imagen-*-generate-*: vision=true (image generation)
+    - imagen-*-capability-*: vision=true (image editing)
+    - imagen-*-upscale-*: vision=true (image upscaling)
+    - imagen-product-recontext-*: vision=true (product recontext)
+    - image-segmentation-*: vision=true (image segmentation)
+    - virtual-try-on-*: vision=true (virtual try-on)
     - *-code-*: coding=true only
     """
     lower_id = model_id.lower()
@@ -55,8 +54,32 @@ def get_google_capabilities(model_id: str) -> Capabilities:
     reasoning = False
     coding = False
 
-    # Imagen models: vision only
-    if lower_id.startswith("imagen"):
+    # === Specialized Vertex AI Models (Image/Media Processing) ===
+
+    # Image Segmentation models: vision only
+    if "segmentation" in lower_id:
+        return Capabilities(vision=True)
+
+    # Virtual Try-On models: vision only
+    if "try-on" in lower_id or "tryon" in lower_id:
+        return Capabilities(vision=True)
+
+    # Product Recontext models: vision only
+    if "recontext" in lower_id:
+        return Capabilities(vision=True)
+
+    # Imagen models with specific capabilities
+    if lower_id.startswith("imagen") or "imagen" in lower_id:
+        # Upscale models: vision only
+        if "upscale" in lower_id:
+            return Capabilities(vision=True)
+        # Capability/edit models: vision only
+        if "capability" in lower_id or "ingredients" in lower_id:
+            return Capabilities(vision=True)
+        # Generate models: vision only
+        if "generate" in lower_id:
+            return Capabilities(vision=True)
+        # Default imagen: vision only
         return Capabilities(vision=True)
 
     # Code models: coding only
@@ -64,7 +87,6 @@ def get_google_capabilities(model_id: str) -> Capabilities:
         return Capabilities(coding=True)
 
     # Deep Research models: search + reasoning
-    # These models are designed for deep research tasks with search and reasoning capabilities
     if "deep-research" in lower_id:
         return Capabilities(search=True, reasoning=True)
 
@@ -76,31 +98,23 @@ def get_google_capabilities(model_id: str) -> Capabilities:
     if lower_id in ["gemini-2.5-pro", "gemini-3.0-pro", "gemini-2.5-pro-latest", "gemini-3.0-pro-latest"]:
         return Capabilities(vision=True, search=True, reasoning=True)
 
-    # Gemini Image generation/editing models (Nano-Banana series)
-    # These models support multimodal input/output with response_modalities=['TEXT', 'IMAGE']
-    # and can use Google Search via tools=[{"google_search": {}}]
-    
-    # Nano-Banana models (explicit model IDs without -image- substring)
-    # Example: nano-banana-pro-preview, nano-banana-pro, nano-banana-preview, nano-banana
+    # Nano-Banana models
     if "nano-banana" in lower_id:
         # Nano-Banana Pro: support thinking/reasoning
         if "pro" in lower_id:
             return Capabilities(vision=True, search=True, reasoning=True)
         # Standard Nano-Banana: vision + search only
         return Capabilities(vision=True, search=True)
-    
+
     # Gemini models with -image- substring
     if "-image-" in lower_id or "-image" in lower_id:
         # Gemini 3.x Pro Image models: support thinking/reasoning
-        # Example: gemini-3-pro-image-preview, gemini-3.0-pro-image-preview
         if ("gemini-3" in lower_id or "gemini-3.0" in lower_id) and "pro" in lower_id:
             return Capabilities(vision=True, search=True, reasoning=True)
         # Other image models: vision + search only
-        # Example: gemini-2.5-flash-image, gemini-2.5-flash-image-preview
         return Capabilities(vision=True, search=True)
 
     # Standard Gemini models: vision + search
-    # Extended to include Gemini 3.x series
     gemini_patterns = ["gemini-1.5", "gemini-2.0", "gemini-2.5", "gemini-3.0", "gemini-3-", "gemini-pro", "gemini-flash"]
     for pattern in gemini_patterns:
         if pattern in lower_id:

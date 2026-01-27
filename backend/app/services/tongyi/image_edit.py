@@ -6,6 +6,10 @@
 - qwen-image-edit-plus (及其变体)
 - wan2.6-image
 - wan2.5-i2i-preview (向后兼容)
+
+增强功能:
+- 编辑 Prompt 智能优化（可选）
+- 基于 Qwen-VL-Max 图像理解
 """
 from typing import Optional
 from dataclasses import dataclass
@@ -27,6 +31,9 @@ class ImageEditResult:
     url: Optional[str] = None
     mime_type: str = "image/png"
     error: Optional[str] = None
+    # 新增: Prompt 优化信息
+    optimized_prompt: Optional[str] = None
+    original_prompt: Optional[str] = None
 
 
 @dataclass
@@ -38,6 +45,8 @@ class ImageEditOptions:
     watermark: bool = False
     seed: Optional[int] = None
     prompt_extend: bool = True
+    # 新增: Prompt 优化参数
+    enable_prompt_optimize: bool = False  # 是否启用编辑 Prompt 智能优化
 
 
 class ImageEditService:
@@ -45,6 +54,15 @@ class ImageEditService:
 
     def __init__(self, api_key: str):
         self.api_key = api_key
+        self._edit_optimizer = None  # 延迟加载
+
+    @property
+    def edit_optimizer(self):
+        """懒加载编辑 Prompt 优化器"""
+        if self._edit_optimizer is None:
+            from .prompt_optimizer import EditPromptOptimizer
+            self._edit_optimizer = EditPromptOptimizer(self.api_key)
+        return self._edit_optimizer
 
     async def process_reference_image(
         self,
@@ -279,9 +297,35 @@ class ImageEditService:
 
         Returns:
             ImageEditResult
+
+        增强功能:
+        - 可选编辑 Prompt 智能优化
         """
         if options is None:
             options = ImageEditOptions()
+
+        # ========== Prompt 优化（如果启用）==========
+        original_prompt = prompt
+        optimized_prompt = None
+
+        if options.enable_prompt_optimize:
+            logger.info(f"[Image Edit] 🔄 [Prompt优化] 开始优化编辑 Prompt...")
+            try:
+                optimize_result = await self.edit_optimizer.optimize(
+                    prompt=prompt,
+                    image=image_url,
+                    enable_rewrite=True
+                )
+                if optimize_result.success:
+                    prompt = optimize_result.optimized_prompt
+                    optimized_prompt = optimize_result.optimized_prompt
+                    logger.info(f"[Image Edit] ✅ [Prompt优化] 优化成功")
+                    logger.info(f"[Image Edit]     - 原始: {original_prompt[:50]}...")
+                    logger.info(f"[Image Edit]     - 优化后: {optimized_prompt[:80]}...")
+                else:
+                    logger.warning(f"[Image Edit] ⚠️ [Prompt优化] 优化失败，使用原始 Prompt: {optimize_result.error}")
+            except Exception as e:
+                logger.error(f"[Image Edit] ❌ [Prompt优化] 异常: {str(e)}")
 
         try:
             # 步骤 1: 处理参考图片
@@ -309,11 +353,21 @@ class ImageEditService:
 
             logger.info(f"[Image Edit] ✅ 图像编辑完成: {result_url[:60]}...")
 
-            return ImageEditResult(success=True, url=result_url)
+            return ImageEditResult(
+                success=True,
+                url=result_url,
+                original_prompt=original_prompt,
+                optimized_prompt=optimized_prompt
+            )
 
         except Exception as e:
             logger.error(f"[Image Edit] ❌ 图像编辑失败: {str(e)}")
-            return ImageEditResult(success=False, error=str(e))
+            return ImageEditResult(
+                success=False,
+                error=str(e),
+                original_prompt=original_prompt,
+                optimized_prompt=optimized_prompt
+            )
 
     async def close(self):
         """关闭服务（预留接口）"""

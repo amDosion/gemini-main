@@ -6,6 +6,7 @@ import { Header } from './Header';
 import { ChatSession, Persona, ModelConfig, AppMode } from '../../types/types';
 import { ConfigProfile } from '../../services/db';
 import { CacheStatusInfo } from '../../hooks/useCacheStatus';
+import InlineModeNavigation from './InlineModeNavigation';
 
 interface AppLayoutProps {
     children: React.ReactNode;
@@ -56,6 +57,11 @@ interface AppLayoutProps {
     // 缓存相关（可选）
     cacheStatus?: CacheStatusInfo;
     onRefreshSessions?: () => void;
+
+    // ✅ 模式导航相关（可选）
+    showModeNavigation?: boolean;
+    setAppMode?: (mode: AppMode) => void;
+    allVisibleModels?: ModelConfig[];
 }
 
 export const AppLayout: React.FC<AppLayoutProps> = (props) => {
@@ -110,6 +116,16 @@ export const AppLayout: React.FC<AppLayoutProps> = (props) => {
                         {/* Settings renders here now, covering only the workspace/chat area */}
                         {props.settings}
                     </div>
+
+                    {/* ✅ 模式导航侧边栏（可选） */}
+                    {props.showModeNavigation && props.setAppMode && (
+                        <InlineModeNavigation
+                            currentMode={props.appMode}
+                            setMode={props.setAppMode}
+                            currentModel={props.activeModelConfig}
+                            allVisibleModels={props.allVisibleModels}
+                        />
+                    )}
 
                     <RightSidebar
                         isOpen={props.isRightSidebarOpen}

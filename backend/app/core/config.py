@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     upload_queue_max_retries: int = int(os.getenv("UPLOAD_QUEUE_MAX_RETRIES", "3"))
     upload_queue_retry_delay: float = float(os.getenv("UPLOAD_QUEUE_RETRY_DELAY", "2.0"))
     upload_queue_rate_limit: int = int(os.getenv("UPLOAD_QUEUE_RATE_LIMIT", "10"))
+    
+    # Worker 运行模式
+    # - "embedded": 内嵌在主进程中运行（推荐，使用现有 Redis 队列系统）
+    # - "separate_process": 在独立子进程中运行（使用原有 Worker 池）
+    # - "disabled": 禁用 Worker（需要外部 Worker 服务）
+    worker_mode: str = os.getenv("WORKER_MODE", "embedded")
 
     # 认证配置
     allow_registration: bool = os.getenv("ALLOW_REGISTRATION", "false").lower() == "true"

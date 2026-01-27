@@ -30,7 +30,7 @@ export enum Role {
 
 export type ApiProtocol = 'google' | 'openai';
 
-export type AppMode = 'chat' | 'image-gen' | 'image-chat-edit' | 'image-mask-edit' | 'image-inpainting' | 'image-background-edit' | 'image-recontext' | 'video-gen' | 'audio-gen' | 'image-outpainting' | 'pdf-extract' | 'virtual-try-on' | 'deep-research' | 'multi-agent';
+export type AppMode = 'chat' | 'image-gen' | 'image-chat-edit' | 'image-mask-edit' | 'image-inpainting' | 'image-background-edit' | 'image-recontext' | 'video-gen' | 'audio-gen' | 'image-outpainting' | 'pdf-extract' | 'virtual-try-on' | 'deep-research' | 'multi-agent' | 'image-upscale' | 'image-segmentation' | 'product-recontext';
 
 export interface GroundingChunk {
   web?: {
@@ -69,6 +69,8 @@ export interface Attachment {
   // Google Files API 相关字段
   googleFileUri?: string; // Google Files API 返回的 file_uri（48小时有效）
   googleFileExpiry?: number; // Google 文件过期时间戳
+  // AI 增强提示词相关字段
+  enhancedPrompt?: string; // 增强后的提示词（当启用 enhance_prompt 时返回）
 }
 
 export interface Message {
@@ -150,7 +152,8 @@ export interface ChatOptions {
   voiceName?: string;
   outPainting?: OutPaintingOptions;
   loraConfig?: LoraConfig; // Added for WanX 2.5
-  virtualTryOnTarget?: string; // Added for Virtual Try-On
+  // Virtual Try-On 官方支持参数
+  baseSteps?: number; // 质量步数（8/16/32/48）
   enableUpscale?: boolean; // Added for Virtual Try-On Upscale
   upscaleFactor?: 2 | 4; // Added for Virtual Try-On Upscale
   addWatermark?: boolean; // Added for Virtual Try-On Upscale
@@ -174,7 +177,10 @@ export interface ChatOptions {
   outputCompressionQuality?: number; // JPEG compression quality (1-100)
   language?: string; // Prompt language
 
-  enhancePrompt?: boolean; // Let AI improve the prompt
+  enhancePrompt?: boolean; // Let AI improve the prompt (Google Imagen)
+  // TongYi 专用参数
+  promptExtend?: boolean; // AI 增强提示词 (TongYi)
+  addMagicSuffix?: boolean; // 魔法词组 (TongYi)
   prompt?: string; // Prompt text for image generation/editing
   modelId?: string; // Model ID for specific operations
   platform?: string; // Platform identifier (e.g., 'gemini', 'vertex_ai')

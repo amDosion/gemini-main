@@ -178,11 +178,9 @@ const InputArea: React.FC<InputAreaProps> = ({
     if (isLoading && !onStop) return;
 
     if (mode === 'image-outpainting') {
-      if (attachments.length === 0 && !hasActiveContext) {
-        // Please attach an image to expand (Out-Painting).
-        // This validation is handled by the backend, so we just prevent submission
-        return;
-      }
+      if (attachments.length === 0 && !hasActiveContext) return;
+    } else if (mode === 'virtual-try-on') {
+      if (!hasActiveContext) return;
     } else {
       if (!input.trim() && attachments.length === 0 && !hasActiveContext) return;
     }
@@ -231,16 +229,18 @@ const InputArea: React.FC<InputAreaProps> = ({
       imageStyle: controls.style,
       voiceName: controls.voice,
       outPainting: outPaintingOptions,
-      virtualTryOnTarget: mode === 'virtual-try-on' ? controls.tryOnTarget : undefined,
+      // Virtual Try-On 官方支持参数
+      baseSteps: mode === 'virtual-try-on' ? controls.baseSteps : undefined,
       negativePrompt: controls.negativePrompt.trim(),
       seed: controls.seed > -1 ? controls.seed : undefined,
       loraConfig: controls.loraConfig.image ? controls.loraConfig : undefined,
       pdfExtractTemplate: mode === 'pdf-extract' ? currentPdfTemplate : undefined,
       pdfAdditionalInstructions: mode === 'pdf-extract' ? controls.pdfAdditionalInstructions.trim() : undefined,
       // Google Imagen Advanced Parameters
+      // Virtual Try-On 使用固定默认值：image/jpeg 和 100（最高质量）
       // guidanceScale removed - not officially documented by Google Imagen
-      outputMimeType: controls.outputMimeType,
-      outputCompressionQuality: controls.outputCompressionQuality,
+      outputMimeType: mode === 'virtual-try-on' ? 'image/jpeg' : controls.outputMimeType,
+      outputCompressionQuality: mode === 'virtual-try-on' ? 100 : controls.outputCompressionQuality,
       enhancePrompt: controls.enhancePrompt,
       // Deep Research specific options
       deepResearchConfig: mode === 'deep-research' ? {
@@ -290,12 +290,12 @@ const InputArea: React.FC<InputAreaProps> = ({
                     mode === 'image-chat-edit' || mode === 'image-mask-edit' || 
                     mode === 'image-inpainting' || mode === 'image-background-edit' || 
                     mode === 'image-recontext' ||
-                    mode === 'video-gen' || mode === 'image-outpainting';
+                    mode === 'video-gen' || mode === 'image-outpainting' || mode === 'virtual-try-on';
   const isMissingImage = (
     mode === 'image-chat-edit' || mode === 'image-mask-edit' || 
     mode === 'image-inpainting' || mode === 'image-background-edit' || 
     mode === 'image-recontext' ||
-    mode === 'image-outpainting'
+    mode === 'image-outpainting' || mode === 'virtual-try-on'
   ) && attachments.length === 0 && !hasActiveContext;
   const showLoraSettings = providerId === 'tongyi' && (
     mode === 'image-chat-edit' || mode === 'image-mask-edit' || 
@@ -305,10 +305,10 @@ const InputArea: React.FC<InputAreaProps> = ({
 
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 pb-6 pt-2 transition-all duration-300">
+    <div className="w-full mx-auto px-4 pb-6 pt-2 transition-all duration-300">
 
       {/* 1. Toolbar Row */}
-      <div className="flex flex-wrap items-center gap-3 mb-2 px-1">
+      <div className="flex flex-wrap items-center gap-3 mb-2">
         <ModeSelector
           mode={mode}
           setMode={setMode}
@@ -377,9 +377,9 @@ const InputArea: React.FC<InputAreaProps> = ({
             setScaleFactor={controls.setScaleFactor}
             offsetPixels={controls.offsetPixels}
             setOffsetPixels={controls.setOffsetPixels}
-            // Try-on controls
-            tryOnTarget={controls.tryOnTarget}
-            setTryOnTarget={controls.setTryOnTarget}
+            // Try-on controls（官方支持参数，output_mime_type/compression_quality 使用固定值）
+            baseSteps={controls.baseSteps}
+            setBaseSteps={controls.setBaseSteps}
             // Audio controls
             voice={controls.voice}
             setVoice={controls.setVoice}
@@ -392,8 +392,8 @@ const InputArea: React.FC<InputAreaProps> = ({
       </div>
 
 
-      {/* AdvancedSettings: 排除 Google image-gen 模式（ImageGenControls 有自己的高级面板） */}
-      {isGenMode && controls.showAdvanced && !(providerId === 'google' && mode === 'image-gen') && (
+      {/* AdvancedSettings: 排除 Google image-gen、virtual-try-on（试衣参数在 VirtualTryOnControls） */}
+      {isGenMode && controls.showAdvanced && !(providerId === 'google' && mode === 'image-gen') && mode !== 'virtual-try-on' && (
         <AdvancedSettings
           negativePrompt={controls.negativePrompt}
           setNegativePrompt={controls.setNegativePrompt}
@@ -411,10 +411,12 @@ const InputArea: React.FC<InputAreaProps> = ({
         />
       )}
 
-      <AttachmentPreview
-        attachments={attachments}
-        removeAttachment={removeAttachment}
-      />
+      {mode !== 'virtual-try-on' && (
+        <AttachmentPreview
+          attachments={attachments}
+          removeAttachment={removeAttachment}
+        />
+      )}
 
       <PromptInput
         input={input}

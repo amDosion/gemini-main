@@ -1,15 +1,17 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
-import { Crop, Wand2, AlertCircle, Layers, User, Bot, Sparkles, Palette, PenTool, MessageSquare } from 'lucide-react';
-import InputArea from '../chat/InputArea';
+import { Crop, Wand2, AlertCircle, Layers, User, Bot, Sparkles, Palette, PenTool, MessageSquare, SlidersHorizontal, RotateCcw } from 'lucide-react';
 import { useImageCanvas } from '../../hooks/useImageCanvas';
 import { ImageCanvasControls } from '../common/ImageCanvasControls';
 import { ImageCompare } from '../common/ImageCompare';
 import { GenViewLayout } from '../common/GenViewLayout';
-import { processUserAttachments, getUrlType } from '../../hooks/handlers/attachmentUtils';
+import { getUrlType } from '../../hooks/handlers/attachmentUtils';
 import { ThinkingBlock } from '../message/ThinkingBlock';
 import { useToastContext } from '../../contexts/ToastContext';
+import { useControlsState } from '../../hooks/useControlsState';
+import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
+import ChatEditInputArea from '../chat/ChatEditInputArea';
 
 interface ImageEditViewProps {
     messages: Message[];
@@ -253,6 +255,15 @@ export const ImageEditView = memo(({
     // State for reference image
     const [activeAttachments, setActiveAttachments] = useState<Attachment[]>([]);
     const [activeImageUrl, setActiveImageUrl] = useState<string | null>(null);
+
+    // ✅ 包装 setActiveAttachments 以添加调试日志
+    const handleAttachmentsChange = useCallback((newAtts: Attachment[]) => {
+        console.log('[ImageEditView] handleAttachmentsChange 被调用:', {
+            newAttachmentsCount: newAtts.length,
+            attachments: newAtts.map(att => ({ id: att.id, name: att.name, hasFile: !!att.file })),
+        });
+        setActiveAttachments(newAtts);
+    }, []);
     
     // 固定使用 image-chat-edit 模式（此视图专门用于对话式编辑）
     const editMode: AppMode = 'image-chat-edit';
@@ -294,6 +305,20 @@ export const ImageEditView = memo(({
     // 对比模式状态
     const [isCompareMode, setIsCompareMode] = useState(false);
 
+    // ✅ 参数面板状态（使用统一的 controls 状态）
+    const controls = useControlsState(editMode, activeModelConfig);
+    // 注意：prompt 和 textareaRef 现在由 ChatEditInputArea 管理
+
+    // 重置参数
+    const resetParams = useCallback(() => {
+        controls.setAspectRatio('1:1');
+        controls.setResolution('1K');
+        controls.setNegativePrompt('');
+        controls.setSeed(-1);
+        controls.setOutputMimeType('image/png');
+        controls.setOutputCompressionQuality(80);
+    }, [controls]);
+
     // Pan & Zoom Hook（替代原有的手动状态管理）
     const canvas = useImageCanvas({ minZoom: 0.1, maxZoom: 5, zoomStep: 0.2 });
 
@@ -334,7 +359,17 @@ export const ImageEditView = memo(({
     // Sync uploaded attachment to main view
     useEffect(() => {
         if (activeAttachments.length > 0) {
-            setActiveImageUrl(getStableCanvasUrlFromAttachment(activeAttachments[0]));
+            const stableUrl = getStableCanvasUrlFromAttachment(activeAttachments[0]);
+            console.log('[ImageEditView] 同步附件到画布:', {
+                attachmentCount: activeAttachments.length,
+                attachmentId: activeAttachments[0].id,
+                stableUrl: stableUrl?.substring(0, 50) + '...',
+            });
+            setActiveImageUrl(stableUrl);
+        } else if (activeAttachments.length === 0) {
+            // ✅ 如果没有附件了，清空画布图片
+            console.log('[ImageEditView] 附件列表为空，清空画布图片');
+            setActiveImageUrl(null);
         }
     }, [activeAttachments, getStableCanvasUrlFromAttachment]);
 
@@ -417,9 +452,17 @@ export const ImageEditView = memo(({
             if (lastUserMsg && lastUserMsg.attachments?.[0]?.url) {
                 const att = lastUserMsg.attachments[0];
                 const urlType = getUrlType(att.url, att.uploadStatus);
+                // 对于BASE64 URL，只输出类型和长度，不输出实际内容
+                const formatUrlForLog = (url: string | undefined): string => {
+                    if (!url) return 'N/A';
+                    if (url.startsWith('data:')) {
+                        return `Base64 Data URL (长度: ${url.length} 字符)`;
+                    }
+                    return url.length > 60 ? url.substring(0, 60) + '...' : url;
+                };
                 console.log('[ImageEditView] 从用户消息中提取原始图片:', {
                     urlType: urlType,
-                    url: att.url ? (att.url.length > 60 ? att.url.substring(0, 60) + '...' : att.url) : 'N/A',
+                    url: formatUrlForLog(att.url),
                     uploadStatus: att.uploadStatus,
                     source: urlType.includes('云存储URL') ? '云存储URL (处理后的永久URL)' : 'AI返回的原始地址或处理后的URL'
                 });
@@ -430,9 +473,17 @@ export const ImageEditView = memo(({
                 if (lastModelMsg && lastModelMsg.attachments?.[0]?.url) {
                     const att = lastModelMsg.attachments[0];
                     const urlType = getUrlType(att.url, att.uploadStatus);
+                    // 对于BASE64 URL，只输出类型和长度，不输出实际内容
+                    const formatUrlForLog = (url: string | undefined): string => {
+                        if (!url) return 'N/A';
+                        if (url.startsWith('data:')) {
+                            return `Base64 Data URL (长度: ${url.length} 字符)`;
+                        }
+                        return url.length > 60 ? url.substring(0, 60) + '...' : url;
+                    };
                     console.log('[ImageEditView] 从模型消息中提取编辑后的图片:', {
                         urlType: urlType,
-                        url: att.url ? (att.url.length > 60 ? att.url.substring(0, 60) + '...' : att.url) : 'N/A',
+                        url: formatUrlForLog(att.url),
                         uploadStatus: att.uploadStatus,
                         source: urlType.includes('云存储URL') ? '云存储URL (处理后的永久URL)' : 'AI返回的原始地址或处理后的URL'
                     });
@@ -451,15 +502,24 @@ export const ImageEditView = memo(({
                     const att = lastMsg.attachments[0];
                     const urlType = getUrlType(att.url, att.uploadStatus);
                     
+                    // 对于BASE64 URL，只输出类型和长度，不输出实际内容
+                    const formatUrlForLog = (url: string | undefined): string => {
+                        if (!url) return 'N/A';
+                        if (url.startsWith('data:')) {
+                            return `Base64 Data URL (长度: ${url.length} 字符)`;
+                        }
+                        return url.length > 80 ? url.substring(0, 80) + '...' : url;
+                    };
+                    
                     console.log('[ImageEditView] ========== 从最新消息中提取附件用于显示 ==========');
                     console.log('[ImageEditView] 提取的附件信息:', {
-                        messageId: lastMsg.id.substring(0, 8) + '...',
-                        attachmentId: att.id?.substring(0, 8) + '...',
+                        messageId: lastMsg.id,
+                        attachmentId: att.id || 'N/A',
                         displayUrlType: urlType,
-                        displayUrl: att.url ? (att.url.length > 80 ? att.url.substring(0, 80) + '...' : att.url) : 'N/A',
+                        displayUrl: formatUrlForLog(att.url),
                         uploadStatus: att.uploadStatus,
                         hasCloudUrl: att.uploadStatus === 'completed' && (att.url?.startsWith('http://') || att.url?.startsWith('https://')),
-                        tempUrl: att.tempUrl ? (att.tempUrl.length > 80 ? att.tempUrl.substring(0, 80) + '...' : att.tempUrl) : 'N/A',
+                        tempUrl: formatUrlForLog(att.tempUrl),
                         source: urlType.includes('云存储URL') ? '云存储URL (处理后的永久URL)' :
                                urlType.includes('Base64') ? 'AI返回的原始Base64地址' :
                                urlType.includes('Blob') ? '处理后的Blob URL (从HTTP临时URL转换)' :
@@ -478,33 +538,19 @@ export const ImageEditView = memo(({
         }
     }, [messages, activeAttachments.length, loadingState, lastProcessedMsgId, activeImageUrl]);
 
-    const handleSend = useCallback(async (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => {
-        try {
-            console.log('========== [ImageEditView] handleSend 开始 ==========');
-            console.log('[handleSend] 用户输入:', text);
-            console.log('[handleSend] 选择的编辑模式:', editMode);
-            console.log('[handleSend] 用户上传的附件数量:', attachments.length);
-            
-            // ✅ 根据设计文档，前端只负责传递附件元数据，后端统一处理
-            // 使用简化版的 processUserAttachments（只做基本元数据整理）
-            const finalAttachments = await processUserAttachments(
-                attachments,
-                activeImageUrl,
-                messages,
-                currentSessionId,
-                'canvas'
-            );
+    // 注意：handleGenerate 和 handleKeyDown 现在由 ChatEditInputArea 管理
 
-            console.log('[handleSend] 最终附件数量:', finalAttachments.length);
-            console.log('========== [ImageEditView] handleSend 结束 ==========');
-            // 使用选择的编辑模式而不是传入的 mode
-            onSend(text, options, finalAttachments, editMode);
-        } catch (error) {
-            console.error('[ImageEditView] handleSend 处理附件失败:', error);
-            showError('处理附件失败，请重试');
-            return;
-        }
-    }, [activeImageUrl, messages, currentSessionId, onSend, editMode]);
+    // ✅ ChatEditInputArea 已经处理了附件和参数，这里只需要直接转发
+    const handleSend = useCallback((text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => {
+        console.log('========== [ImageEditView] handleSend 开始 ==========');
+        console.log('[handleSend] 用户输入:', text);
+        console.log('[handleSend] 选择的编辑模式:', editMode);
+        console.log('[handleSend] 附件数量:', attachments.length);
+        console.log('[handleSend] 选项:', options);
+        console.log('========== [ImageEditView] handleSend 结束 ==========');
+        // ChatEditInputArea 已经处理了所有逻辑，直接转发即可
+        onSend(text, options, attachments, editMode);
+    }, [onSend, editMode]);
 
     // Canvas 事件处理器现在由 useImageCanvas Hook 提供
 
@@ -624,50 +670,77 @@ export const ImageEditView = memo(({
         if (activeImageUrl && onExpandImage) onExpandImage(activeImageUrl);
     }, [activeImageUrl, onExpandImage]);
 
-    const mainContent = (
-        <ImageEditMainCanvas
-            loadingState={loadingState}
-            isCompareMode={isCompareMode}
-            activeAttachments={activeAttachments}
-            activeImageUrl={activeImageUrl}
-            originalImageUrl={originalImageUrl}
-            zoom={canvas.zoom}
-            isDragging={canvas.isDragging}
-            canvasStyle={canvas.canvasStyle}
-            onWheel={canvas.handleWheel}
-            onMouseDown={canvas.handleMouseDown}
-            onMouseMove={canvas.handleMouseMove}
-            onMouseUp={canvas.handleMouseUp}
-            onZoomIn={canvas.handleZoomIn}
-            onZoomOut={canvas.handleZoomOut}
-            onReset={canvas.handleReset}
-            onFullscreen={activeImageUrl ? handleFullscreen : undefined}
-            onExpand={onExpandImage && activeImageUrl ? handleExpand : undefined}
-            onToggleCompare={originalImageUrl ? toggleCompare : undefined}
-        />
-    );
+    // ✅ 主区域：两栏布局（画布 + 参数面板）
+    const mainContent = useMemo(() => (
+        <div className="flex-1 flex flex-row h-full">
+            {/* ========== 左侧：画布区域 ========== */}
+            <ImageEditMainCanvas
+                loadingState={loadingState}
+                isCompareMode={isCompareMode}
+                activeAttachments={activeAttachments}
+                activeImageUrl={activeImageUrl}
+                originalImageUrl={originalImageUrl}
+                zoom={canvas.zoom}
+                isDragging={canvas.isDragging}
+                canvasStyle={canvas.canvasStyle}
+                onWheel={canvas.handleWheel}
+                onMouseDown={canvas.handleMouseDown}
+                onMouseMove={canvas.handleMouseMove}
+                onMouseUp={canvas.handleMouseUp}
+                onZoomIn={canvas.handleZoomIn}
+                onZoomOut={canvas.handleZoomOut}
+                onReset={canvas.handleReset}
+                onFullscreen={activeImageUrl ? handleFullscreen : undefined}
+                onExpand={onExpandImage && activeImageUrl ? handleExpand : undefined}
+                onToggleCompare={originalImageUrl ? toggleCompare : undefined}
+            />
 
-    // bottomContent - 直接渲染，固定使用 image-chat-edit 模式
-    const bottomContent = (
-        <InputArea
-            onSend={handleSend}
-            isLoading={loadingState !== 'idle'}
-            onStop={onStop}
-            currentModel={activeModelConfig}
-            visibleModels={visibleModels}
-            allVisibleModels={allVisibleModels}  // ✅ 传递完整模型列表
-            mode={editMode}
-            setMode={setAppMode}
-            initialPrompt={initialPrompt}
-            // ✅ 同时传递 initialAttachments 和 activeAttachments
-            // initialAttachments: 用于初始化（当组件首次挂载或模式切换时）
-            // activeAttachments: 用于受控模式（实时同步状态）
-            initialAttachments={initialAttachments}
-            activeAttachments={activeAttachments}
-            onAttachmentsChange={setActiveAttachments}
-            providerId={providerId}
-        />
-    );
+            {/* ========== 右侧：参数面板 ========== */}
+            <div className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900/50 flex flex-col h-full overflow-hidden">
+                {/* 头部 */}
+                <div className="px-4 py-3 border-b border-slate-800/50 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <SlidersHorizontal size={14} className="text-pink-400" />
+                        <span className="text-xs font-bold text-white">编辑参数</span>
+                    </div>
+                    <button
+                        onClick={resetParams}
+                        className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                        title="重置为默认值"
+                    >
+                        <RotateCcw size={12} />
+                    </button>
+                </div>
+
+                {/* 参数滚动区 - 通过 ModeControlsCoordinator 分发对应的参数组件 */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+                    <ModeControlsCoordinator
+                        mode={editMode}
+                        providerId={providerId || 'google'}
+                        controls={controls}
+                    />
+                </div>
+
+                {/* 底部固定区：使用 ChatEditInputArea 组件 */}
+                <ChatEditInputArea
+                    onSend={handleSend}
+                    isLoading={loadingState !== 'idle'}
+                    onStop={onStop}
+                    currentModel={activeModelConfig}
+                    mode={editMode}
+                    activeAttachments={activeAttachments}
+                    onAttachmentsChange={handleAttachmentsChange}
+                    activeImageUrl={activeImageUrl}
+                    onActiveImageUrlChange={setActiveImageUrl}
+                    messages={messages}
+                    sessionId={currentSessionId}
+                    initialPrompt={initialPrompt}
+                    initialAttachments={initialAttachments}
+                    providerId={providerId}
+                />
+            </div>
+        </div>
+    ), [loadingState, isCompareMode, activeAttachments, activeImageUrl, originalImageUrl, canvas, handleFullscreen, handleExpand, toggleCompare, onExpandImage, handleSend, activeModelConfig, editMode, onStop, messages, currentSessionId, initialPrompt, initialAttachments, providerId, resetParams]);
 
     return (
         <GenViewLayout
@@ -677,7 +750,6 @@ export const ImageEditView = memo(({
             sidebarHeaderIcon={<Layers size={14} />}
             sidebar={sidebarContent}
             main={mainContent}
-            bottom={bottomContent}
         />
     );
 }, arePropsEqual);

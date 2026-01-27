@@ -4,7 +4,7 @@ Google (Gemini) Provider Service - Main Coordinator
 This module coordinates all Gemini-related operations by delegating to specialized handlers.
 """
 
-from typing import Dict, Any, List, Optional, AsyncGenerator, Union, Type
+from typing import Dict, Any, List, Optional, AsyncGenerator, Union, Type, Tuple
 import logging
 from sqlalchemy.orm import Session
 
@@ -19,21 +19,21 @@ from ..common.errors import (
     RequestIDManager
 )
 
-from .sdk_initializer import SDKInitializer
-from .chat_handler import ChatHandler
+from .common.sdk_initializer import SDKInitializer
+from .common.chat_handler import ChatHandler
 from .image_generator import ImageGenerator
-from .image_edit_coordinator import ImageEditCoordinator
-from .model_manager import ModelManager
-from .file_handler import FileHandler
-from .function_handler import FunctionHandler
-from .schema_handler import SchemaHandler
-from .token_handler import TokenHandler
-from .official_sdk_adapter import OfficialSDKAdapter
-from .expand_service import ExpandService
-from .upscale_service import UpscaleService
-from .segmentation_service import SegmentationService
-from .tryon_service import TryOnService
-from .pdf_extractor import PDFExtractorService
+from .coordinators.image_edit_coordinator import ImageEditCoordinator
+from .common.model_manager import ModelManager
+from .common.file_handler import FileHandler
+from .common.function_handler import FunctionHandler
+from .common.schema_handler import SchemaHandler
+from .common.token_handler import TokenHandler
+from .common.official_sdk_adapter import OfficialSDKAdapter
+from .vertexai.expand_service import ExpandService
+from .vertexai.upscale_service import UpscaleService
+from .vertexai.segmentation_service import SegmentationService
+from .vertexai.tryon_service import TryOnService
+from .common.pdf_extractor import PDFExtractorService
 
 logger = logging.getLogger(__name__)
 
@@ -209,7 +209,7 @@ class GoogleService(BaseProviderService):
             self.file_handler = FileHandler(self.sdk_initializer)
             # Initialize chat session manager (for conversational image editing)
             if db:
-                from .chat_session_manager import ChatSessionManager
+                from .common.chat_session_manager import ChatSessionManager
                 self.chat_session_manager = ChatSessionManager(db)
             else:
                 self.chat_session_manager = None
@@ -228,8 +228,8 @@ class GoogleService(BaseProviderService):
             
             # Initialize specialized image services
             self.expand_service = ExpandService(self.sdk_initializer)
-            self.upscale_service = UpscaleService(self.sdk_initializer)
-            self.segmentation_service = SegmentationService(self.sdk_initializer)
+            self.upscale_service = UpscaleService()  # UpscaleService doesn't take parameters
+            self.segmentation_service = SegmentationService()  # SegmentationService doesn't take parameters
 
             # Initialize PDF extraction service
             self.pdf_extractor = PDFExtractorService(self.sdk_initializer)
@@ -519,7 +519,7 @@ class GoogleService(BaseProviderService):
         allowed_function_names: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """Delegate to FunctionHandler."""
-        from .function_handler import FunctionCallingMode
+        from .common.function_handler import FunctionCallingMode
         mode_enum = FunctionCallingMode(mode)
         return self.function_handler.create_tool_config(functions, mode_enum, allowed_function_names)
     
@@ -1087,6 +1087,52 @@ class GoogleService(BaseProviderService):
 
     # === Virtual Try-On Service ===
 
+    def _resolve_vertex_config_for_tryon(self) -> Tuple[Optional[str], str, Optional[str]]:
+        """
+        解析 Vertex AI 配置，与 GEN/Edit 一致：优先用户 VertexAIConfig（解密），否则 env。
+        返回 (project_id, location, credentials_json)。
+        """
+        import os
+        project_id = None
+        location = "us-central1"
+        credentials_json = None
+        from_db = False
+        user_id = self.user_id
+        db = self.db
+
+        if user_id and db:
+            try:
+                from ...models.db_models import VertexAIConfig
+                from ...core.encryption import decrypt_data, is_encrypted
+                uc = db.query(VertexAIConfig).filter(VertexAIConfig.user_id == user_id).first()
+                if uc and uc.api_mode == "vertex_ai" and uc.vertex_ai_project_id and uc.vertex_ai_credentials_json:
+                    project_id = uc.vertex_ai_project_id
+                    location = uc.vertex_ai_location or "us-central1"
+                    raw = uc.vertex_ai_credentials_json
+                    credentials_json = decrypt_data(raw) if is_encrypted(raw) else raw
+                    from_db = True
+                    logger.info("[Google Service] Try-on using Vertex config from DB for user=%s...", (user_id or "")[:8])
+            except Exception as e:
+                logger.warning("[Google Service] Vertex config from DB failed: %s", e)
+
+        if not from_db:
+            project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT_ID")
+            credentials_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+            location = os.getenv("GOOGLE_CLOUD_LOCATION") or os.getenv("GCP_LOCATION", "us-central1")
+
+        return project_id, location, credentials_json
+
+    @staticmethod
+    def _extract_image_url(obj: Any) -> Optional[str]:
+        """从 reference_images 条目提取 data URL 或 base64 字符串。"""
+        if obj is None:
+            return None
+        if isinstance(obj, str):
+            return obj
+        if isinstance(obj, dict) and "url" in obj:
+            return obj["url"]
+        return None
+
     async def virtual_tryon(
         self,
         prompt: str,
@@ -1095,45 +1141,129 @@ class GoogleService(BaseProviderService):
         **kwargs
     ) -> Dict[str, Any]:
         """
-        Virtual try-on using image editing - 委托给 TryOnService
-        
-        Args:
-            prompt: Description of clothing to try on
-            model: Model identifier (not used for try-on, but required by interface)
-            reference_images: Reference images dict {'raw': image_base64, 'mask': mask_base64}
-            **kwargs: Additional parameters:
-                - edit_mode: Edit mode ('inpainting-insert', 'inpainting-remove')
-                - mask_mode: Mask mode ('foreground', 'background')
-                - dilation: Mask dilation factor
-                - target_clothing: Target clothing area
-                - api_key: Gemini API Key (optional, will use self.api_key if not provided)
-        
-        Returns:
-            Dict with success status and result image
+        虚拟试衣 - 委托给 TryOnService，走统一路由 /api/modes/{provider}/virtual-try-on。
+
+        与 GEN/Edit 统一：
+        - 认证、凭证由 modes 路由 + ProviderFactory 处理
+        - Vertex 配置由本方法解析（用户 VertexAIConfig 或 env）后传入 TryOnService
+        - ✅ 当提供 session_id 和 message_id 时，调用 AttachmentService 处理图片
+        - ✅ 返回与 GEN 模式一致的 {"images": [...]} 格式
+
+        reference_images: 来自 modes 的 convert_attachments_to_reference_images。
+        - raw: 单图即人物图；多图时为 [人物图, 服装图]，顺序固定。
+
+        kwargs 支持的参数:
+        - sessionId / frontend_session_id: 会话 ID
+        - message_id: 消息 ID（用于关联附件）
+        - numberOfImages / number_of_images: 生成图片数量
+        - outputMimeType / output_mime_type: 输出格式
         """
         if self.use_official_sdk:
             raise NotImplementedError("Virtual try-on not yet implemented in official SDK adapter")
 
-        logger.info(f"[Google Service] Delegating virtual try-on to TryOnService: prompt={prompt[:50]}...")
+        ref = reference_images or {}
+        raw = ref.get("raw")
+        person_url = None
+        clothing_url = None
+        if isinstance(raw, list) and len(raw) >= 2:
+            person_url = self._extract_image_url(raw[0])
+            clothing_url = self._extract_image_url(raw[1])
+        elif isinstance(raw, (str, dict)):
+            person_url = self._extract_image_url(raw)
+            clothing_url = self._extract_image_url(ref.get("clothing"))
+        if not person_url or not clothing_url:
+            raise ValueError("Virtual try-on requires two images: person and garment (attachments[0]=person, attachments[1]=garment)")
+
+        project_id, location, credentials_json = self._resolve_vertex_config_for_tryon()
+        if not project_id or not credentials_json:
+            raise ValueError(
+                "Vertex AI not configured for try-on. Set user Vertex AI settings or "
+                "GOOGLE_CLOUD_PROJECT and GOOGLE_APPLICATION_CREDENTIALS_JSON."
+            )
+
+        n = max(1, min(4, kwargs.get("numberOfImages") or kwargs.get("number_of_images") or 1))
+        mime = kwargs.get("outputMimeType") or kwargs.get("output_mime_type") or "image/jpeg"
+        model_id = model or "virtual-try-on-001"
         
-        # 传递 api_key（如果未提供，使用 self.api_key）
-        if 'api_key' not in kwargs:
-            kwargs['api_key'] = self.api_key
-        
-        result = await self.tryon_service.virtual_tryon(
-            prompt=prompt,
-            reference_images=reference_images,
-            **kwargs
+        # 从 kwargs 获取新增的官方支持参数
+        base_steps = kwargs.get("baseSteps") or kwargs.get("base_steps")
+        compression_quality = kwargs.get("outputCompressionQuality") or kwargs.get("output_compression_quality")
+        seed = kwargs.get("seed")
+
+        logger.info(
+            "[Google Service] Delegating virtual try-on to TryOnService: model=%s, images=%s, base_steps=%s, quality=%s",
+            model_id, n, base_steps, compression_quality
         )
+        result = self.tryon_service.virtual_tryon(
+            person_image_base64=person_url,
+            clothing_image_base64=clothing_url,
+            number_of_images=n,
+            output_mime_type=mime,
+            model=model_id,
+            project_id=project_id,
+            location=location,
+            credentials_json=credentials_json,
+            base_steps=base_steps,
+            output_compression_quality=compression_quality,
+            seed=seed,
+        )
+
+        if not result.success:
+            raise Exception(result.error or "Virtual try-on failed")
+
+        data_url = result.image
+        if data_url and not data_url.startswith("data:"):
+            data_url = f"data:{result.mime_type};base64,{data_url}"
+
+        # ✅ 与 GEN 模式保持一致：从 kwargs 中获取 session_id 和 message_id
+        session_id = kwargs.get("frontend_session_id") or kwargs.get("sessionId")
+        message_id = kwargs.get("message_id")
         
-        # 转换为统一格式
-        if result.success:
-            return {
-                "url": result.result_image_base64 or result.result_image_url,
-                "success": True
-            }
-        else:
-            raise Exception(f"Virtual try-on failed: {result.error}")
+        logger.info(f"[Google Service] Virtual try-on result processing: session_id={session_id}, message_id={message_id}")
+        
+        # ✅ 如果有 session_id 和 message_id，调用 AttachmentService 处理图片（方案 B）
+        # 这样做的原因是 modes.py 禁止修改，所以在服务层自行处理附件
+        if session_id and message_id and self.db and self.user_id:
+            try:
+                from ..common.attachment_service import AttachmentService
+                attachment_service = AttachmentService(self.db)
+                
+                # 调用 process_ai_result 创建数据库附件记录和上传任务
+                processed = await attachment_service.process_ai_result(
+                    ai_url=data_url,
+                    mime_type=mime,
+                    session_id=session_id,
+                    message_id=message_id,
+                    user_id=self.user_id,
+                    prefix="tryon"
+                )
+                
+                logger.info(f"[Google Service] Virtual try-on attachment processed: attachment_id={processed['attachment_id']}, status={processed['status']}")
+                
+                # ✅ 返回与 GEN 模式完全一致的 images 数组格式
+                return {
+                    "images": [{
+                        "url": processed["display_url"],
+                        "attachmentId": processed["attachment_id"],
+                        "uploadStatus": processed["status"],
+                        "taskId": processed["task_id"],
+                        "mimeType": mime,
+                        "filename": f"tryon-{processed['attachment_id'][:8]}.png"
+                    }]
+                }
+            except Exception as e:
+                logger.warning(f"[Google Service] AttachmentService processing failed, returning raw result: {e}")
+                # 降级：返回原始结果（不入库）
+        
+        # ✅ 没有 session_id/message_id 时，也返回 images 数组格式（与 GEN 一致）
+        # 这样前端可以统一处理 data.images
+        return {
+            "images": [{
+                "url": data_url,
+                "mimeType": mime,
+                "filename": f"tryon-{model_id}.png"
+            }]
+        }
     
     # === Clothing Segmentation Service ===
     

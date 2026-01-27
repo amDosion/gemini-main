@@ -212,48 +212,53 @@ def setup_logger(name: str = "backend", level: int = logging.INFO) -> logging.Lo
 def setup_root_logger(level: int = logging.INFO) -> None:
     """
     Set up root logger to ensure all child loggers can output logs.
-    
+
     This is important for modules that use logging.getLogger(__name__)
     without explicitly configuring handlers.
-    
-    Only sets the level, handler is added once to avoid duplicates.
-    
+
+    ✅ 修复日志重复问题：清除所有现有 handler，确保只有一个
+
     Args:
         level: Logging level (default: INFO)
     """
     import sys
     root_logger = logging.getLogger()
-    
-    # Only configure if not already configured
-    if not root_logger.handlers:
-        root_logger.setLevel(level)
-        
-        # ✅ 使用 stderr 而不是 stdout（Uvicorn 默认使用 stderr）
-        # 这样可以确保日志不会被 Uvicorn 拦截
-        console_handler = FlushingStreamHandler(sys.stderr)
-        console_handler.setLevel(level)
-        
-        # Force UTF-8 encoding on Windows
-        if hasattr(console_handler.stream, 'reconfigure'):
-            try:
-                console_handler.stream.reconfigure(encoding='utf-8')
-            except Exception:
-                pass
-        
-        # Create formatter with timestamp
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        console_handler.setFormatter(formatter)
-        
-        # ✅ 添加数据库日志过滤器
-        console_handler.addFilter(_logging_filter)
-        
-        root_logger.addHandler(console_handler)
-    else:
-        # Just set level if handler already exists
-        root_logger.setLevel(level)
+    root_logger.setLevel(level)
+
+    # ✅ 修复：始终清除所有现有 handlers，避免重复日志
+    # 这解决了 uvicorn 等可能添加额外 handler 导致日志重复的问题
+    if root_logger.handlers:
+        # 记录现有 handlers 数量（用于调试）
+        existing_count = len(root_logger.handlers)
+        root_logger.handlers.clear()
+        # 不输出日志，避免循环
+
+    # ✅ 使用 stderr 而不是 stdout（Uvicorn 默认使用 stderr）
+    # 这样可以确保日志不会被 Uvicorn 拦截
+    console_handler = FlushingStreamHandler(sys.stderr)
+    console_handler.setLevel(level)
+
+    # Force UTF-8 encoding on Windows
+    if hasattr(console_handler.stream, 'reconfigure'):
+        try:
+            console_handler.stream.reconfigure(encoding='utf-8')
+        except Exception:
+            pass
+
+    # Create formatter with timestamp
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    console_handler.setFormatter(formatter)
+
+    # ✅ 添加数据库日志过滤器
+    console_handler.addFilter(_logging_filter)
+
+    # ✅ 添加唯一标识，方便调试
+    console_handler.set_name("gemini_root_handler")
+
+    root_logger.addHandler(console_handler)
 
 
 # Setup root logger to ensure all child loggers work
@@ -300,12 +305,44 @@ ensure_service_loggers()
 def refresh_logging_config_cache():
     """
     刷新日志配置缓存
-    
+
     当 SystemConfig.enable_logging 在数据库中更新后，调用此函数可以立即生效
     而不需要等待缓存过期（默认30秒）
-    
+
     使用场景：
     - 在更新 SystemConfig.enable_logging 后调用
     - 在系统配置管理界面更新后调用
     """
     _logging_filter.refresh_cache()
+
+
+def diagnose_logger_handlers(logger_name: str = None) -> dict:
+    """
+    诊断 logger handler 配置（用于调试日志重复问题）
+
+    Args:
+        logger_name: 要诊断的 logger 名称，None 表示 root logger
+
+    Returns:
+        包含 handler 信息的字典
+    """
+    target_logger = logging.getLogger(logger_name) if logger_name else logging.getLogger()
+
+    handlers_info = []
+    for h in target_logger.handlers:
+        handler_info = {
+            "class": h.__class__.__name__,
+            "name": getattr(h, 'name', None) or getattr(h, '_name', 'unnamed'),
+            "level": logging.getLevelName(h.level),
+            "stream": getattr(h, 'stream', None).__class__.__name__ if hasattr(h, 'stream') else None,
+            "formatter": h.formatter._fmt if h.formatter else None,
+        }
+        handlers_info.append(handler_info)
+
+    return {
+        "logger_name": logger_name or "root",
+        "level": logging.getLevelName(target_logger.level),
+        "propagate": target_logger.propagate,
+        "handlers_count": len(target_logger.handlers),
+        "handlers": handlers_info,
+    }

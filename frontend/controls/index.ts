@@ -10,16 +10,16 @@ export {
   VirtualTryOnControls
 } from './modes';
 
-// Shared Components
-export {
-  ToggleButton,
-  DropdownSelector,
-  SliderControl,
-  AdvancedToggle
-} from './shared';
+// Shared Components (DEPRECATED - 未使用，暂时禁用)
+// export {
+//   ToggleButton,
+//   DropdownSelector,
+//   SliderControl,
+//   AdvancedToggle
+// } from './_deprecated_shared';
 
 // Types
 export * from './types';
 
-// Constants
-export * from './constants';
+// Constants (modularized)
+export * from './constants/index';

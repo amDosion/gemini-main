@@ -190,6 +190,12 @@ class TongyiService(BaseProviderService):
         # 构建请求参数
         logger.info(f"[TongyiService] 🔄 [步骤2] 构建 ImageGenerationRequest...")
         from .image_generation import ImageGenerationRequest
+        
+        # 处理 promptExtend -> enable_prompt_optimize
+        enable_prompt_optimize = kwargs.get("promptExtend") or kwargs.get("enable_prompt_optimize", False)
+        # 处理 addMagicSuffix -> add_magic_suffix
+        add_magic_suffix = kwargs.get("addMagicSuffix") if kwargs.get("addMagicSuffix") is not None else kwargs.get("add_magic_suffix", True)
+        
         request = ImageGenerationRequest(
             model_id=model,
             prompt=prompt,
@@ -198,7 +204,9 @@ class TongyiService(BaseProviderService):
             num_images=kwargs.get("numberOfImages") or kwargs.get("num_images", 1),
             negative_prompt=kwargs.get("negativePrompt") or kwargs.get("negative_prompt"),
             seed=kwargs.get("seed"),
-            style=kwargs.get("imageStyle") or kwargs.get("style")
+            style=kwargs.get("imageStyle") or kwargs.get("style"),
+            enable_prompt_optimize=enable_prompt_optimize,
+            add_magic_suffix=add_magic_suffix
         )
         logger.info(f"[TongyiService] ✅ [步骤2] 请求参数构建完成:")
         logger.info(f"[TongyiService]     - model_id: {request.model_id}")
@@ -218,14 +226,19 @@ class TongyiService(BaseProviderService):
         logger.info(f"[TongyiService] 🔄 [步骤4] 转换结果格式...")
         formatted_results = []
         for idx, result in enumerate(results):
+            # 获取优化后的提示词（TongYi 使用 optimized_prompt，映射为前端期望的 enhancedPrompt）
+            enhanced_prompt = getattr(result, "optimized_prompt", None)
+            
             formatted_result = {
                 "url": result.url,
-                "revised_prompt": getattr(result, "revised_prompt", None),
+                "enhancedPrompt": enhanced_prompt,  # ✅ 使用前端期望的字段名
                 "mime_type": getattr(result, "mime_type", "image/png")
             }
             formatted_results.append(formatted_result)
             url_type = "HTTP" if result.url and result.url.startswith('http') else "其他"
             logger.info(f"[TongyiService]     - 第 {idx+1} 张图片: URL类型={url_type}, mime_type={formatted_result['mime_type']}")
+            if enhanced_prompt:
+                logger.info(f"[TongyiService]     - 增强后提示词: {enhanced_prompt[:80]}...")
         
         total_time = (time.time() - start_time) * 1000
         logger.info(f"[TongyiService] ✅ [步骤4] 格式转换完成 (耗时: {total_time:.2f}ms)")
@@ -282,13 +295,18 @@ class TongyiService(BaseProviderService):
         
         # 构建编辑选项
         from .image_edit import ImageEditOptions
+        
+        # 处理 promptExtend -> enable_prompt_optimize
+        enable_prompt_optimize = kwargs.get("promptExtend") or kwargs.get("enable_prompt_optimize", False)
+        
         options = ImageEditOptions(
             n=kwargs.get("number_of_images") or kwargs.get("numberOfImages", 1),
             negative_prompt=kwargs.get("negative_prompt") or kwargs.get("negativePrompt"),
             size=kwargs.get("size"),
             watermark=kwargs.get("watermark", False),
             seed=kwargs.get("seed"),
-            prompt_extend=kwargs.get("prompt_extend", True)
+            prompt_extend=kwargs.get("prompt_extend", True),
+            enable_prompt_optimize=enable_prompt_optimize
         )
         
         # 调用编辑服务

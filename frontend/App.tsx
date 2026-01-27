@@ -561,6 +561,11 @@ const AppContent: React.FC = () => {
         onRefreshPersonas={refreshPersonas}
 
         settings={settingsModal}
+
+        // ✅ 模式导航相关
+        showModeNavigation={true}
+        setAppMode={handleModeSwitch}
+        allVisibleModels={allVisibleModels}
       >
         {renderView()}
       </AppLayout>

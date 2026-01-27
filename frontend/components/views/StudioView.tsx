@@ -29,8 +29,8 @@ interface StudioViewProps {
   allVisibleModels?: ModelConfig[];  // ✅ 新增：完整模型列表（不按模式过滤），用于 ModeSelector 判断模式可用性
   initialPrompt?: string;
   initialAttachments?: Attachment[];
-  onEditImage?: (url: string) => void;
-  onExpandImage?: (url: string) => void; // Added prop
+  onEditImage?: (url: string, attachment?: Attachment) => void;  // ✅ 修复：添加可选的 attachment 参数
+  onExpandImage?: (url: string, attachment?: Attachment) => void;  // ✅ 修复：添加可选的 attachment 参数
   providerId?: string;
   sessionId?: string | null;  // ✅ 会话 ID，用于查询附件
   onDeleteMessage?: (messageId: string) => void;  // ✅ 删除消息回调

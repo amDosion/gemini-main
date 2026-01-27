@@ -73,23 +73,26 @@ export interface ChatControlsProps {
 export interface ImageGenControlsProps {
   providerId: string;
   currentModel?: ModelConfig;
-  style: string;
-  setStyle: (v: string) => void;
-  numberOfImages: number;
-  setNumberOfImages: (v: number) => void;
-  aspectRatio: string;
-  setAspectRatio: (v: string) => void;
-  resolution: string;
-  setResolution: (v: string) => void;
-  showAdvanced: boolean;
-  setShowAdvanced: (v: boolean) => void;
+  /** 传递 controls 状态对象 */
+  controls?: ControlsState;
+  /** 最大图片生成数量 */
+  maxImageCount?: number;
+  // 单独 props（向后兼容）
+  style?: string;
+  setStyle?: (v: string) => void;
+  numberOfImages?: number;
+  setNumberOfImages?: (v: number) => void;
+  aspectRatio?: string;
+  setAspectRatio?: (v: string) => void;
+  resolution?: string;
+  setResolution?: (v: string) => void;
+  showAdvanced?: boolean;
+  setShowAdvanced?: (v: boolean) => void;
   // Imagen advanced parameters
   negativePrompt?: string;
   setNegativePrompt?: (v: string) => void;
   seed?: number;
   setSeed?: (v: number) => void;
-  // guidanceScale removed - not officially documented by Google Imagen
-  // personGeneration removed - API uses default (allow_adult)
   outputMimeType?: string;
   setOutputMimeType?: (v: string) => void;
   outputCompressionQuality?: number;
@@ -100,12 +103,15 @@ export interface ImageGenControlsProps {
 
 export interface ImageEditControlsProps {
   providerId: string;
-  aspectRatio: string;
-  setAspectRatio: (v: string) => void;
-  resolution: string;
-  setResolution: (v: string) => void;
-  showAdvanced: boolean;
-  setShowAdvanced: (v: boolean) => void;
+  /** 传递 controls 状态对象 */
+  controls?: ControlsState;
+  // 单独 props（向后兼容）
+  aspectRatio?: string;
+  setAspectRatio?: (v: string) => void;
+  resolution?: string;
+  setResolution?: (v: string) => void;
+  showAdvanced?: boolean;
+  setShowAdvanced?: (v: boolean) => void;
 }
 
 
@@ -117,27 +123,37 @@ export interface OffsetPixels {
 }
 
 export interface ImageOutpaintControlsProps {
-  outPaintingMode: 'scale' | 'offset';
-  setOutPaintingMode: (v: 'scale' | 'offset') => void;
-  scaleFactor: number;
-  setScaleFactor: (v: number) => void;
-  offsetPixels: OffsetPixels;
-  setOffsetPixels: (v: React.SetStateAction<OffsetPixels>) => void;
-  showAdvanced: boolean;
-  setShowAdvanced: (v: boolean) => void;
+  providerId?: string;
+  /** 传递 controls 状态对象 */
+  controls?: ControlsState;
+  // 单独 props（向后兼容）
+  outPaintingMode?: 'scale' | 'offset';
+  setOutPaintingMode?: (v: 'scale' | 'offset') => void;
+  scaleFactor?: number;
+  setScaleFactor?: (v: number) => void;
+  offsetPixels?: OffsetPixels;
+  setOffsetPixels?: (v: React.SetStateAction<OffsetPixels>) => void;
+  showAdvanced?: boolean;
+  setShowAdvanced?: (v: boolean) => void;
 }
 
 export interface VideoGenControlsProps {
   providerId: string;
-  aspectRatio: string;
-  setAspectRatio: (v: string) => void;
-  resolution: string;
-  setResolution: (v: string) => void;
+  /** 传递 controls 状态对象 */
+  controls?: ControlsState;
+  // 单独 props（向后兼容）
+  aspectRatio?: string;
+  setAspectRatio?: (v: string) => void;
+  resolution?: string;
+  setResolution?: (v: string) => void;
 }
 
 export interface AudioGenControlsProps {
-  voice: string;
-  setVoice: (v: string) => void;
+  /** 传递 controls 状态对象 */
+  controls?: ControlsState;
+  // 单独 props（向后兼容）
+  voice?: string;
+  setVoice?: (v: string) => void;
 }
 
 export interface PdfExtractControlsProps {
@@ -149,8 +165,15 @@ export interface PdfExtractControlsProps {
 }
 
 export interface VirtualTryOnControlsProps {
-  tryOnTarget: string;
-  setTryOnTarget: (v: string) => void;
+  /** 传递 controls 状态对象 */
+  controls?: ControlsState;
+  // 单独 props（向后兼容）
+  baseSteps?: number;
+  setBaseSteps?: (v: number) => void;
+  numberOfImages?: number;
+  setNumberOfImages?: (v: number) => void;
+  // output_mime_type 和 output_compression_quality 使用固定默认值（image/jpeg, 100）
+  // 不提供 UI 设置，但在 ChatOptions 中传递给后端
 }
 
 export interface DeepResearchControlsProps {
@@ -234,6 +257,11 @@ export interface ControlsState {
   enhancePrompt: boolean;
   setEnhancePrompt: (v: boolean) => void;
 
+  // TongYi Specific Parameters
+  promptExtend: boolean;
+  setPromptExtend: (v: boolean) => void;
+  addMagicSuffix: boolean;
+  setAddMagicSuffix: (v: boolean) => void;
 
   // Out-Painting
   outPaintingMode: 'scale' | 'offset';
@@ -254,8 +282,9 @@ export interface ControlsState {
   setPdfAdditionalInstructions: (v: string) => void;
 
   // Virtual Try-On
-  tryOnTarget: string;
-  setTryOnTarget: (v: string) => void;
+  baseSteps: number;
+  setBaseSteps: (v: number) => void;
+  // output_mime_type 和 output_compression_quality 使用固定默认值（image/jpeg, 100）
 
   // Deep Research Controls
   thinkingSummaries: 'auto' | 'none';

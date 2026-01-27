@@ -25,11 +25,48 @@ from ...core.dependencies import require_current_user
 from ...core.encryption import encrypt_data, decrypt_data, is_encrypted
 from ...models.db_models import VertexAIConfig, ConfigProfile, UserSettings
 from ...services.common.provider_factory import ProviderFactory
-from ...services.gemini.imagen_common import ConfigurationError
+from ...services.gemini.base.imagen_common import ConfigurationError
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/vertex-ai", tags=["vertex-ai"])
+
+
+# ============================================
+# 静态模型列表 - 这些模型可能不在 Vertex AI API 返回中，但确实存在
+# ============================================
+STATIC_VERTEX_AI_MODELS: List[str] = [
+    # Imagen 图像生成模型
+    "imagen-3.0-generate-001",
+    "imagen-3.0-generate-002",
+    "imagen-3.0-fast-generate-001",
+    "imagen-4.0-generate-preview-05-20",
+    "imagen-4.0-ultra-generate-preview-05-20",
+
+    # Imagen 图像编辑模型
+    "imagen-3.0-capability-001",
+    "imagen-4.0-ingredients-preview",
+
+    # Imagen Upscale 模型
+    "imagen-4.0-upscale-preview",
+
+    # 图像分割模型
+    "image-segmentation-001",
+
+    # 虚拟试衣模型
+    "virtual-try-on-001",
+    "virtual-try-on-preview-08-04",
+
+    # 产品重构模型
+    "imagen-product-recontext-preview-06-30",
+
+    # Veo 视频生成模型
+    "veo-2.0-generate-001",
+    "veo-3.0-generate-preview",
+    "veo-3.0-fast-generate-preview",
+    "veo-3.1-generate-preview",
+    "veo-3.1-fast-generate-preview",
+]
 
 
 # ==================== Request/Response Models ====================
@@ -868,14 +905,21 @@ async def verify_vertex_ai_connection(
             
             # Convert to response format with capabilities and description
             models = []
+            seen_model_ids: set = set()  # 用于去重
+
             for model in models_list:
                 model_name = model.name if hasattr(model, 'name') else str(model)
                 display_name = model.display_name if hasattr(model, 'display_name') else model_name
-                
+
                 # Extract short model ID for capability lookup
                 # e.g., "publishers/google/models/gemini-3-pro-image-preview" -> "gemini-3-pro-image-preview"
                 short_model_id = model_name.split('/')[-1] if '/' in model_name else model_name
-                
+
+                # 跳过已存在的模型
+                if short_model_id in seen_model_ids:
+                    continue
+                seen_model_ids.add(short_model_id)
+
                 # Get model capabilities
                 try:
                     caps = get_google_capabilities(short_model_id)
@@ -888,14 +932,14 @@ async def verify_vertex_ai_connection(
                 except Exception as e:
                     logger.warning(f"[VertexAIConfig] Failed to get capabilities for {short_model_id}: {e}")
                     capabilities = ModelCapabilities()  # Default: all False
-                
+
                 # ✅ Get model description
                 try:
                     description = get_model_description('google', short_model_id)
                 except Exception as e:
                     logger.warning(f"[VertexAIConfig] Failed to get description for {short_model_id}: {e}")
                     description = None  # Will use default in frontend
-                
+
                 models.append(VertexAIModel(
                     id=model_name,
                     name=model_name,
@@ -903,9 +947,46 @@ async def verify_vertex_ai_connection(
                     description=description,  # ✅ Include description
                     capabilities=capabilities
                 ))
-            
+
+            api_model_count = len(models)
+
+            # ✅ 合并静态模型列表（避免重复）
+            static_added = 0
+            for static_model_id in STATIC_VERTEX_AI_MODELS:
+                if static_model_id in seen_model_ids:
+                    continue
+                seen_model_ids.add(static_model_id)
+
+                try:
+                    caps = get_google_capabilities(static_model_id)
+                    capabilities = ModelCapabilities(
+                        vision=caps.vision,
+                        search=caps.search,
+                        reasoning=caps.reasoning,
+                        coding=caps.coding
+                    )
+                except Exception as e:
+                    logger.warning(f"[VertexAIConfig] Failed to get capabilities for static model {static_model_id}: {e}")
+                    capabilities = ModelCapabilities()
+
+                try:
+                    description = get_model_description('google', static_model_id)
+                except Exception as e:
+                    logger.warning(f"[VertexAIConfig] Failed to get description for static model {static_model_id}: {e}")
+                    description = None
+
+                models.append(VertexAIModel(
+                    id=static_model_id,
+                    name=static_model_id,
+                    display_name=static_model_id,
+                    description=description,
+                    capabilities=capabilities
+                ))
+                static_added += 1
+
             logger.info(
-                f"[VertexAIConfig] Successfully listed {len(models)} models from Vertex AI"
+                f"[VertexAIConfig] Successfully listed {len(models)} models "
+                f"({api_model_count} from API + {static_added} static)"
             )
             
             return VerifyVertexAIResponse(

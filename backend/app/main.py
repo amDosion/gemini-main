@@ -15,11 +15,12 @@ from typing import Optional, Dict, Any, List
 import asyncio
 import uuid
 import json
-import subprocess
 import sys
 import atexit
 import platform
 import signal
+import multiprocessing
+import os
 from pathlib import Path
 
 # 导入统一的环境变量加载模块（确保 .env 文件已加载，必须在其他导入之前）
@@ -59,15 +60,15 @@ except ImportError:
 # Browser module import
 try:
     # Try relative import first (when run as module: python -m backend.app.main)
-    from .services.gemini.browser import read_webpage, selenium_browse, SELENIUM_AVAILABLE
+    from .services.gemini.common.browser import read_webpage, selenium_browse, SELENIUM_AVAILABLE
 except ImportError:
     try:
         # Fall back to absolute import (when run directly: python main.py)
-        from services.gemini.browser import read_webpage, selenium_browse, SELENIUM_AVAILABLE
+        from services.gemini.common.browser import read_webpage, selenium_browse, SELENIUM_AVAILABLE
     except ImportError:
         try:
             # 从项目根目录启动时的导入路径
-            from backend.app.services.gemini.browser import read_webpage, selenium_browse, SELENIUM_AVAILABLE
+            from backend.app.services.gemini.common.browser import read_webpage, selenium_browse, SELENIUM_AVAILABLE
         except ImportError as e:
             logger.warning(f"{LOG_PREFIXES['warning']} Could not import browser module: {e}")
             logger.info("Install browser dependencies with: pip install selenium webdriver-manager beautifulsoup4")
@@ -78,10 +79,10 @@ except ImportError:
             def selenium_browse(*args, **kwargs):
                 raise RuntimeError("Browser module not available")
 
-# PDF extractor module import (now in gemini directory)
+# PDF extractor module import (now in gemini/common directory)
 try:
     # Try relative import first (when run as module: python -m backend.app.main)
-    from .services.gemini.pdf_extractor import (
+    from .services.gemini.common.pdf_extractor import (
         extract_structured_data_from_pdf,
         get_available_templates
     )
@@ -89,7 +90,7 @@ try:
 except ImportError:
     try:
         # Fall back to absolute import (when run directly: python main.py)
-        from services.gemini.pdf_extractor import (
+        from services.gemini.common.pdf_extractor import (
             extract_structured_data_from_pdf,
             get_available_templates
         )
@@ -97,7 +98,7 @@ except ImportError:
     except ImportError:
         try:
             # 从项目根目录启动时的导入路径
-            from backend.app.services.gemini.pdf_extractor import (
+            from backend.app.services.gemini.common.pdf_extractor import (
                 extract_structured_data_from_pdf,
                 get_available_templates
             )
@@ -216,21 +217,29 @@ async def lifespan(app: FastAPI):
     启动时:
     - 启动 Redis 队列 Worker 池（5个并发 Worker）
     - 执行崩溃恢复（重新入队未完成的任务）
+    - 根据 WORKER_MODE 决定 Worker 运行方式：
+      * "embedded": 内嵌在主进程中（默认）
+      * "separate_process": 在独立子进程中（推荐）
+      * "disabled": 禁用 Worker（需要外部 Worker 服务）
 
     关闭时:
     - 优雅停止 Worker 池（等待当前任务完成）
     """
     supervisor_task: asyncio.Task | None = None
     cleanup_task: asyncio.Task | None = None
+    worker_process: multiprocessing.Process | None = None
 
     # ✅ 确保日志配置在应用启动时生效（Uvicorn 启动后可能覆盖配置）
     try:
-        from .core.logger import setup_root_logger, ensure_service_loggers
+        from .core.logger import setup_root_logger, ensure_service_loggers, diagnose_logger_handlers
         # 重新配置根 logger（防止 Uvicorn 覆盖）
         setup_root_logger()
         # 确保所有服务 logger 配置正确
         ensure_service_loggers()
+        # 输出诊断信息（验证 handler 数量，应该只有 1 个）
+        diag = diagnose_logger_handlers()
         logger.info(f"{LOG_PREFIXES['success']} Logger configuration ensured in lifespan")
+        logger.info(f"{LOG_PREFIXES['info']} Root logger handlers: {diag['handlers_count']} (expected: 1)")
     except Exception as e:
         logger.warning(f"{LOG_PREFIXES['warning']} Failed to ensure logger configuration: {e}")
 
@@ -359,39 +368,133 @@ async def lifespan(app: FastAPI):
         logger.error(f"{LOG_PREFIXES['error']} Failed to validate provider configurations: {e}")
         logger.error("WARNING: Application will continue but some providers may not work correctly!")
     
-    if WORKER_POOL_AVAILABLE:
-        logger.info(f"{LOG_PREFIXES['info']} Starting upload worker pool (on-demand mode)...")
-        try:
-            await worker_pool.start()
-            logger.info(f"{LOG_PREFIXES['success']} Upload worker pool started successfully (on-demand mode)")
+    # 获取 Worker 运行模式
+    try:
+        from .core.config import settings
+        worker_mode = settings.worker_mode.lower()
+    except Exception as e:
+        logger.warning(f"{LOG_PREFIXES['warning']} Could not read worker_mode from settings: {e}, using 'embedded'")
+        worker_mode = "embedded"
+    
+    if WORKER_POOL_AVAILABLE and worker_mode != "disabled":
+        if worker_mode == "separate_process":
+            # 模式：独立子进程（推荐）
+            logger.info(f"{LOG_PREFIXES['info']} Starting upload worker in separate process...")
+            try:
+                from .worker_main import worker_main
+                
+                # 启动 Worker 子进程
+                worker_process = multiprocessing.Process(
+                    target=worker_main,
+                    name="UploadWorker",
+                    daemon=False  # 非守护进程，主进程退出时会等待
+                )
+                worker_process.start()
+                logger.info(f"{LOG_PREFIXES['success']} Upload worker process started (PID: {worker_process.pid})")
+                logger.info(f"{LOG_PREFIXES['info']} Worker running in separate process for better isolation")
+                
+                # 等待一小段时间确保 Worker 进程启动成功
+                await asyncio.sleep(1.0)
+                if not worker_process.is_alive():
+                    logger.error(f"{LOG_PREFIXES['error']} Worker process exited immediately after start!")
+                    raise RuntimeError("Worker process failed to start")
+                
+            except Exception as e:
+                logger.error(f"{LOG_PREFIXES['error']} Failed to start worker process: {e}")
+                logger.error("WARNING: Application will continue but async uploads will NOT work!")
+                import traceback
+                traceback.print_exc()
+                worker_process = None
+        elif worker_mode == "embedded":
+            # 模式：内嵌在主进程中（兼容现有行为）
+            logger.info(f"{LOG_PREFIXES['info']} Starting upload worker pool (embedded mode, on-demand)...")
+            try:
+                await worker_pool.start()
+                logger.info(f"{LOG_PREFIXES['success']} Upload worker pool started successfully (embedded mode)")
 
-            # 启动后验证（按需调用模式）
-            # 注意：按需调用模式下，如果没有 pending 任务，Worker 不会启动
-            # 所以不再检查 _workers 列表，只检查基础设施是否就绪
-            logger.warning(f"{LOG_PREFIXES['success']} Worker pool startup verification passed (on-demand mode)")
-            logger.info(f"{LOG_PREFIXES['info']} Workers will start on-demand when tasks are submitted")
+                # 启动后验证（按需调用模式）
+                logger.warning(f"{LOG_PREFIXES['success']} Worker pool startup verification passed (on-demand mode)")
+                logger.info(f"{LOG_PREFIXES['info']} Workers will start on-demand when tasks are submitted")
 
-        except Exception as e:
-            logger.error(f"{LOG_PREFIXES['error']} Failed to start upload worker pool: {e}")
-            logger.error("WARNING: Application will continue but async uploads will NOT work!")
-            import traceback
-            traceback.print_exc()
-            # 不抛出异常，允许应用继续启动（但异步上传将不可用）
+            except Exception as e:
+                logger.error(f"{LOG_PREFIXES['error']} Failed to start upload worker pool: {e}")
+                logger.error("WARNING: Application will continue but async uploads will NOT work!")
+                import traceback
+                traceback.print_exc()
+        else:
+            logger.warning(f"{LOG_PREFIXES['warning']} Unknown worker_mode: {worker_mode}, valid values: 'embedded', 'separate_process', 'disabled'")
+            logger.warning(f"{LOG_PREFIXES['warning']} Falling back to 'embedded' mode")
+            try:
+                await worker_pool.start()
+                logger.info(f"{LOG_PREFIXES['success']} Upload worker pool started (fallback to embedded mode)")
+            except Exception as e:
+                logger.error(f"{LOG_PREFIXES['error']} Failed to start upload worker pool: {e}")
+    elif worker_mode == "disabled":
+        logger.info(f"{LOG_PREFIXES['info']} Worker mode is 'disabled', skipping worker startup")
+        logger.info(f"{LOG_PREFIXES['info']} Make sure an external worker service is running")
     else:
         logger.warning(f"{LOG_PREFIXES['warning']} Upload worker pool not available, async uploads will not work")
 
-    # 后台守护：确保 WorkerPool 的 reconciler 在运行（按需调用模式）
-    # 注意：按需调用模式下，Worker 会按需启动/退出，不需要检查 Worker 是否在运行
-    # 只需要确保 reconciler 在运行，以便恢复可能遗漏的任务
-    if WORKER_POOL_AVAILABLE:
+    # 后台守护：确保 WorkerPool 的 reconciler 在运行（仅内嵌模式）
+    # 注意：独立进程模式下，Worker 进程由操作系统管理，不需要 supervisor
+    if WORKER_POOL_AVAILABLE and worker_mode == "embedded":
+        # 使用进程 ID 标识当前 supervisor 实例，防止多个实例同时运行
+        current_pid = os.getpid()
+        supervisor_pid_key = "worker_pool:supervisor:pid"
+        
         async def _worker_pool_supervisor():
             backoff_s = 1.0
+            check_interval = 30.0  # 检查间隔（秒）
+            reconciler_grace_period = 15.0  # reconciler 启动宽限期（秒）
+
+            # 检查是否已有其他 supervisor 实例在运行（使用 Redis 锁）
+            # 注意：Redis 常部署在远程服务器，与应用不同机。不得用本机 PID 存活判断抢锁，
+            # 否则多机部署时会误覆盖他机持锁。锁依赖 60s TTL 在 crash/reload 后自动过期。
+            try:
+                from .services.common.redis_queue_service import redis_queue
+                if redis_queue._redis:
+                    lock_acquired = await redis_queue._redis.set(
+                        supervisor_pid_key,
+                        str(current_pid),
+                        ex=60,
+                        nx=True  # 只在 key 不存在时设置
+                    )
+                    if not lock_acquired:
+                        existing_pid = await redis_queue._redis.get(supervisor_pid_key)
+                        pid_str = (existing_pid.decode() if isinstance(existing_pid, bytes) else existing_pid) if existing_pid else None
+                        if pid_str and pid_str != str(current_pid):
+                            logger.warning(
+                                f"{LOG_PREFIXES['warning']} Supervisor lock held by another PID ({pid_str}), "
+                                f"current PID {current_pid}. Skipping supervisor. "
+                                "If the other process exited (e.g. reload/kill), lock expires in 60s."
+                            )
+                            return  # 退出，不启动 supervisor
+                        await redis_queue._redis.set(supervisor_pid_key, str(current_pid), ex=60)
+                    else:
+                        logger.info(f"[Supervisor] Acquired supervisor lock (PID: {current_pid})")
+            except Exception as e:
+                logger.warning(f"{LOG_PREFIXES['warning']} Failed to check supervisor lock (Redis may be remote): {e}. Continuing anyway.")
+
+            # 启动宽限期：等待 reconciler 稳定启动后再开始检查
+            await asyncio.sleep(20.0)
+            logger.info(f"[Supervisor] Grace period ended, starting monitoring. PID: {current_pid}, _pool_running={worker_pool._pool_running}")
+
+            # 锁由主服务 shutdown 时统一释放，确保与主服务生命周期联动
             while True:
                 try:
-                    # 按需调用模式下，只需检查 reconciler 是否在运行
-                    # 如果 reconciler 停止了，重新启动 worker pool
-                    if worker_pool._reconciler is None or worker_pool._reconciler.done():
-                        logger.warning(f"{LOG_PREFIXES['warning']} Worker pool reconciler not running; restarting pool...")
+                    # 续期锁，确保其他进程知道当前 supervisor 还在运行
+                    if redis_queue._redis:
+                        try:
+                            await redis_queue._redis.set(supervisor_pid_key, str(current_pid), ex=60)
+                        except Exception:
+                            pass  # 锁续期失败不影响主逻辑
+
+                    # 使用 is_reconciler_healthy() 方法进行健康检查
+                    # 该方法会考虑启动宽限期，避免误判
+                    is_healthy = worker_pool.is_reconciler_healthy(grace_period=reconciler_grace_period)
+
+                    if not is_healthy:
+                        logger.warning(f"{LOG_PREFIXES['warning']} Worker pool reconciler not healthy; restarting pool...")
                         try:
                             await worker_pool.stop()
                         except Exception as e:
@@ -401,7 +504,10 @@ async def lifespan(app: FastAPI):
                         logger.info(f"{LOG_PREFIXES['success']} Worker pool restarted by supervisor (on-demand mode)")
                         backoff_s = 1.0
 
-                    await asyncio.sleep(30.0)  # 按需模式下，检查间隔可以更长
+                        # 重启后给额外的宽限期
+                        await asyncio.sleep(reconciler_grace_period)
+
+                    await asyncio.sleep(check_interval)
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
@@ -410,6 +516,27 @@ async def lifespan(app: FastAPI):
                     backoff_s = min(backoff_s * 2.0, 60.0)
 
         supervisor_task = asyncio.create_task(_worker_pool_supervisor())
+    elif worker_mode == "separate_process":
+        # 独立进程模式：监控 Worker 进程健康状态
+        async def _worker_process_monitor():
+            """监控 Worker 进程健康状态（separate_process 使用 multiprocessing.Process）"""
+            while True:
+                try:
+                    await asyncio.sleep(30.0)  # 每 30 秒检查一次
+                    if worker_process and not worker_process.is_alive():
+                        exit_code = worker_process.exitcode
+                        logger.error(f"{LOG_PREFIXES['error']} Worker process died unexpectedly (exit code: {exit_code})")
+                        logger.warning(f"{LOG_PREFIXES['warning']} Worker process will not be restarted automatically")
+                        logger.warning(f"{LOG_PREFIXES['warning']} Please restart the application to restart the worker")
+                        break  # 停止监控
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.error(f"{LOG_PREFIXES['error']} Worker process monitor error: {e}")
+                    await asyncio.sleep(10.0)
+
+        if worker_process:
+            supervisor_task = asyncio.create_task(_worker_process_monitor())
 
     # Browser session cleanup background task
     browser_cleanup_task: asyncio.Task | None = None
@@ -419,7 +546,7 @@ async def lifespan(app: FastAPI):
             while True:
                 try:
                     await asyncio.sleep(60.0)  # Check every minute
-                    from .services.gemini.browser import cleanup_idle_sessions
+                    from .services.gemini.common.browser import cleanup_idle_sessions
                     cleanup_idle_sessions()
                 except asyncio.CancelledError:
                     break
@@ -448,7 +575,7 @@ async def lifespan(app: FastAPI):
     # Close all browser sessions
     if SELENIUM_AVAILABLE:
         try:
-            from .services.gemini.browser import close_all_drivers
+            from .services.gemini.common.browser import close_all_drivers
             close_all_drivers()
             logger.info(f"{LOG_PREFIXES['success']} All browser sessions closed on shutdown")
         except Exception as e:
@@ -459,13 +586,44 @@ async def lifespan(app: FastAPI):
         await asyncio.gather(supervisor_task, return_exceptions=True)
 
 
-    if WORKER_POOL_AVAILABLE:
+    # 停止 Worker（根据模式）
+    if worker_process:
+        # 独立进程模式：优雅停止 Worker 进程（multiprocessing.Process）
+        logger.info(f"{LOG_PREFIXES['info']} Stopping worker process...")
+        try:
+            if worker_process.is_alive():
+                worker_process.terminate()
+                worker_process.join(timeout=10.0)
+                if worker_process.is_alive():
+                    logger.warning(f"{LOG_PREFIXES['warning']} Worker process did not stop gracefully, forcing termination...")
+                    worker_process.kill()
+                    worker_process.join(timeout=5.0)
+                logger.info(f"{LOG_PREFIXES['success']} Worker process stopped")
+            else:
+                logger.info(f"{LOG_PREFIXES['info']} Worker process already stopped")
+        except Exception as e:
+            logger.error(f"{LOG_PREFIXES['error']} Error stopping worker process: {e}")
+    elif WORKER_POOL_AVAILABLE and worker_mode == "embedded":
+        # 内嵌模式：停止 Worker 池
         logger.info(f"{LOG_PREFIXES['info']} Stopping upload worker pool...")
         try:
             await worker_pool.stop()
             logger.info(f"{LOG_PREFIXES['success']} Upload worker pool stopped gracefully")
         except Exception as e:
             logger.error(f"{LOG_PREFIXES['error']} Error stopping upload worker pool: {e}")
+
+        # 释放 supervisor 锁，与主服务生命周期联动（主服务停止即释放）
+        # Redis 可能为远程；若释放失败（网络等），锁靠 60s TTL 自动过期
+        try:
+            from .services.common.redis_queue_service import redis_queue
+            if redis_queue._redis:
+                existing_pid = await redis_queue._redis.get(supervisor_pid_key)
+                pid_str = (existing_pid.decode() if isinstance(existing_pid, bytes) else existing_pid) if existing_pid else None
+                if pid_str == str(current_pid):
+                    await redis_queue._redis.delete(supervisor_pid_key)
+                    logger.info(f"{LOG_PREFIXES['success']} Supervisor lock released (PID: {current_pid})")
+        except Exception as e:
+            logger.warning(f"{LOG_PREFIXES['warning']} Failed to release supervisor lock on shutdown (Redis may be remote): {e}")
     
     # ✅ TASK-002: 关闭全局 Redis 连接池
     try:
@@ -475,7 +633,7 @@ async def lifespan(app: FastAPI):
         logger.info(f"{LOG_PREFIXES['success']} Global Redis connection pool closed")
     except Exception as e:
         logger.error(f"{LOG_PREFIXES['error']} Error closing global Redis connection pool: {e}")
-
+    
 # Create FastAPI app with lifespan
 app = FastAPI(
     title="Gemini Chat Backend",
@@ -516,13 +674,13 @@ if ROUTER_REGISTRY_AVAILABLE:
         # Register service dependencies (设置路由所需的外部服务引用)
         # 获取 web_search 函数
         try:
-            from .services.gemini.browser import web_search
+            from .services.gemini.common.browser import web_search
         except ImportError:
             try:
-                from services.gemini.browser import web_search
+                from services.gemini.common.browser import web_search
             except ImportError:
                 try:
-                    from backend.app.services.gemini.browser import web_search
+                    from backend.app.services.gemini.common.browser import web_search
                 except ImportError:
                     web_search = None
         
@@ -573,7 +731,6 @@ logger.info(startup_separator)
 # Configure CORS
 # 注意：使用 httpOnly Cookie 时，allow_origins 不能为 "*"
 # 环境变量已通过 env_loader 统一加载，直接使用 os.getenv 即可
-import os
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:21573,http://127.0.0.1:21573").split(",")
 
 # ✅ 启用响应压缩（GZip），减少 API 响应体积

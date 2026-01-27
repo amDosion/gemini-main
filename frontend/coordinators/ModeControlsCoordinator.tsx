@@ -1,17 +1,29 @@
+/**
+ * 模式控制协调者（仅 Panel 模式）
+ * 
+ * 根据当前 mode 和 providerId 分发渲染对应的控制组件
+ * 用于 View 组件右侧的参数面板
+ * 
+ * 架构说明：
+ * - 按提供商加载对应的控件集（Google、TongYi、OpenAI）
+ * - 每个提供商有完整的控件导出（专有实现 + 占位）
+ * - 占位文件 re-export Google 主实现
+ * 
+ * 使用方式：
+ * <ModeControlsCoordinator 
+ *   mode={mode} 
+ *   providerId={providerId}
+ *   controls={controls}
+ *   currentModel={activeModelConfig}
+ *   maxImageCount={4}
+ * />
+ */
 import React from 'react';
 import { AppMode, ModelConfig } from '../types/types';
-import {
-  ChatControls,
-  ImageGenControls,
-  ImageEditControls,
-  ImageOutpaintControls,
-  VideoGenControls,
-  AudioGenControls,
-  VirtualTryOnControls,
-  PdfExtractControls,
-  DeepResearchControls,
-  MultiAgentControls
-} from '../controls/modes';
+import { ControlsState } from '../controls/types';
+import * as GoogleControls from '../controls/modes/google';
+import * as TongYiControls from '../controls/modes/tongyi';
+import * as OpenAIControls from '../controls/modes/openai';
 import {
   ChatControlsProps,
   ImageGenControlsProps,
@@ -29,6 +41,10 @@ type ModeControlsCoordinatorProps = {
   mode: AppMode;
   providerId: string;
   currentModel?: ModelConfig;
+  /** 传递 controls 状态对象 */
+  controls?: ControlsState;
+  /** 最大图片数量（image-gen 模式） */
+  maxImageCount?: number;
 } & Partial<ChatControlsProps>
   & Partial<ImageGenControlsProps>
   & Partial<ImageEditControlsProps>
@@ -41,38 +57,99 @@ type ModeControlsCoordinatorProps = {
   & Partial<MultiAgentControlsProps>;
 
 /**
- * 模式控制协调者
- * 根据当前 mode 分发渲染对应的控制组件
+ * 获取对应提供商的控件集
  */
+const getProviderControls = (providerId: string) => {
+  switch (providerId) {
+    case 'tongyi':
+      return TongYiControls;
+    case 'openai':
+      return OpenAIControls;
+    case 'google':
+    case 'google-custom':
+    default:
+      return GoogleControls;
+  }
+};
+
 export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (props) => {
-  const { mode, providerId, currentModel, ...controlProps } = props;
+  const { mode, providerId, currentModel, controls, maxImageCount, ...controlProps } = props;
+
+  // 获取当前提供商的控件集
+  const Controls = getProviderControls(providerId);
 
   switch (mode) {
     case 'chat':
-      return <ChatControls currentModel={currentModel} {...(controlProps as ChatControlsProps)} />;
+      return <Controls.ChatControls currentModel={currentModel} {...(controlProps as ChatControlsProps)} />;
+    
     case 'image-gen':
-      return <ImageGenControls providerId={providerId} currentModel={currentModel} {...(controlProps as ImageGenControlsProps)} />;
+      return (
+        <Controls.ImageGenControls 
+          providerId={providerId} 
+          currentModel={currentModel} 
+          controls={controls}
+          maxImageCount={maxImageCount}
+          {...(controlProps as ImageGenControlsProps)} 
+        />
+      );
+    
     // 图片编辑模式（已拆分为多个独立模式，都使用 ImageEditControls）
     case 'image-chat-edit':
     case 'image-mask-edit':
     case 'image-inpainting':
     case 'image-background-edit':
     case 'image-recontext':
-      return <ImageEditControls providerId={providerId} {...(controlProps as ImageEditControlsProps)} />;
+      return (
+        <Controls.ImageEditControls 
+          providerId={providerId} 
+          controls={controls}
+          {...(controlProps as ImageEditControlsProps)} 
+        />
+      );
+    
     case 'image-outpainting':
-      return <ImageOutpaintControls {...(controlProps as ImageOutpaintControlsProps)} />;
+      return (
+        <Controls.ImageOutpaintControls 
+          providerId={providerId} 
+          controls={controls}
+          {...(controlProps as ImageOutpaintControlsProps)} 
+        />
+      );
+    
     case 'video-gen':
-      return <VideoGenControls providerId={providerId} {...(controlProps as VideoGenControlsProps)} />;
+      return (
+        <Controls.VideoGenControls 
+          providerId={providerId} 
+          controls={controls}
+          {...(controlProps as VideoGenControlsProps)} 
+        />
+      );
+    
     case 'audio-gen':
-      return <AudioGenControls {...(controlProps as AudioGenControlsProps)} />;
+      return (
+        <Controls.AudioGenControls 
+          controls={controls}
+          {...(controlProps as AudioGenControlsProps)} 
+        />
+      );
+    
     case 'pdf-extract':
-      return <PdfExtractControls {...(controlProps as PdfExtractControlsProps)} />;
+      return <Controls.PdfExtractControls {...(controlProps as PdfExtractControlsProps)} />;
+    
     case 'virtual-try-on':
-      return <VirtualTryOnControls {...(controlProps as VirtualTryOnControlsProps)} />;
+      return (
+        <Controls.VirtualTryOnControls 
+          controls={controls}
+          {...(controlProps as VirtualTryOnControlsProps)} 
+        />
+      );
+    
     case 'deep-research':
-      return <DeepResearchControls currentModel={currentModel} {...(controlProps as DeepResearchControlsProps)} />;
+      return <Controls.DeepResearchControls currentModel={currentModel} {...(controlProps as DeepResearchControlsProps)} />;
+    
     case 'multi-agent':
-      return <MultiAgentControls currentModel={currentModel} {...(controlProps as MultiAgentControlsProps)} />;
+      return <Controls.MultiAgentControls currentModel={currentModel} {...(controlProps as MultiAgentControlsProps)} />;
+    
     default:
       return null;
   }

@@ -6,7 +6,7 @@ import { Download, Maximize2, FileText, Music, Video as VideoIcon, Edit, Crop, F
 interface AttachmentGridProps {
   attachments: Attachment[];
   onImageClick?: (url: string) => void;
-  onEditImage?: (url: string) => void;
+  onEditImage?: (url: string, attachment?: Attachment) => void;
 }
 
 export const AttachmentGrid: React.FC<AttachmentGridProps> = ({ attachments, onImageClick, onEditImage }) => {
@@ -22,9 +22,9 @@ export const AttachmentGrid: React.FC<AttachmentGridProps> = ({ attachments, onI
     document.body.removeChild(link);
   };
 
-  const handleEdit = (e: React.MouseEvent, url: string) => {
+  const handleEdit = (e: React.MouseEvent, url: string, attachment?: Attachment) => {
       e.stopPropagation();
-      onEditImage?.(url);
+      onEditImage?.(url, attachment);
   };
 
   // Specialized Layouts
@@ -115,7 +115,7 @@ export const AttachmentGrid: React.FC<AttachmentGridProps> = ({ attachments, onI
                        </button>
                        {onEditImage && (
                         <button 
-                            onClick={(e) => handleEdit(e, displayUrl)} 
+                            onClick={(e) => handleEdit(e, displayUrl, att)} 
                             className="p-2 bg-pink-500/80 hover:bg-pink-500 text-white rounded-full backdrop-blur-md border border-white/20 transition-transform hover:scale-110"
                             title="Edit this image"
                         >

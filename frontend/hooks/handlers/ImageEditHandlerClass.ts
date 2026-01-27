@@ -22,12 +22,27 @@ export class ImageEditHandler extends BaseHandler {
       // - Base64 URL → 后端创建临时代理 URL
       // - Blob URL → 后端会通过其他方式处理（如果需要）
       // - File 对象 → 前端上传到后端，后端统一处理
+      
+      // ✅ 格式化 URL 用于日志（避免输出完整 BASE64）
+      const formatUrlForLog = (url: string | undefined): string => {
+        if (!url) return 'N/A';
+        if (url.startsWith('data:')) {
+          return `Base64 Data URL (长度: ${url.length} 字符)`;
+        }
+        return url.length > 80 ? url.substring(0, 80) + '...' : url;
+      };
+      
       console.log('[ImageEditHandler] ✅ 传递附件元数据给后端处理:', {
+        id: rawAttachment.id || 'N/A',  // ✅ 不截断 ID，显示完整 ID
         urlType: rawAttachment.url?.startsWith('blob:') ? 'Blob' : 
                  rawAttachment.url?.startsWith('data:') ? 'Base64' : 
                  rawAttachment.url?.startsWith('http') ? 'HTTP' : 'Other',
+        url: formatUrlForLog(rawAttachment.url),  // ✅ 使用格式化函数处理 URL
+        urlLength: rawAttachment.url ? rawAttachment.url.length : 0,  // ✅ 记录 URL 长度
         hasFile: !!rawAttachment.file,
-        uploadStatus: rawAttachment.uploadStatus
+        uploadStatus: rawAttachment.uploadStatus,
+        mimeType: rawAttachment.mimeType,
+        name: rawAttachment.name
       });
       
       referenceImages.raw = rawAttachment;

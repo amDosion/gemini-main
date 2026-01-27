@@ -30,7 +30,8 @@ export class ImageGenHandler extends BaseHandler {
         name: res.filename || `generated-${Date.now()}.png`,
         url: res.url,  // 显示URL（Base64 Data URL 或 HTTP URL，临时代理 URL 不再返回）
         uploadStatus: res.uploadStatus || 'pending',
-        uploadTaskId: res.taskId
+        uploadTaskId: res.taskId,
+        enhancedPrompt: res.enhancedPrompt  // ✅ 传递增强后的提示词
       } as Attachment));
 
       // ✅ 后端已处理上传任务，不需要前端再次上传
@@ -39,8 +40,17 @@ export class ImageGenHandler extends BaseHandler {
         return { dbAttachments: displayAttachments };
       };
 
+      // ✅ 提取增强后的提示词（如果有）- 同一批次所有图片共享相同的 enhancedPrompt
+      const enhancedPrompt = results.find((res: ImageGenerationResult) => res.enhancedPrompt)?.enhancedPrompt;
+
+      // ✅ 构建显示内容：同时显示原始提示词和增强后的提示词（如果有）
+      let displayContent = context.text;
+      if (enhancedPrompt) {
+        displayContent = `📝 ${context.text}\n✨ ${enhancedPrompt}`;
+      }
+
       return {
-        content: `Generated images for: "${context.text}"`,
+        content: displayContent,
         attachments: displayAttachments,
         uploadTask: uploadTask()
       };

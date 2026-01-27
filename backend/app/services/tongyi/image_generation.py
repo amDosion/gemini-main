@@ -1,11 +1,16 @@
 """
 通义图像服务 - 文生图实现
 支持 Z-Image、Qwen-Image、WanV2 系列模型
+
+增强功能:
+- Prompt 智能优化（可选）
+- 语言检测与场景分类
+- 魔法词组自动追加
 """
 import httpx
 import logging
-from typing import List, Optional
-from dataclasses import dataclass
+from typing import List, Optional, Dict, Any
+from dataclasses import dataclass, field
 
 from .base import get_endpoint, get_pixel_resolution, QWEN_RESOLUTIONS
 
@@ -18,6 +23,9 @@ class ImageGenerationResult:
     url: str
     mime_type: str = "image/png"
     filename: Optional[str] = None
+    # 新增: Prompt 优化信息
+    optimized_prompt: Optional[str] = None
+    original_prompt: Optional[str] = None
 
 
 @dataclass
@@ -31,6 +39,9 @@ class ImageGenerationRequest:
     negative_prompt: Optional[str] = None
     seed: Optional[int] = None
     style: Optional[str] = None
+    # 新增: Prompt 优化参数
+    enable_prompt_optimize: bool = False     # 是否启用 Prompt 智能优化
+    add_magic_suffix: bool = True            # 是否添加魔法词组
 
 
 class ImageGenerationService:
@@ -47,6 +58,7 @@ class ImageGenerationService:
         self.api_key = api_key
         self.timeout = timeout
         self._client: Optional[httpx.AsyncClient] = None
+        self._prompt_optimizer = None  # 延迟加载
 
     @property
     def client(self) -> httpx.AsyncClient:
@@ -55,13 +67,48 @@ class ImageGenerationService:
             self._client = httpx.AsyncClient(timeout=self.timeout)
         return self._client
 
+    @property
+    def prompt_optimizer(self):
+        """懒加载 Prompt 优化器"""
+        if self._prompt_optimizer is None:
+            from .prompt_optimizer import GenerationPromptOptimizer
+            self._prompt_optimizer = GenerationPromptOptimizer(self.api_key)
+        return self._prompt_optimizer
+
     async def generate(self, request: ImageGenerationRequest) -> List[ImageGenerationResult]:
         """
         生成图像 - 根据模型路由到对应的生成方法
+
+        增强功能:
+        - 可选 Prompt 智能优化
+        - 自动添加魔法词组
         """
         import time
         start_time = time.time()
-        
+
+        # ========== Prompt 优化（如果启用）==========
+        original_prompt = request.prompt
+        optimized_prompt = None
+
+        if request.enable_prompt_optimize:
+            logger.info(f"[ImageGenerationService] 🔄 [Prompt优化] 开始优化 Prompt...")
+            try:
+                optimize_result = await self.prompt_optimizer.optimize(
+                    prompt=request.prompt,
+                    enable_rewrite=True,
+                    add_magic_suffix=request.add_magic_suffix
+                )
+                if optimize_result.success:
+                    request.prompt = optimize_result.optimized_prompt
+                    optimized_prompt = optimize_result.optimized_prompt
+                    logger.info(f"[ImageGenerationService] ✅ [Prompt优化] 优化成功: language={optimize_result.language}")
+                    logger.info(f"[ImageGenerationService]     - 原始: {original_prompt[:50]}...")
+                    logger.info(f"[ImageGenerationService]     - 优化后: {optimized_prompt[:80]}...")
+                else:
+                    logger.warning(f"[ImageGenerationService] ⚠️ [Prompt优化] 优化失败，使用原始 Prompt: {optimize_result.error}")
+            except Exception as e:
+                logger.error(f"[ImageGenerationService] ❌ [Prompt优化] 异常: {str(e)}")
+
         logger.info(f"[ImageGenerationService] ========== 开始图片生成 ==========")
         logger.info(f"[ImageGenerationService] 📥 请求参数:")
         logger.info(f"[ImageGenerationService]     - model_id: {request.model_id}")
@@ -81,6 +128,14 @@ class ImageGenerationService:
         logger.info(f"[ImageGenerationService] 🔄 [步骤1] 识别模型类型...")
         logger.info(f"[ImageGenerationService]     - model_id (lowercase): {model_id}")
 
+        # 辅助函数: 为结果填充 Prompt 信息
+        def fill_prompt_info(results: List[ImageGenerationResult]) -> List[ImageGenerationResult]:
+            if optimized_prompt:
+                for r in results:
+                    r.original_prompt = original_prompt
+                    r.optimized_prompt = optimized_prompt
+            return results
+
         # Z-Image 系列
         if "z-image" in model_id:
             logger.info(f"[ImageGenerationService] ✅ [步骤1] 识别为 Z-Image 系列")
@@ -89,7 +144,7 @@ class ImageGenerationService:
             total_time = (time.time() - start_time) * 1000
             logger.info(f"[ImageGenerationService] ========== 图片生成完成 (总耗时: {total_time:.2f}ms) ==========")
             logger.info(f"[ImageGenerationService]     - 返回图片数量: {len(result)}")
-            return result
+            return fill_prompt_info(result)
 
         # Qwen-Image-Plus
         if "qwen" in model_id:
@@ -99,7 +154,7 @@ class ImageGenerationService:
             total_time = (time.time() - start_time) * 1000
             logger.info(f"[ImageGenerationService] ========== 图片生成完成 (总耗时: {total_time:.2f}ms) ==========")
             logger.info(f"[ImageGenerationService]     - 返回图片数量: {len(result)}")
-            return result
+            return fill_prompt_info(result)
 
         # WanV2 系列 (包含 -t2i 后缀的模型)
         if "-t2i" in model_id:
@@ -109,7 +164,7 @@ class ImageGenerationService:
             total_time = (time.time() - start_time) * 1000
             logger.info(f"[ImageGenerationService] ========== 图片生成完成 (总耗时: {total_time:.2f}ms) ==========")
             logger.info(f"[ImageGenerationService]     - 返回图片数量: {len(result)}")
-            return result
+            return fill_prompt_info(result)
 
         # wan2.6-image 模型不支持纯文生图
         if model_id == "wan2.6-image":

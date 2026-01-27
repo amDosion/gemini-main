@@ -28,6 +28,7 @@ from .user import (
 from .models import (
     models_router, providers_router, ollama_models_router, vertex_ai_config_router
 )
+# 虚拟试衣走统一路由 /api/modes/{provider}/virtual-try-on，不单独注册 tryon 路由
 # 特殊提供商路由已统一到 core/chat.py 和 core/modes.py
 # from .providers import google_chat_router, tongyi_image_router
 

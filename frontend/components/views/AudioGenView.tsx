@@ -1,9 +1,10 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
-import { Mic, Clock, AlertCircle, User, Bot, Download, Maximize2, Volume2 } from 'lucide-react';
-import InputArea from '../chat/InputArea';
+import { Mic, Clock, AlertCircle, User, Bot, Download, Maximize2, Volume2, SlidersHorizontal, RotateCcw, Send } from 'lucide-react';
 import { GenViewLayout } from '../common/GenViewLayout';
+import { useControlsState } from '../../hooks/useControlsState';
+import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
 
 interface AudioGenViewProps {
   messages: Message[];
@@ -12,9 +13,10 @@ interface AudioGenViewProps {
   onSend: (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => void;
   onStop: () => void;
   activeModelConfig?: ModelConfig;
-  visibleModels?: ModelConfig[];  // 新增
-  allVisibleModels?: ModelConfig[];  // 新增：完整模型列表
+  visibleModels?: ModelConfig[];
+  allVisibleModels?: ModelConfig[];
   initialPrompt?: string;
+  providerId?: string;
 }
 
 interface Word {
@@ -261,11 +263,13 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
   onStop,
   activeModelConfig,
   visibleModels = [],
-  allVisibleModels = [],  // 新增
-  initialPrompt
+  allVisibleModels = [],
+  initialPrompt,
+  providerId
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // State for the currently displayed audio in the main stage
   const [activeAudioUrl, setActiveAudioUrl] = useState<string | null>(null);
@@ -276,6 +280,16 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
   // State for audio playback progress (for karaoke effect)
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+
+  // ✅ 参数面板状态
+  const audioMode: AppMode = 'audio-gen';
+  const controls = useControlsState(audioMode, activeModelConfig);
+  const [prompt, setPrompt] = useState(initialPrompt || '');
+
+  // 重置参数
+  const resetParams = useCallback(() => {
+    controls.setVoice('Puck');
+  }, [controls]);
 
   // Auto-scroll history to bottom when messages change
   useEffect(() => {
@@ -386,6 +400,33 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
     link.click();
     document.body.removeChild(link);
   }, []);
+
+  // ✅ 使用参数面板发送生成请求
+  const handleGenerate = useCallback(() => {
+    if (!prompt.trim() || loadingState !== 'idle') return;
+    
+    const options: ChatOptions = {
+      enableSearch: false,
+      enableThinking: false,
+      enableCodeExecution: false,
+      voiceName: controls.voice,
+      // 以下为必填但音频生成不使用的默认值
+      imageAspectRatio: '1:1',
+      imageResolution: '1024x1024',
+    };
+    
+    onSend(prompt, options, [], audioMode);
+    setActiveAudioText(prompt); // 保留用于 Karaoke 显示
+    setPrompt(''); // 发送后清空提示词
+  }, [prompt, loadingState, controls, onSend, audioMode]);
+
+  // ✅ 键盘快捷键
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleGenerate();
+    }
+  }, [handleGenerate]);
 
   // Get current audio text for lyrics display
   const getActiveAudioText = useCallback((): string => {
@@ -505,142 +546,192 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
         </div>
   ), [messages, loadingState, activeModelConfig?.name, activeAudioUrl, handleAudioClick]);
 
-  // 缓存 mainContent
+  // ✅ 主区域：两栏布局（画布 + 参数面板）
   const mainContent = useMemo(() => (
-        /* Main Content Stage */
-        <div className="flex-1 flex flex-col items-center justify-center p-8 overflow-hidden bg-slate-950 relative">
-          {/* 棋盘格背景 - 与其他视图保持一致 */}
-          <div
-            className="absolute inset-0 opacity-20 pointer-events-none"
-            style={{
-              backgroundImage: `
-                linear-gradient(45deg, #334155 25%, transparent 25%), 
-                linear-gradient(-45deg, #334155 25%, transparent 25%), 
-                linear-gradient(45deg, transparent 75%, #334155 75%), 
-                linear-gradient(-45deg, transparent 75%, #334155 75%)
-              `,
-              backgroundSize: '20px 20px',
-              backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
-            }}
-          />
-          {/* Canvas Header */}
-          <div className="absolute top-4 left-4 z-10 pointer-events-none">
-            <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-4 py-1.5 text-xs font-medium text-slate-300 flex items-center gap-2 shadow-lg">
-              <Mic size={12} className="text-cyan-400" />
-              Audio Workspace
+    <div className="flex-1 flex flex-row h-full">
+      {/* ========== 左侧：画布区域 ========== */}
+      <div className="flex-1 flex flex-col items-center justify-center p-8 overflow-hidden bg-slate-950 relative">
+        {/* 棋盘格背景 */}
+        <div
+          className="absolute inset-0 opacity-20 pointer-events-none"
+          style={{
+            backgroundImage: `
+              linear-gradient(45deg, #334155 25%, transparent 25%), 
+              linear-gradient(-45deg, #334155 25%, transparent 25%), 
+              linear-gradient(45deg, transparent 75%, #334155 75%), 
+              linear-gradient(-45deg, transparent 75%, #334155 75%)
+            `,
+            backgroundSize: '20px 20px',
+            backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
+          }}
+        />
+        {/* Canvas Header */}
+        <div className="absolute top-4 left-4 z-10 pointer-events-none">
+          <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-4 py-1.5 text-xs font-medium text-slate-300 flex items-center gap-2 shadow-lg">
+            <Mic size={12} className="text-cyan-400" />
+            Audio Workspace
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <div className="flex-1 flex items-center justify-center p-8 overflow-hidden w-full relative z-10">
+          {loadingState !== 'idle' ? (
+            <div className="flex flex-col items-center gap-6 p-8 rounded-3xl bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 shadow-2xl relative z-10">
+              <div className="relative">
+                <div className="w-24 h-24 border-4 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin"></div>
+                <div className="absolute inset-0 flex items-center justify-center text-sm font-mono text-cyan-400 font-bold tracking-widest">TTS</div>
+              </div>
+              <div className="text-center">
+                <p className="text-slate-200 font-medium text-lg">Generating Speech...</p>
+                <p className="text-slate-500 text-xs mt-1">Converting text to audio.</p>
+              </div>
             </div>
-          </div>
-
-          {/* Main Content */}
-          <div className="flex-1 flex items-center justify-center p-8 overflow-hidden w-full relative z-10">
-            {loadingState !== 'idle' ? (
-                <div className="flex flex-col items-center gap-6 p-8 rounded-3xl bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 shadow-2xl relative z-10">
-                <div className="relative">
-                  <div className="w-24 h-24 border-4 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin"></div>
-                  <div className="absolute inset-0 flex items-center justify-center text-sm font-mono text-cyan-400 font-bold tracking-widest">TTS</div>
-                </div>
-                <div className="text-center">
-                  <p className="text-slate-200 font-medium text-lg">Generating Speech...</p>
-                  <p className="text-slate-500 text-xs mt-1">Converting text to audio.</p>
-                </div>
+          ) : activeAudioUrl ? (
+            <div className="relative max-w-2xl w-full shadow-2xl rounded-xl overflow-hidden bg-slate-900/80 backdrop-blur-sm ring-1 ring-white/10 flex flex-col items-center justify-center p-8 gap-6 z-10">
+              <div className="p-6 bg-cyan-500/10 rounded-full text-cyan-400">
+                <Mic size={64} />
               </div>
-            ) : activeAudioUrl ? (
-              <div className="relative max-w-2xl w-full shadow-2xl rounded-xl overflow-hidden bg-slate-900/80 backdrop-blur-sm ring-1 ring-white/10 flex flex-col items-center justify-center p-8 gap-6 z-10">
-                <div className="p-6 bg-cyan-500/10 rounded-full text-cyan-400">
-                  <Mic size={64} />
-                </div>
-                <audio
-                  ref={audioRef}
-                  src={activeAudioUrl}
-                  controls
-                  autoPlay
-                  className="w-full max-w-md"
-                />
+              <audio
+                ref={audioRef}
+                src={activeAudioUrl}
+                controls
+                autoPlay
+                className="w-full max-w-md"
+              />
 
-                {/* Karaoke Lyrics Display */}
-                {getActiveAudioText() && (
-                  <div className="mt-4 w-full max-w-2xl">
-                    <div className="bg-slate-800/60 backdrop-blur-sm rounded-xl p-8 border border-slate-700/50 min-h-[200px] flex items-center justify-center">
-                      <div className="w-full">
-                        <div className="text-xs text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 justify-center">
-                          <Volume2 size={14} />
-                          <span>Karaoke Mode</span>
-                          {isPlaying && (
-                            <div className="ml-4 flex items-center gap-2 text-cyan-400">
-                              <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></div>
-                              <span className="text-xs">Playing</span>
-                            </div>
-                          )}
-                        </div>
-                        <KaraokeLyrics
-                          text={getActiveAudioText()}
-                          currentTime={currentTime}
-                          duration={duration}
-                        />
+              {/* Karaoke Lyrics Display */}
+              {getActiveAudioText() && (
+                <div className="mt-4 w-full max-w-2xl">
+                  <div className="bg-slate-800/60 backdrop-blur-sm rounded-xl p-8 border border-slate-700/50 min-h-[200px] flex items-center justify-center">
+                    <div className="w-full">
+                      <div className="text-xs text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2 justify-center">
+                        <Volume2 size={14} />
+                        <span>Karaoke Mode</span>
+                        {isPlaying && (
+                          <div className="ml-4 flex items-center gap-2 text-cyan-400">
+                            <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></div>
+                            <span className="text-xs">Playing</span>
+                          </div>
+                        )}
                       </div>
+                      <KaraokeLyrics
+                        text={getActiveAudioText()}
+                        currentTime={currentTime}
+                        duration={duration}
+                      />
                     </div>
-                    {duration > 0 && (
-                      <div className="mt-4 text-xs text-slate-500 flex items-center justify-between px-2">
-                        <span>{Math.floor(currentTime)}s / {Math.floor(duration)}s</span>
-                        <span>{duration > 0 ? Math.round((currentTime / duration) * 100) : 0}%</span>
-                      </div>
-                    )}
                   </div>
-                )}
-              </div>
-            ) : (
-              <div className="text-center text-slate-600 flex flex-col items-center gap-6 relative z-10">
-                <div className="w-32 h-32 rounded-3xl bg-slate-900 border border-slate-800 flex items-center justify-center shadow-inner relative overflow-hidden group">
-                  <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                  <Mic size={64} className="opacity-20 group-hover:scale-110 transition-transform duration-500" />
+                  {duration > 0 && (
+                    <div className="mt-4 text-xs text-slate-500 flex items-center justify-between px-2">
+                      <span>{Math.floor(currentTime)}s / {Math.floor(duration)}s</span>
+                      <span>{duration > 0 ? Math.round((currentTime / duration) * 100) : 0}%</span>
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <h3 className="text-2xl font-bold text-slate-500 mb-2">Text to Speech</h3>
-                  <p className="max-w-xs mx-auto text-sm opacity-60">
-                    Enter text below to convert it into natural-sounding speech.
-                  </p>
-                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center text-slate-600 flex flex-col items-center gap-6 relative z-10">
+              <div className="w-32 h-32 rounded-3xl bg-slate-900 border border-slate-800 flex items-center justify-center shadow-inner relative overflow-hidden group">
+                <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                <Mic size={64} className="opacity-20 group-hover:scale-110 transition-transform duration-500" />
               </div>
-            )}
-          </div>
-
-          {/* Action Buttons - Fixed in bottom right of main stage */}
-          {activeAudioUrl && (
-            <div className="absolute bottom-4 right-4 z-20 flex gap-2 relative">
-              <button
-                onClick={() => window.open(activeAudioUrl, '_blank')}
-                className="p-2.5 bg-black/60 backdrop-blur-md hover:bg-black/80 text-white rounded-xl border border-white/10 transition-colors shadow-lg"
-                title="Open in new tab"
-              >
-                <Maximize2 size={20} />
-              </button>
-              <button
-                onClick={() => handleDownload(activeAudioUrl)}
-                className="p-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl shadow-lg transition-colors flex items-center gap-2 border border-cyan-500/30"
-                title="Download"
-              >
-                <Download size={20} />
-                <span className="text-xs font-bold pr-1">Download</span>
-              </button>
+              <div>
+                <h3 className="text-2xl font-bold text-slate-500 mb-2">Text to Speech</h3>
+                <p className="max-w-xs mx-auto text-sm opacity-60">
+                  Enter text below to convert it into natural-sounding speech.
+                </p>
+              </div>
             </div>
           )}
         </div>
-  ), [loadingState, activeAudioUrl, audioRef, isPlaying, currentTime, duration, getActiveAudioText, handleDownload]);
 
-  // 缓存 bottomContent
-  const bottomContent = useMemo(() => (
-        <InputArea
-          onSend={onSend}
-          isLoading={loadingState !== 'idle'}
-          onStop={onStop}
-          currentModel={activeModelConfig}
-          visibleModels={visibleModels}
-          allVisibleModels={allVisibleModels}  // 传递完整模型列表
-          mode="audio-gen"
-          setMode={setAppMode}
-          initialPrompt={initialPrompt}
-        />
-  ), [onSend, loadingState, onStop, activeModelConfig, visibleModels, setAppMode, initialPrompt]);
+        {/* Action Buttons - Fixed in bottom right of main stage */}
+        {activeAudioUrl && (
+          <div className="absolute bottom-4 right-4 z-20 flex gap-2 relative">
+            <button
+              onClick={() => window.open(activeAudioUrl, '_blank')}
+              className="p-2.5 bg-black/60 backdrop-blur-md hover:bg-black/80 text-white rounded-xl border border-white/10 transition-colors shadow-lg"
+              title="Open in new tab"
+            >
+              <Maximize2 size={20} />
+            </button>
+            <button
+              onClick={() => handleDownload(activeAudioUrl)}
+              className="p-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl shadow-lg transition-colors flex items-center gap-2 border border-cyan-500/30"
+              title="Download"
+            >
+              <Download size={20} />
+              <span className="text-xs font-bold pr-1">Download</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ========== 右侧：参数面板 ========== */}
+      <div className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900/50 flex flex-col h-full overflow-hidden">
+        {/* 头部 */}
+        <div className="px-4 py-3 border-b border-slate-800/50 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <SlidersHorizontal size={14} className="text-cyan-400" />
+            <span className="text-xs font-bold text-white">音频参数</span>
+          </div>
+          <button
+            onClick={resetParams}
+            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+            title="重置为默认值"
+          >
+            <RotateCcw size={12} />
+          </button>
+        </div>
+
+        {/* 参数滚动区 */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+          <ModeControlsCoordinator
+            mode={audioMode}
+            providerId={providerId || 'google'}
+            controls={controls}
+          />
+        </div>
+
+        {/* 底部固定区：提示词 + 生成按钮 */}
+        <div className="border-t border-slate-800 p-3 space-y-2 bg-slate-900/80">
+          {/* 提示词输入 */}
+          <textarea
+            ref={textareaRef}
+            value={prompt}
+            onChange={(e) => {
+              setPrompt(e.target.value);
+              e.target.style.height = 'auto';
+              e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
+            }}
+            onKeyDown={handleKeyDown}
+            placeholder="输入要转换为语音的文本..."
+            className="w-full min-h-[60px] max-h-[150px] bg-slate-800/80 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 overflow-y-auto"
+          />
+
+          {/* 生成按钮 */}
+          <button
+            onClick={handleGenerate}
+            disabled={!prompt.trim() || loadingState !== 'idle'}
+            className="w-full py-2.5 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl font-medium text-sm flex items-center justify-center gap-2 shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loadingState !== 'idle' ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                生成中...
+              </>
+            ) : (
+              <>
+                <Send size={18} />
+                生成语音
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  ), [loadingState, activeAudioUrl, audioRef, isPlaying, currentTime, duration, getActiveAudioText, handleDownload, controls, providerId, prompt, handleKeyDown, handleGenerate, resetParams, audioMode]);
 
   return (
     <GenViewLayout
@@ -650,7 +741,6 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
       sidebarHeaderIcon={<Clock size={14} />}
       sidebar={sidebarContent}
       main={mainContent}
-      bottom={bottomContent}
     />
   );
 };

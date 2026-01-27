@@ -106,7 +106,7 @@ class ProviderFactory:
         import sys
         start_time = time.time()
         
-        logger.info(f"[ProviderFactory] 🔄 开始创建服务: provider={provider}, user_id={user_id[:8] + '...' if user_id else 'None'}")
+        logger.info(f"[ProviderFactory] 🔄 开始创建服务: provider={provider}, user_id={user_id if user_id else 'None'}")
         
         # Generate request ID if not provided
         if not request_id:

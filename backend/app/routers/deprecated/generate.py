@@ -14,7 +14,7 @@ import logging
 
 from ...core.database import get_db
 from ...services.gemini.image_generator import ContentPolicyError
-from ...services.gemini.image_edit_common import NotSupportedError
+from ...services.gemini.base.image_edit_common import NotSupportedError
 from ...core.encryption import decrypt_data, is_encrypted
 
 logger = logging.getLogger(__name__)

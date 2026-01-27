@@ -473,9 +473,12 @@ export class UnifiedProviderClient implements ILLMProvider {
         throw new Error(`Invalid response format: ${JSON.stringify(data)}`);
       }
       
-      // ✅ 处理图片生成和编辑结果（后端已处理，返回标准化格式）
-      // 对于 image-gen 和 image-edit 模式，后端返回 { images: [...] }
-      if ((mode === 'image-gen' || mode.startsWith('image-')) && data.data.images) {
+      // ✅ 处理图片生成、编辑、试衣结果（后端已处理，返回标准化格式）
+      // 对于 image-gen、image-edit、virtual-try-on 模式，后端返回 { images: [...] }
+      const isImageMode = mode === 'image-gen' || 
+                          mode.startsWith('image-') || 
+                          mode === 'virtual-try-on';
+      if (isImageMode && data.data.images) {
         // 将后端格式转换为 ImageGenerationResult[]
         return data.data.images.map((img: any) => ({
           url: img.url,  // 显示URL（可能是 /api/temp-images/{attachment_id} 或 HTTP URL）
@@ -560,32 +563,38 @@ export class UnifiedProviderClient implements ILLMProvider {
     }
     
     // ✅ 将 referenceImages 对象转换为 attachments 数组
+    // 重要：保留原始附件的所有字段（特别是 id、uploadStatus、uploadTaskId）
     const attachments: Attachment[] = [];
     for (const [key, value] of Object.entries(referenceImages)) {
       if (value) {
-        // 构建 Attachment 对象（Attachment 接口不包含 role 字段）
-        const attachment: Attachment = {
-          id: `ref-${key}-${Date.now()}`,
-          name: key === 'mask' ? 'mask.png' : 'reference.png',
-          mimeType: typeof value === 'object' && value.mimeType ? value.mimeType : 'image/png'
-        };
-        
-        // 根据值的类型设置 url 或 base64Data
-        if (typeof value === 'string') {
-          if (value.startsWith('data:')) {
+        // 如果 value 已经是 Attachment 对象，直接使用（保留所有字段）
+        if (typeof value === 'object' && 'id' in value && 'mimeType' in value) {
+          // ✅ 直接使用原始 Attachment 对象，保留所有字段（id, url, uploadStatus, uploadTaskId 等）
+          attachments.push(value as Attachment);
+        } else {
+          // 构建新的 Attachment 对象（用于字符串类型的值）
+          const attachment: Attachment = {
+            id: `ref-${key}-${Date.now()}`,
+            name: key === 'mask' ? 'mask.png' : 'reference.png',
+            mimeType: typeof value === 'object' && value.mimeType ? value.mimeType : 'image/png'
+          };
+          
+          // 根据值的类型设置 url
+          if (typeof value === 'string') {
             attachment.url = value;
-          } else if (value.startsWith('http')) {
-            attachment.url = value;
-          } else {
-            attachment.url = value; // 可能是 base64 字符串
+          } else if (typeof value === 'object') {
+            // ✅ 复制所有可能的字段
+            if (value.url) attachment.url = value.url;
+            if (value.tempUrl) attachment.tempUrl = value.tempUrl;
+            if (value.mimeType) attachment.mimeType = value.mimeType;
+            if (value.id) attachment.id = value.id;  // ✅ 保留原始 id
+            if (value.uploadStatus) attachment.uploadStatus = value.uploadStatus;  // ✅ 保留上传状态
+            if (value.uploadTaskId) attachment.uploadTaskId = value.uploadTaskId;  // ✅ 保留任务 ID
+            if (value.name) attachment.name = value.name;  // ✅ 保留文件名
           }
-        } else if (typeof value === 'object') {
-          if (value.url) attachment.url = value.url;
-          if (value.tempUrl) attachment.tempUrl = value.tempUrl;
-          if (value.mimeType) attachment.mimeType = value.mimeType;
+          
+          attachments.push(attachment);
         }
-        
-        attachments.push(attachment);
       }
     }
     
