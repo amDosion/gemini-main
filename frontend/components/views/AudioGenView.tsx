@@ -1,10 +1,11 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
-import { Mic, Clock, AlertCircle, User, Bot, Download, Maximize2, Volume2, SlidersHorizontal, RotateCcw, Send } from 'lucide-react';
+import { Mic, Clock, AlertCircle, User, Bot, Download, Maximize2, Volume2, SlidersHorizontal, RotateCcw } from 'lucide-react';
 import { GenViewLayout } from '../common/GenViewLayout';
 import { useControlsState } from '../../hooks/useControlsState';
 import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
+import ChatEditInputArea from '../chat/ChatEditInputArea';
 
 interface AudioGenViewProps {
   messages: Message[];
@@ -269,7 +270,6 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // State for the currently displayed audio in the main stage
   const [activeAudioUrl, setActiveAudioUrl] = useState<string | null>(null);
@@ -284,7 +284,6 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
   // ✅ 参数面板状态
   const audioMode: AppMode = 'audio-gen';
   const controls = useControlsState(audioMode, activeModelConfig);
-  const [prompt, setPrompt] = useState(initialPrompt || '');
 
   // 重置参数
   const resetParams = useCallback(() => {
@@ -401,32 +400,12 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
     document.body.removeChild(link);
   }, []);
 
-  // ✅ 使用参数面板发送生成请求
-  const handleGenerate = useCallback(() => {
-    if (!prompt.trim() || loadingState !== 'idle') return;
-    
-    const options: ChatOptions = {
-      enableSearch: false,
-      enableThinking: false,
-      enableCodeExecution: false,
-      voiceName: controls.voice,
-      // 以下为必填但音频生成不使用的默认值
-      imageAspectRatio: '1:1',
-      imageResolution: '1024x1024',
-    };
-    
-    onSend(prompt, options, [], audioMode);
-    setActiveAudioText(prompt); // 保留用于 Karaoke 显示
-    setPrompt(''); // 发送后清空提示词
-  }, [prompt, loadingState, controls, onSend, audioMode]);
-
-  // ✅ 键盘快捷键
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleGenerate();
-    }
-  }, [handleGenerate]);
+  // ✅ ChatEditInputArea 已经处理了附件和参数，这里只需要直接转发
+  // 注意：需要保留 prompt 用于 Karaoke 显示
+  const handleSend = useCallback((text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => {
+    setActiveAudioText(text); // 保留用于 Karaoke 显示
+    onSend(text, options, attachments, audioMode);
+  }, [onSend, audioMode]);
 
   // Get current audio text for lyrics display
   const getActiveAudioText = useCallback((): string => {
@@ -694,44 +673,25 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
           />
         </div>
 
-        {/* 底部固定区：提示词 + 生成按钮 */}
-        <div className="border-t border-slate-800 p-3 space-y-2 bg-slate-900/80">
-          {/* 提示词输入 */}
-          <textarea
-            ref={textareaRef}
-            value={prompt}
-            onChange={(e) => {
-              setPrompt(e.target.value);
-              e.target.style.height = 'auto';
-              e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
-            }}
-            onKeyDown={handleKeyDown}
-            placeholder="输入要转换为语音的文本..."
-            className="w-full min-h-[60px] max-h-[150px] bg-slate-800/80 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 overflow-y-auto"
-          />
-
-          {/* 生成按钮 */}
-          <button
-            onClick={handleGenerate}
-            disabled={!prompt.trim() || loadingState !== 'idle'}
-            className="w-full py-2.5 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl font-medium text-sm flex items-center justify-center gap-2 shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loadingState !== 'idle' ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                生成中...
-              </>
-            ) : (
-              <>
-                <Send size={18} />
-                生成语音
-              </>
-            )}
-          </button>
-        </div>
+        {/* 底部固定区：使用 ChatEditInputArea 组件 */}
+        <ChatEditInputArea
+          onSend={handleSend}
+          isLoading={loadingState !== 'idle'}
+          onStop={onStop}
+          mode={audioMode}
+          activeAttachments={[]}
+          onAttachmentsChange={() => {}}
+          activeImageUrl={null}
+          onActiveImageUrlChange={() => {}}
+          messages={messages}
+          sessionId={null}
+          initialPrompt={initialPrompt}
+          providerId={providerId}
+          controls={controls}
+        />
       </div>
     </div>
-  ), [loadingState, activeAudioUrl, audioRef, isPlaying, currentTime, duration, getActiveAudioText, handleDownload, controls, providerId, prompt, handleKeyDown, handleGenerate, resetParams, audioMode]);
+  ), [loadingState, activeAudioUrl, audioRef, isPlaying, currentTime, duration, getActiveAudioText, handleDownload, controls, providerId, resetParams, audioMode, activeModelConfig, onStop, messages, initialPrompt, handleSend]);
 
   return (
     <GenViewLayout

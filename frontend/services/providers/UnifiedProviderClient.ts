@@ -486,7 +486,10 @@ export class UnifiedProviderClient implements ILLMProvider {
           filename: img.filename,
           attachmentId: img.attachmentId,
           uploadStatus: img.uploadStatus,
-          taskId: img.taskId
+          taskId: img.taskId,
+          thoughts: img.thoughts,  // ✅ 修复断点2：传递 thinking 数据
+          text: img.text,          // ✅ 修复断点2：传递文本响应
+          enhancedPrompt: img.enhancedPrompt  // ✅ 传递增强后的提示词（如果存在）
         } as ImageGenerationResult));
       }
       
@@ -543,7 +546,7 @@ export class UnifiedProviderClient implements ILLMProvider {
   async editImage(
     modelId: string,
     prompt: string,
-    referenceImages: Record<string, any>,
+    referenceImages: Record<string, Attachment | Attachment[]>,  // ✅ 支持多图：raw 可以是数组
     options: ChatOptions,
     baseUrl: string,
     mode?: string
@@ -565,38 +568,66 @@ export class UnifiedProviderClient implements ILLMProvider {
     // ✅ 将 referenceImages 对象转换为 attachments 数组
     // 重要：保留原始附件的所有字段（特别是 id、uploadStatus、uploadTaskId）
     const attachments: Attachment[] = [];
+
+    // 辅助函数：处理单个附件值
+    const processAttachmentValue = (value: any, key: string): Attachment | null => {
+      if (!value) return null;
+
+      // 如果 value 已经是 Attachment 对象，直接使用（保留所有字段）
+      if (typeof value === 'object' && 'id' in value && 'mimeType' in value) {
+        return value as Attachment;
+      }
+
+      // 构建新的 Attachment 对象（用于字符串类型的值）
+      const attachment: Attachment = {
+        id: `ref-${key}-${Date.now()}`,
+        name: key === 'mask' ? 'mask.png' : 'reference.png',
+        mimeType: typeof value === 'object' && value.mimeType ? value.mimeType : 'image/png'
+      };
+
+      // 根据值的类型设置 url
+      if (typeof value === 'string') {
+        attachment.url = value;
+      } else if (typeof value === 'object') {
+        // ✅ 复制所有可能的字段
+        if (value.url) attachment.url = value.url;
+        if (value.tempUrl) attachment.tempUrl = value.tempUrl;
+        if (value.mimeType) attachment.mimeType = value.mimeType;
+        if (value.id) attachment.id = value.id;  // ✅ 保留原始 id
+        if (value.uploadStatus) attachment.uploadStatus = value.uploadStatus;  // ✅ 保留上传状态
+        if (value.uploadTaskId) attachment.uploadTaskId = value.uploadTaskId;  // ✅ 保留任务 ID
+        if (value.name) attachment.name = value.name;  // ✅ 保留文件名
+      }
+
+      return attachment;
+    };
+
     for (const [key, value] of Object.entries(referenceImages)) {
       if (value) {
-        // 如果 value 已经是 Attachment 对象，直接使用（保留所有字段）
-        if (typeof value === 'object' && 'id' in value && 'mimeType' in value) {
-          // ✅ 直接使用原始 Attachment 对象，保留所有字段（id, url, uploadStatus, uploadTaskId 等）
-          attachments.push(value as Attachment);
-        } else {
-          // 构建新的 Attachment 对象（用于字符串类型的值）
-          const attachment: Attachment = {
-            id: `ref-${key}-${Date.now()}`,
-            name: key === 'mask' ? 'mask.png' : 'reference.png',
-            mimeType: typeof value === 'object' && value.mimeType ? value.mimeType : 'image/png'
-          };
-          
-          // 根据值的类型设置 url
-          if (typeof value === 'string') {
-            attachment.url = value;
-          } else if (typeof value === 'object') {
-            // ✅ 复制所有可能的字段
-            if (value.url) attachment.url = value.url;
-            if (value.tempUrl) attachment.tempUrl = value.tempUrl;
-            if (value.mimeType) attachment.mimeType = value.mimeType;
-            if (value.id) attachment.id = value.id;  // ✅ 保留原始 id
-            if (value.uploadStatus) attachment.uploadStatus = value.uploadStatus;  // ✅ 保留上传状态
-            if (value.uploadTaskId) attachment.uploadTaskId = value.uploadTaskId;  // ✅ 保留任务 ID
-            if (value.name) attachment.name = value.name;  // ✅ 保留文件名
+        // ✅ 支持多图：如果值是数组，遍历处理每个附件
+        if (Array.isArray(value)) {
+          console.log(`[UnifiedProviderClient] editImage - 处理多图 key=${key}, count=${value.length}`);
+          for (const item of value) {
+            const processed = processAttachmentValue(item, key);
+            if (processed) {
+              attachments.push(processed);
+            }
           }
-          
-          attachments.push(attachment);
+        } else {
+          // 单个值
+          const processed = processAttachmentValue(value, key);
+          if (processed) {
+            attachments.push(processed);
+          }
         }
       }
     }
+
+    console.log(`[UnifiedProviderClient] editImage - 总共处理 ${attachments.length} 个附件`);
+    attachments.forEach((att, idx) => {
+      const urlPreview = att.url ? (att.url.length > 50 ? att.url.substring(0, 50) + '...' : att.url) : 'N/A';
+      console.log(`[UnifiedProviderClient] 附件[${idx}]: id=${att.id}, urlType=${att.url?.startsWith('blob:') ? 'Blob' : att.url?.startsWith('data:') ? 'Base64' : 'HTTP'}`);
+    });
     
     // ✅ 使用统一模式处理方法
     const editMode = mode || 'image-chat-edit';

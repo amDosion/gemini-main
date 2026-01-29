@@ -208,17 +208,21 @@ class ExpandService:
         logger.info(f"[Expand Service] Scale expansion: x={x_scale}, y={y_scale}")
         
         # Build edit configuration for outpainting
-        config = genai_types.EditImageConfig(
+        output_mime_type = kwargs.get('output_mime_type', 'image/png')
+        config_kwargs = dict(
             edit_mode="EDIT_MODE_OUTPAINT",
             number_of_images=kwargs.get('number_of_images', 1),
             guidance_scale=kwargs.get('guidance_scale', 7.5),
             person_generation=kwargs.get('person_generation', 'ALLOW_ADULT'),
             include_rai_reason=kwargs.get('include_rai_reason', True),
             include_safety_attributes=kwargs.get('include_safety_attributes', True),
-            output_mime_type=kwargs.get('output_mime_type', 'image/png'),
-            output_compression_quality=kwargs.get('output_compression_quality', 95)
+            output_mime_type=output_mime_type,
         )
-        
+        # PNG 是无损格式，不需要 compression_quality；仅 JPEG 时传递
+        if output_mime_type == 'image/jpeg':
+            config_kwargs['output_compression_quality'] = kwargs.get('output_compression_quality', 95)
+        config = genai_types.EditImageConfig(**config_kwargs)
+
         # Create reference image with scale configuration
         reference_image = genai_types.RawReferenceImage(
             reference_id=1,
@@ -257,23 +261,27 @@ class ExpandService:
             raise ValueError("At least one offset must be greater than 0")
         
         # Build edit configuration for outpainting
-        config = genai_types.EditImageConfig(
+        output_mime_type = kwargs.get('output_mime_type', 'image/png')
+        config_kwargs = dict(
             edit_mode="EDIT_MODE_OUTPAINT",
             number_of_images=kwargs.get('number_of_images', 1),
             guidance_scale=kwargs.get('guidance_scale', 7.5),
             person_generation=kwargs.get('person_generation', 'ALLOW_ADULT'),
             include_rai_reason=kwargs.get('include_rai_reason', True),
             include_safety_attributes=kwargs.get('include_safety_attributes', True),
-            output_mime_type=kwargs.get('output_mime_type', 'image/png'),
-            output_compression_quality=kwargs.get('output_compression_quality', 95)
+            output_mime_type=output_mime_type,
         )
-        
+        # PNG 是无损格式，不需要 compression_quality；仅 JPEG 时传递
+        if output_mime_type == 'image/jpeg':
+            config_kwargs['output_compression_quality'] = kwargs.get('output_compression_quality', 95)
+        config = genai_types.EditImageConfig(**config_kwargs)
+
         # Create reference image
         reference_image = genai_types.RawReferenceImage(
             reference_id=1,
             reference_image=genai_types.Image.from_file(location=image_path)
         )
-        
+
         response = self.sdk_initializer.client.models.edit_image(
             model=model,
             prompt=expand_prompt,
@@ -309,7 +317,8 @@ class ExpandService:
             raise ValueError(f"Invalid aspect ratio format: {output_ratio}. Use format like '16:9'")
         
         # Build edit configuration for outpainting
-        config = genai_types.EditImageConfig(
+        output_mime_type = kwargs.get('output_mime_type', 'image/png')
+        config_kwargs = dict(
             edit_mode="EDIT_MODE_OUTPAINT",
             number_of_images=kwargs.get('number_of_images', 1),
             aspect_ratio=output_ratio,
@@ -317,9 +326,12 @@ class ExpandService:
             person_generation=kwargs.get('person_generation', 'ALLOW_ADULT'),
             include_rai_reason=kwargs.get('include_rai_reason', True),
             include_safety_attributes=kwargs.get('include_safety_attributes', True),
-            output_mime_type=kwargs.get('output_mime_type', 'image/png'),
-            output_compression_quality=kwargs.get('output_compression_quality', 95)
+            output_mime_type=output_mime_type,
         )
+        # PNG 是无损格式，不需要 compression_quality；仅 JPEG 时传递
+        if output_mime_type == 'image/jpeg':
+            config_kwargs['output_compression_quality'] = kwargs.get('output_compression_quality', 95)
+        config = genai_types.EditImageConfig(**config_kwargs)
         
         # Create reference image
         reference_image = genai_types.RawReferenceImage(

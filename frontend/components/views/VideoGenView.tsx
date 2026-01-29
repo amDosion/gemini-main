@@ -1,10 +1,11 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
-import { Video as VideoIcon, Clock, AlertCircle, User, Bot, Download, Maximize2, Film, SlidersHorizontal, RotateCcw, Paperclip, X, Image as ImageIcon, Send } from 'lucide-react';
+import { Video as VideoIcon, Clock, AlertCircle, User, Bot, Download, Maximize2, Film, SlidersHorizontal, RotateCcw } from 'lucide-react';
 import { GenViewLayout } from '../common/GenViewLayout';
 import { useControlsState } from '../../hooks/useControlsState';
 import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
+import ChatEditInputArea from '../chat/ChatEditInputArea';
 
 interface VideoGenViewProps {
     messages: Message[];
@@ -32,7 +33,6 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
     providerId
 }) => {
     const scrollRef = useRef<HTMLDivElement>(null);
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     // State for the currently displayed video in the main stage
     const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
@@ -40,8 +40,8 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
     // ✅ 参数面板状态
     const videoMode: AppMode = 'video-gen';
     const controls = useControlsState(videoMode, activeModelConfig);
-    const [prompt, setPrompt] = useState(initialPrompt || '');
     const [activeAttachments, setActiveAttachments] = useState<Attachment[]>([]);
+    const [activeImageUrl, setActiveImageUrl] = useState<string | null>(null);
 
     // 重置参数
     const resetParams = useCallback(() => {
@@ -85,32 +85,10 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
         document.body.removeChild(link);
     }, []);
 
-    // ✅ 使用参数面板发送生成请求
-    const handleGenerate = useCallback(() => {
-        if (!prompt.trim() || loadingState !== 'idle') return;
-        
-        const options: ChatOptions = {
-            enableSearch: false,
-            enableThinking: false,
-            enableCodeExecution: false,
-            imageAspectRatio: controls.aspectRatio,
-            imageResolution: controls.resolution,
-            negativePrompt: controls.negativePrompt || undefined,
-            seed: controls.seed !== -1 ? controls.seed : undefined,
-        };
-        
-        onSend(prompt, options, activeAttachments, videoMode);
-        setPrompt('');
-        setActiveAttachments([]);
-    }, [prompt, loadingState, controls, onSend, activeAttachments, videoMode]);
-
-    // ✅ 键盘快捷键
-    const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            handleGenerate();
-        }
-    }, [handleGenerate]);
+    // ✅ ChatEditInputArea 已经处理了附件和参数，这里只需要直接转发
+    const handleSend = useCallback((text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => {
+        onSend(text, options, attachments, videoMode);
+    }, [onSend, videoMode]);
 
     // Mobile History Toggle
     const [isMobileHistoryOpen, setIsMobileHistoryOpen] = useState(false);
@@ -316,96 +294,25 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
                     />
                 </div>
 
-                {/* 底部固定区：附件预览 + 提示词 + 生成按钮 */}
-                <div className="border-t border-slate-800 p-3 space-y-2 bg-slate-900/80">
-                    {/* 附件预览区 */}
-                    {activeAttachments.length > 0 && (
-                        <div className="flex gap-2 flex-wrap">
-                            {activeAttachments.map((att, idx) => (
-                                <div key={idx} className="relative group">
-                                    <img 
-                                        src={att.url || att.tempUrl || ''} 
-                                        className="w-12 h-12 rounded-lg object-cover border border-slate-700" 
-                                        alt="参考图"
-                                    />
-                                    <button
-                                        onClick={() => {
-                                            setActiveAttachments(activeAttachments.filter((_, i) => i !== idx));
-                                        }}
-                                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                                    >
-                                        <X size={12} className="text-white" />
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-
-                    {/* 提示词输入 */}
-                    <textarea
-                        ref={textareaRef}
-                        value={prompt}
-                        onChange={(e) => {
-                            setPrompt(e.target.value);
-                            e.target.style.height = 'auto';
-                            e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
-                        }}
-                        onKeyDown={handleKeyDown}
-                        placeholder="描述你想生成的视频..."
-                        className="w-full min-h-[40px] max-h-[150px] bg-slate-800/80 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 overflow-y-auto"
-                    />
-
-                    {/* 上传按钮 + 生成按钮 */}
-                    <div className="flex gap-2 items-center">
-                        {/* 上传按钮 */}
-                        <label className="p-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 cursor-pointer transition-colors border border-indigo-500/50 flex-shrink-0 shadow-lg">
-                            <input
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) {
-                                        const url = URL.createObjectURL(file);
-                                        const newAtt: Attachment = {
-                                            id: `att-${Date.now()}`,
-                                            name: file.name,
-                                            mimeType: file.type,
-                                            url: url,
-                                            tempUrl: url,
-                                            file: file,
-                                        };
-                                        setActiveAttachments([...activeAttachments, newAtt]);
-                                    }
-                                    e.target.value = '';
-                                }}
-                            />
-                            <ImageIcon size={18} className="text-white" />
-                        </label>
-
-                        {/* 生成按钮 */}
-                        <button
-                            onClick={handleGenerate}
-                            disabled={!prompt.trim() || loadingState !== 'idle'}
-                            className="flex-1 py-2.5 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl font-medium text-sm flex items-center justify-center gap-2 shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            {loadingState !== 'idle' ? (
-                                <>
-                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                    生成中...
-                                </>
-                            ) : (
-                                <>
-                                    <Send size={18} />
-                                    生成视频
-                                </>
-                            )}
-                        </button>
-                    </div>
-                </div>
+                {/* 底部固定区：使用 ChatEditInputArea 组件 */}
+                <ChatEditInputArea
+                    onSend={handleSend}
+                    isLoading={loadingState !== 'idle'}
+                    onStop={onStop}
+                    mode={videoMode}
+                    activeAttachments={activeAttachments}
+                    onAttachmentsChange={setActiveAttachments}
+                    activeImageUrl={activeImageUrl}
+                    onActiveImageUrlChange={setActiveImageUrl}
+                    messages={messages}
+                    sessionId={null}
+                    initialPrompt={initialPrompt}
+                    providerId={providerId}
+                    controls={controls}
+                />
             </div>
         </div>
-    ), [loadingState, activeVideoUrl, handleDownload, controls, providerId, prompt, handleKeyDown, handleGenerate, resetParams, activeAttachments, videoMode]);
+    ), [loadingState, activeVideoUrl, handleDownload, controls, providerId, resetParams, activeAttachments, videoMode, activeModelConfig, onStop, messages, initialPrompt, handleSend, activeImageUrl]);
 
     return (
         <GenViewLayout

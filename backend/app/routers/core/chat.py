@@ -33,6 +33,8 @@ class Attachment(BaseModel):
     url: Optional[str] = None
     tempUrl: Optional[str] = None
     fileUri: Optional[str] = None
+    base64Data: Optional[str] = None  # 直接 Base64 数据（不含 data: 前缀）
+    googleFileUri: Optional[str] = None  # Google Files API URI
 
 
 class Message(BaseModel):
@@ -68,46 +70,65 @@ class ChatRequest(BaseModel):
 # ==================== Helper Functions ====================
 
 def convert_messages_to_provider_format(
-    history: List[Message], 
+    history: List[Message],
     current_message: str,
-    provider: str = None
+    provider: str = None,
+    current_attachments: Optional[List[Attachment]] = None
 ) -> List[Dict[str, Any]]:
     """
     Convert frontend message format to provider format.
-    
+
     Role conversion rules:
     - Google/Gemini: Keep "model" as "model" (Gemini API expects "model")
     - OpenAI-compatible: Convert "model" to "assistant" (OpenAI API expects "assistant")
     - Default: Convert "model" to "assistant" for backward compatibility
+
+    Attachment handling:
+    - current_attachments are injected into the last user message
+    - Supports inline_data (Base64) and file_data (Google Files API URI)
     """
     messages = []
-    
+
     # Determine if provider is Google (needs "model" role)
     is_google = provider and provider in ["google", "google-custom"]
-    
+
     for msg in history:
         if msg.isError:
             continue
         if not msg.content:
             continue
-        
+
         role = msg.role
         # Only convert "model" to "assistant" for non-Google providers
         if role == "model" and not is_google:
             role = "assistant"
         # For Google, keep "model" as "model" (Gemini API requirement)
-        
+
         messages.append({
             "role": role,
             "content": msg.content
         })
-    
+
     if current_message:
-        messages.append({
+        msg_dict: Dict[str, Any] = {
             "role": "user",
             "content": current_message
-        })
-    
+        }
+        # 注入当前消息的附件数据
+        if current_attachments:
+            msg_dict["attachments"] = [
+                {
+                    "mimeType": att.mimeType,
+                    "url": att.url,
+                    "tempUrl": att.tempUrl,
+                    "fileUri": att.fileUri or att.googleFileUri,
+                    "base64Data": att.base64Data,
+                }
+                for att in current_attachments
+                if att.mimeType  # 只包含有效 MIME 类型的附件
+            ]
+        messages.append(msg_dict)
+
     return messages
 
 
@@ -151,11 +172,13 @@ async def chat_with_provider(
     try:
         # user_id 已通过依赖注入自动获取，无需手动调用
         
+        attachment_count = len(request.attachments) if request.attachments else 0
         logger.info(
             f"[Chat] provider={provider}, "
             f"model={request.modelId}, "
             f"stream={request.stream}, "
             f"messages={len(request.messages)}, "
+            f"attachments={attachment_count}, "
             f"user_id={user_id}"
         )
         
@@ -181,16 +204,19 @@ async def chat_with_provider(
                 provider=provider,
                 api_key=api_key,
                 api_url=base_url,
+                user_id=user_id,
+                db=db,
                 timeout=120.0
             )
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
-        
-        # Convert messages (pass provider to handle role conversion correctly)
+
+        # Convert messages (pass provider and attachments)
         messages = convert_messages_to_provider_format(
             request.messages,
             request.message,
-            provider=provider
+            provider=provider,
+            current_attachments=request.attachments
         )
         
         # Prepare options

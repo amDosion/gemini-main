@@ -105,11 +105,40 @@ export interface ImageEditControlsProps {
   providerId: string;
   /** 传递 controls 状态对象 */
   controls?: ControlsState;
+  /** 可用模型列表（用于增强提示词模型选择） */
+  availableModels?: ModelConfig[];
+  /** 最大图片生成数量 */
+  maxImageCount?: number;
   // 单独 props（向后兼容）
+  numberOfImages?: number;
+  setNumberOfImages?: (v: number) => void;
   aspectRatio?: string;
   setAspectRatio?: (v: string) => void;
   resolution?: string;
   setResolution?: (v: string) => void;
+  showAdvanced?: boolean;
+  setShowAdvanced?: (v: boolean) => void;
+}
+
+export interface ImageMaskEditControlsProps {
+  providerId: string;
+  /** 传递 controls 状态对象 */
+  controls?: ControlsState;
+  // 单独 props（向后兼容）
+  editMode?: string;
+  setEditMode?: (v: string) => void;
+  maskDilation?: number;
+  setMaskDilation?: (v: number) => void;
+  guidanceScale?: number;
+  setGuidanceScale?: (v: number) => void;
+  numberOfImages?: number;
+  setNumberOfImages?: (v: number) => void;
+  negativePrompt?: string;
+  setNegativePrompt?: (v: string) => void;
+  outputMimeType?: string;
+  setOutputMimeType?: (v: string) => void;
+  outputCompressionQuality?: number;
+  setOutputCompressionQuality?: (v: number) => void;
   showAdvanced?: boolean;
   setShowAdvanced?: (v: boolean) => void;
 }
@@ -256,6 +285,8 @@ export interface ControlsState {
   setOutputCompressionQuality: (v: number) => void;
   enhancePrompt: boolean;
   setEnhancePrompt: (v: boolean) => void;
+  enhancePromptModel: string;
+  setEnhancePromptModel: (v: string) => void;
 
   // TongYi Specific Parameters
   promptExtend: boolean;
@@ -295,4 +326,12 @@ export interface ControlsState {
   // Multi-Agent Controls (保留用于向后兼容，但主要在工作流编辑器中管理)
   enableMultiAgent: boolean;
   setEnableMultiAgent: (v: boolean) => void;
+
+  // Mask Edit Controls (仅用于 image-mask-edit 模式)
+  editMode: string;
+  setEditMode: (v: string) => void;
+  maskDilation: number;
+  setMaskDilation: (v: number) => void;
+  guidanceScale: number;
+  setGuidanceScale: (v: number) => void;
 }

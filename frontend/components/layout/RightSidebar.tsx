@@ -31,8 +31,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 }) => {
   const [editingPersona, setEditingPersona] = useState<Persona | undefined>(undefined);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  // Optional: State to toggle category collapse. Defaults to all open.
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
+  // Optional: State to toggle category collapse. Defaults to all collapsed.
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
+    new Set([...PERSONA_CATEGORIES, 'Other'])
+  );
 
   const handleCreate = () => {
     setEditingPersona(undefined);

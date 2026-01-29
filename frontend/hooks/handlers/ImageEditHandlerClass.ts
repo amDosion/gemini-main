@@ -11,48 +11,95 @@ export class ImageEditHandler extends BaseHandler {
   protected async doExecute(context: ExecutionContext): Promise<HandlerResult> {
     // ✅ 根据设计文档，前端只负责传递附件元数据，后端统一处理
     // 不再进行 Base64 转换，后端会处理所有 URL 类型（Base64、Blob URL、HTTP URL）
-    const referenceImages: Record<string, Attachment> = {};
-    
-    // 处理第一个附件作为 raw（基础图片）
+    const referenceImages: Record<string, Attachment | Attachment[]> = {};
+
+    // ✅ 格式化 URL 用于日志（避免输出完整 BASE64）
+    const formatUrlForLog = (url: string | undefined): string => {
+      if (!url) return 'N/A';
+      if (url.startsWith('data:')) {
+        return `Base64 Data URL (长度: ${url.length} 字符)`;
+      }
+      return url.length > 80 ? url.substring(0, 80) + '...' : url;
+    };
+
+    // ✅ 直接传递附件元数据，后端会处理：
+    // - HTTP URL → 后端自己下载
+    // - Base64 URL → 后端创建临时代理 URL
+    // - Blob URL → 后端会通过其他方式处理（如果需要）
+    // - File 对象 → 前端上传到后端，后端统一处理
+
+    // 处理附件：根据模式和附件数量决定如何传递
     if (context.attachments.length > 0) {
-      const rawAttachment = context.attachments[0];
-      
-      // ✅ 直接传递附件元数据，后端会处理：
-      // - HTTP URL → 后端自己下载
-      // - Base64 URL → 后端创建临时代理 URL
-      // - Blob URL → 后端会通过其他方式处理（如果需要）
-      // - File 对象 → 前端上传到后端，后端统一处理
-      
-      // ✅ 格式化 URL 用于日志（避免输出完整 BASE64）
-      const formatUrlForLog = (url: string | undefined): string => {
-        if (!url) return 'N/A';
-        if (url.startsWith('data:')) {
-          return `Base64 Data URL (长度: ${url.length} 字符)`;
-        }
-        return url.length > 80 ? url.substring(0, 80) + '...' : url;
-      };
-      
-      console.log('[ImageEditHandler] ✅ 传递附件元数据给后端处理:', {
-        id: rawAttachment.id || 'N/A',  // ✅ 不截断 ID，显示完整 ID
-        urlType: rawAttachment.url?.startsWith('blob:') ? 'Blob' : 
-                 rawAttachment.url?.startsWith('data:') ? 'Base64' : 
-                 rawAttachment.url?.startsWith('http') ? 'HTTP' : 'Other',
-        url: formatUrlForLog(rawAttachment.url),  // ✅ 使用格式化函数处理 URL
-        urlLength: rawAttachment.url ? rawAttachment.url.length : 0,  // ✅ 记录 URL 长度
-        hasFile: !!rawAttachment.file,
-        uploadStatus: rawAttachment.uploadStatus,
-        mimeType: rawAttachment.mimeType,
-        name: rawAttachment.name
-      });
-      
-      referenceImages.raw = rawAttachment;
-    }
-    
-    // 检查是否有 mask（第二个附件可能是 mask）
-    if (context.attachments.length > 1) {
-      // 简单判断：如果模式是 image-mask-edit，第二个附件作为 mask
+      // ✅ image-mask-edit 模式：第一个附件是 raw，第二个是 mask
       if (context.mode === 'image-mask-edit') {
-        referenceImages.mask = context.attachments[1];
+        const rawAttachment = context.attachments[0];
+        console.log('[ImageEditHandler] ✅ image-mask-edit 模式 - raw 附件:', {
+          id: rawAttachment.id || 'N/A',
+          urlType: rawAttachment.url?.startsWith('blob:') ? 'Blob' :
+                   rawAttachment.url?.startsWith('data:') ? 'Base64' :
+                   rawAttachment.url?.startsWith('http') ? 'HTTP' : 'Other',
+          url: formatUrlForLog(rawAttachment.url),
+          hasFile: !!rawAttachment.file,
+          uploadStatus: rawAttachment.uploadStatus
+        });
+        referenceImages.raw = rawAttachment;
+
+        if (context.attachments.length > 1) {
+          referenceImages.mask = context.attachments[1];
+          console.log('[ImageEditHandler] ✅ image-mask-edit 模式 - mask 附件:', {
+            id: context.attachments[1].id || 'N/A'
+          });
+        }
+      }
+      // ✅ image-chat-edit 模式：支持多图编辑
+      else if (context.mode === 'image-chat-edit') {
+        if (context.attachments.length === 1) {
+          // 单图：保持向后兼容，raw 是单个附件
+          const rawAttachment = context.attachments[0];
+          console.log('[ImageEditHandler] ✅ image-chat-edit 单图模式:', {
+            id: rawAttachment.id || 'N/A',
+            urlType: rawAttachment.url?.startsWith('blob:') ? 'Blob' :
+                     rawAttachment.url?.startsWith('data:') ? 'Base64' :
+                     rawAttachment.url?.startsWith('http') ? 'HTTP' : 'Other',
+            url: formatUrlForLog(rawAttachment.url),
+            hasFile: !!rawAttachment.file,
+            uploadStatus: rawAttachment.uploadStatus
+          });
+          referenceImages.raw = rawAttachment;
+        } else {
+          // ✅ 多图：raw 是附件数组
+          console.log(`[ImageEditHandler] ✅ image-chat-edit 多图模式，附件数量: ${context.attachments.length}`);
+          context.attachments.forEach((att, idx) => {
+            console.log(`[ImageEditHandler] 附件[${idx}]:`, {
+              id: att.id || 'N/A',
+              urlType: att.url?.startsWith('blob:') ? 'Blob' :
+                       att.url?.startsWith('data:') ? 'Base64' :
+                       att.url?.startsWith('http') ? 'HTTP' : 'Other',
+              url: formatUrlForLog(att.url),
+              hasFile: !!att.file,
+              uploadStatus: att.uploadStatus
+            });
+          });
+          referenceImages.raw = context.attachments;  // ✅ 传递附件数组
+        }
+      }
+      // ✅ 其他模式：只使用第一个附件
+      else {
+        const rawAttachment = context.attachments[0];
+        console.log('[ImageEditHandler] ✅ 传递附件元数据给后端处理:', {
+          mode: context.mode,
+          id: rawAttachment.id || 'N/A',
+          urlType: rawAttachment.url?.startsWith('blob:') ? 'Blob' :
+                   rawAttachment.url?.startsWith('data:') ? 'Base64' :
+                   rawAttachment.url?.startsWith('http') ? 'HTTP' : 'Other',
+          url: formatUrlForLog(rawAttachment.url),
+          urlLength: rawAttachment.url ? rawAttachment.url.length : 0,
+          hasFile: !!rawAttachment.file,
+          uploadStatus: rawAttachment.uploadStatus,
+          mimeType: rawAttachment.mimeType,
+          name: rawAttachment.name
+        });
+        referenceImages.raw = rawAttachment;
       }
     }
     
@@ -77,6 +124,9 @@ export class ImageEditHandler extends BaseHandler {
     const thoughts = firstResult?.thoughts || [];
     const textResponse = firstResult?.text;
 
+    // ✅ 提取增强后的提示词（如果有）- 同一批次所有图片共享相同的 enhancedPrompt
+    const enhancedPrompt = results.find((res: ImageGenerationResult) => res.enhancedPrompt)?.enhancedPrompt;
+
     // ✅ 后端已处理图片（返回 attachmentId, uploadStatus, taskId）
     // 直接使用后端返回的结果，不需要再次处理
     const displayAttachments: Attachment[] = results.map((res: ImageGenerationResult) => ({
@@ -88,20 +138,10 @@ export class ImageEditHandler extends BaseHandler {
       uploadTaskId: res.taskId
     } as Attachment));
     
-    // 构建内容：包含 thoughts 和 text（如果有）
-    let content = `Edited images for: "${context.text}"`;
-    if (thoughts.length > 0 || textResponse) {
-      const thoughtTexts = thoughts
-        .filter(t => t.type === 'text')
-        .map(t => t.content)
-        .join('\n\n');
-      if (thoughtTexts) {
-        content += `\n\n**思考过程：**\n${thoughtTexts}`;
-      }
-      if (textResponse) {
-        content += `\n\n**AI 响应：**\n${textResponse}`;
-      }
-    }
+    // ✅ 构建显示内容：只保存原始提示词
+    // enhancedPrompt 作为单独字段存储，在前端单独显示
+    // thoughts 和 textResponse 通过 ThinkingBlock 单独显示
+    const content = context.text;
 
     const uploadTask = async () => {
       // ✅ 后端已创建附件记录和上传任务（AI 返回的图片）
@@ -133,9 +173,19 @@ export class ImageEditHandler extends BaseHandler {
                 taskId: result.taskId
               });
               
+              // ✅ 修复：保留原始 Blob URL 到 tempUrl，用于当前会话显示
+              // 注意：这个返回的附件会保存到数据库（cleanAttachmentsForDb 会清空 Blob URL）
+              // 但当前会话的 messages 状态会保留原始 Blob URL（因为 setMessages 在 updateSessionMessages 之前调用）
+              const originalUrl = att.url || att.tempUrl;
+              const isBlobUrl = originalUrl?.startsWith('blob:');
+              
               return {
                 ...att,
                 id: result.attachmentId || att.id,  // 使用后端返回的 attachmentId
+                // ✅ 保留原始 URL 到 tempUrl，用于当前会话显示
+                // url 字段保留 Blob URL（如果存在），cleanAttachmentsForDb 会在保存到数据库时清空
+                url: originalUrl || '',
+                tempUrl: originalUrl || att.tempUrl, // 保留原始 URL 用于显示
                 uploadStatus: result.taskId ? 'pending' : 'failed',
                 uploadTaskId: result.taskId || undefined,
               } as Attachment;
@@ -158,9 +208,10 @@ export class ImageEditHandler extends BaseHandler {
       content: content,
       attachments: displayAttachments,
       uploadTask: uploadTask(),
-      // 将 thoughts 存储在自定义字段中（用于前端显示）
+      // 将 thoughts、textResponse、enhancedPrompt 存储在自定义字段中（用于前端显示和数据库持久化）
       thoughts: thoughts,
-      textResponse: textResponse
+      textResponse: textResponse,
+      enhancedPrompt: enhancedPrompt
     };
   }
 }

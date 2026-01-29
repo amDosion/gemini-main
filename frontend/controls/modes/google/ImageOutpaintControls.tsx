@@ -175,7 +175,7 @@ export const ImageOutpaintControls: React.FC<ImageOutpaintControlsProps> = ({
                     type="range"
                     min="1"
                     max="100"
-                    step="5"
+                    step="1"
                     value={controls.outputCompressionQuality}
                     onChange={(e) => controls.setOutputCompressionQuality?.(parseInt(e.target.value))}
                     className="w-full h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer accent-orange-500"

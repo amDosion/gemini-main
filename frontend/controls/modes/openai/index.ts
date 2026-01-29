@@ -7,6 +7,8 @@ export { ImageGenControls } from './ImageGenControls';
 
 // 占位（re-export Google）
 export { ImageEditControls } from './ImageEditControls';
+// Mask Edit Controls - 占位，re-export Google
+export { ImageMaskEditControls } from '../google/ImageMaskEditControls';
 export { ImageOutpaintControls } from './ImageOutpaintControls';
 export { VideoGenControls } from './VideoGenControls';
 export { AudioGenControls } from './AudioGenControls';

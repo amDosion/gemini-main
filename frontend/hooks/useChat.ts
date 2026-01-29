@@ -126,14 +126,15 @@ export const useChat = (
         id: userMessageId,
         role: Role.USER,
         content: text,
-        attachments: context.attachments,
+        attachments: context.attachments, // ✅ 保留 Blob URL 用于当前会话显示
         timestamp: Date.now(),
         mode: mode,
       };
 
       const updatedMessages = [...messages, userMessage];
-      setMessages(updatedMessages);
-      updateSessionMessages(currentSessionId, updatedMessages);
+      setMessages(updatedMessages); // ✅ 当前会话保留 Blob URL 用于显示
+      // ✅ 注意：这里不调用 updateSessionMessages，等待 uploadTask 完成后再保存（会清空 Blob URL）
+      // 当前会话的 messages 状态保留 Blob URL，用于立即显示
       setLoadingState(mode === 'chat' ? 'streaming' : 'loading');
 
       // 6. Create Model Placeholder
@@ -180,10 +181,22 @@ export const useChat = (
         groundingMetadata: result.groundingMetadata,
         urlContextMetadata: result.urlContextMetadata,
         browserOperationId: result.browserOperationId,
-        // 存储 thoughts 和 textResponse（如果存在）
+        // 存储 thoughts、textResponse、enhancedPrompt（如果存在）
         ...(result.thoughts && { thoughts: result.thoughts }),
-        ...(result.textResponse && { textResponse: result.textResponse })
+        ...(result.textResponse && { textResponse: result.textResponse }),
+        ...(result.enhancedPrompt && { enhancedPrompt: result.enhancedPrompt })
       };
+
+      // ✅ 调试日志：检查 thoughts/textResponse/enhancedPrompt 是否被添加到消息中
+      console.log('[useChat] 📝 displayModelMessage 元数据字段:', {
+        hasThoughts: !!displayModelMessage.thoughts,
+        thoughtsLength: displayModelMessage.thoughts?.length || 0,
+        hasTextResponse: !!displayModelMessage.textResponse,
+        hasEnhancedPrompt: !!displayModelMessage.enhancedPrompt,
+        resultHasThoughts: !!result.thoughts,
+        resultHasTextResponse: !!result.textResponse,
+        resultHasEnhancedPrompt: !!result.enhancedPrompt
+      });
 
       // ✅ 详细日志：记录附件显示使用的URL类型
       if (displayModelMessage.attachments && displayModelMessage.attachments.length > 0) {
@@ -216,7 +229,8 @@ export const useChat = (
       // 10. Handle upload task (if any)
       if (result.uploadTask) {
         result.uploadTask.then(({ dbAttachments, dbUserAttachments }) => {
-          // 保存到数据库（使用 dbAttachments，带 uploadTaskId）
+          // ✅ 保存到数据库（使用 dbAttachments，带 uploadTaskId）
+          // 注意：dbUserAttachments 已经处理过，可能清空了 Blob URL（用于数据库持久化）
           const dbUserMessage: Message = dbUserAttachments
             ? { ...userMessage, attachments: dbUserAttachments as Attachment[] }
             : userMessage;
@@ -224,16 +238,24 @@ export const useChat = (
           const dbModelMessage: Message = {
             ...initialModelMessage,
             content: result.content,
-            attachments: dbAttachments as Attachment[]
+            attachments: dbAttachments as Attachment[],
+            ...(result.thoughts && { thoughts: result.thoughts }),
+            ...(result.textResponse && { textResponse: result.textResponse }),
+            ...(result.enhancedPrompt && { enhancedPrompt: result.enhancedPrompt })
           };
 
+          // ✅ 保存到数据库的消息（会清空 Blob URL）
           const dbMessages = [
             ...messages.filter(m => m.id !== userMessage.id),
             dbUserMessage,
             dbModelMessage
           ];
 
+          // ✅ 保存到数据库（会清空 Blob URL，用于持久化）
           updateSessionMessages(currentSessionId, dbMessages);
+          
+          // ✅ 重要：当前会话的 messages 状态保留 Blob URL 用于显示
+          // 不需要更新 setMessages，因为 UI 显示使用的是 messages 状态，不是数据库中的
           console.log('[useChat] 上传任务已提交，已保存到数据库（pending）');
           
           // ✅ 详细日志：记录保存到数据库的附件URL类型
@@ -259,7 +281,7 @@ export const useChat = (
           console.error('[useChat] 上传任务失败:', err);
         });
       } else {
-        // 没有上传任务，直接保存到数据库
+        // 没有上传任务，直接保存到数据库（会清空 Blob URL）
         const finalMessages = [...updatedMessages, displayModelMessage];
         updateSessionMessages(currentSessionId, finalMessages);
       }

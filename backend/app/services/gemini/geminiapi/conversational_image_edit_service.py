@@ -49,7 +49,101 @@ class ConversationalImageEditService:
         self.sdk_initializer = sdk_initializer
         self.chat_session_manager = chat_session_manager
         self.file_handler = file_handler
-    
+
+    def _supports_thinking(self, model_name: str) -> bool:
+        """
+        检查模型是否支持 ThinkingConfig
+
+        根据 API 测试结果：
+        - gemini-3-pro-image-preview: 支持 thinking + 图片输出 ✅
+        - gemini-3-flash-preview: 支持 thinking（但不能生成图片）
+        - gemini-2.5-flash-image: 不支持 thinking（400 error）❌
+        - gemini-2.0-flash-exp: 不支持 thinking ❌
+
+        安全策略：只对 gemini-3 系列模型启用 thinking
+        """
+        if not model_name:
+            return False
+        return 'gemini-3' in model_name.lower()
+
+    async def _enhance_prompt_two_stage(
+        self,
+        prompt: str,
+        model_hint: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        两段式提示词增强：先用文本模型改写，再用于图片编辑。
+
+        Args:
+            prompt: 原始提示词
+            model_hint: 可选模型提示（用于选择文本模型）
+
+        Returns:
+            增强后的提示词，失败时返回 None
+        """
+        self.sdk_initializer.ensure_initialized()
+        client = self.sdk_initializer.client
+
+        # 选择文本模型（优先使用提示，默认 gemini-2.5-flash）
+        text_model = None
+        if model_hint and isinstance(model_hint, str):
+            # 如果是 image 模型，回退到通用文本模型
+            if 'image' in model_hint.lower():
+                text_model = 'gemini-2.5-flash'
+            else:
+                text_model = model_hint
+        if not text_model:
+            text_model = 'gemini-2.5-flash'
+
+        system_prompt = (
+            "You are a professional edit prompt enhancer. "
+            "Return ONLY the enhanced prompt text, no explanations."
+        )
+        user_prompt = (
+            "Rewrite the following image edit instruction to be more direct, "
+            "specific, and visually actionable while preserving the intent:\n\n"
+            f"{prompt}"
+        )
+
+        try:
+            from google.genai import types as genai_types
+        except ImportError:
+            genai_types = None
+
+        try:
+            if genai_types:
+                response = client.models.generate_content(
+                    model=text_model,
+                    contents=[
+                        genai_types.Part.from_text(text=system_prompt),
+                        genai_types.Part.from_text(text=user_prompt)
+                    ],
+                )
+            else:
+                response = client.models.generate_content(
+                    model=text_model,
+                    contents=f"{system_prompt}\n\n{user_prompt}",
+                )
+
+            # 取文本输出
+            enhanced = None
+            if hasattr(response, 'text') and response.text:
+                enhanced = response.text.strip()
+            elif hasattr(response, 'parts') and response.parts:
+                for part in response.parts:
+                    if hasattr(part, 'text') and part.text:
+                        enhanced = part.text.strip()
+                        break
+
+            if enhanced:
+                logger.info(f"[ConversationalImageEdit] Enhanced prompt generated (len={len(enhanced)})")
+                return enhanced
+
+        except Exception as e:
+            logger.warning(f"[ConversationalImageEdit] Enhance prompt failed: {e}")
+
+        return None
+
     async def create_chat_session(
         self,
         user_id: str,
@@ -85,6 +179,11 @@ class ConversationalImageEditService:
             
             # 构建 Chat 配置
             # 注意：只提取 GenerateContentConfig 支持的有效字段（imageAspectRatio, imageResolution）
+            # thinking 开关：默认跟随模型能力，若 config 显式关闭则禁用
+            enable_thinking = True
+            if config and 'enableThinking' in config:
+                enable_thinking = bool(config.get('enableThinking'))
+
             if genai_types:
                 # 使用官方 SDK 类型
                 # 注意：图像生成/编辑这类请求，通常不需要 google_search
@@ -94,9 +193,11 @@ class ConversationalImageEditService:
                 if config and config.get('imageResolution'):
                     image_config_dict['image_size'] = config['imageResolution']
                 
+                # ✅ 根据模型判断是否开启思考过程（仅 gemini-3 系列支持）
+                thinking_cfg = genai_types.ThinkingConfig(include_thoughts=True) if enable_thinking and self._supports_thinking(model) else None
                 chat_config = genai_types.GenerateContentConfig(
                     response_modalities=[genai_types.Modality.TEXT, genai_types.Modality.IMAGE],
-                    thinking_config=genai_types.ThinkingConfig(include_thoughts=True),  # ✅ 开启思考过程
+                    thinking_config=thinking_cfg,
                     image_config=genai_types.ImageConfig(**image_config_dict)
                 )
             else:
@@ -107,6 +208,8 @@ class ConversationalImageEditService:
                         'aspect_ratio': config.get('imageAspectRatio', '1:1') if config else '1:1'
                     }
                 }
+                if enable_thinking and self._supports_thinking(model):
+                    chat_config['thinking_config'] = {'include_thoughts': True}
                 if config and config.get('imageResolution'):
                     chat_config['image_config']['image_size'] = config['imageResolution']
             
@@ -208,15 +311,18 @@ class ConversationalImageEditService:
         # 获取 Chat 对象（从缓存）
         # 注意：Chat 对象会自动维护历史记录，不需要手动重建
         chat = self.chat_session_manager.get_chat_object_from_cache(chat_id)
-        
+
+        # ✅ 预先获取 chat_session 元数据（用于获取 model_name 等，构建 send_config 时需要）
+        chat_session = self.chat_session_manager.get_chat_session(chat_id)
+        model_name = chat_session.model_name if chat_session else None
+
         # 判断是否需要传递图片
         # 根据官方示例（intro_gemini_3_image_gen.ipynb），多轮对话中应该传递上一轮生成的图片
         # 如果前端通过 CONTINUITY LOGIC 传递了图片，就使用它（更安全，即使 Chat SDK 有历史记录）
         should_include_image = reference_images is not None and len(reference_images) > 0
-        
+
         if not chat:
             # 如果缓存中没有，说明这是第一次调用，应该先创建 chat 会话
-            chat_session = self.chat_session_manager.get_chat_session(chat_id)
             if not chat_session:
                 raise ValueError(f"Chat session not found: {chat_id}. Please create a chat session first.")
             
@@ -240,6 +346,11 @@ class ConversationalImageEditService:
                     if 'imageResolution' in config_dict:
                         valid_config['imageResolution'] = config_dict['imageResolution']
                     
+                    # thinking 开关：默认跟随模型能力，若 config 显式关闭则禁用
+                    enable_thinking = True
+                    if 'enableThinking' in config_dict:
+                        enable_thinking = bool(config_dict.get('enableThinking'))
+
                     if genai_types and valid_config:
                         # 构建 ImageConfig
                         image_config_dict = {}
@@ -247,9 +358,12 @@ class ConversationalImageEditService:
                             image_config_dict['aspect_ratio'] = valid_config['imageAspectRatio']
                         if 'imageResolution' in valid_config:
                             image_config_dict['image_size'] = valid_config['imageResolution']
-                        
+
+                        # ✅ 根据模型判断是否开启思考过程
+                        thinking_cfg = genai_types.ThinkingConfig(include_thoughts=True) if enable_thinking and self._supports_thinking(chat_session.model_name) else None
                         chat_config = genai_types.GenerateContentConfig(
                             response_modalities=[genai_types.Modality.TEXT, genai_types.Modality.IMAGE],
+                            thinking_config=thinking_cfg,
                             image_config=genai_types.ImageConfig(**image_config_dict) if image_config_dict else None
                         )
                     elif valid_config:
@@ -257,13 +371,47 @@ class ConversationalImageEditService:
                             'response_modalities': ['TEXT', 'IMAGE'],
                             'image_config': {}
                         }
+                        if enable_thinking and self._supports_thinking(chat_session.model_name):
+                            chat_config['thinking_config'] = {'include_thoughts': True}
                         if 'imageAspectRatio' in valid_config:
                             chat_config['image_config']['aspect_ratio'] = valid_config['imageAspectRatio']
                         if 'imageResolution' in valid_config:
                             chat_config['image_config']['image_size'] = valid_config['imageResolution']
                 except Exception as e:
                     logger.warning(f"[ConversationalImageEdit] Failed to parse config_json: {e}")
-            
+
+            # ✅ 确保 chat_config 至少包含基本配置（response_modalities + thinking_config）
+            # 当 config_json 为空或解析失败时，chat_config 仍为 None，需要兜底
+            if chat_config is None:
+                if genai_types:
+                    enable_thinking = True
+                    if chat_session.config_json:
+                        try:
+                            cfg = json.loads(chat_session.config_json)
+                            if 'enableThinking' in cfg:
+                                enable_thinking = bool(cfg.get('enableThinking'))
+                        except Exception:
+                            pass
+                    thinking_cfg = genai_types.ThinkingConfig(include_thoughts=True) if enable_thinking and self._supports_thinking(chat_session.model_name) else None
+                    chat_config = genai_types.GenerateContentConfig(
+                        response_modalities=[genai_types.Modality.TEXT, genai_types.Modality.IMAGE],
+                        thinking_config=thinking_cfg
+                    )
+                else:
+                    chat_config = {
+                        'response_modalities': ['TEXT', 'IMAGE'],
+                    }
+                    enable_thinking = True
+                    if chat_session.config_json:
+                        try:
+                            cfg = json.loads(chat_session.config_json)
+                            if 'enableThinking' in cfg:
+                                enable_thinking = bool(cfg.get('enableThinking'))
+                        except Exception:
+                            pass
+                    if enable_thinking and self._supports_thinking(chat_session.model_name):
+                        chat_config['thinking_config'] = {'include_thoughts': True}
+
             # 从历史重建 Chat 对象（如果有历史）
             history = self.chat_session_manager.get_chat_history_for_rebuild(
                 chat_session.frontend_session_id,
@@ -330,6 +478,18 @@ class ConversationalImageEditService:
         
         # 构建消息 parts
         message_parts = []
+
+        # ✅ AI 增强提示词（两段式稳定方案）
+        enhance_prompt = bool(config.get('enhancePrompt')) if config else False
+        enhanced_prompt_text = None
+        if enhance_prompt:
+            enhance_model = config.get('enhancePromptModel') if config else None
+            enhanced_prompt_text = await self._enhance_prompt_two_stage(
+                prompt,
+                model_hint=enhance_model or model_name
+            )
+            if enhanced_prompt_text:
+                prompt = enhanced_prompt_text
         
         # 添加参考图片（如果前端传递了图片）
         # 注意：根据官方示例，多轮对话中应该传递上一轮生成的图片数据
@@ -465,18 +625,25 @@ class ConversationalImageEditService:
                 genai_types = None
             
             # 构建可选的配置覆盖（例如更新图片尺寸、宽高比）
-            # 参考：response = chat.send_message(message, config=types.GenerateContentConfig(...))
+            # ⚠️ 重要：Google SDK chat.send_message(config=...) 会完全替换 chats.create() 的默认 config
+            # 因此 send_config 必须包含所有必要字段（response_modalities, thinking_config, image_config）
+            # 参考 SDK 源码 chats.py: config=config if config else self._config
             send_config = None
             if config and genai_types:
-                # 如果提供了配置覆盖，构建新的配置
+                # 如果提供了配置覆盖，构建完整的配置（不能只传 image_config，否则会丢失其他配置）
                 image_config_dict = {}
                 if config.get('imageAspectRatio'):
                     image_config_dict['aspect_ratio'] = config['imageAspectRatio']
                 if config.get('imageResolution'):
                     image_config_dict['image_size'] = config['imageResolution']
-                
+
                 if image_config_dict:
+                    # ✅ 获取模型名以判断是否支持 thinking
+                    model_name = chat_session.model_name if chat_session else ''
+                    thinking_cfg = genai_types.ThinkingConfig(include_thoughts=True) if self._supports_thinking(model_name) else None
                     send_config = genai_types.GenerateContentConfig(
+                        response_modalities=[genai_types.Modality.TEXT, genai_types.Modality.IMAGE],
+                        thinking_config=thinking_cfg,
                         image_config=genai_types.ImageConfig(**image_config_dict)
                     )
             
@@ -670,7 +837,8 @@ class ConversationalImageEditService:
             return {
                 'images': results,
                 'text': text_responses[0] if text_responses else None,  # 第一个文本响应
-                'thoughts': thoughts  # 思考过程列表
+                'thoughts': thoughts,  # 思考过程列表
+                'enhancedPrompt': enhanced_prompt_text
             }
             
         except Exception as e:
@@ -679,8 +847,7 @@ class ConversationalImageEditService:
             error_msg = str(e)
             # 如果错误信息中包含 BASE64 数据，截断它
             if 'data:image' in error_msg or 'base64' in error_msg.lower():
-                # 截断 BASE64 部分
-                import re
+                # 截断 BASE64 部分（re 已在模块顶部导入）
                 error_msg = re.sub(r'data:image[^,]+,\s*[A-Za-z0-9+/]{100,}', 'data:image/...base64...[TRUNCATED]', error_msg)
             logger.error(f"[ConversationalImageEdit] Failed to send edit message: {error_msg}")
             raise
@@ -725,80 +892,90 @@ class ConversationalImageEditService:
     def _convert_reference_images(self, reference_images: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         将 reference_images 字典格式转换为列表格式
-        
+
         Args:
             reference_images: 参考图片字典 {'raw': image_data, ...}
-        
+                - image_data 可以是：字符串、字典、或字典/字符串的列表（多图）
+
         Returns:
             参考图片列表
         """
         reference_images_list = []
         if 'raw' in reference_images:
             raw_img = reference_images['raw']
-            if isinstance(raw_img, str):
-                # 字符串格式：根据 URL 类型处理
-                # 修复：先检查 HTTP URL，避免错误地将 HTTP URL 当作 base64 处理
-                if raw_img.startswith('http://') or raw_img.startswith('https://'):
-                    # HTTP URL：直接传递，后端 send_edit_message 会下载
-                    reference_images_list.append({
-                        'url': raw_img,
-                        'mimeType': 'image/png'
-                    })
-                elif raw_img.startswith('data:'):
-                    # Data URL：直接使用
-                    reference_images_list.append({
-                        'url': raw_img,
-                        'mimeType': 'image/png'
-                    })
-                else:
-                    # 其他字符串（纯 base64）：添加 data URL 前缀
-                    reference_images_list.append({
-                        'url': f"data:image/png;base64,{raw_img}",
-                        'mimeType': 'image/png'
-                    })
-            elif isinstance(raw_img, dict):
-                # ✅ 处理字典格式（包含 attachment_id 和 url）
-                processed_img = {}
-                
-                # 优先级 1: googleFileUri（如果已上传到 Google Files API）
-                if raw_img.get('googleFileUri'):
-                    processed_img['googleFileUri'] = raw_img['googleFileUri']
-                    processed_img['mimeType'] = raw_img.get('mimeType', 'image/png')
-                
-                # 优先级 2: url 字段（HTTP URL 优先，避免 Base64 占用空间）
-                elif raw_img.get('url'):
-                    url = raw_img['url']
-                    if url.startswith('http://') or url.startswith('https://'):
-                        processed_img['url'] = url
-                        processed_img['mimeType'] = raw_img.get('mimeType', 'image/png')
-                    elif url.startswith('data:'):
-                        processed_img['url'] = url
-                        processed_img['mimeType'] = raw_img.get('mimeType', 'image/png')
-                
-                # 优先级 3: base64Data
-                elif raw_img.get('base64Data'):
-                    processed_img['url'] = raw_img['base64Data']
-                    processed_img['mimeType'] = raw_img.get('mimeType', 'image/png')
-                
-                # 优先级 4: tempUrl 字段（备选）
-                elif raw_img.get('tempUrl'):
-                    processed_img['url'] = raw_img['tempUrl']
-                    processed_img['mimeType'] = raw_img.get('mimeType', 'image/png')
-                
-                # ✅ 如果有 attachment_id，也传递（用于日志和调试）
-                if 'attachment_id' in raw_img:
-                    processed_img['attachment_id'] = raw_img['attachment_id']
-                    logger.info(f"[ConversationalImageEdit] 处理附件: attachment_id={raw_img['attachment_id'][:8]}...")
-                
-                # 如果提取到了有效数据，添加到列表
-                if processed_img:
-                    reference_images_list.append(processed_img)
-                else:
-                    logger.warning(
-                        f"[ConversationalImageEdit] Failed to extract image data from Attachment object: "
-                        f"keys={list(raw_img.keys())}"
-                    )
-        
+
+            # ✅ 处理单个图片项（字符串或字典）
+            def process_single_image(img_item) -> Optional[Dict[str, Any]]:
+                """处理单个图片项，返回标准化的字典格式"""
+                if isinstance(img_item, str):
+                    # 字符串格式：根据 URL 类型处理
+                    if img_item.startswith('http://') or img_item.startswith('https://'):
+                        return {'url': img_item, 'mimeType': 'image/png'}
+                    elif img_item.startswith('data:'):
+                        return {'url': img_item, 'mimeType': 'image/png'}
+                    else:
+                        # 纯 base64：添加 data URL 前缀
+                        return {'url': f"data:image/png;base64,{img_item}", 'mimeType': 'image/png'}
+
+                elif isinstance(img_item, dict):
+                    # 字典格式（包含 attachment_id 和 url）
+                    processed_img = {}
+
+                    # 优先级 1: googleFileUri
+                    if img_item.get('googleFileUri'):
+                        processed_img['googleFileUri'] = img_item['googleFileUri']
+                        processed_img['mimeType'] = img_item.get('mimeType', 'image/png')
+
+                    # 优先级 2: url 字段
+                    elif img_item.get('url'):
+                        url = img_item['url']
+                        if url.startswith('http://') or url.startswith('https://'):
+                            processed_img['url'] = url
+                            processed_img['mimeType'] = img_item.get('mimeType', 'image/png')
+                        elif url.startswith('data:'):
+                            processed_img['url'] = url
+                            processed_img['mimeType'] = img_item.get('mimeType', 'image/png')
+
+                    # 优先级 3: base64Data
+                    elif img_item.get('base64Data'):
+                        processed_img['url'] = img_item['base64Data']
+                        processed_img['mimeType'] = img_item.get('mimeType', 'image/png')
+
+                    # 优先级 4: tempUrl
+                    elif img_item.get('tempUrl'):
+                        processed_img['url'] = img_item['tempUrl']
+                        processed_img['mimeType'] = img_item.get('mimeType', 'image/png')
+
+                    # 传递 attachment_id（用于日志和调试）
+                    if 'attachment_id' in img_item:
+                        processed_img['attachment_id'] = img_item['attachment_id']
+                        logger.info(f"[ConversationalImageEdit] 处理附件: attachment_id={img_item['attachment_id'][:8]}...")
+
+                    if processed_img:
+                        return processed_img
+                    else:
+                        logger.warning(
+                            f"[ConversationalImageEdit] Failed to extract image data from Attachment object: "
+                            f"keys={list(img_item.keys())}"
+                        )
+
+                return None
+
+            # ✅ 支持多图：raw_img 可能是列表
+            if isinstance(raw_img, list):
+                logger.info(f"[ConversationalImageEdit] 处理多张参考图片，数量: {len(raw_img)}")
+                for idx, img_item in enumerate(raw_img):
+                    processed = process_single_image(img_item)
+                    if processed:
+                        reference_images_list.append(processed)
+                        logger.debug(f"[ConversationalImageEdit] 图片 {idx + 1}/{len(raw_img)} 处理成功")
+            else:
+                # 单图：字符串或字典
+                processed = process_single_image(raw_img)
+                if processed:
+                    reference_images_list.append(processed)
+
+        logger.info(f"[ConversationalImageEdit] 转换完成，共 {len(reference_images_list)} 张参考图片")
         return reference_images_list
     
     async def edit_image(
@@ -865,6 +1042,12 @@ class ConversationalImageEditService:
             edit_config['imageAspectRatio'] = kwargs['imageAspectRatio']
         if 'imageResolution' in kwargs:
             edit_config['imageResolution'] = kwargs['imageResolution']
+        if 'enhancePrompt' in kwargs:
+            edit_config['enhancePrompt'] = kwargs['enhancePrompt']
+        if 'enhancePromptModel' in kwargs:
+            edit_config['enhancePromptModel'] = kwargs['enhancePromptModel']
+        if 'enableThinking' in kwargs:
+            edit_config['enableThinking'] = kwargs['enableThinking']
         
         # 发送编辑消息
         results = await self.send_edit_message(
@@ -880,6 +1063,7 @@ class ConversationalImageEditService:
             images = results.get('images', [])
             thoughts = results.get('thoughts', [])
             text = results.get('text')
+            enhanced_prompt = results.get('enhancedPrompt')
             
             # 将 thoughts 和 text 附加到每个图片结果中（用于前端访问）
             for img in images:
@@ -887,6 +1071,8 @@ class ConversationalImageEditService:
                     img['thoughts'] = thoughts
                 if text:
                     img['text'] = text
+                if enhanced_prompt:
+                    img['enhancedPrompt'] = enhanced_prompt
             
             return images
         else:

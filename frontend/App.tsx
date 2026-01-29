@@ -198,9 +198,7 @@ const AppContent: React.FC = () => {
   } = useImageNavigation(currentViewMessages);
 
   // --- Effects ---
-  useEffect(() => {
-    if (window.innerWidth >= 1280) setIsRightSidebarOpen(true);
-  }, []);
+  // RightSidebar 默认关闭，用户可以手动打开
 
   // --- 模式切换（需要在其他 handlers 之前定义）---
   const { handleModeSwitch } = useModeSwitch({

@@ -180,6 +180,7 @@ export interface HandlerResult {
   // 思考过程和文本响应（用于图片编辑等场景）
   readonly thoughts?: Array<{ type: 'text' | 'image'; content: string }>;
   readonly textResponse?: string;
+  readonly enhancedPrompt?: string;  // AI 增强后的提示词
 }
 
 /**

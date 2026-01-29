@@ -31,4 +31,9 @@ export const DEFAULT_CONTROLS = {
   outputMimeType: "image/png",
   outputCompressionQuality: 80,
   enhancePrompt: false,
+  enhancePromptModel: "",
+  // Mask Edit 特有参数
+  editMode: "EDIT_MODE_INPAINT_INSERTION", // 编辑模式
+  maskDilation: 0.06, // 掩码膨胀系数 (0.0-1.0)
+  guidanceScale: 15.0, // 引导比例 (1.0-20.0)，仅用于 mask 编辑
 };

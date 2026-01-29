@@ -71,7 +71,9 @@ class ModeOptions(BaseModel):
     imageStyle: Optional[str] = None
     # Image editing options
     edit_mode: Optional[str] = None
+    editMode: Optional[str] = None  # ✅ 前端传递的字段名（camelCase）
     number_of_images: Optional[int] = None
+    numberOfImages: Optional[int] = None  # ✅ 前端传递的字段名（camelCase）
     frontend_session_id: Optional[str] = None
     sessionId: Optional[str] = None  # Alias for frontend_session_id
     message_id: Optional[str] = None  # 消息ID（用于附件关联）
@@ -80,11 +82,13 @@ class ModeOptions(BaseModel):
     # Other options
     negativePrompt: Optional[str] = None
     guidanceScale: Optional[float] = None
+    maskDilation: Optional[float] = None  # ✅ Mask 编辑特有参数：掩码膨胀系数 (0.0-1.0)
     seed: Optional[int] = None
     # Google Imagen 高级参数
     outputMimeType: Optional[str] = None
     outputCompressionQuality: Optional[int] = None
     enhancePrompt: Optional[bool] = None
+    enhancePromptModel: Optional[str] = None
     # TongYi 专用参数
     promptExtend: Optional[bool] = None  # AI 增强提示词
     addMagicSuffix: Optional[bool] = None  # 魔法词组
@@ -593,12 +597,16 @@ async def handle_mode(
                         mime_type = img.get("mimeType") or img.get("mime_type", "image/png")
                         filename = img.get("filename")  # ✅ 提取 filename（如果有）
                         enhanced_prompt = img.get("enhancedPrompt")  # ✅ 新增：提取增强后的提示词
+                        thoughts = img.get("thoughts")  # ✅ 修复断点1：提取思考过程
+                        text = img.get("text")  # ✅ 修复断点1：提取文本响应
                     else:
                         # ImageGenerationResult 对象
                         ai_url = img.url if hasattr(img, "url") else None
                         mime_type = img.mime_type if hasattr(img, "mime_type") else "image/png"
                         filename = img.filename if hasattr(img, "filename") else None
                         enhanced_prompt = img.enhanced_prompt if hasattr(img, "enhanced_prompt") else None
+                        thoughts = getattr(img, "thoughts", None)  # ✅ 修复断点1：提取思考过程
+                        text = getattr(img, "text", None)  # ✅ 修复断点1：提取文本响应
                     
                     if not ai_url:
                         logger.warning(f"[Modes] ⚠️ 第 {idx+1} 张图片缺少URL，跳过")
@@ -639,6 +647,14 @@ async def handle_mode(
                     if enhanced_prompt:
                         image_result["enhancedPrompt"] = enhanced_prompt
                         logger.info(f"[Modes]     - enhancedPrompt: {enhanced_prompt}")
+                    
+                    # ✅ 修复断点1：保留 thinking 数据（如果存在）
+                    if thoughts:
+                        image_result["thoughts"] = thoughts
+                        logger.info(f"[Modes]     - thoughts: {len(thoughts) if isinstance(thoughts, list) else 'N/A'} items")
+                    if text:
+                        image_result["text"] = text
+                        logger.info(f"[Modes]     - text: {text[:100]}..." if len(text) > 100 else f"[Modes]     - text: {text}")
                     
                     processed_images.append(image_result)
                 

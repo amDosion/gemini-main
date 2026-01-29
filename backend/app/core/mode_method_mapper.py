@@ -16,7 +16,7 @@ MODE_METHOD_MAP: Dict[str, str] = {
     
     # 图片编辑模式（都映射到 edit_image，但需要传递 mode 参数）
     "image-chat-edit": "edit_image",      # 对话式图片编辑 → ConversationalImageEditService
-    "image-mask-edit": "edit_image",      # 遮罩编辑 → ImageEditCoordinator (Vertex AI Imagen)
+    "image-mask-edit": "edit_image",      # 遮罩编辑 → ImageEditCoordinator → MaskEditService
     "image-inpainting": "edit_image",     # 图片修复 → ImageEditCoordinator (Vertex AI Imagen)
     "image-background-edit": "edit_image", # 背景编辑 → ImageEditCoordinator (Vertex AI Imagen)
     "image-recontext": "edit_image",      # 图片重上下文 → ImageEditCoordinator (Vertex AI Imagen)

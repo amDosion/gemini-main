@@ -205,15 +205,18 @@ class UpscaleService:
             )
 
             # 构建配置 (参考官方 SDK test_upscale_image.py)
-            config = types.UpscaleImageConfig(
+            config_kwargs = dict(
                 include_rai_reason=include_rai_reason,
                 person_generation=getattr(types.PersonGeneration, person_generation, types.PersonGeneration.ALLOW_ADULT),
                 safety_filter_level=getattr(types.SafetyFilterLevel, safety_filter_level, types.SafetyFilterLevel.BLOCK_LOW_AND_ABOVE),
                 output_mime_type=output_mime_type,
-                output_compression_quality=output_compression_quality,
                 enhance_input_image=enhance_input_image,
                 image_preservation_factor=image_preservation_factor,
             )
+            # PNG 是无损格式，不需要 compression_quality；仅 JPEG 时传递
+            if output_mime_type == 'image/jpeg':
+                config_kwargs['output_compression_quality'] = output_compression_quality
+            config = types.UpscaleImageConfig(**config_kwargs)
 
             # 调用 upscale_image API
             response = client.models.upscale_image(

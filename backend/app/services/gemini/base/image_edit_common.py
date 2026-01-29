@@ -12,10 +12,23 @@ from typing import Dict, Optional
 # ==================== Constants ====================
 
 VALID_EDIT_MODES = [
+    # 原始格式（frontend kebab-case）
     "inpainting-insert",
     "inpainting-remove",
     "outpainting",
-    "product-image"
+    "product-image",
+    # 后端 snake_case 格式（coordinator edit_mode_map 输出）
+    "mask_edit",
+    "inpainting",
+    "background_edit",
+    "recontext",
+    # SDK EDIT_MODE_* 格式（Vertex AI Imagen API）
+    "EDIT_MODE_INPAINT_INSERTION",
+    "EDIT_MODE_INPAINT_REMOVAL",
+    "EDIT_MODE_OUTPAINT",
+    "EDIT_MODE_BGSWAP",
+    "EDIT_MODE_PRODUCT_IMAGE",
+    "EDIT_MODE_DEFAULT",
 ]
 
 VALID_REFERENCE_IMAGE_TYPES = [
@@ -33,18 +46,6 @@ VALID_ASPECT_RATIOS = ["1:1", "3:4", "4:3", "9:16", "16:9"]
 
 VALID_OUTPUT_MIME_TYPES = ["image/png", "image/jpeg"]
 
-VALID_SAFETY_FILTER_LEVELS = [
-    "block_most",
-    "block_some",
-    "block_few",
-    "block_fewest"
-]
-
-VALID_PERSON_GENERATION = [
-    "dont_allow",
-    "allow_adult",
-    "allow_all"
-]
 
 
 # ==================== Error Classes ====================
@@ -150,9 +151,15 @@ def validate_reference_images(reference_images: Dict[str, str]) -> None:
                 f"Valid types: {VALID_REFERENCE_IMAGE_TYPES}"
             )
         
-        if not isinstance(ref_data, str) or not ref_data:
+        # ✅ 支持两种格式：str（Base64/data URL）或 dict（含 url 字段）
+        if isinstance(ref_data, dict):
+            if not ref_data.get('url'):
+                raise ValueError(
+                    f"Reference image '{ref_type}' dict must have a non-empty 'url' field"
+                )
+        elif not isinstance(ref_data, str) or not ref_data:
             raise ValueError(
-                f"Reference image '{ref_type}' must be a non-empty Base64 string"
+                f"Reference image '{ref_type}' must be a non-empty Base64 string or dict with 'url'"
             )
 
 
@@ -248,46 +255,6 @@ def validate_output_mime_type(output_mime_type: Optional[str]) -> None:
         )
 
 
-def validate_safety_filter_level(safety_filter_level: Optional[str]) -> None:
-    """
-    Validate safety filter level parameter.
-    
-    Args:
-        safety_filter_level: Safety filter level (e.g., 'block_some', 'block_few')
-    
-    Raises:
-        ValueError: If safety filter level is invalid
-    
-    Example:
-        >>> validate_safety_filter_level("block_some")  # OK
-        >>> validate_safety_filter_level("block_none")  # Raises ValueError
-    """
-    if safety_filter_level is not None and safety_filter_level not in VALID_SAFETY_FILTER_LEVELS:
-        raise ValueError(
-            f"Invalid safety_filter_level: {safety_filter_level}. "
-            f"Must be one of {VALID_SAFETY_FILTER_LEVELS}"
-        )
-
-
-def validate_person_generation(person_generation: Optional[str]) -> None:
-    """
-    Validate person generation parameter.
-    
-    Args:
-        person_generation: Person generation setting (e.g., 'allow_adult', 'dont_allow')
-    
-    Raises:
-        ValueError: If person generation setting is invalid
-    
-    Example:
-        >>> validate_person_generation("allow_adult")  # OK
-        >>> validate_person_generation("allow_nsfw")  # Raises ValueError
-    """
-    if person_generation is not None and person_generation not in VALID_PERSON_GENERATION:
-        raise ValueError(
-            f"Invalid person_generation: {person_generation}. "
-            f"Must be one of {VALID_PERSON_GENERATION}"
-        )
 
 
 # ==================== Utility Functions ====================

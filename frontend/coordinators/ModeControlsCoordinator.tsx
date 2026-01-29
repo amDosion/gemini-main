@@ -28,6 +28,7 @@ import {
   ChatControlsProps,
   ImageGenControlsProps,
   ImageEditControlsProps,
+  ImageMaskEditControlsProps,
   ImageOutpaintControlsProps,
   VideoGenControlsProps,
   AudioGenControlsProps,
@@ -41,6 +42,7 @@ type ModeControlsCoordinatorProps = {
   mode: AppMode;
   providerId: string;
   currentModel?: ModelConfig;
+  availableModels?: ModelConfig[];
   /** 传递 controls 状态对象 */
   controls?: ControlsState;
   /** 最大图片数量（image-gen 模式） */
@@ -48,6 +50,7 @@ type ModeControlsCoordinatorProps = {
 } & Partial<ChatControlsProps>
   & Partial<ImageGenControlsProps>
   & Partial<ImageEditControlsProps>
+  & Partial<ImageMaskEditControlsProps>
   & Partial<ImageOutpaintControlsProps>
   & Partial<VideoGenControlsProps>
   & Partial<AudioGenControlsProps>
@@ -73,7 +76,7 @@ const getProviderControls = (providerId: string) => {
 };
 
 export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (props) => {
-  const { mode, providerId, currentModel, controls, maxImageCount, ...controlProps } = props;
+  const { mode, providerId, currentModel, availableModels, controls, maxImageCount, ...controlProps } = props;
 
   // 获取当前提供商的控件集
   const Controls = getProviderControls(providerId);
@@ -93,19 +96,45 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
         />
       );
     
-    // 图片编辑模式（已拆分为多个独立模式，都使用 ImageEditControls）
+    // 图片编辑模式
     case 'image-chat-edit':
-    case 'image-mask-edit':
     case 'image-inpainting':
     case 'image-background-edit':
     case 'image-recontext':
       return (
-        <Controls.ImageEditControls 
-          providerId={providerId} 
+        <Controls.ImageEditControls
+          providerId={providerId}
           controls={controls}
-          {...(controlProps as ImageEditControlsProps)} 
+          availableModels={availableModels}
+          maxImageCount={maxImageCount}
+          {...(controlProps as ImageEditControlsProps)}
         />
       );
+    
+    // 掩码编辑模式（使用专门的 ImageMaskEditControls）
+    case 'image-mask-edit':
+      // 类型断言：所有提供商都通过占位导出提供了 ImageMaskEditControls
+      if ('ImageMaskEditControls' in Controls) {
+        const MaskEditControls = (Controls as any).ImageMaskEditControls as React.ComponentType<ImageMaskEditControlsProps>;
+        return (
+          <MaskEditControls 
+            providerId={providerId} 
+            controls={controls}
+            {...(controlProps as ImageMaskEditControlsProps)} 
+          />
+        );
+      }
+      // Fallback（不应该到达这里）
+      {
+        const FallbackEditControls = (Controls as any).ImageEditControls as React.ComponentType<ImageEditControlsProps>;
+        return (
+          <FallbackEditControls
+            providerId={providerId}
+            controls={controls}
+            {...(controlProps as ImageEditControlsProps)}
+          />
+        );
+      }
     
     case 'image-outpainting':
       return (

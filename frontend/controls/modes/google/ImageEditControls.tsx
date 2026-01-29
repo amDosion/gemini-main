@@ -4,17 +4,22 @@
  * 用于右侧参数面板，通过 ModeControlsCoordinator 分发
  */
 import React, { useMemo } from 'react';
-import { Ratio, ChevronUp, ChevronDown, FileImage, Dices } from 'lucide-react';
+import { Ratio, Layers, ChevronUp, ChevronDown, FileImage, Dices, Sparkles } from 'lucide-react';
 import { ImageEditControlsProps } from '../../types';
-import { 
-  GOOGLE_EDIT_ASPECT_RATIOS, 
-  GOOGLE_EDIT_RESOLUTION_TIERS, 
-  getPixelResolution 
+import {
+  GOOGLE_EDIT_ASPECT_RATIOS,
+  GOOGLE_EDIT_RESOLUTION_TIERS,
+  getPixelResolution,
+  IMAGE_COUNTS,
 } from '../../constants/index';
 
 export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   controls,
+  availableModels = [],
+  maxImageCount = 4,
   // 单独 props（向后兼容）
+  numberOfImages: propNumberOfImages,
+  setNumberOfImages: propSetNumberOfImages,
   aspectRatio: propAspectRatio,
   setAspectRatio: propSetAspectRatio,
   resolution: propResolution,
@@ -23,6 +28,8 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   setShowAdvanced: propSetShowAdvanced,
 }) => {
   // 优先使用 controls 对象，fallback 到单独 props
+  const numberOfImages = controls?.numberOfImages ?? propNumberOfImages ?? 1;
+  const setNumberOfImages = controls?.setNumberOfImages ?? propSetNumberOfImages ?? (() => {});
   const aspectRatio = controls?.aspectRatio ?? propAspectRatio ?? '1:1';
   const setAspectRatio = controls?.setAspectRatio ?? propSetAspectRatio ?? (() => {});
   const resolution = controls?.resolution ?? propResolution ?? '1K';
@@ -96,6 +103,31 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
         </div>
       )}
 
+      {/* 生成数量 */}
+      {maxImageCount > 1 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Layers size={12} className="text-blue-400" />
+            <span className="text-xs text-slate-300">生成数量</span>
+          </div>
+          <div className="flex gap-2">
+            {IMAGE_COUNTS.filter(n => n <= maxImageCount).map((num) => (
+              <button
+                key={num}
+                onClick={() => setNumberOfImages(num)}
+                className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                  numberOfImages === num
+                    ? 'bg-pink-600 text-white'
+                    : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                }`}
+              >
+                {num}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ==================== 高级参数折叠区 ==================== */}
       {controls && (
         <div className="border-t border-slate-700/50 pt-4">
@@ -143,7 +175,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                     type="range"
                     min="1"
                     max="100"
-                    step="5"
+                    step="1"
                     value={controls.outputCompressionQuality}
                     onChange={(e) => controls.setOutputCompressionQuality(parseInt(e.target.value))}
                     className="w-full h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer accent-pink-500"
@@ -181,6 +213,65 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                   placeholder="随机 (-1)"
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-pink-500/50"
                 />
+              </div>
+
+              {/* AI 增强提示词 - Switch 开关 */}
+              <div className="flex items-center justify-between py-1">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={12} className="text-pink-400" />
+                  <span className="text-xs text-slate-300">AI 增强提示词</span>
+                </div>
+                <div
+                  onClick={() => controls.setEnhancePrompt(!controls.enhancePrompt)}
+                  className={`w-10 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-200 ${
+                    controls.enhancePrompt ? 'bg-pink-600' : 'bg-slate-600'
+                  }`}
+                >
+                  <div
+                    className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
+                      controls.enhancePrompt ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {/* 增强提示词模型选择（仅开启时显示） */}
+              {controls.enhancePrompt && (
+                <div className="space-y-2">
+                  <span className="text-xs text-slate-300">增强提示词模型</span>
+                  <select
+                    value={controls.enhancePromptModel || ''}
+                    onChange={(e) => controls.setEnhancePromptModel(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-pink-500/50"
+                  >
+                    <option value="">自动选择</option>
+                    {availableModels.map(model => (
+                      <option key={model.id} value={model.id}>
+                        {model.name || model.id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* 思考过程 - Switch 开关 */}
+              <div className="flex items-center justify-between py-1">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={12} className="text-cyan-400" />
+                  <span className="text-xs text-slate-300">显示思考过程</span>
+                </div>
+                <div
+                  onClick={() => controls.setEnableThinking(!controls.enableThinking)}
+                  className={`w-10 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-200 ${
+                    controls.enableThinking ? 'bg-cyan-600' : 'bg-slate-600'
+                  }`}
+                >
+                  <div
+                    className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
+                      controls.enableThinking ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </div>
               </div>
             </div>
           )}

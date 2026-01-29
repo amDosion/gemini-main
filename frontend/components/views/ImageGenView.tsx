@@ -213,7 +213,8 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
             negativePrompt: controls.negativePrompt || undefined,
             seed: controls.seed !== -1 ? controls.seed : undefined,
             outputMimeType: controls.outputMimeType,
-            outputCompressionQuality: controls.outputCompressionQuality,
+            // PNG 是无损格式，不需要压缩质量参数，仅 JPEG 时传递
+            ...(controls.outputMimeType === 'image/jpeg' ? { outputCompressionQuality: controls.outputCompressionQuality } : {}),
             enhancePrompt: controls.enhancePrompt,
             // TongYi 专用参数
             promptExtend: controls.promptExtend,

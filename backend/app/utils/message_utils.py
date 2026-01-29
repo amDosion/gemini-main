@@ -133,6 +133,10 @@ def extract_metadata(msg: Dict[str, Any]) -> Dict[str, Any]:
         # 视频生成相关
         'generatedVideos',
         'videoPrompt',
+        # ✅ 图像编辑相关（Gemini 3 思考过程）
+        'thoughts',          # 思考过程列表
+        'textResponse',      # AI 文本响应
+        'enhancedPrompt',    # 增强后的提示词
         # 其他扩展字段
         'customData',
     ]

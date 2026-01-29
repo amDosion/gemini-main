@@ -431,7 +431,15 @@ class GoogleService(BaseProviderService):
         **kwargs
     ) -> List[Dict[str, Any]]:
         """
-        编辑图片 - 委托给 ImageEditCoordinator
+        编辑图片 - 统一委托给 ImageEditCoordinator
+
+        路由逻辑（由 ImageEditCoordinator 负责）：
+        - image-chat-edit → ConversationalImageEditService (对话式编辑)
+        - image-mask-edit → MaskEditService (Vertex AI Imagen 遮罩编辑，独立服务文件)
+        - image-inpainting → VertexAIImageEditor (Vertex AI Imagen 图片修复)
+        - image-background-edit → VertexAIImageEditor (Vertex AI Imagen 背景编辑)
+        - image-recontext → VertexAIImageEditor (Vertex AI Imagen 重上下文)
+        - 其他模式 → ImageEditCoordinator (统一处理)
         
         Args:
             prompt: Text description of the desired edit
@@ -446,6 +454,15 @@ class GoogleService(BaseProviderService):
         Returns:
             List of edited images with metadata
         """
+        # ✅ 所有模式统一委托给 ImageEditCoordinator（统一处理）
+        # ImageEditCoordinator 负责根据 mode 路由到正确的子服务：
+        # - image-chat-edit → ConversationalImageEditService
+        # - image-mask-edit → MaskEditService (独立服务文件)
+        # - image-inpainting → VertexAIImageEditor (Vertex AI Imagen)
+        # - image-background-edit → VertexAIImageEditor (Vertex AI Imagen)
+        # - image-recontext → VertexAIImageEditor (Vertex AI Imagen)
+        # - 有 mask → MaskEditService (自动检测)
+        # - 无 mask → MaskEditService (自动掩码)
         logger.info(f"[Google Service] Delegating image editing to ImageEditCoordinator: model={model}, mode={mode}")
         return await self.image_edit_coordinator.edit_image(
             prompt=prompt,

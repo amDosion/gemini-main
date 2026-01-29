@@ -1,12 +1,12 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
-import { Crop, Wand2, AlertCircle, Layers, User, Bot, Sparkles, Palette, PenTool, MessageSquare, SlidersHorizontal, RotateCcw } from 'lucide-react';
+import { Crop, Wand2, AlertCircle, Layers, User, Bot, Sparkles, Palette, PenTool, MessageSquare, SlidersHorizontal, RotateCcw, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
 import { useImageCanvas } from '../../hooks/useImageCanvas';
 import { ImageCanvasControls } from '../common/ImageCanvasControls';
 import { ImageCompare } from '../common/ImageCompare';
 import { GenViewLayout } from '../common/GenViewLayout';
-import { getUrlType } from '../../hooks/handlers/attachmentUtils';
+import { getUrlType, isBlobUrl } from '../../hooks/handlers/attachmentUtils';
 import { ThinkingBlock } from '../message/ThinkingBlock';
 import { useToastContext } from '../../contexts/ToastContext';
 import { useControlsState } from '../../hooks/useControlsState';
@@ -70,6 +70,12 @@ type ImageEditMainCanvasProps = {
     onFullscreen?: () => void;
     onExpand?: () => void;
     onToggleCompare?: () => void;
+    // ✅ 旋转木马支持（多图预览）
+    carouselIndex: number;
+    onCarouselPrev: () => void;
+    onCarouselNext: () => void;
+    onCarouselSelect: (index: number) => void;
+    getStableUrl: (att: Attachment) => string | null;
 };
 
 const ImageEditMainCanvas = memo(({
@@ -91,9 +97,22 @@ const ImageEditMainCanvas = memo(({
     onFullscreen,
     onExpand,
     onToggleCompare,
+    // ✅ 旋转木马支持
+    carouselIndex,
+    onCarouselPrev,
+    onCarouselNext,
+    onCarouselSelect,
+    getStableUrl,
 }: ImageEditMainCanvasProps) => {
     const cursor =
         isCompareMode ? 'default' : isDragging ? 'grabbing' : activeImageUrl ? 'grab' : 'default';
+
+    // ✅ 判断是否为多图模式（用户上传了多个附件）
+    const isMultiImageMode = activeAttachments.length > 1;
+    // 当前显示的图片 URL（优先使用 att.url，与 AttachmentPreview 一致）
+    const currentDisplayUrl = isMultiImageMode && activeAttachments[carouselIndex]
+        ? (activeAttachments[carouselIndex].url || activeAttachments[carouselIndex].tempUrl || getStableUrl(activeAttachments[carouselIndex]))
+        : activeImageUrl;
 
     return (
         // RIGHT MAIN: Result / Canvas
@@ -111,9 +130,9 @@ const ImageEditMainCanvas = memo(({
                 className="absolute inset-0 opacity-20 pointer-events-none"
                 style={{
                     backgroundImage: `
-                               linear-gradient(45deg, #334155 25%, transparent 25%), 
-                               linear-gradient(-45deg, #334155 25%, transparent 25%), 
-                               linear-gradient(45deg, transparent 75%, #334155 75%), 
+                               linear-gradient(45deg, #334155 25%, transparent 25%),
+                               linear-gradient(-45deg, #334155 25%, transparent 25%),
+                               linear-gradient(45deg, transparent 75%, #334155 75%),
                                linear-gradient(-45deg, transparent 75%, #334155 75%)
                            `,
                     backgroundSize: '20px 20px',
@@ -127,20 +146,22 @@ const ImageEditMainCanvas = memo(({
                     <Wand2 size={12} className="text-pink-400" />
                     {isCompareMode
                         ? '对比模式'
-                        : activeAttachments.length > 0 && activeImageUrl === activeAttachments[0].url
-                            ? 'Source Preview'
-                            : 'Workspace'}
+                        : isMultiImageMode
+                            ? `多图编辑 (${carouselIndex + 1}/${activeAttachments.length})`
+                            : activeAttachments.length > 0 && activeImageUrl === activeAttachments[0].url
+                                ? 'Source Preview'
+                                : 'Workspace'}
                     <span className="opacity-50">|</span>
                     <span className="font-mono text-[10px] opacity-70">{Math.round(zoom * 100)}%</span>
                 </div>
             </div>
 
             {/* Main Image Display with Transformations */}
-            <div className="flex-1 flex items-center justify-center p-0 w-full h-full">
+            <div className="flex-1 flex items-center justify-center p-0 w-full relative overflow-hidden">
                 {loadingState !== 'idle' ? (() => {
                     // 根据 loadingState 显示不同的过程信息
                     let statusText = 'Processing Image...';
-                    
+
                     if (loadingState === 'uploading') {
                         statusText = '上传图片中...';
                     } else if (loadingState === 'loading') {
@@ -148,7 +169,7 @@ const ImageEditMainCanvas = memo(({
                     } else if (loadingState === 'streaming') {
                         statusText = '流式处理中...';
                     }
-                    
+
                     return (
                         <div className="flex flex-col items-center gap-4 pointer-events-none">
                             <div className="relative">
@@ -170,19 +191,44 @@ const ImageEditMainCanvas = memo(({
                             style={{ maxHeight: '80vh', maxWidth: '80vw' }}
                         />
                     </div>
-                ) : activeImageUrl ? (
-                    // 普通模式
-                    <div
-                        className="relative shadow-2xl group transition-transform duration-75 ease-out"
-                        style={canvasStyle}
-                    >
-                        <img
-                            src={activeImageUrl}
-                            className="max-w-none rounded-lg border border-slate-800 pointer-events-none"
-                            style={{ maxHeight: '80vh', maxWidth: '80vw' }}
-                            alt="Main Canvas"
-                        />
-                    </div>
+                ) : currentDisplayUrl ? (
+                    // ✅ 普通模式 / 多图旋转木马模式
+                    <>
+                        {/* 左箭头（多图时显示） */}
+                        {isMultiImageMode && (
+                            <button
+                                onClick={onCarouselPrev}
+                                className="absolute left-4 z-10 p-3 rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur border border-white/10 transition-all hover:scale-110"
+                                title="上一张"
+                            >
+                                <ChevronLeft size={24} />
+                            </button>
+                        )}
+
+                        {/* 主图展示 */}
+                        <div
+                            className="relative shadow-2xl group transition-transform duration-75 ease-out"
+                            style={canvasStyle}
+                        >
+                            <img
+                                src={currentDisplayUrl}
+                                className="max-w-none rounded-lg border border-slate-800 pointer-events-none"
+                                style={{ maxHeight: '70vh', maxWidth: '70vw' }}
+                                alt="Main Canvas"
+                            />
+                        </div>
+
+                        {/* 右箭头（多图时显示） */}
+                        {isMultiImageMode && (
+                            <button
+                                onClick={onCarouselNext}
+                                className="absolute right-4 z-10 p-3 rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur border border-white/10 transition-all hover:scale-110"
+                                title="下一张"
+                            >
+                                <ChevronRight size={24} />
+                            </button>
+                        )}
+                    </>
                 ) : (
                     <div className="text-center text-slate-600 pointer-events-none flex flex-col items-center gap-4 max-w-md">
                         <Crop size={48} className="opacity-20" />
@@ -208,10 +254,55 @@ const ImageEditMainCanvas = memo(({
                         </div>
                     </div>
                 )}
+
+                {/* ✅ 底部缩略图导航（多图时显示）- 移到图片区域内部 */}
+                {isMultiImageMode && loadingState === 'idle' && (
+                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20">
+                        <div className="flex items-center gap-3 py-3 px-4 bg-black/60 backdrop-blur-md rounded-2xl border border-white/10 shadow-xl">
+                            {activeAttachments.map((att, idx) => {
+                                // ✅ 直接使用 att.url（与 AttachmentPreview 一致）
+                                const thumbUrl = att.url || att.tempUrl || getStableUrl(att);
+                                return (
+                                    <button
+                                        key={att.id || `thumb-${idx}`}
+                                        onClick={() => onCarouselSelect(idx)}
+                                        className={`relative rounded-lg overflow-hidden transition-all duration-200 ${
+                                            idx === carouselIndex
+                                                ? 'ring-2 ring-pink-500 scale-110'
+                                                : 'opacity-60 hover:opacity-100 hover:scale-105'
+                                        }`}
+                                    >
+                                        {thumbUrl ? (
+                                            <img
+                                                src={thumbUrl}
+                                                className="w-14 h-14 object-cover"
+                                                alt={`缩略图 ${idx + 1}`}
+                                                onError={(e) => {
+                                                    // 如果图片加载失败，显示占位图标
+                                                    (e.target as HTMLImageElement).style.display = 'none';
+                                                    (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                                                }}
+                                            />
+                                        ) : null}
+                                        <div className={`w-14 h-14 bg-slate-800 flex items-center justify-center ${thumbUrl ? 'hidden' : ''}`}>
+                                            <ImageIcon size={16} className="text-slate-600" />
+                                        </div>
+                                        {idx === carouselIndex && (
+                                            <div className="absolute inset-0 bg-pink-500/20" />
+                                        )}
+                                    </button>
+                                );
+                            })}
+                            <span className="ml-2 text-xs text-slate-400 font-mono">
+                                {carouselIndex + 1} / {activeAttachments.length}
+                            </span>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* 浮动控制按钮 */}
-            {activeImageUrl && (
+            {currentDisplayUrl && (
                 <div className="absolute bottom-6 right-6 z-20">
                     <ImageCanvasControls
                         zoom={zoom}
@@ -219,7 +310,7 @@ const ImageEditMainCanvas = memo(({
                         onZoomOut={onZoomOut}
                         onReset={onReset}
                         onFullscreen={onFullscreen}
-                        downloadUrl={activeImageUrl}
+                        downloadUrl={currentDisplayUrl}
                         onExpand={onExpand}
                         onToggleCompare={onToggleCompare}
                         isCompareMode={isCompareMode}
@@ -256,6 +347,9 @@ export const ImageEditView = memo(({
     const [activeAttachments, setActiveAttachments] = useState<Attachment[]>([]);
     const [activeImageUrl, setActiveImageUrl] = useState<string | null>(null);
 
+    // ✅ 旋转木马索引（多图预览时使用）
+    const [carouselIndex, setCarouselIndex] = useState(0);
+
     // ✅ 包装 setActiveAttachments 以添加调试日志
     const handleAttachmentsChange = useCallback((newAtts: Attachment[]) => {
         console.log('[ImageEditView] handleAttachmentsChange 被调用:', {
@@ -272,30 +366,59 @@ export const ImageEditView = memo(({
     const [isThinkingOpen, setIsThinkingOpen] = useState(true);
     const [displayedThinkingContent, setDisplayedThinkingContent] = useState('');
 
-    // Stable canvas URL (avoid relying on InputArea-managed Blob URLs that may be revoked)
-    const canvasObjectUrlRef = useRef<string | null>(null);
-    const canvasObjectUrlFileRef = useRef<File | null>(null);
+    // ✅ 多图 URL 缓存（支持多图预览）
+    // 使用 Map 缓存每个文件的 Blob URL，避免重复创建和提前 revoke
+    const canvasObjectUrlMapRef = useRef<Map<File, string>>(new Map());
 
     const getStableCanvasUrlFromAttachment = useCallback((att: Attachment) => {
+        // ✅ 调试日志
+        console.log('[getStableCanvasUrlFromAttachment] 处理附件:', {
+            id: att.id,
+            hasFile: !!att.file,
+            hasUrl: !!att.url,
+            hasTempUrl: !!att.tempUrl,
+            urlPreview: att.url ? (att.url.startsWith('blob:') ? 'blob:...' : att.url.substring(0, 50)) : 'N/A'
+        });
+
         if (att.file) {
             const file = att.file;
-            if (!canvasObjectUrlRef.current || canvasObjectUrlFileRef.current !== file) {
-                if (canvasObjectUrlRef.current) URL.revokeObjectURL(canvasObjectUrlRef.current);
-                canvasObjectUrlRef.current = URL.createObjectURL(file);
-                canvasObjectUrlFileRef.current = file;
+            const cachedUrl = canvasObjectUrlMapRef.current.get(file);
+            if (cachedUrl) {
+                console.log('[getStableCanvasUrlFromAttachment] 使用缓存的 Blob URL');
+                return cachedUrl;
             }
-            return canvasObjectUrlRef.current;
+            // 为新文件创建 Blob URL 并缓存
+            const newUrl = URL.createObjectURL(file);
+            canvasObjectUrlMapRef.current.set(file, newUrl);
+            console.log('[getStableCanvasUrlFromAttachment] 创建新的 Blob URL:', newUrl.substring(0, 50));
+            return newUrl;
         }
-        return att.url || att.tempUrl || null;
+        const result = att.url || att.tempUrl || null;
+        console.log('[getStableCanvasUrlFromAttachment] 使用现有 URL:', result ? result.substring(0, 50) : 'null');
+        return result;
     }, []);
 
+    // ✅ 清理不再使用的 Blob URLs（当附件变化时）
+    useEffect(() => {
+        const currentFiles = new Set(activeAttachments.map(att => att.file).filter(Boolean));
+        const urlMap = canvasObjectUrlMapRef.current;
+
+        // 清理不在当前附件列表中的文件 URL
+        for (const [file, url] of urlMap.entries()) {
+            if (!currentFiles.has(file)) {
+                URL.revokeObjectURL(url);
+                urlMap.delete(file);
+            }
+        }
+    }, [activeAttachments]);
+
+    // 组件卸载时清理所有 Blob URLs
     useEffect(() => {
         return () => {
-            if (canvasObjectUrlRef.current) {
-                URL.revokeObjectURL(canvasObjectUrlRef.current);
-                canvasObjectUrlRef.current = null;
-                canvasObjectUrlFileRef.current = null;
+            for (const url of canvasObjectUrlMapRef.current.values()) {
+                URL.revokeObjectURL(url);
             }
+            canvasObjectUrlMapRef.current.clear();
         };
     }, []);
 
@@ -322,20 +445,61 @@ export const ImageEditView = memo(({
     // Pan & Zoom Hook（替代原有的手动状态管理）
     const canvas = useImageCanvas({ minZoom: 0.1, maxZoom: 5, zoomStep: 0.2 });
 
+    // ✅ 旋转木马处理函数
+    const handleCarouselPrev = useCallback(() => {
+        setCarouselIndex((prev) => (prev - 1 + activeAttachments.length) % activeAttachments.length);
+        canvas.resetView();
+    }, [activeAttachments.length, canvas]);
+
+    const handleCarouselNext = useCallback(() => {
+        setCarouselIndex((prev) => (prev + 1) % activeAttachments.length);
+        canvas.resetView();
+    }, [activeAttachments.length, canvas]);
+
+    const handleCarouselSelect = useCallback((index: number) => {
+        setCarouselIndex(index);
+        canvas.resetView();
+    }, [canvas]);
+
+    // ✅ 当附件变化时，重置旋转木马索引
+    useEffect(() => {
+        if (carouselIndex >= activeAttachments.length && activeAttachments.length > 0) {
+            setCarouselIndex(activeAttachments.length - 1);
+        } else if (activeAttachments.length === 0) {
+            setCarouselIndex(0);
+        }
+    }, [activeAttachments.length, carouselIndex]);
+
+    // ✅ 键盘左右键切换图片（多图模式）
+    useEffect(() => {
+        if (activeAttachments.length <= 1) return;
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // 如果焦点在输入框内，不处理
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+                return;
+            }
+
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                handleCarouselPrev();
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                handleCarouselNext();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [activeAttachments.length, handleCarouselPrev, handleCarouselNext]);
+
     // Reset View when image changes
     useEffect(() => {
         canvas.resetView();
         setIsCompareMode(false);
     }, [activeImageUrl]);
 
-    // Release any prior canvas object URL once we switch away from it (e.g. to a generated result)
-    useEffect(() => {
-        if (canvasObjectUrlRef.current && activeImageUrl !== canvasObjectUrlRef.current) {
-            URL.revokeObjectURL(canvasObjectUrlRef.current);
-            canvasObjectUrlRef.current = null;
-            canvasObjectUrlFileRef.current = null;
-        }
-    }, [activeImageUrl]);
+    // 注意：Blob URL 清理现在由 canvasObjectUrlMapRef 的 useEffect 统一管理
 
     // 获取原图 URL（用于对比）
     const originalImageUrl = useMemo(() => {
@@ -357,6 +521,8 @@ export const ImageEditView = memo(({
     }, [initialAttachments, getStableCanvasUrlFromAttachment]);
 
     // Sync uploaded attachment to main view
+    // ✅ 与原始代码一致：只在有附件时设置画布图片，不清空画布
+    // 原因：发送后附件预览会被清空，但画布应继续显示用户上传的图片，直到 AI 返回结果
     useEffect(() => {
         if (activeAttachments.length > 0) {
             const stableUrl = getStableCanvasUrlFromAttachment(activeAttachments[0]);
@@ -366,10 +532,6 @@ export const ImageEditView = memo(({
                 stableUrl: stableUrl?.substring(0, 50) + '...',
             });
             setActiveImageUrl(stableUrl);
-        } else if (activeAttachments.length === 0) {
-            // ✅ 如果没有附件了，清空画布图片
-            console.log('[ImageEditView] 附件列表为空，清空画布图片');
-            setActiveImageUrl(null);
         }
     }, [activeAttachments, getStableCanvasUrlFromAttachment]);
 
@@ -575,20 +737,98 @@ export const ImageEditView = memo(({
                                     ? 'bg-slate-800 text-slate-200 rounded-tr-sm'
                                     : 'bg-slate-800/50 text-slate-300 border border-slate-700/50 rounded-tl-sm'
                                     }`}>
+                                    {/* 原始提示词 */}
                                     {msg.content && <p className="mb-2">{msg.content}</p>}
-                                    {msg.attachments?.filter(att => att.url && att.url.length > 0).map((att, idx) => (
-                                        <div
-                                            key={idx}
-                                            onClick={() => setActiveImageUrl(att.url || null)}
-                                            className={`relative group mt-1 rounded-lg overflow-hidden border cursor-pointer transition-all ${activeImageUrl === att.url ? 'ring-2 ring-pink-500 border-transparent' : 'border-slate-700 hover:border-slate-500'
-                                                }`}
-                                        >
-                                            <img src={att.url} className="w-full h-32 object-cover bg-slate-900" alt="thumbnail" />
-                                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                                                {activeImageUrl === att.url && <div className="bg-pink-500 w-2 h-2 rounded-full absolute top-2 right-2 shadow-sm" />}
+
+                                    {/* ✅ 增强后的提示词（单独容器显示，与原始提示词区分） */}
+                                    {msg.role === Role.MODEL && msg.enhancedPrompt && (
+                                        <div className="mb-3 p-2 bg-gradient-to-r from-purple-500/10 to-pink-500/10 rounded-lg border border-purple-500/20">
+                                            <div className="flex items-center gap-1.5 mb-1">
+                                                <Sparkles size={12} className="text-purple-400" />
+                                                <span className="text-xs text-purple-400 font-medium">AI 增强提示词</span>
                                             </div>
+                                            <p className="text-xs text-slate-300 italic">{msg.enhancedPrompt}</p>
                                         </div>
-                                    ))}
+                                    )}
+
+                                    {/* ✅ 思考过程显示在图片上方（先思考 → 再生成图片） */}
+                                    {msg.role === Role.MODEL && (msg.thoughts?.length > 0 || msg.textResponse) && (() => {
+                                        const thoughtTexts = (msg.thoughts || [])
+                                            .filter((t: { type: string }) => t.type === 'text')
+                                            .map((t: { content: string }) => t.content)
+                                            .join('\n\n');
+                                        const fullContent = [thoughtTexts, msg.textResponse].filter(Boolean).join('\n\n---\n\n');
+                                        if (!fullContent) return null;
+                                        return (
+                                            <div className="mb-3">
+                                                <ThinkingBlock
+                                                    content={fullContent}
+                                                    isOpen={isThinkingOpen}
+                                                    onToggle={() => setIsThinkingOpen(!isThinkingOpen)}
+                                                    isComplete={true}
+                                                />
+                                            </div>
+                                        );
+                                    })()}
+
+                                    {(() => {
+                                        const displayAttachments = (msg.attachments || []).filter(att => {
+                                            return (att.url && att.url.length > 0) || (att.tempUrl && att.tempUrl.length > 0);
+                                        });
+
+                                        if (displayAttachments.length === 0) return null;
+
+                                        const columns = Math.min(displayAttachments.length, 3);
+
+                                        return (
+                                            <div
+                                                className="grid gap-2 mt-2"
+                                                style={{ gridTemplateColumns: `repeat(${columns}, 80px)` }}
+                                            >
+                                                {displayAttachments.map((att, idx) => {
+                                                    // ✅ 修复：优先使用 url，如果为空则使用 tempUrl（用于显示用户上传的附件）
+                                                    let displayUrl = att.url && att.url.length > 0 ? att.url : (att.tempUrl || '');
+
+                                                    // ✅ 如果 displayUrl 是 Blob URL 且附件有 File 对象，使用 File 对象创建新的 Blob URL
+                                                    if (isBlobUrl(displayUrl) && att.file) {
+                                                        try {
+                                                            displayUrl = URL.createObjectURL(att.file);
+                                                        } catch (error) {
+                                                            console.warn('[ImageEditView] 无法从 File 对象创建 Blob URL:', error);
+                                                        }
+                                                    }
+
+                                                    return (
+                                                        <div
+                                                            key={idx}
+                                                            onClick={() => setActiveImageUrl(displayUrl)}
+                                                            className={`relative group rounded-lg overflow-hidden border cursor-pointer transition-all w-[80px] ${activeImageUrl === displayUrl ? 'ring-2 ring-pink-500 border-transparent' : 'border-slate-700 hover:border-slate-500'
+                                                                }`}
+                                                        >
+                                                            <img 
+                                                                src={displayUrl} 
+                                                                className="w-full h-[56px] object-cover bg-slate-900" 
+                                                                alt="thumbnail"
+                                                                onError={(e) => {
+                                                                    if (att.file && isBlobUrl(displayUrl)) {
+                                                                        try {
+                                                                            const newBlobUrl = URL.createObjectURL(att.file);
+                                                                            (e.target as HTMLImageElement).src = newBlobUrl;
+                                                                        } catch (error) {
+                                                                            console.error('[ImageEditView] 无法从 File 对象恢复 Blob URL:', error);
+                                                                        }
+                                                                    }
+                                                                }}
+                                                            />
+                                                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                                                {activeImageUrl === displayUrl && <div className="bg-pink-500 w-2 h-2 rounded-full absolute top-2 right-2 shadow-sm" />}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        );
+                                    })()}
                                     {msg.isError && (
                                         <div className="flex items-center gap-2 text-red-400 text-xs mt-1">
                                             <AlertCircle size={12} /> Error generating
@@ -660,7 +900,7 @@ export const ImageEditView = memo(({
                     {/* 底部占位符 */}
                     <div />
                 </div>
-    ), [messages, loadingState, activeModelConfig?.name, activeImageUrl, activeAttachments, editMode]);
+    ), [messages, loadingState, activeModelConfig?.name, activeImageUrl, activeAttachments, editMode, isThinkingOpen]);
 
     const toggleCompare = useCallback(() => setIsCompareMode(prev => !prev), []);
     const handleFullscreen = useCallback(() => {
@@ -693,6 +933,12 @@ export const ImageEditView = memo(({
                 onFullscreen={activeImageUrl ? handleFullscreen : undefined}
                 onExpand={onExpandImage && activeImageUrl ? handleExpand : undefined}
                 onToggleCompare={originalImageUrl ? toggleCompare : undefined}
+                // ✅ 旋转木马支持
+                carouselIndex={carouselIndex}
+                onCarouselPrev={handleCarouselPrev}
+                onCarouselNext={handleCarouselNext}
+                onCarouselSelect={handleCarouselSelect}
+                getStableUrl={getStableCanvasUrlFromAttachment}
             />
 
             {/* ========== 右侧：参数面板 ========== */}
@@ -718,6 +964,7 @@ export const ImageEditView = memo(({
                         mode={editMode}
                         providerId={providerId || 'google'}
                         controls={controls}
+                        availableModels={visibleModels}
                     />
                 </div>
 
@@ -726,7 +973,6 @@ export const ImageEditView = memo(({
                     onSend={handleSend}
                     isLoading={loadingState !== 'idle'}
                     onStop={onStop}
-                    currentModel={activeModelConfig}
                     mode={editMode}
                     activeAttachments={activeAttachments}
                     onAttachmentsChange={handleAttachmentsChange}
@@ -737,10 +983,11 @@ export const ImageEditView = memo(({
                     initialPrompt={initialPrompt}
                     initialAttachments={initialAttachments}
                     providerId={providerId}
+                    controls={controls}
                 />
             </div>
         </div>
-    ), [loadingState, isCompareMode, activeAttachments, activeImageUrl, originalImageUrl, canvas, handleFullscreen, handleExpand, toggleCompare, onExpandImage, handleSend, activeModelConfig, editMode, onStop, messages, currentSessionId, initialPrompt, initialAttachments, providerId, resetParams]);
+    ), [loadingState, isCompareMode, activeAttachments, activeImageUrl, originalImageUrl, canvas, handleFullscreen, handleExpand, toggleCompare, onExpandImage, handleSend, editMode, onStop, messages, currentSessionId, initialPrompt, initialAttachments, providerId, resetParams, carouselIndex, handleCarouselPrev, handleCarouselNext, handleCarouselSelect, getStableCanvasUrlFromAttachment]);
 
     return (
         <GenViewLayout

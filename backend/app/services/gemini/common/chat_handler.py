@@ -428,13 +428,29 @@ class ChatHandler:
             
             # 发送当前消息并异步流式接收响应（支持函数调用循环）
             current_content = current_message['content']
+            current_attachments = current_message.get('attachments', [])
             total_text = ""
             usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
             finish_reason = "stop"
 
+            # 构建多模态消息内容（文本 + 附件）
+            if current_attachments:
+                message_parts = []
+                for att in current_attachments:
+                    part = self._build_attachment_part(att)
+                    if part:
+                        message_parts.append(part)
+                message_parts.append(genai_types.Part(text=current_content))
+                current_message_content = message_parts
+                logger.info(
+                    f"[Chat Handler] 多模态消息: {len(message_parts)} parts "
+                    f"({len(current_attachments)} attachments + 1 text)"
+                )
+            else:
+                current_message_content = current_content
+
             # 函数调用循环（最多 5 次迭代）
             max_iterations = 5
-            current_message_content = current_content
 
             for iteration in range(max_iterations):
                 logger.info(f"[Chat Handler] Function call loop iteration {iteration + 1}/{max_iterations}")
@@ -655,3 +671,83 @@ class ChatHandler:
                 "chunk_type": "error",
                 "error": str(e)
             }
+
+    @staticmethod
+    def _build_attachment_part(attachment: Dict[str, Any]):
+        """
+        从附件字典构建 genai_types.Part（用于多模态消息）
+
+        支持的附件数据源（按优先级）：
+        1. fileUri → file_data Part（Google Files API）
+        2. url/tempUrl (data: URL) → inline_data Part（Base64）
+        3. base64Data → inline_data Part（纯 Base64 字符串）
+
+        Args:
+            attachment: 附件字典，包含 mimeType、fileUri、url、tempUrl、base64Data 等字段
+
+        Returns:
+            genai_types.Part 或 None（如果无法构建）
+        """
+        import base64 as b64
+        import re
+
+        if not GENAI_TYPES_AVAILABLE:
+            logger.warning("[Chat Handler] genai_types not available, cannot build attachment part")
+            return None
+
+        mime_type = attachment.get('mimeType', 'image/png')
+
+        # Priority 1: fileUri (Google Files API)
+        file_uri = attachment.get('fileUri')
+        if file_uri:
+            logger.info(f"[Chat Handler] Attachment: file_data (uri={file_uri[:50]}...)")
+            return genai_types.Part(
+                file_data=genai_types.FileData(
+                    file_uri=file_uri,
+                    mime_type=mime_type
+                )
+            )
+
+        # Priority 2: url or tempUrl with Base64 Data URL
+        url = attachment.get('url') or attachment.get('tempUrl')
+        if url and url.startswith('data:'):
+            match = re.match(r'^data:(.*?);base64,(.*)$', url)
+            if match:
+                actual_mime = match.group(1) or mime_type
+                base64_str = match.group(2)
+                image_bytes = b64.b64decode(base64_str)
+                logger.info(f"[Chat Handler] Attachment: inline_data from data URL "
+                          f"(mime={actual_mime}, size={len(image_bytes)} bytes)")
+                return genai_types.Part.from_bytes(
+                    data=image_bytes,
+                    mime_type=actual_mime
+                )
+
+        # Priority 3: base64Data field (pure Base64 string or data URL)
+        base64_data = attachment.get('base64Data')
+        if base64_data:
+            if base64_data.startswith('data:'):
+                match = re.match(r'^data:(.*?);base64,(.*)$', base64_data)
+                if match:
+                    actual_mime = match.group(1) or mime_type
+                    base64_str = match.group(2)
+                    image_bytes = b64.b64decode(base64_str)
+                    logger.info(f"[Chat Handler] Attachment: inline_data from base64Data "
+                              f"(mime={actual_mime}, size={len(image_bytes)} bytes)")
+                    return genai_types.Part.from_bytes(
+                        data=image_bytes,
+                        mime_type=actual_mime
+                    )
+            else:
+                # Pure base64 string without data: prefix
+                image_bytes = b64.b64decode(base64_data)
+                logger.info(f"[Chat Handler] Attachment: inline_data from raw base64 "
+                          f"(mime={mime_type}, size={len(image_bytes)} bytes)")
+                return genai_types.Part.from_bytes(
+                    data=image_bytes,
+                    mime_type=mime_type
+                )
+
+        logger.warning(f"[Chat Handler] Attachment: no usable data found "
+                      f"(mimeType={mime_type}, hasUrl={bool(url)}, hasBase64={bool(base64_data)})")
+        return None

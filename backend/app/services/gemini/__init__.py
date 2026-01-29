@@ -8,11 +8,15 @@ Gemini Service Module (重构版)
 ├── google_service.py       # 主服务入口
 │
 ├── vertexai/               # Vertex AI 专用服务 (需要 GCP 凭证)
-│   ├── tryon_service.py    # 虚拟试穿
-│   ├── upscale_service.py  # 图片放大
-│   ├── segmentation_service.py  # 图片分割
-│   ├── mask_edit_service.py    # 掩码编辑
-│   └── expand_service.py   # 图像扩展
+│   ├── vertex_edit_base.py       # 编辑服务共享基类
+│   ├── inpainting_service.py     # 图像修复
+│   ├── background_edit_service.py # 背景编辑
+│   ├── recontext_service.py      # 重新上下文
+│   ├── mask_edit_service.py      # 掩码编辑
+│   ├── tryon_service.py          # 虚拟试穿
+│   ├── upscale_service.py        # 图片放大
+│   ├── segmentation_service.py   # 图片分割
+│   └── expand_service.py         # 图像扩展
 │
 ├── geminiapi/              # Gemini API 专用服务 (只需 API Key)
 │   ├── imagen_gemini_api.py
@@ -48,6 +52,12 @@ from .common.mode_initialization import initialize_google_modes, get_registered_
 
 # ==================== Vertex AI 服务 ====================
 from .vertexai import (
+    VertexAIEditBase,
+    InpaintingService,
+    BackgroundEditService,
+    RecontextService,
+    MaskEditService,
+    EditResult,
     TryOnService,
     TryOnResult,
     tryon_service,
@@ -57,9 +67,6 @@ from .vertexai import (
     SegmentationService,
     SegmentResult,
     segmentation_service,
-    MaskEditService,
-    EditResult,
-    mask_edit_service,
 )
 
 __all__ = [
@@ -84,7 +91,15 @@ __all__ = [
     'initialize_google_modes',
     'get_registered_modes',
 
-    # Vertex AI 服务
+    # Vertex AI 编辑服务
+    'VertexAIEditBase',
+    'InpaintingService',
+    'BackgroundEditService',
+    'RecontextService',
+    'MaskEditService',
+    'EditResult',
+
+    # Vertex AI 其他服务
     'TryOnService',
     'TryOnResult',
     'tryon_service',
@@ -94,7 +109,4 @@ __all__ = [
     'SegmentationService',
     'SegmentResult',
     'segmentation_service',
-    'MaskEditService',
-    'EditResult',
-    'mask_edit_service',
 ]

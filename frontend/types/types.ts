@@ -88,6 +88,7 @@ export interface Message {
   toolResults?: ToolResult[]; // Added toolResults
   thoughts?: Array<{ type: 'text' | 'image'; content: string }>; // 思考过程（thoughts）
   textResponse?: string; // 文本响应
+  enhancedPrompt?: string; // AI 增强后的提示词
 }
 
 export interface ChatSession {
@@ -171,13 +172,18 @@ export interface ChatOptions {
   topK?: number; // Top-k sampling parameter
   baseUrl?: string; // Custom base URL for API requests
   // Imagen-specific advanced parameters
-  // guidanceScale removed - not officially documented by Google Imagen
+  // guidanceScale removed - not officially documented by Google Imagen (但用于 mask 编辑)
   // personGeneration parameter removed - API uses default (allow_adult)
   outputMimeType?: string; // Output format (image/jpeg, image/png)
   outputCompressionQuality?: number; // JPEG compression quality (1-100)
   language?: string; // Prompt language
 
   enhancePrompt?: boolean; // Let AI improve the prompt (Google Imagen)
+  enhancePromptModel?: string; // Model for prompt enhancement
+  // Mask Edit 特有参数
+  editMode?: string; // 编辑模式 (EDIT_MODE_INPAINT_INSERTION, EDIT_MODE_INPAINT_REMOVAL, etc.)
+  maskDilation?: number; // 掩码膨胀系数 (0.0-1.0)
+  guidanceScale?: number; // 引导比例 (1.0-20.0)，仅用于 mask 编辑
   // TongYi 专用参数
   promptExtend?: boolean; // AI 增强提示词 (TongYi)
   addMagicSuffix?: boolean; // 魔法词组 (TongYi)
@@ -208,6 +214,10 @@ export interface ChatOptions {
   liveAPIConfig?: {
     agentId?: string; // Optional agent ID for Live API
   };
+  // Session/Message 上下文（Handler 传递给后端用于附件记录等）
+  sessionId?: string;
+  frontend_session_id?: string;
+  message_id?: string;
 }
 
 // PDF Extraction Types

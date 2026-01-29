@@ -268,12 +268,13 @@ export const useSessions = (
           const currentMode = lastMsgWithMode?.mode || s.mode || 'chat';
 
           // ✅ 根据会话模式判断是否需要清理附件
-          // 图片模式（image-outpainting、image-chat-edit、image-mask-edit、image-inpainting、image-background-edit、image-recontext、image-gen）需要清理 Blob URL 和 Base64 URL
+          // 图片模式和 chat 模式（含附件时）需要清理 Blob URL 和 Base64 URL
           // 因为这些模式都有异步上传任务，清理后 URL 为空，等待后端上传完成后更新
-          const needsCleanSession = currentMode === 'image-outpainting' || 
-                                    (currentMode === 'image-chat-edit' || currentMode === 'image-mask-edit' || 
-                                     currentMode === 'image-inpainting' || currentMode === 'image-background-edit' || 
-                                     currentMode === 'image-recontext') || 
+          const needsCleanSession = currentMode === 'chat' ||
+                                    currentMode === 'image-outpainting' ||
+                                    (currentMode === 'image-chat-edit' || currentMode === 'image-mask-edit' ||
+                                     currentMode === 'image-inpainting' || currentMode === 'image-background-edit' ||
+                                     currentMode === 'image-recontext') ||
                                     currentMode === 'image-gen';
           
           const cleanedMessages = needsCleanSession 

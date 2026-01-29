@@ -33,6 +33,7 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
   const [outputMimeType, setOutputMimeType] = useState(DEFAULT_CONTROLS.outputMimeType);
   const [outputCompressionQuality, setOutputCompressionQuality] = useState(DEFAULT_CONTROLS.outputCompressionQuality);
   const [enhancePrompt, setEnhancePrompt] = useState(DEFAULT_CONTROLS.enhancePrompt);
+  const [enhancePromptModel, setEnhancePromptModel] = useState(DEFAULT_CONTROLS.enhancePromptModel);
 
   // TongYi Specific Parameters
   const [promptExtend, setPromptExtend] = useState(false); // 阿里的 prompt_extend 参数
@@ -60,6 +61,11 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
   const [thinkingSummaries, setThinkingSummaries] = useState<'auto' | 'none'>('auto');
   const [enableMultiAgent, setEnableMultiAgent] = useState(false);
   const [researchMode, setResearchMode] = useState<'vertex-ai' | 'gemini-api'>('vertex-ai');
+
+  // Mask Edit Controls (仅用于 image-mask-edit 模式)
+  const [editMode, setEditMode] = useState(DEFAULT_CONTROLS.editMode);
+  const [maskDilation, setMaskDilation] = useState(DEFAULT_CONTROLS.maskDilation);
+  const [guidanceScale, setGuidanceScale] = useState(DEFAULT_CONTROLS.guidanceScale);
 
   // Reset UI state when mode changes (only generic resets, no mode-specific logic)
   // 高级参数保持默认展开状态
@@ -105,6 +111,7 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
     outputMimeType, setOutputMimeType,
     outputCompressionQuality, setOutputCompressionQuality,
     enhancePrompt, setEnhancePrompt,
+    enhancePromptModel, setEnhancePromptModel,
 
     // TongYi Specific Parameters
     promptExtend, setPromptExtend,
@@ -130,6 +137,11 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
     thinkingSummaries, setThinkingSummaries,
     enableMultiAgent, setEnableMultiAgent,
     researchMode, setResearchMode,
+
+    // Mask Edit Controls
+    editMode, setEditMode,
+    maskDilation, setMaskDilation,
+    guidanceScale, setGuidanceScale,
   };
 }
 

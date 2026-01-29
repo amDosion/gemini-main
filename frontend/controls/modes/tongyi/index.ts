@@ -5,6 +5,8 @@
 // ★ 专有实现
 export { ImageGenControls } from './ImageGenControls';
 export { ImageEditControls } from './ImageEditControls';
+// Mask Edit Controls - 占位，re-export Google
+export { ImageMaskEditControls } from '../google/ImageMaskEditControls';
 export { ImageOutpaintControls } from './ImageOutpaintControls';
 
 // 占位（re-export Google）

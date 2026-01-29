@@ -6,8 +6,8 @@ image editor based on configuration.
 
 Also handles mode routing to different edit services:
 - ConversationalImageEditService: For chat-based editing
-- SimpleImageEditService: For simple editing without mask
-- Vertex AI Imagen editors: For advanced editing with mask
+- MaskEditService: For mask/auto-mask editing (Vertex AI Imagen)
+- Vertex AI Imagen editors: For inpainting/background/recontext
 """
 
 import logging
@@ -16,8 +16,13 @@ from typing import Dict, Any, Optional, List
 from sqlalchemy.orm import Session
 
 from ..base.image_edit_base import BaseImageEditor
+from ..base.image_edit_common import NotSupportedError
 from ..geminiapi.image_edit_gemini_api import GeminiAPIImageEditor
 from ..vertexai.image_edit_vertex_ai import VertexAIImageEditor
+from ..vertexai.mask_edit_service import MaskEditService
+from ..vertexai.inpainting_service import InpaintingService
+from ..vertexai.background_edit_service import BackgroundEditService
+from ..vertexai.recontext_service import RecontextService
 
 logger = logging.getLogger(__name__)
 
@@ -363,6 +368,80 @@ class ImageEditCoordinator:
         self._editor_cache.clear()
         logger.info(f"[ImageEditCoordinator] Configuration reloaded: api_mode={self._config.get('api_mode')}")
     
+    # ==================== 统一的服务获取方法 ====================
+    # 所有 Vertex AI 编辑服务遵循相同的创建/缓存模式
+
+    def _require_vertex_ai(self, mode: str) -> None:
+        """验证当前 API 模式为 Vertex AI，否则抛出异常"""
+        api_mode = self.get_current_api_mode()
+        if api_mode != 'vertex_ai':
+            raise NotSupportedError(
+                f"{mode} mode requires Vertex AI configuration. "
+                f"Please set GOOGLE_GENAI_USE_VERTEXAI=true or configure Vertex AI in your settings. "
+                f"Current API mode: {api_mode}",
+                api_type=api_mode
+            )
+
+    def _get_vertex_credentials(self) -> tuple:
+        """获取 Vertex AI 凭据三元组 (project_id, location, credentials_json)"""
+        project_id = self._config.get('vertex_ai_project_id')
+        location = self._config.get('vertex_ai_location', 'us-central1')
+        credentials_json = self._config.get('vertex_ai_credentials_json')
+
+        if not project_id:
+            raise ValueError("GOOGLE_CLOUD_PROJECT is required for Vertex AI mode")
+        if not location:
+            raise ValueError("GOOGLE_CLOUD_LOCATION is required for Vertex AI mode")
+        if not credentials_json:
+            raise ValueError("GOOGLE_APPLICATION_CREDENTIALS_JSON is required for Vertex AI mode")
+
+        return project_id, location, credentials_json
+
+    def _get_cached_service(self, cache_key: str, service_class):
+        """获取或创建缓存的 Vertex AI 编辑服务（统一模式）"""
+        if cache_key in self._editor_cache:
+            logger.debug(f"[ImageEditCoordinator] Using cached {cache_key} editor")
+            return self._editor_cache[cache_key]
+
+        project_id, location, credentials_json = self._get_vertex_credentials()
+        service = service_class(
+            project_id=project_id,
+            location=location,
+            credentials_json=credentials_json
+        )
+        self._editor_cache[cache_key] = service
+        logger.info(f"[ImageEditCoordinator] Created and cached {cache_key} editor ({service_class.__name__})")
+        return service
+
+    def get_mask_editor(self) -> MaskEditService:
+        """获取 MaskEditService 实例（缓存）"""
+        return self._get_cached_service('mask_edit', MaskEditService)
+
+    def get_inpainting_editor(self) -> InpaintingService:
+        """获取 InpaintingService 实例（缓存）"""
+        return self._get_cached_service('inpainting', InpaintingService)
+
+    def get_background_editor(self) -> BackgroundEditService:
+        """获取 BackgroundEditService 实例（缓存）"""
+        return self._get_cached_service('background_edit', BackgroundEditService)
+
+    def get_recontext_editor(self) -> RecontextService:
+        """获取 RecontextService 实例（缓存）"""
+        return self._get_cached_service('recontext', RecontextService)
+
+    # ==================== 统一模型验证 ====================
+
+    @staticmethod
+    def _validate_edit_model(model: str) -> str:
+        """验证并返回有效的编辑模型"""
+        IMAGEN_EDIT_MODELS = {'imagen-3.0-capability-001', 'imagen-4.0-ingredients-preview'}
+        if model in IMAGEN_EDIT_MODELS:
+            return model
+        logger.info(f"[ImageEditCoordinator] Model '{model}' is not an Imagen edit model, using default: imagen-3.0-capability-001")
+        return 'imagen-3.0-capability-001'
+
+    # ==================== 主路由方法 ====================
+
     async def edit_image(
         self,
         prompt: str,
@@ -377,36 +456,21 @@ class ImageEditCoordinator:
     ) -> List[Dict[str, Any]]:
         """
         智能路由图片编辑请求到对应的子服务
-        
+
         路由逻辑（按优先级）：
-        1. 如果 mode='image-chat-edit' → 使用 ConversationalImageEditService（对话式编辑）
-        2. 如果 mode='image-mask-edit' → 使用 Vertex AI Imagen（精确编辑，必须有 mask）
-        3. 如果 mode='image-inpainting' → 使用 Vertex AI Imagen（图片修复）
-        4. 如果 mode='image-background-edit' → 使用 Vertex AI Imagen（背景编辑）
-        5. 如果 mode='image-recontext' → 使用 Vertex AI Imagen（重新上下文）
-        6. 如果有 mask → 使用 Vertex AI Imagen（精确编辑，自动检测）
-        7. 如果没有 mask → 使用 SimpleImageEditService（generateContent 方式，简单编辑）
-        
-        Args:
-            prompt: Text description of the desired edit
-            model: Model to use for editing
-            reference_images: Dictionary mapping reference image types to Base64-encoded images
-                Required key: 'raw' (base image)
-                Optional keys: 'mask', 'control', 'style', 'subject', 'content'
-            mode: 编辑模式（可选）：'image-chat-edit', 'image-mask-edit', 'image-inpainting', 
-                 'image-background-edit', 'image-recontext'
-            sdk_initializer: SDK 初始化器（用于 ConversationalImageEditService 和 SimpleImageEditService）
-            chat_session_manager: Chat 会话管理器（用于 ConversationalImageEditService）
-            file_handler: 文件处理器（用于 ConversationalImageEditService 和 SimpleImageEditService）
-            user_id: 用户 ID（用于会话管理）
-            **kwargs: Additional parameters (edit_mode, number_of_images, aspect_ratio, etc.)
-        
-        Returns:
-            List of edited images with metadata
+        1. mode='image-chat-edit' → ConversationalImageEditService（对话式编辑）
+        2. mode='image-mask-edit' → MaskEditService（掩码编辑）
+        3. mode='image-inpainting' → InpaintingService（图片修复）
+        4. mode='image-background-edit' → BackgroundEditService（背景编辑）
+        5. mode='image-recontext' → RecontextService（重新上下文）
+        6. 有 mask → MaskEditService（掩码编辑，自动检测）
+        7. 无 mask → MaskEditService（自动掩码）
+
+        路由 2-5 使用统一模式：get_xxx_editor() → editor.edit_image(prompt, reference_images, config)
         """
         logger.info(f"[ImageEditCoordinator] Image editing request: model={model}, mode={mode}, prompt='{prompt[:50]}...'")
         logger.info(f"[ImageEditCoordinator] Reference images: {list(reference_images.keys())}, additional parameters: {list(kwargs.keys())}")
-        
+
         # 路由 1: 对话式编辑模式
         if mode == 'image-chat-edit':
             if not chat_session_manager:
@@ -415,14 +479,14 @@ class ImageEditCoordinator:
                 raise ValueError("SDKInitializer is required for image-chat-edit mode")
             if not file_handler:
                 raise ValueError("FileHandler is required for image-chat-edit mode")
-            
+
             from ..geminiapi.conversational_image_edit_service import ConversationalImageEditService
             conversational_service = ConversationalImageEditService(
                 sdk_initializer=sdk_initializer,
                 chat_session_manager=chat_session_manager,
                 file_handler=file_handler
             )
-            
+
             return await conversational_service.edit_image(
                 prompt=prompt,
                 model=model,
@@ -430,66 +494,53 @@ class ImageEditCoordinator:
                 user_id=user_id,
                 **kwargs
             )
-        
-        # 路由 2-5: Vertex AI Imagen 模式（mask-edit, inpainting, background-edit, recontext）
-        vertex_ai_modes = ['image-mask-edit', 'image-inpainting', 'image-background-edit', 'image-recontext']
-        if mode in vertex_ai_modes:
-            has_mask = 'mask' in reference_images and reference_images.get('mask')
-            
-            if mode == 'image-mask-edit' and not has_mask:
-                raise ValueError("image-mask-edit mode requires a mask in reference_images")
-            
-            if mode == 'image-inpainting' and not has_mask:
-                logger.warning("[ImageEditCoordinator] image-inpainting mode typically requires a mask, proceeding without mask")
-            
-            # 设置编辑模式
-            edit_mode_map = {
-                'image-mask-edit': 'mask_edit',
-                'image-inpainting': 'inpainting',
-                'image-background-edit': 'background_edit',
-                'image-recontext': 'recontext'
-            }
-            kwargs['edit_mode'] = edit_mode_map.get(mode, 'inpainting')
-            
-            logger.info(f"[ImageEditCoordinator] Using Vertex AI Imagen for {mode}")
-            editor = self.get_editor()
-            return await editor.edit_image(
-                prompt=prompt,
-                reference_images=reference_images,
-                config=kwargs
-            )
-        
+
+        # 路由 2: 掩码编辑模式 → MaskEditService（统一接口）
+        if mode == 'image-mask-edit':
+            self._require_vertex_ai(mode)
+            kwargs['model'] = self._validate_edit_model(model)
+            logger.info(f"[ImageEditCoordinator] → MaskEditService.edit_image(): model={kwargs['model']}")
+            editor = self.get_mask_editor()
+            return editor.edit_image(prompt=prompt, reference_images=reference_images, config=kwargs)
+
+        # 路由 3: 图片修复模式 → InpaintingService
+        if mode == 'image-inpainting':
+            self._require_vertex_ai(mode)
+            kwargs['model'] = self._validate_edit_model(model)
+            logger.info(f"[ImageEditCoordinator] → InpaintingService.edit_image(): model={kwargs['model']}")
+            editor = self.get_inpainting_editor()
+            return editor.edit_image(prompt=prompt, reference_images=reference_images, config=kwargs)
+
+        # 路由 4: 背景编辑模式 → BackgroundEditService
+        if mode == 'image-background-edit':
+            self._require_vertex_ai(mode)
+            kwargs['model'] = self._validate_edit_model(model)
+            logger.info(f"[ImageEditCoordinator] → BackgroundEditService.edit_image(): model={kwargs['model']}")
+            editor = self.get_background_editor()
+            return editor.edit_image(prompt=prompt, reference_images=reference_images, config=kwargs)
+
+        # 路由 5: 重新上下文模式 → RecontextService
+        if mode == 'image-recontext':
+            self._require_vertex_ai(mode)
+            kwargs['model'] = self._validate_edit_model(model)
+            logger.info(f"[ImageEditCoordinator] → RecontextService.edit_image(): model={kwargs['model']}")
+            editor = self.get_recontext_editor()
+            return editor.edit_image(prompt=prompt, reference_images=reference_images, config=kwargs)
+
         # 路由 6 & 7: 根据是否有 mask 自动选择（未指定模式或向后兼容）
         has_mask = 'mask' in reference_images and reference_images.get('mask')
-        
+
+        self._require_vertex_ai('image-edit')
+        kwargs['model'] = self._validate_edit_model(model)
+        editor = self.get_mask_editor()
+
         if has_mask:
-            # 使用 Vertex AI Imagen（精确编辑）
-            logger.info("[ImageEditCoordinator] Using Vertex AI Imagen for precise editing (has mask, auto-detect)")
-            editor = self.get_editor()
-            return await editor.edit_image(
-                prompt=prompt,
-                reference_images=reference_images,
-                config=kwargs
-            )
+            logger.info("[ImageEditCoordinator] → MaskEditService.edit_image(): has mask, auto-detect")
         else:
-            # 使用 SimpleImageEditService（generateContent 方式，简单编辑）
-            if not sdk_initializer:
-                raise ValueError("SDKInitializer is required for simple image editing")
-            if not file_handler:
-                raise ValueError("FileHandler is required for simple image editing")
-            
-            logger.info("[ImageEditCoordinator] Using SimpleImageEditService for simple editing (no mask, auto-detect)")
-            # NOTE: SimpleImageEditService 已移至 _deprecated，使用 generateContent API
-            from ._deprecated.simple_image_edit_service import SimpleImageEditService
-            
-            simple_edit_service = SimpleImageEditService(
-                sdk_initializer=sdk_initializer,
-                file_handler=file_handler
-            )
-            
-            return await simple_edit_service.edit_image(
-                prompt=prompt,
-                model=model,
-                reference_images=reference_images,
-                **kwargs
-            )
+            logger.info("[ImageEditCoordinator] → MaskEditService.edit_image(): no mask, auto-mask")
+
+        return editor.edit_image(
+            prompt=prompt,
+            reference_images=reference_images,
+            config=kwargs
+        )

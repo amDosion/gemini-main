@@ -289,8 +289,8 @@ export class LLMService {
   }
 
   public async editImage(
-      prompt: string, 
-      referenceImages: Record<string, Attachment>,
+      prompt: string,
+      referenceImages: Record<string, Attachment | Attachment[]>,  // ✅ 支持多图：raw 可以是数组
       mode?: AppMode,
       options?: ChatOptions
   ): Promise<ImageGenerationResult[]> {
@@ -327,27 +327,9 @@ export class LLMService {
           referenceImageTypes: Object.keys(referenceImages)
       });
 
-      // 路由 1: 对话式编辑模式（image-chat-edit）
-      // 注意：对话式编辑由后端 UnifiedProviderClient 处理，直接传递 mode 参数即可
-      // 不需要特殊处理，后端会根据 mode='image-chat-edit' 路由到 ConversationalImageEditService
-
-      // 路由 2: Mask 编辑模式（image-mask-edit）- 必须有 mask
-      if (mode === 'image-mask-edit') {
-          if (!referenceImages.mask) {
-              throw new Error('image-mask-edit mode requires a mask in referenceImages');
-          }
-          if (this.providerId === 'google') {
-              const result = await this.callGoogleInpaintAPI(prompt, referenceImages);
-              return [result];
-          }
-      }
-
-      // 路由 3: 自动路由（根据是否有 mask）
-      // Route Google inpainting through backend API if mask is provided
-      if (this.providerId === 'google' && referenceImages.mask) {
-          const result = await this.callGoogleInpaintAPI(prompt, referenceImages);
-          return [result];
-      }
+      // ✅ 统一路由：所有编辑模式都通过 UnifiedProviderClient → 后端 /api/modes/{provider}/{mode} 处理
+      // 包括：image-chat-edit, image-mask-edit, image-inpainting, image-background-edit, image-recontext 等
+      // 后端会根据 mode 分发到对应的子服务（ConversationalImageEditService, MaskEditService 等）
 
       // ✅ Call currentProvider.editImage()
       // API Key is retrieved from database by backend, not passed from frontend
@@ -597,61 +579,6 @@ export class LLMService {
       }
   }
 
-  private async callGoogleInpaintAPI(prompt: string, referenceImages: Record<string, Attachment>): Promise<ImageGenerationResult> {
-      try {
-          // Convert attachments to base64
-          const convertToBase64 = async (attachment: Attachment): Promise<string> => {
-              if (attachment.url.startsWith('data:')) {
-                  return attachment.url;
-              }
-              if (attachment.url.startsWith('blob:')) {
-                  const response = await fetch(attachment.url);
-                  const blob = await response.blob();
-                  return await new Promise<string>((resolve) => {
-                      const reader = new FileReader();
-                      reader.onloadend = () => resolve(reader.result as string);
-                      reader.readAsDataURL(blob);
-                  });
-              }
-              return attachment.url;
-          };
-
-          const image = await convertToBase64(referenceImages.raw);
-          const mask = await convertToBase64(referenceImages.mask);
-
-          const response = await fetch('/api/google/inpaint', {
-              method: 'POST',
-              headers: {
-                  'Content-Type': 'application/json',
-              },
-              credentials: 'include',
-              body: JSON.stringify({
-                  image,
-                  mask,
-                  prompt,
-                  model: this._cachedOptions.modelId || 'imagen-3.0-generate-001',
-                  platform: this._cachedOptions.platform,
-              }),
-          });
-
-          if (!response.ok) {
-              const error = await response.json().catch(() => ({ detail: response.statusText }));
-              throw new Error(error.detail || `HTTP ${response.status}`);
-          }
-
-          const result = await response.json();
-          
-          // Convert backend response to ImageGenerationResult format
-          return {
-              url: result.images[0], // Backend returns base64 in images array
-              mimeType: 'image/png',
-              filename: 'inpainted.png',
-          };
-      } catch (error) {
-          console.error('[LLMService] Google inpaint API error:', error);
-          throw error;
-      }
-  }
 }
 
 export const llmService = new LLMService();

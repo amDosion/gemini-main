@@ -377,8 +377,18 @@ async def create_or_update_session(
         # upsert 模式表
         table_class = get_message_table_class_by_name(table_name)
         message = db.query(table_class).get(msg_id)
-        
-        metadata_json = json.dumps(extract_metadata(msg)) if extract_metadata(msg) else None
+
+        # ✅ 调试：检查 thoughts/textResponse/enhancedPrompt 是否存在于消息中
+        extracted_meta = extract_metadata(msg)
+        if extracted_meta:
+            # 只记录关键字段，不记录完整内容
+            meta_keys = list(extracted_meta.keys())
+            has_thoughts = 'thoughts' in extracted_meta
+            has_text_response = 'textResponse' in extracted_meta
+            has_enhanced_prompt = 'enhancedPrompt' in extracted_meta
+            logger.info(f"[Sessions] 📝 消息 {msg_id[:8]}... 的 metadata 字段: {meta_keys}, thoughts={has_thoughts}, textResponse={has_text_response}, enhancedPrompt={has_enhanced_prompt}")
+
+        metadata_json = json.dumps(extracted_meta) if extracted_meta else None
         
         if not message:
             # 创建新消息
@@ -398,6 +408,12 @@ async def create_or_update_session(
             message.content = msg.get("content", "")
             message.is_error = msg.get("isError", False)
             message.metadata_json = metadata_json
+
+        # ✅ image-chat-edit: persist enhanced prompt into edit_prompt if available
+        if hasattr(message, "edit_prompt"):
+            enhanced_prompt_value = msg.get("enhancedPrompt") or msg.get("editPrompt")
+            if enhanced_prompt_value:
+                message.edit_prompt = enhanced_prompt_value
         
         # 5. upsert 附件（云 URL 保护逻辑）
         for att in msg.get("attachments", []):

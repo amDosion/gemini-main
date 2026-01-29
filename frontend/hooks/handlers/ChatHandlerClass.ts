@@ -3,6 +3,8 @@ import { ExecutionContext, HandlerResult } from './types';
 import { Attachment } from '../../types/types';
 import { llmService } from '../../services/llmService';
 import { addCitations } from '../../utils/groundingUtils';
+import { storageUpload } from '../../services/storage/storageUpload';
+import { v4 as uuidv4 } from 'uuid';
 
 // 打字效果配置
 const TYPING_CONFIG = {
@@ -104,6 +106,76 @@ export class ChatHandler extends BaseHandler {
       finalText = addCitations(finalText, lastGroundingMetadata);
     }
 
+    // 检查用户附件是否有 File 对象需要上传到云存储
+    const userAttachmentsWithFile = context.attachments.filter(att => att.file);
+
+    if (userAttachmentsWithFile.length > 0) {
+      // 有用户附件需要上传到云存储（与 ImageEditHandler 模式一致）
+      const uploadTask = async () => {
+        const dbUserAttachments = await Promise.all(
+          context.attachments.map(async (att) => {
+            // 已上传到云存储的附件直接返回
+            if (att.uploadStatus === 'completed' && att.url?.startsWith('http')) {
+              return att;
+            }
+
+            // 有 File 对象的附件，上传到后端云存储
+            if (att.file) {
+              try {
+                const result = await storageUpload.uploadFileAsync(att.file, {
+                  sessionId: context.sessionId,
+                  messageId: context.userMessageId,
+                  attachmentId: att.id || uuidv4(),
+                  storageId: context.storageId,
+                });
+
+                console.log('[ChatHandler] 用户附件已提交云存储上传:', {
+                  attachmentId: result.attachmentId || att.id,
+                  taskId: result.taskId
+                });
+
+                return {
+                  ...att,
+                  id: result.attachmentId || att.id,
+                  file: undefined, // 移除 File 对象（不可序列化到数据库）
+                  uploadStatus: result.taskId ? 'pending' as const : 'failed' as const,
+                  uploadTaskId: result.taskId || undefined,
+                } as Attachment;
+              } catch (error) {
+                console.error('[ChatHandler] 用户附件上传失败:', error);
+                return { ...att, file: undefined, uploadStatus: 'failed' as const } as Attachment;
+              }
+            }
+
+            // 无 File 对象的附件，移除不可序列化的数据
+            return { ...att, file: undefined } as Attachment;
+          })
+        );
+
+        // 启动后台轮询，上传完成后更新本地数据库中的云 URL
+        // （与 BaseHandler.startUploadPolling 一致）
+        this.startUploadPolling(
+          dbUserAttachments.filter(att => att.uploadTaskId),
+          context
+        );
+
+        return {
+          dbAttachments: accumulatedAttachments, // AI 返回的附件（chat 模式通常为空）
+          dbUserAttachments
+        };
+      };
+
+      return {
+        content: finalText,
+        attachments: accumulatedAttachments,
+        groundingMetadata: lastGroundingMetadata,
+        urlContextMetadata: lastUrlContextMetadata,
+        browserOperationId: lastBrowserOperationId,
+        uploadTask: uploadTask()
+      };
+    }
+
+    // 无用户附件需要上传，直接返回（原有逻辑）
     return {
       content: finalText,
       attachments: accumulatedAttachments,
