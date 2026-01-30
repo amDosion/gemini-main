@@ -1064,7 +1064,7 @@ class ConversationalImageEditService:
             thoughts = results.get('thoughts', [])
             text = results.get('text')
             enhanced_prompt = results.get('enhancedPrompt')
-            
+
             # 将 thoughts 和 text 附加到每个图片结果中（用于前端访问）
             for img in images:
                 if thoughts:
@@ -1073,7 +1073,7 @@ class ConversationalImageEditService:
                     img['text'] = text
                 if enhanced_prompt:
                     img['enhancedPrompt'] = enhanced_prompt
-            
+
             return images
         else:
             # 旧格式：直接返回图片列表（向后兼容）

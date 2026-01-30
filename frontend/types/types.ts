@@ -184,6 +184,7 @@ export interface ChatOptions {
   editMode?: string; // 编辑模式 (EDIT_MODE_INPAINT_INSERTION, EDIT_MODE_INPAINT_REMOVAL, etc.)
   maskDilation?: number; // 掩码膨胀系数 (0.0-1.0)
   guidanceScale?: number; // 引导比例 (1.0-20.0)，仅用于 mask 编辑
+  maskMode?: 'MASK_MODE_USER_PROVIDED' | 'MASK_MODE_BACKGROUND' | 'MASK_MODE_FOREGROUND' | 'MASK_MODE_SEMANTIC'; // 掩码模式 (Vertex AI MaskReferenceConfig)
   // TongYi 专用参数
   promptExtend?: boolean; // AI 增强提示词 (TongYi)
   addMagicSuffix?: boolean; // 魔法词组 (TongYi)

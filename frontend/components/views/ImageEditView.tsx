@@ -361,7 +361,7 @@ export const ImageEditView = memo(({
     
     // 固定使用 image-chat-edit 模式（此视图专门用于对话式编辑）
     const editMode: AppMode = 'image-chat-edit';
-    
+
     // State for thinking block
     const [isThinkingOpen, setIsThinkingOpen] = useState(true);
     const [displayedThinkingContent, setDisplayedThinkingContent] = useState('');
@@ -689,7 +689,7 @@ export const ImageEditView = memo(({
                         note: '前端显示将使用此URL'
                     });
                     console.log('[ImageEditView] ============================================');
-                    
+
                     setActiveImageUrl(lastMsg.attachments[0].url);
                     setLastProcessedMsgId(lastMsg.id);
                 } else if (lastMsg.isError) {
@@ -943,23 +943,26 @@ export const ImageEditView = memo(({
 
             {/* ========== 右侧：参数面板 ========== */}
             <div className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900/50 flex flex-col h-full overflow-hidden">
-                {/* 头部 */}
+                {/* 编辑参数头部 */}
                 <div className="px-4 py-3 border-b border-slate-800/50 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <SlidersHorizontal size={14} className="text-pink-400" />
                         <span className="text-xs font-bold text-white">编辑参数</span>
                     </div>
-                    <button
-                        onClick={resetParams}
-                        className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-                        title="重置为默认值"
-                    >
-                        <RotateCcw size={12} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={resetParams}
+                            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                            title="重置为默认值"
+                        >
+                            <RotateCcw size={12} />
+                        </button>
+                    </div>
                 </div>
 
-                {/* 参数滚动区 - 通过 ModeControlsCoordinator 分发对应的参数组件 */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+                {/* 参数滚动区 */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
+                    {/* 编辑参数面板（始终显示） */}
                     <ModeControlsCoordinator
                         mode={editMode}
                         providerId={providerId || 'google'}
@@ -968,7 +971,7 @@ export const ImageEditView = memo(({
                     />
                 </div>
 
-                {/* 底部固定区：使用 ChatEditInputArea 组件 */}
+                {/* 底部固定区：使用 ChatEditInputArea 组件（始终显示） */}
                 <ChatEditInputArea
                     onSend={handleSend}
                     isLoading={loadingState !== 'idle'}

@@ -278,6 +278,7 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
         options.editMode = controls.editMode;
         options.maskDilation = controls.maskDilation;
         options.guidanceScale = controls.guidanceScale;
+        options.maskMode = controls.maskMode; // Vertex AI MaskReferenceConfig.mask_mode
       }
 
       onSend(prompt, options, finalAttachments, mode);

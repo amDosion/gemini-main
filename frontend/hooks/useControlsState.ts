@@ -66,6 +66,8 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
   const [editMode, setEditMode] = useState(DEFAULT_CONTROLS.editMode);
   const [maskDilation, setMaskDilation] = useState(DEFAULT_CONTROLS.maskDilation);
   const [guidanceScale, setGuidanceScale] = useState(DEFAULT_CONTROLS.guidanceScale);
+  // Mask 模式 (对应 Vertex AI MaskReferenceConfig.mask_mode)
+  const [maskMode, setMaskMode] = useState<'MASK_MODE_USER_PROVIDED' | 'MASK_MODE_BACKGROUND' | 'MASK_MODE_FOREGROUND' | 'MASK_MODE_SEMANTIC'>('MASK_MODE_USER_PROVIDED');
 
   // Reset UI state when mode changes (only generic resets, no mode-specific logic)
   // 高级参数保持默认展开状态
@@ -142,6 +144,7 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
     editMode, setEditMode,
     maskDilation, setMaskDilation,
     guidanceScale, setGuidanceScale,
+    maskMode, setMaskMode,
   };
 }
 

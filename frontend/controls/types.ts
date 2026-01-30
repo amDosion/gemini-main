@@ -334,4 +334,7 @@ export interface ControlsState {
   setMaskDilation: (v: number) => void;
   guidanceScale: number;
   setGuidanceScale: (v: number) => void;
+  // Mask 模式 (对应 Vertex AI MaskReferenceConfig.mask_mode)
+  maskMode: 'MASK_MODE_USER_PROVIDED' | 'MASK_MODE_BACKGROUND' | 'MASK_MODE_FOREGROUND' | 'MASK_MODE_SEMANTIC';
+  setMaskMode: (v: 'MASK_MODE_USER_PROVIDED' | 'MASK_MODE_BACKGROUND' | 'MASK_MODE_FOREGROUND' | 'MASK_MODE_SEMANTIC') => void;
 }
