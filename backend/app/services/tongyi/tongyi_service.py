@@ -439,3 +439,60 @@ class TongyiService(BaseProviderService):
             NotImplementedError: Tongyi 暂不支持语音生成
         """
         raise NotImplementedError("Tongyi does not support speech generation yet")
+
+    async def layered_design(
+        self,
+        prompt: str,
+        model: str,
+        reference_images: Dict[str, Any],
+        mode: Optional[str] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        分层设计（委托给 LayeredDesignService）
+
+        与 GoogleService 保持一致的接口，使用共享的 LayeredDesignService。
+
+        Args:
+            prompt: 设计目标描述
+            model: 模型名称（用于布局建议时的 LLM 调用）
+            reference_images: 参考图片字典 {'raw': image_url, ...}
+            mode: 分层设计模式:
+                - image-layered-suggest: 布局建议
+                - image-layered-decompose: 图层分解
+                - image-layered-vectorize: Mask 矢量化
+                - image-layered-render: 渲染合成
+            **kwargs: 额外参数
+                - canvasW, canvasH: 画布尺寸
+                - layers: 分解图层数
+                - layerDoc: 渲染用的 LayerDoc
+
+        Returns:
+            根据 mode 返回不同结构的结果字典
+        """
+        from ..common.layered_design_service import LayeredDesignService
+
+        logger.info(f"[TongyiService] Delegating layered design to LayeredDesignService: mode={mode}")
+
+        # 创建 LayeredDesignService 实例
+        # 注意：Tongyi 使用 OpenAI 兼容格式的 LLM 客户端
+        llm_client = None
+        if self._chat_provider is None:
+            from .chat import QwenNativeProvider
+            self._chat_provider = QwenNativeProvider(
+                api_key=self.api_key,
+                api_url=self.api_url,
+            )
+        llm_client = self._chat_provider
+
+        service = LayeredDesignService(
+            llm_client=llm_client,
+            llm_model=model
+        )
+
+        return await service.process(
+            mode=mode,
+            prompt=prompt,
+            reference_images=reference_images,
+            **kwargs
+        )

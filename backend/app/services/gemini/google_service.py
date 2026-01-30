@@ -229,7 +229,7 @@ class GoogleService(BaseProviderService):
             # Initialize specialized image services
             self.expand_service = ExpandService(self.sdk_initializer)
             self.upscale_service = UpscaleService()  # UpscaleService doesn't take parameters
-            self.segmentation_service = SegmentationService()  # SegmentationService doesn't take parameters
+            self.segmentation_service = SegmentationService(user_id=user_id, db=db)  # 遵循 GEN 模式，从数据库获取 Vertex AI 配置
 
             # Initialize PDF extraction service
             self.pdf_extractor = PDFExtractorService(self.sdk_initializer)
@@ -475,7 +475,56 @@ class GoogleService(BaseProviderService):
             user_id=self.user_id,
             **kwargs
         )
-    
+
+    async def layered_design(
+        self,
+        prompt: str,
+        model: str,
+        reference_images: Dict[str, Any],
+        mode: Optional[str] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        分层设计功能（委托给 LayeredDesignService）
+
+        Args:
+            prompt: 设计目标描述
+            model: 模型名称（用于布局建议时的 LLM）
+            reference_images: 参考图片字典 {'raw': image_url, ...}
+            mode: 分层设计模式:
+                - image-layered-suggest: 布局建议
+                - image-layered-decompose: 图层分解
+                - image-layered-vectorize: Mask 矢量化
+                - image-layered-render: 渲染合成
+            **kwargs: 额外参数
+
+        Returns:
+            根据 mode 返回不同结构的结果字典
+        """
+        from ..common.layered_design_service import LayeredDesignService
+
+        logger.info(f"[GoogleService] Delegating layered design to LayeredDesignService: mode={mode}")
+
+        # 获取 LLM client（用于布局建议等需要 LLM 的功能）
+        llm_client = None
+        if hasattr(self, 'sdk_initializer') and self.sdk_initializer:
+            # 确保 SDK 已初始化（懒加载模式）
+            self.sdk_initializer.ensure_initialized()
+            llm_client = self.sdk_initializer.client
+
+        # 创建 LayeredDesignService 实例
+        service = LayeredDesignService(
+            llm_client=llm_client,
+            llm_model=model
+        )
+
+        return await service.process(
+            mode=mode,
+            prompt=prompt,
+            reference_images=reference_images,
+            **kwargs
+        )
+
     async def get_available_models(self) -> List[ModelConfig]:
         """Delegate to ModelManager."""
         return await self.model_manager.get_available_models()
@@ -1282,8 +1331,93 @@ class GoogleService(BaseProviderService):
             }]
         }
     
+    # === Mask Preview Service (委托给 SegmentationService) ===
+
+    async def preview_mask(
+        self,
+        prompt: str,  # 占位参数，mask 预览不需要 prompt
+        model: str,
+        reference_images: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Preview auto-generated mask - 委托给 SegmentationService
+
+        Args:
+            prompt: Placeholder (not used)
+            model: Model identifier (default: image-segmentation-001)
+            reference_images: Reference images dict (should contain 'raw' image)
+            **kwargs: Additional parameters:
+                - mask_mode: MASK_MODE_BACKGROUND, MASK_MODE_FOREGROUND, or MASK_MODE_SEMANTIC
+                - mask_dilation: Mask dilation factor (0.0-1.0)
+
+        Returns:
+            Dict with mask preview data
+        """
+        # 从 reference_images 中提取原图
+        image_base64 = None
+        if reference_images:
+            raw_data = reference_images.get("raw")
+            if raw_data:
+                if isinstance(raw_data, dict):
+                    raw_data = raw_data.get("url") or raw_data.get("data")
+                if isinstance(raw_data, str):
+                    if raw_data.startswith("data:"):
+                        image_base64 = raw_data.split(",", 1)[1] if "," in raw_data else raw_data
+                    else:
+                        image_base64 = raw_data
+        if not image_base64:
+            image_base64 = kwargs.get("image_base64")
+
+        if not image_base64:
+            return {"success": False, "error": "preview_mask requires 'raw' image in reference_images"}
+
+        # 获取 mask 模式并转换为 segmentation 模式
+        mask_mode = kwargs.get("mask_mode", kwargs.get("maskMode", "MASK_MODE_FOREGROUND"))
+        mode_mapping = {
+            "MASK_MODE_FOREGROUND": "FOREGROUND",
+            "MASK_MODE_BACKGROUND": "BACKGROUND",
+            "MASK_MODE_SEMANTIC": "SEMANTIC",
+        }
+        segment_mode = mode_mapping.get(mask_mode, "FOREGROUND")
+
+        # 语义分割需要 prompt
+        segment_prompt = None
+        if segment_mode == "SEMANTIC":
+            segment_prompt = kwargs.get("segmentation_prompt", "person")
+
+        logger.info(f"[Google Service] preview_mask: mask_mode={mask_mode} → segment_mode={segment_mode}")
+
+        # 调用 SegmentationService
+        try:
+            result = self.segmentation_service.segment_image(
+                image_base64=image_base64,
+                mode=segment_mode,
+                prompt=segment_prompt,
+                model=model if model != "imagen-3.0-capability-001" else "image-segmentation-001",
+                mask_dilation=kwargs.get("mask_dilation", kwargs.get("maskDilation", 0.02)),
+            )
+        except Exception as e:
+            logger.error(f"[Google Service] preview_mask: SegmentationService error: {e}")
+            return {"success": False, "error": f"SegmentationService error: {str(e)}"}
+
+        if result.success and result.masks:
+            return {
+                "success": True,
+                "masks": [
+                    {
+                        "url": f"data:image/png;base64,{m.mask}",
+                        "mimeType": "image/png",
+                        "labels": [{"label": l.label, "score": l.score} for l in m.labels]
+                    }
+                    for m in result.masks
+                ]
+            }
+        else:
+            return {"success": False, "error": result.error or "No mask generated"}
+
     # === Clothing Segmentation Service ===
-    
+
     async def segment_clothing(
         self,
         prompt: str,  # 占位参数，segment-clothing 不需要 prompt

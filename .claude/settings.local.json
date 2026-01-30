@@ -80,7 +80,14 @@
       "Bash(git -C \"d:\\\\gemini-main\\\\cursor-Attachment\" log --all -p --diff-filter=D -- \"backend/app/routers/*upload*\")",
       "Bash(git -C \"d:\\\\gemini-main\\\\cursor-Attachment\" log --all -p -- \"backend/app/routers/deprecated/*\")",
       "Bash(git add:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: 多图编辑支持与UI默认状态优化\n\n主要更新：\n- ImageEditView: 添加旋转木马多图预览功能，支持键盘左右键切换\n- ImageEditHandlerClass: 支持 image-chat-edit 多图模式传递附件数组\n- RightSidebar: Persona 分类默认折叠\n- App.tsx: RightSidebar 默认关闭，不再自动在大屏幕上打开\n- 后端图片编辑服务重构和优化\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: 多图编辑支持与UI默认状态优化\n\n主要更新：\n- ImageEditView: 添加旋转木马多图预览功能，支持键盘左右键切换\n- ImageEditHandlerClass: 支持 image-chat-edit 多图模式传递附件数组\n- RightSidebar: Persona 分类默认折叠\n- App.tsx: RightSidebar 默认关闭，不再自动在大屏幕上打开\n- 后端图片编辑服务重构和优化\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(npm run build:*)",
+      "Bash(git checkout:*)",
+      "WebFetch(domain:docs.cloud.google.com)",
+      "WebFetch(domain:googleapis.dev)",
+      "WebFetch(domain:github.com)",
+      "Bash(npx madge:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nrefactor: 移除分层设计功能（显存不足）\n\n- 移除后端 _apply_layered_design 方法\n- 移除前端 ImageEditControls 分层开关\n- 移除 useControlsState 中 enableLayeredDesign 状态\n- 移除 ControlsState 和 ChatOptions 中的类型定义\n- 清理 ImageEditView 中的分层设计相关代码\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }

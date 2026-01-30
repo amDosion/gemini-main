@@ -61,9 +61,10 @@ class MaskEditService(VertexAIEditBase):
     - EDIT_MODE_BGSWAP: 背景替换
 
     掩码模式 (mask_mode):
-    - MASK_MODE_FOREGROUND: 前景
-    - MASK_MODE_BACKGROUND: 背景
     - MASK_MODE_USER_PROVIDED: 用户提供 (通过 reference_images['mask'])
+    - MASK_MODE_FOREGROUND: 自动检测前景
+    - MASK_MODE_BACKGROUND: 自动检测背景
+    - MASK_MODE_SEMANTIC: 语义分割 (检测人物等特定类别，需配合 segmentation_classes)
     """
 
     # 默认编辑模式 → EDIT_MODE_INPAINT_INSERTION
@@ -83,11 +84,12 @@ class MaskEditService(VertexAIEditBase):
         'EDIT_MODE_BGSWAP',
     ]
 
-    # 掩码模式列表
+    # 掩码模式列表 (对应 Vertex AI MaskReferenceConfig.mask_mode)
     MASK_MODES = [
-        'MASK_MODE_FOREGROUND',
-        'MASK_MODE_BACKGROUND',
-        'MASK_MODE_USER_PROVIDED',
+        'MASK_MODE_USER_PROVIDED',   # 用户提供遮罩（手动绘制）
+        'MASK_MODE_FOREGROUND',      # 自动检测前景
+        'MASK_MODE_BACKGROUND',      # 自动检测背景
+        'MASK_MODE_SEMANTIC',        # 语义分割（人物等）
     ]
 
     def edit_image(
@@ -168,10 +170,16 @@ class MaskEditService(VertexAIEditBase):
             "edit_modes": self.EDIT_MODES,
             "mask_modes": self.MASK_MODES,
             "supported_models": list(self.SUPPORTED_MODELS),
-            "mode_descriptions": {
+            "edit_mode_descriptions": {
                 "EDIT_MODE_INPAINT_INSERTION": "Insert content into masked area",
                 "EDIT_MODE_INPAINT_REMOVAL": "Remove content from masked area",
                 "EDIT_MODE_OUTPAINT": "Extend image beyond boundaries",
                 "EDIT_MODE_BGSWAP": "Replace background"
+            },
+            "mask_mode_descriptions": {
+                "MASK_MODE_USER_PROVIDED": "User-provided mask image (manual drawing)",
+                "MASK_MODE_FOREGROUND": "Auto-detect foreground objects",
+                "MASK_MODE_BACKGROUND": "Auto-detect background",
+                "MASK_MODE_SEMANTIC": "Semantic segmentation (people, objects, etc.)"
             },
         }

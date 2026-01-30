@@ -92,6 +92,19 @@ class ModeOptions(BaseModel):
     # TongYi 专用参数
     promptExtend: Optional[bool] = None  # AI 增强提示词
     addMagicSuffix: Optional[bool] = None  # 魔法词组
+    # Layered Design 参数
+    layers: Optional[int] = None  # 图层分解数量 (2-10)
+    canvasW: Optional[int] = None  # 画布宽度
+    canvasH: Optional[int] = None  # 画布高度
+    maxTextBoxes: Optional[int] = None  # 最大文本框数量
+    locale: Optional[str] = None  # 语言区域
+    layerDoc: Optional[Dict[str, Any]] = None  # LayerDoc 渲染用
+    simplifyTolerance: Optional[float] = None  # 矢量化简化容差
+    smoothIterations: Optional[int] = None  # 平滑迭代次数
+    useBezier: Optional[bool] = None  # 使用贝塞尔曲线
+    bezierSmoothness: Optional[float] = None  # 贝塞尔平滑度
+    threshold: Optional[int] = None  # 二值化阈值
+    blurRadius: Optional[float] = None  # 模糊半径
     # Allow additional fields
     class Config:
         extra = "allow"
@@ -323,7 +336,14 @@ async def handle_mode(
         if method_name == "edit_image":
             # 将 URL 路径中的 mode 参数传递给 edit_image 方法
             params["mode"] = mode
-        
+
+        # **重要**：对于 layered_design 方法，需要传递 mode 参数
+        # GoogleService.layered_design() 会根据 mode 参数智能分发到不同的子方法
+        if method_name == "layered_design":
+            # 将 URL 路径中的 mode 参数传递给 layered_design 方法
+            params["mode"] = mode
+            logger.info(f"[Modes]     - layered_design mode: {mode}")
+
         # ✅ **新增**：处理 Edit 模式的 CONTINUITY LOGIC
         # 如果提供了 activeImageUrl，使用 AttachmentService 解析
         if method_name == "edit_image" and request_body.options and request_body.options.activeImageUrl:
