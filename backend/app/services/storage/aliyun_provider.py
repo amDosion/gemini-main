@@ -24,18 +24,18 @@ class AliyunProvider(BaseStorageProvider):
         Returns:
             UploadResult: 上传结果
         """
-        access_key_id = self.config.get("accessKeyId")
-        access_key_secret = self.config.get("accessKeySecret")
+        access_key_id = self.config.get("access_key_id")
+        access_key_secret = self.config.get("access_key_secret")
         bucket_name = self.config.get("bucket")
         endpoint = self.config.get("endpoint")
-        custom_domain = self.config.get("customDomain")
+        custom_domain = self.config.get("custom_domain")
         secure = self.config.get("secure", True)
         
         # 验证配置
         if not all([access_key_id, access_key_secret, bucket_name, endpoint]):
             return UploadResult(
                 success=False,
-                error="阿里云 OSS 配置不完整：缺少必填项（accessKeyId, accessKeySecret, bucket, endpoint）",
+                error="阿里云 OSS 配置不完整：缺少必填项（access_key_id, access_key_secret, bucket, endpoint）",
                 provider="aliyun-oss"
             )
         
@@ -76,7 +76,7 @@ class AliyunProvider(BaseStorageProvider):
                     url=image_url,
                     provider="aliyun-oss",
                     metadata={
-                        "objectName": object_name,
+                        "object_name": object_name,
                         "bucket": bucket_name,
                         "endpoint": oss_endpoint
                     }
@@ -122,15 +122,15 @@ class AliyunProvider(BaseStorageProvider):
         Returns:
             UploadResult: 测试结果
         """
-        access_key_id = self.config.get("accessKeyId")
-        access_key_secret = self.config.get("accessKeySecret")
+        access_key_id = self.config.get("access_key_id")
+        access_key_secret = self.config.get("access_key_secret")
         bucket_name = self.config.get("bucket")
         endpoint = self.config.get("endpoint")
-        
+
         if not all([access_key_id, access_key_secret, bucket_name, endpoint]):
             return UploadResult(
                 success=False,
-                error="阿里云 OSS 配置不完整：缺少必填项（accessKeyId, accessKeySecret, bucket, endpoint）",
+                error="阿里云 OSS 配置不完整：缺少必填项（access_key_id, access_key_secret, bucket, endpoint）",
                 provider="aliyun-oss"
             )
         

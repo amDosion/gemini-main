@@ -73,79 +73,63 @@ STATIC_VERTEX_AI_MODELS: List[str] = [
 
 class VertexAIConfigResponse(BaseModel):
     """Response model for Vertex AI configuration"""
-    api_mode: Literal['gemini_api', 'vertex_ai'] = Field(alias='apiMode')
+    api_mode: Literal['gemini_api', 'vertex_ai']
     capabilities: Dict[str, Any]
-    gemini_api_configured: bool = Field(alias='geminiApiConfigured')
-    vertex_ai_configured: bool = Field(alias='vertexAiConfigured')
-    vertex_ai_project_id: Optional[str] = Field(default=None, alias='vertexAiProjectId')
-    vertex_ai_location: Optional[str] = Field(default='us-central1', alias='vertexAiLocation')
-    vertex_ai_credentials_json: Optional[str] = Field(default=None, alias='vertexAiCredentialsJson')
-    hidden_models: List[str] = Field(default_factory=list, alias='hiddenModels')
-    saved_models: List[Dict[str, Any]] = Field(default_factory=list, alias='savedModels')
-
-    class Config:
-        populate_by_name = True
+    gemini_api_configured: bool
+    vertex_ai_configured: bool
+    vertex_ai_project_id: Optional[str] = None
+    vertex_ai_location: Optional[str] = 'us-central1'
+    vertex_ai_credentials_json: Optional[str] = None
+    hidden_models: List[str] = Field(default_factory=list)
+    saved_models: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class VertexAIConfigUpdateRequest(BaseModel):
     """Request model for updating Vertex AI configuration"""
-    apiMode: Literal['gemini_api', 'vertex_ai'] = Field(
-        alias='api_mode',
+    api_mode: Literal['gemini_api', 'vertex_ai'] = Field(
         description="API mode to use for image generation"
     )
-    
+
     # Gemini API config (optional, uses LLM API key if not provided)
-    geminiApiKey: Optional[str] = Field(
+    gemini_api_key: Optional[str] = Field(
         default=None,
-        alias='gemini_api_key',
         description="Gemini API key (optional, uses LLM config if not provided)"
     )
-    
+
     # Vertex AI config
-    vertexAiProjectId: Optional[str] = Field(
+    vertex_ai_project_id: Optional[str] = Field(
         default=None,
-        alias='vertex_ai_project_id',
         description="Google Cloud project ID (required for vertex_ai mode)"
     )
-    vertexAiLocation: Optional[str] = Field(
+    vertex_ai_location: Optional[str] = Field(
         default='us-central1',
-        alias='vertex_ai_location',
         description="Vertex AI location/region"
     )
-    vertexAiCredentialsJson: Optional[str] = Field(
+    vertex_ai_credentials_json: Optional[str] = Field(
         default=None,
-        alias='vertex_ai_credentials_json',
         description="Service account credentials JSON content (required for vertex_ai mode)"
     )
-    hiddenModels: Optional[List[str]] = Field(
+    hidden_models: Optional[List[str]] = Field(
         default=None,
-        alias='hidden_models',
         description="List of hidden model IDs"
     )
-    savedModels: Optional[List[Dict[str, Any]]] = Field(
+    saved_models: Optional[List[Dict[str, Any]]] = Field(
         default=None,
-        alias='saved_models',
         description="List of saved model configurations (ModelConfig[])"
     )
-    
-    class Config:
-        populate_by_name = True  # Allow both camelCase and snake_case
 
 
 class TestConnectionRequest(BaseModel):
     """Request model for testing API connection"""
-    apiMode: Literal['gemini_api', 'vertex_ai'] = Field(alias='api_mode')
-    
+    api_mode: Literal['gemini_api', 'vertex_ai']
+
     # Gemini API credentials
-    geminiApiKey: Optional[str] = Field(default=None, alias='gemini_api_key')
-    
+    gemini_api_key: Optional[str] = None
+
     # Vertex AI credentials
-    vertexAiProjectId: Optional[str] = Field(default=None, alias='vertex_ai_project_id')
-    vertexAiLocation: Optional[str] = Field(default='us-central1', alias='vertex_ai_location')
-    vertexAiCredentialsJson: Optional[str] = Field(default=None, alias='vertex_ai_credentials_json')
-    
-    class Config:
-        populate_by_name = True  # Allow both camelCase and snake_case
+    vertex_ai_project_id: Optional[str] = None
+    vertex_ai_location: Optional[str] = 'us-central1'
+    vertex_ai_credentials_json: Optional[str] = None
 
 
 class TestConnectionResponse(BaseModel):
@@ -181,12 +165,9 @@ class VertexAIModel(BaseModel):
 
 class VerifyVertexAIRequest(BaseModel):
     """Request model for verifying Vertex AI connection and listing models"""
-    projectId: str = Field(alias='project_id')
-    location: str = Field(default='us-central1')
-    credentialsJson: str = Field(alias='credentials_json')
-    
-    class Config:
-        populate_by_name = True
+    project_id: str
+    location: str = 'us-central1'
+    credentials_json: str
 
 
 class VerifyVertexAIResponse(BaseModel):
@@ -424,21 +405,21 @@ async def update_vertex_ai_config(
         
         logger.info(
             f"[VertexAIConfig] Updating configuration for user={user_id}, "
-            f"api_mode={request_body.apiMode}"
+            f"api_mode={request_body.api_mode}"
         )
         
         # Validate configuration based on API mode
-        if request_body.apiMode == 'gemini_api':
+        if request_body.api_mode == 'gemini_api':
             # Gemini API mode uses the API key from ConfigProfile (LLM configuration)
             # No additional validation needed here
             pass
-        elif request_body.apiMode == 'vertex_ai':
-            if not request_body.vertexAiProjectId:
+        elif request_body.api_mode == 'vertex_ai':
+            if not request_body.vertex_ai_project_id:
                 raise HTTPException(
                     status_code=400,
                     detail="vertexAiProjectId is required for Vertex AI mode"
                 )
-            if not request_body.vertexAiCredentialsJson:
+            if not request_body.vertex_ai_credentials_json:
                 raise HTTPException(
                     status_code=400,
                     detail="vertexAiCredentialsJson is required for Vertex AI mode"
@@ -453,26 +434,26 @@ async def update_vertex_ai_config(
             db.add(user_config)
         
         # Update configuration
-        user_config.api_mode = request_body.apiMode
+        user_config.api_mode = request_body.api_mode
         
-        if request_body.apiMode == 'vertex_ai':
-            user_config.vertex_ai_project_id = request_body.vertexAiProjectId
-            user_config.vertex_ai_location = request_body.vertexAiLocation or 'us-central1'
+        if request_body.api_mode == 'vertex_ai':
+            user_config.vertex_ai_project_id = request_body.vertex_ai_project_id
+            user_config.vertex_ai_location = request_body.vertex_ai_location or 'us-central1'
             
             # 保存 credentials JSON（加密存储）
-            if request_body.vertexAiCredentialsJson:
+            if request_body.vertex_ai_credentials_json:
                 # 判断是否已经是加密的
-                if is_encrypted(request_body.vertexAiCredentialsJson):
+                if is_encrypted(request_body.vertex_ai_credentials_json):
                     # 如果已经是加密的，可能是前端传递回来的加密值（用户没有修改）
                     # 检查是否与数据库中的值相同
                     existing_encrypted = user_config.vertex_ai_credentials_json
-                    if existing_encrypted == request_body.vertexAiCredentialsJson:
+                    if existing_encrypted == request_body.vertex_ai_credentials_json:
                         # 用户没有修改凭证，保持加密状态
                         logger.debug(f"[VertexAIConfig] Credentials unchanged, keeping encrypted value (user={user_id})")
                         # 不需要更新，保持原值
                     else:
                         # 不同的加密值，直接保存（可能是从其他地方传递的加密值）
-                        user_config.vertex_ai_credentials_json = request_body.vertexAiCredentialsJson
+                        user_config.vertex_ai_credentials_json = request_body.vertex_ai_credentials_json
                         logger.debug(f"[VertexAIConfig] Saved encrypted credentials (different encrypted value) (user={user_id})")
                 else:
                     # 明文凭证（用户输入的新凭证或修改过的凭证），加密后保存
@@ -483,29 +464,29 @@ async def update_vertex_ai_config(
                             try:
                                 if is_encrypted(existing_encrypted):
                                     existing_decrypted = decrypt_data(existing_encrypted, silent=True)
-                                    if existing_decrypted == request_body.vertexAiCredentialsJson:
+                                    if existing_decrypted == request_body.vertex_ai_credentials_json:
                                         # 用户没有修改凭证，保持加密状态
                                         logger.debug(f"[VertexAIConfig] Credentials unchanged (decrypted comparison), keeping encrypted value (user={user_id})")
                                         # 不需要更新，保持原值
                                     else:
                                         # 新的凭证，加密后保存
-                                        encrypted_credentials = encrypt_data(request_body.vertexAiCredentialsJson)
+                                        encrypted_credentials = encrypt_data(request_body.vertex_ai_credentials_json)
                                         user_config.vertex_ai_credentials_json = encrypted_credentials
                                         logger.info(f"[VertexAIConfig] Encrypted and saved new credentials (user={user_id})")
                                 else:
                                     # 数据库中是明文（旧数据），加密后保存
-                                    encrypted_credentials = encrypt_data(request_body.vertexAiCredentialsJson)
+                                    encrypted_credentials = encrypt_data(request_body.vertex_ai_credentials_json)
                                     user_config.vertex_ai_credentials_json = encrypted_credentials
                                     logger.info(f"[VertexAIConfig] Encrypted and saved credentials (migrated from plaintext) (user={user_id})")
                             except Exception as e:
                                 # 解密失败，可能是密钥不匹配，当作新凭证处理
                                 logger.warning(f"[VertexAIConfig] Failed to decrypt existing credentials for comparison: {e}")
-                                encrypted_credentials = encrypt_data(request_body.vertexAiCredentialsJson)
+                                encrypted_credentials = encrypt_data(request_body.vertex_ai_credentials_json)
                                 user_config.vertex_ai_credentials_json = encrypted_credentials
                                 logger.info(f"[VertexAIConfig] Encrypted and saved new credentials (decryption failed) (user={user_id})")
                         else:
                             # 数据库中没有凭证，加密后保存
-                            encrypted_credentials = encrypt_data(request_body.vertexAiCredentialsJson)
+                            encrypted_credentials = encrypt_data(request_body.vertex_ai_credentials_json)
                             user_config.vertex_ai_credentials_json = encrypted_credentials
                             logger.info(f"[VertexAIConfig] Encrypted and saved new credentials (first time) (user={user_id})")
                     except Exception as e:
@@ -517,23 +498,23 @@ async def update_vertex_ai_config(
             
             # Save model configurations (hidden_models and saved_models)
             # Always update these fields if provided (even if empty array)
-            if hasattr(request_body, 'hiddenModels') and request_body.hiddenModels is not None:
-                user_config.hidden_models = request_body.hiddenModels
+            if hasattr(request_body, 'hiddenModels') and request_body.hidden_models is not None:
+                user_config.hidden_models = request_body.hidden_models
                 logger.info(
-                    f"[VertexAIConfig] Updated hidden_models for user={user_id}: {len(request_body.hiddenModels)} models"
+                    f"[VertexAIConfig] Updated hidden_models for user={user_id}: {len(request_body.hidden_models)} models"
                 )
-            elif request_body.apiMode == 'vertex_ai':
+            elif request_body.api_mode == 'vertex_ai':
                 # If not provided but in vertex_ai mode, initialize as empty array
                 if user_config.hidden_models is None:
                     user_config.hidden_models = []
             
-            if hasattr(request_body, 'savedModels') and request_body.savedModels is not None:
+            if hasattr(request_body, 'savedModels') and request_body.saved_models is not None:
                 # ✅ 确保保存的模型包含完整的能力信息和描述
                 # 如果前端传递的模型缺少 capabilities 或 description，从 model_capabilities 获取
                 from ...services.common.model_capabilities import get_google_capabilities, build_model_config, get_model_description
                 
                 enriched_saved_models = []
-                for model_data in request_body.savedModels:
+                for model_data in request_body.saved_models:
                     # 如果已经是完整的 ModelConfig 格式（包含 capabilities），直接使用
                     if isinstance(model_data, dict) and 'capabilities' in model_data:
                         model_id = model_data.get('id', '')
@@ -621,7 +602,7 @@ async def update_vertex_ai_config(
                 logger.info(
                     f"[VertexAIConfig] Saved {len(enriched_saved_models)} model configurations with capabilities for user={user_id}"
                 )
-            elif request_body.apiMode == 'vertex_ai':
+            elif request_body.api_mode == 'vertex_ai':
                 # If not provided but in vertex_ai mode, initialize as empty array
                 if user_config.saved_models is None:
                     user_config.saved_models = []
@@ -639,7 +620,7 @@ async def update_vertex_ai_config(
         
         logger.info(
             f"[VertexAIConfig] Configuration updated successfully: "
-            f"api_mode={request_body.apiMode}, user={user_id}"
+            f"api_mode={request_body.api_mode}, user={user_id}"
         )
         
         # Build response with updated configuration
@@ -700,7 +681,7 @@ async def update_vertex_ai_config(
         
         return {
             "success": True,
-            "message": f"Vertex AI configuration updated to {request_body.apiMode} mode",
+            "message": f"Vertex AI configuration updated to {request_body.api_mode} mode",
             "config": updated_config
         }
         
@@ -742,34 +723,34 @@ async def test_vertex_ai_connection(
         
         logger.info(
             f"[VertexAIConfig] Testing connection for user={user_id}, "
-            f"api_mode={request_body.apiMode}"
+            f"api_mode={request_body.api_mode}"
         )
         
         # Validate credentials based on API mode
-        if request_body.apiMode == 'gemini_api':
-            if not request_body.geminiApiKey:
+        if request_body.api_mode == 'gemini_api':
+            if not request_body.gemini_api_key:
                 raise HTTPException(
                     status_code=400,
                     detail="geminiApiKey is required for testing Gemini API"
                 )
-        elif request_body.apiMode == 'vertex_ai':
-            if not request_body.vertexAiProjectId:
+        elif request_body.api_mode == 'vertex_ai':
+            if not request_body.vertex_ai_project_id:
                 raise HTTPException(
                     status_code=400,
                     detail="vertexAiProjectId is required for testing Vertex AI"
                 )
-            if not request_body.vertexAiCredentialsJson:
+            if not request_body.vertex_ai_credentials_json:
                 raise HTTPException(
                     status_code=400,
                     detail="vertexAiCredentialsJson is required for testing Vertex AI"
                 )
         
         # Create temporary generator to test connection
-        if request_body.apiMode == 'gemini_api':
+        if request_body.api_mode == 'gemini_api':
             from ...services.gemini.imagen_gemini_api import GeminiAPIImageGenerator
             
             generator = GeminiAPIImageGenerator(
-                api_key=request_body.geminiApiKey
+                api_key=request_body.gemini_api_key
             )
             
             # Test by getting supported models
@@ -789,9 +770,9 @@ async def test_vertex_ai_connection(
             from ...services.gemini.imagen_vertex_ai import VertexAIImageGenerator
             
             generator = VertexAIImageGenerator(
-                project_id=request_body.vertexAiProjectId,
-                location=request_body.vertexAiLocation,
-                credentials_json=request_body.vertexAiCredentialsJson
+                project_id=request_body.vertex_ai_project_id,
+                location=request_body.vertex_ai_location,
+                credentials_json=request_body.vertex_ai_credentials_json
             )
             
             # Test by getting supported models
@@ -802,8 +783,8 @@ async def test_vertex_ai_connection(
                 api_mode='vertex_ai',
                 message="Successfully connected to Vertex AI",
                 details={
-                    "project_id": request_body.vertexAiProjectId,
-                    "location": request_body.vertexAiLocation,
+                    "project_id": request_body.vertex_ai_project_id,
+                    "location": request_body.vertex_ai_location,
                     "supported_models": models,
                     "capabilities": generator.get_capabilities()
                 }
@@ -817,7 +798,7 @@ async def test_vertex_ai_connection(
         )
         return TestConnectionResponse(
             success=False,
-            api_mode=request_body.apiMode,
+            api_mode=request_body.api_mode,
             message=f"Configuration error: {str(e)}"
         )
     except Exception as e:
@@ -827,7 +808,7 @@ async def test_vertex_ai_connection(
         )
         return TestConnectionResponse(
             success=False,
-            api_mode=request_body.apiMode,
+            api_mode=request_body.api_mode,
             message=f"Connection test failed: {str(e)}"
         )
 
@@ -862,7 +843,7 @@ async def verify_vertex_ai_connection(
         
         logger.info(
             f"[VertexAIConfig] Verifying Vertex AI connection: "
-            f"project={request_body.projectId}, location={request_body.location}"
+            f"project={request_body.project_id}, location={request_body.location}"
         )
         
         # Import Google GenAI SDK
@@ -879,7 +860,7 @@ async def verify_vertex_ai_connection(
             )
         
         # 直接使用 credentials JSON（测试时使用明文）
-        credentials_json_to_use = request_body.credentialsJson
+        credentials_json_to_use = request_body.credentials_json
         
         # Create temporary credentials file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
@@ -889,7 +870,7 @@ async def verify_vertex_ai_connection(
         try:
             # Set environment variables for Vertex AI
             os.environ['GOOGLE_GENAI_USE_VERTEXAI'] = 'true'
-            os.environ['GOOGLE_CLOUD_PROJECT'] = request_body.projectId
+            os.environ['GOOGLE_CLOUD_PROJECT'] = request_body.project_id
             os.environ['GOOGLE_CLOUD_LOCATION'] = request_body.location
             os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_credentials_path
             

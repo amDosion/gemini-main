@@ -95,8 +95,9 @@ export class StorageUploadService {
       const formData = new FormData();
       formData.append('file', file);
 
+      // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
       const url = storageId
-        ? `${API_BASE}/storage/upload?storage_id=${storageId}`
+        ? `${API_BASE}/storage/upload?storageId=${storageId}`
         : `${API_BASE}/storage/upload`;
 
       const response = await fetch(url, {
@@ -423,11 +424,12 @@ export class StorageUploadService {
       formData.append('file', file);
 
       const params = new URLSearchParams();
-      params.append('session_id', options.sessionId);
-      params.append('message_id', options.messageId);
-      params.append('attachment_id', options.attachmentId);
+      // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
+      params.append('sessionId', options.sessionId);
+      params.append('messageId', options.messageId);
+      params.append('attachmentId', options.attachmentId);
       if (options.storageId) {
-        params.append('storage_id', options.storageId);
+        params.append('storageId', options.storageId);
       }
 
       const response = await fetch(`${API_BASE}/storage/upload-async?${params.toString()}`, {
@@ -443,19 +445,19 @@ export class StorageUploadService {
       }
 
       const result = await response.json();
-      console.log('[StorageUpload] 异步上传任务已创建:', result.task_id);
+      console.log('[StorageUpload] 异步上传任务已创建:', result.taskId);
       if (result.enqueued === false) {
-        console.warn('[StorageUpload] 任务创建成功但 Redis 入队失败，将依赖后端启动补偿/手动补偿:', result.enqueue_error);
+        console.warn('[StorageUpload] 任务创建成功但 Redis 入队失败，将依赖后端启动补偿/手动补偿:', result.enqueueError);
       }
       
       return {
-        taskId: result.task_id,
-        attachmentId: result.attachment_id,
+        taskId: result.taskId,
+        attachmentId: result.attachmentId,
         status: result.status,
         message: result.message,
         enqueued: result.enqueued,
-        enqueueError: result.enqueue_error,
-        queuePosition: result.queue_position
+        enqueueError: result.enqueueError,
+        queuePosition: result.queuePosition
       };
     } catch (error) {
       console.error('[StorageUpload] 创建异步上传任务失败:', error);
@@ -497,10 +499,10 @@ export class StorageUploadService {
         body: JSON.stringify({
           url: imageUrl,
           filename,
-          session_id: options?.sessionId,
-          storage_id: options?.storageId,
-          message_id: options?.messageId,
-          attachment_id: options?.attachmentId
+          sessionId: options?.sessionId,
+          storageId: options?.storageId,
+          messageId: options?.messageId,
+          attachmentId: options?.attachmentId
         })
       });
 
@@ -510,18 +512,18 @@ export class StorageUploadService {
       }
 
       const result = await response.json();
-      console.log('[StorageUpload] 上传任务已创建:', result.task_id);
+      console.log('[StorageUpload] 上传任务已创建:', result.taskId);
       if (result.enqueued === false) {
-        console.warn('[StorageUpload] 任务创建成功但 Redis 入队失败，将依赖后端启动补偿/手动补偿:', result.enqueue_error);
+        console.warn('[StorageUpload] 任务创建成功但 Redis 入队失败，将依赖后端启动补偿/手动补偿:', result.enqueueError);
       }
 
       return {
-        taskId: result.task_id,
+        taskId: result.taskId,
         status: result.status,
         message: result.message,
         enqueued: result.enqueued,
-        enqueueError: result.enqueue_error,
-        queuePosition: result.queue_position
+        enqueueError: result.enqueueError,
+        queuePosition: result.queuePosition
       };
     } catch (error) {
       console.error('[StorageUpload] 创建上传任务失败:', error);

@@ -5,7 +5,7 @@
  */
 
 export interface BrowseProgressUpdate {
-  operation_id: string;
+  operationId: string;
   step: string;
   status: 'in_progress' | 'completed' | 'error';
   details: string | null;

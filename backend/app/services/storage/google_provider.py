@@ -18,9 +18,9 @@ class GoogleProvider(BaseStorageProvider):
     
     def _create_credentials(self) -> Credentials:
         """创建 OAuth2 凭证"""
-        client_id = self.config.get("clientId")
-        client_secret = self.config.get("clientSecret")
-        refresh_token = self.config.get("refreshToken")
+        client_id = self.config.get("client_id")
+        client_secret = self.config.get("client_secret")
+        refresh_token = self.config.get("refresh_token")
         
         return Credentials(
             token=None,
@@ -47,16 +47,16 @@ class GoogleProvider(BaseStorageProvider):
         Returns:
             UploadResult: 上传结果
         """
-        client_id = self.config.get("clientId")
-        client_secret = self.config.get("clientSecret")
-        refresh_token = self.config.get("refreshToken")
-        folder_id = self.config.get("folderId")
-        
+        client_id = self.config.get("client_id")
+        client_secret = self.config.get("client_secret")
+        refresh_token = self.config.get("refresh_token")
+        folder_id = self.config.get("folder_id")
+
         # 验证配置
         if not all([client_id, client_secret, refresh_token]):
             return UploadResult(
                 success=False,
-                error="Google Drive 配置不完整：缺少必填项（clientId, clientSecret, refreshToken）",
+                error="Google Drive 配置不完整：缺少必填项（client_id, client_secret, refresh_token）",
                 provider="google-drive"
             )
         
@@ -114,10 +114,10 @@ class GoogleProvider(BaseStorageProvider):
                 url=public_url,
                 provider="google-drive",
                 metadata={
-                    "fileId": file_id,
-                    "folderId": folder_id,
-                    "webViewLink": web_view_link,
-                    "webContentLink": web_content_link
+                    "file_id": file_id,
+                    "folder_id": folder_id,
+                    "web_view_link": web_view_link,
+                    "web_content_link": web_content_link
                 }
             )
         
@@ -192,14 +192,14 @@ class GoogleProvider(BaseStorageProvider):
         Returns:
             UploadResult: 测试结果
         """
-        client_id = self.config.get("clientId")
-        client_secret = self.config.get("clientSecret")
-        refresh_token = self.config.get("refreshToken")
-        
+        client_id = self.config.get("client_id")
+        client_secret = self.config.get("client_secret")
+        refresh_token = self.config.get("refresh_token")
+
         if not all([client_id, client_secret, refresh_token]):
             return UploadResult(
                 success=False,
-                error="Google Drive 配置不完整：缺少必填项（clientId, clientSecret, refreshToken）",
+                error="Google Drive 配置不完整：缺少必填项（client_id, client_secret, refresh_token）",
                 provider="google-drive"
             )
         
@@ -215,7 +215,7 @@ class GoogleProvider(BaseStorageProvider):
             return UploadResult(
                 success=True,
                 provider="google-drive",
-                metadata={"userEmail": user_email}
+                metadata={"user_email": user_email}
             )
         
         except RefreshError as e:

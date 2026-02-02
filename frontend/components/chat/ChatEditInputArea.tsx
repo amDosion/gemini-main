@@ -215,8 +215,10 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
 
   // 发送逻辑
   const handleGenerate = useCallback(async () => {
+    // 判断是否需要 prompt（扩图模式不强制要求 prompt）
+    const requiresPrompt = mode !== 'image-outpainting';
     // 如果没有上传附件且画布也没有图片，则不允许发送
-    if (!prompt.trim() || isLoading || (activeAttachments.length === 0 && !activeImageUrl)) return;
+    if ((requiresPrompt && !prompt.trim()) || isLoading || (activeAttachments.length === 0 && !activeImageUrl)) return;
 
     try {
       // 逻辑：
@@ -281,6 +283,40 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
         options.maskMode = controls.maskMode; // Vertex AI MaskReferenceConfig.mask_mode
       }
 
+      // ✅ Outpainting 模式特有参数（传递给 ExpandService）
+      if (mode === 'image-outpainting') {
+        // 扩图模式：ratio | scale | offset | upscale
+        (options as any).outpaintMode = controls.outpaintMode;
+
+        // 根据扩图模式传递不同的参数
+        if (controls.outpaintMode === 'scale') {
+          // 缩放模式：x_scale, y_scale
+          (options as any).xScale = controls.xScale;
+          (options as any).yScale = controls.yScale;
+        } else if (controls.outpaintMode === 'offset') {
+          // 偏移模式：left_offset, right_offset, top_offset, bottom_offset
+          (options as any).leftOffset = controls.offsetPixels.left;
+          (options as any).rightOffset = controls.offsetPixels.right;
+          (options as any).topOffset = controls.offsetPixels.top;
+          (options as any).bottomOffset = controls.offsetPixels.bottom;
+        } else if (controls.outpaintMode === 'ratio') {
+          // 比例模式：使用 aspectRatio
+          (options as any).outputRatio = controls.aspectRatio;
+        } else if (controls.outpaintMode === 'upscale') {
+          // 放大模式：upscale_factor
+          (options as any).upscaleFactor = controls.upscaleFactor;
+        }
+
+        console.log('[ChatEditInputArea] ✅ Outpainting 参数:', {
+          outpaintMode: controls.outpaintMode,
+          xScale: controls.xScale,
+          yScale: controls.yScale,
+          offsetPixels: controls.offsetPixels,
+          upscaleFactor: controls.upscaleFactor,
+          aspectRatio: controls.aspectRatio,
+        });
+      }
+
       onSend(prompt, options, finalAttachments, mode);
       setPrompt(''); // 发送后清空提示词
       
@@ -314,7 +350,9 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
 
   // 判断是否需要附件（某些模式不需要附件，如 audio-gen）
   const requiresAttachment = !['video-gen', 'audio-gen'].includes(mode);
-  const isDisabled = !prompt.trim() || isLoading || (requiresAttachment && activeAttachments.length === 0 && !activeImageUrl);
+  // 判断是否需要 prompt（扩图模式不强制要求 prompt）
+  const requiresPromptForMode = mode !== 'image-outpainting';
+  const isDisabled = (requiresPromptForMode && !prompt.trim()) || isLoading || (requiresAttachment && activeAttachments.length === 0 && !activeImageUrl);
 
   return (
     <div className="border-t border-slate-800 p-3 space-y-2 bg-slate-900/80">

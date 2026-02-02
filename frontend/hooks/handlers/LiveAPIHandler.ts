@@ -28,7 +28,7 @@ export class LiveAPIHandler extends BaseHandler {
         credentials: 'include',
         body: JSON.stringify({
           input: text,
-          agent_id: agentId
+          agentId: agentId  // ✅ 使用 camelCase（中间件会转为 snake_case）
         }),
       });
 

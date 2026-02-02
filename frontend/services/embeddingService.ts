@@ -26,12 +26,12 @@ export class EmbeddingService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          user_id: userId,
+          userId: userId,
           filename,
           content,
-          api_key: apiKey,
-          chunk_size: chunkSize,
-          chunk_overlap: chunkOverlap,
+          apiKey: apiKey,
+          chunkSize: chunkSize,
+          chunkOverlap: chunkOverlap,
         }),
       });
 
@@ -64,10 +64,10 @@ export class EmbeddingService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          user_id: userId,
+          userId: userId,
           query,
-          api_key: apiKey,
-          top_k: topK,
+          apiKey: apiKey,
+          topK: topK,
         }),
       });
 

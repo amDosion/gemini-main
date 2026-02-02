@@ -16,8 +16,8 @@ class TencentProvider(BaseStorageProvider):
     
     def _create_client(self) -> CosS3Client:
         """创建 COS 客户端"""
-        secret_id = self.config.get("secretId")
-        secret_key = self.config.get("secretKey")
+        secret_id = self.config.get("secret_id")
+        secret_key = self.config.get("secret_key")
         region = self.config.get("region")
         
         config = CosConfig(Region=region, SecretId=secret_id, SecretKey=secret_key)
@@ -35,18 +35,18 @@ class TencentProvider(BaseStorageProvider):
         Returns:
             UploadResult: 上传结果
         """
-        secret_id = self.config.get("secretId")
-        secret_key = self.config.get("secretKey")
+        secret_id = self.config.get("secret_id")
+        secret_key = self.config.get("secret_key")
         bucket = self.config.get("bucket")
         region = self.config.get("region")
         custom_domain = self.config.get("domain")
-        path_prefix = self.config.get("pathPrefix", "")
-        
+        path_prefix = self.config.get("path_prefix", "")
+
         # 验证配置
         if not all([secret_id, secret_key, bucket, region]):
             return UploadResult(
                 success=False,
-                error="腾讯云 COS 配置不完整：缺少必填项（secretId, secretKey, bucket, region）",
+                error="腾讯云 COS 配置不完整：缺少必填项（secret_id, secret_key, bucket, region）",
                 provider="tencent-cos"
             )
         
@@ -88,7 +88,7 @@ class TencentProvider(BaseStorageProvider):
                     url=image_url,
                     provider="tencent-cos",
                     metadata={
-                        "objectName": object_name,
+                        "object_name": object_name,
                         "bucket": bucket,
                         "region": region,
                         "etag": response.get('ETag', '').strip('"')
@@ -168,15 +168,15 @@ class TencentProvider(BaseStorageProvider):
         Returns:
             UploadResult: 测试结果
         """
-        secret_id = self.config.get("secretId")
-        secret_key = self.config.get("secretKey")
+        secret_id = self.config.get("secret_id")
+        secret_key = self.config.get("secret_key")
         bucket = self.config.get("bucket")
         region = self.config.get("region")
-        
+
         if not all([secret_id, secret_key, bucket, region]):
             return UploadResult(
                 success=False,
-                error="腾讯云 COS 配置不完整：缺少必填项（secretId, secretKey, bucket, region）",
+                error="腾讯云 COS 配置不完整：缺少必填项（secret_id, secret_key, bucket, region）",
                 provider="tencent-cos"
             )
         

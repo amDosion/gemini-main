@@ -306,8 +306,8 @@ export const LayerPropertyEditor: React.FC<LayerPropertyEditorProps> = ({
         <div className="grid grid-cols-2 gap-2">
           <NumberInput
             label="锚点 X"
-            value={layer.transform.anchor_x}
-            onChange={(v) => updateTransform('anchor_x', v)}
+            value={layer.transform.anchorX}
+            onChange={(v) => updateTransform('anchorX', v)}
             min={0}
             max={1}
             step={0.1}
@@ -315,8 +315,8 @@ export const LayerPropertyEditor: React.FC<LayerPropertyEditorProps> = ({
           />
           <NumberInput
             label="锚点 Y"
-            value={layer.transform.anchor_y}
-            onChange={(v) => updateTransform('anchor_y', v)}
+            value={layer.transform.anchorY}
+            onChange={(v) => updateTransform('anchorY', v)}
             min={0}
             max={1}
             step={0.1}
@@ -351,10 +351,10 @@ export const LayerPropertyEditor: React.FC<LayerPropertyEditorProps> = ({
             <>
               <NumberInput
                 label="字号"
-                value={(layer as TextLayer).style?.font_size || 16}
+                value={(layer as TextLayer).style?.fontSize || 16}
                 onChange={(v) =>
                   onUpdateLayer(layer.id, {
-                    style: { ...(layer as TextLayer).style, font_size: v },
+                    style: { ...(layer as TextLayer).style, fontSize: v },
                   } as Partial<TextLayer>)
                 }
                 min={8}
@@ -370,17 +370,17 @@ export const LayerPropertyEditor: React.FC<LayerPropertyEditorProps> = ({
                 <div className="flex items-center gap-2">
                   <input
                     type="color"
-                    value={(layer as TextLayer).style?.font_color || '#ffffff'}
+                    value={(layer as TextLayer).style?.fontColor || '#ffffff'}
                     onChange={(e) =>
                       onUpdateLayer(layer.id, {
-                        style: { ...(layer as TextLayer).style, font_color: e.target.value },
+                        style: { ...(layer as TextLayer).style, fontColor: e.target.value },
                       } as Partial<TextLayer>)
                     }
                     disabled={isDisabled}
                     className="w-8 h-6 rounded cursor-pointer"
                   />
                   <span className="text-xs text-white font-mono">
-                    {(layer as TextLayer).style?.font_color || '#ffffff'}
+                    {(layer as TextLayer).style?.fontColor || '#ffffff'}
                   </span>
                 </div>
               </div>

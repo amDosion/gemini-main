@@ -31,59 +31,16 @@ from ...utils.message_utils import (
 )
 from ...core.dependencies import require_current_user, get_cache
 from ...core.user_scoped_query import UserScopedQuery
+from ...utils.message_assembly import assemble_messages_v3
 
 
 router = APIRouter(prefix="/api", tags=["sessions"])
 
 
-# ==================== v3 辅助函数 ====================
+# ==================== v3 辅助函数（已移至 utils/message_assembly.py）====================
 
-def assemble_messages_v3(
-    session_id: str,
-    indexes: List[MessageIndex],
-    messages_by_table: Dict[str, Dict[str, Any]],
-    attachments_by_message: Dict[str, List[MessageAttachment]]
-) -> List[Dict[str, Any]]:
-    """
-    组装单个会话的消息列表 (v3 架构)
-    
-    Args:
-        session_id: 会话 ID
-        indexes: 该会话的消息索引列表（已按 seq 排序）
-        messages_by_table: {table_name: {msg_id: msg_obj}} 消息字典
-        attachments_by_message: {message_id: [attachment_obj]} 附件字典
-    
-    Returns:
-        组装后的消息列表
-    """
-    assembled_messages = []
-    
-    for idx in indexes:
-        # 从模式表获取消息
-        table_messages = messages_by_table.get(idx.table_name, {})
-        msg = table_messages.get(idx.id)
-        
-        if not msg:
-            # 数据不一致：索引存在但消息不存在，跳过
-            print(f"[Sessions] ⚠️ 消息不存在: id={idx.id}, table={idx.table_name}")
-            continue
-        
-        # 转换为字典
-        msg_dict = msg.to_dict()
-        
-        # ✅ 关键：从索引表获取 mode 字段并赋值
-        msg_dict['mode'] = idx.mode
-        
-        # 附加附件
-        atts = attachments_by_message.get(idx.id, [])
-        if atts:
-            msg_dict['attachments'] = [att.to_dict() for att in atts]
-        else:
-            msg_dict['attachments'] = []
-        
-        assembled_messages.append(msg_dict)
-    
-    return assembled_messages
+# 已删除重复的 assemble_messages_v3 函数
+# 现在使用统一的实现：utils/message_assembly.py
 
 
 # ==================== 会话管理 ====================
@@ -180,8 +137,8 @@ async def get_sessions(
             session_dict = {
                 "id": session.id,
                 "title": session.title,
-                "createdAt": session.created_at,
-                "personaId": session.persona_id,
+                "created_at": session.created_at,
+                "persona_id": session.persona_id,
                 "mode": session.mode
             }
             
@@ -250,7 +207,7 @@ async def create_or_update_session(
     if session:
         # 更新现有会话元数据
         session.title = session_data.get("title", session.title)
-        session.persona_id = session_data.get("personaId", session.persona_id)
+        session.persona_id = session_data.get("persona_id", session.persona_id)
         session.mode = session_data.get("mode", session.mode)
     else:
         # 创建新会话
@@ -258,8 +215,8 @@ async def create_or_update_session(
             id=session_id,
             user_id=user_id,
             title=session_data.get("title", "新对话"),
-            created_at=session_data.get("createdAt", int(datetime.now().timestamp() * 1000)),
-            persona_id=session_data.get("personaId"),
+            created_at=session_data.get("created_at", int(datetime.now().timestamp() * 1000)),
+            persona_id=session_data.get("persona_id"),
             mode=session_data.get("mode")
         )
         db.add(session)
@@ -378,15 +335,15 @@ async def create_or_update_session(
         table_class = get_message_table_class_by_name(table_name)
         message = db.query(table_class).get(msg_id)
 
-        # ✅ 调试：检查 thoughts/textResponse/enhancedPrompt 是否存在于消息中
+        # ✅ 调试：检查 thoughts/text_response/enhanced_prompt 是否存在于消息中
         extracted_meta = extract_metadata(msg)
         if extracted_meta:
             # 只记录关键字段，不记录完整内容
             meta_keys = list(extracted_meta.keys())
             has_thoughts = 'thoughts' in extracted_meta
-            has_text_response = 'textResponse' in extracted_meta
-            has_enhanced_prompt = 'enhancedPrompt' in extracted_meta
-            logger.info(f"[Sessions] 📝 消息 {msg_id[:8]}... 的 metadata 字段: {meta_keys}, thoughts={has_thoughts}, textResponse={has_text_response}, enhancedPrompt={has_enhanced_prompt}")
+            has_text_response = 'text_response' in extracted_meta
+            has_enhanced_prompt = 'enhanced_prompt' in extracted_meta
+            logger.info(f"[Sessions] 📝 消息 {msg_id[:8]}... 的 metadata 字段: {meta_keys}, thoughts={has_thoughts}, text_response={has_text_response}, enhanced_prompt={has_enhanced_prompt}")
 
         metadata_json = json.dumps(extracted_meta) if extracted_meta else None
         
@@ -406,12 +363,12 @@ async def create_or_update_session(
         else:
             # 更新消息
             message.content = msg.get("content", "")
-            message.is_error = msg.get("isError", False)
+            message.is_error = msg.get("is_error", False)
             message.metadata_json = metadata_json
 
         # ✅ image-chat-edit: persist enhanced prompt into edit_prompt if available
         if hasattr(message, "edit_prompt"):
-            enhanced_prompt_value = msg.get("enhancedPrompt") or msg.get("editPrompt")
+            enhanced_prompt_value = msg.get("enhanced_prompt") or msg.get("edit_prompt")
             if enhanced_prompt_value:
                 message.edit_prompt = enhanced_prompt_value
         
@@ -457,15 +414,15 @@ async def create_or_update_session(
                     session_id=session_id,
                     user_id=user_id,
                     message_id=msg_id,
-                    mime_type=att.get("mimeType"),
+                    mime_type=att.get("mime_type"),
                     name=att.get("name"),
                     url=final_url,
-                    temp_url=att.get("tempUrl"),
-                    file_uri=att.get("fileUri"),
-                    upload_status=att.get("uploadStatus", "pending"),
+                    temp_url=att.get("temp_url"),
+                    file_uri=att.get("file_uri"),
+                    upload_status=att.get("upload_status", "pending"),
                     upload_task_id=task.id if task else None,
-                    google_file_uri=att.get("googleFileUri"),
-                    google_file_expiry=att.get("googleFileExpiry"),
+                    google_file_uri=att.get("google_file_uri"),
+                    google_file_expiry=att.get("google_file_expiry"),
                     size=att.get("size")
                 )
                 db.add(attachment)
@@ -481,11 +438,11 @@ async def create_or_update_session(
                 
                 # 更新其他字段
                 attachment.message_id = msg_id
-                attachment.mime_type = att.get("mimeType") or attachment.mime_type
+                attachment.mime_type = att.get("mime_type") or attachment.mime_type
                 attachment.name = att.get("name") or attachment.name
-                attachment.file_uri = att.get("fileUri") or attachment.file_uri
-                attachment.google_file_uri = att.get("googleFileUri") or attachment.google_file_uri
-                attachment.google_file_expiry = att.get("googleFileExpiry") or attachment.google_file_expiry
+                attachment.file_uri = att.get("file_uri") or attachment.file_uri
+                attachment.google_file_uri = att.get("google_file_uri") or attachment.google_file_uri
+                attachment.google_file_expiry = att.get("google_file_expiry") or attachment.google_file_expiry
                 attachment.size = att.get("size") or attachment.size
         
         # ✅ 更新内存记录
@@ -593,8 +550,8 @@ async def get_session_by_id(session_id: str, user_id: str, db: Session) -> Dict[
         "id": session.id,
         "title": session.title,
         "messages": messages,
-        "createdAt": session.created_at,
-        "personaId": session.persona_id,
+        "created_at": session.created_at,
+        "persona_id": session.persona_id,
         "mode": session.mode
     }
 
@@ -700,11 +657,11 @@ async def get_attachment(
     {
         "id": "att-xxx",
         "url": "https://img.dicry.com/xxx.png",
-        "uploadStatus": "completed",
-        "mimeType": "image/png",
+        "upload_status": "completed",
+        "mime_type": "image/png",
         "name": "image.png",
-        "taskId": "task-xxx",
-        "taskStatus": "completed"
+        "task_id": "task-xxx",
+        "task_status": "completed"
     }
     """
     user_query = UserScopedQuery(db, user_id)
@@ -733,15 +690,15 @@ async def get_attachment(
     
     # 如果有关联的上传任务，添加任务信息
     if task:
-        result["taskId"] = task.id
-        result["taskStatus"] = task.status
+        result["task_id"] = task.id
+        result["task_status"] = task.status
         print(f"[Sessions] 找到上传任务: task_id={task.id[:8]}..., status={task.status}, target_url={task.target_url[:60] if task.target_url else 'None'}")
         
         # 如果任务已完成且有目标 URL，优先使用任务的 URL
         if task.status == 'completed' and task.target_url:
             result["url"] = task.target_url
-            result["uploadStatus"] = 'completed'
+            result["upload_status"] = 'completed'
             print(f"[Sessions] ✅ 使用任务的 target_url 作为最终 URL")
     
-    print(f"[Sessions] 查询附件: {attachment_id[:8]}... -> url: {result.get('url', 'None')[:50] if result.get('url') else 'None'}..., uploadStatus: {result.get('uploadStatus')}")
+    print(f"[Sessions] 查询附件: {attachment_id[:8]}... -> url: {result.get('url', 'None')[:50] if result.get('url') else 'None'}..., upload_status: {result.get('upload_status')}")
     return result

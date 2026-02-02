@@ -10,7 +10,7 @@ interface ToolCall {
 
 interface ToolResult {
   name: string;
-  call_id: string;
+  callId: string;
   result: any;
   error?: string;
 }

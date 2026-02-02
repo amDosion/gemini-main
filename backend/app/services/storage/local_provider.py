@@ -28,8 +28,8 @@ class LocalProvider(BaseStorageProvider):
     
     def _check_storage_space(self, content_size: int) -> tuple[bool, str]:
         """检查存储空间是否足够"""
-        storage_path = self.config.get("storagePath")
-        max_size_mb = self.config.get("maxSizeMB")
+        storage_path = self.config.get("storage_path")
+        max_size_mb = self.config.get("max_size_mb")
         
         if not max_size_mb:
             return True, ""
@@ -61,14 +61,14 @@ class LocalProvider(BaseStorageProvider):
         Returns:
             UploadResult: 上传结果
         """
-        storage_path = self.config.get("storagePath")
-        url_prefix = self.config.get("urlPrefix")
-        
+        storage_path = self.config.get("storage_path")
+        url_prefix = self.config.get("url_prefix")
+
         # 验证配置
         if not storage_path or not url_prefix:
             return UploadResult(
                 success=False,
-                error="本地存储配置不完整：缺少必填项（storagePath, urlPrefix）",
+                error="本地存储配置不完整：缺少必填项（storage_path, url_prefix）",
                 provider="local"
             )
         
@@ -123,10 +123,10 @@ class LocalProvider(BaseStorageProvider):
                 url=public_url,
                 provider="local",
                 metadata={
-                    "filePath": file_path,
-                    "relativePath": relative_path,
-                    "fileSize": file_size,
-                    "contentType": content_type
+                    "file_path": file_path,
+                    "relative_path": relative_path,
+                    "file_size": file_size,
+                    "content_type": content_type
                 }
             )
         
@@ -159,9 +159,9 @@ class LocalProvider(BaseStorageProvider):
         Returns:
             bool: 删除是否成功
         """
-        storage_path = self.config.get("storagePath")
-        url_prefix = self.config.get("urlPrefix")
-        
+        storage_path = self.config.get("storage_path")
+        url_prefix = self.config.get("url_prefix")
+
         if not storage_path or not url_prefix:
             return False
         
@@ -202,13 +202,13 @@ class LocalProvider(BaseStorageProvider):
         Returns:
             UploadResult: 测试结果
         """
-        storage_path = self.config.get("storagePath")
-        url_prefix = self.config.get("urlPrefix")
-        
+        storage_path = self.config.get("storage_path")
+        url_prefix = self.config.get("url_prefix")
+
         if not storage_path or not url_prefix:
             return UploadResult(
                 success=False,
-                error="本地存储配置不完整：缺少必填项（storagePath, urlPrefix）",
+                error="本地存储配置不完整：缺少必填项（storage_path, url_prefix）",
                 provider="local"
             )
         
@@ -234,16 +234,16 @@ class LocalProvider(BaseStorageProvider):
             # 计算当前使用空间
             current_size_bytes = self._get_directory_size(storage_path)
             current_size_mb = current_size_bytes / (1024 * 1024)
-            max_size_mb = self.config.get("maxSizeMB")
-            
+            max_size_mb = self.config.get("max_size_mb")
+
             metadata = {
-                "storagePath": storage_path,
-                "currentSizeMB": round(current_size_mb, 2)
+                "storage_path": storage_path,
+                "current_size_mb": round(current_size_mb, 2)
             }
-            
+
             if max_size_mb:
-                metadata["maxSizeMB"] = max_size_mb
-                metadata["availableMB"] = round(max_size_mb - current_size_mb, 2)
+                metadata["max_size_mb"] = max_size_mb
+                metadata["available_mb"] = round(max_size_mb - current_size_mb, 2)
             
             return UploadResult(
                 success=True,

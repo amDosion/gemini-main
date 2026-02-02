@@ -51,6 +51,7 @@ export class UnifiedProviderClient implements ILLMProvider {
   async getAvailableModels(apiKey?: string, baseUrl?: string, useCache: boolean = true): Promise<ModelConfig[]> {
     try {
       // Build query parameters
+      // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
       const params = new URLSearchParams();
       if (apiKey) {
         params.append('apiKey', apiKey);  // ✅ 传递 API Key 给后端
@@ -99,7 +100,7 @@ export class UnifiedProviderClient implements ILLMProvider {
           name: model.name || model.id,
           description: model.description || `${this.id} model: ${model.id}`,
           capabilities: model.capabilities || { vision: false, search: false, reasoning: false, coding: false },
-          contextWindow: model.context_window || this.getDefaultContextWindow(model.id)
+          contextWindow: model.contextWindow || this.getDefaultContextWindow(model.id)
         }));
       } catch (error: any) {
         clearTimeout(timeoutId);
@@ -271,45 +272,45 @@ export class UnifiedProviderClient implements ILLMProvider {
                 chunkCount++;
                 
                 // 调试日志（仅在前几个 chunk 或重要事件时记录）
-                if (chunkCount <= 3 || chunk.chunk_type === 'done' || chunk.chunk_type === 'error') {
+                if (chunkCount <= 3 || chunk.chunkType === 'done' || chunk.chunkType === 'error') {
                   console.debug('[UnifiedProviderClient] Chunk #' + chunkCount + ':', {
-                    chunk_type: chunk.chunk_type,
-                    has_text: !!chunk.text,
-                    text_length: chunk.text?.length || 0,
-                    text_preview: chunk.text?.substring(0, 50) || ''
+                    chunkType: chunk.chunkType,
+                    hasText: !!chunk.text,
+                    textLength: chunk.text?.length || 0,
+                    textPreview: chunk.text?.substring(0, 50) || ''
                   });
                 }
                 
                 // Convert backend format to frontend format
-                if (chunk.chunk_type === 'error') {
+                if (chunk.chunkType === 'error') {
                   console.error('[UnifiedProviderClient] Error chunk received:', chunk.error);
                   throw new Error(chunk.error || 'Unknown error');
                 }
 
                 // Handle tool_call chunks (Browser function calling)
-                if (chunk.chunk_type === 'tool_call') {
-                  console.debug('[UnifiedProviderClient] Tool call:', chunk.tool_name, chunk.tool_args);
+                if (chunk.chunkType === 'tool_call') {
+                  console.debug('[UnifiedProviderClient] Tool call:', chunk.toolName, chunk.toolArgs);
                   yield {
                     text: '',
                     toolCall: {
-                      name: chunk.tool_name,
-                      args: chunk.tool_args || {}
+                      name: chunk.toolName,
+                      args: chunk.toolArgs || {}
                     }
                   } as StreamUpdate;
                   continue;
                 }
 
                 // Handle tool_result chunks (Browser function result)
-                if (chunk.chunk_type === 'tool_result') {
-                  const hasScreenshot = chunk.screenshot_url || chunk.screenshot;
-                  console.debug('[UnifiedProviderClient] Tool result:', chunk.tool_name, hasScreenshot ? '(with screenshot)' : '');
+                if (chunk.chunkType === 'tool_result') {
+                  const hasScreenshot = chunk.screenshotUrl || chunk.screenshot;
+                  console.debug('[UnifiedProviderClient] Tool result:', chunk.toolName, hasScreenshot ? '(with screenshot)' : '');
                   yield {
                     text: '',
                     toolResult: {
-                      name: chunk.tool_name,
-                      result: chunk.tool_result || '',
+                      name: chunk.toolName,
+                      result: chunk.toolResult || '',
                       screenshot: chunk.screenshot,
-                      screenshotUrl: chunk.screenshot_url
+                      screenshotUrl: chunk.screenshotUrl
                     }
                   } as StreamUpdate;
                   continue;
@@ -317,8 +318,8 @@ export class UnifiedProviderClient implements ILLMProvider {
 
                 // Yield content chunks - 修复：确保所有有效的 chunk 都被 yield
                 // 包括 text 为空字符串的情况（可能是中间状态）
-                const shouldYield = chunk.chunk_type === 'done' ||
-                                  chunk.chunk_type === 'content' ||
+                const shouldYield = chunk.chunkType === 'done' ||
+                                  chunk.chunkType === 'content' ||
                                   chunk.text !== undefined;
 
                 if (shouldYield) {
@@ -340,7 +341,7 @@ export class UnifiedProviderClient implements ILLMProvider {
                   chunkCount
                 });
                 // ✅ 如果是 JSON 解析错误，继续处理下一个 chunk
-                // 如果是其他错误（如 chunk.chunk_type === 'error'），则抛出
+                // 如果是其他错误（如 chunk.chunkType === 'error'），则抛出
                 if (parseError.message && 
                     !parseError.message.includes('Unexpected token') && 
                     !parseError.message.includes('JSON') &&
@@ -452,18 +453,33 @@ export class UnifiedProviderClient implements ILLMProvider {
       if (!response.ok) {
         const contentType = response.headers.get('content-type');
         let errorMessage = `Mode execution failed (${response.status})`;
-        
+
         try {
           if (contentType?.includes('application/json')) {
             const errorData = await response.json();
-            errorMessage = errorData.detail || errorData.error || errorMessage;
+            // ✅ 处理 422 Pydantic 验证错误的详细格式
+            if (response.status === 422 && Array.isArray(errorData.detail)) {
+              // Pydantic 验证错误格式: { detail: [{ loc: [...], msg: '...', type: '...' }, ...] }
+              const validationErrors = errorData.detail.map((err: any) => {
+                const field = err.loc?.join('.') || 'unknown';
+                return `${field}: ${err.msg}`;
+              }).join('; ');
+              errorMessage = `Validation failed: ${validationErrors}`;
+              console.error('[UnifiedProviderClient] 422 Validation errors:', errorData.detail);
+            } else if (typeof errorData.detail === 'string') {
+              errorMessage = errorData.detail;
+            } else if (typeof errorData.detail === 'object') {
+              errorMessage = JSON.stringify(errorData.detail);
+            } else {
+              errorMessage = errorData.error || errorMessage;
+            }
           } else {
             errorMessage = await response.text() || errorMessage;
           }
         } catch (parseError) {
           console.error('[UnifiedProviderClient] Error parsing error response:', parseError);
         }
-        
+
         throw new Error(errorMessage);
       }
       

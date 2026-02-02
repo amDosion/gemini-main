@@ -73,9 +73,9 @@ const getLayerTypeName = (type: Layer['type']): string => {
 const LayerThumbnail: React.FC<{ layer: Layer }> = ({ layer }) => {
   if (layer.type === 'raster') {
     const rasterLayer = layer as RasterLayer;
-    const src = rasterLayer.png_base64
-      ? `data:image/png;base64,${rasterLayer.png_base64}`
-      : rasterLayer.asset_url;
+    const src = rasterLayer.pngBase64
+      ? `data:image/png;base64,${rasterLayer.pngBase64}`
+      : rasterLayer.assetUrl;
 
     if (src) {
       return (

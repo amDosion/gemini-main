@@ -231,7 +231,7 @@ class TongyiService(BaseProviderService):
             
             formatted_result = {
                 "url": result.url,
-                "enhancedPrompt": enhanced_prompt,  # ✅ 使用前端期望的字段名
+                "enhanced_prompt": enhanced_prompt,  # ✅ 使用 snake_case，中间件会转换为 camelCase
                 "mime_type": getattr(result, "mime_type", "image/png")
             }
             formatted_results.append(formatted_result)

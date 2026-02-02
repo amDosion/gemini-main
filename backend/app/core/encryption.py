@@ -352,16 +352,31 @@ def is_encrypted(data: str) -> bool:
 # ==================== 配置字典加密/解密功能 ====================
 
 # Sensitive fields that should be encrypted in configuration dictionaries
+# 注意：只使用 snake_case 格式（中间件会自动转换前端的 camelCase）
 SENSITIVE_FIELDS: Set[str] = {
+    # 通用字段
     "token",
-    "accessKeyId",
-    "accessKeySecret",
-    "secretId",
-    "secretKey",
-    "clientSecret",
-    "refreshToken",
-    "apiKey",
     "password",
+
+    # Access Key
+    "access_key_id",
+    "access_key_secret",
+
+    # Secret Key
+    "secret_id",
+    "secret_key",
+
+    # Client Secret
+    "client_secret",
+
+    # Refresh Token
+    "refresh_token",
+
+    # API Key
+    "api_key",
+
+    # Google 凭证
+    "credentials_json",
 }
 
 

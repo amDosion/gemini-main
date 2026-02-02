@@ -40,10 +40,16 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
   const [addMagicSuffix, setAddMagicSuffix] = useState(true); // 阿里的 add_magic_suffix 参数（默认开启）
 
 
-  // Out-Painting
+  // Out-Painting (旧参数，保留向后兼容)
   const [outPaintingMode, setOutPaintingMode] = useState<'scale' | 'offset'>(DEFAULT_CONTROLS.outPaintingMode);
   const [scaleFactor, setScaleFactor] = useState(DEFAULT_CONTROLS.scaleFactor);
   const [offsetPixels, setOffsetPixels] = useState<OffsetPixels>(DEFAULT_CONTROLS.offsetPixels);
+
+  // Out-Painting (新参数)
+  const [outpaintMode, setOutpaintMode] = useState<'ratio' | 'scale' | 'offset' | 'upscale'>(DEFAULT_CONTROLS.outpaintMode);
+  const [xScale, setXScale] = useState(DEFAULT_CONTROLS.xScale);
+  const [yScale, setYScale] = useState(DEFAULT_CONTROLS.yScale);
+  const [upscaleFactor, setUpscaleFactor] = useState<'x2' | 'x3' | 'x4'>(DEFAULT_CONTROLS.upscaleFactor);
 
 
   // Audio
@@ -120,10 +126,16 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
     addMagicSuffix, setAddMagicSuffix,
 
 
-    // Out-Painting
+    // Out-Painting (旧参数，保留向后兼容)
     outPaintingMode, setOutPaintingMode,
     scaleFactor, setScaleFactor,
     offsetPixels, setOffsetPixels,
+
+    // Out-Painting (新参数)
+    outpaintMode, setOutpaintMode,
+    xScale, setXScale,
+    yScale, setYScale,
+    upscaleFactor, setUpscaleFactor,
 
     // Audio
     voice, setVoice,

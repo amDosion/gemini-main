@@ -14,9 +14,8 @@ Gemini Service Module (重构版)
 │   ├── recontext_service.py      # 重新上下文
 │   ├── mask_edit_service.py      # 掩码编辑
 │   ├── tryon_service.py          # 虚拟试穿
-│   ├── upscale_service.py        # 图片放大
 │   ├── segmentation_service.py   # 图片分割
-│   └── expand_service.py         # 图像扩展
+│   └── expand_service.py         # 图像扩展/放大 (包含 outpaint 和 upscale)
 │
 ├── geminiapi/              # Gemini API 专用服务 (只需 API Key)
 │   ├── imagen_gemini_api.py
@@ -29,13 +28,15 @@ Gemini Service Module (重构版)
 
 使用方式:
     # Vertex AI 服务
-    from .vertexai import tryon_service, upscale_service, segmentation_service
+    from .vertexai import tryon_service, segmentation_service, ExpandService
 
     # Gemini API 服务
     from .geminiapi import imagen_gemini_api
 
     # 统一客户端池
     from .client_pool import get_client_pool
+
+注意: upscale_service 已整合到 expand_service 中
 """
 
 # ==================== 主服务 ====================
@@ -61,12 +62,10 @@ from .vertexai import (
     TryOnService,
     TryOnResult,
     tryon_service,
-    UpscaleService,
-    UpscaleResult,
-    upscale_service,
     SegmentationService,
     SegmentResult,
     segmentation_service,
+    ExpandService,
 )
 
 __all__ = [
@@ -103,10 +102,8 @@ __all__ = [
     'TryOnService',
     'TryOnResult',
     'tryon_service',
-    'UpscaleService',
-    'UpscaleResult',
-    'upscale_service',
     'SegmentationService',
     'SegmentResult',
     'segmentation_service',
+    'ExpandService',
 ]

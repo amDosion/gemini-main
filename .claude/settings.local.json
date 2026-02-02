@@ -87,7 +87,15 @@
       "WebFetch(domain:googleapis.dev)",
       "WebFetch(domain:github.com)",
       "Bash(npx madge:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nrefactor: 移除分层设计功能（显存不足）\n\n- 移除后端 _apply_layered_design 方法\n- 移除前端 ImageEditControls 分层开关\n- 移除 useControlsState 中 enableLayeredDesign 状态\n- 移除 ControlsState 和 ChatOptions 中的类型定义\n- 清理 ImageEditView 中的分层设计相关代码\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nrefactor: 移除分层设计功能（显存不足）\n\n- 移除后端 _apply_layered_design 方法\n- 移除前端 ImageEditControls 分层开关\n- 移除 useControlsState 中 enableLayeredDesign 状态\n- 移除 ControlsState 和 ChatOptions 中的类型定义\n- 清理 ImageEditView 中的分层设计相关代码\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(pip install:*)",
+      "Bash(Stop-Process -Id 6512 -Force)",
+      "Bash(wmic:*)",
+      "Bash(del \"d:\\\\gemini-main\\\\cursor-Attachment\\\\backend\\\\app\\\\arq_worker.py\")",
+      "Bash(del \"d:\\\\gemini-main\\\\cursor-Attachment\\\\backend\\\\app\\\\arq_worker_runner.py\")",
+      "Bash(del \"d:\\\\gemini-main\\\\cursor-Attachment\\\\backend\\\\app\\\\services\\\\common\\\\arq_queue_service.py\")",
+      "Bash(echo:*)",
+      "Bash(del \"d:\\\\gemini-main\\\\cursor-Attachment\\\\backend\\\\test_routes.py\")"
     ]
   }
 }

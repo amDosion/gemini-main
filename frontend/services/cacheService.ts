@@ -104,16 +104,13 @@ class CacheService {
             // 验证 TTL，清理过期条目
             if (entry.ttl > 0 && (now - entry.timestamp) > entry.ttl) {
               await this.idbAdapter.delete(key);
-              console.log(`[CacheService] 清理过期缓存: ${key}`);
             } else {
               this.memoryCache.set(key, entry);
             }
           }
           this.stats.persistentAvailable = true;
-          console.log(`[CacheService] 从 IndexedDB 加载了 ${this.memoryCache.size} 个缓存条目`);
         }
       } catch (error) {
-        console.warn('[CacheService] IndexedDB 初始化失败，降级到内存缓存', error);
         this.config.enablePersistence = false;
         this.stats.persistentAvailable = false;
       }
@@ -121,7 +118,6 @@ class CacheService {
     
     this.stats.size = this.memoryCache.size;
     this.isInitialized = true;
-    console.log('[CacheService] 缓存服务初始化完成');
   }
 
   /**
@@ -147,20 +143,17 @@ class CacheService {
 
       if (isStale) {
         // 返回陈旧数据，后台刷新（Stale-While-Revalidate）
-        console.log(`[CacheService] 缓存陈旧: "${key}"，返回旧数据并后台刷新`);
-        this.refresh<T>(key, fetcher, ttl).catch(err => {
-          console.error(`[CacheService] 后台刷新失败: "${key}"`, err);
+        this.refresh<T>(key, fetcher, ttl).catch(() => {
+          // Background refresh failed
         });
         return { data: entry.data, fromCache: true, isStale: true, timestamp: entry.timestamp };
       } else {
         // 返回有效缓存数据
-        console.log(`[CacheService] 缓存命中: "${key}"`);
         return { data: entry.data, fromCache: true, isStale: false, timestamp: entry.timestamp };
       }
     } else {
       // 缓存未命中
       this.stats.misses++;
-      console.log(`[CacheService] 缓存未命中: "${key}"，获取新数据`);
       const newData = await fetcher();
       await this.set<T>(key, newData, ttl);
       return { data: newData, fromCache: false, isStale: false, timestamp: Date.now() };
@@ -209,16 +202,13 @@ class CacheService {
       } catch (error: any) {
         // 处理存储配额超限
         if (error?.name === 'QuotaExceededError') {
-          console.warn('[CacheService] 存储配额超限，执行 LRU 清理');
           await this.cleanup();
           // 重试写入
           try {
             await this.idbAdapter.set(entry);
           } catch {
-            console.error('[CacheService] 清理后仍无法写入 IndexedDB');
+            // Failed to write to IndexedDB after cleanup
           }
-        } else {
-          console.error(`[CacheService] 写入 IndexedDB 失败: "${key}"`, error);
         }
       }
     }
@@ -236,7 +226,6 @@ class CacheService {
    * @param ttl - 本次操作的特定 TTL（毫秒）
    */
   async refresh<T>(key: string, fetcher: () => Promise<T>, ttl?: number): Promise<CacheResult<T>> {
-    console.log(`[CacheService] 强制刷新: "${key}"`);
     const newData = await fetcher();
     await this.set(key, newData, ttl);
     return { data: newData, fromCache: false, isStale: false, timestamp: Date.now() };
@@ -249,14 +238,13 @@ class CacheService {
   async invalidate(key: string): Promise<void> {
     if (this.memoryCache.delete(key)) {
       this.stats.size = this.memoryCache.size;
-      console.log(`[CacheService] 失效缓存: "${key}"`);
     }
 
     if (this.config.enablePersistence && this.idbAdapter.isAvailable()) {
       try {
         await this.idbAdapter.delete(key);
-      } catch (error) {
-        console.error(`[CacheService] 从 IndexedDB 删除失败: "${key}"`, error);
+      } catch {
+        // Failed to delete from IndexedDB
       }
     }
   }
@@ -273,7 +261,6 @@ class CacheService {
       }
     }
     
-    console.log(`[CacheService] 按模式失效 ${keysToInvalidate.length} 个缓存条目`);
     await Promise.all(keysToInvalidate.map(key => this.invalidate(key)));
   }
 
@@ -354,8 +341,6 @@ class CacheService {
     
     // 如果仍超过限制，执行 LRU 清理
     if (this.memoryCache.size > this.config.maxEntries) {
-      console.log(`[CacheService] LRU 清理触发，当前: ${this.memoryCache.size}，最大: ${this.config.maxEntries}`);
-      
       // 按 lastAccess 排序，删除最少使用的条目
       const sortedEntries = Array.from(this.memoryCache.values()).sort(
         (a, b) => a.lastAccess - b.lastAccess
@@ -367,8 +352,6 @@ class CacheService {
       for (const entry of entriesToRemove) {
         await this.invalidate(entry.key);
       }
-      
-      console.log(`[CacheService] 清理了 ${entriesToRemove.length} 个 LRU 条目`);
     }
     
     this.stats.lastCleaned = now;
@@ -384,12 +367,9 @@ class CacheService {
     if (this.config.enablePersistence && this.idbAdapter.isAvailable()) {
       try {
         await this.idbAdapter.clear();
-        console.log('[CacheService] 所有缓存已清空（内存 + IndexedDB）');
-      } catch (error) {
-        console.error('[CacheService] 清空 IndexedDB 失败', error);
+      } catch {
+        // Failed to clear IndexedDB
       }
-    } else {
-      console.log('[CacheService] 内存缓存已清空');
     }
   }
 }

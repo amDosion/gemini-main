@@ -268,7 +268,7 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
                 
                 result = {
                     "url": f"data:{output_mime_type};base64,{b64_data}",
-                    "mimeType": output_mime_type,
+                    "mime_type": output_mime_type,
                     "index": idx,
                     "size": len(image_bytes)
                 }
@@ -291,7 +291,7 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
                 
                 # ✅ 提取增强后的提示词（如果启用了 enhance_prompt）
                 if hasattr(generated_image, 'enhanced_prompt') and generated_image.enhanced_prompt:
-                    result["enhancedPrompt"] = generated_image.enhanced_prompt
+                    result["enhanced_prompt"] = generated_image.enhanced_prompt
                 
                 results.append(result)
             finally:

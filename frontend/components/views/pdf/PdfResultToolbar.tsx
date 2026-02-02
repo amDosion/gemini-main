@@ -24,7 +24,7 @@ export const PdfResultToolbar: React.FC<PdfResultToolbarProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `extracted-${result.template_type || 'data'}-${Date.now()}.json`;
+    link.download = `extracted-${result.templateType || 'data'}-${Date.now()}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

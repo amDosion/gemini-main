@@ -17,11 +17,11 @@ class S3Provider(BaseStorageProvider):
     
     def _create_client(self):
         """创建 S3 客户端"""
-        access_key_id = self.config.get("accessKeyId")
-        secret_access_key = self.config.get("secretAccessKey")
+        access_key_id = self.config.get("access_key_id")
+        secret_access_key = self.config.get("secret_access_key")
         region = self.config.get("region", "us-east-1")
         endpoint = self.config.get("endpoint")
-        force_path_style = self.config.get("forcePathStyle", False)
+        force_path_style = self.config.get("force_path_style", False)
         
         # 配置 boto3
         config = Config(
@@ -55,20 +55,20 @@ class S3Provider(BaseStorageProvider):
         Returns:
             UploadResult: 上传结果
         """
-        access_key_id = self.config.get("accessKeyId")
-        secret_access_key = self.config.get("secretAccessKey")
+        access_key_id = self.config.get("access_key_id")
+        secret_access_key = self.config.get("secret_access_key")
         bucket = self.config.get("bucket")
         region = self.config.get("region", "us-east-1")
         endpoint = self.config.get("endpoint")
-        custom_domain = self.config.get("customDomain")
-        path_prefix = self.config.get("pathPrefix", "")
-        force_path_style = self.config.get("forcePathStyle", False)
+        custom_domain = self.config.get("custom_domain")
+        path_prefix = self.config.get("path_prefix", "")
+        force_path_style = self.config.get("force_path_style", False)
         
         # 验证配置
         if not all([access_key_id, secret_access_key, bucket]):
             return UploadResult(
                 success=False,
-                error="S3 兼容存储配置不完整：缺少必填项（accessKeyId, secretAccessKey, bucket）",
+                error="S3 兼容存储配置不完整：缺少必填项（access_key_id, secret_access_key, bucket）",
                 provider="s3-compatible"
             )
         
@@ -120,7 +120,7 @@ class S3Provider(BaseStorageProvider):
                     url=public_url,
                     provider="s3-compatible",
                     metadata={
-                        "objectKey": object_key,
+                        "object_key": object_key,
                         "bucket": bucket,
                         "region": region,
                         "etag": response.get('ETag', '').strip('"')
@@ -208,14 +208,14 @@ class S3Provider(BaseStorageProvider):
         Returns:
             UploadResult: 测试结果
         """
-        access_key_id = self.config.get("accessKeyId")
-        secret_access_key = self.config.get("secretAccessKey")
+        access_key_id = self.config.get("access_key_id")
+        secret_access_key = self.config.get("secret_access_key")
         bucket = self.config.get("bucket")
         
         if not all([access_key_id, secret_access_key, bucket]):
             return UploadResult(
                 success=False,
-                error="S3 兼容存储配置不完整：缺少必填项（accessKeyId, secretAccessKey, bucket）",
+                error="S3 兼容存储配置不完整：缺少必填项（access_key_id, secret_access_key, bucket）",
                 provider="s3-compatible"
             )
         
@@ -236,7 +236,7 @@ class S3Provider(BaseStorageProvider):
                     provider="s3-compatible",
                     metadata={
                         "bucket": bucket,
-                        "objectCount": response.get('KeyCount', 0)
+                        "object_count": response.get('KeyCount', 0)
                     }
                 )
             else:

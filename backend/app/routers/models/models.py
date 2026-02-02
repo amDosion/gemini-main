@@ -381,9 +381,9 @@ def clear_cache(provider: Optional[str] = None) -> None:
 @router.get("/{provider}")
 async def get_available_models(
     provider: str,
-    apiKey: Optional[str] = Query(None, description="API key for the provider (optional, will use database config if not provided)"),
-    baseUrl: Optional[str] = Query(None, description="Custom API URL"),
-    useCache: bool = Query(True, description="Whether to use cached models"),
+    api_key: Optional[str] = Query(None, description="API key for the provider (optional, will use database config if not provided)"),
+    base_url: Optional[str] = Query(None, description="Custom API URL"),
+    use_cache: bool = Query(True, description="Whether to use cached models"),
     mode: Optional[str] = Query(None, description="Filter models by app mode (chat, image-edit, image-gen, etc.)"),
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db),
@@ -412,7 +412,7 @@ async def get_available_models(
     try:
         # user_id 已通过依赖注入自动获取
         
-        logger.info(f"[Models] Getting models for {provider}, user={user_id}, useCache={useCache}")
+        logger.info(f"[Models] Getting models for {provider}, user={user_id}, use_cache={use_cache}")
         start_time = time.time()
         
         from ...services.common.cache_service import CacheService
@@ -424,15 +424,15 @@ async def get_available_models(
         # 定义数据获取函数
         async def fetch_models():
             # Get credentials from database
-            api_key, effective_base_url = await get_provider_credentials(
-                provider, db, user_id, apiKey, baseUrl
+            api_key_resolved, effective_base_url = await get_provider_credentials(
+                provider, db, user_id, api_key, base_url
             )
 
             # Create provider service (使用顶部导入的 ProviderFactory)
             try:
                 service = ProviderFactory.create(
                     provider=provider,
-                    api_key=api_key,
+                    api_key=api_key_resolved,
                     api_url=effective_base_url,
                     timeout=30.0
                 )
@@ -462,7 +462,7 @@ async def get_available_models(
         
         # 使用 Redis 缓存（TTL: 1 小时）
         was_cached = False
-        if useCache:
+        if use_cache:
             try:
                 cached_models_dict = await cache_service.get_or_set(
                     cache_key,

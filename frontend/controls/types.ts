@@ -155,13 +155,9 @@ export interface ImageOutpaintControlsProps {
   providerId?: string;
   /** 传递 controls 状态对象 */
   controls?: ControlsState;
+  /** 最大图片生成数量 */
+  maxImageCount?: number;
   // 单独 props（向后兼容）
-  outPaintingMode?: 'scale' | 'offset';
-  setOutPaintingMode?: (v: 'scale' | 'offset') => void;
-  scaleFactor?: number;
-  setScaleFactor?: (v: number) => void;
-  offsetPixels?: OffsetPixels;
-  setOffsetPixels?: (v: React.SetStateAction<OffsetPixels>) => void;
   showAdvanced?: boolean;
   setShowAdvanced?: (v: boolean) => void;
 }
@@ -294,13 +290,23 @@ export interface ControlsState {
   addMagicSuffix: boolean;
   setAddMagicSuffix: (v: boolean) => void;
 
-  // Out-Painting
+  // Out-Painting (旧参数，保留向后兼容)
   outPaintingMode: 'scale' | 'offset';
   setOutPaintingMode: (v: 'scale' | 'offset') => void;
   scaleFactor: number;
   setScaleFactor: (v: number) => void;
   offsetPixels: OffsetPixels;
   setOffsetPixels: (v: React.SetStateAction<OffsetPixels>) => void;
+
+  // Out-Painting (新参数)
+  outpaintMode: 'ratio' | 'scale' | 'offset' | 'upscale';
+  setOutpaintMode: (v: 'ratio' | 'scale' | 'offset' | 'upscale') => void;
+  xScale: number;
+  setXScale: (v: number) => void;
+  yScale: number;
+  setYScale: (v: number) => void;
+  upscaleFactor: 'x2' | 'x3' | 'x4';
+  setUpscaleFactor: (v: 'x2' | 'x3' | 'x4') => void;
 
   // Audio
   voice: string;

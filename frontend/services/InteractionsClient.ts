@@ -8,13 +8,13 @@ export interface CreateInteractionParams {
   model?: string;
   agent?: string;
   input: string | Content[];
-  previous_interaction_id?: string;
+  previousInteractionId?: string;
   tools?: Tool[];
   stream?: boolean;
   background?: boolean;
-  generation_config?: GenerationConfig;
-  system_instruction?: string;
-  response_format?: Record<string, any>;
+  generationConfig?: GenerationConfig;
+  systemInstruction?: string;
+  responseFormat?: Record<string, any>;
   store?: boolean;
 }
 
@@ -22,7 +22,7 @@ export interface Content {
   type: string;
   text?: string;
   data?: string;
-  mime_type?: string;
+  mimeType?: string;
   uri?: string;
 }
 
@@ -34,10 +34,10 @@ export interface Tool {
 
 export interface GenerationConfig {
   temperature?: number;
-  max_output_tokens?: number;
-  thinking_level?: 'minimal' | 'low' | 'medium' | 'high';
-  top_p?: number;
-  top_k?: number;
+  maxOutputTokens?: number;
+  thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high';
+  topP?: number;
+  topK?: number;
 }
 
 export interface Interaction {
@@ -47,18 +47,18 @@ export interface Interaction {
   status: string;
   outputs: Content[];
   usage?: Usage;
-  created_at?: string;
+  createdAt?: string;
 }
 
 export interface Usage {
-  input_tokens?: number;
-  output_tokens?: number;
-  total_tokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
 }
 
 export interface StreamChunk {
-  event_type: string;
-  event_id?: string;
+  eventType: string;
+  eventId?: string;
   delta?: {
     type: string;
     text?: string;
@@ -140,7 +140,7 @@ export class InteractionsClient {
     eventSource.onmessage = (event) => {
       const chunk = JSON.parse(event.data);
 
-      if (chunk.event_type === 'interaction.complete') {
+      if (chunk.eventType === 'interaction.complete') {
         onComplete();
         eventSource.close();
       } else {

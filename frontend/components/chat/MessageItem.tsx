@@ -147,7 +147,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, onImageClick, onEdit
                      <div className="flex flex-col gap-2">
                          {message.toolCalls.map((toolCall) => {
                              const toolResult = message.toolResults?.find(
-                                 (result) => result.call_id === toolCall.id
+                                 (result) => result.callId === toolCall.id
                              );
                              const isToolExecuting = !toolResult && isStreaming;
 

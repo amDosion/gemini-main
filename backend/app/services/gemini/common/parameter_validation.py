@@ -388,7 +388,7 @@ class ImageServiceValidator(ParameterValidator):
     # PERSON_GENERATION removed - parameter no longer used
     MIME_TYPES = ['image/png', 'image/jpeg']
     MASK_MODES = ['MASK_MODE_FOREGROUND', 'MASK_MODE_BACKGROUND']
-    EXPANSION_MODES = ['scale', 'offset', 'ratio']
+    EXPANSION_MODES = ['scale', 'offset', 'ratio', 'upscale']
 
     
     def validate_model(self, model: str, supported_models: List[str]) -> None:

@@ -127,34 +127,6 @@ class VertexAIEditBase(BaseImageEditor):
             logger.error(f"[{self.__class__.__name__}] Failed to initialize client: {e}")
             raise RuntimeError(f"Failed to initialize Vertex AI client: {e}")
 
-    # camelCase → snake_case mapping (mirrors ImageGenerator.PARAM_MAPPING for edit mode)
-    _CAMEL_TO_SNAKE = {
-        'numberOfImages': 'number_of_images',
-        'imageAspectRatio': 'aspect_ratio',
-        'guidanceScale': 'guidance_scale',
-        'outputMimeType': 'output_mime_type',
-        'outputCompressionQuality': 'output_compression_quality',
-        'negativePrompt': 'negative_prompt',
-        'editMode': 'edit_mode',
-        'maskMode': 'mask_mode',
-        'maskDilation': 'mask_dilation',
-        'enhancePrompt': 'enhance_prompt',
-    }
-
-    @staticmethod
-    def _normalize_config(config: Dict[str, Any]) -> Dict[str, Any]:
-        """Normalize camelCase keys to snake_case.
-
-        Gen mode has ImageGenerator._convert_parameters_for_api() for this;
-        edit mode receives raw frontend kwargs, so we normalize here.
-        snake_case keys take priority if both formats are present.
-        """
-        result = dict(config)
-        for camel, snake in VertexAIEditBase._CAMEL_TO_SNAKE.items():
-            if camel in result and snake not in result:
-                result[snake] = result.pop(camel)
-        return result
-
     def edit_image(
         self,
         prompt: str,
@@ -177,8 +149,8 @@ class VertexAIEditBase(BaseImageEditor):
 
         logger.info(f"[{self.__class__.__name__}] Editing image: prompt={prompt[:50]}...")
 
-        # Normalize camelCase → snake_case (equivalent to gen mode's _convert_parameters_for_api)
-        effective_config = self._normalize_config(config or {})
+        # Config from middleware is already in snake_case
+        effective_config = config or {}
 
         # Merge default edit_mode if not provided
         if self.DEFAULT_EDIT_MODE and 'edit_mode' not in effective_config:
@@ -229,14 +201,12 @@ class VertexAIEditBase(BaseImageEditor):
     def _build_config(self, config: Dict[str, Any]) -> 'genai_types.EditImageConfig':
         """Build Vertex AI EditImageConfig from parameters.
 
-        Supports both camelCase (from frontend) and snake_case parameter names.
-        Gen mode has ImageGenerator._convert_parameters_for_api() as a conversion layer,
-        but edit mode receives raw frontend kwargs — so this method handles both formats.
+        All parameters are expected in snake_case format (middleware handles camelCase conversion).
         """
         config_kwargs = {}
 
-        # Edit mode (snake_case / camelCase)
-        edit_mode = config.get('edit_mode') or config.get('editMode')
+        # Edit mode
+        edit_mode = config.get('edit_mode')
         if edit_mode:
             if edit_mode.startswith('EDIT_MODE_'):
                 try:
@@ -259,32 +229,32 @@ class VertexAIEditBase(BaseImageEditor):
                 else:
                     logger.warning(f"[{self.__class__.__name__}] Unknown edit_mode: {edit_mode}, skipping")
 
-        # Number of images (snake_case / camelCase)
-        number_of_images = config.get('number_of_images', config.get('numberOfImages', 1))
+        # Number of images
+        number_of_images = config.get('number_of_images', 1)
         config_kwargs['number_of_images'] = min(max(int(number_of_images), 1), 4)
 
-        # Aspect ratio (snake_case / camelCase)
-        aspect_ratio = config.get('aspect_ratio') or config.get('imageAspectRatio')
+        # Aspect ratio
+        aspect_ratio = config.get('aspect_ratio')
         if aspect_ratio:
             config_kwargs['aspect_ratio'] = aspect_ratio
 
-        # Guidance scale (snake_case / camelCase) — use None-safe lookup to avoid 0 being falsy
-        guidance_scale = config.get('guidance_scale', config.get('guidanceScale'))
+        # Guidance scale (use None-safe lookup to avoid 0 being falsy)
+        guidance_scale = config.get('guidance_scale')
         if guidance_scale is not None:
             config_kwargs['guidance_scale'] = float(guidance_scale)
 
-        # Output MIME type (snake_case / camelCase)
-        output_mime_type = config.get('output_mime_type') or config.get('outputMimeType', 'image/jpeg')
+        # Output MIME type
+        output_mime_type = config.get('output_mime_type', 'image/jpeg')
         config_kwargs['output_mime_type'] = output_mime_type
 
-        # Negative prompt (snake_case / camelCase)
-        negative_prompt = config.get('negative_prompt') or config.get('negativePrompt')
+        # Negative prompt
+        negative_prompt = config.get('negative_prompt')
         if negative_prompt:
             config_kwargs['negative_prompt'] = negative_prompt
 
-        # Output compression quality (snake_case / camelCase)
+        # Output compression quality
         # IMPORTANT: PNG does not accept compressionQuality — only set for JPEG
-        output_compression_quality = config.get('output_compression_quality', config.get('outputCompressionQuality'))
+        output_compression_quality = config.get('output_compression_quality')
         if output_compression_quality is not None and output_mime_type == 'image/jpeg':
             config_kwargs['output_compression_quality'] = int(output_compression_quality)
 
@@ -365,7 +335,7 @@ class VertexAIEditBase(BaseImageEditor):
                         reference_image=image
                     )
                 elif ref_type == 'mask':
-                    mask_dilation = config.get('mask_dilation') or config.get('maskDilation', 0.06)
+                    mask_dilation = config.get('mask_dilation', 0.06)
                     ref_image = genai_types.MaskReferenceImage(
                         reference_id=reference_id,
                         reference_image=image,
@@ -419,15 +389,15 @@ class VertexAIEditBase(BaseImageEditor):
 
         # Auto-mask mode
         if not has_mask_ref:
-            mask_mode = config.get('mask_mode') or config.get('maskMode')
+            mask_mode = config.get('mask_mode')
             if mask_mode:
-                mask_dilation = config.get('mask_dilation') or config.get('maskDilation', 0.06)
+                mask_dilation = config.get('mask_dilation', 0.06)
                 mask_config_kwargs = {
                     'mask_mode': mask_mode,
                     'mask_dilation': float(mask_dilation),
                 }
                 if mask_mode == 'MASK_MODE_SEMANTIC':
-                    seg_classes = config.get('segmentation_classes') or config.get('segmentationClasses')
+                    seg_classes = config.get('segmentation_classes')
                     if seg_classes:
                         mask_config_kwargs['segmentation_classes'] = seg_classes
 
@@ -470,7 +440,7 @@ class VertexAIEditBase(BaseImageEditor):
 
                 result = {
                     "url": f"data:{output_mime_type};base64,{b64_data}",
-                    "mimeType": output_mime_type,
+                    "mime_type": output_mime_type,
                     "index": idx,
                     "size": len(image_bytes)
                 }
@@ -482,7 +452,7 @@ class VertexAIEditBase(BaseImageEditor):
                     enhanced_prompt_value = generated_image.prompt
 
                 if enhanced_prompt_value:
-                    result["enhancedPrompt"] = enhanced_prompt_value
+                    result["enhanced_prompt"] = enhanced_prompt_value
 
                 results.append(result)
             finally:

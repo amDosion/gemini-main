@@ -35,18 +35,18 @@ class ConfigProfile(Base):
         """转换为字典格式（与前端ConfigProfile接口兼容）"""
         return {
             "id": self.id,
-            "userId": self.user_id,
+            "user_id": self.user_id,
             "name": self.name,
-            "providerId": self.provider_id,
-            "apiKey": self.api_key,
-            "baseUrl": self.base_url or "",
+            "provider_id": self.provider_id,
+            "api_key": self.api_key,
+            "base_url": self.base_url or "",
             "protocol": self.protocol,
-            "isProxy": self.is_proxy,
-            "hiddenModels": self.hidden_models or [],
-            "cachedModelCount": self.cached_model_count or 0,
-            "savedModels": self.saved_models or [],
-            "createdAt": self.created_at,
-            "updatedAt": self.updated_at
+            "is_proxy": self.is_proxy,
+            "hidden_models": self.hidden_models or [],
+            "cached_model_count": self.cached_model_count or 0,
+            "saved_models": self.saved_models or [],
+            "created_at": self.created_at,
+            "updated_at": self.updated_at
         }
 
 
@@ -77,10 +77,10 @@ class ChatSession(Base):
         """转换为字典格式（与前端ChatSession接口兼容）"""
         return {
             "id": self.id,
-            "userId": self.user_id,
+            "user_id": self.user_id,
             "title": self.title,
-            "createdAt": self.created_at,
-            "personaId": self.persona_id,
+            "created_at": self.created_at,
+            "persona_id": self.persona_id,
             "mode": self.mode
         }
 
@@ -118,18 +118,7 @@ class MessageIndex(Base):
         # CREATE INDEX idx_message_index_session_mode_seq ON message_index(session_id, mode, seq)
     )
 
-    def to_dict(self):
-        """转换为字典格式"""
-        return {
-            "id": self.id,
-            "userId": self.user_id,
-            "sessionId": self.session_id,
-            "mode": self.mode,
-            "tableName": self.table_name,
-            "seq": self.seq,
-            "timestamp": self.timestamp,
-            "parentId": self.parent_id
-        }
+    # 使用基类的统一 to_dict() 方法
 
 
 class MessagesChat(Base):
@@ -159,7 +148,7 @@ class MessagesChat(Base):
             "role": self.role,
             "content": self.content,
             "timestamp": self.timestamp,
-            "isError": self.is_error
+            "is_error": self.is_error
         }
         # 解析 metadata_json 并合并到结果中
         if self.metadata_json:
@@ -209,12 +198,12 @@ class MessagesImageGen(Base):
             "role": self.role,
             "content": self.content,
             "timestamp": self.timestamp,
-            "isError": self.is_error,
-            "imageSize": self.image_size,
-            "imageStyle": self.image_style,
-            "imageQuality": self.image_quality,
-            "imageCount": self.image_count,
-            "modelName": self.model_name
+            "is_error": self.is_error,
+            "image_size": self.image_size,
+            "image_style": self.image_style,
+            "image_quality": self.image_quality,
+            "image_count": self.image_count,
+            "model_name": self.model_name
         }
         if self.metadata_json:
             try:
@@ -262,11 +251,11 @@ class MessagesVideoGen(Base):
             "role": self.role,
             "content": self.content,
             "timestamp": self.timestamp,
-            "isError": self.is_error,
-            "videoDuration": self.video_duration,
-            "videoResolution": self.video_resolution,
-            "videoFps": self.video_fps,
-            "modelName": self.model_name
+            "is_error": self.is_error,
+            "video_duration": self.video_duration,
+            "video_resolution": self.video_resolution,
+            "video_fps": self.video_fps,
+            "model_name": self.model_name
         }
         if self.metadata_json:
             try:
@@ -315,7 +304,7 @@ class MessagesGeneric(Base):
             "role": self.role,
             "content": self.content,
             "timestamp": self.timestamp,
-            "isError": self.is_error
+            "is_error": self.is_error
         }
         if self.metadata_json:
             try:
@@ -363,10 +352,10 @@ class MessagesImageChatEdit(Base):
             "role": self.role,
             "content": self.content,
             "timestamp": self.timestamp,
-            "isError": self.is_error,
-            "chatId": self.chat_id,
-            "modelName": self.model_name,
-            "editPrompt": self.edit_prompt
+            "is_error": self.is_error,
+            "chat_id": self.chat_id,
+            "model_name": self.model_name,
+            "edit_prompt": self.edit_prompt
         }
         if self.metadata_json:
             try:
@@ -417,13 +406,13 @@ class MessagesImageMaskEdit(Base):
             "role": self.role,
             "content": self.content,
             "timestamp": self.timestamp,
-            "isError": self.is_error,
-            "editMode": self.edit_mode,
-            "maskMode": self.mask_mode,
-            "guidanceScale": self.guidance_scale,
-            "modelName": self.model_name,
-            "numberOfImages": self.number_of_images,
-            "aspectRatio": self.aspect_ratio
+            "is_error": self.is_error,
+            "edit_mode": self.edit_mode,
+            "mask_mode": self.mask_mode,
+            "guidance_scale": self.guidance_scale,
+            "model_name": self.model_name,
+            "number_of_images": self.number_of_images,
+            "aspect_ratio": self.aspect_ratio
         }
         if self.metadata_json:
             try:
@@ -471,10 +460,10 @@ class MessagesImageInpainting(Base):
             "role": self.role,
             "content": self.content,
             "timestamp": self.timestamp,
-            "isError": self.is_error,
-            "repairType": self.repair_type,
-            "modelName": self.model_name,
-            "guidanceScale": self.guidance_scale
+            "is_error": self.is_error,
+            "repair_type": self.repair_type,
+            "model_name": self.model_name,
+            "guidance_scale": self.guidance_scale
         }
         if self.metadata_json:
             try:
@@ -522,10 +511,10 @@ class MessagesImageBackgroundEdit(Base):
             "role": self.role,
             "content": self.content,
             "timestamp": self.timestamp,
-            "isError": self.is_error,
-            "backgroundType": self.background_type,
-            "modelName": self.model_name,
-            "guidanceScale": self.guidance_scale
+            "is_error": self.is_error,
+            "background_type": self.background_type,
+            "model_name": self.model_name,
+            "guidance_scale": self.guidance_scale
         }
         if self.metadata_json:
             try:
@@ -573,10 +562,10 @@ class MessagesImageRecontext(Base):
             "role": self.role,
             "content": self.content,
             "timestamp": self.timestamp,
-            "isError": self.is_error,
-            "contextType": self.context_type,
-            "modelName": self.model_name,
-            "guidanceScale": self.guidance_scale
+            "is_error": self.is_error,
+            "context_type": self.context_type,
+            "model_name": self.model_name,
+            "guidance_scale": self.guidance_scale
         }
         if self.metadata_json:
             try:
@@ -618,23 +607,7 @@ class MessageAttachment(Base):
     google_file_expiry = Column(BigInteger, nullable=True)  # 过期时间（ms）
     size = Column(BigInteger, nullable=True)  # 文件大小
 
-    def to_dict(self):
-        """转换为字典格式（兼容前端 Attachment 结构）"""
-        return {
-            "id": self.id,
-            "messageId": self.message_id,
-            "mimeType": self.mime_type,
-            "name": self.name,
-            "url": self.url,
-            "tempUrl": self.temp_url,
-            "fileUri": self.file_uri,
-            "uploadStatus": self.upload_status,
-            "uploadTaskId": self.upload_task_id,
-            "uploadError": self.upload_error,
-            "googleFileUri": self.google_file_uri,
-            "googleFileExpiry": self.google_file_expiry,
-            "size": self.size
-        }
+    # 使用基类的统一 to_dict() 方法
 
 
 class GoogleChatSession(Base):
@@ -666,13 +639,13 @@ class GoogleChatSession(Base):
         """转换为字典格式"""
         import json
         result = {
-            "chatId": self.chat_id,
-            "userId": self.user_id,
-            "frontendSessionId": self.frontend_session_id,
-            "modelName": self.model_name,
-            "createdAt": self.created_at,
-            "lastUsedAt": self.last_used_at,
-            "isActive": self.is_active
+            "chat_id": self.chat_id,
+            "user_id": self.user_id,
+            "frontend_session_id": self.frontend_session_id,
+            "model_name": self.model_name,
+            "created_at": self.created_at,
+            "last_used_at": self.last_used_at,
+            "is_active": self.is_active
         }
         if self.config_json:
             try:
@@ -700,10 +673,10 @@ class Persona(Base):
         """转换为字典格式（与前端Persona接口兼容）"""
         return {
             "id": self.id,
-            "userId": self.user_id,
+            "user_id": self.user_id,
             "name": self.name,
             "description": self.description or "",
-            "systemPrompt": self.system_prompt,
+            "system_prompt": self.system_prompt,
             "icon": self.icon,
             "category": self.category or ""
         }
@@ -722,18 +695,7 @@ class StorageConfig(Base):
     created_at = Column(BigInteger, nullable=False)  # 创建时间戳（毫秒）
     updated_at = Column(BigInteger, nullable=False)  # 更新时间戳（毫秒）
 
-    def to_dict(self):
-        """转换为字典格式（与前端StorageConfig接口兼容）"""
-        return {
-            "id": self.id,
-            "userId": self.user_id,
-            "name": self.name,
-            "provider": self.provider,
-            "enabled": self.enabled,
-            "config": self.config,
-            "createdAt": self.created_at,
-            "updatedAt": self.updated_at
-        }
+    # 使用基类的统一 to_dict() 方法
 
 
 class ActiveStorage(Base):
@@ -769,27 +731,7 @@ class UploadTask(Base):
     created_at = Column(BigInteger, nullable=False)  # 创建时间戳（毫秒）
     completed_at = Column(BigInteger, nullable=True)  # 完成时间戳（毫秒）
 
-    def to_dict(self):
-        """转换为字典格式"""
-        return {
-            "id": self.id,
-            "sessionId": self.session_id,
-            "messageId": self.message_id,
-            "attachmentId": self.attachment_id,
-            "sourceUrl": self.source_url,
-            "sourceFilePath": self.source_file_path,
-            "sourceAiUrl": self.source_ai_url,
-            "sourceAttachmentId": self.source_attachment_id,
-            "targetUrl": self.target_url,
-            "filename": self.filename,
-            "storageId": self.storage_id,
-            "priority": self.priority,
-            "retryCount": self.retry_count,
-            "status": self.status,
-            "errorMessage": self.error_message,
-            "createdAt": self.created_at,
-            "completedAt": self.completed_at
-        }
+    # 使用基类的统一 to_dict() 方法
 
 
 # ============================================
@@ -839,8 +781,8 @@ class User(Base):
             "email": self.email,
             "name": self.name,
             "status": self.status,
-            "createdAt": self.created_at.isoformat() if self.created_at else None,
-            "updatedAt": self.updated_at.isoformat() if self.updated_at else None
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }
 
 
@@ -858,10 +800,10 @@ class RefreshToken(Base):
     def to_dict(self):
         return {
             "id": self.id,
-            "userId": self.user_id,
-            "expiresAt": self.expires_at.isoformat() if self.expires_at else None,
-            "createdAt": self.created_at.isoformat() if self.created_at else None,
-            "revokedAt": self.revoked_at.isoformat() if self.revoked_at else None
+            "user_id": self.user_id,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "revoked_at": self.revoked_at.isoformat() if self.revoked_at else None
         }
 
 
@@ -880,11 +822,11 @@ class IPLoginHistory(Base):
     def to_dict(self):
         return {
             "id": self.id,
-            "userId": self.user_id,
-            "ipAddress": self.ip_address,
+            "user_id": self.user_id,
+            "ip_address": self.ip_address,
             "action": self.action,
-            "userAgent": self.user_agent,
-            "createdAt": self.created_at.isoformat() if self.created_at else None
+            "user_agent": self.user_agent,
+            "created_at": self.created_at.isoformat() if self.created_at else None
         }
 
 
@@ -902,11 +844,11 @@ class IPBlocklist(Base):
     def to_dict(self):
         return {
             "id": self.id,
-            "ipAddress": self.ip_address,
+            "ip_address": self.ip_address,
             "reason": self.reason,
-            "blockedAt": self.blocked_at.isoformat() if self.blocked_at else None,
-            "expiresAt": self.expires_at.isoformat() if self.expires_at else None,
-            "createdBy": self.created_by
+            "blocked_at": self.blocked_at.isoformat() if self.blocked_at else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "created_by": self.created_by
         }
 
 
@@ -925,12 +867,12 @@ class AccountStatusHistory(Base):
     def to_dict(self):
         return {
             "id": self.id,
-            "userId": self.user_id,
-            "oldStatus": self.old_status,
-            "newStatus": self.new_status,
+            "user_id": self.user_id,
+            "old_status": self.old_status,
+            "new_status": self.new_status,
             "reason": self.reason,
-            "changedBy": self.changed_by,
-            "createdAt": self.created_at.isoformat() if self.created_at else None
+            "changed_by": self.changed_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None
         }
 
 
@@ -946,11 +888,11 @@ class UserOnlineStatus(Base):
 
     def to_dict(self):
         return {
-            "userId": self.user_id,
-            "isOnline": self.is_online,
-            "lastActive": self.last_active.isoformat() if self.last_active else None,
-            "lastLoginIp": self.last_login_ip,
-            "updatedAt": self.updated_at.isoformat() if self.updated_at else None
+            "user_id": self.user_id,
+            "is_online": self.is_online,
+            "last_active": self.last_active.isoformat() if self.last_active else None,
+            "last_login_ip": self.last_login_ip,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }
 
 
@@ -978,15 +920,15 @@ class VertexAIConfig(Base):
         """转换为字典格式（与前端 ImagenConfig 接口兼容）"""
         return {
             "id": self.id,
-            "userId": self.user_id,
-            "apiMode": self.api_mode,
-            "vertexAiProjectId": self.vertex_ai_project_id,
-            "vertexAiLocation": self.vertex_ai_location or 'us-central1',
-            "vertexAiCredentialsJson": self.vertex_ai_credentials_json,
-            "hiddenModels": self.hidden_models or [],
-            "savedModels": self.saved_models or [],
-            "createdAt": self.created_at.isoformat() if self.created_at else None,
-            "updatedAt": self.updated_at.isoformat() if self.updated_at else None
+            "user_id": self.user_id,
+            "api_mode": self.api_mode,
+            "vertex_ai_project_id": self.vertex_ai_project_id,
+            "vertex_ai_location": self.vertex_ai_location or 'us-central1',
+            "vertex_ai_credentials_json": self.vertex_ai_credentials_json,
+            "hidden_models": self.hidden_models or [],
+            "saved_models": self.saved_models or [],
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }
 
 
@@ -1018,11 +960,11 @@ class AgentMemoryBank(Base):
         import json
         result = {
             "id": self.id,
-            "userId": self.user_id,
+            "user_id": self.user_id,
             "name": self.name,
-            "vertexMemoryBankId": self.vertex_memory_bank_id,
-            "createdAt": self.created_at,
-            "updatedAt": self.updated_at
+            "vertex_memory_bank_id": self.vertex_memory_bank_id,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at
         }
         if self.config_json:
             try:
@@ -1060,13 +1002,13 @@ class AgentMemory(Base):
         import json
         result = {
             "id": self.id,
-            "userId": self.user_id,
-            "memoryBankId": self.memory_bank_id,
-            "sessionId": self.session_id,
-            "vertexMemoryId": self.vertex_memory_id,
+            "user_id": self.user_id,
+            "memory_bank_id": self.memory_bank_id,
+            "session_id": self.session_id,
+            "vertex_memory_id": self.vertex_memory_id,
             "content": self.content,
-            "createdAt": self.created_at,
-            "updatedAt": self.updated_at
+            "created_at": self.created_at,
+            "updated_at": self.updated_at
         }
         if self.metadata_json:
             try:
@@ -1102,12 +1044,12 @@ class AgentMemorySession(Base):
         import json
         result = {
             "id": self.id,
-            "userId": self.user_id,
-            "memoryBankId": self.memory_bank_id,
-            "sessionId": self.session_id,
-            "vertexSessionId": self.vertex_session_id,
-            "createdAt": self.created_at,
-            "lastUsedAt": self.last_used_at
+            "user_id": self.user_id,
+            "memory_bank_id": self.memory_bank_id,
+            "session_id": self.session_id,
+            "vertex_session_id": self.vertex_session_id,
+            "created_at": self.created_at,
+            "last_used_at": self.last_used_at
         }
         if self.metadata_json:
             try:
@@ -1142,11 +1084,11 @@ class AgentCodeSandbox(Base):
         import json
         result = {
             "id": self.id,
-            "userId": self.user_id,
-            "vertexSandboxId": self.vertex_sandbox_id,
+            "user_id": self.user_id,
+            "vertex_sandbox_id": self.vertex_sandbox_id,
             "status": self.status,
-            "createdAt": self.created_at,
-            "updatedAt": self.updated_at
+            "created_at": self.created_at,
+            "updated_at": self.updated_at
         }
         if self.config_json:
             try:
@@ -1181,11 +1123,11 @@ class AgentArtifact(Base):
         import json
         result = {
             "id": self.id,
-            "userId": self.user_id,
-            "sandboxId": self.sandbox_id,
-            "vertexArtifactId": self.vertex_artifact_id,
-            "gcsUri": self.gcs_uri,
-            "createdAt": self.created_at
+            "user_id": self.user_id,
+            "sandbox_id": self.sandbox_id,
+            "vertex_artifact_id": self.vertex_artifact_id,
+            "gcs_uri": self.gcs_uri,
+            "created_at": self.created_at
         }
         if self.metadata_json:
             try:
@@ -1222,19 +1164,19 @@ class AgentRegistry(Base):
         import json
         result = {
             "id": self.id,
-            "userId": self.user_id,
+            "user_id": self.user_id,
             "name": self.name,
-            "agentType": self.agent_type,
-            "endpointUrl": self.endpoint_url,
+            "agent_type": self.agent_type,
+            "endpoint_url": self.endpoint_url,
             "status": self.status,
-            "createdAt": self.created_at,
-            "updatedAt": self.updated_at
+            "created_at": self.created_at,
+            "updated_at": self.updated_at
         }
         if self.agent_card_json:
             try:
-                result["agentCard"] = json.loads(self.agent_card_json)
+                result["agent_card"] = json.loads(self.agent_card_json)
             except (json.JSONDecodeError, TypeError):
-                result["agentCard"] = None
+                result["agent_card"] = None
         return result
 
 
@@ -1263,11 +1205,11 @@ class AgentCard(Base):
         import json
         result = {
             "id": self.id,
-            "userId": self.user_id,
-            "agentId": self.agent_id,
+            "user_id": self.user_id,
+            "agent_id": self.agent_id,
             "version": self.version,
-            "createdAt": self.created_at,
-            "updatedAt": self.updated_at
+            "created_at": self.created_at,
+            "updated_at": self.updated_at
         }
         if self.card_json:
             try:
@@ -1298,15 +1240,15 @@ class WorkflowTemplate(Base):
         import json
         result = {
             "id": self.id,
-            "userId": self.user_id,
+            "user_id": self.user_id,
             "name": self.name,
             "description": self.description,
             "category": self.category,
-            "workflowType": self.workflow_type,
-            "isPublic": self.is_public,
+            "workflow_type": self.workflow_type,
+            "is_public": self.is_public,
             "version": self.version,
-            "createdAt": self.created_at,
-            "updatedAt": self.updated_at
+            "created_at": self.created_at,
+            "updated_at": self.updated_at
         }
         try:
             result["config"] = json.loads(self.config_json)
@@ -1343,13 +1285,13 @@ class A2ATask(Base):
         import json
         result = {
             "id": self.id,
-            "userId": self.user_id,
-            "agentId": self.agent_id,
-            "taskId": self.task_id,
-            "contextId": self.context_id,
+            "user_id": self.user_id,
+            "agent_id": self.agent_id,
+            "task_id": self.task_id,
+            "context_id": self.context_id,
             "status": self.status,
-            "createdAt": self.created_at,
-            "updatedAt": self.updated_at
+            "created_at": self.created_at,
+            "updated_at": self.updated_at
         }
         if self.metadata_json:
             try:
@@ -1381,15 +1323,15 @@ class A2AEvent(Base):
         import json
         result = {
             "id": self.id,
-            "taskId": self.task_id,
-            "eventType": self.event_type,
-            "createdAt": self.created_at
+            "task_id": self.task_id,
+            "event_type": self.event_type,
+            "created_at": self.created_at
         }
         if self.event_data_json:
             try:
-                result["eventData"] = json.loads(self.event_data_json)
+                result["event_data"] = json.loads(self.event_data_json)
             except (json.JSONDecodeError, TypeError):
-                result["eventData"] = None
+                result["event_data"] = None
         return result
 
 
@@ -1417,13 +1359,13 @@ class SystemConfig(Base):
     def to_dict(self):
         return {
             "id": self.id,
-            "allowRegistration": self.allow_registration,
-            "maxLoginAttempts": self.max_login_attempts,
-            "maxLoginAttemptsPerIp": self.max_login_attempts_per_ip,
-            "loginLockoutDuration": self.login_lockout_duration,
-            "enableLogging": self.enable_logging,
-            "createdAt": self.created_at.isoformat() if self.created_at else None,
-            "updatedAt": self.updated_at.isoformat() if self.updated_at else None
+            "allow_registration": self.allow_registration,
+            "max_login_attempts": self.max_login_attempts,
+            "max_login_attempts_per_ip": self.max_login_attempts_per_ip,
+            "login_lockout_duration": self.login_lockout_duration,
+            "enable_logging": self.enable_logging,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }
 
 
@@ -1442,10 +1384,10 @@ class LoginAttempt(Base):
         return {
             "id": self.id,
             "email": self.email,
-            "ipAddress": self.ip_address,
+            "ip_address": self.ip_address,
             "success": self.success,
-            "userAgent": self.user_agent,
-            "createdAt": self.created_at.isoformat() if self.created_at else None
+            "user_agent": self.user_agent,
+            "created_at": self.created_at.isoformat() if self.created_at else None
         }
 
 
@@ -1474,11 +1416,11 @@ class ADKSession(Base):
         import json
         result = {
             "id": self.id,
-            "userId": self.user_id,
-            "agentId": self.agent_id,
-            "sessionId": self.session_id,
-            "createdAt": self.created_at,
-            "lastUsedAt": self.last_used_at
+            "user_id": self.user_id,
+            "agent_id": self.agent_id,
+            "session_id": self.session_id,
+            "created_at": self.created_at,
+            "last_used_at": self.last_used_at
         }
         if self.metadata_json:
             try:

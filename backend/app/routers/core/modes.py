@@ -40,83 +40,106 @@ router = APIRouter(prefix="/api/modes", tags=["modes"])
 # ==================== Request/Response Models ====================
 
 class Attachment(BaseModel):
-    """Attachment model (images, files, etc.)"""
+    """
+    Attachment model (images, files, etc.)
+
+    注意：字段名使用 snake_case，因为 CaseConversionMiddleware 会自动
+    将前端的 camelCase 转换为 snake_case。
+    """
     id: Optional[str] = None
-    mimeType: Optional[str] = None
+    mime_type: Optional[str] = None
     name: Optional[str] = None
     url: Optional[str] = None
-    tempUrl: Optional[str] = None
-    fileUri: Optional[str] = None
-    base64Data: Optional[str] = None
+    temp_url: Optional[str] = None
+    file_uri: Optional[str] = None
+    base64_data: Optional[str] = None
     role: Optional[str] = None  # 'mask' for mask images, etc.
 
 
 class ModeOptions(BaseModel):
-    """Mode options - flexible dict-like structure"""
-    baseUrl: Optional[str] = None
+    """
+    Mode options - flexible dict-like structure
+
+    注意：字段名使用 snake_case，因为 CaseConversionMiddleware 会自动
+    将前端的 camelCase 转换为 snake_case。
+    """
+    # 基础选项
+    base_url: Optional[str] = None
     temperature: Optional[float] = None
-    maxTokens: Optional[int] = None
-    topP: Optional[float] = None
-    topK: Optional[int] = None
-    enableSearch: Optional[bool] = None
-    enableThinking: Optional[bool] = None
+    max_tokens: Optional[int] = None
+    top_p: Optional[float] = None
+    top_k: Optional[int] = None
+    enable_search: Optional[bool] = None
+    enable_thinking: Optional[bool] = None
     # Image generation options
     size: Optional[str] = None
     quality: Optional[str] = None
     style: Optional[str] = None
-    numberOfImages: Optional[int] = None
-    aspectRatio: Optional[str] = None
-    imageAspectRatio: Optional[str] = None
-    imageResolution: Optional[str] = None
-    imageStyle: Optional[str] = None
+    number_of_images: Optional[int] = None
+    aspect_ratio: Optional[str] = None
+    image_aspect_ratio: Optional[str] = None
+    image_resolution: Optional[str] = None
+    image_style: Optional[str] = None
     # Image editing options
     edit_mode: Optional[str] = None
-    editMode: Optional[str] = None  # ✅ 前端传递的字段名（camelCase）
-    number_of_images: Optional[int] = None
-    numberOfImages: Optional[int] = None  # ✅ 前端传递的字段名（camelCase）
     frontend_session_id: Optional[str] = None
-    sessionId: Optional[str] = None  # Alias for frontend_session_id
+    session_id: Optional[str] = None  # Alias for frontend_session_id
     message_id: Optional[str] = None  # 消息ID（用于附件关联）
-    # ✅ Edit模式新增字段
-    activeImageUrl: Optional[str] = None  # CONTINUITY LOGIC用
+    # Edit模式新增字段
+    active_image_url: Optional[str] = None  # CONTINUITY LOGIC用
     # Other options
-    negativePrompt: Optional[str] = None
-    guidanceScale: Optional[float] = None
-    maskDilation: Optional[float] = None  # ✅ Mask 编辑特有参数：掩码膨胀系数 (0.0-1.0)
+    negative_prompt: Optional[str] = None
+    guidance_scale: Optional[float] = None
+    mask_dilation: Optional[float] = None  # Mask 编辑特有参数：掩码膨胀系数 (0.0-1.0)
     seed: Optional[int] = None
     # Google Imagen 高级参数
-    outputMimeType: Optional[str] = None
-    outputCompressionQuality: Optional[int] = None
-    enhancePrompt: Optional[bool] = None
-    enhancePromptModel: Optional[str] = None
+    output_mime_type: Optional[str] = None
+    output_compression_quality: Optional[int] = None
+    enhance_prompt: Optional[bool] = None
+    enhance_prompt_model: Optional[str] = None
     # TongYi 专用参数
-    promptExtend: Optional[bool] = None  # AI 增强提示词
-    addMagicSuffix: Optional[bool] = None  # 魔法词组
+    prompt_extend: Optional[bool] = None  # AI 增强提示词
+    add_magic_suffix: Optional[bool] = None  # 魔法词组
+    # Outpainting 参数（image-outpainting 模式）
+    outpaint_mode: Optional[str] = None  # 扩图模式：ratio | scale | offset | upscale
+    x_scale: Optional[float] = None  # 水平缩放倍数 (scale 模式)
+    y_scale: Optional[float] = None  # 垂直缩放倍数 (scale 模式)
+    left_offset: Optional[int] = None  # 左侧偏移像素 (offset 模式)
+    right_offset: Optional[int] = None  # 右侧偏移像素 (offset 模式)
+    top_offset: Optional[int] = None  # 顶部偏移像素 (offset 模式)
+    bottom_offset: Optional[int] = None  # 底部偏移像素 (offset 模式)
+    output_ratio: Optional[str] = None  # 目标比例 (ratio 模式)
+    upscale_factor: Optional[str] = None  # 放大倍数：x2 | x3 | x4 (upscale 模式)
     # Layered Design 参数
     layers: Optional[int] = None  # 图层分解数量 (2-10)
-    canvasW: Optional[int] = None  # 画布宽度
-    canvasH: Optional[int] = None  # 画布高度
-    maxTextBoxes: Optional[int] = None  # 最大文本框数量
+    canvas_w: Optional[int] = None  # 画布宽度
+    canvas_h: Optional[int] = None  # 画布高度
+    max_text_boxes: Optional[int] = None  # 最大文本框数量
     locale: Optional[str] = None  # 语言区域
-    layerDoc: Optional[Dict[str, Any]] = None  # LayerDoc 渲染用
-    simplifyTolerance: Optional[float] = None  # 矢量化简化容差
-    smoothIterations: Optional[int] = None  # 平滑迭代次数
-    useBezier: Optional[bool] = None  # 使用贝塞尔曲线
-    bezierSmoothness: Optional[float] = None  # 贝塞尔平滑度
+    layer_doc: Optional[Dict[str, Any]] = None  # LayerDoc 渲染用
+    simplify_tolerance: Optional[float] = None  # 矢量化简化容差
+    smooth_iterations: Optional[int] = None  # 平滑迭代次数
+    use_bezier: Optional[bool] = None  # 使用贝塞尔曲线
+    bezier_smoothness: Optional[float] = None  # 贝塞尔平滑度
     threshold: Optional[int] = None  # 二值化阈值
-    blurRadius: Optional[float] = None  # 模糊半径
+    blur_radius: Optional[float] = None  # 模糊半径
     # Allow additional fields
     class Config:
         extra = "allow"
 
 
 class ModeRequest(BaseModel):
-    """统一模式请求"""
-    modelId: str
+    """
+    统一模式请求
+
+    注意：字段名使用 snake_case，因为 CaseConversionMiddleware 会自动
+    将前端的 camelCase 转换为 snake_case。
+    """
+    model_id: str
     prompt: str
     attachments: Optional[List[Attachment]] = None
     options: Optional[ModeOptions] = None
-    apiKey: Optional[str] = None  # Optional, will try to get from database
+    api_key: Optional[str] = None  # Optional, will try to get from database
     extra: Optional[Dict[str, Any]] = None  # Additional parameters
 
 
@@ -148,27 +171,27 @@ def convert_attachments_to_reference_images(attachments: Optional[List[Attachmen
     
     reference_images = {}
     for attachment in attachments:
-        # 获取图片数据（优先级：url > tempUrl > fileUri > base64Data）
+        # 获取图片数据（优先级：url > temp_url > file_uri > base64_data）
         image_data = None
         if attachment.url:
             image_data = attachment.url
-        elif attachment.tempUrl:
-            image_data = attachment.tempUrl
-        elif attachment.fileUri:
-            image_data = attachment.fileUri
-        elif attachment.base64Data:
-            image_data = attachment.base64Data
-        
+        elif attachment.temp_url:
+            image_data = attachment.temp_url
+        elif attachment.file_uri:
+            image_data = attachment.file_uri
+        elif attachment.base64_data:
+            image_data = attachment.base64_data
+
         if not image_data:
             continue
-        
-        # ✅ 如果有 attachment_id，传递字典格式（包含 attachment_id 和 url）
+
+        # 如果有 attachment_id，传递字典格式（包含 attachment_id 和 url）
         # 如果没有 attachment_id，传递字符串格式（向后兼容）
         if attachment.id:
             ref_data = {
                 'url': image_data,
                 'attachment_id': attachment.id,
-                'mimeType': attachment.mimeType or 'image/png'
+                'mime_type': attachment.mime_type or 'image/png'
             }
         else:
             ref_data = image_data  # 向后兼容：只传递 URL 字符串
@@ -246,19 +269,19 @@ async def handle_mode(
         logger.info(f"[Modes]     - token来源: {token_source}")
         logger.info(f"[Modes]     - 有Authorization header: {'是' if auth_header else '否'}")
         logger.info(f"[Modes]     - 有Cookie token: {'是' if cookie_token else '否'}")
-        logger.info(f"[Modes]     - modelId: {request_body.modelId}")
+        logger.info(f"[Modes]     - model_id: {request_body.model_id}")
         logger.info(f"[Modes]     - prompt长度: {len(request_body.prompt)}")
         logger.info(f"[Modes]     - attachments数量: {len(request_body.attachments) if request_body.attachments else 0}")
 
-        # ✅ 1. 获取凭证
+        # 1. 获取凭证
         logger.info(f"[Modes] 🔄 [步骤1] 获取提供商凭证...")
         credential_start = time.time()
         api_key, api_url = await get_provider_credentials(
             provider=provider,
             db=db,
             user_id=user_id,
-            request_api_key=request_body.apiKey,
-            request_base_url=request_body.options.baseUrl if request_body.options else None
+            request_api_key=request_body.api_key,
+            request_base_url=request_body.options.base_url if request_body.options else None
         )
         credential_time = (time.time() - credential_start) * 1000
         logger.info(f"[Modes] ✅ [步骤1] 凭证获取完成 (耗时: {credential_time:.2f}ms)")
@@ -302,7 +325,7 @@ async def handle_mode(
         
         # 构建调用参数
         params = {
-            "model": request_body.modelId,
+            "model": request_body.model_id,
             "prompt": request_body.prompt,
         }
         logger.info(f"[Modes]     - 基础参数已设置: model={params['model']}, prompt长度={len(params['prompt'])}")
@@ -344,23 +367,32 @@ async def handle_mode(
             params["mode"] = mode
             logger.info(f"[Modes]     - layered_design mode: {mode}")
 
-        # ✅ **新增**：处理 Edit 模式的 CONTINUITY LOGIC
-        # 如果提供了 activeImageUrl，使用 AttachmentService 解析
-        if method_name == "edit_image" and request_body.options and request_body.options.activeImageUrl:
+        # **重要**：对于 expand_image 方法，需要将 outpaint_mode 映射为 mode
+        # ExpandService.expand_image() 期望的参数名是 "mode" 而非 "outpaint_mode"
+        # 注意：camelCase → snake_case 转换由 CaseConversionMiddleware 自动完成
+        if method_name == "expand_image":
+            # outpaint_mode → mode (语义映射，中间件已将 outpaintMode 转换为 outpaint_mode)
+            if "outpaint_mode" in params:
+                params["mode"] = params.pop("outpaint_mode")
+                logger.info(f"[Modes]     - expand_image mode: {params['mode']}")
+
+        # **新增**：处理 Edit 模式的 CONTINUITY LOGIC
+        # 如果提供了 active_image_url，使用 AttachmentService 解析
+        if method_name == "edit_image" and request_body.options and request_body.options.active_image_url:
             import time
             continuity_start_time = time.time()
-            
+
             logger.info(f"[Modes] ========== 开始处理Edit模式的CONTINUITY LOGIC ==========")
             logger.info(f"[Modes] 📥 CONTINUITY参数:")
             logger.info(f"[Modes]     - method_name: {method_name}")
-            url_type = 'Blob' if request_body.options.activeImageUrl.startswith('blob:') else 'Base64' if request_body.options.activeImageUrl.startswith('data:') else 'HTTP' if request_body.options.activeImageUrl.startswith('http') else '未知'
-            logger.info(f"[Modes]     - activeImageUrl类型: {url_type}")
-            logger.info(f"[Modes]     - activeImageUrl长度: {len(request_body.options.activeImageUrl)}")
-            
+            url_type = 'Blob' if request_body.options.active_image_url.startswith('blob:') else 'Base64' if request_body.options.active_image_url.startswith('data:') else 'HTTP' if request_body.options.active_image_url.startswith('http') else '未知'
+            logger.info(f"[Modes]     - active_image_url类型: {url_type}")
+            logger.info(f"[Modes]     - active_image_url长度: {len(request_body.options.active_image_url)}")
+
             attachment_service = AttachmentService(db)
-            
+
             # 获取会话ID和消息列表
-            session_id = request_body.options.frontend_session_id or request_body.options.sessionId
+            session_id = request_body.options.frontend_session_id or request_body.options.session_id
             if session_id:
                 logger.info(f"[Modes] 🔍 获取会话ID和消息列表...")
                 logger.info(f"[Modes]     - session_id: {session_id}")  # ✅ 不截断 ID，显示完整 ID
@@ -381,7 +413,7 @@ async def handle_mode(
                 # 解析 CONTINUITY 附件
                 logger.info(f"[Modes] 🔄 调用 AttachmentService.resolve_continuity_attachment()...")
                 resolved = await attachment_service.resolve_continuity_attachment(
-                    active_image_url=request_body.options.activeImageUrl,
+                    active_image_url=request_body.options.active_image_url,
                     session_id=session_id,
                     user_id=user_id,
                     messages=messages
@@ -473,45 +505,45 @@ async def handle_mode(
             if method_name == "segment_clothing":
                 # 查找图像附件并添加到 reference_images
                 for attachment in request_body.attachments:
-                    if attachment.mimeType and "image" in attachment.mimeType.lower():
-                        # 如果有 base64Data，直接使用
-                        if attachment.base64Data:
-                            image_data = attachment.base64Data
+                    if attachment.mime_type and "image" in attachment.mime_type.lower():
+                        # 如果有 base64_data，直接使用
+                        if attachment.base64_data:
+                            image_data = attachment.base64_data
                             if image_data.startswith("data:"):
                                 image_data = image_data.split(",", 1)[1]
                             if "reference_images" not in params:
                                 params["reference_images"] = {}
                             params["reference_images"]["raw"] = image_data
                         # 如果有 URL，需要下载（在服务层处理）
-                        elif attachment.url or attachment.tempUrl:
+                        elif attachment.url or attachment.temp_url:
                             if "reference_images" not in params:
                                 params["reference_images"] = {}
-                            params["reference_images"]["raw_url"] = attachment.url or attachment.tempUrl
+                            params["reference_images"]["raw_url"] = attachment.url or attachment.temp_url
                         break
                 # 从 extra 中获取 target_clothing
                 if request_body.extra and "target_clothing" in request_body.extra:
                     params["target_clothing"] = request_body.extra["target_clothing"]
-            
+
             # 对于 pdf-extract，需要从 attachments 中提取 PDF 数据
             if method_name == "extract_pdf_data":
                 # 查找 PDF 附件
                 for attachment in request_body.attachments:
-                    if attachment.mimeType and "pdf" in attachment.mimeType.lower():
-                        # 如果有 base64Data，直接使用
-                        if attachment.base64Data:
+                    if attachment.mime_type and "pdf" in attachment.mime_type.lower():
+                        # 如果有 base64_data，直接使用
+                        if attachment.base64_data:
                             import base64
                             # 移除 data URI 前缀（如果有）
-                            pdf_data = attachment.base64Data
+                            pdf_data = attachment.base64_data
                             if pdf_data.startswith("data:"):
                                 pdf_data = pdf_data.split(",", 1)[1]
                             if "reference_images" not in params:
                                 params["reference_images"] = {}
                             params["reference_images"]["pdf_bytes"] = base64.b64decode(pdf_data)
                         # 如果有 URL，需要下载（在服务层处理）
-                        elif attachment.url or attachment.tempUrl:
+                        elif attachment.url or attachment.temp_url:
                             if "reference_images" not in params:
                                 params["reference_images"] = {}
-                            params["reference_images"]["pdf_url"] = attachment.url or attachment.tempUrl
+                            params["reference_images"]["pdf_url"] = attachment.url or attachment.temp_url
                         break
         
         param_time = (time.time() - param_start) * 1000
@@ -543,8 +575,8 @@ async def handle_mode(
             method_time = (time.time() - method_start) * 1000
             logger.error(f"[Modes] ❌ [步骤6] 服务方法调用失败 (耗时: {method_time:.2f}ms): {method_error}")
             
-            # 对于图片生成/编辑模式，需要返回友好的错误信息
-            if method_name in ["generate_image", "edit_image"]:
+            # 对于图片生成/编辑/扩图模式，需要返回友好的错误信息
+            if method_name in ["generate_image", "edit_image", "expand_image"]:
                 # 检查是否是 API 相关错误
                 from ...services.gemini.base.imagen_common import APIError
                 if isinstance(method_error, APIError):
@@ -580,8 +612,8 @@ async def handle_mode(
             logger.info(f"[Modes]     - 返回结果类型: {type(result).__name__}")
 
         # ✅ 7. **新增**：处理图片生成和编辑的结果（使用 AttachmentService）
-        # 对于 image-gen 和 image-edit 模式，处理返回的图片
-        if method_name in ["generate_image", "edit_image"]:
+        # 对于 image-gen, image-edit, image-outpainting 模式，处理返回的图片
+        if method_name in ["generate_image", "edit_image", "expand_image"]:
             logger.info(f"[Modes] 🔄 [步骤7] 处理图片生成/编辑结果...")
             attachment_service = AttachmentService(db)
             
@@ -589,7 +621,7 @@ async def handle_mode(
             session_id = None
             message_id = None
             if request_body.options:
-                session_id = request_body.options.frontend_session_id or request_body.options.sessionId
+                session_id = request_body.options.frontend_session_id or request_body.options.session_id
                 message_id = request_body.options.message_id
             
             logger.info(f"[Modes]     - session_id: {session_id or 'None'}")  # ✅ 不截断 ID，显示完整 ID
@@ -614,9 +646,9 @@ async def handle_mode(
                     # 支持多种格式：Dict 或 ImageGenerationResult
                     if isinstance(img, dict):
                         ai_url = img.get("url") or img.get("image")
-                        mime_type = img.get("mimeType") or img.get("mime_type", "image/png")
+                        mime_type = img.get("mime_type", "image/png")
                         filename = img.get("filename")  # ✅ 提取 filename（如果有）
-                        enhanced_prompt = img.get("enhancedPrompt")  # ✅ 新增：提取增强后的提示词
+                        enhanced_prompt = img.get("enhanced_prompt")  # ✅ 提取增强后的提示词
                         thoughts = img.get("thoughts")  # ✅ 修复断点1：提取思考过程
                         text = img.get("text")  # ✅ 修复断点1：提取文本响应
                     else:
@@ -637,7 +669,13 @@ async def handle_mode(
                     logger.info(f"[Modes]     - mime_type: {mime_type}")
                     
                     # 使用 AttachmentService 处理AI返回的图片
-                    prefix = "generated" if method_name == "generate_image" else "edited"
+                    # 根据方法名确定前缀：generated（生成）, edited（编辑）, expanded（扩图）
+                    if method_name == "generate_image":
+                        prefix = "generated"
+                    elif method_name == "expand_image":
+                        prefix = "expanded"
+                    else:
+                        prefix = "edited"
                     logger.info(f"[Modes]     - 调用 AttachmentService.process_ai_result()...")
                     processed = await attachment_service.process_ai_result(
                         ai_url=ai_url,
@@ -653,20 +691,20 @@ async def handle_mode(
                     logger.info(f"[Modes]     - status: {processed['status']}")
                     logger.info(f"[Modes]     - task_id: {processed.get('task_id') or 'None'}")  # ✅ 不截断 task_id，显示完整 ID
                     
-                    # ✅ 构建响应格式（包含完整字段）
+                    # 构建响应格式（使用 snake_case，中间件会自动转换为 camelCase）
                     image_result = {
                         "url": processed["display_url"],  # 显示URL（前端立即显示）
-                        "attachmentId": processed["attachment_id"],
-                        "uploadStatus": processed["status"],
-                        "taskId": processed["task_id"],
-                        "mimeType": mime_type,  # ✅ 新增：MIME类型
-                        "filename": filename or f"{prefix}-{processed['attachment_id'][:8]}.png"  # ✅ 新增：文件名（修复：使用正确的格式）
+                        "attachment_id": processed["attachment_id"],
+                        "upload_status": processed["status"],
+                        "task_id": processed["task_id"],
+                        "mime_type": mime_type,
+                        "filename": filename or f"{prefix}-{processed['attachment_id'][:8]}.png"
                     }
-                    
-                    # ✅ 新增：添加增强后的提示词（如果有）
+
+                    # 添加增强后的提示词（如果有）
                     if enhanced_prompt:
-                        image_result["enhancedPrompt"] = enhanced_prompt
-                        logger.info(f"[Modes]     - enhancedPrompt: {enhanced_prompt}")
+                        image_result["enhanced_prompt"] = enhanced_prompt
+                        logger.info(f"[Modes]     - enhanced_prompt: {enhanced_prompt}")
                     
                     # ✅ 修复断点1：保留 thinking 数据（如果存在）
                     if thoughts:
@@ -739,16 +777,16 @@ async def handle_mode_stream(
     try:
         logger.info(f"[Modes] Stream request: provider={provider}, mode={mode}, user_id={user_id}")
 
-        # ✅ 1. 获取凭证
+        # 1. 获取凭证
         api_key, api_url = await get_provider_credentials(
             provider=provider,
             db=db,
             user_id=user_id,
-            request_api_key=request_body.apiKey,
-            request_base_url=request_body.options.baseUrl if request_body.options else None
+            request_api_key=request_body.api_key,
+            request_base_url=request_body.options.base_url if request_body.options else None
         )
 
-        # ✅ 2. 创建提供商服务
+        # 2. 创建提供商服务
         service = ProviderFactory.create(
             provider=provider,
             api_key=api_key,
@@ -757,7 +795,7 @@ async def handle_mode_stream(
             db=db
         )
 
-        # ✅ 3. 获取服务方法
+        # 3. 获取服务方法
         method_name = get_service_method(mode)
         if not method_name or not is_streaming_mode(mode):
             raise ValueError(f"Mode '{mode}' does not support streaming")
@@ -766,9 +804,9 @@ async def handle_mode_stream(
         if not method:
             raise ValueError(f"Provider '{provider}' does not support method '{method_name}'")
 
-        # ✅ 4. 准备参数
+        # 4. 准备参数
         params = {
-            "model": request_body.modelId,
+            "model": request_body.model_id,
         }
         
         # 对于聊天模式，需要 messages 参数

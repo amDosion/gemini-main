@@ -36,17 +36,11 @@ export function useAuth(): UseAuthReturn {
             // 尝试获取用户信息
             const [currentUser, config] = await Promise.all([
               authService.getCurrentUser(),
-              authService.getConfig().catch((err) => {
-                console.error('[useAuth] 获取配置失败:', err);
-                return { allowRegistration: false };
-              })
+              authService.getConfig().catch(() => ({ allowRegistration: false }))
             ]);
             setUser(currentUser);
-            console.log('[useAuth] 设置 allowRegistration:', config.allowRegistration);
             setAllowRegistration(config.allowRegistration);
-          } catch (err) {
-            console.warn('Auth token invalid, attempting refresh:', err);
-            
+          } catch {
             // ✅ 新增：如果有 refresh_token，尝试刷新
             if (refreshToken) {
               try {
@@ -61,8 +55,8 @@ export function useAuth(): UseAuthReturn {
                   setAllowRegistration(config.allowRegistration);
                   return; // 成功，退出
                 }
-              } catch (refreshErr) {
-                console.warn('[useAuth] Refresh failed on init:', refreshErr);
+              } catch {
+                // Refresh failed
               }
             }
             
@@ -75,16 +69,11 @@ export function useAuth(): UseAuthReturn {
           }
         } else {
           // 没有 token，设置为未登录状态
-          const config = await authService.getConfig().catch((err) => {
-            console.error('[useAuth] 获取配置失败（未登录）:', err);
-            return { allowRegistration: false };
-          });
-          console.log('[useAuth] 设置 allowRegistration（未登录）:', config.allowRegistration);
+          const config = await authService.getConfig().catch(() => ({ allowRegistration: false }));
           setAllowRegistration(config.allowRegistration);
           setUser(null);
         }
-      } catch (err) {
-        console.error('Auth init error:', err);
+      } catch {
         setUser(null);
       } finally {
         setIsLoading(false);
@@ -105,13 +94,11 @@ export function useAuth(): UseAuthReturn {
       try {
         const success = await authService.refreshToken();
         if (!success) {
-          console.warn('[useAuth] Token 刷新失败，需要重新登录');
           setUser(null);
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
         }
-      } catch (error) {
-        console.error('[useAuth] Token 刷新异常:', error);
+      } catch {
         setUser(null);
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
@@ -180,8 +167,8 @@ export function useAuth(): UseAuthReturn {
     try {
       const currentUser = await authService.getCurrentUser();
       setUser(currentUser);
-    } catch (err) {
-      console.error('Failed to refresh user:', err);
+    } catch {
+      // Failed to refresh user
     }
   }, []);
 

@@ -27,6 +27,7 @@ from ...models.db_models import (
     VertexAIConfig
 )
 from ...utils.message_utils import get_message_table_class_by_name
+from ...utils.message_assembly import assemble_messages_v3
 
 logger = logging.getLogger(__name__)
 
@@ -34,44 +35,8 @@ logger = logging.getLogger(__name__)
 QUERY_TIMEOUT = 5
 
 
-def assemble_messages_v3(
-    session_id: str,
-    indexes: List[MessageIndex],
-    messages_by_table: Dict[str, Dict[str, Any]],
-    attachments_by_message: Dict[str, List[MessageAttachment]]
-) -> List[Dict[str, Any]]:
-    """
-    组装单个会话的消息列表 (v3 架构)
-    
-    复用 sessions.py 的逻辑
-    """
-    assembled_messages = []
-    
-    for idx in indexes:
-        # 从模式表获取消息
-        table_messages = messages_by_table.get(idx.table_name, {})
-        msg = table_messages.get(idx.id)
-        
-        if not msg:
-            logger.warning(f"消息不存在: id={idx.id}, table={idx.table_name}")
-            continue
-        
-        # 转换为字典
-        msg_dict = msg.to_dict()
-        
-        # 从索引表获取 mode 字段
-        msg_dict['mode'] = idx.mode
-        
-        # 附加附件
-        atts = attachments_by_message.get(idx.id, [])
-        if atts:
-            msg_dict['attachments'] = [att.to_dict() for att in atts]
-        else:
-            msg_dict['attachments'] = []
-        
-        assembled_messages.append(msg_dict)
-    
-    return assembled_messages
+# 已删除重复的 assemble_messages_v3 函数
+# 现在使用统一的实现：utils/message_assembly.py
 
 
 async def _query_profiles(user_id: str, db: Session) -> Dict[str, Any]:
@@ -101,28 +66,28 @@ async def _query_profiles(user_id: str, db: Session) -> Dict[str, Any]:
         # 提取 DashScope Key
         dashscope_key = ""
         tongyi_profile = next(
-            (p for p in profiles_data if p["providerId"] == "tongyi"),
+            (p for p in profiles_data if p["provider_id"] == "tongyi"),
             None
         )
         if tongyi_profile:
-            dashscope_key = tongyi_profile.get("apiKey", "")
+            dashscope_key = tongyi_profile.get("api_key", "")
         
         logger.info(f"[InitService] Profiles 加载成功: {len(profiles_data)} 个配置")
         
         return {
             "profiles": profiles_data,
-            "activeProfileId": active_profile_id,
-            "activeProfile": active_profile,
-            "dashscopeKey": dashscope_key,
+            "active_profile_id": active_profile_id,
+            "active_profile": active_profile,
+            "dashscope_key": dashscope_key,
             "error": None
         }
     except Exception as e:
         logger.error(f"[InitService] Profiles 加载失败: {e}")
         return {
             "profiles": [],
-            "activeProfileId": None,
-            "activeProfile": None,
-            "dashscopeKey": "",
+            "active_profile_id": None,
+            "active_profile": None,
+            "dashscope_key": "",
             "error": str(e)
         }
 
@@ -147,15 +112,15 @@ async def _query_storage_configs(user_id: str, db: Session) -> Dict[str, Any]:
         logger.info(f"[InitService] Storage Configs 加载成功: {len(storage_configs_data)} 个配置")
         
         return {
-            "storageConfigs": storage_configs_data,
-            "activeStorageId": active_storage_id,
+            "storage_configs": storage_configs_data,
+            "active_storage_id": active_storage_id,
             "error": None
         }
     except Exception as e:
         logger.error(f"[InitService] Storage Configs 加载失败: {e}")
         return {
-            "storageConfigs": [],
-            "activeStorageId": None,
+            "storage_configs": [],
+            "active_storage_id": None,
             "error": str(e)
         }
 
@@ -232,8 +197,8 @@ async def _query_sessions(user_id: str, db: Session) -> Dict[str, Any]:
             session_dict = {
                 "id": session.id,
                 "title": session.title,
-                "createdAt": session.created_at,
-                "personaId": session.persona_id,
+                "created_at": session.created_at,
+                "persona_id": session.persona_id,
                 "mode": session.mode
             }
             
@@ -273,7 +238,7 @@ async def _query_sessions_with_first_messages(user_id: str, db: Session, limit: 
         {
             "sessions": [...],
             "total": int,
-            "hasMore": bool
+            "has_more": bool
         }
     """
     try:
@@ -292,7 +257,7 @@ async def _query_sessions_with_first_messages(user_id: str, db: Session, limit: 
             return {
                 "sessions": [],
                 "total": 0,
-                "hasMore": False,
+                "has_more": False,
                 "error": None
             }
         
@@ -374,10 +339,10 @@ async def _query_sessions_with_first_messages(user_id: str, db: Session, limit: 
             session_dict = {
                 "id": session.id,
                 "title": session.title,
-                "createdAt": session.created_at,
-                "personaId": session.persona_id,
+                "created_at": session.created_at,
+                "persona_id": session.persona_id,
                 "mode": session.mode,
-                "messageCount": message_count_map.get(session.id, 0)
+                "message_count": message_count_map.get(session.id, 0)
             }
             
             if idx == 0:
@@ -396,7 +361,7 @@ async def _query_sessions_with_first_messages(user_id: str, db: Session, limit: 
         return {
             "sessions": sessions_result,
             "total": total_count,
-            "hasMore": has_more,
+            "has_more": has_more,
             "error": None
         }
     except Exception as e:
@@ -404,7 +369,7 @@ async def _query_sessions_with_first_messages(user_id: str, db: Session, limit: 
         return {
             "sessions": [],
             "total": 0,
-            "hasMore": False,
+            "has_more": False,
             "error": str(e)
         }
 
@@ -419,7 +384,7 @@ async def _query_sessions_metadata_only(user_id: str, db: Session, limit: int = 
         {
             "sessions": [...],  # messages 为空数组
             "total": int,
-            "hasMore": bool
+            "has_more": bool
         }
     """
     try:
@@ -437,7 +402,7 @@ async def _query_sessions_metadata_only(user_id: str, db: Session, limit: int = 
             return {
                 "sessions": [],
                 "total": 0,
-                "hasMore": False,
+                "has_more": False,
                 "error": None
             }
         
@@ -464,10 +429,10 @@ async def _query_sessions_metadata_only(user_id: str, db: Session, limit: int = 
             session_dict = {
                 "id": session.id,
                 "title": session.title,
-                "createdAt": session.created_at,
-                "personaId": session.persona_id,
+                "created_at": session.created_at,
+                "persona_id": session.persona_id,
                 "mode": session.mode,
-                "messageCount": message_count_map.get(session.id, 0),
+                "message_count": message_count_map.get(session.id, 0),
                 "messages": []  # ✅ 滚动加载的会话 messages 为空数组
             }
             sessions_result.append(session_dict)
@@ -479,7 +444,7 @@ async def _query_sessions_metadata_only(user_id: str, db: Session, limit: int = 
         return {
             "sessions": sessions_result,
             "total": total_count,
-            "hasMore": has_more,
+            "has_more": has_more,
             "error": None
         }
     except Exception as e:
@@ -487,7 +452,7 @@ async def _query_sessions_metadata_only(user_id: str, db: Session, limit: int = 
         return {
             "sessions": [],
             "total": 0,
-            "hasMore": False,
+            "has_more": False,
             "error": str(e)
         }
 
@@ -535,28 +500,28 @@ async def _query_vertex_ai_config(user_id: str, db: Session) -> Dict[str, Any]:
         
         if vertex_ai_config:
             config_data = vertex_ai_config.to_dict()
-            logger.info(f"[InitService] Vertex AI Config 加载成功: api_mode={config_data.get('apiMode')}")
-            return {"vertexAiConfig": config_data, "error": None}
+            logger.info(f"[InitService] Vertex AI Config 加载成功: api_mode={config_data.get('api_mode')}")
+            return {"vertex_ai_config": config_data, "error": None}
         else:
             # 返回默认配置
             logger.info(f"[InitService] 无 Imagen 配置，返回默认值")
             return {
-                "imagenConfig": {
-                    "apiMode": "gemini_api",
-                    "vertexAiProjectId": None,
-                    "vertexAiLocation": "us-central1",
-                    "vertexAiCredentialsJson": None
+                "imagen_config": {
+                    "api_mode": "gemini_api",
+                    "vertex_ai_project_id": None,
+                    "vertex_ai_location": "us-central1",
+                    "vertex_ai_credentials_json": None
                 },
                 "error": None
             }
     except Exception as e:
         logger.warning(f"[InitService] Imagen Config 加载失败，使用默认值: {e}")
         return {
-            "imagenConfig": {
-                "apiMode": "gemini_api",
-                "vertexAiProjectId": None,
-                "vertexAiLocation": "us-central1",
-                "vertexAiCredentialsJson": None
+            "imagen_config": {
+                "api_mode": "gemini_api",
+                "vertex_ai_project_id": None,
+                "vertex_ai_location": "us-central1",
+                "vertex_ai_credentials_json": None
             },
             "error": str(e)
         }
@@ -578,18 +543,18 @@ async def get_init_data(user_id: str, db: Session) -> Dict[str, Any]:
     # 初始化返回结构
     result = {
         "profiles": [],
-        "activeProfileId": None,
-        "activeProfile": None,
-        "dashscopeKey": "",
-        "storageConfigs": [],
-        "activeStorageId": None,
+        "active_profile_id": None,
+        "active_profile": None,
+        "dashscope_key": "",
+        "storage_configs": [],
+        "active_storage_id": None,
         "sessions": [],
         "personas": [],  # ✅ 重构后：默认返回空数组，不返回默认 Personas
-        "imagenConfig": None,
-        "cachedModels": None,
+        "imagen_config": None,
+        "cached_models": None,
         "_metadata": {
             "timestamp": int(time.time() * 1000),
-            "partialFailures": []
+            "partial_failures": []
         }
     }
     
@@ -617,20 +582,20 @@ async def get_init_data(user_id: str, db: Session) -> Dict[str, Any]:
         # 处理 Profiles 结果
         if isinstance(profiles_result, dict) and not profiles_result.get("error"):
             result["profiles"] = profiles_result["profiles"]
-            result["activeProfileId"] = profiles_result["activeProfileId"]
-            result["activeProfile"] = profiles_result["activeProfile"]
-            result["dashscopeKey"] = profiles_result["dashscopeKey"]
+            result["active_profile_id"] = profiles_result["active_profile_id"]
+            result["active_profile"] = profiles_result["active_profile"]
+            result["dashscope_key"] = profiles_result["dashscope_key"]
         else:
-            result["_metadata"]["partialFailures"].append("profiles")
+            result["_metadata"]["partial_failures"].append("profiles")
             if isinstance(profiles_result, Exception):
                 logger.error(f"[InitService] Profiles 查询异常: {profiles_result}")
         
         # 处理 Storage Configs 结果
         if isinstance(storage_result, dict) and not storage_result.get("error"):
-            result["storageConfigs"] = storage_result["storageConfigs"]
-            result["activeStorageId"] = storage_result["activeStorageId"]
+            result["storage_configs"] = storage_result["storage_configs"]
+            result["active_storage_id"] = storage_result["active_storage_id"]
         else:
-            result["_metadata"]["partialFailures"].append("storageConfigs")
+            result["_metadata"]["partial_failures"].append("storage_configs")
             if isinstance(storage_result, Exception):
                 logger.error(f"[InitService] Storage Configs 查询异常: {storage_result}")
         
@@ -638,39 +603,39 @@ async def get_init_data(user_id: str, db: Session) -> Dict[str, Any]:
         if isinstance(sessions_result, dict) and not sessions_result.get("error"):
             result["sessions"] = sessions_result["sessions"]
         else:
-            result["_metadata"]["partialFailures"].append("sessions")
+            result["_metadata"]["partial_failures"].append("sessions")
             if isinstance(sessions_result, Exception):
                 logger.error(f"[InitService] Sessions 查询异常: {sessions_result}")
         
         # 处理 Personas 结果
         if isinstance(personas_result, dict):
             result["personas"] = personas_result["personas"]
-            # Personas 失败不算 partialFailures，因为有默认值
+            # Personas 失败不算 partial_failures，因为有默认值
         else:
             if isinstance(personas_result, Exception):
                 logger.warning(f"[InitService] Personas 查询异常，使用默认值: {personas_result}")
         
         # 处理 Vertex AI Config 结果
         if isinstance(vertex_ai_result, dict) and not vertex_ai_result.get("error"):
-            result["vertexAiConfig"] = vertex_ai_result["vertexAiConfig"]
+            result["vertex_ai_config"] = vertex_ai_result["vertex_ai_config"]
         else:
-            # Vertex AI Config 失败不算 partialFailures，因为有默认值
+            # Vertex AI Config 失败不算 partial_failures，因为有默认值
             if isinstance(vertex_ai_result, Exception):
                 logger.warning(f"[InitService] Vertex AI Config 查询异常，使用默认值: {vertex_ai_result}")
-            result["vertexAiConfig"] = {
-                "apiMode": "gemini_api",
-                "vertexAiProjectId": None,
-                "vertexAiLocation": "us-central1",
-                "vertexAiCredentialsJson": None
+            result["vertex_ai_config"] = {
+                "api_mode": "gemini_api",
+                "vertex_ai_project_id": None,
+                "vertex_ai_location": "us-central1",
+                "vertex_ai_credentials_json": None
             }
         
     except asyncio.TimeoutError:
         logger.error(f"[InitService] 查询超时（{QUERY_TIMEOUT}秒）")
-        result["_metadata"]["partialFailures"].append("timeout")
+        result["_metadata"]["partial_failures"].append("timeout")
     except Exception as e:
         logger.error(f"[InitService] 并行查询失败: {e}")
-        result["_metadata"]["partialFailures"].append("critical_error")
+        result["_metadata"]["partial_failures"].append("critical_error")
     
-    logger.info(f"[InitService] 初始化数据加载完成，部分失败: {result['_metadata']['partialFailures']}")
+    logger.info(f"[InitService] 初始化数据加载完成，部分失败: {result['_metadata']['partial_failures']}")
     
     return result

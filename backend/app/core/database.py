@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -36,6 +37,29 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # 创建我们 ORM 模型将继承的基类
 Base = declarative_base()
+
+
+# 为 Base 添加统一的 to_dict() 方法
+def _base_to_dict(self):
+    """
+    统一的 to_dict() 方法，返回 snake_case 格式
+
+    中间件会自动将 snake_case 转换为 camelCase 发送给前端
+    这样保持了架构的一致性：后端内部统一使用 snake_case
+    """
+    result = {}
+    for column in self.__table__.columns:
+        value = getattr(self, column.name)
+        # 处理特殊类型
+        if isinstance(value, datetime):
+            # 转换为时间戳（毫秒）
+            result[column.name] = int(value.timestamp() * 1000)
+        else:
+            result[column.name] = value
+    return result
+
+
+Base.to_dict = _base_to_dict
 
 
 # 依赖注入：获取数据库会话

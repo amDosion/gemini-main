@@ -261,8 +261,8 @@ export function useLayeredDesign({
           options: { layerDoc: doc },
         });
 
-        if (response.success && response.data?.image_base64) {
-          const imageUrl = `data:image/png;base64,${response.data.image_base64}`;
+        if (response.success && response.data?.imageBase64) {
+          const imageUrl = `data:image/png;base64,${response.data.imageBase64}`;
           setRenderedImage(imageUrl);
           return { success: true, ...response.data };
         } else {

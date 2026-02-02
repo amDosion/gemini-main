@@ -82,7 +82,7 @@ def clear_auth_cookies(response: Response) -> None:
     response.delete_cookie(key="csrf_token", path="/")
 
 
-@router.get("/config", response_model=AuthConfigResponse)
+@router.get("/config")
 async def get_auth_config(db: Session = Depends(get_db)):
     """获取认证配置（注册开关状态）"""
     logger.info("[Auth] 收到获取配置请求")
@@ -90,10 +90,21 @@ async def get_auth_config(db: Session = Depends(get_db)):
     try:
         config = auth_service.get_config()
         logger.info(f"[Auth] 成功返回配置: allow_registration={config.allow_registration}")
-        return config
+        # 返回 snake_case，由中间件转换为 camelCase
+        return {"allow_registration": config.allow_registration}
     except Exception as e:
-        logger.error(f"[Auth] 获取配置失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to get auth config: {str(e)}")
+        error_msg = str(e).lower()
+        # ✅ 详细的错误分类和日志记录
+        if "no such table" in error_msg or "does not exist" in error_msg:
+            logger.error("[Auth] 数据库表不存在，系统可能未正确初始化")
+        elif "no row" in error_msg or "none" in error_msg:
+            logger.error("[Auth] SystemConfig 记录不存在，系统配置未初始化")
+        elif "connection" in error_msg or "connect" in error_msg:
+            logger.error("[Auth] 数据库连接失败")
+        else:
+            logger.error(f"[Auth] 获取配置失败: {e}", exc_info=True)
+        # ✅ 返回通用错误消息，不泄露实现细节
+        raise HTTPException(status_code=500, detail="Failed to get auth config")
 
 
 @router.get("/ip-info")
@@ -338,7 +349,7 @@ async def get_current_user(
 ):
     """获取当前用户信息 - 从 Authorization header 获取 token"""
     auth_service = AuthService(db)
-    
+
     # ✅ 从 Authorization header 获取 token
     auth_header = request.headers.get("Authorization")
     access_token = None
@@ -346,11 +357,15 @@ async def get_current_user(
         parts = auth_header.split()
         if len(parts) == 2 and parts[0].lower() == "bearer":
             access_token = parts[1]
-    
+
     if not access_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    
+
     try:
         return auth_service.get_current_user(access_token)
     except (InvalidTokenError, TokenExpiredError):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    except Exception as e:
+        # ✅ 捕获其他异常（如数据库错误），避免返回 500 错误
+        logger.error(f"[Auth] 获取当前用户失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch user information")

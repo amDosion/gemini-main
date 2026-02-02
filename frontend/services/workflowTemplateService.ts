@@ -106,10 +106,11 @@ class WorkflowTemplateService {
     includePublic?: boolean;
   }): Promise<WorkflowTemplate[]> {
     const params = new URLSearchParams();
+    // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
     if (options?.category) params.append('category', options.category);
-    if (options?.workflowType) params.append('workflow_type', options.workflowType);
+    if (options?.workflowType) params.append('workflowType', options.workflowType);
     if (options?.search) params.append('search', options.search);
-    if (options?.includePublic !== undefined) params.append('include_public', String(options.includePublic));
+    if (options?.includePublic !== undefined) params.append('includePublic', String(options.includePublic));
 
     const url = params.toString() ? `${this.baseUrl}?${params.toString()}` : this.baseUrl;
     console.log('[WorkflowTemplateService] Fetching templates from:', url);
@@ -201,7 +202,7 @@ class WorkflowTemplateService {
     name: string;
     description: string;
     category: string;
-    workflow_type: string;
+    workflowType: string;
     path: string;
     source: string;
   }>> {
@@ -232,8 +233,8 @@ class WorkflowTemplateService {
       headers: this.getHeaders(),
       credentials: 'include',
       body: JSON.stringify({
-        template_id: templateId,
-        custom_name: customName,
+        templateId: templateId,
+        customName: customName,
         isPublic: isPublic
       })
     });
@@ -251,6 +252,7 @@ class WorkflowTemplateService {
    */
   async importAllADKSamplesTemplates(isPublic: boolean = false): Promise<WorkflowTemplate[]> {
     const params = new URLSearchParams();
+    // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
     params.append('isPublic', String(isPublic));
     
     const response = await fetch(`/api/multi-agent/workflows/adk-samples/import-all?${params.toString()}`, {

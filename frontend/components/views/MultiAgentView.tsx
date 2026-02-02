@@ -133,7 +133,7 @@ export const MultiAgentView: React.FC<MultiAgentViewProps> = React.memo(({
                 credentials: 'include',
                 body: JSON.stringify({
                     task: taskDescription || '执行多智能体工作流',
-                    agent_ids: agentIds.length > 0 ? agentIds : undefined
+                    agentIds: agentIds.length > 0 ? agentIds : undefined
                 }),
             });
 

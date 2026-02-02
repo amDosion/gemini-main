@@ -107,9 +107,9 @@ export class ImageEditHandler extends BaseHandler {
     // 将 sessionId 和 messageId 添加到 options 中，以便后端使用
     const editOptions = {
       ...context.options,
-      frontend_session_id: context.sessionId,  // 传递前端会话 ID
+      frontendSessionId: context.sessionId,  // 传递前端会话 ID
       sessionId: context.sessionId,  // 向后兼容
-      message_id: context.modelMessageId  // ✅ 新增：后端需要 messageId 来创建附件记录
+      messageId: context.modelMessageId  // ✅ 新增：后端需要 messageId 来创建附件记录
     };
     
     const results = await llmService.editImage(

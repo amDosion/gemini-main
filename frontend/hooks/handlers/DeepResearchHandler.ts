@@ -90,12 +90,12 @@ export class DeepResearchHandler extends BaseHandler {
         agent: currentModel.id || 'deep-research-pro-preview-12-2025',
         background: true,
         stream: true,
-        research_mode: researchMode,  // ✅ 传递工作模式（vertex-ai 或 gemini-api）
-        agent_config: {
+        researchMode: researchMode,  // ✅ 传递工作模式（vertex-ai 或 gemini-api）
+        agentConfig: {
           type: 'deep-research',
-          thinking_summaries: thinkingSummaries  // ✅ 使用用户配置的思考摘要模式
+          thinkingSummaries: thinkingSummaries  // ✅ 使用用户配置的思考摘要模式
         },
-        file_search_store_names: fileSearchStoreNames  // 传递文档存储名称
+        fileSearchStoreNames: fileSearchStoreNames  // 传递文档存储名称
       }),
     });
 
@@ -105,10 +105,10 @@ export class DeepResearchHandler extends BaseHandler {
     }
 
     const startData = await startResponse.json();
-    const { interaction_id } = startData;
+    const { interactionId } = startData;
 
-    if (!interaction_id) {
-      throw new Error('Failed to start research task: No interaction_id received.');
+    if (!interactionId) {
+      throw new Error('Failed to start research task: No interactionId received.');
     }
 
     // 通知 UI 研究已开始
@@ -133,12 +133,13 @@ export class DeepResearchHandler extends BaseHandler {
 
       // 连接函数（支持重连）
       const connectSSE = () => {
-        // 构造SSE URL（包含 last_event_id 用于断点续传）
+        // 构造SSE URL（包含 lastEventId 用于断点续传）
         // 注意：EventSource 不支持自定义 headers，所以认证通过 Cookie 进行
-        let sseUrl = `/api/research/stream/${interaction_id}`;
+        // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
+        let sseUrl = `/api/research/stream/${interactionId}`;
         if (lastEventId) {
-          sseUrl += `?last_event_id=${lastEventId}`;
-          console.log('[DeepResearchHandler] 🔄 重连SSE（断点续传）:', `...&last_event_id=${lastEventId.substring(0, 8)}...`);
+          sseUrl += `?lastEventId=${lastEventId}`;
+          console.log('[DeepResearchHandler] 🔄 重连SSE（断点续传）:', `...&lastEventId=${lastEventId.substring(0, 8)}...`);
         } else {
           console.log('[DeepResearchHandler] 连接SSE:', sseUrl);
         }
@@ -157,14 +158,14 @@ export class DeepResearchHandler extends BaseHandler {
         eventSource.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            console.log('[DeepResearchHandler] 收到事件:', data.event_type);
+            console.log('[DeepResearchHandler] 收到事件:', data.eventType);
 
             // 保存 event_id 用于断点续传
-            if (data.event_id) {
-              lastEventId = data.event_id;
+            if (data.eventId) {
+              lastEventId = data.eventId;
             }
 
-            if (data.event_type === 'content.delta') {
+            if (data.eventType === 'content.delta') {
               if (data.delta?.type === 'text') {
                 // 累积最终答案文本
                 accumulatedText += data.delta.text;
@@ -195,9 +196,9 @@ export class DeepResearchHandler extends BaseHandler {
                   });
                 }
               }
-            } else if (data.event_type === 'tool.call') {
+            } else if (data.eventType === 'tool.call') {
               // ✅ 处理 Browser 工具调用事件
-              const toolCall = data.tool_call;
+              const toolCall = data.toolCall;
               const toolName = toolCall?.name || 'unknown';
               const toolArgs = toolCall?.args || {};
               
@@ -211,9 +212,9 @@ export class DeepResearchHandler extends BaseHandler {
                 content: accumulatedText,
                 groundingMetadata: lastGroundingMetadata,
               });
-            } else if (data.event_type === 'tool.result') {
+            } else if (data.eventType === 'tool.result') {
               // ✅ 处理 Browser 工具结果事件
-              const toolResult = data.tool_result;
+              const toolResult = data.toolResult;
               const toolName = toolResult?.tool || 'unknown';
               const result = toolResult?.result || '';
               
@@ -228,13 +229,13 @@ export class DeepResearchHandler extends BaseHandler {
                 content: accumulatedText,
                 groundingMetadata: lastGroundingMetadata,
               });
-            } else if (data.event_type === 'interaction.complete') {
+            } else if (data.eventType === 'interaction.complete') {
               // 研究完成
               console.log('[DeepResearchHandler] ✅ 研究完成');
               
               // ✅ 提取 grounding metadata（如果存在）
-              if (data.grounding_metadata) {
-                lastGroundingMetadata = data.grounding_metadata;
+              if (data.groundingMetadata) {
+                lastGroundingMetadata = data.groundingMetadata;
                 console.log('[DeepResearchHandler] 找到 grounding metadata:', lastGroundingMetadata);
               }
               
@@ -251,7 +252,7 @@ export class DeepResearchHandler extends BaseHandler {
                 attachments: [],
                 groundingMetadata: lastGroundingMetadata,  // ✅ 传递 grounding metadata
               });
-            } else if (data.event_type === 'error') {
+            } else if (data.eventType === 'error') {
               // 服务端错误
               console.error('[DeepResearchHandler] ❌ 服务端错误:', data.error);
               isComplete = true;

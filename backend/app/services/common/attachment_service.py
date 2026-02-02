@@ -20,16 +20,6 @@ from .upload_worker_pool import worker_pool
 
 logger = logging.getLogger(__name__)
 
-# 检查是否使用 ARQ 模式
-def _is_arq_mode() -> bool:
-    """检查是否使用 ARQ 模式"""
-    try:
-        from ...core.config import settings
-        return settings.worker_mode.lower() == "arq"
-    except Exception:
-        return False
-
-
 class AttachmentService:
     """
     统一附件处理服务
@@ -573,51 +563,31 @@ class AttachmentService:
         step1_time = (time.time() - start_time) * 1000
         logger.info(f"[AttachmentService] ✅ [步骤1] UploadTask记录已创建并保存到数据库 (耗时: {step1_time:.2f}ms)")
 
-        # ✅ 详细日志：步骤2 - 入队任务（ARQ 或 Redis）
-        if _is_arq_mode():
-            logger.info(f"[AttachmentService] 🔄 [步骤2] 入队ARQ...")
-            try:
-                from .arq_queue_service import enqueue_arq_job
-                job_id = await enqueue_arq_job(task_id, priority)
-                step2_time = (time.time() - start_time) * 1000
-                if job_id:
-                    logger.info(f"[AttachmentService] ✅ [步骤2] 任务已入队ARQ (耗时: {step2_time:.2f}ms)")
-                    logger.info(f"[AttachmentService]     - job_id: {job_id}")
-                    # ARQ Worker 会自动处理，不需要手动启动
-                else:
-                    logger.error(f"[AttachmentService] ❌ [步骤2] ARQ入队失败 (耗时: {step2_time:.2f}ms)")
-                    logger.error(f"[AttachmentService]     - 任务已保存到数据库，ARQ Worker会在启动时恢复")
-            except Exception as e:
-                step2_time = (time.time() - start_time) * 1000
-                logger.error(f"[AttachmentService] ❌ [步骤2] ARQ入队失败 (耗时: {step2_time:.2f}ms): {e}")
-                logger.error(f"[AttachmentService]     - 任务已保存到数据库，ARQ Worker会在启动时恢复")
-                import traceback
-                traceback.print_exc()
-        else:
-            logger.info(f"[AttachmentService] 🔄 [步骤2] 入队Redis...")
-            try:
-                # 确保Redis连接已建立
-                if redis_queue._redis is None:
-                    logger.info(f"[AttachmentService]     - Redis连接未建立，正在连接...")
-                    await redis_queue.connect()
-                    logger.info(f"[AttachmentService]     - Redis连接已建立")
+        # ✅ 详细日志：步骤2 - 入队任务到 Redis
+        logger.info(f"[AttachmentService] 🔄 [步骤2] 入队Redis...")
+        try:
+            # 确保Redis连接已建立
+            if redis_queue._redis is None:
+                logger.info(f"[AttachmentService]     - Redis连接未建立，正在连接...")
+                await redis_queue.connect()
+                logger.info(f"[AttachmentService]     - Redis连接已建立")
 
-                queue_position = await redis_queue.enqueue(task_id, priority)
-                step2_time = (time.time() - start_time) * 1000
-                logger.info(f"[AttachmentService] ✅ [步骤2] 任务已入队Redis (耗时: {step2_time:.2f}ms)")
-                logger.info(f"[AttachmentService]     - queue_position: {queue_position}")
+            queue_position = await redis_queue.enqueue(task_id, priority)
+            step2_time = (time.time() - start_time) * 1000
+            logger.info(f"[AttachmentService] ✅ [步骤2] 任务已入队Redis (耗时: {step2_time:.2f}ms)")
+            logger.info(f"[AttachmentService]     - queue_position: {queue_position}")
 
-                # ✅ 步骤3: 确保Worker正在运行（按需启动）
-                logger.info(f"[AttachmentService] 🔄 [步骤3] 确保Worker正在运行...")
-                await worker_pool.ensure_worker_running()
-                step3_time = (time.time() - start_time) * 1000
-                logger.info(f"[AttachmentService] ✅ [步骤3] Worker已启动/运行中 (耗时: {step3_time:.2f}ms)")
-            except Exception as e:
-                step2_time = (time.time() - start_time) * 1000
-                logger.error(f"[AttachmentService] ❌ [步骤2] Redis入队失败 (耗时: {step2_time:.2f}ms): {e}")
-                logger.error(f"[AttachmentService]     - 任务已保存到数据库，Worker Pool会在启动时恢复")
-                # 即使Redis入队失败，任务也已保存到数据库
-                # Worker Pool会在启动时恢复这些任务
+            # ✅ 步骤3: 确保Worker正在运行（按需启动）
+            logger.info(f"[AttachmentService] 🔄 [步骤3] 确保Worker正在运行...")
+            await worker_pool.ensure_worker_running()
+            step3_time = (time.time() - start_time) * 1000
+            logger.info(f"[AttachmentService] ✅ [步骤3] Worker已启动/运行中 (耗时: {step3_time:.2f}ms)")
+        except Exception as e:
+            step2_time = (time.time() - start_time) * 1000
+            logger.error(f"[AttachmentService] ❌ [步骤2] Redis入队失败 (耗时: {step2_time:.2f}ms): {e}")
+            logger.error(f"[AttachmentService]     - 任务已保存到数据库，Worker Pool会在启动时恢复")
+            # 即使Redis入队失败，任务也已保存到数据库
+            # Worker Pool会在启动时恢复这些任务
 
         total_time = (time.time() - start_time) * 1000
         logger.info(f"[AttachmentService] ========== 上传任务创建完成 (总耗时: {total_time:.2f}ms) ==========")

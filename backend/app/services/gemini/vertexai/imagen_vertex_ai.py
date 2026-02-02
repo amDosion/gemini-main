@@ -347,7 +347,7 @@ class VertexAIImageGenerator(BaseImageGenerator):
                                     
                                     result = {
                                         "url": f"data:{output_mime_type};base64,{b64_data}",
-                                        "mimeType": output_mime_type,
+                                        "mime_type": output_mime_type,
                                         "index": len(results),
                                         "size": len(image_bytes)
                                     }
@@ -475,7 +475,7 @@ class VertexAIImageGenerator(BaseImageGenerator):
                 
                 result = {
                     "url": f"data:{output_mime_type};base64,{b64_data}",
-                    "mimeType": output_mime_type,
+                    "mime_type": output_mime_type,
                     "index": idx,
                     "size": len(image_bytes)
                 }
@@ -497,7 +497,7 @@ class VertexAIImageGenerator(BaseImageGenerator):
                     logger.info(f"[VertexAIImageGenerator] ⚠️ No enhanced_prompt found in response")
                 
                 if enhanced_prompt_value:
-                    result["enhancedPrompt"] = enhanced_prompt_value
+                    result["enhanced_prompt"] = enhanced_prompt_value
                 
                 results.append(result)
             finally:

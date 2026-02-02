@@ -93,8 +93,7 @@ gemini/                                         # 共 91 个 Python 文件
 ├── # ═══════════════════════════════════════════════════════════════════════
 ├── # 专业服务 (Specialized Services)
 ├── # ═══════════════════════════════════════════════════════════════════════
-├── expand_service.py                           # [Common] 图像扩展/外扩 (Outpainting)
-├── upscale_service.py                          # [Common] 图像放大
+├── expand_service.py                           # [Common] 图像扩展/外扩/放大 (Outpainting + Upscale)
 ├── segmentation_service.py                     # [Common] 图像分割
 ├── tryon_service.py                            # [Hybrid] 虚拟试穿 - Vertex AI 优先，Gemini API 降级
 ├── pdf_extractor.py                            # [Common] PDF 结构化提取

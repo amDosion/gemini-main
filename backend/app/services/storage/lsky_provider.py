@@ -25,7 +25,7 @@ class LskyProvider(BaseStorageProvider):
         """
         domain = self.config.get("domain")
         token = self.config.get("token")
-        strategy_id = self.config.get("strategyId")
+        strategy_id = self.config.get("strategy_id")
         
         # 验证配置
         if not domain or not token:
@@ -83,7 +83,7 @@ class LskyProvider(BaseStorageProvider):
                     success=True,
                     url=image_url,
                     provider="lsky",
-                    metadata={"fullData": result.get("data")}
+                    metadata={"full_data": result.get("data")}
                 )
             else:
                 error_msg = result.get("message", "未知错误")

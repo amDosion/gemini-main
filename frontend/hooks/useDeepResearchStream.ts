@@ -24,8 +24,8 @@ export interface UseDeepResearchStreamReturn {
 }
 
 interface StreamEvent {
-  event_type: 'interaction.start' | 'content.delta' | 'interaction.complete' | 'error';
-  event_id?: string;
+  eventType: 'interaction.start' | 'content.delta' | 'interaction.complete' | 'error';
+  eventId?: string;
   delta?: ContentDelta;
   interaction?: {
     id: string;
@@ -104,9 +104,9 @@ export const useDeepResearchStream = (): UseDeepResearchStreamReturn => {
         return;
       }
 
-      // 正确编码 authorization 参数，避免 API Key 中的特殊字符导致解析失败
+      // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
       const authParam = encodeURIComponent(`Bearer ${import.meta.env.VITE_GEMINI_API_KEY}`);
-      const url = `/api/research/stream/${interactionIdRef.current}?last_event_id=${lastEventIdRef.current}&authorization=${authParam}`;
+      const url = `/api/research/stream/${interactionIdRef.current}?lastEventId=${lastEventIdRef.current}&authorization=${authParam}`;
       const eventSource = new EventSource(url);
 
       eventSource.onmessage = (event) => {
@@ -114,11 +114,11 @@ export const useDeepResearchStream = (): UseDeepResearchStreamReturn => {
           const data = JSON.parse(event.data) as StreamEvent;
 
           // 保存 event_id
-          if (data.event_id) {
-            lastEventIdRef.current = data.event_id;
+          if (data.eventId) {
+            lastEventIdRef.current = data.eventId;
           }
 
-          switch (data.event_type) {
+          switch (data.eventType) {
             case 'interaction.start':
               setStatus(prev => ({
                 ...prev,
@@ -204,11 +204,11 @@ export const useDeepResearchStream = (): UseDeepResearchStreamReturn => {
         agent: "deep-research-pro-preview-12-2025",
         background: true,
         stream: true,
-        agent_config: {
-          thinking_summaries: 'auto'
+        agentConfig: {
+          thinkingSummaries: 'auto'
         },
         tools: (options.documentIds && options.documentIds.length > 0)
-          ? [{ type: 'file_search', doc_ids: options.documentIds }]
+          ? [{ type: 'file_search', docIds: options.documentIds }]
           : undefined,
       };
 
@@ -229,11 +229,11 @@ export const useDeepResearchStream = (): UseDeepResearchStreamReturn => {
         }
 
         const data = await response.json();
-        interactionIdRef.current = data.interaction_id;
+        interactionIdRef.current = data.interactionId;
 
         setStatus(prev => ({
           ...prev,
-          progress: [...prev.progress, `已获取 interaction_id: ${data.interaction_id}`],
+          progress: [...prev.progress, `已获取 interaction_id: ${data.interactionId}`],
         }));
 
         // 连接 SSE 流

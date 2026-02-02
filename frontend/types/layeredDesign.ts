@@ -12,8 +12,8 @@ export interface Transform {
   y: number;
   scale: number;
   rotate: number;
-  anchor_x: number;
-  anchor_y: number;
+  anchorX: number;
+  anchorY: number;
 }
 
 // =========================
@@ -33,24 +33,24 @@ export interface BaseLayer {
 
 export interface RasterLayer extends BaseLayer {
   type: 'raster';
-  png_base64?: string;
-  asset_url?: string;
-  mask_png_base64?: string;
-  mask_svg_path?: string;
+  pngBase64?: string;
+  assetUrl?: string;
+  maskPngBase64?: string;
+  maskSvgPath?: string;
 }
 
 export interface TextStyle {
-  font_size: number;
-  font_color: string;
-  stroke_color?: string;
-  stroke_width?: number;
+  fontSize: number;
+  fontColor: string;
+  strokeColor?: string;
+  strokeWidth?: number;
   align: 'left' | 'center' | 'right';
-  line_spacing?: number;
-  fit_to_box?: boolean;
-  shadow_color?: string;
-  shadow_dx?: number;
-  shadow_dy?: number;
-  shadow_blur?: number;
+  lineSpacing?: number;
+  fitToBox?: boolean;
+  shadowColor?: string;
+  shadowDx?: number;
+  shadowDy?: number;
+  shadowBlur?: number;
 }
 
 export interface TextLayer extends BaseLayer {
@@ -58,27 +58,27 @@ export interface TextLayer extends BaseLayer {
   text: string;
   bbox: [number, number, number, number]; // [x, y, width, height]
   style: TextStyle;
-  box_fill?: string;
-  box_radius?: number;
-  box_padding?: number;
+  boxFill?: string;
+  boxRadius?: number;
+  boxPadding?: number;
 }
 
 export interface ShapeStyle {
   fill?: string;
   stroke?: string;
-  stroke_width?: number;
+  strokeWidth?: number;
   radius?: number;
   gradient?: Record<string, unknown>;
 }
 
-export type ShapeType = 'rect' | 'round_rect' | 'ellipse' | 'path';
+export type ShapeType = 'rect' | 'roundRect' | 'ellipse' | 'path';
 
 export interface ShapeLayer extends BaseLayer {
   type: 'shape';
   shape: ShapeType;
   bbox: [number, number, number, number]; // [x, y, width, height]
   style: ShapeStyle;
-  svg_path_d?: string;
+  svgPathD?: string;
 }
 
 export interface GradientStop {
@@ -117,7 +117,7 @@ export interface DecomposedLayer {
   id: string;
   name: string;
   z: number;
-  png_base64: string;
+  pngBase64: string;
   width: number;
   height: number;
 }
@@ -134,24 +134,24 @@ export interface LayeredDecomposeResponse {
 export interface VectorPath {
   id: string;
   d: string;
-  points_count: number;
+  pointsCount: number;
 }
 
 export interface LayeredVectorizeResponse {
   success: boolean;
   svg?: string;
-  svg_base64?: string;
+  svgBase64?: string;
   paths?: VectorPath[];
   width?: number;
   height?: number;
-  contours_count?: number;
+  contoursCount?: number;
   error?: string;
 }
 
 export interface LayeredRenderResponse {
   success: boolean;
-  image_base64?: string;
-  mime_type?: string;
+  imageBase64?: string;
+  mimeType?: string;
   width?: number;
   height?: number;
   error?: string;

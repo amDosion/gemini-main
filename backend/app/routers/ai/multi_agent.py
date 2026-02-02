@@ -488,13 +488,9 @@ class CreateWorkflowTemplateRequest(BaseModel):
     name: str
     description: Optional[str] = None
     category: str  # image-edit, excel-analysis, general等
-    workflowType: str  # sequential, parallel, coordinator (前端使用 camelCase)
+    workflow_type: str  # sequential, parallel, coordinator (snake_case)
     config: Dict[str, Any]  # 工作流配置（节点、边、参数等）
-    isPublic: Optional[bool] = False  # 前端使用 camelCase
-    
-    class Config:
-        # 允许使用字段别名，支持前端 camelCase 和后端 snake_case
-        validate_by_name = True
+    is_public: Optional[bool] = False  # snake_case
 
 
 class UpdateWorkflowTemplateRequest(BaseModel):
@@ -502,12 +498,9 @@ class UpdateWorkflowTemplateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     category: Optional[str] = None
-    workflowType: Optional[str] = None  # 前端使用 camelCase
+    workflow_type: Optional[str] = None  # snake_case
     config: Optional[Dict[str, Any]] = None
-    isPublic: Optional[bool] = None  # 前端使用 camelCase
-    
-    class Config:
-        validate_by_name = True
+    is_public: Optional[bool] = None  # snake_case
 
 
 @router.post("/workflows/templates")
@@ -532,9 +525,9 @@ async def create_workflow_template(
             name=request_body.name,
             description=request_body.description,
             category=request_body.category,
-            workflow_type=request_body.workflowType,  # 使用前端字段名
+            workflow_type=request_body.workflow_type,
             config=request_body.config,
-            is_public=request_body.isPublic  # 使用前端字段名
+            is_public=request_body.is_public
         )
         
         return template
@@ -640,9 +633,9 @@ async def update_workflow_template(
             name=request_body.name,
             description=request_body.description,
             category=request_body.category,
-            workflow_type=request_body.workflowType if request_body.workflowType is not None else None,  # 使用前端字段名
+            workflow_type=request_body.workflow_type,
             config=request_body.config,
-            is_public=request_body.isPublic if request_body.isPublic is not None else None  # 使用前端字段名
+            is_public=request_body.is_public
         )
         
         return template
@@ -715,10 +708,7 @@ class ImportADKSampleRequest(BaseModel):
     """导入 ADK sample 模板请求"""
     template_id: str  # marketing-agency, data-engineering, customer-service, camel
     custom_name: Optional[str] = None  # 自定义模板名称
-    isPublic: Optional[bool] = False  # 前端使用 camelCase
-    
-    class Config:
-        validate_by_name = True
+    is_public: Optional[bool] = False  # snake_case
 
 
 @router.post("/workflows/adk-samples/import")
@@ -742,7 +732,7 @@ async def import_adk_samples_template(
             user_id=user_id,
             template_id=request_body.template_id,
             custom_name=request_body.custom_name,
-            is_public=request_body.isPublic  # 使用前端字段名
+            is_public=request_body.is_public  # 使用 snake_case 字段名
         )
         
         return template
@@ -756,7 +746,7 @@ async def import_adk_samples_template(
 
 @router.post("/workflows/adk-samples/import-all")
 async def import_all_adk_samples_templates(
-    isPublic: bool = False,
+    is_public: bool = False,  # snake_case Query 参数
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)
 ):
@@ -773,7 +763,7 @@ async def import_all_adk_samples_templates(
         importer = ADKSamplesImporter(db=db)
         templates = await importer.import_all_templates(
             user_id=user_id,
-            is_public=isPublic
+            is_public=is_public
         )
         
         return {"templates": templates, "count": len(templates)}

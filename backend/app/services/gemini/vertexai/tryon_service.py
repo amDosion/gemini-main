@@ -6,7 +6,7 @@ Virtual Try-On 服务（独立版）
   用 credentials 创建 Client；未传入时回退到 env / client_pool（兼容旧调用）
 - 模型：virtual-try-on-001 / virtual-try-on-preview-08-04
 
-掩码 / 编辑等已迁移至 mask_edit_service、upscale_service、segmentation_service；
+掩码 / 编辑等已迁移至 mask_edit_service、expand_service、segmentation_service；
 本模块不再保留兼容接口与掩码回退。
 """
 import base64

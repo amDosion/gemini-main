@@ -8,7 +8,7 @@ export interface ToolCall {
 
 export interface ToolResult {
   name: string;
-  call_id: string;
+  callId: string;
   result: any;
   error?: string;
 }
@@ -217,8 +217,8 @@ export interface ChatOptions {
   };
   // Session/Message 上下文（Handler 传递给后端用于附件记录等）
   sessionId?: string;
-  frontend_session_id?: string;
-  message_id?: string;
+  frontendSessionId?: string;
+  messageId?: string;
 }
 
 // PDF Extraction Types
@@ -231,20 +231,20 @@ export interface PdfExtractionTemplate {
 
 export interface PdfExtractionResult {
   success: boolean;
-  template_type: string;
-  template_name: string;
+  templateType: string;
+  templateName: string;
   data: Record<string, any>;
-  raw_text?: string;
+  rawText?: string;
   error?: string;
-  model_response?: string;
+  modelResponse?: string;
 }
 
 // RAG / Document Embedding Types
 export interface DocumentMetadata {
   filename: string;
-  document_id: string;
-  chunk_count: number;
-  added_at: string;
+  documentId: string;
+  chunkCount: number;
+  addedAt: string;
 }
 
 export interface SearchResult {
@@ -252,12 +252,12 @@ export interface SearchResult {
   source: string;
   filename: string;
   similarity: number;
-  chunk_id: string;
+  chunkId: string;
 }
 
 export interface VectorStoreStats {
-  total_chunks: number;
-  total_documents: number;
+  totalChunks: number;
+  totalDocuments: number;
   documents: string[];
 }
 

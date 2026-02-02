@@ -54,8 +54,8 @@ export const VertexAIConfiguration: React.FC<VertexAIConfigurationProps> = ({
             try {
                 setIsLoading(true);
                 
-                // 编辑模式：传递 edit_mode=true 以获取解密后的凭证
-                const data = await db.request<ImagenConfigResponse>('/vertex-ai/config?edit_mode=true');
+                // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
+                const data = await db.request<ImagenConfigResponse>('/vertex-ai/config?editMode=true');
                 
                 // Initialize Vertex AI configuration from API response
                 setImagenConfig({
@@ -184,8 +184,8 @@ export const VertexAIConfiguration: React.FC<VertexAIConfigurationProps> = ({
                 // 只恢复已保存的模型选择状态（哪些模型被选中），但使用最新获取的模型数据
                 // 这样可以确保显示的是最新的模型列表，而不是数据库中的旧数据
                 try {
-                    // 编辑模式：传递 edit_mode=true 以获取解密后的凭证
-                    const configData = await db.request<ImagenConfigResponse>('/vertex-ai/config?edit_mode=true');
+                    // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
+                    const configData = await db.request<ImagenConfigResponse>('/vertex-ai/config?editMode=true');
                     if (configData.savedModels && configData.savedModels.length > 0) {
                         // 只恢复选中状态，使用最新获取的模型数据
                         const savedModelIds = configData.savedModels.map((sm: ModelConfig) => sm.id);

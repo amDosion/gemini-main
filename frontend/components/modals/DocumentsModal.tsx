@@ -157,11 +157,11 @@ export const DocumentsModal: React.FC<DocumentsModalProps> = ({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <div className="text-sm text-slate-400">Total Documents</div>
-                <div className="text-2xl font-bold text-white">{stats.total_documents}</div>
+                <div className="text-2xl font-bold text-white">{stats.totalDocuments}</div>
               </div>
               <div>
                 <div className="text-sm text-slate-400">Total Chunks</div>
-                <div className="text-2xl font-bold text-white">{stats.total_chunks}</div>
+                <div className="text-2xl font-bold text-white">{stats.totalChunks}</div>
               </div>
             </div>
           </div>
@@ -230,7 +230,7 @@ export const DocumentsModal: React.FC<DocumentsModalProps> = ({
             <div className="space-y-2">
               {documents.map((doc) => (
                 <div
-                  key={doc.document_id}
+                  key={doc.documentId}
                   className="flex items-center justify-between p-4 bg-slate-950/50 rounded-lg border border-slate-800 hover:border-slate-700 transition-colors"
                 >
                   <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -238,12 +238,12 @@ export const DocumentsModal: React.FC<DocumentsModalProps> = ({
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-white truncate">{doc.filename}</div>
                       <div className="text-xs text-slate-500">
-                        {doc.chunk_count} chunks • Added {new Date(doc.added_at).toLocaleDateString()}
+                        {doc.chunkCount} chunks • Added {new Date(doc.addedAt).toLocaleDateString()}
                       </div>
                     </div>
                   </div>
                   <button
-                    onClick={() => handleDeleteDocument(doc.document_id)}
+                    onClick={() => handleDeleteDocument(doc.documentId)}
                     className="p-2 rounded-lg hover:bg-red-500/10 text-slate-400 hover:text-red-400 transition-colors"
                     title="Delete document"
                   >

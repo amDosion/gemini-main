@@ -13,21 +13,22 @@ Vertex AI 专用服务模块
 - recontext_service: 重新上下文 (edit_image API - inpaint)
 - mask_edit_service: 掩码编辑 (edit_image API - 带掩码)
 - tryon_service: 虚拟试穿 (recontext_image API)
-- upscale_service: 图片放大 (upscale_image API)
 - segmentation_service: 图片分割 (segment_image API)
-- expand_service: 图像扩展 (edit_image API - outpaint)
+- expand_service: 图像扩展/放大 (edit_image API - outpaint, upscale_image API)
 - imagen_vertex_ai: Vertex AI 图像生成
 - image_edit_vertex_ai: Vertex AI 图像编辑 (向后兼容别名)
+
+注意: upscale_service 已整合到 expand_service 中
 """
 
 from .tryon_service import TryOnService, TryOnResult, tryon_service
-from .upscale_service import UpscaleService, UpscaleResult, upscale_service
 from .segmentation_service import SegmentationService, SegmentResult, segmentation_service
 from .mask_edit_service import MaskEditService, EditResult
 from .vertex_edit_base import VertexAIEditBase
 from .inpainting_service import InpaintingService
 from .background_edit_service import BackgroundEditService
 from .recontext_service import RecontextService
+from .expand_service import ExpandService
 
 __all__ = [
     # 编辑服务基类
@@ -45,12 +46,10 @@ __all__ = [
     "TryOnService",
     "TryOnResult",
     "tryon_service",
-    # 图片放大
-    "UpscaleService",
-    "UpscaleResult",
-    "upscale_service",
     # 图片分割
     "SegmentationService",
     "SegmentResult",
     "segmentation_service",
+    # 图像扩展/放大
+    "ExpandService",
 ]

@@ -30,7 +30,6 @@ from .common.schema_handler import SchemaHandler
 from .common.token_handler import TokenHandler
 from .common.official_sdk_adapter import OfficialSDKAdapter
 from .vertexai.expand_service import ExpandService
-from .vertexai.upscale_service import UpscaleService
 from .vertexai.segmentation_service import SegmentationService
 from .vertexai.tryon_service import TryOnService
 from .common.pdf_extractor import PDFExtractorService
@@ -226,10 +225,9 @@ class GoogleService(BaseProviderService):
             self.schema_handler = SchemaHandler(self.sdk_initializer)
             self.token_handler = TokenHandler(self.sdk_initializer)
             
-            # Initialize specialized image services
-            self.expand_service = ExpandService(self.sdk_initializer)
-            self.upscale_service = UpscaleService()  # UpscaleService doesn't take parameters
-            self.segmentation_service = SegmentationService(user_id=user_id, db=db)  # 遵循 GEN 模式，从数据库获取 Vertex AI 配置
+            # Initialize specialized image services (遵循 GEN 模式，从数据库获取 Vertex AI 配置)
+            self.expand_service = ExpandService(user_id=user_id, db=db)
+            self.segmentation_service = SegmentationService(user_id=user_id, db=db)
 
             # Initialize PDF extraction service
             self.pdf_extractor = PDFExtractorService(self.sdk_initializer)
@@ -1060,24 +1058,30 @@ class GoogleService(BaseProviderService):
         **kwargs
     ) -> List[Dict[str, Any]]:
         """
-        Upscale image resolution by 2x or 4x.
-        
+        Upscale image resolution by 2x, 3x or 4x.
+
         Args:
             image_path: Path to the image to upscale
-            upscale_factor: Upscale factor ('x2' or 'x4') - must be provided by caller
+            upscale_factor: Upscale factor ('x2', 'x3' or 'x4') - must be provided by caller
             model: Model to use for upscaling (must be provided by caller, no default)
             **kwargs: Additional parameters
-        
+
         Returns:
             List of upscaled images
         """
         if self.use_official_sdk:
             raise NotImplementedError("Image upscaling not yet implemented in official SDK adapter")
-        
-        logger.info(f"[Google Service] Delegating image upscaling to UpscaleService: factor={upscale_factor}, model={model}")
+
+        logger.info(f"[Google Service] Delegating image upscaling to ExpandService: factor={upscale_factor}, model={model}")
         logger.info(f"[Google Service] Additional parameters: {list(kwargs.keys())}")
-        
-        return await self.upscale_service.upscale_image(image_path, upscale_factor, model, **kwargs)
+
+        # 委托给 ExpandService.upscale_image
+        return await self.expand_service.upscale_image(
+            image_path=image_path,
+            upscale_factor=upscale_factor,
+            model=model,
+            **kwargs
+        )
     
     # === Image Segmentation Service ===
     
@@ -1310,10 +1314,10 @@ class GoogleService(BaseProviderService):
                 return {
                     "images": [{
                         "url": processed["display_url"],
-                        "attachmentId": processed["attachment_id"],
-                        "uploadStatus": processed["status"],
-                        "taskId": processed["task_id"],
-                        "mimeType": mime,
+                        "attachment_id": processed["attachment_id"],
+                        "upload_status": processed["status"],
+                        "task_id": processed["task_id"],
+                        "mime_type": mime,
                         "filename": f"tryon-{processed['attachment_id'][:8]}.png"
                     }]
                 }
@@ -1326,7 +1330,7 @@ class GoogleService(BaseProviderService):
         return {
             "images": [{
                 "url": data_url,
-                "mimeType": mime,
+                "mime_type": mime,
                 "filename": f"tryon-{model_id}.png"
             }]
         }
@@ -1407,7 +1411,7 @@ class GoogleService(BaseProviderService):
                 "masks": [
                     {
                         "url": f"data:image/png;base64,{m.mask}",
-                        "mimeType": "image/png",
+                        "mime_type": "image/png",
                         "labels": [{"label": l.label, "score": l.score} for l in m.labels]
                     }
                     for m in result.masks

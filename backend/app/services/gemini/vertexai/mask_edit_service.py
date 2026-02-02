@@ -111,12 +111,12 @@ class MaskEditService(VertexAIEditBase):
                 必需: 'raw' (原图 Base64)
                 可选: 'mask' (掩码 Base64，提供时使用 MASK_MODE_USER_PROVIDED)
             config: 配置字典
-                - editMode/edit_mode: 编辑模式 (默认 EDIT_MODE_INPAINT_INSERTION)
-                - maskMode/mask_mode: 自动掩码模式 (默认 MASK_MODE_FOREGROUND)
-                - maskDilation/mask_dilation: 掩码膨胀系数 (默认 0.06)
+                - edit_mode: 编辑模式 (默认 EDIT_MODE_INPAINT_INSERTION)
+                - mask_mode: 自动掩码模式 (默认 MASK_MODE_FOREGROUND)
+                - mask_dilation: 掩码膨胀系数 (默认 0.06)
                 - model: 模型 ID
-                - number_of_images/numberOfImages: 生成数量
-                - negativePrompt/negative_prompt: 负面提示词
+                - number_of_images: 生成数量
+                - negative_prompt: 负面提示词
                 - guidance_scale: 引导比例 (默认 15.0)
                 - output_mime_type: 输出格式 (默认 image/png)
                 - output_compression_quality: 压缩质量 (默认 95)
@@ -131,11 +131,8 @@ class MaskEditService(VertexAIEditBase):
         if not raw:
             raise ValueError("mask edit requires 'raw' image in reference_images")
 
-        # ── Step 1: Normalize camelCase → snake_case ──
-        # Must normalize BEFORE setdefault(), otherwise snake_case defaults
-        # shadow frontend camelCase values (e.g. guidanceScale: 20 ignored because
-        # setdefault('guidance_scale', 15.0) runs first and _build_config prefers snake_case).
-        effective_config = self._normalize_config(config or {})
+        # ── Step 1: Use config directly (middleware already handles camelCase → snake_case) ──
+        effective_config = config or {}
 
         # ── Step 2: Mask-edit specific defaults (only applied if not set by frontend) ──
         effective_config.setdefault('guidance_scale', 15.0)
@@ -152,7 +149,7 @@ class MaskEditService(VertexAIEditBase):
 
         logger.info(
             f"[MaskEditService] edit_image(): has_mask={has_mask}, "
-            f"edit_mode={effective_config.get('edit_mode') or effective_config.get('editMode') or self.DEFAULT_EDIT_MODE}"
+            f"edit_mode={effective_config.get('edit_mode') or self.DEFAULT_EDIT_MODE}"
         )
 
         # Delegate to base class shared pipeline

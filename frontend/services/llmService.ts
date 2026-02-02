@@ -88,6 +88,7 @@ export class LLMService {
           // 4. 如果传递了 mode，后端会根据模式过滤模型
           // 5. 返回 ModelConfig 数组（已过滤或完整列表）
           const params = new URLSearchParams();
+          // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
           params.append('useCache', String(useCache));
           if (mode) {
               params.append('mode', mode);
@@ -119,7 +120,7 @@ export class LLMService {
               });
           }
 
-          console.log(`[LLMService] Successfully fetched ${models.length} models from backend${data.filtered_by_mode ? ` (filtered by mode: ${data.filtered_by_mode})` : ''}`);
+          console.log(`[LLMService] Successfully fetched ${models.length} models from backend${data.filteredByMode ? ` (filtered by mode: ${data.filteredByMode})` : ''}`);
           return models;
       } catch (error) {
           if (cachedData && !mode) {
@@ -382,17 +383,56 @@ export class LLMService {
       );
   }
 
-  public async outPaintImage(referenceImage: Attachment): Promise<ImageGenerationResult> {
-      // Route Google provider through backend API
-      if (this.providerId === 'google') {
-          return this.callGoogleOutpaintAPI(referenceImage);
+  /**
+   * Out-Painting（图片扩展）
+   *
+   * 与 GEN 模式保持一致：传递 sessionId 和 messageId 到后端，
+   * 后端会通过 AttachmentService 创建数据库附件记录和上传任务。
+   *
+   * @param referenceImage 参考图片
+   * @param options 选项（包含 sessionId、messageId 等）
+   */
+  public async outPaintImage(
+    referenceImage: Attachment,
+    options?: Partial<ChatOptions>
+  ): Promise<ImageGenerationResult> {
+      // ✅ 与 ImageGenHandler 保持一致：合并 options，确保传递 sessionId 和 messageId
+      const mergedOptions = {
+        ...this._cachedOptions,
+        ...options,  // ✅ Handler 传入的 options 优先（包含 sessionId、messageId）
+      };
+
+      // ✅ 详细日志：记录 image-outpainting 模式下传递的参数
+      console.log('========== [llmService.outPaintImage] 参数传递 ==========');
+      console.log('[outPaintImage] Provider:', this.providerId);
+      console.log('[outPaintImage] sessionId:', mergedOptions.sessionId || mergedOptions.frontendSessionId || 'N/A');
+      console.log('[outPaintImage] messageId:', (mergedOptions as any).messageId || 'N/A');
+      console.log('[outPaintImage] outPainting options:', mergedOptions.outPainting);
+      console.log('========== [llmService.outPaintImage] 参数传递结束 ==========');
+
+      // ✅ 新架构: 使用 UnifiedProviderClient.executeMode('image-outpainting', ...) 统一处理
+      // 路由: /api/modes/{provider}/image-outpainting → modes.py → GoogleService.expand_image() → ExpandService
+      if (this.currentProvider && 'executeMode' in this.currentProvider) {
+          const unifiedProvider = this.currentProvider as any;
+          const prompt = mergedOptions.prompt || 'Extend the image naturally';
+
+          const result = await unifiedProvider.executeMode(
+              'image-outpainting',
+              mergedOptions.modelId || 'imagen-3.0-capability-001',
+              prompt,
+              [referenceImage],
+              mergedOptions,  // ✅ 使用合并后的 options（包含 sessionId、message_id、outPainting）
+              {}
+          );
+          return Array.isArray(result) ? result[0] : result;
       }
-      
+
+      // 回退到旧方法（仅用于兼容性，应该尽快迁移）
       // For other providers, use existing logic
       if (this.currentProvider.outPaintImage) {
-          return this.currentProvider.outPaintImage(referenceImage, this._cachedOptions, this.apiKey, this.baseUrl);
+          return this.currentProvider.outPaintImage(referenceImage, mergedOptions, this.apiKey, this.baseUrl);
       }
-      
+
       // Fallback: If current provider doesn't support outpainting,
       // check if we have a DashScope key configured and use the Tongyi provider (via UnifiedProviderClient) for this specific task.
       // ✅ 新架构: 使用 UnifiedProviderClient('tongyi')，通过 executeMode('image-outpainting', ...) 统一处理
@@ -403,12 +443,12 @@ export class LLMService {
                // Resolve correct DashScope URL from config if available, otherwise default standard
                const profiles = await configService.getProfiles();
                const tongyiProfile = profiles.find(p => p.providerId === 'tongyi');
-               
+
                // Use profile URL if exists, BUT if it is undefined, resolveDashUrl in api.ts will handle the default proxy path.
                // We avoid defaulting to the absolute 'https://dashscope...' URL here because it breaks CORS in browsers.
                const dsUrl = tongyiProfile?.baseUrl;
 
-               return tongyiProvider.outPaintImage(referenceImage, this._cachedOptions, dashscopeKey, dsUrl);
+               return tongyiProvider.outPaintImage(referenceImage, mergedOptions, dashscopeKey, dsUrl);
            }
       }
       throw new Error("Out-Painting not supported by current provider.");
@@ -416,29 +456,29 @@ export class LLMService {
 
   /**
    * Virtual Try-On（虚拟试衣）
-   * 
-   * 与 GEN 模式保持一致：传递 sessionId 和 message_id 到后端，
+   *
+   * 与 GEN 模式保持一致：传递 sessionId 和 messageId 到后端，
    * 后端会通过 AttachmentService 创建数据库附件记录和上传任务。
-   * 
+   *
    * @param prompt 提示词（暂不支持）
    * @param attachments 附件（人物图 + 服装图）
-   * @param options 选项（包含 sessionId、message_id 等）
+   * @param options 选项（包含 sessionId、messageId 等）
    */
   public async virtualTryOn(
-    prompt: string, 
+    prompt: string,
     attachments: Attachment[],
     options?: Partial<ChatOptions>
   ): Promise<ImageGenerationResult[]> {
-      // ✅ 与 ImageGenHandler 保持一致：合并 options，确保传递 sessionId 和 message_id
+      // ✅ 与 ImageGenHandler 保持一致：合并 options，确保传递 sessionId 和 messageId
       const mergedOptions = {
         ...this._cachedOptions,
-        ...options,  // ✅ Handler 传入的 options 优先（包含 sessionId、message_id）
+        ...options,  // ✅ Handler 传入的 options 优先（包含 sessionId、messageId）
       };
-      
+
       // ✅ 详细日志：记录 virtual-try-on 模式下传递的参数
       console.log('========== [llmService.virtualTryOn] 参数传递 ==========');
-      console.log('[virtualTryOn] sessionId:', mergedOptions.sessionId || mergedOptions.frontend_session_id || 'N/A');
-      console.log('[virtualTryOn] message_id:', (mergedOptions as any).message_id || 'N/A');
+      console.log('[virtualTryOn] sessionId:', mergedOptions.sessionId || mergedOptions.frontendSessionId || 'N/A');
+      console.log('[virtualTryOn] messageId:', (mergedOptions as any).messageId || 'N/A');
       console.log('[virtualTryOn] numberOfImages:', mergedOptions.numberOfImages);
       console.log('[virtualTryOn] attachments:', attachments.length);
       console.log('========== [llmService.virtualTryOn] 参数传递结束 ==========');
@@ -451,7 +491,7 @@ export class LLMService {
               mergedOptions.modelId || '',
               prompt,
               attachments,
-              mergedOptions,  // ✅ 使用合并后的 options（包含 sessionId、message_id）
+              mergedOptions,  // ✅ 使用合并后的 options（包含 sessionId、messageId）
               {}
           );
           return Array.isArray(result) ? result : [result];
@@ -466,53 +506,15 @@ export class LLMService {
       throw new Error("Virtual Try-On not supported by current provider.");
   }
 
-  private async callGoogleOutpaintAPI(referenceImage: Attachment): Promise<ImageGenerationResult> {
-      try {
-          // Convert attachment to base64 if needed
-          let imageData = referenceImage.url;
-          if (referenceImage.url.startsWith('blob:')) {
-              const response = await fetch(referenceImage.url);
-              const blob = await response.blob();
-              const base64 = await new Promise<string>((resolve) => {
-                  const reader = new FileReader();
-                  reader.onloadend = () => resolve(reader.result as string);
-                  reader.readAsDataURL(blob);
-              });
-              imageData = base64;
-          }
-
-          const response = await fetch('/api/google/outpaint', {
-              method: 'POST',
-              headers: {
-                  'Content-Type': 'application/json',
-              },
-              credentials: 'include',
-              body: JSON.stringify({
-                  image: imageData,
-                  prompt: this._cachedOptions.prompt || 'Extend the image naturally',
-                  model: this._cachedOptions.modelId || 'imagen-3.0-generate-001',
-                  aspectRatio: this._cachedOptions.outPainting?.aspectRatio,
-                  platform: this._cachedOptions.outPainting?.platform,
-              }),
-          });
-
-          if (!response.ok) {
-              const error = await response.json().catch(() => ({ detail: response.statusText }));
-              throw new Error(error.detail || `HTTP ${response.status}`);
-          }
-
-          const result = await response.json();
-          
-          // Convert backend response to ImageGenerationResult format
-          return {
-              url: result.images[0], // Backend returns base64 in images array
-              mimeType: 'image/png',
-              filename: 'outpainted.png',
-          };
-      } catch (error) {
-          console.error('[LLMService] Google outpaint API error:', error);
-          throw error;
-      }
+  /**
+   * @deprecated 使用 UnifiedProviderClient.executeMode('image-outpainting', ...) 代替
+   * 旧 API 路由: /api/google/outpaint (已废弃)
+   * 新 API 路由: /api/modes/google/image-outpainting
+   */
+  private async callGoogleOutpaintAPI(_referenceImage: Attachment): Promise<ImageGenerationResult> {
+      // 此方法已废弃，直接抛出错误引导开发者使用新的 executeMode 路由
+      console.warn('[LLMService] callGoogleOutpaintAPI is deprecated. Use executeMode("image-outpainting", ...) instead.');
+      throw new Error('callGoogleOutpaintAPI is deprecated. The new route /api/modes/google/image-outpainting should be used via executeMode().');
   }
 
   /**

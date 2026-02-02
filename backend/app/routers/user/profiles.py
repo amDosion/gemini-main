@@ -75,16 +75,16 @@ def _decrypt_api_key(api_key: str, silent: bool = False) -> str:
 class ConfigProfilePayload(BaseModel):
     id: str
     name: Optional[str] = None
-    providerId: Optional[str] = None
-    apiKey: Optional[str] = None
-    baseUrl: Optional[str] = None
+    provider_id: Optional[str] = None
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
     protocol: Optional[str] = None
-    isProxy: Optional[bool] = None
-    hiddenModels: Optional[List[str]] = None
-    cachedModelCount: Optional[int] = None
-    savedModels: Optional[List[dict]] = None  # 接收完整的 ModelConfig 对象数组
-    createdAt: Optional[int] = None
-    updatedAt: Optional[int] = None
+    is_proxy: Optional[bool] = None
+    hidden_models: Optional[List[str]] = None
+    cached_model_count: Optional[int] = None
+    saved_models: Optional[List[dict]] = None  # 接收完整的 ModelConfig 对象数组
+    created_at: Optional[int] = None
+    updated_at: Optional[int] = None
 
     class Config:
         extra = "ignore"
@@ -111,10 +111,10 @@ async def get_profiles(
         profile_dict = profile.to_dict()
         
         # 根据 edit_mode 决定是否解密 API Key
-        if edit_mode and profile_dict.get("apiKey"):
+        if edit_mode and profile_dict.get("api_key"):
             # 编辑模式：解密返回给前端
             try:
-                profile_dict["apiKey"] = _decrypt_api_key(profile_dict["apiKey"], silent=True)
+                profile_dict["api_key"] = _decrypt_api_key(profile_dict["api_key"], silent=True)
                 logger.debug(f"[Profiles] Decrypted API key for edit mode (profile={profile.id})")
             except Exception as e:
                 logger.warning(f"[Profiles] Failed to decrypt API key in edit mode: {e}")
@@ -146,11 +146,11 @@ async def create_or_update_profile(
             update_data = profile_data.dict(exclude_unset=True)
             if "name" in update_data:
                 profile.name = update_data["name"]
-            if "providerId" in update_data:
-                profile.provider_id = update_data["providerId"]
-            if "apiKey" in update_data:
+            if "provider_id" in update_data:
+                profile.provider_id = update_data["provider_id"]
+            if "api_key" in update_data:
                 # 保存 API Key（加密存储）
-                api_key_to_save = update_data["apiKey"]
+                api_key_to_save = update_data["api_key"]
                 
                 # 判断是否已经是加密的（通过一致性检查）
                 existing_encrypted = profile.api_key
@@ -201,22 +201,22 @@ async def create_or_update_profile(
                             status_code=500,
                             detail=f"Failed to encrypt API key: {str(e)}"
                         )
-            if "baseUrl" in update_data:
-                profile.base_url = update_data["baseUrl"]
+            if "base_url" in update_data:
+                profile.base_url = update_data["base_url"]
             if "protocol" in update_data:
                 profile.protocol = update_data["protocol"]
-            if "isProxy" in update_data:
-                profile.is_proxy = update_data["isProxy"]
-            if "hiddenModels" in update_data:
-                profile.hidden_models = update_data["hiddenModels"]
-            if "cachedModelCount" in update_data:
-                profile.cached_model_count = update_data["cachedModelCount"]
-            if "savedModels" in update_data:
-                profile.saved_models = update_data["savedModels"]
+            if "is_proxy" in update_data:
+                profile.is_proxy = update_data["is_proxy"]
+            if "hidden_models" in update_data:
+                profile.hidden_models = update_data["hidden_models"]
+            if "cached_model_count" in update_data:
+                profile.cached_model_count = update_data["cached_model_count"]
+            if "saved_models" in update_data:
+                profile.saved_models = update_data["saved_models"]
             profile.updated_at = int(datetime.now().timestamp() * 1000)
         else:
             # 创建新配置（加密存储 API Key）
-            api_key_to_save = profile_data.apiKey or ""
+            api_key_to_save = profile_data.api_key or ""
             if api_key_to_save:
                 # 只有提供了 API Key 才加密保存
                 if is_encrypted(api_key_to_save):
@@ -232,16 +232,16 @@ async def create_or_update_profile(
                 id=profile_data.id,
                 user_id=user_id,
                 name=profile_data.name or "新配置",
-                provider_id=profile_data.providerId or "",
+                provider_id=profile_data.provider_id or "",
                 api_key=encrypted_api_key,
-                base_url=profile_data.baseUrl or "",
+                base_url=profile_data.base_url or "",
                 protocol=profile_data.protocol or "openai",
-                is_proxy=profile_data.isProxy or False,
-                hidden_models=profile_data.hiddenModels or [],
-                cached_model_count=profile_data.cachedModelCount,
-                saved_models=profile_data.savedModels or [],
-                created_at=profile_data.createdAt or int(datetime.now().timestamp() * 1000),
-                updated_at=profile_data.updatedAt or int(datetime.now().timestamp() * 1000)
+                is_proxy=profile_data.is_proxy or False,
+                hidden_models=profile_data.hidden_models or [],
+                cached_model_count=profile_data.cached_model_count,
+                saved_models=profile_data.saved_models or [],
+                created_at=profile_data.created_at or int(datetime.now().timestamp() * 1000),
+                updated_at=profile_data.updated_at or int(datetime.now().timestamp() * 1000)
             )
             db.add(profile)
         
@@ -352,10 +352,10 @@ async def get_full_settings(
         profile_dict = profile.to_dict()
         
         # 根据 edit_mode 决定是否解密 API Key
-        if edit_mode and profile_dict.get("apiKey"):
+        if edit_mode and profile_dict.get("api_key"):
             # 编辑模式：解密返回给前端
             try:
-                profile_dict["apiKey"] = _decrypt_api_key(profile_dict["apiKey"], silent=True)
+                profile_dict["api_key"] = _decrypt_api_key(profile_dict["api_key"], silent=True)
                 logger.debug(f"[Profiles] Decrypted API key for edit mode in full settings (profile={profile.id})")
             except Exception as e:
                 logger.warning(f"[Profiles] Failed to decrypt API key in edit mode: {e}")
@@ -375,13 +375,13 @@ async def get_full_settings(
 
     # 4. 获取 DashScope Key（通义千问的 API Key，已解密）
     dashscope_key = ""
-    tongyi_profile = next((p for p in profiles_data if p["providerId"] == "tongyi"), None)
+    tongyi_profile = next((p for p in profiles_data if p["provider_id"] == "tongyi"), None)
     if tongyi_profile:
-        dashscope_key = tongyi_profile.get("apiKey", "")
+        dashscope_key = tongyi_profile.get("api_key", "")
 
     return {
         "profiles": profiles_data,
-        "activeProfileId": active_profile_id,
-        "activeProfile": active_profile,
-        "dashscopeKey": dashscope_key
+        "active_profile_id": active_profile_id,
+        "active_profile": active_profile,
+        "dashscope_key": dashscope_key
     }

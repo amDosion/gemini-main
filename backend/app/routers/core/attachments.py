@@ -27,15 +27,15 @@ router = APIRouter(prefix="/api", tags=["attachments"])
 
 class ResolveContinuityRequest(BaseModel):
     """解析CONTINUITY附件的请求"""
-    activeImageUrl: str
-    sessionId: str
+    active_image_url: str
+    session_id: str
     messages: Optional[List[Dict[str, Any]]] = None  # 可选，如果不传则后端从数据库查询
 
 
 class CloudUrlResponse(BaseModel):
     """云URL响应"""
     url: Optional[str] = None
-    uploadStatus: str
+    upload_status: str
 
 
 @router.get("/temp-images/{attachment_id}")
@@ -236,18 +236,18 @@ async def resolve_continuity(
     
     try:
         # ✅ 详细日志：记录请求信息
-        url_type = "Blob" if request_body.activeImageUrl.startswith("blob:") else \
-                   "Base64" if request_body.activeImageUrl.startswith("data:") else \
-                   "HTTP" if request_body.activeImageUrl.startswith("http") else "未知"
+        url_type = "Blob" if request_body.active_image_url.startswith("blob:") else \
+                   "Base64" if request_body.active_image_url.startswith("data:") else \
+                   "HTTP" if request_body.active_image_url.startswith("http") else "未知"
         logger.info(
             f"[Attachments] ========== 开始解析CONTINUITY附件 =========="
         )
         logger.info(
             f"[Attachments] 📥 请求参数: "
             f"user_id={user_id[:8]}..., "
-            f"session_id={request_body.sessionId[:8] if request_body.sessionId else 'None'}..., "
-            f"activeImageUrl类型={url_type}, "
-            f"activeImageUrl长度={len(request_body.activeImageUrl)}, "
+            f"session_id={request_body.session_id[:8] if request_body.session_id else 'None'}..., "
+            f"active_image_url类型={url_type}, "
+            f"active_image_url长度={len(request_body.active_image_url)}, "
             f"messages数量={len(request_body.messages) if request_body.messages else 0}"
         )
         
@@ -256,8 +256,8 @@ async def resolve_continuity(
         # ✅ 详细日志：调用解析方法
         logger.info(f"[Attachments] 🔍 调用 AttachmentService.resolve_continuity_attachment()...")
         resolved = await attachment_service.resolve_continuity_attachment(
-            active_image_url=request_body.activeImageUrl,
-            session_id=request_body.sessionId,
+            active_image_url=request_body.active_image_url,
+            session_id=request_body.session_id,
             user_id=user_id,
             messages=request_body.messages or []
         )
@@ -293,10 +293,10 @@ async def resolve_continuity(
         )
         
         return {
-            "attachmentId": resolved["attachment_id"],
+            "attachment_id": resolved["attachment_id"],
             "url": resolved["url"],
             "status": resolved["status"],
-            "taskId": resolved.get("task_id")
+            "task_id": resolved.get("task_id")
         }
     except HTTPException:
         elapsed_time = (time.time() - start_time) * 1000
@@ -344,7 +344,7 @@ async def get_cloud_url(
         
         return CloudUrlResponse(
             url=cloud_url,
-            uploadStatus=attachment.upload_status or "pending"
+            upload_status=attachment.upload_status or "pending"
         )
     except HTTPException:
         raise

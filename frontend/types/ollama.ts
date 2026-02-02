@@ -8,8 +8,8 @@
 export interface OllamaModelDetails {
     format: string;            // 格式 (如 "gguf")
     family: string;            // 模型家族 (如 "llama")
-    parameter_size: string;    // 参数量 (如 "8B")
-    quantization_level: string; // 量化级别 (如 "Q4_K_M")
+    parameterSize: string;     // 参数量 (如 "8B")
+    quantizationLevel: string; // 量化级别 (如 "Q4_K_M")
 }
 
 /**
@@ -20,7 +20,7 @@ export interface OllamaModel {
     model: string;             // 模型标识符
     size: number;              // 模型大小 (bytes)
     digest: string;            // SHA256 摘要
-    modified_at: string;       // 修改时间 (ISO 8601)
+    modifiedAt: string;        // 修改时间 (ISO 8601)
     details: OllamaModelDetails;
 }
 
@@ -32,7 +32,7 @@ export interface OllamaModelInfo {
     parameters: string;        // 参数字符串
     template: string;          // 提示词模板
     details: OllamaModelDetails;
-    model_info: Record<string, unknown>;  // 模型架构信息
+    modelInfo: Record<string, unknown>;  // 模型架构信息
     capabilities: string[];    // 能力列表 (如 ["completion", "vision"])
 }
 
@@ -67,6 +67,6 @@ export interface DeleteModelResponse {
  */
 export interface PullModelRequest {
     model: string;
-    base_url: string;
-    api_key?: string;
+    baseUrl: string;
+    apiKey?: string;
 }

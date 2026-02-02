@@ -20,10 +20,10 @@ export interface User {
 
 export interface LoginResponse {
   user: User;
-  access_token: string;
-  refresh_token?: string;
-  token_type?: string;
-  expires_in: number;
+  accessToken: string;
+  refreshToken?: string;
+  tokenType?: string;
+  expiresIn: number;
 }
 
 export interface RegisterData {
@@ -136,18 +136,15 @@ class AuthService {
 
     // ✅ 检查缓存是否有效
     if (this.configCache && now - this.configCache.timestamp < this.configCacheTTL) {
-      console.log('[AuthService] Using cached config');
       return this.configCache.data;
     }
 
     // ✅ 如果已有进行中的请求，复用它（防止并发请求）
     if (this.configPromise) {
-      console.log('[AuthService] Reusing pending config request');
       return this.configPromise;
     }
 
     // ✅ 发起新请求
-    console.log('[AuthService] Fetching config...');
     this.configPromise = (async () => {
       try {
         const response = await fetch(`${this.baseUrl}/config`, {
@@ -155,17 +152,16 @@ class AuthService {
           signal: AbortSignal.timeout(10000), // 10秒超时
         });
         if (!response.ok) {
-          console.error('[AuthService] 获取配置失败:', response.status, response.statusText);
           throw new Error('Failed to fetch auth config');
         }
         const data = await response.json();
         const result: AuthConfig = {
-          allowRegistration: data.allow_registration,
+          // ✅ 后端统一返回 snake_case，中间件转换为 camelCase
+          allowRegistration: data.allowRegistration ?? false,
         };
 
         // ✅ 更新缓存
         this.configCache = { timestamp: Date.now(), data: result };
-        console.log('[AuthService] Config fetched and cached:', result);
         return result;
       } finally {
         // ✅ 请求完成，清除 promise 引用
@@ -186,7 +182,7 @@ class AuthService {
       body: JSON.stringify({
         email: data.email,
         password: data.password,
-        confirm_password: data.confirmPassword,
+        confirmPassword: data.confirmPassword,
         name: data.name,
       }),
       signal: AbortSignal.timeout(10000), // 10秒超时
@@ -197,13 +193,11 @@ class AuthService {
     }
     const result = await response.json();
     // ✅ 新增：如果注册返回了 tokens，保存它们（注册即登录）
-    if (result.access_token) {
-      setAccessToken(result.access_token);
-      console.log('[AuthService] Saved access_token from registration');
+    if (result.accessToken) {
+      setAccessToken(result.accessToken);
     }
-    if (result.refresh_token) {
-      setRefreshToken(result.refresh_token);
-      console.log('[AuthService] Saved refresh_token from registration');
+    if (result.refreshToken) {
+      setRefreshToken(result.refreshToken);
     }
     // 返回用户对象
     return result.user || result;
@@ -225,17 +219,17 @@ class AuthService {
     }
     const result = await response.json();
     // ✅ 保存 access_token 到 localStorage
-    if (result.access_token) {
-      setAccessToken(result.access_token);
+    if (result.accessToken) {
+      setAccessToken(result.accessToken);
       // ✅ 同时设置 Cookie（用于 EventSource 等场景）
       // 注意：后端也会设置 Cookie，这里作为双重保障
-      const expiresIn = result.expires_in || 3600; // 默认 1 小时
+      const expiresIn = result.expiresIn || 3600; // 默认 1 小时
       const expiresDate = new Date(Date.now() + expiresIn * 1000);
-      document.cookie = `access_token=${result.access_token}; expires=${expiresDate.toUTCString()}; path=/; SameSite=Lax`;
+      document.cookie = `access_token=${result.accessToken}; expires=${expiresDate.toUTCString()}; path=/; SameSite=Lax`;
     }
     // ✅ 保存 refresh_token
-    if (result.refresh_token) {
-      setRefreshToken(result.refresh_token);
+    if (result.refreshToken) {
+      setRefreshToken(result.refreshToken);
     }
     return result;
   }
@@ -258,10 +252,10 @@ class AuthService {
       });
       // 即使后端请求失败，也清除本地 token
       if (!response.ok) {
-        console.warn('Logout request failed, but clearing local tokens');
+        // Logout request failed, but clearing local tokens
       }
     } catch (error) {
-      console.warn('Logout request error, but clearing local tokens:', error);
+      // Logout request error, clearing local tokens
     } finally {
       // ✅ 清除所有 token
       removeAccessToken();
@@ -294,9 +288,8 @@ class AuthService {
         throw new Error('Failed to get current user');
       }
       return response.json();
-    } catch (error) {
-      console.warn('[AuthService] getCurrentUser failed:', error);
-      // 出错时清除 token
+    } catch {
+      // getCurrentUser failed, clearing token
       removeAccessToken();
       return null;
     }
@@ -311,13 +304,11 @@ class AuthService {
       const refreshToken = getRefreshToken();
       
       if (!refreshToken) {
-        console.warn('[AuthService] No refresh token available');
         return false;
       }
       
       // ✅ 检查 access_token 是否真的需要刷新
       if (accessToken && !isTokenExpired(accessToken)) {
-        console.log('[AuthService] Access token still valid, skip refresh');
         return true;
       }
 
@@ -335,30 +326,26 @@ class AuthService {
         const result = await response.json();
         
         // ✅ 更新 access_token
-        if (result.access_token) {
-          setAccessToken(result.access_token);
+        if (result.accessToken) {
+          setAccessToken(result.accessToken);
           // ✅ 同时更新 Cookie
-          const expiresIn = result.expires_in || 3600;
+          const expiresIn = result.expiresIn || 3600;
           const expiresDate = new Date(Date.now() + expiresIn * 1000);
-          document.cookie = `access_token=${result.access_token}; expires=${expiresDate.toUTCString()}; path=/; SameSite=Lax`;
+          document.cookie = `access_token=${result.accessToken}; expires=${expiresDate.toUTCString()}; path=/; SameSite=Lax`;
         }
         
         // ✅ 更新 refresh_token（Token 轮换）
-        if (result.refresh_token) {
-          setRefreshToken(result.refresh_token);
-          console.log('[AuthService] Refresh token rotated');
+        if (result.refreshToken) {
+          setRefreshToken(result.refreshToken);
           // ✅ 广播给其他标签页
-          broadcastTokenRefresh(result.access_token, result.refresh_token);
+          broadcastTokenRefresh(result.accessToken, result.refreshToken);
         }
         
-        console.log('[AuthService] Token refreshed successfully');
         return true;
       }
       
-      console.warn('[AuthService] Token refresh failed');
       return false;
-    } catch (error) {
-      console.error('[AuthService] Token refresh error:', error);
+    } catch {
       return false;
     }
   }

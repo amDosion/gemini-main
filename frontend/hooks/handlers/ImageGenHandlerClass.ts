@@ -11,9 +11,9 @@ export class ImageGenHandler extends BaseHandler {
       // ✅ 传递 sessionId 和 messageId 到 options（后端需要这些信息来保存附件）
       const genOptions = {
         ...context.options,
-        frontend_session_id: context.sessionId,
+        frontendSessionId: context.sessionId,
         sessionId: context.sessionId,  // 向后兼容
-        message_id: context.modelMessageId  // ✅ 新增：后端需要 messageId 来创建附件记录
+        messageId: context.modelMessageId  // ✅ 新增：后端需要 messageId 来创建附件记录
       };
       
       const results = await llmService.generateImage(

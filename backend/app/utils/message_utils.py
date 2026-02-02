@@ -116,29 +116,29 @@ def extract_metadata(msg: Dict[str, Any]) -> Dict[str, Any]:
         >>> extract_metadata(msg)
         {'groundingMetadata': {...}}
     """
-    # 需要提取的元数据字段列表
+    # 需要提取的元数据字段列表（中间件已将 camelCase 转为 snake_case）
     metadata_fields = [
-        'groundingMetadata',
-        'urlContextMetadata',
-        'toolCalls',
-        'toolResults',
-        'thinkingContent',
-        'searchResults',
+        'grounding_metadata',
+        'url_context_metadata',
+        'tool_calls',
+        'tool_results',
+        'thinking_content',
+        'search_results',
         'citations',
-        'safetyRatings',
-        'finishReason',
+        'safety_ratings',
+        'finish_reason',
         # 图像生成相关（可能在 metadata 中）
-        'generatedImages',
-        'imagePrompt',
+        'generated_images',
+        'image_prompt',
         # 视频生成相关
-        'generatedVideos',
-        'videoPrompt',
+        'generated_videos',
+        'video_prompt',
         # ✅ 图像编辑相关（Gemini 3 思考过程）
         'thoughts',          # 思考过程列表
-        'textResponse',      # AI 文本响应
-        'enhancedPrompt',    # 增强后的提示词
+        'text_response',     # AI 文本响应
+        'enhanced_prompt',   # 增强后的提示词
         # 其他扩展字段
-        'customData',
+        'custom_data',
     ]
     
     metadata = {}
@@ -151,7 +151,7 @@ def extract_metadata(msg: Dict[str, Any]) -> Dict[str, Any]:
 
 def extract_image_gen_fields(msg: Dict[str, Any]) -> Dict[str, Any]:
     """
-    从消息中提取图像生成特定字段
+    从消息中提取图像生成特定字段（中间件已将 camelCase 转为 snake_case）
     
     Args:
         msg: 前端消息对象
@@ -160,17 +160,17 @@ def extract_image_gen_fields(msg: Dict[str, Any]) -> Dict[str, Any]:
         图像生成特定字段字典
     """
     return {
-        'image_size': msg.get('imageSize'),
-        'image_style': msg.get('imageStyle'),
-        'image_quality': msg.get('imageQuality'),
-        'image_count': msg.get('imageCount', 1),
-        'model_name': msg.get('modelName'),
+        'image_size': msg.get('image_size'),
+        'image_style': msg.get('image_style'),
+        'image_quality': msg.get('image_quality'),
+        'image_count': msg.get('image_count', 1),
+        'model_name': msg.get('model_name'),
     }
 
 
 def extract_video_gen_fields(msg: Dict[str, Any]) -> Dict[str, Any]:
     """
-    从消息中提取视频生成特定字段
+    从消息中提取视频生成特定字段（中间件已将 camelCase 转为 snake_case）
     
     Args:
         msg: 前端消息对象
@@ -179,10 +179,10 @@ def extract_video_gen_fields(msg: Dict[str, Any]) -> Dict[str, Any]:
         视频生成特定字段字典
     """
     return {
-        'video_duration': msg.get('videoDuration'),
-        'video_resolution': msg.get('videoResolution'),
-        'video_fps': msg.get('videoFps'),
-        'model_name': msg.get('modelName'),
+        'video_duration': msg.get('video_duration'),
+        'video_resolution': msg.get('video_resolution'),
+        'video_fps': msg.get('video_fps'),
+        'model_name': msg.get('model_name'),
     }
 
 
@@ -209,7 +209,7 @@ def build_message_for_table(
         'role': msg['role'],
         'content': msg['content'],
         'timestamp': msg['timestamp'],
-        'is_error': msg.get('isError', False),
+        'is_error': msg.get('is_error', False),
         'metadata_json': json.dumps(extract_metadata(msg)) if extract_metadata(msg) else None,
     }
     

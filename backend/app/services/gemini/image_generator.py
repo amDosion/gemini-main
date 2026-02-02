@@ -79,7 +79,7 @@ class ImageGenerator:
                 - output_compression_quality: JPEG compression quality (1-100)
         
         Returns:
-            List of dicts with url, mimeType, index, size, and optional safety_attributes
+            List of dicts with url, mime_type, index, size, and optional safety_attributes
         """
         import time
         start_time = time.time()
@@ -95,23 +95,18 @@ class ImageGenerator:
                 logger.info(f"[ImageGenerator]     - {key}: {value}")
         
         try:
-            # Convert parameters based on API mode
-            logger.info(f"[ImageGenerator] 🔄 [步骤1] 转换参数格式...")
-            kwargs = self._convert_parameters_for_api(kwargs)
-            logger.info(f"[ImageGenerator] ✅ [步骤1] 参数转换完成")
-            
             # Get the appropriate generator from coordinator
-            logger.info(f"[ImageGenerator] 🔄 [步骤2] 从 Coordinator 获取生成器...")
+            logger.info(f"[ImageGenerator] 🔄 [步骤1] 从 Coordinator 获取生成器...")
             generator = self._coordinator.get_generator()
             generator_type = type(generator).__name__
-            logger.info(f"[ImageGenerator] ✅ [步骤2] 生成器获取完成: {generator_type}")
+            logger.info(f"[ImageGenerator] ✅ [步骤1] 生成器获取完成: {generator_type}")
             
             # Delegate to the generator
-            logger.info(f"[ImageGenerator] 🔄 [步骤3] 委托给生成器.generate_image()...")
+            logger.info(f"[ImageGenerator] 🔄 [步骤2] 委托给生成器.generate_image()...")
             delegate_start = time.time()
             result = await generator.generate_image(prompt, model, **kwargs)
             delegate_time = (time.time() - delegate_start) * 1000
-            logger.info(f"[ImageGenerator] ✅ [步骤3] 生成器调用完成 (耗时: {delegate_time:.2f}ms)")
+            logger.info(f"[ImageGenerator] ✅ [步骤2] 生成器调用完成 (耗时: {delegate_time:.2f}ms)")
             
             total_time = (time.time() - start_time) * 1000
             logger.info(f"[ImageGenerator] ========== 图片生成完成 (总耗时: {total_time:.2f}ms) ==========")
@@ -123,54 +118,6 @@ class ImageGenerator:
             total_time = (time.time() - start_time) * 1000
             logger.error(f"[ImageGenerator] ❌ 图片生成失败 (耗时: {total_time:.2f}ms): {e}", exc_info=True)
             raise
-    
-    # Parameter name mapping (camelCase -> snake_case)
-    PARAM_MAPPING = {
-        'numberOfImages': 'number_of_images',
-        'imageAspectRatio': 'aspect_ratio',
-        'aspectRatio': 'aspect_ratio',
-        'imageResolution': 'image_size',
-        'outputMimeType': 'output_mime_type',
-        'negativePrompt': 'negative_prompt',
-        'enhancePrompt': 'enhance_prompt',  # ✅ 提示词增强参数（仅 Vertex AI 支持）
-        'outputCompressionQuality': 'output_compression_quality',  # ✅ JPEG 压缩质量
-        # imageStyle maps to image_style (no change needed, already snake_case compatible)
-    }
-    
-    def _convert_parameters_for_api(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Convert camelCase parameters to snake_case for Google SDK compatibility.
-        Also removes deprecated parameters.
-        
-        Args:
-            kwargs: Parameters that may be in camelCase or snake_case format
-            
-        Returns:
-            Dictionary with all parameters converted to snake_case
-        """
-        result = {}
-        
-        for key, value in kwargs.items():
-            # Skip deprecated parameters
-            if key == 'person_generation':
-                logger.info(
-                    "[ImageGenerator] Removing person_generation parameter "
-                    "(using API default: allow_adult)"
-                )
-                continue
-            
-            # Convert camelCase to snake_case if mapping exists
-            new_key = self.PARAM_MAPPING.get(key, key)
-            
-            # If both versions exist, camelCase takes priority (first occurrence wins)
-            if new_key not in result:
-                result[new_key] = value
-        
-        # Set default output_mime_type to PNG if not specified
-        if 'output_mime_type' not in result:
-            result['output_mime_type'] = 'image/png'
-        
-        return result
     
     async def generate_image_stream(
         self,

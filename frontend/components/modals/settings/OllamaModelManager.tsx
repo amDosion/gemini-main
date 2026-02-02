@@ -300,10 +300,10 @@ export const OllamaModelManager: React.FC<OllamaModelManagerProps> = ({
                                                     <span>{formatSize(model.size)}</span>
                                                     <span>•</span>
                                                     <span>{model.details?.family || 'unknown'}</span>
-                                                    {model.details?.parameter_size && (
+                                                    {model.details?.parameterSize && (
                                                         <>
                                                             <span>•</span>
-                                                            <span>{model.details.parameter_size}</span>
+                                                            <span>{model.details.parameterSize}</span>
                                                         </>
                                                     )}
                                                 </div>
@@ -366,7 +366,7 @@ export const OllamaModelManager: React.FC<OllamaModelManagerProps> = ({
                                                             </div>
                                                             <div>
                                                                 <span className="text-slate-500">Parameters:</span>
-                                                                <span className="ml-1 text-slate-300">{modelInfo.details?.parameter_size || 'N/A'}</span>
+                                                                <span className="ml-1 text-slate-300">{modelInfo.details?.parameterSize || 'N/A'}</span>
                                                             </div>
                                                             <div>
                                                                 <span className="text-slate-500">Format:</span>
@@ -374,7 +374,7 @@ export const OllamaModelManager: React.FC<OllamaModelManagerProps> = ({
                                                             </div>
                                                             <div>
                                                                 <span className="text-slate-500">Quantization:</span>
-                                                                <span className="ml-1 text-slate-300">{modelInfo.details?.quantization_level || 'N/A'}</span>
+                                                                <span className="ml-1 text-slate-300">{modelInfo.details?.quantizationLevel || 'N/A'}</span>
                                                             </div>
                                                         </div>
                                                         <div>
@@ -391,7 +391,7 @@ export const OllamaModelManager: React.FC<OllamaModelManagerProps> = ({
                                                             </div>
                                                         </div>
                                                         <div className="text-[10px] text-slate-600">
-                                                            Modified: {formatDateTime(model.modified_at)}
+                                                            Modified: {formatDateTime(model.modifiedAt)}
                                                         </div>
                                                     </div>
                                                 ) : null}

@@ -2,9 +2,9 @@
 纯前端：npx vite
 一键启动前后端：pnpm run dev
 
-用户名：xcgrmini@example.com
-密码：rRMRbChRoAWt&@5Rs!rYNGO8dg42gk
+用户名：121802744@qq.com
+密码：chuan*1127
 
-cursor: cd backend && uvicorn app.main:app --host 0.0.0.0 --port 21574 --reload
+kiro: cd backend && uvicorn app.main:app
 
-cursor: npx vite
+kiro: npx vite

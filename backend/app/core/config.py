@@ -12,6 +12,10 @@ from .env_loader import _ENV_LOADED  # noqa: F401
 class Settings(BaseSettings):
     """应用配置类"""
 
+    # 服务器配置
+    host: str = os.getenv("HOST", "0.0.0.0")
+    port: int = int(os.getenv("PORT", "21574"))
+
     # 数据库配置（必须设置，仅支持 PostgreSQL）
     # 注意：实际的数据库连接由 backend/app/core/database.py 处理，该模块要求必须设置 DATABASE_URL 环境变量
     database_url: str = os.getenv("DATABASE_URL", "")
@@ -34,8 +38,7 @@ class Settings(BaseSettings):
     upload_queue_rate_limit: int = int(os.getenv("UPLOAD_QUEUE_RATE_LIMIT", "10"))
     
     # Worker 运行模式
-    # - "embedded": 内嵌在主进程中运行（推荐，使用现有 Redis 队列系统）
-    # - "separate_process": 在独立子进程中运行（使用原有 Worker 池）
+    # - "embedded": 内嵌在主进程中运行（默认，推荐，使用 Redis 队列系统）
     # - "disabled": 禁用 Worker（需要外部 Worker 服务）
     worker_mode: str = os.getenv("WORKER_MODE", "embedded")
 

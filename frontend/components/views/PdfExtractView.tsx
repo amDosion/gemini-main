@@ -220,7 +220,7 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
                     <XCircle size={16} className="text-red-400" />
                   )}
                   <span className="text-xs font-medium text-slate-300 truncate">
-                    {result?.template_name || (msg.isError ? '提取失败' : '未知模板')}
+                    {result?.templateName || (msg.isError ? '提取失败' : '未知模板')}
                   </span>
                 </div>
 

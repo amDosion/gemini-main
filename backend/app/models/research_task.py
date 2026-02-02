@@ -1,8 +1,6 @@
 from sqlalchemy import Column, String, Text, DateTime, Integer, JSON
-from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
-
-Base = declarative_base()
+from ..core.database import Base  # 使用统一的 Base
 
 
 class ResearchTask(Base):
@@ -23,7 +21,12 @@ class ResearchTask(Base):
     completed_at = Column(DateTime, nullable=True)
     
     def to_dict(self):
-        """Convert to dictionary"""
+        """
+        转换为字典
+
+        注意：保留此方法因为需要特殊的日期格式化（ISO String）
+        基类的 to_dict() 会将日期转换为时间戳（毫秒）
+        """
         return {
             'id': self.id,
             'user_id': self.user_id,

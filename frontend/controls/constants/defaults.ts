@@ -25,6 +25,11 @@ export const DEFAULT_CONTROLS = {
   pdfAdditionalInstructions: "",
   outPaintingMode: "scale" as const,
   offsetPixels: { left: 0, right: 0, top: 0, bottom: 0 },
+  // Outpaint 新参数
+  outpaintMode: "ratio" as const, // 扩图模式: ratio | scale | offset | upscale
+  xScale: 1.5, // 水平缩放倍数
+  yScale: 1.5, // 垂直缩放倍数
+  upscaleFactor: "x2" as const, // 放大倍数: x2 | x3 | x4
   // Google Imagen 高级参数默认值
   // guidanceScale 已移除 - 官方文档未记录此参数
   // personGeneration 已移除 - 使用 API 默认值 (allow_adult)

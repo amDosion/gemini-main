@@ -137,7 +137,8 @@ class ApiDB {
     async getProfiles(editMode: boolean = false): Promise<ConfigProfile[]> {
         // ✅ editMode=true 时，后端会解密 API Key 返回（用于 EditorTab 编辑）
         // editMode=false 时，返回加密的 API Key（用于 ProfilesTab 显示）
-        const url = editMode ? '/profiles?edit_mode=true' : '/profiles';
+        // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
+        const url = editMode ? '/profiles?editMode=true' : '/profiles';
         return this.request<ConfigProfile[]>(url);
     }
 

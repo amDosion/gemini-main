@@ -11,17 +11,43 @@ export class ImageOutpaintingHandler extends BaseHandler {
     if (!context.attachments || context.attachments.length === 0) {
       throw new Error('ImageOutpaintingHandler requires an attachment.');
     }
-    
-    const result = await llmService.outPaintImage(context.attachments[0]);
+
+    // ✅ 与 VirtualTryOnHandler 保持一致：传递 sessionId 和 messageId 到 options
+    // 后端需要这些信息来保存附件到数据库
+    const outpaintOptions = {
+      ...context.options,
+      frontendSessionId: context.sessionId,
+      sessionId: context.sessionId,  // 向后兼容
+      messageId: context.modelMessageId  // ✅ 后端需要 messageId 来创建附件记录
+    };
+
+    const result = await llmService.outPaintImage(
+      context.attachments[0],
+      outpaintOptions  // ✅ 传递包含 sessionId 和 messageId 的 options
+    );
     const results = [result];
 
-    const processed = await Promise.all(
-      results.map(res => processMediaResult(res, context, 'outpainted'))
-    );
-    
-    const displayAttachments = processed.map(p => p.displayAttachment);
+    // ✅ 后端已处理图片（返回 attachmentId, uploadStatus, taskId）
+    // 直接使用后端返回的结果，与 VirtualTryOnHandler 一致
+    const displayAttachments: Attachment[] = results.map((res: {
+      url: string;
+      mimeType: string;
+      filename?: string;
+      attachmentId?: string;
+      uploadStatus?: string;
+      taskId?: string;
+    }) => ({
+      id: res.attachmentId || `outpaint-${Date.now()}`,
+      mimeType: res.mimeType || 'image/png',
+      name: res.filename || `outpainted-${Date.now()}.png`,
+      url: res.url,
+      uploadStatus: (res.uploadStatus || 'pending') as 'pending' | 'uploading' | 'completed' | 'failed',
+      uploadTaskId: res.taskId
+    } as Attachment));
+
+    // ✅ 后端已创建附件记录和上传任务（AI 返回的结果图片）
     const uploadTask = async () => ({
-      dbAttachments: await Promise.all(processed.map(p => p.dbAttachmentPromise)),
+      dbAttachments: displayAttachments,
       dbUserAttachments: context.attachments
     });
 
@@ -44,9 +70,9 @@ export class VirtualTryOnHandler extends BaseHandler {
     // 后端需要这些信息来保存附件到数据库
     const tryOnOptions = {
       ...context.options,
-      frontend_session_id: context.sessionId,
+      frontendSessionId: context.sessionId,
       sessionId: context.sessionId,  // 向后兼容
-      message_id: context.modelMessageId  // ✅ 后端需要 messageId 来创建附件记录
+      messageId: context.modelMessageId  // ✅ 后端需要 messageId 来创建附件记录
     };
 
     const results = await llmService.virtualTryOn(

@@ -42,7 +42,7 @@ export class MultiAgentHandler extends BaseHandler {
         credentials: 'include',
         body: JSON.stringify({
           task: taskDescription,
-          agent_ids: agentIds.length > 0 ? agentIds : undefined
+          agentIds: agentIds.length > 0 ? agentIds : undefined
         }),
       });
 

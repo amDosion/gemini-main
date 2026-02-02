@@ -28,42 +28,42 @@ router = APIRouter(prefix="/api/modes", tags=["chat"])
 class Attachment(BaseModel):
     """Attachment model (images, files, etc.)"""
     id: str
-    mimeType: str
+    mime_type: str
     name: str
     url: Optional[str] = None
-    tempUrl: Optional[str] = None
-    fileUri: Optional[str] = None
-    base64Data: Optional[str] = None  # 直接 Base64 数据（不含 data: 前缀）
-    googleFileUri: Optional[str] = None  # Google Files API URI
+    temp_url: Optional[str] = None
+    file_uri: Optional[str] = None
+    base64_data: Optional[str] = None  # 直接 Base64 数据（不含 data: 前缀）
+    google_file_uri: Optional[str] = None  # Google Files API URI
 
 
 class Message(BaseModel):
     """Message model"""
     role: str  # "user" | "assistant" | "system"
     content: str
-    isError: Optional[bool] = False
+    is_error: Optional[bool] = False
     attachments: Optional[List[Attachment]] = None
 
 
 class ChatOptions(BaseModel):
     """Chat options"""
     temperature: Optional[float] = 1.0
-    maxTokens: Optional[int] = None
-    topP: Optional[float] = None
-    topK: Optional[int] = None
-    enableSearch: Optional[bool] = False
-    enableThinking: Optional[bool] = False
-    baseUrl: Optional[str] = None  # Custom API URL
+    max_tokens: Optional[int] = None
+    top_p: Optional[float] = None
+    top_k: Optional[int] = None
+    enable_search: Optional[bool] = False
+    enable_thinking: Optional[bool] = False
+    base_url: Optional[str] = None  # Custom API URL
 
 
 class ChatRequest(BaseModel):
     """Chat request"""
-    modelId: str
+    model_id: str
     messages: List[Message]
     message: str
     attachments: Optional[List[Attachment]] = None
     options: Optional[ChatOptions] = None
-    apiKey: Optional[str] = None  # Optional, will try to get from database/env
+    api_key: Optional[str] = None  # Optional, will try to get from database/env
     stream: Optional[bool] = True  # Default to streaming
 
 
@@ -93,7 +93,7 @@ def convert_messages_to_provider_format(
     is_google = provider and provider in ["google", "google-custom"]
 
     for msg in history:
-        if msg.isError:
+        if msg.is_error:
             continue
         if not msg.content:
             continue
@@ -118,14 +118,14 @@ def convert_messages_to_provider_format(
         if current_attachments:
             msg_dict["attachments"] = [
                 {
-                    "mimeType": att.mimeType,
+                    "mime_type": att.mime_type,
                     "url": att.url,
-                    "tempUrl": att.tempUrl,
-                    "fileUri": att.fileUri or att.googleFileUri,
-                    "base64Data": att.base64Data,
+                    "temp_url": att.temp_url,
+                    "file_uri": att.file_uri or att.google_file_uri,
+                    "base64_data": att.base64_data,
                 }
                 for att in current_attachments
-                if att.mimeType  # 只包含有效 MIME 类型的附件
+                if att.mime_type  # 只包含有效 MIME 类型的附件
             ]
         messages.append(msg_dict)
 
@@ -161,7 +161,7 @@ async def chat_with_provider(
     provider: str,
     request: ChatRequest,
     request_obj: Request,
-    user_id: str = Depends(require_current_user),  # ✅ 自动注入 user_id
+    user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -170,31 +170,29 @@ async def chat_with_provider(
     Supports both streaming and non-streaming responses.
     """
     try:
-        # user_id 已通过依赖注入自动获取，无需手动调用
-        
         attachment_count = len(request.attachments) if request.attachments else 0
         logger.info(
             f"[Chat] provider={provider}, "
-            f"model={request.modelId}, "
+            f"model={request.model_id}, "
             f"stream={request.stream}, "
             f"messages={len(request.messages)}, "
             f"attachments={attachment_count}, "
             f"user_id={user_id}"
         )
         
-        # ✅ 从数据库获取 API key 和 base URL（与 models.py 保持一致）
+        # 从数据库获取 API key 和 base URL
         api_key, db_base_url = await get_provider_credentials(
             provider=provider,
             db=db,
             user_id=user_id,
-            request_api_key=request.apiKey,
-            request_base_url=request.options.baseUrl if request.options else None
+            request_api_key=request.api_key,
+            request_base_url=request.options.base_url if request.options else None
         )
         
-        # ✅ 优先使用数据库中的 base_url，如果没有则使用请求中的
+        # 优先使用数据库中的 base_url
         base_url = db_base_url
-        if not base_url and request.options and request.options.baseUrl:
-            base_url = request.options.baseUrl
+        if not base_url and request.options and request.options.base_url:
+            base_url = request.options.base_url
         
         # Create provider service
         from ...services.common.provider_factory import ProviderFactory
@@ -211,7 +209,7 @@ async def chat_with_provider(
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
 
-        # Convert messages (pass provider and attachments)
+        # Convert messages
         messages = convert_messages_to_provider_format(
             request.messages,
             request.message,
@@ -224,12 +222,12 @@ async def chat_with_provider(
         if request.options:
             if request.options.temperature is not None:
                 options["temperature"] = request.options.temperature
-            if request.options.maxTokens is not None:
-                options["max_tokens"] = request.options.maxTokens
-            if request.options.topP is not None:
-                options["top_p"] = request.options.topP
-            if request.options.topK is not None:
-                options["top_k"] = request.options.topK
+            if request.options.max_tokens is not None:
+                options["max_tokens"] = request.options.max_tokens
+            if request.options.top_p is not None:
+                options["top_p"] = request.options.top_p
+            if request.options.top_k is not None:
+                options["top_k"] = request.options.top_k
         
         # Streaming response
         if request.stream:
@@ -237,7 +235,7 @@ async def chat_with_provider(
                 try:
                     async for chunk in service.stream_chat(
                         messages=messages,
-                        model=request.modelId,
+                        model=request.model_id,
                         **options
                     ):
                         frontend_chunk = convert_chunk_to_frontend_format(chunk)
@@ -276,7 +274,7 @@ async def chat_with_provider(
         else:
             response = await service.chat(
                 messages=messages,
-                model=request.modelId,
+                model=request.model_id,
                 **options
             )
             
