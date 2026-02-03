@@ -47,7 +47,7 @@ SKIP_VALUE_CONVERSION_FIELDS: Set[str] = {
     # ========== 外部服务响应 ==========
     'payload',                            # 外部 API payload
     'body',                               # 请求/响应 body
-    'data',                               # 通用数据字段（注意：比较通用，可能需要调整）
+    # 'data' 已移除：API 响应的 data 字段内部应该被正确转换（如 attachment_id → attachmentId）
     'result',                             # 结果数据
     'response',                           # 响应数据
 

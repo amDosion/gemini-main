@@ -101,7 +101,7 @@ class SegmentationService:
         self._config: Optional[Dict[str, Any]] = None
         self._client = None
 
-        logger.info(f"[SegmentationService] Initialized with user_id={user_id[:8] + '...' if user_id else 'None'}")
+        logger.info(f"[SegmentationService] Initialized with user_id={user_id if user_id else 'None'}")
 
     def _load_config(self) -> Dict[str, Any]:
         """
@@ -129,7 +129,7 @@ class SegmentationService:
                 ).first()
 
                 if user_config and user_config.api_mode == 'vertex_ai':
-                    logger.info(f"[SegmentationService] Using Vertex AI config from database for user={self._user_id[:8]}...")
+                    logger.info(f"[SegmentationService] Using Vertex AI config from database for user={self._user_id}")
 
                     config['project_id'] = user_config.vertex_ai_project_id
                     config['location'] = user_config.vertex_ai_location or 'us-central1'
@@ -154,7 +154,7 @@ class SegmentationService:
                     self._config = config
                     return config
                 else:
-                    logger.info(f"[SegmentationService] No Vertex AI config in database for user={self._user_id[:8]}..., falling back to environment")
+                    logger.info(f"[SegmentationService] No Vertex AI config in database for user={self._user_id}, falling back to environment")
             except Exception as e:
                 logger.warning(f"[SegmentationService] Failed to load config from database: {e}")
 

@@ -395,9 +395,9 @@ async def process_upload_task(task_id: str, _db: Session = None):
         # ✅ 详细日志：确认任务数据
         logger.info(f"[UploadTask] 开始处理任务: {task_id}")
         logger.info(f"  - 文件名: {task.filename}")
-        logger.info(f"  - session_id: {task.session_id[:8] if task.session_id else 'None'}...")
-        logger.info(f"  - message_id: {task.message_id[:8] if task.message_id else 'None'}...")
-        logger.info(f"  - attachment_id: {task.attachment_id[:8] if task.attachment_id else 'None'}...")
+        logger.info(f"  - session_id: {task.session_id if task.session_id else 'None'}")
+        logger.info(f"  - message_id: {task.message_id if task.message_id else 'None'}")
+        logger.info(f"  - attachment_id: {task.attachment_id if task.attachment_id else 'None'}")
         
         # 1. 更新状态为 uploading
         task.status = 'uploading'
@@ -526,7 +526,7 @@ async def update_session_attachment_url(
     from ...models.db_models import MessageAttachment
     import asyncio
     
-    logger.info(f"[UploadTask] 开始更新附件 URL: session={session_id[:8]}..., msg={message_id[:8]}..., att={attachment_id[:8]}...")
+    logger.info(f"[UploadTask] 开始更新附件 URL: session={session_id}, msg={message_id}, att={attachment_id}")
     
     for attempt in range(max_retries):
         try:
@@ -541,14 +541,14 @@ async def update_session_attachment_url(
                 attachment.upload_status = 'completed'
                 attachment.temp_url = None
                 db.commit()
-                print(f"[UploadTask] ✅ 附件表已更新: {attachment_id[:8]}..., URL: {url[:60]}...")
+                print(f"[UploadTask] ✅ 附件表已更新: {attachment_id}, URL: {url}")
                 return
             else:
                 if attempt < max_retries - 1:
-                    print(f"[UploadTask] ⏳ 附件不存在，等待重试 ({attempt + 1}/{max_retries}): {attachment_id[:8]}...")
+                    print(f"[UploadTask] ⏳ 附件不存在，等待重试 ({attempt + 1}/{max_retries}): {attachment_id}")
                     await asyncio.sleep(retry_delay)
                 else:
-                    print(f"[UploadTask] ❌ 重试 {max_retries} 次后仍未找到附件: {attachment_id[:8]}...")
+                    print(f"[UploadTask] ❌ 重试 {max_retries} 次后仍未找到附件: {attachment_id}")
                 
         except Exception as e:
             print(f"[UploadTask] ❌ 更新附件失败: {str(e)}")
@@ -603,12 +603,12 @@ async def upload_file_async(
     logger.info(f"[UploadAsync] 📥 请求参数:")
     logger.info(f"[UploadAsync]     - filename: {file.filename}")
     logger.info(f"[UploadAsync]     - content_type: {file.content_type}")
-    logger.info(f"[UploadAsync]     - session_id: {session_id[:8] if session_id else 'None'}...")
-    logger.info(f"[UploadAsync]     - message_id: {message_id[:8] if message_id else 'None'}...")
-    logger.info(f"[UploadAsync]     - attachment_id: {attachment_id[:8] + '...' if attachment_id else 'None'}")
-    logger.info(f"[UploadAsync]     - storage_id: {storage_id[:8] + '...' if storage_id else 'None'}")
+    logger.info(f"[UploadAsync]     - session_id: {session_id if session_id else 'None'}")
+    logger.info(f"[UploadAsync]     - message_id: {message_id if message_id else 'None'}")
+    logger.info(f"[UploadAsync]     - attachment_id: {attachment_id if attachment_id else 'None'}")
+    logger.info(f"[UploadAsync]     - storage_id: {storage_id if storage_id else 'None'}")
     logger.info(f"[UploadAsync]     - priority: {priority}")
-    logger.info(f"[UploadAsync]     - user_id: {user_id[:8]}...")
+    logger.info(f"[UploadAsync]     - user_id: {user_id}")
     
     # ✅ 验证必需参数
     if not session_id or not message_id:
@@ -650,24 +650,24 @@ async def upload_file_async(
         active = db.query(ActiveStorage).filter(ActiveStorage.user_id == user_id).first()
         if active and active.storage_id:
             resolved_storage_id = active.storage_id
-            logger.info(f"[UploadAsync]     - 找到激活的存储配置: {resolved_storage_id[:8]}...")
+            logger.info(f"[UploadAsync]     - 找到激活的存储配置: {resolved_storage_id}")
         else:
             logger.error(f"[UploadAsync] ❌ 未设置存储配置")
             raise HTTPException(status_code=400, detail="未设置存储配置")
     else:
-        logger.info(f"[UploadAsync]     - 使用提供的 storage_id: {resolved_storage_id[:8]}...")
+        logger.info(f"[UploadAsync]     - 使用提供的 storage_id: {resolved_storage_id}")
     
     # ✅ 详细日志：验证存储配置
     logger.info(f"[UploadAsync] 🔄 [步骤2] 验证存储配置...")
     user_query = UserScopedQuery(db, user_id)
     config = user_query.get(StorageConfig, resolved_storage_id)
     if not config:
-        logger.error(f"[UploadAsync] ❌ 存储配置不存在或无权访问: {resolved_storage_id[:8]}...")
+        logger.error(f"[UploadAsync] ❌ 存储配置不存在或无权访问: {resolved_storage_id}")
         raise HTTPException(status_code=404, detail="存储配置不存在或无权访问")
     if not config.enabled:
-        logger.error(f"[UploadAsync] ❌ 存储配置已禁用: {resolved_storage_id[:8]}...")
+        logger.error(f"[UploadAsync] ❌ 存储配置已禁用: {resolved_storage_id}")
         raise HTTPException(status_code=400, detail="存储配置已禁用")
-    logger.info(f"[UploadAsync] ✅ [步骤2] 存储配置验证通过: {resolved_storage_id[:8]}...")
+    logger.info(f"[UploadAsync] ✅ [步骤2] 存储配置验证通过: {resolved_storage_id}")
     
     # ✅ 详细日志：步骤3 - 使用 AttachmentService 处理用户上传
     logger.info(f"[UploadAsync] 🔄 [步骤3] 调用 AttachmentService.process_user_upload()...")
@@ -684,15 +684,15 @@ async def upload_file_async(
     )
     step3_time = (time.time() - start_time) * 1000
     logger.info(f"[UploadAsync] ✅ [步骤3] AttachmentService 处理完成 (耗时: {step3_time:.2f}ms)")
-    logger.info(f"[UploadAsync]     - attachment_id: {result['attachment_id'][:8]}...")
-    logger.info(f"[UploadAsync]     - task_id: {result.get('task_id', 'None')[:8] + '...' if result.get('task_id') else 'None'}")
+    logger.info(f"[UploadAsync]     - attachment_id: {result['attachment_id']}")
+    logger.info(f"[UploadAsync]     - task_id: {result.get('task_id') if result.get('task_id') else 'None'}")
     logger.info(f"[UploadAsync]     - status: {result['status']}")
     
     # ✅ 详细日志：步骤4 - 如果提供了 attachment_id，更新记录（向后兼容）
     if attachment_id and attachment_id != result['attachment_id']:
         logger.info(f"[UploadAsync] 🔄 [步骤4] 更新 attachment_id (向后兼容)...")
-        logger.info(f"[UploadAsync]     - 提供的 attachment_id: {attachment_id[:8]}...")
-        logger.info(f"[UploadAsync]     - 生成的 attachment_id: {result['attachment_id'][:8]}...")
+        logger.info(f"[UploadAsync]     - 提供的 attachment_id: {attachment_id}")
+        logger.info(f"[UploadAsync]     - 生成的 attachment_id: {result['attachment_id']}")
         from ...models.db_models import MessageAttachment, UploadTask
         
         attachment = db.query(MessageAttachment).filter_by(
@@ -728,8 +728,8 @@ async def upload_file_async(
     
     total_time = (time.time() - start_time) * 1000
     logger.info(f"[UploadAsync] ========== 异步上传请求处理完成 (总耗时: {total_time:.2f}ms) ==========")
-    logger.info(f"[UploadAsync]     - attachment_id: {result['attachment_id'][:8]}...")
-    logger.info(f"[UploadAsync]     - task_id: {result.get('task_id', 'None')[:8] + '...' if result.get('task_id') else 'None'}")
+    logger.info(f"[UploadAsync]     - attachment_id: {result['attachment_id']}")
+    logger.info(f"[UploadAsync]     - task_id: {result.get('task_id') if result.get('task_id') else 'None'}")
     logger.info(f"[UploadAsync]     - status: {result['status']}")
     
     return {

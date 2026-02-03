@@ -93,7 +93,7 @@ class ImagenCoordinator:
         api_mode = self._config.get('api_mode', 'gemini_api')
         logger.info(f"[ImagenCoordinator] 🔄 获取生成器...")
         logger.info(f"[ImagenCoordinator]     - api_mode: {api_mode}")
-        logger.info(f"[ImagenCoordinator]     - user_id: {self._user_id[:8] + '...' if self._user_id else 'None'}")
+        logger.info(f"[ImagenCoordinator]     - user_id: {self._user_id if self._user_id else 'None'}")
         
         # Return cached generator if available
         if api_mode in self._generator_cache:

@@ -697,8 +697,13 @@ async def handle_mode(
                         "attachment_id": processed["attachment_id"],
                         "upload_status": processed["status"],
                         "task_id": processed["task_id"],
-                        "mime_type": mime_type,
-                        "filename": filename or f"{prefix}-{processed['attachment_id'][:8]}.png"
+                        "mime_type": processed.get("mime_type") or mime_type,
+                        "filename": processed.get("filename") or filename or f"{prefix}-{processed['attachment_id'][:8]}.png",
+                        # ✅ 新增：返回完整的元数据，供前端保存和后续 CONTINUITY LOGIC 使用
+                        "session_id": processed.get("session_id") or session_id,
+                        "message_id": processed.get("message_id") or message_id,
+                        "user_id": processed.get("user_id") or user_id,
+                        "cloud_url": processed.get("cloud_url") or "",  # 云URL（空，待上传完成）
                     }
 
                     # 添加增强后的提示词（如果有）

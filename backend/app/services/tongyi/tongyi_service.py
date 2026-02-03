@@ -288,7 +288,7 @@ class TongyiService(BaseProviderService):
                 raise ValueError("reference_images['raw'] dict must contain 'url' key")
             # 记录 attachment_id（如果存在）
             if "attachment_id" in raw_image:
-                logger.info(f"[TongyiService.edit_image] 处理附件: attachment_id={raw_image['attachment_id'][:8]}...")
+                logger.info(f"[TongyiService.edit_image] 处理附件: attachment_id={raw_image['attachment_id']}")
         else:
             # 向后兼容：字符串格式
             image_url = raw_image
@@ -366,7 +366,7 @@ class TongyiService(BaseProviderService):
                 raise ValueError("reference_images['raw'] dict must contain 'url' key")
             # 记录 attachment_id（如果存在）
             if "attachment_id" in raw_image:
-                logger.info(f"[TongyiService.expand_image] 处理附件: attachment_id={raw_image['attachment_id'][:8]}...")
+                logger.info(f"[TongyiService.expand_image] 处理附件: attachment_id={raw_image['attachment_id']}")
         else:
             # 向后兼容：字符串格式
             image_url = raw_image

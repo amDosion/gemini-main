@@ -127,16 +127,40 @@ export class ImageEditHandler extends BaseHandler {
     // ✅ 提取增强后的提示词（如果有）- 同一批次所有图片共享相同的 enhancedPrompt
     const enhancedPrompt = results.find((res: ImageGenerationResult) => res.enhancedPrompt)?.enhancedPrompt;
 
-    // ✅ 后端已处理图片（返回 attachmentId, uploadStatus, taskId）
+    // ✅ 后端已处理图片（返回完整的附件元数据）
     // 直接使用后端返回的结果，不需要再次处理
-    const displayAttachments: Attachment[] = results.map((res: ImageGenerationResult) => ({
-      id: res.attachmentId || uuidv4(),  // 使用后端返回的 attachmentId
-      mimeType: res.mimeType || 'image/png',
-      name: res.filename || `edited-${Date.now()}.png`,
-      url: res.url,  // 显示URL（可能是 /api/temp-images/{attachment_id} 或 HTTP URL）
-      uploadStatus: res.uploadStatus || 'pending',
-      uploadTaskId: res.taskId
-    } as Attachment));
+    const displayAttachments: Attachment[] = results.map((res: ImageGenerationResult) => {
+      // ✅ 记录后端返回的完整元数据
+      console.log('[ImageEditHandler] 📥 后端返回的图片元数据:', {
+        attachmentId: res.attachmentId || 'N/A',
+        messageId: res.messageId || 'N/A',
+        sessionId: res.sessionId || 'N/A',
+        filename: res.filename || 'N/A',
+        mimeType: res.mimeType || 'N/A',
+        size: res.size || 'N/A',
+        uploadStatus: res.uploadStatus || 'N/A',
+        uploadTaskId: res.taskId || 'N/A',
+        cloudUrl: res.cloudUrl || 'N/A',
+        urlType: res.url?.startsWith('data:') ? 'Base64' : res.url?.startsWith('http') ? 'HTTP' : 'Other',
+        urlLength: res.url?.length || 0
+      });
+
+      return {
+        id: res.attachmentId || uuidv4(),  // 使用后端返回的 attachmentId
+        mimeType: res.mimeType || 'image/png',
+        name: res.filename || `edited-${Date.now()}.png`,
+        url: res.url,  // 显示URL（Base64 Data URL 或 HTTP URL）
+        uploadStatus: res.uploadStatus || 'pending',
+        uploadTaskId: res.taskId,
+        // ✅ 新增：保存后端返回的额外元数据
+        size: res.size,  // 文件大小（bytes）
+        cloudUrl: res.cloudUrl,  // 云存储 URL（如果已上传）
+        messageId: res.messageId,  // 消息 ID
+        sessionId: res.sessionId,  // 会话 ID
+        userId: res.userId,  // 用户 ID
+        createdAt: res.createdAt,  // 创建时间戳
+      } as Attachment;
+    });
     
     // ✅ 构建显示内容：只保存原始提示词
     // enhancedPrompt 作为单独字段存储，在前端单独显示

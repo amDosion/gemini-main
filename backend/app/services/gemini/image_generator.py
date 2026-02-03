@@ -89,7 +89,7 @@ class ImageGenerator:
         logger.info(f"[ImageGenerator]     - model: {model}")
         logger.info(f"[ImageGenerator]     - prompt: {prompt[:100] + '...' if len(prompt) > 100 else prompt}")
         logger.info(f"[ImageGenerator]     - prompt长度: {len(prompt)}")
-        logger.info(f"[ImageGenerator]     - user_id: {self._user_id[:8] + '...' if self._user_id else 'None'}")
+        logger.info(f"[ImageGenerator]     - user_id: {self._user_id if self._user_id else 'None'}")
         for key, value in kwargs.items():
             if key in ['number_of_images', 'aspect_ratio', 'image_size', 'output_mime_type', 'image_style']:
                 logger.info(f"[ImageGenerator]     - {key}: {value}")

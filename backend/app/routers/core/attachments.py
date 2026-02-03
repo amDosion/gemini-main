@@ -71,8 +71,8 @@ async def get_temp_image(
         token_source = "无 token"
     
     logger.info(
-        f"[TempImage] 收到请求: attachment_id={attachment_id[:8]}..., "
-        f"user_id={current_user[:8]}..., "
+        f"[TempImage] 收到请求: attachment_id={attachment_id}, "
+        f"user_id={current_user}, "
         f"token来源={token_source}, "
         f"有Authorization header={'是' if auth_header else '否'}, "
         f"有Cookie token={'是' if cookie_token else '否'}"
@@ -84,7 +84,7 @@ async def get_temp_image(
     ).first()
     
     if not attachment_any:
-        logger.warning(f"[TempImage] ❌ 附件不存在: attachment_id={attachment_id[:8]}...")
+        logger.warning(f"[TempImage] ❌ 附件不存在: attachment_id={attachment_id}")
         raise HTTPException(status_code=404, detail="Attachment not found")
     
     # ✅ 详细比较 user_id（用于诊断）
@@ -113,7 +113,7 @@ async def get_temp_image(
     attachment = attachment_any
     logger.info(
         f"[TempImage] ✅ 附件找到: "
-        f"user_id={attachment.user_id[:8]}..., "
+        f"user_id={attachment.user_id}, "
         f"temp_url={'存在' if attachment.temp_url else 'None'}, "
         f"url={'存在' if attachment.url else 'None'}, "
         f"upload_status={attachment.upload_status}"
@@ -142,7 +142,7 @@ async def get_temp_image(
             mime_type, base64_str = parse_data_url(temp_url)
             image_bytes = base64.b64decode(base64_str)
 
-            logger.info(f"[TempImage] Serving Base64 image: {attachment_id[:8]}... (size: {len(image_bytes) / 1024:.2f} KB)")
+            logger.info(f"[TempImage] Serving Base64 image: {attachment_id} (size: {len(image_bytes) / 1024:.2f} KB)")
 
             return Response(
                 content=image_bytes,
@@ -154,12 +154,12 @@ async def get_temp_image(
                 }
             )
         except Exception as e:
-            logger.error(f"[TempImage] Failed to decode Base64: {attachment_id[:8]}...: {e}")
+            logger.error(f"[TempImage] Failed to decode Base64: {attachment_id}: {e}")
             raise HTTPException(status_code=400, detail=f"Invalid Base64 data URL: {str(e)}")
     
     elif temp_url.startswith('http'):
         # HTTP URL → 重定向（Tongyi临时URL）
-        logger.info(f"[TempImage] Redirecting to HTTP URL: {attachment_id[:8]}...")
+        logger.info(f"[TempImage] Redirecting to HTTP URL: {attachment_id}")
         return RedirectResponse(url=temp_url)
     
     else:
@@ -244,8 +244,8 @@ async def resolve_continuity(
         )
         logger.info(
             f"[Attachments] 📥 请求参数: "
-            f"user_id={user_id[:8]}..., "
-            f"session_id={request_body.session_id[:8] if request_body.session_id else 'None'}..., "
+            f"user_id={user_id}, "
+            f"session_id={request_body.session_id if request_body.session_id else 'None'}, "
             f"active_image_url类型={url_type}, "
             f"active_image_url长度={len(request_body.active_image_url)}, "
             f"messages数量={len(request_body.messages) if request_body.messages else 0}"
@@ -274,7 +274,7 @@ async def resolve_continuity(
             f"[Attachments] ✅ CONTINUITY附件解析成功 (耗时: {elapsed_time:.2f}ms):"
         )
         logger.info(
-            f"[Attachments]     - attachment_id: {resolved['attachment_id'][:8]}..."
+            f"[Attachments]     - attachment_id: {resolved['attachment_id']}"
         )
         logger.info(
             f"[Attachments]     - status: {resolved['status']}"
@@ -286,7 +286,7 @@ async def resolve_continuity(
             f"[Attachments]     - url: {resolved['url'][:80] + '...' if resolved['url'] and len(resolved['url']) > 80 else resolved['url'] or 'None'}"
         )
         logger.info(
-            f"[Attachments]     - taskId: {resolved.get('task_id', 'None')[:8] + '...' if resolved.get('task_id') else 'None'}"
+            f"[Attachments]     - taskId: {resolved.get('task_id') if resolved.get('task_id') else 'None'}"
         )
         logger.info(
             f"[Attachments] ========== CONTINUITY附件解析完成 =========="
@@ -296,7 +296,16 @@ async def resolve_continuity(
             "attachment_id": resolved["attachment_id"],
             "url": resolved["url"],
             "status": resolved["status"],
-            "task_id": resolved.get("task_id")
+            "task_id": resolved.get("task_id"),
+            # ✅ 新增：返回完整的附件元数据
+            "message_id": resolved.get("message_id"),
+            "session_id": resolved.get("session_id"),
+            "user_id": resolved.get("user_id"),
+            "filename": resolved.get("filename"),
+            "mime_type": resolved.get("mime_type"),
+            "size": resolved.get("size"),
+            "cloud_url": resolved.get("cloud_url"),
+            "created_at": resolved.get("created_at")
         }
     except HTTPException:
         elapsed_time = (time.time() - start_time) * 1000

@@ -78,14 +78,14 @@ class AttachmentService:
         logger.info(f"[AttachmentService]     - filename: {filename}")
         logger.info(f"[AttachmentService]     - mime_type: {mime_type}")
         logger.info(f"[AttachmentService]     - file_path: {file_path}")
-        logger.info(f"[AttachmentService]     - session_id: {session_id[:8] if session_id else 'None'}...")
-        logger.info(f"[AttachmentService]     - message_id: {message_id[:8] if message_id else 'None'}...")
-        logger.info(f"[AttachmentService]     - user_id: {user_id[:8]}...")
-        logger.info(f"[AttachmentService]     - storage_id: {storage_id[:8] + '...' if storage_id else 'None'}")
+        logger.info(f"[AttachmentService]     - session_id: {session_id if session_id else 'None'}")
+        logger.info(f"[AttachmentService]     - message_id: {message_id if message_id else 'None'}")
+        logger.info(f"[AttachmentService]     - user_id: {user_id}")
+        logger.info(f"[AttachmentService]     - storage_id: {storage_id if storage_id else 'None'}")
         logger.info(f"[AttachmentService]     - priority: {priority}")
         
         attachment_id = str(uuid.uuid4())
-        logger.info(f"[AttachmentService] 🔄 [步骤1] 生成附件ID: {attachment_id[:8]}...")
+        logger.info(f"[AttachmentService] 🔄 [步骤1] 生成附件ID: {attachment_id}")
 
         # ✅ 详细日志：步骤1 - 创建附件记录
         logger.info(f"[AttachmentService] 🔄 [步骤1] 创建附件记录...")
@@ -117,7 +117,7 @@ class AttachmentService:
         )
         
         elapsed_time = (time.time() - start_time) * 1000
-        logger.info(f"[AttachmentService] ✅ [步骤2] 上传任务已创建: {task_id[:8]}... (耗时: {elapsed_time:.2f}ms)")
+        logger.info(f"[AttachmentService] ✅ [步骤2] 上传任务已创建: {task_id} (耗时: {elapsed_time:.2f}ms)")
         logger.info(f"[AttachmentService] ========== 用户上传处理完成 ==========")
 
         return {
@@ -174,9 +174,9 @@ class AttachmentService:
         logger.info(f"[AttachmentService] 📥 请求参数:")
         logger.info(f"[AttachmentService]     - prefix: {prefix}")
         logger.info(f"[AttachmentService]     - mime_type: {mime_type}")
-        logger.info(f"[AttachmentService]     - session_id: {session_id[:8] if session_id else 'None'}...")
-        logger.info(f"[AttachmentService]     - message_id: {message_id[:8] if message_id else 'None'}...")
-        logger.info(f"[AttachmentService]     - user_id: {user_id[:8]}...")
+        logger.info(f"[AttachmentService]     - session_id: {session_id if session_id else 'None'}")
+        logger.info(f"[AttachmentService]     - message_id: {message_id if message_id else 'None'}")
+        logger.info(f"[AttachmentService]     - user_id: {user_id}")
         
         # ✅ 详细日志：步骤1 - 判断URL类型
         url_type = "Base64" if ai_url.startswith('data:') else "HTTP" if ai_url.startswith('http') else "未知"
@@ -193,7 +193,7 @@ class AttachmentService:
         
         attachment_id = str(uuid.uuid4())
         filename = f"{prefix}-{uuid.uuid4()}.png"
-        logger.info(f"[AttachmentService] 🔄 [步骤1] 生成附件ID: {attachment_id[:8]}...")
+        logger.info(f"[AttachmentService] 🔄 [步骤1] 生成附件ID: {attachment_id}")
         logger.info(f"[AttachmentService]     - filename: {filename}")
 
         # ✅ 步骤2 - 直接使用原始 URL（Base64 或 HTTP）
@@ -237,24 +237,30 @@ class AttachmentService:
             mime_type=mime_type
         )
         step4_time = (time.time() - start_time) * 1000
-        logger.info(f"[AttachmentService] ✅ [步骤4] 上传任务已创建: {task_id[:8]}... (耗时: {step4_time:.2f}ms)")
+        logger.info(f"[AttachmentService] ✅ [步骤4] 上传任务已创建: {task_id} (耗时: {step4_time:.2f}ms)")
 
         total_time = (time.time() - start_time) * 1000
         logger.info(f"[AttachmentService] ========== AI图片处理完成 (总耗时: {total_time:.2f}ms) ==========")
-        logger.info(f"[AttachmentService]     - attachment_id: {attachment_id[:8]}...")
+        logger.info(f"[AttachmentService]     - attachment_id: {attachment_id}")
         # ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
         if display_url and display_url.startswith('data:'):
             logger.info(f"[AttachmentService]     - display_url: Base64 Data URL (长度: {len(display_url)} 字符)")
         else:
             logger.info(f"[AttachmentService]     - display_url: {display_url[:80] + '...' if display_url and len(display_url) > 80 else display_url or 'None'}")
-        logger.info(f"[AttachmentService]     - task_id: {task_id[:8]}...")
+        logger.info(f"[AttachmentService]     - task_id: {task_id}")
 
         return {
             'attachment_id': attachment_id,
             'display_url': display_url,  # ✅ 显示URL（Base64 Data URL 或 HTTP URL）
             'cloud_url': '',             # ✅ 云URL（空，待上传完成）
             'status': 'pending',
-            'task_id': task_id
+            'task_id': task_id,
+            # ✅ 新增：返回完整的元数据，供前端保存和后续 CONTINUITY LOGIC 使用
+            'session_id': session_id,
+            'message_id': message_id,
+            'user_id': user_id,
+            'filename': filename,
+            'mime_type': mime_type,
         }
 
     async def resolve_continuity_attachment(
@@ -302,7 +308,7 @@ class AttachmentService:
         attachment_id = self._find_attachment_by_url(active_image_url, messages)
         
         if attachment_id:
-            logger.info(f"[AttachmentService] ✅ [步骤1] 在messages中找到附件ID: {attachment_id[:8]}...")
+            logger.info(f"[AttachmentService] ✅ [步骤1] 在messages中找到附件ID: {attachment_id}")
         else:
             logger.info(f"[AttachmentService] ⚠️ [步骤1] 在messages中未找到匹配的附件ID")
 
@@ -312,7 +318,7 @@ class AttachmentService:
                 logger.info(f"[AttachmentService] 🔄 [步骤1-兜底] Blob URL，尝试查找最近的已上传图片...")
                 attachment_id = self._find_latest_uploaded_image(session_id, user_id)
                 if attachment_id:
-                    logger.info(f"[AttachmentService] ✅ [步骤1-兜底] 找到最近的已上传图片: {attachment_id[:8]}...")
+                    logger.info(f"[AttachmentService] ✅ [步骤1-兜底] 找到最近的已上传图片: {attachment_id}")
                 else:
                     logger.warning(f"[AttachmentService] ❌ [步骤1-兜底] 未找到最近的已上传图片")
 
@@ -323,8 +329,8 @@ class AttachmentService:
 
         # ✅ 详细日志：步骤2 - 查询数据库
         logger.info(f"[AttachmentService] 🔍 [步骤2] 查询数据库获取附件详情...")
-        logger.info(f"[AttachmentService]     - attachment_id: {attachment_id[:8]}...")
-        logger.info(f"[AttachmentService]     - user_id: {user_id[:8]}...")
+        logger.info(f"[AttachmentService]     - attachment_id: {attachment_id}")
+        logger.info(f"[AttachmentService]     - user_id: {user_id}")
         
         attachment = self.db.query(MessageAttachment).filter_by(
             id=attachment_id,
@@ -367,7 +373,16 @@ class AttachmentService:
                 'attachment_id': attachment_id,
                 'url': attachment.url,
                 'status': 'completed',
-                'task_id': None
+                'task_id': None,
+                # ✅ 新增：返回完整的附件元数据
+                'message_id': attachment.message_id,
+                'session_id': attachment.session_id,
+                'user_id': attachment.user_id,
+                'filename': attachment.name,
+                'mime_type': attachment.mime_type,
+                'size': attachment.size,
+                'cloud_url': attachment.url,  # 已上传完成，url 就是 cloud_url
+                'created_at': None  # MessageAttachment 模型没有 created_at 字段
             }
         
         # ✅ 如果附件有 HTTP URL 但状态不是 completed，可能是数据不一致，也直接返回
@@ -383,7 +398,16 @@ class AttachmentService:
                 'attachment_id': attachment_id,
                 'url': attachment.url,
                 'status': 'completed',
-                'task_id': None
+                'task_id': None,
+                # ✅ 新增：返回完整的附件元数据
+                'message_id': attachment.message_id,
+                'session_id': attachment.session_id,
+                'user_id': attachment.user_id,
+                'filename': attachment.name,
+                'mime_type': attachment.mime_type,
+                'size': attachment.size,
+                'cloud_url': attachment.url,  # 已上传完成，url 就是 cloud_url
+                'created_at': None  # MessageAttachment 模型没有 created_at 字段
             }
         
         # ✅ 详细日志：步骤4 - 未上传，准备创建上传任务
@@ -392,6 +416,7 @@ class AttachmentService:
         # ✅ 修复：如果附件有 temp_url（Base64或HTTP URL），使用 source_ai_url
         # 如果附件有 url（但未上传），使用 source_url
         # 只有在附件已上传的情况下才使用 source_attachment_id 复用
+        # ✅ 关键修复：如果附件没有任何 URL，使用请求中的 active_image_url
         source_ai_url = None
         source_url = None
         
@@ -408,6 +433,17 @@ class AttachmentService:
             # 有 HTTP URL，使用 source_url
             source_url = attachment.url
             logger.info(f"[AttachmentService]     - 使用 url (HTTP) 作为 source_url")
+        elif active_image_url:
+            # ✅ 关键修复：附件没有任何 URL，使用请求中的 active_image_url
+            logger.info(f"[AttachmentService]     - 附件没有 URL，使用请求中的 active_image_url")
+            if active_image_url.startswith('data:') or active_image_url.startswith('blob:'):
+                source_ai_url = active_image_url
+                logger.info(f"[AttachmentService]     - active_image_url类型: {'Base64' if active_image_url.startswith('data:') else 'Blob'}")
+            elif active_image_url.startswith('http'):
+                source_url = active_image_url
+                logger.info(f"[AttachmentService]     - active_image_url类型: HTTP")
+            else:
+                logger.warning(f"[AttachmentService]     - ⚠️ active_image_url类型未知: {active_image_url[:50]}...")
         else:
             logger.warning(f"[AttachmentService]     - ⚠️ 没有可用的源URL或文件路径")
         
@@ -423,13 +459,37 @@ class AttachmentService:
         )
         
         elapsed_time = (time.time() - start_time) * 1000
-        logger.info(f"[AttachmentService] ✅ [步骤4] 上传任务已创建: {task_id[:8]}... (耗时: {elapsed_time:.2f}ms)")
+        logger.info(f"[AttachmentService] ✅ [步骤4] 上传任务已创建: {task_id} (耗时: {elapsed_time:.2f}ms)")
 
+        # ✅ 关键修复：当数据库中没有保存 URL 时，使用前端传入的 active_image_url
+        # 这样 Base64 URL 可以正确传递给 AI 服务处理
+        final_url = attachment.temp_url or attachment.url or active_image_url or ''
+        
+        # 日志记录最终使用的 URL 来源
+        if attachment.temp_url:
+            url_source = 'temp_url'
+        elif attachment.url:
+            url_source = 'url'
+        elif active_image_url:
+            url_source = 'active_image_url (前端传入)'
+        else:
+            url_source = '无可用 URL'
+        logger.info(f"[AttachmentService]     - 返回 URL 来源: {url_source}")
+        
         return {
             'attachment_id': attachment_id,
-            'url': attachment.temp_url or attachment.url or '',
+            'url': final_url,
             'status': 'pending',
-            'task_id': task_id
+            'task_id': task_id,
+            # ✅ 新增：返回完整的附件元数据
+            'message_id': attachment.message_id,
+            'session_id': attachment.session_id,
+            'user_id': attachment.user_id,
+            'filename': attachment.name,
+            'mime_type': attachment.mime_type,
+            'size': attachment.size,
+            'cloud_url': None,  # 尚未上传完成
+            'created_at': None  # MessageAttachment 模型没有 created_at 字段
         }
 
     async def get_cloud_url(
@@ -516,20 +576,20 @@ class AttachmentService:
         
         logger.info(f"[AttachmentService] ========== 开始创建上传任务 ==========")
         logger.info(f"[AttachmentService] 📋 任务参数:")
-        logger.info(f"[AttachmentService]     - attachment_id: {attachment_id[:8]}...")
+        logger.info(f"[AttachmentService]     - attachment_id: {attachment_id}")
         logger.info(f"[AttachmentService]     - filename: {filename}")
         logger.info(f"[AttachmentService]     - mime_type: {mime_type}")
-        logger.info(f"[AttachmentService]     - session_id: {session_id[:8] if session_id else 'None'}...")
-        logger.info(f"[AttachmentService]     - message_id: {message_id[:8] if message_id else 'None'}...")
+        logger.info(f"[AttachmentService]     - session_id: {session_id if session_id else 'None'}")
+        logger.info(f"[AttachmentService]     - message_id: {message_id if message_id else 'None'}")
         logger.info(f"[AttachmentService]     - priority: {priority}")
-        logger.info(f"[AttachmentService]     - storage_id: {storage_id[:8] + '...' if storage_id else 'None'}")
+        logger.info(f"[AttachmentService]     - storage_id: {storage_id if storage_id else 'None'}")
         
         # ✅ 详细日志：检查source类型
         logger.info(f"[AttachmentService] 🔍 检查源类型:")
         logger.info(f"[AttachmentService]     - source_file_path: {'存在' if source_file_path else 'None'}")
         logger.info(f"[AttachmentService]     - source_url: {'存在 (HTTP URL)' if source_url else 'None'}")
         logger.info(f"[AttachmentService]     - source_ai_url: {'存在 (' + ('Base64' if source_ai_url and source_ai_url.startswith('data:') else 'HTTP') + ')' if source_ai_url else 'None'}")
-        logger.info(f"[AttachmentService]     - source_attachment_id: {source_attachment_id[:8] + '...' if source_attachment_id else 'None'}")
+        logger.info(f"[AttachmentService]     - source_attachment_id: {source_attachment_id if source_attachment_id else 'None'}")
         
         # 确保至少有一个source
         if not any([source_file_path, source_url, source_ai_url, source_attachment_id]):
@@ -537,7 +597,7 @@ class AttachmentService:
             raise ValueError("至少需要提供一个source（source_file_path, source_url, source_ai_url, source_attachment_id）")
 
         task_id = str(uuid.uuid4())
-        logger.info(f"[AttachmentService] 🔄 [步骤1] 生成任务ID: {task_id[:8]}...")
+        logger.info(f"[AttachmentService] 🔄 [步骤1] 生成任务ID: {task_id}")
 
         # ✅ 详细日志：步骤1 - 创建UploadTask记录
         logger.info(f"[AttachmentService] 🔄 [步骤1] 创建UploadTask记录...")
@@ -591,8 +651,8 @@ class AttachmentService:
 
         total_time = (time.time() - start_time) * 1000
         logger.info(f"[AttachmentService] ========== 上传任务创建完成 (总耗时: {total_time:.2f}ms) ==========")
-        logger.info(f"[AttachmentService]     - task_id: {task_id[:8]}...")
-        logger.info(f"[AttachmentService]     - attachment_id: {attachment_id[:8]}...")
+        logger.info(f"[AttachmentService]     - task_id: {task_id}")
+        logger.info(f"[AttachmentService]     - attachment_id: {attachment_id}")
 
         return task_id
 

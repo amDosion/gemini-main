@@ -76,7 +76,7 @@ class ExpandService:
         self._vertex_client = None  # Vertex AI 客户端
         self.validator = ImageServiceValidator("Expand Service")
 
-        logger.info(f"[Expand Service] Initialized with user_id={user_id[:8] + '...' if user_id else 'None'}")
+        logger.info(f"[Expand Service] Initialized with user_id={user_id if user_id else 'None'}")
 
         # ========================================
         # 模型配置
@@ -130,7 +130,7 @@ class ExpandService:
                 ).first()
 
                 if user_config and user_config.api_mode == 'vertex_ai':
-                    logger.info(f"[Expand Service] Using Vertex AI config from database for user={self._user_id[:8]}...")
+                    logger.info(f"[Expand Service] Using Vertex AI config from database for user={self._user_id}")
 
                     config['project_id'] = user_config.vertex_ai_project_id
                     config['location'] = user_config.vertex_ai_location or 'us-central1'
@@ -155,7 +155,7 @@ class ExpandService:
                     self._config = config
                     return config
                 else:
-                    logger.info(f"[Expand Service] No Vertex AI config in database for user={self._user_id[:8] if self._user_id else 'None'}..., falling back to environment")
+                    logger.info(f"[Expand Service] No Vertex AI config in database for user={self._user_id if self._user_id else 'None'}, falling back to environment")
             except Exception as e:
                 logger.warning(f"[Expand Service] Failed to load config from database: {e}")
 

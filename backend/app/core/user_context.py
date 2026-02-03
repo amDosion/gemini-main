@@ -67,7 +67,7 @@ def get_current_user_id(request: Request) -> Optional[str]:
             return None
         
         user_id = payload.sub
-        logger.debug(f"[UserContext] 提取 user_id: {user_id[:8]}... (来源: {token_source}, 路径: {request.url.path})")
+        logger.debug(f"[UserContext] 提取 user_id: {user_id} (来源: {token_source}, 路径: {request.url.path})")
         
         return user_id
         

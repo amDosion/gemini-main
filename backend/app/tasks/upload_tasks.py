@@ -39,11 +39,11 @@ def process_upload(self, task_id: str):
             return {'success': False, 'error': '任务不存在'}
 
         # 详细日志
-        print(f"[Celery] 开始处理任务: {task_id[:8]}...")
+        print(f"[Celery] 开始处理任务: {task_id}")
         print(f"  - 文件名: {task.filename}")
-        print(f"  - session_id: {task.session_id[:8] if task.session_id else 'None'}...")
-        print(f"  - message_id: {task.message_id[:8] if task.message_id else 'None'}...")
-        print(f"  - attachment_id: {task.attachment_id[:8] if task.attachment_id else 'None'}...")
+        print(f"  - session_id: {task.session_id if task.session_id else 'None'}")
+        print(f"  - message_id: {task.message_id if task.message_id else 'None'}")
+        print(f"  - attachment_id: {task.attachment_id if task.attachment_id else 'None'}")
 
         # 2. 更新状态为 uploading
         task.status = 'uploading'
@@ -210,7 +210,7 @@ def update_session_attachment_url_sync(
     """
     import time
 
-    print(f"[Celery] 开始更新附件 URL: session={session_id[:8]}..., msg={message_id[:8]}..., att={attachment_id[:8]}...")
+    print(f"[Celery] 开始更新附件 URL: session={session_id}, msg={message_id}, att={attachment_id}")
 
     for attempt in range(max_retries):
         try:
@@ -227,7 +227,7 @@ def update_session_attachment_url_sync(
             updated = False
 
             # 调试日志
-            msg_ids = [m.get('id', '')[:8] for m in messages]
+            msg_ids = [m.get('id', '') for m in messages]
             if attempt == 0:
                 print(f"[Celery] 当前会话消息数: {len(messages)}, IDs: {msg_ids}")
 
@@ -250,15 +250,15 @@ def update_session_attachment_url_sync(
                 session.messages = messages
                 flag_modified(session, 'messages')
                 db.commit()
-                print(f"[Celery] ✅ 会话已更新: {session_id[:8]}..., 附件: {attachment_id[:8]}...")
+                print(f"[Celery] ✅ 会话已更新: {session_id}, 附件: {attachment_id}")
                 return
             else:
                 # 未找到附件，等待后重试
                 if attempt < max_retries - 1:
-                    print(f"[Celery] ⏳ 未找到附件，等待重试 ({attempt + 1}/{max_retries}): {attachment_id[:8]}...")
+                    print(f"[Celery] ⏳ 未找到附件，等待重试 ({attempt + 1}/{max_retries}): {attachment_id}")
                     time.sleep(retry_delay)
                 else:
-                    print(f"[Celery] ❌ 重试 {max_retries} 次后仍未找到附件: {attachment_id[:8]}...")
+                    print(f"[Celery] ❌ 重试 {max_retries} 次后仍未找到附件: {attachment_id}")
 
         except Exception as e:
             print(f"[Celery] ❌ 更新会话失败: {str(e)}")

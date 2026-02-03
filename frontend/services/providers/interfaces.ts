@@ -24,16 +24,23 @@ export interface StreamUpdate {
 }
 
 export interface ImageGenerationResult {
-  url: string;  // 显示URL（可能是 /api/temp-images/{attachment_id} 或 HTTP URL）
+  url: string;  // 显示URL（Base64 Data URL 或 HTTP URL）
   mimeType: string;
   filename?: string; // Optional filename for generated images
-  // ✅ 新增字段（后端统一附件处理）
+  // ✅ 附件元数据（后端统一附件处理）
   attachmentId?: string;  // 附件ID
+  messageId?: string;  // 消息ID
+  sessionId?: string;  // 会话ID
+  userId?: string;  // 用户ID
   uploadStatus?: 'pending' | 'completed' | 'failed';  // 上传状态
   taskId?: string;  // 上传任务ID
+  cloudUrl?: string;  // 云存储URL（如果已上传完成）
+  size?: number;  // 文件大小（bytes）
+  createdAt?: number;  // 创建时间戳
+  // ✅ AI 响应元数据
   thoughts?: Array<{ type: 'text' | 'image'; content: string }>; // 思考过程（thoughts）
   text?: string; // 文本响应
-  enhancedPrompt?: string; // ✅ 增强后的提示词（当启用 enhance_prompt 时返回）
+  enhancedPrompt?: string; // 增强后的提示词（当启用 enhance_prompt 时返回）
 }
 
 export interface VideoGenerationResult {

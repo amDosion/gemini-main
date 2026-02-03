@@ -496,6 +496,7 @@ export class UnifiedProviderClient implements ILLMProvider {
                           mode === 'virtual-try-on';
       if (isImageMode && data.data.images) {
         // 将后端格式转换为 ImageGenerationResult[]
+        // ✅ 修复：复制后端返回的所有元数据字段，确保前端能获取完整信息
         return data.data.images.map((img: any) => ({
           url: img.url,  // 显示URL（可能是 /api/temp-images/{attachment_id} 或 HTTP URL）
           mimeType: img.mimeType || 'image/png',
@@ -505,7 +506,14 @@ export class UnifiedProviderClient implements ILLMProvider {
           taskId: img.taskId,
           thoughts: img.thoughts,  // ✅ 修复断点2：传递 thinking 数据
           text: img.text,          // ✅ 修复断点2：传递文本响应
-          enhancedPrompt: img.enhancedPrompt  // ✅ 传递增强后的提示词（如果存在）
+          enhancedPrompt: img.enhancedPrompt,  // ✅ 传递增强后的提示词（如果存在）
+          // ✅ 新增：传递完整的附件元数据（后端 CaseConversionMiddleware 会自动转换 snake_case → camelCase）
+          messageId: img.messageId,      // 关联的消息 ID
+          sessionId: img.sessionId,      // 关联的会话 ID
+          userId: img.userId,            // 用户 ID
+          size: img.size,                // 文件大小（字节）
+          cloudUrl: img.cloudUrl,        // 云存储 URL（如果已上传）
+          createdAt: img.createdAt       // 创建时间戳（毫秒）
         } as ImageGenerationResult));
       }
       

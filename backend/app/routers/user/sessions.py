@@ -343,7 +343,7 @@ async def create_or_update_session(
             has_thoughts = 'thoughts' in extracted_meta
             has_text_response = 'text_response' in extracted_meta
             has_enhanced_prompt = 'enhanced_prompt' in extracted_meta
-            logger.info(f"[Sessions] 📝 消息 {msg_id[:8]}... 的 metadata 字段: {meta_keys}, thoughts={has_thoughts}, text_response={has_text_response}, enhanced_prompt={has_enhanced_prompt}")
+            logger.info(f"[Sessions] 📝 消息 {msg_id} 的 metadata 字段: {meta_keys}, thoughts={has_thoughts}, text_response={has_text_response}, enhanced_prompt={has_enhanced_prompt}")
 
         metadata_json = json.dumps(extracted_meta) if extracted_meta else None
         
@@ -692,7 +692,7 @@ async def get_attachment(
     if task:
         result["task_id"] = task.id
         result["task_status"] = task.status
-        print(f"[Sessions] 找到上传任务: task_id={task.id[:8]}..., status={task.status}, target_url={task.target_url[:60] if task.target_url else 'None'}")
+        print(f"[Sessions] 找到上传任务: task_id={task.id}, status={task.status}, target_url={task.target_url if task.target_url else 'None'}")
         
         # 如果任务已完成且有目标 URL，优先使用任务的 URL
         if task.status == 'completed' and task.target_url:
@@ -700,5 +700,5 @@ async def get_attachment(
             result["upload_status"] = 'completed'
             print(f"[Sessions] ✅ 使用任务的 target_url 作为最终 URL")
     
-    print(f"[Sessions] 查询附件: {attachment_id[:8]}... -> url: {result.get('url', 'None')[:50] if result.get('url') else 'None'}..., upload_status: {result.get('upload_status')}")
+    print(f"[Sessions] 查询附件: {attachment_id} -> url: {result.get('url') if result.get('url') else 'None'}, upload_status: {result.get('upload_status')}")
     return result

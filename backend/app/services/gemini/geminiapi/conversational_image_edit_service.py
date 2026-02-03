@@ -308,7 +308,9 @@ class ConversationalImageEditService:
         chat_id: str,
         prompt: str,
         reference_images: Optional[List[Dict[str, Any]]] = None,
-        config: Optional[Dict[str, Any]] = None
+        config: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None,
+        frontend_session_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         发送编辑消息到 Chat 会话
@@ -321,9 +323,11 @@ class ConversationalImageEditService:
             prompt: 编辑提示词
             reference_images: 参考图片列表（可选）
             config: 可选的配置覆盖（例如更新图片尺寸、宽高比等）
+            user_id: 用户 ID（用于生成附件元数据）
+            frontend_session_id: 前端会话 ID（用于生成附件元数据）
         
         Returns:
-            编辑后的图片列表
+            编辑后的图片列表（包含完整的附件元数据）
         """
         self.sdk_initializer.ensure_initialized()
         client = self.sdk_initializer.client
@@ -353,7 +357,9 @@ class ConversationalImageEditService:
                     model_name=model_name,
                     should_include_image=should_include_image,
                     client=client,
-                    skip_cache=(attempt > 0)  # 第二次尝试时跳过缓存
+                    skip_cache=(attempt > 0),  # 第二次尝试时跳过缓存
+                    user_id=user_id,
+                    frontend_session_id=frontend_session_id
                 )
             except ValueError as e:
                 error_msg = str(e)
@@ -385,13 +391,17 @@ class ConversationalImageEditService:
         model_name: Optional[str],
         should_include_image: bool,
         client,
-        skip_cache: bool = False
+        skip_cache: bool = False,
+        user_id: Optional[str] = None,
+        frontend_session_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         内部方法：发送编辑消息到 Chat 会话
         
         Args:
             skip_cache: 如果为 True，跳过缓存并重建 chat 对象（不带历史）
+            user_id: 用户 ID（用于生成附件元数据）
+            frontend_session_id: 前端会话 ID（用于生成附件元数据）
         """
         # 获取 Chat 对象（从缓存）
         # 注意：Chat 对象会自动维护历史记录，不需要手动重建
@@ -830,12 +840,28 @@ class ConversationalImageEditService:
                 
                 # 检查 inline_data 是否存在且不为 None（官方 SDK 模式）
                 inline_data = getattr(part, 'inline_data', None)
-                logger.info(f"[ConversationalImageEdit] _extract_image_from_part: inline_data={inline_data is not None}")
+                
+                # ✅ 详细调试日志：记录 part 的所有属性
+                part_attrs = [attr for attr in dir(part) if not attr.startswith('_')]
+                logger.info(f"[ConversationalImageEdit] _extract_image_from_part: part type={type(part).__name__}, attrs={part_attrs[:10]}...")
+                
+                # ✅ 详细调试日志：记录 inline_data 的实际类型和内容
+                if inline_data is not None:
+                    inline_data_type = type(inline_data).__name__
+                    inline_data_data = getattr(inline_data, 'data', None)
+                    inline_data_mime = getattr(inline_data, 'mime_type', None)
+                    data_type = type(inline_data_data).__name__ if inline_data_data is not None else 'None'
+                    data_len = len(inline_data_data) if inline_data_data is not None and hasattr(inline_data_data, '__len__') else 'N/A'
+                    logger.info(f"[ConversationalImageEdit] _extract_image_from_part: inline_data type={inline_data_type}, data type={data_type}, data len={data_len}, mime={inline_data_mime}")
+                else:
+                    logger.info(f"[ConversationalImageEdit] _extract_image_from_part: inline_data=None")
                 
                 if inline_data is not None:
                     # 方法1: 优先使用 as_image()（官方推荐方式）
                     try:
+                        logger.info(f"[ConversationalImageEdit] Trying as_image() method...")
                         img = part.as_image()
+                        logger.info(f"[ConversationalImageEdit] as_image() returned: type={type(img).__name__}, is_none={img is None}")
                         if img is not None:
                             img_bytes_io = io.BytesIO()
                             img.save(img_bytes_io, format='PNG')
@@ -845,14 +871,19 @@ class ConversationalImageEditService:
                             logger.info(f"[ConversationalImageEdit] ✅ Extracted image via as_image(), size={len(image_bytes)} bytes")
                             return {
                                 'url': f"data:image/png;base64,{base64_str}",
-                                'mime_type': 'image/png'
+                                'mime_type': 'image/png',
+                                'size': len(image_bytes)  # 文件大小（bytes）
                             }
+                        else:
+                            logger.warning(f"[ConversationalImageEdit] as_image() returned None, trying inline_data.data")
                     except Exception as e:
                         logger.warning(f"[ConversationalImageEdit] as_image() failed: {e}, trying inline_data.data")
                     
                     # 方法2: 回退到直接读取 inline_data.data
                     try:
+                        logger.info(f"[ConversationalImageEdit] Trying inline_data.data fallback...")
                         image_bytes = getattr(inline_data, 'data', None)
+                        logger.info(f"[ConversationalImageEdit] inline_data.data: type={type(image_bytes).__name__ if image_bytes is not None else 'None'}")
                         # 兼容 data 为 str/base64 的情况
                         if isinstance(image_bytes, str):
                             data_str = image_bytes
@@ -879,7 +910,8 @@ class ConversationalImageEditService:
                             logger.info(f"[ConversationalImageEdit] ✅ Extracted image via inline_data.data, size={len(image_bytes)} bytes, mime={mime_type}")
                             return {
                                 'url': f"data:{mime_type};base64,{base64_str}",
-                                'mime_type': mime_type
+                                'mime_type': mime_type,
+                                'size': len(image_bytes)  # 文件大小（bytes）
                             }
                     except Exception as e:
                         logger.warning(f"[ConversationalImageEdit] inline_data.data extraction failed: {e}")
@@ -968,6 +1000,9 @@ class ConversationalImageEditService:
                                 'content': thought_content
                             })
                             logger.debug(f"[ConversationalImageEdit] Part {idx} is a thought (type={thought_type}), collected for frontend display")
+                
+                # ✅ 添加思考处理总结日志
+                logger.info(f"[ConversationalImageEdit] Thought processing complete: collected {len(thoughts)} thoughts, last_thought_image={'Yes' if last_thought_image else 'No'}")
             
             # 步骤2: 从 response.parts 提取最终的图片和文本（参考官方示例）
             # 官方示例: for part in response.parts: if part.text is not None: ... elif part.inline_data is not None: image = part.as_image() ...
@@ -996,8 +1031,31 @@ class ConversationalImageEditService:
                     if inline_data_value is not None:
                         image_result = _extract_image_from_part(part)
                         if image_result:
+                            # ✅ 为图片添加完整的附件元数据
+                            attachment_id = str(uuid.uuid4())
+                            message_id = str(uuid.uuid4())  # AI 响应消息 ID
+                            timestamp = int(time.time() * 1000)
+                            
+                            # 生成文件名
+                            mime_type = image_result.get('mime_type', 'image/png')
+                            ext = 'png' if 'png' in mime_type else 'jpeg' if 'jpeg' in mime_type or 'jpg' in mime_type else 'png'
+                            filename = f"edited-{attachment_id[:8]}.{ext}"
+                            
+                            # 添加完整元数据
+                            image_result['attachment_id'] = attachment_id
+                            image_result['message_id'] = message_id
+                            image_result['session_id'] = frontend_session_id
+                            image_result['user_id'] = user_id
+                            image_result['filename'] = filename
+                            image_result['upload_status'] = 'pending'  # AI 生成的图片初始状态为 pending
+                            image_result['upload_task_id'] = None  # 尚未提交上传任务
+                            image_result['cloud_url'] = None  # 尚未上传到云存储
+                            image_result['created_at'] = timestamp
+                            
+                            logger.info(f"[ConversationalImageEdit] ✅ Part {idx} extracted as final image with metadata: "
+                                        f"attachment_id={attachment_id}, filename={filename}, size={image_result.get('size', 'N/A')} bytes")
+                            
                             results.append(image_result)
-                            logger.info(f"[ConversationalImageEdit] ✅ Part {idx} extracted as final image")
                             continue
 
                     # 如果没有图片数据，处理文本响应
@@ -1010,6 +1068,29 @@ class ConversationalImageEditService:
             # 根据官方文档："The last image within Thinking is also the final rendered image."
             if not results and last_thought_image:
                 logger.info(f"[ConversationalImageEdit] No non-thought images found, using last thought image as final result")
+                
+                # ✅ 为 thought 图片也添加完整的附件元数据
+                attachment_id = str(uuid.uuid4())
+                message_id = str(uuid.uuid4())
+                timestamp = int(time.time() * 1000)
+                
+                mime_type = last_thought_image.get('mime_type', 'image/png')
+                ext = 'png' if 'png' in mime_type else 'jpeg' if 'jpeg' in mime_type or 'jpg' in mime_type else 'png'
+                filename = f"edited-{attachment_id[:8]}.{ext}"
+                
+                last_thought_image['attachment_id'] = attachment_id
+                last_thought_image['message_id'] = message_id
+                last_thought_image['session_id'] = frontend_session_id
+                last_thought_image['user_id'] = user_id
+                last_thought_image['filename'] = filename
+                last_thought_image['upload_status'] = 'pending'
+                last_thought_image['upload_task_id'] = None
+                last_thought_image['cloud_url'] = None
+                last_thought_image['created_at'] = timestamp
+                
+                logger.info(f"[ConversationalImageEdit] ✅ Using thought image with metadata: "
+                            f"attachment_id={attachment_id}, filename={filename}, size={last_thought_image.get('size', 'N/A')} bytes")
+                
                 results.append(last_thought_image)
             
             if not results:
@@ -1163,7 +1244,7 @@ class ConversationalImageEditService:
                     # 传递 attachment_id（用于日志和调试）
                     if 'attachment_id' in img_item:
                         processed_img['attachment_id'] = img_item['attachment_id']
-                        logger.info(f"[ConversationalImageEdit] 处理附件: attachment_id={img_item['attachment_id'][:8]}...")
+                        logger.info(f"[ConversationalImageEdit] 处理附件: attachment_id={img_item['attachment_id']}")
 
                     if processed_img:
                         return processed_img
@@ -1268,7 +1349,9 @@ class ConversationalImageEditService:
             chat_id=chat_id,
             prompt=prompt,
             reference_images=reference_images_list if reference_images_list else None,
-            config=edit_config if edit_config else None
+            config=edit_config if edit_config else None,
+            user_id=user_id,
+            frontend_session_id=frontend_session_id
         )
         
         # 处理返回结果：如果返回的是字典（包含 images, thoughts, text），提取并附加元数据

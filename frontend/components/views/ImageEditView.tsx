@@ -346,6 +346,8 @@ export const ImageEditView = memo(({
     // State for reference image
     const [activeAttachments, setActiveAttachments] = useState<Attachment[]>([]);
     const [activeImageUrl, setActiveImageUrl] = useState<string | null>(null);
+    // ✅ 新增：存储当前画布图片对应的完整附件对象（包含元数据）
+    const [activeCanvasAttachment, setActiveCanvasAttachment] = useState<Attachment | null>(null);
 
     // ✅ 旋转木马索引（多图预览时使用）
     const [carouselIndex, setCarouselIndex] = useState(0);
@@ -513,6 +515,8 @@ export const ImageEditView = memo(({
             console.log('[ImageEditView] 同步 initialAttachments:', initialAttachments);
             setActiveAttachments(initialAttachments);
             setActiveImageUrl(getStableCanvasUrlFromAttachment(initialAttachments[0]));
+            // ✅ 同时保存完整的附件对象（包含元数据）
+            setActiveCanvasAttachment(initialAttachments[0]);
         } else if (initialAttachments === undefined && activeAttachments.length === 0) {
             // 如果 initialAttachments 被清空（undefined），且当前没有附件，保持空状态
             // 但如果已经有附件（例如从消息中恢复），不要清空
@@ -532,6 +536,8 @@ export const ImageEditView = memo(({
                 stableUrl: stableUrl?.substring(0, 50) + '...',
             });
             setActiveImageUrl(stableUrl);
+            // ✅ 同时保存完整的附件对象（包含元数据）
+            setActiveCanvasAttachment(activeAttachments[0]);
         }
     }, [activeAttachments, getStableCanvasUrlFromAttachment]);
 
@@ -622,13 +628,35 @@ export const ImageEditView = memo(({
                     }
                     return url.length > 60 ? url.substring(0, 60) + '...' : url;
                 };
-                console.log('[ImageEditView] 从用户消息中提取原始图片:', {
+                console.log('[ImageEditView] ========== 从用户消息中提取原始图片 ==========');
+                console.log('[ImageEditView] 消息信息:', {
+                    messageId: lastUserMsg.id,
+                    role: lastUserMsg.role,
+                    content: lastUserMsg.content?.substring(0, 50) || 'N/A',
+                    attachmentsCount: lastUserMsg.attachments?.length || 0
+                });
+                console.log('[ImageEditView] 附件完整元数据:', {
+                    id: att.id || 'N/A',
+                    name: att.name || 'N/A',
+                    mimeType: att.mimeType || 'N/A',
                     urlType: urlType,
                     url: formatUrlForLog(att.url),
-                    uploadStatus: att.uploadStatus,
-                    source: urlType.includes('云存储URL') ? '云存储URL (处理后的永久URL)' : 'AI返回的原始地址或处理后的URL'
+                    urlLength: att.url?.length || 0,
+                    tempUrl: formatUrlForLog(att.tempUrl),
+                    uploadStatus: att.uploadStatus || 'N/A',
+                    uploadTaskId: att.uploadTaskId || 'N/A',
+                    cloudUrl: att.cloudUrl ? formatUrlForLog(att.cloudUrl) : 'N/A',
+                    size: att.size ? `${att.size} bytes` : 'N/A',
+                    messageId: att.messageId || 'N/A',
+                    sessionId: att.sessionId || 'N/A',
+                    userId: att.userId || 'N/A',
+                    createdAt: att.createdAt ? new Date(att.createdAt).toISOString() : 'N/A',
+                    hasFile: !!att.file
                 });
+                console.log('[ImageEditView] ==============================================');
                 setActiveImageUrl(lastUserMsg.attachments[0].url);
+                // ✅ 同时保存完整的附件对象（包含元数据）
+                setActiveCanvasAttachment(lastUserMsg.attachments[0]);
             } else {
                 // 如果没有用户消息，从模型消息中获取（编辑后的图片）
                 const lastModelMsg = [...messages].reverse().find(m => m.role === Role.MODEL && m.attachments?.length);
@@ -643,13 +671,35 @@ export const ImageEditView = memo(({
                         }
                         return url.length > 60 ? url.substring(0, 60) + '...' : url;
                     };
-                    console.log('[ImageEditView] 从模型消息中提取编辑后的图片:', {
+                    console.log('[ImageEditView] ========== 从模型消息中提取编辑后的图片 ==========');
+                    console.log('[ImageEditView] 消息信息:', {
+                        messageId: lastModelMsg.id,
+                        role: lastModelMsg.role,
+                        content: lastModelMsg.content?.substring(0, 50) || 'N/A',
+                        attachmentsCount: lastModelMsg.attachments?.length || 0
+                    });
+                    console.log('[ImageEditView] 附件完整元数据:', {
+                        id: att.id || 'N/A',
+                        name: att.name || 'N/A',
+                        mimeType: att.mimeType || 'N/A',
                         urlType: urlType,
                         url: formatUrlForLog(att.url),
-                        uploadStatus: att.uploadStatus,
-                        source: urlType.includes('云存储URL') ? '云存储URL (处理后的永久URL)' : 'AI返回的原始地址或处理后的URL'
+                        urlLength: att.url?.length || 0,
+                        tempUrl: formatUrlForLog(att.tempUrl),
+                        uploadStatus: att.uploadStatus || 'N/A',
+                        uploadTaskId: att.uploadTaskId || 'N/A',
+                        cloudUrl: att.cloudUrl ? formatUrlForLog(att.cloudUrl) : 'N/A',
+                        size: att.size ? `${att.size} bytes` : 'N/A',
+                        messageId: att.messageId || 'N/A',
+                        sessionId: att.sessionId || 'N/A',
+                        userId: att.userId || 'N/A',
+                        createdAt: att.createdAt ? new Date(att.createdAt).toISOString() : 'N/A',
+                        hasFile: !!att.file
                     });
+                    console.log('[ImageEditView] ================================================');
                     setActiveImageUrl(lastModelMsg.attachments[0].url);
+                    // ✅ 同时保存完整的附件对象（包含元数据）
+                    setActiveCanvasAttachment(lastModelMsg.attachments[0]);
                 }
             }
         }
@@ -674,23 +724,42 @@ export const ImageEditView = memo(({
                     };
                     
                     console.log('[ImageEditView] ========== 从最新消息中提取附件用于显示 ==========');
-                    console.log('[ImageEditView] 提取的附件信息:', {
+                    console.log('[ImageEditView] 消息信息:', {
                         messageId: lastMsg.id,
-                        attachmentId: att.id || 'N/A',
-                        displayUrlType: urlType,
-                        displayUrl: formatUrlForLog(att.url),
-                        uploadStatus: att.uploadStatus,
-                        hasCloudUrl: att.uploadStatus === 'completed' && (att.url?.startsWith('http://') || att.url?.startsWith('https://')),
+                        role: lastMsg.role,
+                        content: lastMsg.content?.substring(0, 50) || 'N/A',
+                        attachmentsCount: lastMsg.attachments?.length || 0,
+                        hasThoughts: !!(lastMsg.thoughts && lastMsg.thoughts.length > 0),
+                        hasTextResponse: !!lastMsg.textResponse,
+                        hasEnhancedPrompt: !!lastMsg.enhancedPrompt
+                    });
+                    console.log('[ImageEditView] 附件完整元数据:', {
+                        id: att.id || 'N/A',
+                        name: att.name || 'N/A',
+                        mimeType: att.mimeType || 'N/A',
+                        urlType: urlType,
+                        url: formatUrlForLog(att.url),
+                        urlLength: att.url?.length || 0,
                         tempUrl: formatUrlForLog(att.tempUrl),
+                        uploadStatus: att.uploadStatus || 'N/A',
+                        uploadTaskId: att.uploadTaskId || 'N/A',
+                        cloudUrl: att.cloudUrl ? formatUrlForLog(att.cloudUrl) : 'N/A',
+                        size: att.size ? `${att.size} bytes` : 'N/A',
+                        messageId: att.messageId || 'N/A',
+                        sessionId: att.sessionId || 'N/A',
+                        userId: att.userId || 'N/A',
+                        createdAt: att.createdAt ? new Date(att.createdAt).toISOString() : 'N/A',
+                        hasFile: !!att.file,
                         source: urlType.includes('云存储URL') ? '云存储URL (处理后的永久URL)' :
                                urlType.includes('Base64') ? 'AI返回的原始Base64地址' :
-                               urlType.includes('Blob') ? '处理后的Blob URL (从HTTP临时URL转换)' :
-                               urlType.includes('HTTP临时URL') ? 'AI返回的HTTP临时地址' : '未知来源',
-                        note: '前端显示将使用此URL'
+                               urlType.includes('Blob') ? '处理后的Blob URL' :
+                               urlType.includes('HTTP临时URL') ? 'AI返回的HTTP临时地址' : '未知来源'
                     });
                     console.log('[ImageEditView] ============================================');
 
                     setActiveImageUrl(lastMsg.attachments[0].url);
+                    // ✅ 同时保存完整的附件对象（包含元数据）
+                    setActiveCanvasAttachment(lastMsg.attachments[0]);
                     setLastProcessedMsgId(lastMsg.id);
                 } else if (lastMsg.isError) {
                     // Just mark processed so we don't check again
@@ -981,6 +1050,7 @@ export const ImageEditView = memo(({
                     onAttachmentsChange={handleAttachmentsChange}
                     activeImageUrl={activeImageUrl}
                     onActiveImageUrlChange={setActiveImageUrl}
+                    activeCanvasAttachment={activeCanvasAttachment}
                     messages={messages}
                     sessionId={currentSessionId}
                     initialPrompt={initialPrompt}
@@ -990,7 +1060,7 @@ export const ImageEditView = memo(({
                 />
             </div>
         </div>
-    ), [loadingState, isCompareMode, activeAttachments, activeImageUrl, originalImageUrl, canvas, handleFullscreen, handleExpand, toggleCompare, onExpandImage, handleSend, editMode, onStop, messages, currentSessionId, initialPrompt, initialAttachments, providerId, resetParams, carouselIndex, handleCarouselPrev, handleCarouselNext, handleCarouselSelect, getStableCanvasUrlFromAttachment]);
+    ), [loadingState, isCompareMode, activeAttachments, activeImageUrl, activeCanvasAttachment, originalImageUrl, canvas, handleFullscreen, handleExpand, toggleCompare, onExpandImage, handleSend, editMode, onStop, messages, currentSessionId, initialPrompt, initialAttachments, providerId, resetParams, carouselIndex, handleCarouselPrev, handleCarouselNext, handleCarouselSelect, getStableCanvasUrlFromAttachment, controls]);
 
     return (
         <GenViewLayout

@@ -338,7 +338,7 @@ class RedisQueueService:
                 message=f"enqueued to {queue_key} (priority={priority}, position={length})",
                 source="queue",
             )
-            logger.info(f"[RedisQueue] ✅ 入队: {task_id[:8]}..., 优先级: {priority}, 位置: {length}")
+            logger.info(f"[RedisQueue] ✅ 入队: {task_id}, 优先级: {priority}, 位置: {length}")
             return length
         except Exception as e:
             logger.error(f"[RedisQueue] ❌ 入队失败: {e}")
@@ -375,7 +375,7 @@ class RedisQueueService:
                 message=f"dequeued from {queue_name}",
                 source="queue",
             )
-            logger.debug(f"[RedisQueue] 出队: {task_id[:8]}... from {queue_name}")
+            logger.debug(f"[RedisQueue] 出队: {task_id} from {queue_name}")
             return task_id
 
         return None
@@ -384,7 +384,7 @@ class RedisQueueService:
         """移入死信队列"""
         await self._redis.lpush(self.DEAD_LETTER, task_id)
         await self._redis.hincrby(self.STATS_KEY, "total_dead", 1)
-        logger.warning(f"[RedisQueue] 移入死信: {task_id[:8]}...")
+        logger.warning(f"[RedisQueue] 移入死信: {task_id}")
 
     async def retry_from_dead_letter(self, task_id: str, priority: str = "low") -> bool:
         """从死信队列重试"""

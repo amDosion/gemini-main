@@ -1181,7 +1181,7 @@ class GoogleService(BaseProviderService):
                     raw = uc.vertex_ai_credentials_json
                     credentials_json = decrypt_data(raw) if is_encrypted(raw) else raw
                     from_db = True
-                    logger.info("[Google Service] Try-on using Vertex config from DB for user=%s...", (user_id or "")[:8])
+                    logger.info("[Google Service] Try-on using Vertex config from DB for user=%s", user_id or "")
             except Exception as e:
                 logger.warning("[Google Service] Vertex config from DB failed: %s", e)
 
@@ -1318,7 +1318,7 @@ class GoogleService(BaseProviderService):
                         "upload_status": processed["status"],
                         "task_id": processed["task_id"],
                         "mime_type": mime,
-                        "filename": f"tryon-{processed['attachment_id'][:8]}.png"
+                        "filename": f"tryon-{processed['attachment_id']}.png"
                     }]
                 }
             except Exception as e:

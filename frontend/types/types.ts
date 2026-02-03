@@ -66,6 +66,13 @@ export interface Attachment {
   uploadStatus?: 'pending' | 'uploading' | 'completed' | 'failed'; // 上传状态
   uploadTaskId?: string; // 后端上传任务 ID
   uploadError?: string; // 上传失败的错误信息
+  cloudUrl?: string; // 云存储 URL（如果已上传完成）
+  size?: number; // 文件大小（bytes）
+  // ✅ 后端返回的元数据
+  messageId?: string; // 消息 ID
+  sessionId?: string; // 会话 ID
+  userId?: string; // 用户 ID
+  createdAt?: number; // 创建时间戳
   // Google Files API 相关字段
   googleFileUri?: string; // Google Files API 返回的 file_uri（48小时有效）
   googleFileExpiry?: number; // Google 文件过期时间戳

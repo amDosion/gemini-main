@@ -468,7 +468,7 @@ async def _query_personas(user_id: str, db: Session) -> Dict[str, Any]:
         包含 personas 的字典
     """
     try:
-        logger.info(f"[InitService] 查询 Personas（用户: {user_id[:8]}...）...")
+        logger.info(f"[InitService] 查询 Personas（用户: {user_id}）...")
         
         # ✅ 只查询数据库，不执行初始化
         user_query = UserScopedQuery(db, user_id)
@@ -480,7 +480,7 @@ async def _query_personas(user_id: str, db: Session) -> Dict[str, Any]:
             return {"personas": personas_data, "error": None}
         else:
             # ✅ 如果用户没有 Personas，返回空数组（前端会处理）
-            logger.info(f"[InitService] 用户 {user_id[:8]}... 暂无 Personas（可能尚未注册或注册时初始化失败）")
+            logger.info(f"[InitService] 用户 {user_id} 暂无 Personas（可能尚未注册或注册时初始化失败）")
             return {"personas": [], "error": None}
     except Exception as e:
         logger.error(f"[InitService] Personas 加载失败: {e}", exc_info=True)
