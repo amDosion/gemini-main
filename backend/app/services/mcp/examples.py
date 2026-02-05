@@ -7,7 +7,7 @@ MCP 服务使用示例
 import asyncio
 from .types import MCPServerConfig, MCPServerType
 from .client import MCPClient
-from ..mcp_manager import MCPManager
+from .mcp_manager import MCPManager
 
 
 async def example_basic_usage():

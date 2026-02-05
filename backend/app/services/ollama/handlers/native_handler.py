@@ -8,7 +8,7 @@ import logging
 import httpx
 from cachetools import TTLCache
 
-from ...errors import (
+from ...common.errors import (
     OperationError,
     ErrorContext,
     ExecutionTimer

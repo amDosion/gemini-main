@@ -7,7 +7,6 @@ and retry mechanisms.
 """
 
 import mimetypes
-import magic
 import asyncio
 import random
 import time
@@ -17,6 +16,13 @@ import hashlib
 from typing import Optional, Any, Callable, TypeVar, Union, Dict, List
 from pathlib import Path
 import logging
+
+# Optional: python-magic for better MIME type detection
+try:
+    import magic
+    MAGIC_AVAILABLE = True
+except ImportError:
+    MAGIC_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -45,12 +51,13 @@ def detect_mime_type(file_path: Union[str, Path]) -> Optional[str]:
         return None
     
     # Try python-magic first (most accurate)
-    try:
-        mime_type = magic.from_file(str(file_path), mime=True)
-        if mime_type and mime_type != 'application/octet-stream':
-            return mime_type
-    except Exception as e:
-        logger.debug(f"python-magic detection failed: {e}")
+    if MAGIC_AVAILABLE:
+        try:
+            mime_type = magic.from_file(str(file_path), mime=True)
+            if mime_type and mime_type != 'application/octet-stream':
+                return mime_type
+        except Exception as e:
+            logger.debug(f"python-magic detection failed: {e}")
     
     # Fallback to mimetypes module
     mime_type, _ = mimetypes.guess_type(str(file_path))
