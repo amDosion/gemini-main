@@ -6,6 +6,7 @@ Image Edit Workflow - 图像编辑工作流
 - 使用 SequentialAgent 执行
 - 集成图像分析和编辑工具
 """
+from __future__ import annotations
 
 import logging
 from typing import Dict, Any, Optional, TYPE_CHECKING

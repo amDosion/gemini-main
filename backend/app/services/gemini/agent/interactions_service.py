@@ -12,6 +12,7 @@ Vertex AI Interactions Service - 企业级 Interactions 服务
 - 集成 Agent Engine 高级功能
 - 使用统一的客户端池管理
 """
+from __future__ import annotations
 
 import logging
 from typing import Dict, Any, Optional, List, Union, AsyncIterator
