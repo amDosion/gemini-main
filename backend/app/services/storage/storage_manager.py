@@ -137,8 +137,8 @@ class StorageManager:
                 provider=config_data['provider'],
                 enabled=config_data.get('enabled', True),
                 config=encrypted_config,
-                created_at=config_data.get('createdAt', int(datetime.now().timestamp() * 1000)),
-                updated_at=config_data.get('updatedAt', int(datetime.now().timestamp() * 1000))
+                created_at=config_data.get('created_at', int(datetime.now().timestamp() * 1000)),
+                updated_at=config_data.get('updated_at', int(datetime.now().timestamp() * 1000))
             )
             
             self.db.add(config)

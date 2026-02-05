@@ -160,6 +160,13 @@ export interface ImageOutpaintControlsProps {
   // 单独 props（向后兼容）
   showAdvanced?: boolean;
   setShowAdvanced?: (v: boolean) => void;
+  // Out-painting 专用参数
+  outPaintingMode?: 'scale' | 'offset';
+  setOutPaintingMode?: (v: 'scale' | 'offset') => void;
+  scaleFactor?: number;
+  setScaleFactor?: (v: number) => void;
+  offsetPixels?: OffsetPixels;
+  setOffsetPixels?: (v: React.SetStateAction<OffsetPixels>) => void;
 }
 
 export interface VideoGenControlsProps {

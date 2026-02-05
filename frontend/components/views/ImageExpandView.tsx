@@ -1,7 +1,7 @@
 
-import React, { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
-import { Expand, AlertCircle, Layers, User, Bot, SlidersHorizontal, RotateCcw } from 'lucide-react';
+import { Expand, AlertCircle, Layers, SlidersHorizontal, RotateCcw, Clock, ChevronLeft, ChevronRight, Grid, Image as ImageIcon } from 'lucide-react';
 import { useImageCanvas } from '../../hooks/useImageCanvas';
 import { ImageCanvasControls } from '../common/ImageCanvasControls';
 import { ImageCompare } from '../common/ImageCompare';
@@ -27,181 +27,7 @@ interface ImageExpandViewProps {
     sessionId?: string | null;  // ✅ 会话 ID，用于查询附件
 }
 
-// 优化：使用 React.memo 配合自定义比较函数，防止不必要的重新渲染
-// Optimization: Use React.memo with a custom comparison function to prevent unnecessary re-renders
-const arePropsEqual = (prevProps: ImageExpandViewProps, nextProps: ImageExpandViewProps) => {
-    // 仅比较 activeModelConfig 的 ID，避免因对象引用变化而重新渲染
-    // Only compare the ID of activeModelConfig to prevent re-renders due to object reference changes
-    if (prevProps.activeModelConfig?.id !== nextProps.activeModelConfig?.id) {
-        return false;
-    }
-
-    // 比较其他关键 props
-    // Compare other critical props
-    if (prevProps.loadingState !== nextProps.loadingState) return false;
-    if (prevProps.messages !== nextProps.messages) return false;
-    if (prevProps.sessionId !== nextProps.sessionId) return false;
-    if (prevProps.providerId !== nextProps.providerId) return false;
-
-    // 如果所有关键 props 都相等，则不重新渲染
-    // If all critical props are equal, do not re-render
-    return true;
-};
-
-type ImageExpandMainCanvasProps = {
-    loadingState: string;
-    isCompareMode: boolean;
-    activeAttachments: Attachment[];
-    activeImageUrl: string | null;
-    originalImageUrl: string | null;
-    zoom: number;
-    isDragging: boolean;
-    canvasStyle: React.CSSProperties;
-    onWheel: (e: React.WheelEvent) => void;
-    onMouseDown: (e: React.MouseEvent) => void;
-    onMouseMove: (e: React.MouseEvent) => void;
-    onMouseUp: () => void;
-    onZoomIn: (e?: React.MouseEvent) => void;
-    onZoomOut: (e?: React.MouseEvent) => void;
-    onReset: (e?: React.MouseEvent) => void;
-    onFullscreen?: () => void;
-    onToggleCompare?: () => void;
-};
-
-const ImageExpandMainCanvas = memo(({
-    loadingState,
-    isCompareMode,
-    activeAttachments,
-    activeImageUrl,
-    originalImageUrl,
-    zoom,
-    isDragging,
-    canvasStyle,
-    onWheel,
-    onMouseDown,
-    onMouseMove,
-    onMouseUp,
-    onZoomIn,
-    onZoomOut,
-    onReset,
-    onFullscreen,
-    onToggleCompare,
-}: ImageExpandMainCanvasProps) => {
-    const cursor =
-        isCompareMode ? 'default' : isDragging ? 'grabbing' : activeImageUrl ? 'grab' : 'default';
-
-    return (
-        // RIGHT MAIN: Result / Canvas
-        <div
-            className="flex-1 w-full h-full select-none flex flex-col relative"
-            onWheel={isCompareMode ? undefined : onWheel}
-            onMouseDown={isCompareMode ? undefined : onMouseDown}
-            onMouseMove={isCompareMode ? undefined : onMouseMove}
-            onMouseUp={isCompareMode ? undefined : onMouseUp}
-            onMouseLeave={isCompareMode ? undefined : onMouseUp}
-            style={{ cursor }}
-        >
-            {/* 棋盘格背景 */}
-            <div
-                className="absolute inset-0 opacity-20 pointer-events-none"
-                style={{
-                    backgroundImage: `
-                               linear-gradient(45deg, #334155 25%, transparent 25%), 
-                               linear-gradient(-45deg, #334155 25%, transparent 25%), 
-                               linear-gradient(45deg, transparent 75%, #334155 75%), 
-                               linear-gradient(-45deg, transparent 75%, #334155 75%)
-                           `,
-                    backgroundSize: '20px 20px',
-                    backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
-                }}
-            />
-
-            {/* Canvas Header */}
-            <div className="absolute top-4 left-4 z-10 pointer-events-none">
-                <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-4 py-1.5 text-xs font-medium text-slate-300 flex items-center gap-2 shadow-lg">
-                    <Expand size={12} className="text-orange-400" />
-                    {isCompareMode
-                        ? '对比模式'
-                        : activeAttachments.length > 0 && activeImageUrl === activeAttachments[0].url
-                            ? 'Source Preview'
-                            : 'Workspace'}
-                    <span className="opacity-50">|</span>
-                    <span className="font-mono text-[10px] opacity-70">{Math.round(zoom * 100)}%</span>
-                </div>
-            </div>
-
-            {/* Main Image Display */}
-            <div className="flex-1 flex items-center justify-center p-0 w-full h-full">
-                {loadingState !== 'idle' ? (
-                    <div className="flex flex-col items-center gap-4 pointer-events-none">
-                        <div className="relative">
-                            <div className="w-20 h-20 border-4 border-orange-500/30 border-t-orange-500 rounded-full animate-spin"></div>
-                        </div>
-                        <p className="text-slate-400 animate-pulse">Expanding Image...</p>
-                    </div>
-                ) : isCompareMode && originalImageUrl && activeImageUrl ? (
-                    // 对比模式
-                    <div className="relative shadow-2xl transition-transform duration-75 ease-out" style={canvasStyle}>
-                        <ImageCompare
-                            beforeImage={originalImageUrl}
-                            afterImage={activeImageUrl}
-                            beforeLabel="原图"
-                            afterLabel="扩图结果"
-                            accentColor="orange"
-                            className="max-w-none rounded-lg border border-slate-800"
-                            style={{ maxHeight: '80vh', maxWidth: '80vw' }}
-                        />
-                    </div>
-                ) : activeImageUrl ? (
-                    // 普通模式
-                    <div
-                        className="relative shadow-2xl group transition-transform duration-75 ease-out"
-                        style={canvasStyle}
-                    >
-                        <img
-                            src={activeImageUrl}
-                            className="max-w-none rounded-lg border border-slate-800 pointer-events-none"
-                            style={{ maxHeight: '80vh', maxWidth: '80vw' }}
-                            alt="Main Canvas"
-                        />
-                    </div>
-                ) : (
-                    <div className="text-center text-slate-600 pointer-events-none flex flex-col items-center gap-4 max-w-md">
-                        <Expand size={48} className="opacity-20" />
-                        <div>
-                            <h3 className="text-xl font-bold text-slate-500 mb-2">Out-Paint Workspace</h3>
-                            <p className="text-sm opacity-60">
-                                Attach an image below to start expanding. Select any image from the history to view it
-                                here.
-                            </p>
-                        </div>
-                    </div>
-                )}
-            </div>
-
-            {/* 浮动控制按钮 */}
-            {activeImageUrl && (
-                <div className="absolute bottom-6 right-6 z-20">
-                    <ImageCanvasControls
-                        zoom={zoom}
-                        onZoomIn={onZoomIn}
-                        onZoomOut={onZoomOut}
-                        onReset={onReset}
-                        onFullscreen={onFullscreen}
-                        downloadUrl={activeImageUrl}
-                        onToggleCompare={onToggleCompare}
-                        isCompareMode={isCompareMode}
-                        accentColor="orange"
-                    />
-                </div>
-            )}
-        </div>
-    );
-});
-
-ImageExpandMainCanvas.displayName = 'ImageExpandMainCanvas';
-
-export const ImageExpandView = memo(({
+export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
     messages,
     setAppMode,
     onImageClick,
@@ -221,6 +47,10 @@ export const ImageExpandView = memo(({
     // State for reference image, synced with InputArea
     const [activeAttachments, setActiveAttachments] = useState<Attachment[]>([]);
     const [activeImageUrl, setActiveImageUrl] = useState<string | null>(null);
+
+    // ✅ 新增：选中的消息批次 ID 和旋转木马索引
+    const [selectedMsgId, setSelectedMsgId] = useState<string | null>(null);
+    const [carouselIndex, setCarouselIndex] = useState(0);
 
     // Stable canvas URL (avoid relying on InputArea-managed Blob URLs that may be revoked)
     const canvasObjectUrlRef = useRef<string | null>(null);
@@ -255,6 +85,69 @@ export const ImageExpandView = memo(({
     // 对比模式状态
     const [isCompareMode, setIsCompareMode] = useState(false);
 
+    // ✅ 新增：按消息分组的历史批次（只包含有附件的模型响应）
+    const historyBatches = useMemo(() => {
+        return messages
+            .filter(m => m.role === Role.MODEL && ((m.attachments && m.attachments.length > 0) || m.isError))
+            .reverse();
+    }, [messages]);
+
+    // ✅ 新增：当前激活的批次消息
+    const activeBatchMessage = useMemo(() => {
+        if (selectedMsgId) {
+            return historyBatches.find(m => m.id === selectedMsgId);
+        }
+        return historyBatches[0];
+    }, [selectedMsgId, historyBatches]);
+
+    // ✅ 新增：当前批次的所有图片
+    const displayImages = useMemo(() => {
+        return (activeBatchMessage?.attachments || []).filter(att => att.url && att.url.length > 0);
+    }, [activeBatchMessage?.attachments]);
+
+    // ✅ 新增：批次切换时重置旋转木马索引
+    useEffect(() => {
+        setCarouselIndex(0);
+    }, [activeBatchMessage?.id]);
+
+    // ✅ 新增：确保 carouselIndex 不越界
+    useEffect(() => {
+        if (carouselIndex >= displayImages.length && displayImages.length > 0) {
+            setCarouselIndex(displayImages.length - 1);
+        }
+    }, [displayImages.length, carouselIndex]);
+
+    // ✅ 新增：键盘左右键切换图片
+    useEffect(() => {
+        if (displayImages.length <= 1) return;
+        
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+                return;
+            }
+            
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                setCarouselIndex((prev) => (prev - 1 + displayImages.length) % displayImages.length);
+                canvas.resetView();
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                setCarouselIndex((prev) => (prev + 1) % displayImages.length);
+                canvas.resetView();
+            }
+        };
+        
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [displayImages.length]);
+
+    // ✅ 新增：当新生成开始时，清除选中状态
+    useEffect(() => {
+        if (loadingState === 'loading') {
+            setSelectedMsgId(null);
+        }
+    }, [loadingState]);
+
     // ✅ 参数面板状态
     const expandMode: AppMode = 'image-outpainting';
     const controls = useControlsState(expandMode, activeModelConfig);
@@ -270,11 +163,14 @@ export const ImageExpandView = memo(({
     // Pan & Zoom Hook
     const canvas = useImageCanvas({ minZoom: 0.1, maxZoom: 5, zoomStep: 0.2 });
 
+    // ✅ 切换对比模式
+    const toggleCompare = useCallback(() => setIsCompareMode(prev => !prev), []);
+
     // 重置视图当图片改变时
     useEffect(() => {
         canvas.resetView();
         setIsCompareMode(false);
-    }, [activeImageUrl]);
+    }, [activeImageUrl, carouselIndex]);
 
     // Release any prior canvas object URL once we switch away from it (e.g. to a generated result)
     useEffect(() => {
@@ -349,95 +245,309 @@ export const ImageExpandView = memo(({
     const [isMobileHistoryOpen, setIsMobileHistoryOpen] = useState(false);
 
     // 使用 useMemo 缓存 sidebarContent，防止不必要的重新渲染
+    // ✅ 改为按批次分组显示历史记录
     const sidebarContent = useMemo(() => (
-        <div className="flex-1 p-4 space-y-6">
-                    {messages.map((msg) => {
-                        // Filter out empty placeholders
-                        const isPlaceholder = !msg.content && (!msg.attachments || msg.attachments.length === 0) && !msg.isError;
-                        if (isPlaceholder) return null;
+        <div className="p-3 space-y-3">
+            {historyBatches.map((msg) => {
+                const firstImage = msg.attachments?.[0]?.url;
+                const count = msg.attachments?.length || 0;
+                const isSelected = activeBatchMessage?.id === msg.id;
 
-                        return (
-                            <div key={msg.id} className={`flex flex-col gap-2 ${msg.role === Role.USER ? 'items-end' : 'items-start'}`}>
-                                <div className="flex items-center gap-2 text-xs text-slate-500 px-1">
-                                    {msg.role === Role.USER ? <User size={12} /> : <Bot size={12} />}
-                                    <span>{msg.role === Role.USER ? 'You' : 'AI Expander'}</span>
+                return (
+                    <div
+                        key={msg.id}
+                        className={`group relative rounded-xl overflow-hidden border cursor-pointer transition-all flex flex-col gap-2 bg-slate-800/40 p-2 ${
+                            isSelected ? 'ring-1 ring-orange-500 border-transparent bg-slate-800' : 'border-slate-700/50 hover:border-slate-600 hover:bg-slate-800'
+                        }`}
+                        onClick={() => {
+                            setSelectedMsgId(msg.id);
+                            if (window.innerWidth < 768) setIsMobileHistoryOpen(false);
+                        }}
+                    >
+                        <div className="aspect-square w-full rounded-lg overflow-hidden bg-slate-900 relative">
+                            {msg.isError ? (
+                                <div className="w-full h-full flex items-center justify-center text-red-400 bg-red-900/10">
+                                    <AlertCircle size={24} />
                                 </div>
-
-                                <div className={`p-3 rounded-2xl max-w-full text-sm shadow-sm ${msg.role === Role.USER
-                                    ? 'bg-slate-800 text-slate-200 rounded-tr-sm'
-                                    : 'bg-slate-800/50 text-slate-300 border border-slate-700/50 rounded-tl-sm'
-                                    }`}>
-                                    {msg.content && <p className="mb-2">{msg.content}</p>}
-                                    {msg.attachments?.map((att, idx) => {
-                                        // ✅ 优先使用 url（永久 URL），如果没有则使用 tempUrl（临时 URL）
-                                        const displayUrl = att.url || att.tempUrl || '';
-                                        // ✅ 如果没有有效的 URL，不渲染图片
-                                        if (!displayUrl) return null;
-                                        return (
-                                            <div
-                                                key={idx}
-                                                onClick={() => setActiveImageUrl(displayUrl || null)}
-                                                className={`relative group mt-1 rounded-lg overflow-hidden border cursor-pointer transition-all ${activeImageUrl === displayUrl ? 'ring-2 ring-orange-500 border-transparent' : 'border-slate-700 hover:border-slate-500'
-                                                    }`}
-                                            >
-                                                <img src={displayUrl} className="w-full h-32 object-cover bg-slate-900" alt="thumbnail" />
-                                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                                                    {activeImageUrl === displayUrl && <div className="bg-orange-500 w-2 h-2 rounded-full absolute top-2 right-2 shadow-sm" />}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                    {msg.isError && (
-                                        <div className="flex items-center gap-2 text-red-400 text-xs mt-1">
-                                            <AlertCircle size={12} /> Error expanding
+                            ) : firstImage ? (
+                                <>
+                                    <img src={firstImage} className="w-full h-full object-cover transition-transform group-hover:scale-105" loading="lazy" alt="Expanded image" />
+                                    {count > 1 && (
+                                        <div className="absolute top-1 right-1 bg-black/60 backdrop-blur-sm text-white text-[10px] px-1.5 py-0.5 rounded-md flex items-center gap-1 font-medium border border-white/10">
+                                            <Layers size={10} /> {count}
                                         </div>
                                     )}
+                                </>
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-slate-600">
+                                    <ImageIcon size={24} className="opacity-50" />
                                 </div>
-                            </div>
-                        );
-                    })}
-
-                    {loadingState !== 'idle' && (
-                        <div className="flex items-start gap-2 animate-pulse">
-                            <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center"><Bot size={16} className="text-slate-500" /></div>
-                            <div className="bg-slate-800/50 rounded-xl p-3 text-xs text-slate-400">
-                                Expanding image...
-                            </div>
+                            )}
                         </div>
-                    )}
-                    {/* Dummy div for scroll ref */}
-                    <div ref={scrollRef} />
-                </div>
-    ), [messages, loadingState, activeImageUrl, activeAttachments]);
+                        <div className="px-1">
+                            <p className="text-[11px] text-slate-300 leading-relaxed font-medium whitespace-pre-wrap break-words line-clamp-2">
+                                {msg.content || "扩图结果"}
+                            </p>
+                            <p className="text-[10px] text-slate-600 mt-1">
+                                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                        </div>
+                    </div>
+                );
+            })}
 
-    const toggleCompare = useCallback(() => setIsCompareMode(prev => !prev), []);
-    const handleFullscreen = useCallback(() => {
-        if (activeImageUrl) onImageClick(activeImageUrl);
-    }, [activeImageUrl, onImageClick]);
+            {historyBatches.length === 0 && (
+                <div className="text-center py-10 text-slate-600 text-xs italic">
+                    暂无扩图历史
+                </div>
+            )}
+        </div>
+    ), [historyBatches, activeBatchMessage?.id]);
+
+    // ✅ 新增：侧边栏头部额外内容（显示批次数量）
+    const sidebarExtraHeader = useMemo(() => (
+        <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-500">
+            {historyBatches.length}
+        </span>
+    ), [historyBatches.length]);
+
+    // ✅ 新增：当前显示的图片 URL（来自旋转木马）
+    const currentDisplayUrl = useMemo(() => {
+        if (displayImages.length > 0) {
+            return displayImages[carouselIndex]?.url || null;
+        }
+        return activeImageUrl;
+    }, [displayImages, carouselIndex, activeImageUrl]);
+
+    // ✅ 新增：判断当前批次是否有错误
+    const isBatchError = activeBatchMessage?.isError;
 
     // ✅ 主区域：两栏布局（画布 + 参数面板）
     const mainContent = useMemo(() => (
         <div className="flex-1 flex flex-row h-full">
-            {/* ========== 左侧：画布区域 ========== */}
-            <ImageExpandMainCanvas
-                loadingState={loadingState}
-                isCompareMode={isCompareMode}
-                activeAttachments={activeAttachments}
-                activeImageUrl={activeImageUrl}
-                originalImageUrl={originalImageUrl}
-                zoom={canvas.zoom}
-                isDragging={canvas.isDragging}
-                canvasStyle={canvas.canvasStyle}
-                onWheel={canvas.handleWheel}
-                onMouseDown={canvas.handleMouseDown}
-                onMouseMove={canvas.handleMouseMove}
-                onMouseUp={canvas.handleMouseUp}
-                onZoomIn={canvas.handleZoomIn}
-                onZoomOut={canvas.handleZoomOut}
-                onReset={canvas.handleReset}
-                onFullscreen={activeImageUrl ? handleFullscreen : undefined}
-                onToggleCompare={originalImageUrl ? toggleCompare : undefined}
-            />
+            {/* ========== 左侧：画布区域（带旋转木马） ========== */}
+            <div 
+                className="flex-1 w-full h-full select-none flex flex-col relative"
+                onWheel={isCompareMode ? undefined : canvas.handleWheel}
+            >
+                {/* 棋盘格背景 */}
+                <div
+                    className="absolute inset-0 opacity-20 pointer-events-none"
+                    style={{
+                        backgroundImage: `
+                            linear-gradient(45deg, #334155 25%, transparent 25%), 
+                            linear-gradient(-45deg, #334155 25%, transparent 25%), 
+                            linear-gradient(45deg, transparent 75%, #334155 75%), 
+                            linear-gradient(-45deg, transparent 75%, #334155 75%)
+                        `,
+                        backgroundSize: '20px 20px',
+                        backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
+                    }}
+                />
+
+                {/* 主图片显示区域 */}
+                {loadingState !== 'idle' ? (
+                    <div className="flex-1 flex items-center justify-center">
+                        <div className="flex flex-col items-center gap-6 p-8 rounded-3xl bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 shadow-2xl">
+                            <div className="relative">
+                                <div className="w-20 h-20 border-4 border-orange-500/30 border-t-orange-500 rounded-full animate-spin"></div>
+                                <div className="absolute inset-0 flex items-center justify-center text-xs font-mono text-orange-400 font-bold">EXP</div>
+                            </div>
+                            <div className="text-center space-y-2">
+                                <p className="text-slate-200 font-medium text-lg">扩图中...</p>
+                                <p className="text-slate-500 text-sm">这可能需要几秒钟</p>
+                            </div>
+                        </div>
+                    </div>
+                ) : isBatchError ? (
+                    <div className="flex-1 flex items-center justify-center">
+                        <div className="flex flex-col items-center gap-4 text-center p-8 bg-slate-900/50 rounded-2xl border border-red-900/30">
+                            <AlertCircle size={48} className="text-red-500 opacity-80" />
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-200">扩图失败</h3>
+                                <p className="text-sm text-red-400 mt-2 max-w-md">{activeBatchMessage?.content || "未知错误"}</p>
+                            </div>
+                        </div>
+                    </div>
+                ) : displayImages.length > 0 ? (
+                    <>
+                        {/* 旋转木马视图 */}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center overflow-hidden">
+                            {/* 主图展示区 - 支持拖拽 */}
+                            <div 
+                                className="flex-1 w-full flex items-center justify-center relative px-16 overflow-hidden"
+                                onMouseDown={isCompareMode ? undefined : canvas.handleMouseDown}
+                                onMouseMove={isCompareMode ? undefined : canvas.handleMouseMove}
+                                onMouseUp={isCompareMode ? undefined : canvas.handleMouseUp}
+                                onMouseLeave={isCompareMode ? undefined : canvas.handleMouseUp}
+                                style={{ cursor: isCompareMode ? 'default' : canvas.isDragging ? 'grabbing' : (canvas.zoom > 1 ? 'grab' : 'default') }}
+                            >
+                                {/* 左箭头 */}
+                                {displayImages.length > 1 && (
+                                    <button
+                                        onClick={() => { setCarouselIndex((prev) => (prev - 1 + displayImages.length) % displayImages.length); canvas.resetView(); }}
+                                        className="absolute left-4 z-10 p-3 rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur border border-white/10 transition-all hover:scale-110"
+                                        title="上一张"
+                                    >
+                                        <ChevronLeft size={24} />
+                                    </button>
+                                )}
+                                
+                                {/* 当前图片（支持对比模式） */}
+                                <div className="relative group max-w-full max-h-full flex items-center justify-center">
+                                    {isCompareMode && originalImageUrl && currentDisplayUrl ? (
+                                        <div className="relative shadow-2xl transition-transform duration-75 ease-out" style={canvas.canvasStyle}>
+                                            <ImageCompare
+                                                beforeImage={originalImageUrl}
+                                                afterImage={currentDisplayUrl}
+                                                beforeLabel="原图"
+                                                afterLabel="扩图结果"
+                                                accentColor="orange"
+                                                className="max-w-none rounded-lg border border-slate-800"
+                                                style={{ maxHeight: '70vh', maxWidth: '80vw' }}
+                                            />
+                                        </div>
+                                    ) : currentDisplayUrl ? (
+                                        <img
+                                            src={currentDisplayUrl}
+                                            className="block max-h-[70vh] max-w-full object-contain rounded-2xl shadow-2xl border border-slate-800/50 select-none"
+                                            style={canvas.canvasStyle}
+                                            onDoubleClick={() => onImageClick(currentDisplayUrl)}
+                                            alt={`扩图结果 ${carouselIndex + 1}`}
+                                            draggable={false}
+                                        />
+                                    ) : (
+                                        <div className="w-64 h-64 flex items-center justify-center text-slate-600 bg-slate-900 rounded-2xl">
+                                            <ImageIcon size={48} className="opacity-50" />
+                                        </div>
+                                    )}
+                                    {/* 悬浮操作按钮 */}
+                                    {currentDisplayUrl && (
+                                        <ImageCanvasControls
+                                            variant="canvas"
+                                            mode="image-outpainting"
+                                            modeAware={false}
+                                            className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                                            zoom={canvas.zoom}
+                                            onZoomIn={canvas.handleZoomIn}
+                                            onZoomOut={canvas.handleZoomOut}
+                                            onReset={canvas.handleReset}
+                                            onFullscreen={() => onImageClick(currentDisplayUrl)}
+                                            downloadUrl={currentDisplayUrl}
+                                            onToggleCompare={originalImageUrl ? toggleCompare : undefined}
+                                            isCompareMode={isCompareMode}
+                                            accentColor="orange"
+                                        />
+                                    )}
+                                </div>
+                                
+                                {/* 右箭头 */}
+                                {displayImages.length > 1 && (
+                                    <button
+                                        onClick={() => { setCarouselIndex((prev) => (prev + 1) % displayImages.length); canvas.resetView(); }}
+                                        className="absolute right-4 z-10 p-3 rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur border border-white/10 transition-all hover:scale-110"
+                                        title="下一张"
+                                    >
+                                        <ChevronRight size={24} />
+                                    </button>
+                                )}
+                                
+                                {/* 缩放提示 */}
+                                {canvas.zoom !== 1 && (
+                                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-slate-400 text-xs bg-black/60 px-3 py-1.5 rounded-full backdrop-blur pointer-events-none">
+                                        {Math.round(canvas.zoom * 100)}% · 拖拽移动 · 双击全屏
+                                    </div>
+                                )}
+                            </div>
+                            
+                            {/* 底部缩略图导航 */}
+                            {displayImages.length > 1 && (
+                                <div className="flex items-center gap-3 py-4 px-4">
+                                    {displayImages.map((att, idx) => (
+                                        <button
+                                            key={idx}
+                                            onClick={() => { setCarouselIndex(idx); canvas.resetView(); }}
+                                            className={`relative rounded-lg overflow-hidden transition-all duration-200 ${
+                                                idx === carouselIndex 
+                                                    ? 'ring-2 ring-orange-500 scale-110' 
+                                                    : 'opacity-60 hover:opacity-100 hover:scale-105'
+                                            }`}
+                                        >
+                                            {att.url ? (
+                                                <img
+                                                    src={att.url}
+                                                    className="w-16 h-16 object-cover"
+                                                    alt={`缩略图 ${idx + 1}`}
+                                                />
+                                            ) : (
+                                                <div className="w-16 h-16 bg-slate-800 flex items-center justify-center">
+                                                    <ImageIcon size={20} className="text-slate-600" />
+                                                </div>
+                                            )}
+                                            {idx === carouselIndex && (
+                                                <div className="absolute inset-0 bg-orange-500/20" />
+                                            )}
+                                        </button>
+                                    ))}
+                                    <span className="ml-2 text-sm text-slate-400 font-mono">
+                                        {carouselIndex + 1} / {displayImages.length}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    </>
+                ) : activeImageUrl ? (
+                    // 显示用户上传的原图（还没有生成结果时）
+                    <div className="flex-1 flex items-center justify-center p-0 w-full h-full">
+                        <div
+                            className="relative shadow-2xl group transition-transform duration-75 ease-out"
+                            style={canvas.canvasStyle}
+                            onMouseDown={canvas.handleMouseDown}
+                            onMouseMove={canvas.handleMouseMove}
+                            onMouseUp={canvas.handleMouseUp}
+                            onMouseLeave={canvas.handleMouseUp}
+                        >
+                            <img
+                                src={activeImageUrl}
+                                className="max-w-none rounded-lg border border-slate-800 pointer-events-none"
+                                style={{ maxHeight: '80vh', maxWidth: '80vw' }}
+                                alt="Source Preview"
+                            />
+                            <ImageCanvasControls
+                                variant="canvas"
+                                className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                                zoom={canvas.zoom}
+                                onZoomIn={canvas.handleZoomIn}
+                                onZoomOut={canvas.handleZoomOut}
+                                onReset={canvas.handleReset}
+                                onFullscreen={() => onImageClick(activeImageUrl)}
+                                downloadUrl={activeImageUrl}
+                                accentColor="orange"
+                            />
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex-1 flex items-center justify-center">
+                        <div className="text-center text-slate-600 pointer-events-none flex flex-col items-center gap-4 max-w-md">
+                            <Expand size={48} className="opacity-20" />
+                            <div>
+                                <h3 className="text-xl font-bold text-slate-500 mb-2">Out-Paint Workspace</h3>
+                                <p className="text-sm opacity-60">在右侧上传图片，设置参数后点击扩图</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* 批次信息提示 */}
+                {displayImages.length > 1 && (
+                    <div className="absolute top-4 left-4 z-10 animate-[fadeIn_0.3s_ease-out] pointer-events-none">
+                        <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-4 py-1.5 text-xs font-medium text-slate-300 flex items-center gap-2 shadow-xl">
+                            <Grid size={14} className="text-orange-400" />
+                            批次结果 ({displayImages.length})
+                        </div>
+                    </div>
+                )}
+            </div>
 
             {/* ========== 右侧：参数面板 ========== */}
             <div className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900/50 flex flex-col h-full overflow-hidden">
@@ -483,16 +593,17 @@ export const ImageExpandView = memo(({
                 />
             </div>
         </div>
-    ), [loadingState, isCompareMode, activeAttachments, activeImageUrl, originalImageUrl, canvas, handleFullscreen, toggleCompare, controls, providerId, resetParams, expandMode, activeModelConfig, onStop, messages, currentSessionId, initialAttachments, handleSend]);
+    ), [loadingState, isBatchError, displayImages, activeBatchMessage, currentDisplayUrl, activeImageUrl, originalImageUrl, isCompareMode, canvas, carouselIndex, onImageClick, toggleCompare, controls, providerId, resetParams, expandMode, onStop, messages, currentSessionId, initialAttachments, handleSend, activeAttachments]);
 
     return (
         <GenViewLayout
             isMobileHistoryOpen={isMobileHistoryOpen}
             setIsMobileHistoryOpen={setIsMobileHistoryOpen}
             sidebarTitle="History"
-            sidebarHeaderIcon={<Layers size={14} />}
+            sidebarHeaderIcon={<Clock size={14} />}
+            sidebarExtraHeader={sidebarExtraHeader}
             sidebar={sidebarContent}
             main={mainContent}
         />
     );
-}, arePropsEqual);
+};

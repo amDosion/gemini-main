@@ -148,7 +148,9 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
       enableSearch: false,
       enableThinking: false,
       enableCodeExecution: false,
-      pdfTemplate: selectedTemplate,
+      imageAspectRatio: '1:1',
+      imageResolution: '1024x1024',
+      pdfExtractTemplate: selectedTemplate,
     };
     
     onSend(prompt, options, activeAttachments, 'pdf-extract');

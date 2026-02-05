@@ -82,20 +82,25 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
         setPreviewError(null);
         setPreviewModels([]);
 
-        // ✅ 移除对 savedModels 的检查，总是重新获取最新的模型列表
-        // 因为后端现在存储的 savedModels 是字符串数组（仅模型 ID）
-        // 前端需要完整的 ModelConfig 对象来显示
-
         // Fetch live models
         setIsPreviewLoading(true);
         try {
-            const providerInstance = LLMFactory.getProvider(profile.protocol as ApiProtocol, profile.providerId);
-            // ✅ 使用数据库中存储的完整 baseUrl
-            // 数据库中已经保存了正确的 URL（无论是默认 URL 还是自定义 URL）
-            const models = await providerInstance.getAvailableModels(
-                profile.apiKey,
-                profile.baseUrl
-            );
+            // ✅ 使用后端 API 获取模型列表
+            // 后端会自动从数据库读取并解密 API key
+            // 这样前端不需要处理加密的 API key
+            const response = await fetch(`/api/models/${profile.providerId}?use_cache=false`, {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                }
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || `Failed to get models: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            const models = data.models || [];
 
             if (models.length > 0) {
                 setPreviewModels(models);
@@ -145,31 +150,33 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
                             </div>
                         </div>
                     ) : (
-                        <div className="space-y-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                             {previewModels.map(m => {
                                 const isHidden = previewProfile.hiddenModels.includes(m.id);
                                 return (
-                                    <div key={m.id} className={`p-3 rounded-xl border flex justify-between items-center ${isHidden
+                                    <div key={m.id} className={`p-3 rounded-xl border flex flex-col ${isHidden
                                         ? 'bg-slate-900/30 border-slate-800 opacity-60'
                                         : 'bg-slate-900 border-slate-700'
                                         }`}>
-                                        <div className="flex items-center gap-3">
-                                            <div className={`p-2 rounded-lg ${isHidden ? 'bg-slate-800 text-slate-600' : 'bg-indigo-500/10 text-indigo-400'}`}>
+                                        <div className="flex items-start gap-3 mb-2">
+                                            <div className={`p-2 rounded-lg shrink-0 ${isHidden ? 'bg-slate-800 text-slate-600' : 'bg-indigo-500/10 text-indigo-400'}`}>
                                                 {m.capabilities.vision ? <Eye size={16} /> : <Box size={16} />}
                                             </div>
-                                            <div>
-                                                <div className="text-sm font-medium text-slate-200">{m.name}</div>
-                                                <div className="text-xs text-slate-500 font-mono">{m.id}</div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-sm font-medium text-slate-200 break-words">{m.name}</div>
+                                                <div className="text-xs text-slate-500 font-mono break-all">{m.id}</div>
                                             </div>
                                         </div>
                                         {isHidden && (
-                                            <span className="text-[10px] bg-slate-800 px-2 py-1 rounded text-slate-500 font-medium">Hidden</span>
+                                            <div className="mt-auto pt-2 border-t border-slate-800">
+                                                <span className="text-[10px] bg-slate-800 px-2 py-1 rounded text-slate-500 font-medium">Hidden</span>
+                                            </div>
                                         )}
                                     </div>
                                 );
                             })}
                             {previewModels.length === 0 && !isPreviewLoading && (
-                                <div className="text-center py-8 text-slate-500">No models returned by the API.</div>
+                                <div className="col-span-full text-center py-8 text-slate-500">No models returned by the API.</div>
                             )}
                         </div>
                     )}

@@ -90,6 +90,11 @@ export interface GradientLayer extends BaseLayer {
   type: 'gradient';
   angle: number;
   stops: [number, string][]; // [[position, color], ...]
+  // 可选的 gradient 对象（用于更复杂的渐变配置）
+  gradient?: {
+    type: 'linear' | 'radial';
+    stops: GradientStop[];
+  };
 }
 
 export type Layer = RasterLayer | TextLayer | ShapeLayer | GradientLayer;

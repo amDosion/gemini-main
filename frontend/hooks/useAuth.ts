@@ -10,6 +10,7 @@ export interface UseAuthReturn {
   isLoading: boolean;
   error: string | null;
   allowRegistration: boolean;
+  hasActiveProfile: boolean | null;  // ✅ 新增：是否有活跃的配置文件
   register: (data: RegisterData) => Promise<void>;
   login: (data: LoginData) => Promise<void>;
   logout: () => Promise<void>;
@@ -22,6 +23,7 @@ export function useAuth(): UseAuthReturn {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [allowRegistration, setAllowRegistration] = useState(false);
+  const [hasActiveProfile, setHasActiveProfile] = useState<boolean | null>(null);  // ✅ 新增状态
 
   // 初始化：尝试刷新 token 而不是直接清除
   useEffect(() => {
@@ -30,7 +32,13 @@ export function useAuth(): UseAuthReturn {
       try {
         const token = localStorage.getItem('access_token');
         const refreshToken = localStorage.getItem('refresh_token');
-        
+
+        // ✅ 先从 localStorage 读取缓存的配置状态（立即可用）
+        const cachedStatus = localStorage.getItem('has_active_profile');
+        if (cachedStatus !== null) {
+          setHasActiveProfile(cachedStatus === 'true');
+        }
+
         if (token) {
           try {
             // 尝试获取用户信息
@@ -40,6 +48,11 @@ export function useAuth(): UseAuthReturn {
             ]);
             setUser(currentUser);
             setAllowRegistration(config.allowRegistration);
+
+            // ✅ 更新配置状态（从用户信息中获取）
+            if (currentUser?.hasActiveProfile !== undefined) {
+              setHasActiveProfile(currentUser.hasActiveProfile);
+            }
           } catch {
             // ✅ 新增：如果有 refresh_token，尝试刷新
             if (refreshToken) {
@@ -53,17 +66,24 @@ export function useAuth(): UseAuthReturn {
                   ]);
                   setUser(currentUser);
                   setAllowRegistration(config.allowRegistration);
+
+                  // ✅ 更新配置状态
+                  if (currentUser?.hasActiveProfile !== undefined) {
+                    setHasActiveProfile(currentUser.hasActiveProfile);
+                  }
                   return; // 成功，退出
                 }
               } catch {
                 // Refresh failed
               }
             }
-            
+
             // 刷新失败或没有 refresh_token，清除所有 tokens
             localStorage.removeItem('access_token');
             localStorage.removeItem('refresh_token');
+            localStorage.removeItem('has_active_profile');  // ✅ 同时清除配置状态
             setUser(null);
+            setHasActiveProfile(null);
             const config = await authService.getConfig().catch(() => ({ allowRegistration: false }));
             setAllowRegistration(config.allowRegistration);
           }
@@ -72,9 +92,11 @@ export function useAuth(): UseAuthReturn {
           const config = await authService.getConfig().catch(() => ({ allowRegistration: false }));
           setAllowRegistration(config.allowRegistration);
           setUser(null);
+          setHasActiveProfile(null);
         }
       } catch {
         setUser(null);
+        setHasActiveProfile(null);
       } finally {
         setIsLoading(false);
       }
@@ -118,6 +140,12 @@ export function useAuth(): UseAuthReturn {
     try {
       const newUser = await authService.register(data);
       setUser(newUser);
+
+      // ✅ 更新配置状态（注册后通常没有配置）
+      const cachedStatus = localStorage.getItem('has_active_profile');
+      if (cachedStatus !== null) {
+        setHasActiveProfile(cachedStatus === 'true');
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Registration failed';
       setError(message);
@@ -135,6 +163,11 @@ export function useAuth(): UseAuthReturn {
       const result = await authService.login(data);
       // ✅ 登录成功，设置用户信息（token 已自动存储到 localStorage）
       setUser(result.user);
+
+      // ✅ 设置配置状态（优化：减少前端初始化请求）
+      if (result.hasActiveProfile !== undefined) {
+        setHasActiveProfile(result.hasActiveProfile);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Login failed';
       setError(message);
@@ -152,11 +185,15 @@ export function useAuth(): UseAuthReturn {
       await authService.logout();
       // ✅ token 已在 authService.logout() 中清除
       setUser(null);
+      setHasActiveProfile(null);  // ✅ 清除配置状态
+      localStorage.removeItem('has_active_profile');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Logout failed';
       setError(message);
       // 即使出错也清除用户状态
       setUser(null);
+      setHasActiveProfile(null);
+      localStorage.removeItem('has_active_profile');
     } finally {
       setIsLoading(false);
     }
@@ -167,6 +204,11 @@ export function useAuth(): UseAuthReturn {
     try {
       const currentUser = await authService.getCurrentUser();
       setUser(currentUser);
+
+      // ✅ 更新配置状态
+      if (currentUser?.hasActiveProfile !== undefined) {
+        setHasActiveProfile(currentUser.hasActiveProfile);
+      }
     } catch {
       // Failed to refresh user
     }
@@ -183,6 +225,7 @@ export function useAuth(): UseAuthReturn {
     isLoading,
     error,
     allowRegistration,
+    hasActiveProfile,  // ✅ 新增：返回配置状态
     register,
     login,
     logout,

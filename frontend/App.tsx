@@ -4,6 +4,7 @@ import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-
 
 import { AppMode, Attachment, Role } from './types/types';
 import { llmService } from './services/llmService';
+import { ConfigProfile } from './services/db';  // ✅ 新增：ConfigProfile 类型
 
 // Cleaner Imports via Barrel Files
 import {
@@ -54,14 +55,20 @@ const AppContent: React.FC = () => {
     isAuthenticated,
     isLoading: isAuthLoading,
     allowRegistration,
+    hasActiveProfile,  // ✅ 新增：配置状态
     login,
     register,
     error: authError,
-    logout
+    logout,
+    refreshUser  // ✅ 新增：刷新用户信息（用于更新 hasActiveProfile）
   } = useAuth();
 
+  // ✅ 条件加载：只要已认证就加载初始化数据（包括 storageConfigs、personas 等）
+  // 修复：即使用户未配置 AI provider，也应该能看到和管理 storage 配置
+  const shouldLoadInitData = isAuthenticated;
+
   // --- 统一初始化数据 ---
-  const { initData, isLoading: isInitLoading, error: initError, isConfigReady, retry } = useInitData(isAuthenticated);
+  const { initData, isLoading: isInitLoading, error: initError, isConfigReady, retry } = useInitData(shouldLoadInitData);
 
 
   // --- UI State ---
@@ -78,7 +85,10 @@ const AppContent: React.FC = () => {
   // --- Domain Hooks ---
   const {
     config, isSettingsOpen, setIsSettingsOpen,
-    profiles, activeProfileId, activeProfile: activeProfileFromSettings, saveProfile, deleteProfile, activateProfile,
+    profiles, activeProfileId, activeProfile: activeProfileFromSettings,
+    saveProfile: originalSaveProfile,
+    deleteProfile,
+    activateProfile: originalActivateProfile,
     hiddenModelIds
   } = useSettings(initData ? {
     profiles: initData.profiles || [],  // ✅ 确保不为 undefined
@@ -86,6 +96,22 @@ const AppContent: React.FC = () => {
     activeProfile: initData.activeProfile || null,  // ✅ 确保不为 undefined
     dashscopeKey: initData.dashscopeKey || ''  // ✅ 确保不为 undefined
   } : undefined);
+
+  // ✅ 包装 saveProfile：保存后刷新用户信息，更新 hasActiveProfile
+  const saveProfile = useCallback(async (profile: ConfigProfile, autoActivate: boolean = false) => {
+    await originalSaveProfile(profile, autoActivate);
+    // 刷新用户信息，更新 hasActiveProfile 状态
+    if (autoActivate) {
+      await refreshUser();
+    }
+  }, [originalSaveProfile, refreshUser]);
+
+  // ✅ 包装 activateProfile：激活后刷新用户信息，更新 hasActiveProfile
+  const activateProfile = useCallback(async (id: string) => {
+    await originalActivateProfile(id);
+    // 刷新用户信息，更新 hasActiveProfile 状态
+    await refreshUser();
+  }, [originalActivateProfile, refreshUser]);
 
 
   const {
@@ -276,8 +302,11 @@ const AppContent: React.FC = () => {
 
     const optionsWithPersona = { ...options, persona: activePersona };
     const selectedModel = visibleModels.find(m => m.id === currentModelId);
-    const modelForSend = mode === 'pdf-extract' ? selectedModel : activeModelConfig;
-    
+
+    // ✅ 修复：所有模式都应该使用用户选择的模型，而不仅仅是 pdf-extract
+    // 优先使用 selectedModel（用户在 Header 中选择的），如果找不到才使用 activeModelConfig
+    const modelForSend = selectedModel || activeModelConfig;
+
     // For PDF extraction, enforce using the user-selected model only (no fallback).
     if (mode === 'pdf-extract' && !selectedModel) {
       showError('当前选择的模型不可用，请在模型列表中重新选择后再进行 PDF 提取。');
@@ -448,22 +477,8 @@ const AppContent: React.FC = () => {
     }
   };
 
-  // --- Early Return for Auth Check ---
-  if (isAuthLoading) {
-    return <LoadingSpinner message="正在验证身份..." showMessage={false} />;
-  }
-
-  // --- Early Return for Init Loading ---
-  if (isInitLoading) {
-    return <LoadingSpinner message="正在加载配置..." />;
-  }
-
-  // --- Early Return for Init Error ---
-  if (initError) {
-    return <ErrorView error={initError} onRetry={retry} />;
-  }
-
   // --- 准备 SettingsModal（需要在所有地方都能访问） ---
+  // ✅ 必须在 Early Return 之前定义，否则会报错 "Cannot access before initialization"
   const settingsModal = isSettingsOpen && (
     <SettingsModal
       isOpen={isSettingsOpen}
@@ -487,13 +502,16 @@ const AppContent: React.FC = () => {
     />
   );
 
-  // --- Early Return for Unconfigured State ---
-  // 新用户没有配置时，显示欢迎界面
-  // 点击"打开设置"时，直接进入编辑器标签页创建第一个配置
-  // ✅ 使用 activeProfileFromSettings 而不是 initData?.activeProfile
-  // 因为 saveProfile 会更新 useSettings 的状态，但不会自动更新 initData
-  // ✅ 同时渲染 SettingsModal，确保点击"打开设置"时能正常显示
-  if (isConfigReady && !activeProfileFromSettings) {
+  // ✅ 优化：统一加载状态（合并认证和初始化加载）
+  const isAppLoading = isAuthLoading || (isAuthenticated && hasActiveProfile === true && isInitLoading);
+
+  // --- Early Return for Loading ---
+  if (isAppLoading) {
+    return <LoadingSpinner message="正在登录..." showMessage={false} />;
+  }
+
+  // ✅ 优化：已认证但没有配置 → 直接显示欢迎屏（跳过初始化数据加载）
+  if (isAuthenticated && hasActiveProfile === false) {
     return (
       <>
         <WelcomeScreen onOpenSettings={() => handleOpenSettings('editor')} />
@@ -501,6 +519,14 @@ const AppContent: React.FC = () => {
       </>
     );
   }
+
+  // --- Early Return for Init Error ---
+  if (initError) {
+    return <ErrorView error={initError} onRetry={retry} />;
+  }
+
+  // ✅ 原有的 WelcomeScreen 逻辑已移至上方（优化后无需此检查）
+  // 因为现在在认证阶段就知道是否有配置，不需要等待 initData 加载
 
   // --- 主应用内容 ---
   const mainAppElement = (

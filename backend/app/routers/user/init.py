@@ -35,18 +35,19 @@ async def get_critical_init_data(
     
     try:
         profiles_result = await _query_profiles(user_id, db)
-        
-        # ✅ 从 activeProfile 中提取 cachedModels（savedModels）
+
+        # ✅ 从 active_profile 中提取 cachedModels（saved_models）
+        # 注意：此时数据还是 snake_case，还没有经过 Middleware 转换
         cached_models = None
-        if profiles_result.get("activeProfile") and profiles_result["activeProfile"].get("savedModels"):
-            cached_models = profiles_result["activeProfile"]["savedModels"]
-        
+        if profiles_result.get("active_profile") and profiles_result["active_profile"].get("saved_models"):
+            cached_models = profiles_result["active_profile"]["saved_models"]
+
         return {
             "profiles": profiles_result.get("profiles", []),
-            "activeProfileId": profiles_result.get("activeProfileId"),
-            "activeProfile": profiles_result.get("activeProfile"),
-            "cachedModels": cached_models,
-            "dashscopeKey": profiles_result.get("dashscopeKey", "")
+            "active_profile_id": profiles_result.get("active_profile_id"),
+            "active_profile": profiles_result.get("active_profile"),
+            "cached_models": cached_models,
+            "dashscope_key": profiles_result.get("dashscope_key", "")
         }
     except Exception as e:
         logger.error(f"Failed to load critical initialization data for user {user_id}: {e}", exc_info=True)
@@ -129,8 +130,8 @@ async def get_non_critical_init_data(
             "sessionsTotal": sessions_result.get("total", 0) if isinstance(sessions_result, dict) else 0,
             "sessionsHasMore": sessions_result.get("hasMore", False) if isinstance(sessions_result, dict) else False,
             "personas": personas_result.get("personas", []) if isinstance(personas_result, dict) else [],
-            "storageConfigs": storage_result.get("storageConfigs", []) if isinstance(storage_result, dict) else [],
-            "activeStorageId": storage_result.get("activeStorageId") if isinstance(storage_result, dict) else None,
+            "storageConfigs": storage_result.get("storage_configs", []) if isinstance(storage_result, dict) else [],
+            "activeStorageId": storage_result.get("active_storage_id") if isinstance(storage_result, dict) else None,
             "imagenConfig": vertex_ai_result.get("imagenConfig") if isinstance(vertex_ai_result, dict) else None
         }
     except Exception as e:

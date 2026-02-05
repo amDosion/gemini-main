@@ -1,11 +1,13 @@
 
 export { AppLayout } from './layout/AppLayout';
 export { ChatView } from './views/ChatView';
-export { AgentView } from './views/AgentView';
-export { MultiAgentView } from './views/MultiAgentView';
+// ✅ AgentView、MultiAgentView、StudioView、LiveAPIView 使用懒加载
+// 不在此处导出，避免与 App.tsx 中的动态导入冲突
+// export { AgentView } from './views/AgentView';
+// export { MultiAgentView } from './views/MultiAgentView';
+// export { StudioView } from './views/StudioView';
+// export { LiveAPIView } from './live/LiveAPIView';
 export { MultiAgentWorkflowEditorReactFlow as MultiAgentWorkflowEditor } from './multiagent';
-export { LiveAPIView } from './live/LiveAPIView';
-export { StudioView } from './views/StudioView';
 export { SettingsModal } from './modals/SettingsModal';
 export { default as ImageModal } from './modals/ImageModal';
 export { default as PersonaModal } from './modals/PersonaModal';

@@ -168,14 +168,26 @@ async def register(
         except Exception as e:
             # Personas 初始化失败不应该阻止注册，只记录警告
             logger.warning(f"Failed to initialize default personas for new user {result.user.id}: {e}")
-        
+
+        # ✅ 检查用户是否有活跃的配置文件（新用户通常为 false）
+        from ...models.db_models import UserSettings
+        user_settings = db.query(UserSettings).filter(
+            UserSettings.user_id == result.user.id
+        ).first()
+
+        has_active_profile = (
+            user_settings is not None and
+            user_settings.active_profile_id is not None
+        )
+
         # ✅ 返回用户信息和 token，前端存储在 localStorage
         return {
             "user": result.user.dict(),
             "access_token": result.tokens.access_token,
             "refresh_token": result.tokens.refresh_token,
             "token_type": result.tokens.token_type,
-            "expires_in": result.tokens.expires_in
+            "expires_in": result.tokens.expires_in,
+            "has_active_profile": has_active_profile  # ✅ 新增：配置状态
         }
     except RegistrationDisabledError:
         raise HTTPException(status_code=403, detail="Registration is disabled")
@@ -200,7 +212,18 @@ async def login(
         user_agent = request.headers.get("User-Agent")
         
         result = auth_service.login(data, ip_address=ip_address, user_agent=user_agent)
-        
+
+        # ✅ 检查用户是否有活跃的配置文件（优化：减少前端初始化请求）
+        from ...models.db_models import UserSettings
+        user_settings = db.query(UserSettings).filter(
+            UserSettings.user_id == result.user.id
+        ).first()
+
+        has_active_profile = (
+            user_settings is not None and
+            user_settings.active_profile_id is not None
+        )
+
         # ✅ 设置 Cookie（用于 EventSource 等无法发送自定义 headers 的场景）
         # 注意：生产环境应设置 Secure=True, HttpOnly=True
         response.set_cookie(
@@ -211,14 +234,15 @@ async def login(
             samesite="lax",  # 防止 CSRF
             secure=False  # 开发环境设为 False，生产环境应设为 True（HTTPS）
         )
-        
+
         # ✅ 返回用户信息和 token，前端存储在 localStorage
         return {
             "user": result.user.dict(),
             "access_token": result.tokens.access_token,
             "refresh_token": result.tokens.refresh_token,
             "token_type": result.tokens.token_type,
-            "expires_in": result.tokens.expires_in
+            "expires_in": result.tokens.expires_in,
+            "has_active_profile": has_active_profile  # ✅ 新增：配置状态
         }
     except InvalidCredentialsError:
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -330,19 +354,31 @@ async def refresh_token(
                 db.commit()
             except Exception as e:
                 logger.warning(f"[Auth] 记录 token 刷新历史失败: {e}")
-        
+
+        # ✅ 检查用户是否有活跃的配置文件
+        from ...models.db_models import UserSettings
+        user_settings = db.query(UserSettings).filter(
+            UserSettings.user_id == user.id
+        ).first()
+
+        has_active_profile = (
+            user_settings is not None and
+            user_settings.active_profile_id is not None
+        )
+
         # ✅ 返回新的 access_token 和 refresh_token
         return {
             "access_token": tokens.access_token,
             "refresh_token": tokens.refresh_token,  # ✅ 新增：返回新的 refresh_token
             "token_type": tokens.token_type,
-            "expires_in": tokens.expires_in
+            "expires_in": tokens.expires_in,
+            "has_active_profile": has_active_profile  # ✅ 新增：配置状态
         }
     except (InvalidTokenError, TokenExpiredError):
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me")
 async def get_current_user(
     request: Request,
     db: Session = Depends(get_db)
@@ -362,7 +398,24 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     try:
-        return auth_service.get_current_user(access_token)
+        user_response = auth_service.get_current_user(access_token)
+
+        # ✅ 检查用户是否有活跃的配置文件
+        from ...models.db_models import UserSettings
+        user_settings = db.query(UserSettings).filter(
+            UserSettings.user_id == user_response.id
+        ).first()
+
+        has_active_profile = (
+            user_settings is not None and
+            user_settings.active_profile_id is not None
+        )
+
+        # ✅ 返回用户信息 + 配置状态
+        return {
+            **user_response.dict(),
+            "has_active_profile": has_active_profile  # ✅ 新增：配置状态
+        }
     except (InvalidTokenError, TokenExpiredError):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     except Exception as e:

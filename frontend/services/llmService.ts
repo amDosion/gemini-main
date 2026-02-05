@@ -395,18 +395,40 @@ export class LLMService {
   public async outPaintImage(
     referenceImage: Attachment,
     options?: Partial<ChatOptions>
-  ): Promise<ImageGenerationResult> {
+  ): Promise<ImageGenerationResult[]> {  // ✅ 修复：返回数组而不是单个结果
       // ✅ 与 ImageGenHandler 保持一致：合并 options，确保传递 sessionId 和 messageId
       const mergedOptions = {
         ...this._cachedOptions,
         ...options,  // ✅ Handler 传入的 options 优先（包含 sessionId、messageId）
       };
 
+      // ✅ 根据 outpaintMode 选择正确的模型
+      // - upscale 模式：必须使用 imagen-4.0-upscale-preview
+      // - ratio/scale/offset 模式：使用 imagen-3.0-capability-001 或 imagen-4.0-ingredients-preview
+      const outpaintMode = (mergedOptions as any).outpaintMode || 'ratio';
+      let selectedModelId = mergedOptions.modelId;
+      
+      if (outpaintMode === 'upscale') {
+          // ✅ upscale 模式必须使用放大专用模型
+          if (!selectedModelId || !selectedModelId.toLowerCase().includes('upscale')) {
+              selectedModelId = 'imagen-4.0-upscale-preview';
+              console.log('[outPaintImage] ✅ upscale 模式：自动切换到放大模型', selectedModelId);
+          }
+      } else {
+          // ✅ ratio/scale/offset 模式使用编辑模型
+          if (!selectedModelId || selectedModelId.toLowerCase().includes('upscale')) {
+              selectedModelId = 'imagen-3.0-capability-001';
+              console.log('[outPaintImage] ✅ 扩图模式：自动切换到编辑模型', selectedModelId);
+          }
+      }
+
       // ✅ 详细日志：记录 image-outpainting 模式下传递的参数
       console.log('========== [llmService.outPaintImage] 参数传递 ==========');
       console.log('[outPaintImage] Provider:', this.providerId);
       console.log('[outPaintImage] sessionId:', mergedOptions.sessionId || mergedOptions.frontendSessionId || 'N/A');
       console.log('[outPaintImage] messageId:', (mergedOptions as any).messageId || 'N/A');
+      console.log('[outPaintImage] outpaintMode:', outpaintMode);
+      console.log('[outPaintImage] selectedModelId:', selectedModelId);
       console.log('[outPaintImage] outPainting options:', mergedOptions.outPainting);
       console.log('========== [llmService.outPaintImage] 参数传递结束 ==========');
 
@@ -418,19 +440,20 @@ export class LLMService {
 
           const result = await unifiedProvider.executeMode(
               'image-outpainting',
-              mergedOptions.modelId || 'imagen-3.0-capability-001',
+              selectedModelId,  // ✅ 使用根据 outpaintMode 选择的模型
               prompt,
               [referenceImage],
               mergedOptions,  // ✅ 使用合并后的 options（包含 sessionId、message_id、outPainting）
               {}
           );
-          return Array.isArray(result) ? result[0] : result;
+          return Array.isArray(result) ? result : [result];  // ✅ 修复：返回数组
       }
 
       // 回退到旧方法（仅用于兼容性，应该尽快迁移）
       // For other providers, use existing logic
       if (this.currentProvider.outPaintImage) {
-          return this.currentProvider.outPaintImage(referenceImage, mergedOptions, this.apiKey, this.baseUrl);
+          const result = await this.currentProvider.outPaintImage(referenceImage, mergedOptions, this.apiKey, this.baseUrl);
+          return Array.isArray(result) ? result : [result];  // ✅ 确保返回数组
       }
 
       // Fallback: If current provider doesn't support outpainting,
@@ -448,7 +471,8 @@ export class LLMService {
                // We avoid defaulting to the absolute 'https://dashscope...' URL here because it breaks CORS in browsers.
                const dsUrl = tongyiProfile?.baseUrl;
 
-               return tongyiProvider.outPaintImage(referenceImage, mergedOptions, dashscopeKey, dsUrl);
+               const result = await tongyiProvider.outPaintImage(referenceImage, mergedOptions, dashscopeKey, dsUrl);
+               return Array.isArray(result) ? result : [result];  // ✅ 确保返回数组
            }
       }
       throw new Error("Out-Painting not supported by current provider.");

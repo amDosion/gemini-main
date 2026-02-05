@@ -148,13 +148,13 @@ export interface ChatOptions {
   enableSearch: boolean;
   enableThinking: boolean;
   enableCodeExecution: boolean;
+  imageAspectRatio: string;
+  imageResolution: string;
   enableGrounding?: boolean; // Added for Google Grounding
   enableUrlContext?: boolean; // Added URL Context option
   enableBrowser?: boolean; // Added Browser Tool option
   enableResearch?: boolean; // Added Research option (basic research in Chat mode)
   googleCacheMode?: 'none' | 'exact' | 'semantic'; // Added Google Cache Mode
-  imageAspectRatio: string;
-  imageResolution: string;
   numberOfImages?: number; // Added for Imagen
   imageStyle?: string;
   voiceName?: string;

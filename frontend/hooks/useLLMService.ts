@@ -2,7 +2,7 @@
 import { useEffect } from 'react';
 import { llmService } from '../services/llmService';
 import { ApiProtocol } from '../types/types';
-import { ConfigProfile } from '../types/types';
+import { ConfigProfile } from '../services/db';
 
 interface InitData {
   activeProfile?: ConfigProfile | null;
@@ -22,7 +22,7 @@ export const useLLMService = (
       llmService.setConfig(
         initData.activeProfile.apiKey,
         initData.activeProfile.baseUrl,
-        initData.activeProfile.protocol,
+        initData.activeProfile.protocol as ApiProtocol,
         initData.activeProfile.providerId
       );
     } else if (initData && !initData.activeProfile) {

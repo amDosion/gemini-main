@@ -159,7 +159,29 @@ def filter_models_by_mode(models: List[ModelConfig], mode: str) -> List[ModelCon
             # 产品重构模式
             should_include = _matches_model_list(model.id, PRODUCT_RECONTEXT_MODELS) or 'recontext' in model_id
 
-        elif mode in ['image-edit', 'image-outpainting', 'image-chat-edit', 'image-mask-edit',
+        elif mode == 'image-outpainting':
+            # 图像扩展模式：支持编辑模型（扩图）+ 放大模型（upscale 子模式）
+            # ✅ 包含编辑模型（用于 ratio, scale, offset 子模式）
+            if _matches_model_list(model.id, IMAGEN_EDIT_MODELS):
+                should_include = True
+            # ✅ 包含放大模型（用于 upscale 子模式）
+            elif _matches_model_list(model.id, IMAGE_UPSCALE_MODELS):
+                should_include = True
+            # ✅ 包含分割模型
+            elif _matches_model_list(model.id, IMAGE_SEGMENTATION_MODELS):
+                should_include = True
+            elif 'veo' in model_id or not caps.vision:
+                should_include = False
+            else:
+                # 排除纯文生图模型（但不排除放大模型）
+                is_text_to_image_only = any([
+                    'wanx' in model_id, '-t2i' in model_id, 'z-image-turbo' in model_id,
+                    'dall' in model_id, 'flux' in model_id, 'midjourney' in model_id,
+                    _matches_model_list(model.id, IMAGEN_GENERATE_MODELS),
+                ])
+                should_include = not is_text_to_image_only
+
+        elif mode in ['image-edit', 'image-chat-edit', 'image-mask-edit',
                       'image-inpainting', 'image-background-edit', 'image-recontext']:
             # 图像编辑模式：支持 Imagen 编辑模型 + Gemini 视觉模型
             # ✅ 优先包含 Imagen 编辑专用模型
