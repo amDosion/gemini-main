@@ -9,6 +9,7 @@ export default defineConfig({
     host: '0.0.0.0', // 监听所有 IPv4 网络接口（包括 localhost 和局域网 IP）
     port: 21573,
     strictPort: false, // 如果端口被占用，自动尝试下一个可用端口
+    allowedHosts: ['geminiai.lspon.com'], // 允许的域名
     open: '/login', // 自动打开浏览器到登录页面
     cors: true, // 启用 CORS
     hmr: {
