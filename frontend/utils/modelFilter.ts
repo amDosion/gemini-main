@@ -19,6 +19,9 @@ const IMAGEN_GENERATE_MODELS = [
     'imagen-3.0-fast-generate-001',
     'imagen-4.0-generate-preview',
     'imagen-4.0-ultra-generate-preview',
+    'imagen-4.0-generate-001',           // ✅ 新增
+    'imagen-4.0-ultra-generate-001',     // ✅ 新增
+    'imagen-4.0-fast-generate-001',      // ✅ 新增
 ];
 
 // Imagen 图像编辑模型（支持 mask 编辑、背景替换等）
@@ -126,14 +129,21 @@ export function filterModelsByAppMode(models: ModelConfig[], appMode: AppMode): 
             case 'image-inpainting':
             case 'image-background-edit':
             case 'image-recontext':
-            case 'image-outpainting':
                 // 图像编辑模式：支持 Imagen 编辑模型 + Gemini 视觉模型
-                // ✅ 优先包含 Imagen 编辑专用模型
+                // ✅ 明确包含 Imagen 编辑专用模型
                 if (matchesModelList(model.id, IMAGEN_EDIT_MODELS)) return true;
-                // ✅ 包含产品重构模型（用于背景编辑）
+
+                // ✅ 明确包含图像分割模型（自动 mask 功能需要）
+                if (matchesModelList(model.id, IMAGE_SEGMENTATION_MODELS)) return true;
+
+                // ✅ 明确包含虚拟试衣模型
+                if (matchesModelList(model.id, VIRTUAL_TRY_ON_MODELS)) return true;
+
+                // ✅ 明确包含产品重构模型（背景编辑需要）
                 if (appMode === 'image-background-edit' || appMode === 'image-recontext') {
                     if (matchesModelList(model.id, PRODUCT_RECONTEXT_MODELS)) return true;
                 }
+
                 // 排除视频模型
                 if (id.includes('veo')) return false;
                 // 需要视觉能力
@@ -145,6 +155,28 @@ export function filterModelsByAppMode(models: ModelConfig[], appMode: AppMode): 
                     matchesModelList(model.id, IMAGEN_GENERATE_MODELS) ||
                     matchesModelList(model.id, IMAGE_UPSCALE_MODELS);
                 return !isTextToImageOnly;
+
+            case 'image-outpainting':
+                // 图像扩展模式：支持编辑模型（扩图）+ 放大模型（upscale 子模式）
+                // ✅ 包含编辑模型（用于 ratio, scale, offset 子模式）
+                if (matchesModelList(model.id, IMAGEN_EDIT_MODELS)) return true;
+
+                // ✅ 包含放大模型（用于 upscale 子模式）
+                if (matchesModelList(model.id, IMAGE_UPSCALE_MODELS)) return true;
+
+                // ✅ 包含图像分割模型
+                if (matchesModelList(model.id, IMAGE_SEGMENTATION_MODELS)) return true;
+
+                // 排除视频模型
+                if (id.includes('veo')) return false;
+                // 需要视觉能力
+                if (!caps.vision) return false;
+                // 排除纯文生图模型
+                const isOutpaintTextToImageOnly =
+                    id.includes('wanx') || id.includes('-t2i') || id.includes('z-image-turbo') ||
+                    id.includes('dall') || id.includes('flux') || id.includes('midjourney') ||
+                    matchesModelList(model.id, IMAGEN_GENERATE_MODELS);
+                return !isOutpaintTextToImageOnly;
 
             case 'virtual-try-on':
                 // 虚拟试衣模式：优先虚拟试衣专用模型

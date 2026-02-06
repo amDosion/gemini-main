@@ -407,6 +407,13 @@ async def update_vertex_ai_config(
             f"[VertexAIConfig] Updating configuration for user={user_id}, "
             f"api_mode={request_body.api_mode}"
         )
+
+        # ✅ 调试日志：检查接收到的数据
+        logger.info(
+            f"[VertexAIConfig] Request data: "
+            f"hidden_models={len(request_body.hidden_models) if request_body.hidden_models else 0}, "
+            f"saved_models={len(request_body.saved_models) if request_body.saved_models else 0}"
+        )
         
         # Validate configuration based on API mode
         if request_body.api_mode == 'gemini_api':
@@ -498,7 +505,8 @@ async def update_vertex_ai_config(
             
             # Save model configurations (hidden_models and saved_models)
             # Always update these fields if provided (even if empty array)
-            if hasattr(request_body, 'hiddenModels') and request_body.hidden_models is not None:
+            # ✅ 修复：Pydantic 使用 snake_case，不是 camelCase
+            if request_body.hidden_models is not None:
                 user_config.hidden_models = request_body.hidden_models
                 logger.info(
                     f"[VertexAIConfig] Updated hidden_models for user={user_id}: {len(request_body.hidden_models)} models"
@@ -507,8 +515,8 @@ async def update_vertex_ai_config(
                 # If not provided but in vertex_ai mode, initialize as empty array
                 if user_config.hidden_models is None:
                     user_config.hidden_models = []
-            
-            if hasattr(request_body, 'savedModels') and request_body.saved_models is not None:
+
+            if request_body.saved_models is not None:
                 # ✅ 确保保存的模型包含完整的能力信息和描述
                 # 如果前端传递的模型缺少 capabilities 或 description，从 model_capabilities 获取
                 from ...services.common.model_capabilities import get_google_capabilities, build_model_config, get_model_description

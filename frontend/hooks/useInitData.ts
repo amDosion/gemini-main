@@ -22,17 +22,17 @@ const BASE_RETRY_DELAY = 1000; // 1 second
  * It handles loading states, error handling with automatic exponential backoff,
  * and provides a manual retry mechanism.
  *
- * @param isAuthenticated - Boolean indicating if the user is authenticated. The API call is only made if true.
+ * @param shouldLoad - Boolean indicating if the data should be loaded. Only loads when true (优化：减少不必要的请求).
  * @returns An object containing the initial data, loading and error states, and a retry function.
  */
-export const useInitData = (isAuthenticated: boolean): UseInitDataReturn => {
+export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
   const [criticalData, setCriticalData] = useState<Partial<InitData> | null>(null);
   const [nonCriticalData, setNonCriticalData] = useState<Partial<InitData> | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
   const [isConfigReady, setIsConfigReady] = useState<boolean>(false);
   const [retryTrigger, setRetryTrigger] = useState(0);
-  
+
   // Use ref to track if component is mounted
   const isMountedRef = useRef(true);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -45,14 +45,14 @@ export const useInitData = (isAuthenticated: boolean): UseInitDataReturn => {
     // Reset mounted flag on mount
     isMountedRef.current = true;
 
-    if (!isAuthenticated) {
-      // If the user is not authenticated, do nothing.
-      // Reset state in case of logout.
+    // ✅ 条件加载：只有在 shouldLoad 为 true 时才加载数据
+    if (!shouldLoad) {
+      // 不需要加载数据，重置状态
       setCriticalData(null);
       setNonCriticalData(null);
       setIsLoading(false);
       setError(null);
-      setIsConfigReady(false);
+      setIsConfigReady(true);  // ✅ 标记为已就绪（即使没有加载数据）
       return;
     }
 
@@ -80,6 +80,7 @@ export const useInitData = (isAuthenticated: boolean): UseInitDataReturn => {
 
           setCriticalData(critical);
           setError(null);
+          setIsConfigReady(true);  // ✅ 移到这里：关键数据加载成功后立即设置
           
           // ✅ 步骤 2：关键数据加载完成后，立即渲染
           // Header 可以显示提供商和模型选择器
@@ -116,6 +117,7 @@ export const useInitData = (isAuthenticated: boolean): UseInitDataReturn => {
           if (error.message === 'Unauthorized') {
             console.error('Authentication failed. Please log in again.');
             setError(error);
+            setIsConfigReady(true);  // ✅ 错误情况下也设置为 true，让 UI 显示错误
             return; // Exit without retry
           }
 
@@ -127,6 +129,7 @@ export const useInitData = (isAuthenticated: boolean): UseInitDataReturn => {
           } else {
             console.error('Failed to fetch init data after multiple retries.', e);
             setError(error);
+            setIsConfigReady(true);  // ✅ 重试耗尽后设置为 true，让 UI 显示错误
           }
         }
       }
@@ -135,7 +138,8 @@ export const useInitData = (isAuthenticated: boolean): UseInitDataReturn => {
     fetchData().finally(() => {
       if (isMountedRef.current) {
         setIsLoading(false);
-        setIsConfigReady(true);
+        // ✅ 不在这里设置 isConfigReady，因为此时 criticalData 可能还没更新
+        // isConfigReady 已在 setCriticalData 之后设置
       }
     });
 
@@ -146,7 +150,7 @@ export const useInitData = (isAuthenticated: boolean): UseInitDataReturn => {
         abortControllerRef.current.abort();
       }
     };
-  }, [isAuthenticated, retryTrigger]);
+  }, [shouldLoad, retryTrigger]);  // ✅ 修改依赖：shouldLoad 替代 isAuthenticated
 
   // ✅ 合并关键数据和非关键数据
   const initData = useMemo(() => {

@@ -61,6 +61,30 @@ class FileData(CommonBaseModel):
     display_name: Optional[str] = None
 
 
+class File(CommonBaseModel):
+    """Represents an uploaded file in the service."""
+    
+    name: Optional[str] = None
+    display_name: Optional[str] = None
+    mime_type: Optional[str] = None
+    size_bytes: Optional[int] = None
+    create_time: Optional[str] = None
+    update_time: Optional[str] = None
+    expiration_time: Optional[str] = None
+    sha256_hash: Optional[str] = None
+    uri: Optional[str] = None
+    state: Optional[str] = None
+    error: Optional[Dict[str, Any]] = None
+
+
+class UploadFileConfig(CommonBaseModel):
+    """Configuration for file upload."""
+    
+    name: Optional[str] = None
+    display_name: Optional[str] = None
+    mime_type: Optional[str] = None
+
+
 class Content(CommonBaseModel):
     """A piece of content with a role and parts."""
     

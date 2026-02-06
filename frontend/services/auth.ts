@@ -16,6 +16,7 @@ export interface User {
   email: string;
   name: string | null;
   status: string;
+  hasActiveProfile?: boolean;  // ✅ 新增：是否有活跃的配置文件
 }
 
 export interface LoginResponse {
@@ -24,6 +25,7 @@ export interface LoginResponse {
   refreshToken?: string;
   tokenType?: string;
   expiresIn: number;
+  hasActiveProfile?: boolean;  // ✅ 新增：是否有活跃的配置文件
 }
 
 export interface RegisterData {
@@ -199,6 +201,10 @@ class AuthService {
     if (result.refreshToken) {
       setRefreshToken(result.refreshToken);
     }
+    // ✅ 保存配置状态（优化：减少前端初始化请求）
+    if (result.hasActiveProfile !== undefined) {
+      localStorage.setItem('has_active_profile', String(result.hasActiveProfile));
+    }
     // 返回用户对象
     return result.user || result;
   }
@@ -230,6 +236,10 @@ class AuthService {
     // ✅ 保存 refresh_token
     if (result.refreshToken) {
       setRefreshToken(result.refreshToken);
+    }
+    // ✅ 保存配置状态（优化：减少前端初始化请求）
+    if (result.hasActiveProfile !== undefined) {
+      localStorage.setItem('has_active_profile', String(result.hasActiveProfile));
     }
     return result;
   }
@@ -287,7 +297,14 @@ class AuthService {
         }
         throw new Error('Failed to get current user');
       }
-      return response.json();
+      const result = await response.json();
+
+      // ✅ 更新配置状态（优化：减少前端初始化请求）
+      if (result.hasActiveProfile !== undefined) {
+        localStorage.setItem('has_active_profile', String(result.hasActiveProfile));
+      }
+
+      return result;
     } catch {
       // getCurrentUser failed, clearing token
       removeAccessToken();
@@ -324,7 +341,7 @@ class AuthService {
       
       if (response.ok) {
         const result = await response.json();
-        
+
         // ✅ 更新 access_token
         if (result.accessToken) {
           setAccessToken(result.accessToken);
@@ -333,14 +350,19 @@ class AuthService {
           const expiresDate = new Date(Date.now() + expiresIn * 1000);
           document.cookie = `access_token=${result.accessToken}; expires=${expiresDate.toUTCString()}; path=/; SameSite=Lax`;
         }
-        
+
         // ✅ 更新 refresh_token（Token 轮换）
         if (result.refreshToken) {
           setRefreshToken(result.refreshToken);
           // ✅ 广播给其他标签页
           broadcastTokenRefresh(result.accessToken, result.refreshToken);
         }
-        
+
+        // ✅ 更新配置状态（优化：减少前端初始化请求）
+        if (result.hasActiveProfile !== undefined) {
+          localStorage.setItem('has_active_profile', String(result.hasActiveProfile));
+        }
+
         return true;
       }
       

@@ -71,55 +71,105 @@ export const InlineModeNavigation: React.FC<InlineModeNavigationProps> = ({
   // 计算模式可用性
   const modeAvailability = useMemo(() => {
     const models = allVisibleModels.length > 0 ? allVisibleModels : (visibleModels.length > 0 ? visibleModels : (currentModel ? [currentModel] : []));
-    
+
+    // ✅ 图像生成模型（纯文生图）
     const hasImageGenModels = models.some(m => {
       const id = m.id.toLowerCase();
-      const isImageGenModel = id.includes('dall') || id.includes('wanx') || id.includes('flux') || 
-             id.includes('midjourney') || id.includes('-t2i') || id.includes('z-image') || 
-             id.includes('imagen');
+
+      // 排除编辑、放大、分割等专用模型
+      if (id.includes('capability') || id.includes('ingredients')) return false;
+      if (id.includes('upscale')) return false;
+      if (id.includes('segmentation')) return false;
+      if (id.includes('try-on') || id.includes('recontext')) return false;
+
+      const isImageGenModel = id.includes('dall') || id.includes('wanx') || id.includes('flux') ||
+             id.includes('midjourney') || id.includes('-t2i') || id.includes('z-image') ||
+             (id.includes('imagen') && id.includes('generate'));  // ✅ 只匹配 imagen-*-generate-* 模型
       const isGeminiImageModel = id.includes('gemini') && id.includes('image');
       const isNanoBananaModel = id.includes('nano-banana');
       return isImageGenModel || isGeminiImageModel || isNanoBananaModel;
     });
-    
+
+    // ✅ 图像编辑模型（capability, ingredients）
+    const hasImageEditModels = models.some(m => {
+      const id = m.id.toLowerCase();
+      return id.includes('capability') || id.includes('ingredients');
+    });
+
+    // ✅ 图像放大模型
+    const hasUpscaleModels = models.some(m => {
+      const id = m.id.toLowerCase();
+      return id.includes('upscale');
+    });
+
+    // ✅ 图像分割模型
+    const hasSegmentationModels = models.some(m => {
+      const id = m.id.toLowerCase();
+      return id.includes('segmentation');
+    });
+
+    // ✅ 虚拟试衣模型
+    const hasTryOnModels = models.some(m => {
+      const id = m.id.toLowerCase();
+      return id.includes('try-on') || id.includes('tryon');
+    });
+
+    // ✅ 产品重构模型
+    const hasRecontextModels = models.some(m => {
+      const id = m.id.toLowerCase();
+      return id.includes('recontext');
+    });
+
+    // ✅ 通用视觉模型（排除专用模型）
     const hasVisionModels = models.some(m => {
       const id = m.id.toLowerCase();
-      return m.capabilities.vision && !id.includes('veo');
+      return m.capabilities.vision &&
+             !id.includes('veo') &&
+             !id.includes('generate') &&
+             !id.includes('upscale') &&
+             !id.includes('segmentation');
     });
     
     const hasDeepResearchModels = models.some(m => {
       const name = (m.name || m.id || '').toLowerCase();
       return name.includes('deep-research') || name.includes('deep research') || name.includes('deepresearch');
     });
-    
+
     const hasVideoModels = models.some(m => {
       const id = m.id.toLowerCase();
       return id.includes('veo') || id.includes('sora') || id.includes('video') || id.includes('luma');
     });
-    
+
     const hasAudioModels = models.some(m => {
       const id = m.id.toLowerCase();
       return id.includes('tts') || id.includes('audio') || id.includes('speech');
     });
-    
+
     const hasPdfModels = models.some(m => {
       const id = m.id.toLowerCase();
-      return !id.includes('veo') && !id.includes('tts') && !id.includes('wanx') && 
+      return !id.includes('veo') && !id.includes('tts') && !id.includes('wanx') &&
              !id.includes('imagen') && !id.includes('-t2i') && !id.includes('z-image');
     });
-    
+
     return {
       chat: true,
       'deep-research': hasDeepResearchModels,
       'multi-agent': true,
       'image-gen': hasImageGenModels,
-      'image-chat-edit': hasVisionModels || hasImageGenModels,
-      'image-mask-edit': hasVisionModels || hasImageGenModels,
-      'image-inpainting': hasVisionModels || hasImageGenModels,
-      'image-background-edit': hasVisionModels || hasImageGenModels,
-      'image-recontext': hasVisionModels || hasImageGenModels,
-      'virtual-try-on': hasVisionModels,
-      'image-outpainting': true,
+      // ✅ 图像编辑模式：需要编辑模型或通用视觉模型
+      'image-chat-edit': hasImageEditModels || hasVisionModels,
+      'image-mask-edit': hasImageEditModels || hasVisionModels,
+      'image-inpainting': hasImageEditModels || hasVisionModels,
+      'image-background-edit': hasImageEditModels || hasVisionModels || hasRecontextModels,
+      'image-recontext': hasImageEditModels || hasVisionModels || hasRecontextModels,
+      // ✅ 虚拟试衣：需要专用模型或通用视觉模型
+      'virtual-try-on': hasTryOnModels || hasVisionModels,
+      // ✅ 扩图：需要编辑模型或通用视觉模型
+      'image-outpainting': hasImageEditModels || hasVisionModels,
+      // ✅ 放大：需要放大模型
+      'image-upscale': hasUpscaleModels,
+      // ✅ 分割：需要分割模型
+      'image-segmentation': hasSegmentationModels,
       'video-gen': hasVideoModels,
       'audio-gen': hasAudioModels || true,
       'pdf-extract': hasPdfModels

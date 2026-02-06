@@ -3,6 +3,9 @@ import { ExecutionContext, HandlerResult } from './types';
 import { Attachment } from '../../types/types';
 import { llmService } from '../../services/llmService';
 import { processMediaResult } from './attachmentUtils';
+// ✅ 改为静态导入，避免与其他文件的静态导入冲突
+import { storageUpload } from '../../services/storage/storageUpload';
+import { v4 as uuidv4 } from 'uuid';
 
 // --- Handler Classes ---
 
@@ -21,11 +24,11 @@ export class ImageOutpaintingHandler extends BaseHandler {
       messageId: context.modelMessageId  // ✅ 后端需要 messageId 来创建附件记录
     };
 
-    const result = await llmService.outPaintImage(
+    // ✅ 修复：outPaintImage 现在返回数组，不需要再包装
+    const results = await llmService.outPaintImage(
       context.attachments[0],
       outpaintOptions  // ✅ 传递包含 sessionId 和 messageId 的 options
     );
-    const results = [result];
 
     // ✅ 后端已处理图片（返回 attachmentId, uploadStatus, taskId）
     // 直接使用后端返回的结果，与 VirtualTryOnHandler 一致
@@ -37,7 +40,7 @@ export class ImageOutpaintingHandler extends BaseHandler {
       uploadStatus?: string;
       taskId?: string;
     }) => ({
-      id: res.attachmentId || `outpaint-${Date.now()}`,
+      id: res.attachmentId || `outpaint-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       mimeType: res.mimeType || 'image/png',
       name: res.filename || `outpainted-${Date.now()}.png`,
       url: res.url,
@@ -117,9 +120,6 @@ export class VirtualTryOnHandler extends BaseHandler {
           // ✅ 如果有 File 对象，上传到后端（后端会统一处理）
           if (att.file) {
             try {
-              const { storageUpload } = await import('../../services/storage/storageUpload');
-              const { v4: uuidv4 } = await import('uuid');
-              
               const result = await storageUpload.uploadFileAsync(att.file, {
                 sessionId: context.sessionId,
                 messageId: context.userMessageId,
@@ -148,9 +148,6 @@ export class VirtualTryOnHandler extends BaseHandler {
           // 这是 Virtual Try-On 特有的逻辑，因为人物图/服装图通常是本地上传的
           if (att.url && (att.url.startsWith('data:') || att.url.startsWith('blob:'))) {
             try {
-              const { storageUpload } = await import('../../services/storage/storageUpload');
-              const { v4: uuidv4 } = await import('uuid');
-              
               // 将 Base64/Blob URL 转换为 File 对象
               const response = await fetch(att.url);
               const blob = await response.blob();

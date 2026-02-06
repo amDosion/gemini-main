@@ -59,12 +59,19 @@ class ChatHandler:
         """
         try:
             logger.info(f"[OpenAI ChatHandler] Chat request: model={model}, messages={len(messages)}")
-            
+
+            # ✅ 过滤掉 OpenAI API 不支持的参数
+            # top_k 只有 Gemini 等部分 API 支持，OpenAI API 不支持
+            supported_params = {}
+            for key, value in kwargs.items():
+                if key not in ['top_k']:  # 排除不支持的参数
+                    supported_params[key] = value
+
             # Call OpenAI API
             response: ChatCompletion = await self.client.chat.completions.create(
                 model=model,
                 messages=messages,
-                **kwargs
+                **supported_params
             )
             
             # Convert to unified format
@@ -100,12 +107,12 @@ class ChatHandler:
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         发送聊天请求并流式返回响应
-        
+
         Args:
             messages: 消息列表
             model: 模型标识符
             **kwargs: 额外参数
-            
+
         Yields:
             流式响应块
         """
@@ -113,14 +120,21 @@ class ChatHandler:
             # ✅ 记录 max_tokens 以便调试
             max_tokens_info = f", max_tokens={kwargs.get('max_tokens', 'default')}" if 'max_tokens' in kwargs else ""
             logger.info(f"[OpenAI ChatHandler] Stream chat request: model={model}, messages={len(messages)}{max_tokens_info}")
-            
+
+            # ✅ 过滤掉 OpenAI API 不支持的参数
+            # top_k 只有 Gemini 等部分 API 支持，OpenAI API 不支持
+            supported_params = {}
+            for key, value in kwargs.items():
+                if key not in ['top_k']:  # 排除不支持的参数
+                    supported_params[key] = value
+
             # Call OpenAI API with streaming
             stream = await self.client.chat.completions.create(
                 model=model,
                 messages=messages,
                 stream=True,
                 stream_options={"include_usage": True},
-                **kwargs
+                **supported_params
             )
             
             # Stream chunks

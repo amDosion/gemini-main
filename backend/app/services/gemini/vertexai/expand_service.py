@@ -427,8 +427,30 @@ class ExpandService:
                 return await self._expand_by_ratio(image_path, expand_prompt, model, **kwargs)
             elif mode == "upscale":
                 # 调用 upscale_image 方法
-                upscale_factor = kwargs.get('upscale_factor', 'x2')
-                upscale_model = kwargs.get('upscale_model', 'imagen-4.0-upscale-preview')
+                # ✅ 提取参数并从 kwargs 中移除，避免重复传递
+                upscale_factor = kwargs.pop('upscale_factor', 'x2')
+
+                # ✅ 直接使用前端传递的模型，不做硬编码切换
+                # 优先使用 kwargs 中的 upscale_model，如果没有则使用 model 参数
+                upscale_model = kwargs.pop('upscale_model', None) or model
+
+                # ✅ 验证模型是否为放大模型（提供清晰的错误提示）
+                if upscale_model and 'upscale' not in upscale_model.lower():
+                    raise ValueError(
+                        f"模型 '{upscale_model}' 不支持图片放大操作。"
+                        f"请在前端选择放大模型，例如 'imagen-4.0-upscale-preview'。"
+                    )
+
+                if not upscale_model:
+                    raise ValueError(
+                        "未指定放大模型。请在前端选择一个支持放大的模型，"
+                        "例如 'imagen-4.0-upscale-preview'。"
+                    )
+
+                logger.info(
+                    f"[Expand Service] Using upscale model from frontend: {upscale_model}"
+                )
+
                 return await self.upscale_image(
                     image_path=image_path,
                     upscale_factor=upscale_factor,
@@ -478,8 +500,24 @@ class ExpandService:
 
         logger.info(f"[Expand Service] Scale target: {orig_width}x{orig_height} -> {target_width}x{target_height}")
 
-        # 使用编辑模型
-        edit_model = model if model in self.edit_models else 'imagen-3.0-capability-001'
+        # ✅ 直接使用前端传递的模型，不做硬编码切换
+        edit_model = model
+
+        # ✅ 验证模型是否为编辑模型（提供清晰的错误提示）
+        if edit_model and edit_model not in self.edit_models:
+            # 检查是否是放大模型
+            if 'upscale' in edit_model.lower():
+                raise ValueError(
+                    f"模型 '{edit_model}' 是放大模型，不支持图像扩展操作。"
+                    f"请在前端选择编辑模型，例如 'imagen-3.0-capability-001' 或 'imagen-4.0-ingredients-preview'。"
+                )
+            # 其他不支持的模型
+            logger.warning(
+                f"[Expand Service] Model '{edit_model}' is not in known edit models list, "
+                f"attempting to use it anyway."
+            )
+
+        logger.info(f"[Expand Service] Using edit model from frontend: {edit_model}")
 
         # ✅ 将图片字节转换为 data: 格式，供 _pad_image_for_outpaint 使用
         b64_data = base64.b64encode(image_bytes).decode('utf-8')
@@ -585,8 +623,24 @@ class ExpandService:
 
         logger.info(f"[Expand Service] Offset target: {orig_width}x{orig_height} -> {target_width}x{target_height}")
 
-        # 使用编辑模型
-        edit_model = model if model in self.edit_models else 'imagen-3.0-capability-001'
+        # ✅ 直接使用前端传递的模型，不做硬编码切换
+        edit_model = model
+
+        # ✅ 验证模型是否为编辑模型（提供清晰的错误提示）
+        if edit_model and edit_model not in self.edit_models:
+            # 检查是否是放大模型
+            if 'upscale' in edit_model.lower():
+                raise ValueError(
+                    f"模型 '{edit_model}' 是放大模型，不支持图像扩展操作。"
+                    f"请在前端选择编辑模型，例如 'imagen-3.0-capability-001' 或 'imagen-4.0-ingredients-preview'。"
+                )
+            # 其他不支持的模型
+            logger.warning(
+                f"[Expand Service] Model '{edit_model}' is not in known edit models list, "
+                f"attempting to use it anyway."
+            )
+
+        logger.info(f"[Expand Service] Using edit model from frontend: {edit_model}")
 
         # ✅ 将图片字节转换为 data: 格式，供 _pad_image_with_offset 使用
         b64_data = base64.b64encode(image_bytes).decode('utf-8')
@@ -666,11 +720,24 @@ class ExpandService:
 
         logger.info(f"[Expand Service] Ratio expansion: ratio={output_ratio}")
 
-        # 使用编辑模型（如果传入的是生成模型，切换到编辑模型）
+        # ✅ 直接使用前端传递的模型，不做硬编码切换
         edit_model = model
-        if model not in self.edit_models:
-            edit_model = 'imagen-3.0-capability-001'
-            logger.info(f"[Expand Service] Switching to edit model: {edit_model}")
+
+        # ✅ 验证模型是否为编辑模型（提供清晰的错误提示）
+        if edit_model and edit_model not in self.edit_models:
+            # 检查是否是放大模型
+            if 'upscale' in edit_model.lower():
+                raise ValueError(
+                    f"模型 '{edit_model}' 是放大模型，不支持图像扩展操作。"
+                    f"请在前端选择编辑模型，例如 'imagen-3.0-capability-001' 或 'imagen-4.0-ingredients-preview'。"
+                )
+            # 其他不支持的模型
+            logger.warning(
+                f"[Expand Service] Model '{edit_model}' is not in known edit models list, "
+                f"attempting to use it anyway."
+            )
+
+        logger.info(f"[Expand Service] Using edit model from frontend: {edit_model}")
 
         # 调用改进的 outpaint_with_ratio 方法
         return await self.outpaint_with_ratio(

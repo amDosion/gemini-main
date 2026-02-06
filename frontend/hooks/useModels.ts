@@ -25,7 +25,7 @@ export const useModels = (
   const userSelectedModelRef = useRef<boolean>(false);
 
   // ✅ 用于存储最新的 internalSelectBestModel 函数引用，避免将其加入依赖数组
-  const selectBestModelRef = useRef<(models: ModelConfig[], forceReset: boolean) => void>();
+  const selectBestModelRef = useRef<((models: ModelConfig[], forceReset: boolean) => void) | undefined>(undefined);
 
   // ✅ 用于防止 Vertex AI 配置重复请求
   const vertexAIConfigCacheRef = useRef<{ timestamp: number; data: any } | null>(null);

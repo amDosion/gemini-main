@@ -7,6 +7,7 @@ Smart Task Decomposer - 智能任务分解器
 - 建议的代理 ID
 - 依赖关系
 """
+from __future__ import annotations
 
 import logging
 import json

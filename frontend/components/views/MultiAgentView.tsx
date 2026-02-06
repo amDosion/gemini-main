@@ -232,6 +232,8 @@ export const MultiAgentView: React.FC<MultiAgentViewProps> = React.memo(({
             enableSearch: false,
             enableThinking: false,
             enableCodeExecution: false,
+            imageAspectRatio: '1:1',
+            imageResolution: '1024x1024',
         };
         
         onSend(prompt, options, activeAttachments, appMode);

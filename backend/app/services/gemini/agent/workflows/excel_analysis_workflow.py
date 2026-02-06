@@ -6,6 +6,7 @@ Excel Analysis Workflow - Excel 分析工作流
 - 使用 SequentialAgent 执行
 - 集成 Excel 读取、清理、分析和报告生成工具
 """
+from __future__ import annotations
 
 import logging
 from typing import Dict, Any, Optional, TYPE_CHECKING

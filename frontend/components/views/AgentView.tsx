@@ -232,6 +232,8 @@ export const AgentView: React.FC<AgentViewProps> = React.memo(({
             enableSearch,
             enableThinking,
             enableCodeExecution: false,
+            imageAspectRatio: '1:1',
+            imageResolution: '1024x1024',
         };
         
         onSend(prompt, options, activeAttachments, appMode);
