@@ -15,25 +15,20 @@ interface ComponentLibraryProps {
 
 // Node categories for organization
 const nodeCategories = {
-  basic: {
-    title: '基础节点',
-    description: '工作流的起点和终点',
-    nodes: ['start', 'end'] as NodeType[],
+  flow: {
+    title: '流程控制',
+    description: '工作流的入口、出口和分支',
+    nodes: ['start', 'end', 'condition', 'merge', 'loop'] as NodeType[],
   },
-  operation: {
-    title: '运维节点',
-    description: '大模型和知识库操作',
-    nodes: ['llm', 'knowledge', 'agent'] as NodeType[],
+  agent: {
+    title: '智能体',
+    description: '核心执行单元和工具',
+    nodes: ['agent', 'tool', 'human'] as NodeType[],
   },
-  control: {
-    title: '分支节点',
-    description: '条件判断和流程合并',
-    nodes: ['condition', 'merge'] as NodeType[],
-  },
-  execution: {
-    title: '代码节点',
-    description: '代码执行和 API 调用',
-    nodes: ['code', 'api'] as NodeType[],
+  orchestration: {
+    title: '编排模式',
+    description: '任务路由和并行执行',
+    nodes: ['router', 'parallel'] as NodeType[],
   },
 };
 

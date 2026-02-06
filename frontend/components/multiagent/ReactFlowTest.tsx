@@ -1,6 +1,6 @@
 /**
  * React Flow Test Component
- * 
+ *
  * Comprehensive test component demonstrating all node types and statuses
  */
 
@@ -22,7 +22,7 @@ import { nodeTypeConfigs } from './nodeTypeConfigs';
 
 // Test nodes with different types and statuses
 const initialNodes: Node<CustomNodeData>[] = [
-  // Row 1: Basic nodes
+  // Row 1: Flow control + Agent
   {
     id: '1',
     type: 'start',
@@ -38,49 +38,48 @@ const initialNodes: Node<CustomNodeData>[] = [
   },
   {
     id: '2',
-    type: 'llm',
+    type: 'agent',
     position: { x: 320, y: 50 },
     data: {
-      label: 'LLM 节点',
-      description: '调用大语言模型',
-      icon: nodeTypeConfigs.llm.icon,
-      iconColor: nodeTypeConfigs.llm.iconColor,
-      type: 'llm',
+      label: '研究智能体',
+      description: '模型 + 指令 + 工具',
+      icon: nodeTypeConfigs.agent.icon,
+      iconColor: nodeTypeConfigs.agent.iconColor,
+      type: 'agent',
       status: 'running',
       progress: 65,
-      agentName: 'GPT-4',
+      agentName: 'Research Agent',
     },
   },
   {
     id: '3',
-    type: 'knowledge',
+    type: 'tool',
     position: { x: 590, y: 50 },
     data: {
-      label: '知识库节点',
-      description: '检索知识库',
-      icon: nodeTypeConfigs.knowledge.icon,
-      iconColor: nodeTypeConfigs.knowledge.iconColor,
-      type: 'knowledge',
+      label: 'Web 搜索工具',
+      description: 'MCP 工具调用',
+      icon: nodeTypeConfigs.tool.icon,
+      iconColor: nodeTypeConfigs.tool.iconColor,
+      type: 'tool',
       status: 'pending',
     },
   },
   {
     id: '4',
-    type: 'agent',
+    type: 'human',
     position: { x: 860, y: 50 },
     data: {
-      label: '智能体节点',
-      description: '调用子智能体',
-      icon: nodeTypeConfigs.agent.icon,
-      iconColor: nodeTypeConfigs.agent.iconColor,
-      type: 'agent',
+      label: '人工审核',
+      description: '等待人工确认',
+      icon: nodeTypeConfigs.human.icon,
+      iconColor: nodeTypeConfigs.human.iconColor,
+      type: 'human',
       status: 'failed',
-      error: 'Connection timeout: Failed to connect to agent service',
-      agentName: 'Research Agent',
+      error: 'Timeout: Human review not completed within deadline',
     },
   },
 
-  // Row 2: Control flow nodes
+  // Row 2: Orchestration + Control
   {
     id: '5',
     type: 'condition',
@@ -110,37 +109,49 @@ const initialNodes: Node<CustomNodeData>[] = [
   },
   {
     id: '7',
-    type: 'code',
+    type: 'router',
     position: { x: 590, y: 250 },
     data: {
-      label: '代码执行',
-      description: '执行 Python 代码',
-      icon: nodeTypeConfigs.code.icon,
-      iconColor: nodeTypeConfigs.code.iconColor,
-      type: 'code',
+      label: '智能路由',
+      description: '根据意图分发任务',
+      icon: nodeTypeConfigs.router.icon,
+      iconColor: nodeTypeConfigs.router.iconColor,
+      type: 'router',
       status: 'completed',
-      progress: 100,
     },
   },
   {
     id: '8',
-    type: 'api',
+    type: 'parallel',
     position: { x: 860, y: 250 },
     data: {
-      label: 'API 调用',
-      description: '调用外部 API',
-      icon: nodeTypeConfigs.api.icon,
-      iconColor: nodeTypeConfigs.api.iconColor,
-      type: 'api',
+      label: '并行执行',
+      description: '并行执行多个子任务',
+      icon: nodeTypeConfigs.parallel.icon,
+      iconColor: nodeTypeConfigs.parallel.iconColor,
+      type: 'parallel',
       status: 'pending',
     },
   },
 
-  // Row 3: End node
+  // Row 3: Loop + End
   {
     id: '9',
+    type: 'loop',
+    position: { x: 200, y: 450 },
+    data: {
+      label: '循环执行',
+      description: '循环直到满足条件',
+      icon: nodeTypeConfigs.loop.icon,
+      iconColor: nodeTypeConfigs.loop.iconColor,
+      type: 'loop',
+      status: 'pending',
+    },
+  },
+  {
+    id: '10',
     type: 'end',
-    position: { x: 450, y: 450 },
+    position: { x: 550, y: 450 },
     data: {
       label: '结束节点',
       description: '工作流出口',
@@ -160,20 +171,22 @@ const initialEdges: Edge[] = [
   { id: 'e5-6', source: '5', target: '6', animated: true },
   { id: 'e6-7', source: '6', target: '7' },
   { id: 'e7-8', source: '7', target: '8' },
-  { id: 'e4-9', source: '4', target: '9' },
+  { id: 'e4-10', source: '4', target: '10' },
   { id: 'e8-9', source: '8', target: '9' },
+  { id: 'e9-10', source: '9', target: '10' },
 ];
 
 const nodeTypes = {
   start: CustomNode,
   end: CustomNode,
-  llm: CustomNode,
-  knowledge: CustomNode,
   agent: CustomNode,
+  tool: CustomNode,
+  human: CustomNode,
+  router: CustomNode,
+  parallel: CustomNode,
   condition: CustomNode,
   merge: CustomNode,
-  code: CustomNode,
-  api: CustomNode,
+  loop: CustomNode,
 };
 
 const ReactFlowTestInner: React.FC = () => {
@@ -241,6 +254,9 @@ const ReactFlowTestInner: React.FC = () => {
                 'bg-indigo-500': '#6366f1',
                 'bg-pink-500': '#ec4899',
                 'bg-red-500': '#ef4444',
+                'bg-violet-500': '#8b5cf6',
+                'bg-cyan-500': '#06b6d4',
+                'bg-amber-500': '#f59e0b',
               };
               return colorMap[config?.iconColor] || '#9ca3af';
             }}

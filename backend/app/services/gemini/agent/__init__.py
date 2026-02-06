@@ -30,6 +30,7 @@ from .agent_matcher import AgentMatcher, AgentLoad
 from .execution_graph import ExecutionGraph
 from .tool_registry import ToolRegistry, Tool, ToolExecutor, BuiltinToolExecutor, MCPToolExecutor
 from .agent_with_tools import AgentWithTools, ToolCall, ToolCallResult
+from .base_agent_executor import BaseAgentExecutor
 from .coordinator_agent import CoordinatorAgent, Intent
 from .sequential_agent import SequentialAgent, SequentialStep
 from .parallel_agent import ParallelAgent, ParallelTask
@@ -74,6 +75,7 @@ __all__ = [
     "AgentWithTools",  # 带工具的代理
     "ToolCall",  # 工具调用请求
     "ToolCallResult",  # 工具调用结果
+    "BaseAgentExecutor",  # 共享的智能体执行逻辑
     "CoordinatorAgent",  # 协调代理（Coordinator/Dispatcher Pattern）
     "Intent",  # 意图分析结果
     "SequentialAgent",  # 顺序代理（Sequential Pipeline Pattern）
