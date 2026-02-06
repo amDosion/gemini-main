@@ -109,13 +109,14 @@ const MultiAgentWorkflowEditorEnhancedInner: React.FC<MultiAgentWorkflowEditorEn
   const nodeTypes = useMemo(() => ({
     start: CustomNode,
     end: CustomNode,
-    llm: CustomNode,
-    knowledge: CustomNode,
     agent: CustomNode,
+    tool: CustomNode,
+    human: CustomNode,
+    router: CustomNode,
+    parallel: CustomNode,
     condition: CustomNode,
     merge: CustomNode,
-    code: CustomNode,
-    api: CustomNode,
+    loop: CustomNode,
   }), []);
 
   // Take snapshot on changes (debounced)

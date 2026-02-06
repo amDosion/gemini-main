@@ -103,20 +103,18 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     }
   }, [redo, setNodes, setEdges]);
 
-  // Register custom node types (including ADK patterns)
+  // Register custom node types
   const nodeTypes = useMemo(() => ({
     start: CustomNode,
     end: CustomNode,
-    llm: CustomNode,
-    knowledge: CustomNode,
     agent: CustomNode,
+    tool: CustomNode,
+    human: CustomNode,
+    router: CustomNode,
+    parallel: CustomNode,
     condition: CustomNode,
     merge: CustomNode,
-    code: CustomNode,
-    api: CustomNode,
-    parallel: CustomNode,
     loop: CustomNode,
-    coordinator: CustomNode,
   }), []);
 
   // Connection validation - prevent invalid connections
