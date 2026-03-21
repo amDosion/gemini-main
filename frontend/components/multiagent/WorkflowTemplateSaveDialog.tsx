@@ -326,7 +326,6 @@ export const WorkflowTemplateSaveDialog: React.FC<WorkflowTemplateSaveDialogProp
       const response = await fetch(endpoint, {
         method: isUpdateMode ? 'PUT' : 'POST',
         headers: getAuthHeadersWithJson(),
-        credentials: 'include',
         body: JSON.stringify(templatePayload),
       });
 

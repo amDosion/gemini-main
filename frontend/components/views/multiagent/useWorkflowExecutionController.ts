@@ -1,4 +1,3 @@
-import { syncTokenToCookie } from '../../../services/authTokenStore';
 import {
   useCallback,
   useEffect,
@@ -7,25 +6,19 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from 'react';
-import { syncTokenToCookie } from '../../../services/authTokenStore';
 import { getAccessToken } from '../../../services/apiClient';
-import { syncTokenToCookie } from '../../../services/authTokenStore';
 import { requestJson } from '../../../services/http';
-import { syncTokenToCookie } from '../../../services/authTokenStore';
 import {
   DEFAULT_WORKFLOW_EXECUTION_POLICY,
   fetchWorkflowExecutionPolicy,
   type WorkflowExecutionPolicy,
 } from '../../../services/runtimePolicies';
 import type { ExecutionStatus, WorkflowEdge, WorkflowNode } from '../../multiagent/types';
-import { syncTokenToCookie } from '../../../services/authTokenStore';
 import { useWorkflowExecutionStream } from './useWorkflowExecutionStream';
-import { syncTokenToCookie } from '../../../services/authTokenStore';
 import {
   buildFailedExecutionStatus,
   createInitialExecutionStatus,
 } from './executionStatusUtils';
-import { syncTokenToCookie } from '../../../services/authTokenStore';
 import { isWorkflowExecutionAbortError } from './workflowExecutionErrors';
 
 interface WorkflowExecuteRequest {
@@ -194,8 +187,7 @@ export const useWorkflowExecutionController = ({
 
         const token = getAccessToken();
         if (token) {
-          syncTokenToCookie(token);
-        }
+                  }
 
         const normalizedProviderId = String(providerId || '').trim();
         if (!normalizedProviderId) {
@@ -208,7 +200,6 @@ export const useWorkflowExecutionController = ({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           withAuth: true,
-          credentials: 'include',
           signal: executionController.signal,
           timeoutMs: 0,
           errorMessage: '工作流执行失败',

@@ -80,7 +80,6 @@ describe('WorkflowTemplateSaveDialog', () => {
         '/api/workflows/templates/template-1',
         expect.objectContaining({
           method: 'PUT',
-          credentials: 'include',
         }),
       );
     });
@@ -145,7 +144,6 @@ describe('WorkflowTemplateSaveDialog', () => {
         '/api/workflows/templates',
         expect.objectContaining({
           method: 'POST',
-          credentials: 'include',
         }),
       );
     });

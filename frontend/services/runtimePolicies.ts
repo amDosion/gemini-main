@@ -87,7 +87,6 @@ export const fetchDeepResearchStreamPolicy = async (): Promise<DeepResearchStrea
   try {
     const payload = await requestJson<Record<string, unknown>>('/api/research/stream/policy', {
       withAuth: true,
-      credentials: 'include',
       errorMessage: '加载 Deep Research 策略失败',
     });
     deepResearchPolicyCache = normalizeDeepResearchPolicy(payload);
@@ -104,7 +103,6 @@ export const fetchWorkflowExecutionPolicy = async (): Promise<WorkflowExecutionP
   try {
     const payload = await requestJson<Record<string, unknown>>('/api/workflows/execution-policy', {
       withAuth: true,
-      credentials: 'include',
       errorMessage: '加载工作流执行策略失败',
     });
     workflowExecutionPolicyCache = normalizeWorkflowExecutionPolicy(payload);

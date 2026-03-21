@@ -23,7 +23,6 @@ export const fetchWorkflowExecutionState = async (
     `/api/workflows/${encodeURIComponent(safeExecutionId)}/state`,
     {
       withAuth: true,
-      credentials: 'include',
       signal,
       timeoutMs: 0,
       errorMessage: '加载工作流状态失败',

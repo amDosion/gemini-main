@@ -57,19 +57,3 @@ export function withAuthorization(
   return finalHeaders;
 }
 
-/** 同步 access_token 到 cookie（用于 EventSource 等场景） */
-export function syncTokenToCookie(token: string | null, expiresIn: number = 86400): void {
-  if (typeof document === 'undefined') return;
-  if (token) {
-    const expires = new Date(Date.now() + expiresIn * 1000).toUTCString();
-    document.cookie = `access_token=${token}; expires=${expires}; path=/; SameSite=Lax`;
-  } else {
-    document.cookie = 'access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax';
-  }
-}
-
-/** 确保 cookie 与 localStorage 中的 token 一致 */
-export function ensureTokenSync(): void {
-  const token = getAccessToken();
-  syncTokenToCookie(token);
-}

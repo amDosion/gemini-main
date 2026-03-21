@@ -129,7 +129,6 @@ export class LLMService {
           const response = await fetchWithTimeout(`/api/models/${this.providerId}?${params.toString()}`, {
               method: 'GET',
               cache: 'no-store',
-              credentials: 'include', // 携带认证 Cookie
               headers: {
                   'Content-Type': 'application/json'
               },
@@ -251,7 +250,6 @@ export class LLMService {
               headers: {
                   'Content-Type': 'application/json',
               },
-              credentials: 'include', // Include cookies for user_id
               withAuth: true,
           });
 

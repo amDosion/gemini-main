@@ -1505,7 +1505,6 @@ export const listAdkAgentSessions = async (
         signal,
         timeoutMs: 0,
         withAuth: true,
-        credentials: 'include',
       }
     );
   } catch (error) {
@@ -1543,7 +1542,6 @@ export const getAdkAgentSession = async (
         signal,
         timeoutMs: 0,
         withAuth: true,
-        credentials: 'include',
       }
     );
   } catch (error) {
@@ -1618,7 +1616,6 @@ export const confirmAdkToolCall = async (
         signal,
         timeoutMs: 0,
         withAuth: true,
-        credentials: 'include',
         body: JSON.stringify({
           function_call_id: functionCallId,
           confirmed: request.confirmed === true,
@@ -1673,7 +1670,6 @@ export const rewindAdkSession = async (
         signal,
         timeoutMs: 0,
         withAuth: true,
-        credentials: 'include',
         body: JSON.stringify({
           rewind_before_invocation_id: normalizedInvocation,
         }),

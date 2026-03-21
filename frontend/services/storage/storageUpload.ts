@@ -46,7 +46,6 @@ export class StorageUploadService {
       const response = await fetchWithTimeout(`${API_BASE}/storage/configs`, {
         method: 'GET',
         withAuth: true,
-        credentials: 'include',
       });
 
       const available = response.ok;
@@ -89,7 +88,6 @@ export class StorageUploadService {
       const response = await fetchWithTimeout(url, {
         method: 'POST',
         withAuth: true,
-        credentials: 'include',
         body: formData,
         timeoutMs: 120000,
       });
@@ -410,7 +408,6 @@ export class StorageUploadService {
       const result = await requestJson<any>(`${API_BASE}/storage/upload-async?${params.toString()}`, {
         method: 'POST',
         withAuth: true,
-        credentials: 'include',
         body: formData,
         timeoutMs: 120000,
         errorMessage: '创建上传任务失败',
@@ -463,7 +460,6 @@ export class StorageUploadService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         withAuth: true,
-        credentials: 'include',
         timeoutMs: 30000,
         errorMessage: '创建上传任务失败',
         body: JSON.stringify({
@@ -508,7 +504,6 @@ export class StorageUploadService {
     try {
       const result = await requestJson<any>(`${API_BASE}/storage/upload-status/${taskId}`, {
         withAuth: true,
-        credentials: 'include',
         errorMessage: '查询上传状态失败',
       });
       
@@ -534,7 +529,6 @@ export class StorageUploadService {
     }
     const response = await fetchWithTimeout(`${API_BASE}/storage/upload-logs/${taskId}?tail=${tail}`, {
       withAuth: true,
-      credentials: 'include',
     });
     if (response.status === 404) {
       // 后端未更新/路由未注册：避免在轮询里刷屏

@@ -63,7 +63,6 @@ class ApiDB {
                 timeoutMs,
                 timeoutMessage: () => `Request timeout after ${timeoutMs}ms: ${endpoint}`,
                 abortMessage: 'Request cancelled by user',
-                credentials: 'include' // 携带 Cookie（向后兼容）
             });
 
             if (!res.ok) {

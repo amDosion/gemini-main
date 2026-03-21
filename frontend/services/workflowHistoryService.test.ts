@@ -37,7 +37,6 @@ describe('workflowHistoryService', () => {
     expect(requestJsonMock).toHaveBeenCalledWith(
       '/api/workflows/history/exec-1/images/preview?limit=5',
       expect.objectContaining({
-        credentials: 'include',
         signal,
         timeoutMs: 0,
         withAuth: true,
@@ -136,7 +135,6 @@ describe('workflowHistoryService', () => {
     expect(requestJsonMock).toHaveBeenCalledWith(
       '/api/workflows/history/exec-1/video/preview?limit=3',
       expect.objectContaining({
-        credentials: 'include',
         signal,
         timeoutMs: 0,
         withAuth: true,

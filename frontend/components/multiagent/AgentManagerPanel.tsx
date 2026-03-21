@@ -81,7 +81,6 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
   const fetchProviders = useCallback(async () => {
     await fetch('/api/agents/available-models', {
       headers: getHeaders(),
-      credentials: 'include',
     }).then(res => {
       if (res.ok) return res.json().then(data => setProviders(normalizeProviderModels(data)));
     });
@@ -227,7 +226,6 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
       const res = await fetch(url, {
         method,
         headers: getHeaders(),
-        credentials: 'include',
         body: JSON.stringify({
           name: editing.name,
           description: editing.description,
@@ -266,7 +264,6 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
       const res = await fetch(path, {
         method: 'DELETE',
         headers: getHeaders(),
-        credentials: 'include',
       });
       if (!res.ok) {
         setNotice({ type: 'error', text: await getErrorMessage(res, hardDelete ? '永久删除失败' : '停用失败') });
@@ -292,7 +289,6 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
       const res = await fetch(`/api/agents/${id}/restore?rename_on_conflict=true`, {
         method: 'POST',
         headers: getHeaders(),
-        credentials: 'include',
       });
       if (!res.ok) {
         setNotice({ type: 'error', text: await getErrorMessage(res, '恢复 Agent 失败') });

@@ -554,7 +554,6 @@ export const replayStageFromAnchor = async (
       signal,
       timeoutMs: 0,
       withAuth: true,
-      credentials: 'include',
     }
   );
 

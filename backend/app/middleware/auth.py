@@ -5,12 +5,8 @@ from typing import Optional, Callable
 from functools import wraps
 
 from fastapi import Request, HTTPException, Depends
-from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
 
 from ..core.jwt_utils import decode_token, TokenPayload
-from ..core.database import get_db
-from ..services.common.auth_service import AuthService, InvalidTokenError, TokenExpiredError
 
 
 # 不需要认证的路径
@@ -24,49 +20,7 @@ PUBLIC_PATHS = [
 ]
 
 
-class AuthMiddleware(BaseHTTPMiddleware):
-    """认证中间件"""
-
-    async def dispatch(self, request: Request, call_next):
-        # 跳过公开路径
-        path = request.url.path
-        if any(path.startswith(p) for p in PUBLIC_PATHS):
-            return await call_next(request)
-
-        # 从 cookie 获取 access_token
-        access_token = request.cookies.get("access_token")
-        if not access_token:
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Not authenticated"}
-            )
-
-        # 验证令牌
-        try:
-            payload = decode_token(access_token)
-            # 将用户信息注入到 request.state
-            request.state.user_id = payload.sub
-            request.state.token_payload = payload
-        except Exception:
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Invalid or expired token"}
-            )
-
-        # 对于状态变更请求，验证 CSRF token
-        if request.method in ["POST", "PUT", "DELETE", "PATCH"]:
-            csrf_cookie = request.cookies.get("csrf_token")
-            csrf_header = request.headers.get("X-CSRF-Token")
-            
-            # 跳过登录/注册/刷新的 CSRF 验证（它们在 PUBLIC_PATHS 中）
-            if csrf_cookie and csrf_header:
-                if csrf_cookie != csrf_header:
-                    return JSONResponse(
-                        status_code=403,
-                        content={"detail": "CSRF validation failed"}
-                    )
-
-        return await call_next(request)
+# AuthMiddleware removed - using Depends(require_current_user) instead
 
 
 async def get_current_user(request: Request) -> Optional[str]:

@@ -576,7 +576,6 @@ export const fetchAttachmentStatus = async (
     
     const response = await fetch(`/api/attachments/${attachmentId}/cloud-url`, {
       headers,
-      credentials: 'include',
     });
     
     if (!response.ok) {
@@ -682,7 +681,6 @@ export const prepareAttachmentForApi = async (
         const response = await fetch('/api/attachments/resolve-continuity', {
           method: 'POST',
           headers,
-          credentials: 'include',
           body: JSON.stringify(requestBody)
         });
 

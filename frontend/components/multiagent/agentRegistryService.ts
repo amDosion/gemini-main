@@ -264,7 +264,6 @@ export const fetchAgentList = async (options: AgentListFetchOptions = {}): Promi
 
   const payload = await requestJson<Record<string, unknown>>(url, {
     withAuth: true,
-    credentials: 'include',
     signal: options.signal,
     timeoutMs: 0,
     errorMessage: 'Failed to fetch agents',

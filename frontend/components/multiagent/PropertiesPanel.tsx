@@ -287,7 +287,6 @@ function useProviderModels(selectedNode: Node<CustomNodeData> | null, nodeType: 
       try {
         const res = await fetch('/api/agents/available-models', {
           headers: getAuthHeaders(),
-          credentials: 'include',
         });
         if (!res.ok || cancelled) return;
         const data = await res.json();

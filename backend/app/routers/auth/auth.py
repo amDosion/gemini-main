@@ -95,13 +95,7 @@ def _build_auth_cookie_specs(tokens: TokenPair) -> tuple[AuthCookieSpec, ...]:
             max_age=refresh_max_age,
             httponly=True,
         ),
-        AuthCookieSpec(
-            key="csrf_token",
-            value=tokens.csrf_token,
-            path="/",
-            max_age=access_max_age,
-            httponly=False,
-        ),
+
     )
 
 
@@ -109,7 +103,6 @@ def _build_auth_cookie_clear_specs() -> tuple[AuthCookieClearSpec, ...]:
     return (
         AuthCookieClearSpec(key="access_token", path="/", httponly=True),
         AuthCookieClearSpec(key="refresh_token", path="/api/auth/refresh", httponly=True),
-        AuthCookieClearSpec(key="csrf_token", path="/"),
     )
 
 

@@ -10,7 +10,6 @@ import {
   setAccessToken,
   setRefreshToken,
   withAuthorization,
-  syncTokenToCookie,
 } from './authTokenStore';
 import { fetchWithTimeout, parseHttpError, readJsonResponse } from './http';
 
@@ -247,7 +246,6 @@ class AuthService {
       setAccessToken(result.accessToken);
       // ✅ 同时设置 Cookie（用于 EventSource 等场景）
       // 注意：后端也会设置 Cookie，这里作为双重保障
-      syncTokenToCookie(result.accessToken, result.expiresIn || 3600);
     }
     // ✅ 保存 refresh_token
     if (result.refreshToken) {
@@ -266,7 +264,6 @@ class AuthService {
   async logout(): Promise<void> {
     try {
       // ✅ 清除 Cookie
-      syncTokenToCookie(null);
     } catch (e) {
       // 忽略 Cookie 清除错误
     }
@@ -361,8 +358,7 @@ class AuthService {
         if (result.accessToken) {
           setAccessToken(result.accessToken);
           // ✅ 同时更新 Cookie
-          syncTokenToCookie(result.accessToken, result.expiresIn || 3600);
-        }
+            }
 
         // ✅ 更新 refresh_token（Token 轮换）
         if (result.refreshToken) {

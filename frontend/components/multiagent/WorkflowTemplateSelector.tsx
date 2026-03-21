@@ -539,7 +539,6 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
     try {
       const response = await fetch('/api/auth/me', {
         headers: getAuthHeaders(),
-        credentials: 'include',
       });
       if (!response.ok) {
         return;
@@ -558,7 +557,6 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
     try {
       const templateResponse = await fetch('/api/workflows/templates', {
         headers: getAuthHeaders(),
-        credentials: 'include',
       });
 
       if (!templateResponse.ok) {
@@ -702,7 +700,6 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
           ...getAuthHeaders(),
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
         body: JSON.stringify({}),
       });
 
@@ -800,7 +797,6 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
           ...getAuthHeaders(),
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
         body: JSON.stringify({
           name: normalizedName,
         }),
@@ -871,7 +867,6 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
       const response = await fetch(`/api/workflows/templates/${encodeURIComponent(templateId)}`, {
         method: 'DELETE',
         headers: getAuthHeaders(),
-        credentials: 'include',
       });
       if (!response.ok) {
         let message = '删除模板失败';

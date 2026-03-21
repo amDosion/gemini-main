@@ -448,7 +448,6 @@ export class DeepResearchHandler extends BaseHandler {
     const startResponse = await fetch('/api/research/stream/start', {
       method: 'POST',
       headers,
-      credentials: 'include',
       body: JSON.stringify({
         prompt: text,
         agent: deepResearchAgentId,
@@ -692,7 +691,6 @@ export class DeepResearchHandler extends BaseHandler {
             headers: {
               ...getAuthHeaders(),
             },
-            credentials: 'include',
           }
         );
         if (!response.ok) {
@@ -800,7 +798,6 @@ export class DeepResearchHandler extends BaseHandler {
         await fetch(`/api/research/stream/cancel/${currentInteractionId}`, {
           method: 'POST',
           headers,
-          credentials: 'include',
         });
         finalizeCancelled('Deep Research 已停止');
       };
@@ -838,7 +835,6 @@ export class DeepResearchHandler extends BaseHandler {
           const actionResponse = await fetch('/api/research/stream/action', {
             method: 'POST',
             headers,
-            credentials: 'include',
             body: JSON.stringify({
               agent: deepResearchAgentId,
               previous_interaction_id: currentInteractionId,

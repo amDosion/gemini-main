@@ -90,7 +90,6 @@ describe('useModeControlsSchema', () => {
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/modes/google/video-gen/controls?model_id=veo-3-fast',
         expect.objectContaining({
-          credentials: 'include',
           method: 'GET',
           signal: expect.any(AbortSignal),
         })

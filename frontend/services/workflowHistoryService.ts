@@ -155,7 +155,6 @@ export const fetchWorkflowPreviewImagesWithMeta = async (
     payload = await requestJson<WorkflowPreviewPayload>(
       `/api/workflows/history/${encodeURIComponent(safeExecutionId)}/images/preview${query}`,
       {
-        credentials: 'include',
         signal,
         timeoutMs: 0,
         withAuth: true,
@@ -205,7 +204,6 @@ export const fetchWorkflowPreviewMediaWithMeta = async (
     payload = await requestJson<WorkflowMediaPreviewPayload>(
       `/api/workflows/history/${encodeURIComponent(safeExecutionId)}/${safeMediaKind}/preview${query}`,
       {
-        credentials: 'include',
         signal,
         timeoutMs: 0,
         withAuth: true,

@@ -26,7 +26,6 @@ export class MultiAgentHandler extends BaseHandler {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           withAuth: true,
-          credentials: 'include',
           timeoutMs: 0,
           errorMessage: '工作流执行失败',
           body: JSON.stringify({

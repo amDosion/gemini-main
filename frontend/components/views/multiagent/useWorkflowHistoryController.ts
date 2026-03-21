@@ -224,7 +224,6 @@ export const useWorkflowHistoryController = ({
     try {
       const payload = await requestJson<any>('/api/workflows/history?limit=100', {
         withAuth: true,
-        credentials: 'include',
         signal: controller.signal,
         timeoutMs: 0,
         errorMessage: '加载工作流历史失败',
@@ -277,7 +276,6 @@ export const useWorkflowHistoryController = ({
     try {
       const payload = await requestJson<any>(`/api/workflows/history/${executionId}`, {
         withAuth: true,
-        credentials: 'include',
         signal: controller.signal,
         timeoutMs: 0,
         errorMessage: '加载历史详情失败',
@@ -366,7 +364,6 @@ export const useWorkflowHistoryController = ({
       await requestJson(`/api/workflows/history/${executionId}`, {
         method: 'DELETE',
         withAuth: true,
-        credentials: 'include',
         signal: controller.signal,
         timeoutMs: 0,
         errorMessage: '删除工作流历史失败',

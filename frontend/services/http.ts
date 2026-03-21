@@ -1,4 +1,4 @@
-import { withAuthorization, ensureTokenSync } from './authTokenStore';
+import { withAuthorization } from './authTokenStore';
 
 export const DEFAULT_REQUEST_TIMEOUT_MS = 10000;
 
@@ -166,9 +166,6 @@ export async function fetchWithTimeout(
         controller.abort();
       }, timeoutMs)
     : null;
-
-  // 确保 cookie 与 localStorage 中的 token 一致
-  if (withAuth) ensureTokenSync();
 
   try {
     return await fetch(input, {

@@ -650,7 +650,6 @@ export function useModeControlsSchema(
     void requestJson<ControlsApiResponse>(requestUrl, {
       method: 'GET',
       withAuth: true,
-      credentials: 'include',
       signal: controller.signal,
       timeoutMs: 0,
       errorMessage: 'Failed to fetch controls schema',

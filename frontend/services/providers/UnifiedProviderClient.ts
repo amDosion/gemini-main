@@ -267,7 +267,6 @@ export class UnifiedProviderClient implements ILLMProvider {
       const url = queryString ? `/api/models/${this.id}?${queryString}` : `/api/models/${this.id}`;
       const response = await fetchWithTimeout(url, {
         withAuth: true,
-        credentials: 'include',  // 发送认证 Cookie
         timeoutMs: 30000,
         timeoutMessage: `Request to ${this.id} API timed out after 30 seconds. Please check your network connection and try again.`,
       });
@@ -387,7 +386,6 @@ export class UnifiedProviderClient implements ILLMProvider {
         const response = await fetch(`/api/modes/${this.id}/chat`, {
           method: 'POST',
           headers,
-          credentials: 'include',  // 发送认证 Cookie
           body: JSON.stringify(requestBody),
           signal: controller.signal
         });
@@ -605,7 +603,6 @@ export class UnifiedProviderClient implements ILLMProvider {
       const response = await fetchWithTimeout(url, {
         method: 'POST',
         headers,
-        credentials: 'include',
         body: JSON.stringify(requestBody),
         timeoutMs: 0,
       });
@@ -896,7 +893,6 @@ export class UnifiedProviderClient implements ILLMProvider {
       const response = await fetchWithTimeout(`/api/upload/${this.id}`, {
         method: 'POST',
         headers,
-        credentials: 'include',  // 发送认证 Cookie
         body: formData,
         timeoutMs: 120000,
       });
