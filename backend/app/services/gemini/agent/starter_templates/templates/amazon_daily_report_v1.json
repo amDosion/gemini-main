@@ -1,0 +1,196 @@
+{
+  "starter_key": "amazon_daily_report_v1",
+  "starter_version": 1,
+  "name": "亚马逊运营日报工作流",
+  "description": "并行分析广告/销售/竞品数据，合并后生成运营日报。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "daily-report",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-daily",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 260
+        },
+        "data": {
+          "type": "start",
+          "label": "今日数据",
+          "description": "输入今日运营数据（广告+销售+竞品信息）",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "parallel-analysis",
+        "type": "parallel",
+        "position": {
+          "x": 300,
+          "y": 260
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行分析",
+          "description": "同时分析广告、销售、竞品三个维度",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-ad-daily",
+        "type": "agent",
+        "position": {
+          "x": 540,
+          "y": 100
+        },
+        "data": {
+          "type": "agent",
+          "label": "广告分析",
+          "description": "分析今日广告数据表现",
+          "icon": "📊",
+          "iconColor": "bg-blue-500",
+          "agentName": "亚马逊广告分析师",
+          "instructions": "请分析今日广告数据，输出简要分析：\n1. 今日广告关键指标（Spend/Sales/ACOS）\n2. 与昨日/上周同期对比\n3. 异常 Campaign 标注\n4. 紧急调整建议（如有）"
+        }
+      },
+      {
+        "id": "agent-sales-daily",
+        "type": "agent",
+        "position": {
+          "x": 540,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "销售分析",
+          "description": "分析今日销售和库存数据",
+          "icon": "📈",
+          "iconColor": "bg-cyan-500",
+          "agentName": "数据报表分析师",
+          "instructions": "请分析今日销售和运营数据：\n1. 今日订单量/销售额/退款率\n2. 各 ASIN 表现排名\n3. 库存预警（低于安全库存的 SKU）\n4. BSR 变动趋势"
+        }
+      },
+      {
+        "id": "agent-compete-daily",
+        "type": "agent",
+        "position": {
+          "x": 540,
+          "y": 420
+        },
+        "data": {
+          "type": "agent",
+          "label": "竞品动态",
+          "description": "监测竞品动态变化",
+          "icon": "🎯",
+          "iconColor": "bg-red-500",
+          "agentName": "竞品分析专家",
+          "instructions": "请分析竞品最新动态：\n1. 竞品价格变动\n2. 竞品新增 Review 或 Q&A\n3. 竞品广告位变化\n4. 需要关注的竞品行为"
+        }
+      },
+      {
+        "id": "merge-daily",
+        "type": "merge",
+        "position": {
+          "x": 780,
+          "y": 260
+        },
+        "data": {
+          "type": "merge",
+          "label": "汇总合并",
+          "description": "合并三个分析结果",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-summary",
+        "type": "agent",
+        "position": {
+          "x": 1000,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "日报生成",
+          "description": "汇总三维分析生成运营日报",
+          "icon": "🧠",
+          "iconColor": "bg-indigo-500",
+          "agentName": "运营策略顾问",
+          "instructions": "请将广告分析、销售分析和竞品动态三部分汇总，生成结构化的运营日报：\n1. 【今日概要】一句话总结\n2. 【关键指标】核心数据表格\n3. 【重要发现】3-5 条关键发现\n4. 【待办事项】今日需要处理的事项（按优先级）\n5. 【明日关注】明天重点关注的事项"
+        }
+      },
+      {
+        "id": "end-daily",
+        "type": "end",
+        "position": {
+          "x": 1240,
+          "y": 260
+        },
+        "data": {
+          "type": "end",
+          "label": "运营日报",
+          "description": "输出每日运营报告",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-daily-1",
+        "source": "start-daily",
+        "target": "parallel-analysis"
+      },
+      {
+        "id": "e-daily-2",
+        "source": "parallel-analysis",
+        "target": "agent-ad-daily"
+      },
+      {
+        "id": "e-daily-3",
+        "source": "parallel-analysis",
+        "target": "agent-sales-daily"
+      },
+      {
+        "id": "e-daily-4",
+        "source": "parallel-analysis",
+        "target": "agent-compete-daily"
+      },
+      {
+        "id": "e-daily-5",
+        "source": "agent-ad-daily",
+        "target": "merge-daily"
+      },
+      {
+        "id": "e-daily-6",
+        "source": "agent-sales-daily",
+        "target": "merge-daily"
+      },
+      {
+        "id": "e-daily-7",
+        "source": "agent-compete-daily",
+        "target": "merge-daily"
+      },
+      {
+        "id": "e-daily-8",
+        "source": "merge-daily",
+        "target": "agent-summary"
+      },
+      {
+        "id": "e-daily-9",
+        "source": "agent-summary",
+        "target": "end-daily"
+      }
+    ]
+  }
+}

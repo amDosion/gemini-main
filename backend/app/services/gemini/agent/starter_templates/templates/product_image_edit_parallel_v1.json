@@ -1,0 +1,274 @@
+{
+  "starter_key": "product_image_edit_parallel_v1",
+  "starter_version": 9,
+  "name": "产品图片图生图并行工作流",
+  "description": "纯图生图流程：参考图输入 + 编辑规划 + 并行多 Agent 编辑 + 质检汇总。",
+  "category": "图像工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "image",
+    "image-to-image",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-img-edit-parallel",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 240
+        },
+        "data": {
+          "type": "start",
+          "label": "图生图输入",
+          "description": "输入编辑目标和输出用途",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-image-img-edit-parallel",
+        "type": "input_image",
+        "position": {
+          "x": 300,
+          "y": 240
+        },
+        "data": {
+          "type": "input_image",
+          "label": "参考图输入",
+          "description": "上传原图或填写 imageUrl（图生图必填）",
+          "icon": "🖼️",
+          "iconColor": "bg-lime-500",
+          "startImageUrl": ""
+        }
+      },
+      {
+        "id": "input-text-img-edit-parallel",
+        "type": "input_text",
+        "position": {
+          "x": 520,
+          "y": 240
+        },
+        "data": {
+          "type": "input_text",
+          "label": "编辑目标",
+          "description": "例如：主图白底 + 场景图 + 卖点特写",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-edit-plan",
+        "type": "agent",
+        "position": {
+          "x": 760,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "编辑规划",
+          "description": "生成三路图生图编辑提示词",
+          "icon": "🧠",
+          "iconColor": "bg-violet-500",
+          "agentName": "图片编辑优化师",
+          "inputMapping": "编辑目标：{{input-text-img-edit-parallel.output.text}}\\n参考图地址：{{input-image-img-edit-parallel.output.imageUrl}}\\n\\n请输出三路图生图提示词：\\n- 主图编辑提示词\\n- 场景图编辑提示词\\n- 卖点图编辑提示词",
+          "instructions": "请根据参考图与编辑目标，生成可直接执行的图生图提示词，确保不改变核心产品形态。"
+        }
+      },
+      {
+        "id": "parallel-img-edit",
+        "type": "parallel",
+        "position": {
+          "x": 1000,
+          "y": 240
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行编辑",
+          "description": "并行生成主图/场景图/卖点图",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "tool-main-edit",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": 100
+        },
+        "data": {
+          "type": "agent",
+          "label": "主图图生图",
+          "description": "主图智能体执行图生图",
+          "icon": "🪄",
+          "iconColor": "bg-purple-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentReferenceImageUrl": "{{input-image-img-edit-parallel.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-edit-plan.output.text}}\\n\\n请严格执行主图要求：纯白背景，无文字无水印，保留产品主体细节。仅返回编辑后的图片。",
+          "instructions": "执行 image-chat-edit，重点保证主体一致与主图合规。"
+        }
+      },
+      {
+        "id": "tool-scene-edit",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "场景图图生图",
+          "description": "场景智能体执行图生图",
+          "icon": "🏞️",
+          "iconColor": "bg-indigo-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentReferenceImageUrl": "{{input-image-img-edit-parallel.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-edit-plan.output.text}}\\n\\n请严格执行场景图要求：保持产品主体一致，增强使用场景真实感。仅返回编辑后的图片。",
+          "instructions": "执行 image-chat-edit，保持产品形态不变并增强场景叙事。"
+        }
+      },
+      {
+        "id": "tool-detail-edit",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": 380
+        },
+        "data": {
+          "type": "agent",
+          "label": "卖点图图生图",
+          "description": "卖点智能体执行图生图",
+          "icon": "🔍",
+          "iconColor": "bg-violet-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentReferenceImageUrl": "{{input-image-img-edit-parallel.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-edit-plan.output.text}}\\n\\n请严格执行卖点图要求：突出材质与工艺细节，背景简洁。仅返回编辑后的图片。",
+          "instructions": "执行 image-chat-edit，优先强化材质纹理和细节层次。"
+        }
+      },
+      {
+        "id": "merge-img-edit",
+        "type": "merge",
+        "position": {
+          "x": 1480,
+          "y": 240
+        },
+        "data": {
+          "type": "merge",
+          "label": "编辑汇总",
+          "description": "汇总并行图生图结果",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-edit-qa",
+        "type": "agent",
+        "position": {
+          "x": 1720,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "结果质检",
+          "description": "输出最终可交付图清单与复修建议",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "agentName": "图片编辑优化师",
+          "inputMapping": "并行图生图结果摘要：{{merge-img-edit.output.text}}\\n编辑规划：{{agent-edit-plan.output.text}}",
+          "instructions": "请对已生成图生图结果做交付质检（不要再索要输入）：\n1. 每类图选择最优结果（主图/场景图/卖点图）\n2. 标注不合规风险（主图规范、清晰度、一致性）\n3. 输出可直接交付与需二次编辑清单\n4. 给出下一轮编辑提示词（如需要）"
+        }
+      },
+      {
+        "id": "end-img-edit-parallel",
+        "type": "end",
+        "position": {
+          "x": 1960,
+          "y": 240
+        },
+        "data": {
+          "type": "end",
+          "label": "图生图结果",
+          "description": "输出并行图生图交付结果",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-img-edit-p-1",
+        "source": "start-img-edit-parallel",
+        "target": "input-image-img-edit-parallel"
+      },
+      {
+        "id": "e-img-edit-p-2",
+        "source": "input-image-img-edit-parallel",
+        "target": "input-text-img-edit-parallel"
+      },
+      {
+        "id": "e-img-edit-p-3",
+        "source": "input-text-img-edit-parallel",
+        "target": "agent-edit-plan"
+      },
+      {
+        "id": "e-img-edit-p-4",
+        "source": "agent-edit-plan",
+        "target": "parallel-img-edit"
+      },
+      {
+        "id": "e-img-edit-p-5",
+        "source": "parallel-img-edit",
+        "target": "tool-main-edit"
+      },
+      {
+        "id": "e-img-edit-p-6",
+        "source": "parallel-img-edit",
+        "target": "tool-scene-edit"
+      },
+      {
+        "id": "e-img-edit-p-7",
+        "source": "parallel-img-edit",
+        "target": "tool-detail-edit"
+      },
+      {
+        "id": "e-img-edit-p-8",
+        "source": "tool-main-edit",
+        "target": "merge-img-edit"
+      },
+      {
+        "id": "e-img-edit-p-9",
+        "source": "tool-scene-edit",
+        "target": "merge-img-edit"
+      },
+      {
+        "id": "e-img-edit-p-10",
+        "source": "tool-detail-edit",
+        "target": "merge-img-edit"
+      },
+      {
+        "id": "e-img-edit-p-11",
+        "source": "merge-img-edit",
+        "target": "agent-edit-qa"
+      },
+      {
+        "id": "e-img-edit-p-12",
+        "source": "agent-edit-qa",
+        "target": "end-img-edit-parallel"
+      }
+    ]
+  }
+}

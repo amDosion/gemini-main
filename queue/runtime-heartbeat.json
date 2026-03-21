@@ -1,0 +1,8 @@
+{
+  "timestamp": "2026-03-17T00:00:00+08:00",
+  "phase": "planning",
+  "activeLanes": 0,
+  "completedTasks": 0,
+  "pendingTasks": 6,
+  "message": "Queue is initialized and waiting for research execution."
+}

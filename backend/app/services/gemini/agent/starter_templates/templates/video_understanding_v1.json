@@ -1,0 +1,96 @@
+{
+  "starter_key": "video_understanding_v1",
+  "starter_version": 2,
+  "name": "工作流 · 视频理解",
+  "description": "输入视频 + 分析任务，调用 Google 视频理解能力输出结构化结论。",
+  "category": "多模态工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "video",
+    "video-understand",
+    "google-runtime",
+    "starter"
+  ],
+  "sample_input": {
+    "task": "请分析视频里的主要场景、人物动作、镜头变化、字幕信息和可用于后续剪辑的关键节点。",
+    "videoUrl": "https://storage.googleapis.com/cloud-samples-data/generative-ai/video/animals.mp4"
+  },
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-video-understand",
+        "type": "start",
+        "position": { "x": 80, "y": 240 },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "接收视频理解任务",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-video-understand",
+        "type": "input_video",
+        "position": { "x": 300, "y": 160 },
+        "data": {
+          "type": "input_video",
+          "label": "视频输入",
+          "description": "上传或填写待理解的视频",
+          "icon": "🎬",
+          "iconColor": "bg-indigo-500",
+          "startVideoUrl": ""
+        }
+      },
+      {
+        "id": "input-text-video-understand",
+        "type": "input_text",
+        "position": { "x": 300, "y": 320 },
+        "data": {
+          "type": "input_text",
+          "label": "分析目标",
+          "description": "配置理解要求（input.task）",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "tool-video-understand",
+        "type": "tool",
+        "position": { "x": 620, "y": 240 },
+        "data": {
+          "type": "tool",
+          "label": "视频理解",
+          "description": "调用 Google 视频理解能力",
+          "icon": "🧠",
+          "iconColor": "bg-indigo-500",
+          "toolName": "video_understand",
+          "toolProviderId": "google",
+          "toolModelId": "gemini-2.5-flash",
+          "toolSourceVideoUrl": "{{input-video-understand.output}}",
+          "toolArgsTemplate": "{\"prompt\":\"{{input-text-video-understand.output.text}}\",\"output_format\":\"json\"}"
+        }
+      },
+      {
+        "id": "end-video-understand",
+        "type": "end",
+        "position": { "x": 900, "y": 240 },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出视频理解结论",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      { "id": "edge-video-understand-1", "source": "start-video-understand", "target": "input-video-understand" },
+      { "id": "edge-video-understand-2", "source": "input-video-understand", "target": "input-text-video-understand" },
+      { "id": "edge-video-understand-3", "source": "input-text-video-understand", "target": "tool-video-understand" },
+      { "id": "edge-video-understand-4", "source": "tool-video-understand", "target": "end-video-understand" }
+    ]
+  }
+}

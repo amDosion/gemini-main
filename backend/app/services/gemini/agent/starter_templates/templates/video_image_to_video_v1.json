@@ -1,0 +1,100 @@
+{
+  "starter_key": "video_image_to_video_v1",
+  "starter_version": 1,
+  "name": "工作流 · 图生视频",
+  "description": "参考图 + 文本任务 + 当前活跃 Provider 视频生成，适合作为 provider-neutral 图生视频模板。",
+  "category": "多模态工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "video",
+    "video-gen",
+    "image-to-video",
+    "provider-neutral",
+    "starter"
+  ],
+  "sample_input": {
+    "task": "请把这张产品图转成 8 秒短视频：镜头从半身景平稳推进到近景，主体始终居中，背景干净，适合电商首屏。",
+    "imageUrl": "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=1200&q=80"
+  },
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-video-image-to-video",
+        "type": "start",
+        "position": { "x": 80, "y": 240 },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "接收图生视频任务",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-image-video-image-to-video",
+        "type": "input_image",
+        "position": { "x": 300, "y": 160 },
+        "data": {
+          "type": "input_image",
+          "label": "参考图",
+          "description": "上传首帧参考图或填写 imageUrl",
+          "icon": "🖼️",
+          "iconColor": "bg-lime-500",
+          "startImageUrl": ""
+        }
+      },
+      {
+        "id": "input-text-video-image-to-video",
+        "type": "input_text",
+        "position": { "x": 300, "y": 320 },
+        "data": {
+          "type": "input_text",
+          "label": "镜头需求",
+          "description": "配置视频动作与镜头要求（input.task）",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-video-image-to-video",
+        "type": "agent",
+        "position": { "x": 600, "y": 240 },
+        "data": {
+          "type": "agent",
+          "label": "图生视频",
+          "description": "用参考图作为首帧生成连续视频",
+          "icon": "🎬",
+          "iconColor": "bg-fuchsia-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "video-gen",
+          "agentAspectRatio": "16:9",
+          "agentResolutionTier": "1K",
+          "agentVideoDurationSeconds": 8,
+          "agentReferenceImageUrl": "{{input-image-video-image-to-video.output.imageUrl}}",
+          "inputMapping": "参考图：{{input-image-video-image-to-video.output.imageUrl}}\\n需求：{{input-text-video-image-to-video.output.text}}\\n\\n请把参考图中的主体、材质、颜色和构图关系稳定地延续为视频首帧，再生成连贯运动。明确主体动作、镜头运动、背景层次、光线变化和结尾状态，避免主体漂移、形变和背景突然重构。",
+          "instructions": "你是图生视频导演节点。必须把参考图当成视觉锚点：主体形态、材质、配色、视角和品牌元素要保持稳定。优先输出镜头平稳、节奏清晰、适合产品展示或视觉叙事的视频。只返回视频结果。"
+        }
+      },
+      {
+        "id": "end-video-image-to-video",
+        "type": "end",
+        "position": { "x": 860, "y": 240 },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出图生视频结果",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      { "id": "edge-video-image-to-video-1", "source": "start-video-image-to-video", "target": "input-image-video-image-to-video" },
+      { "id": "edge-video-image-to-video-2", "source": "input-image-video-image-to-video", "target": "input-text-video-image-to-video" },
+      { "id": "edge-video-image-to-video-3", "source": "input-text-video-image-to-video", "target": "agent-video-image-to-video" },
+      { "id": "edge-video-image-to-video-4", "source": "agent-video-image-to-video", "target": "end-video-image-to-video" }
+    ]
+  }
+}

@@ -1,0 +1,89 @@
+# OS files
+.DS_Store
+
+# IDEs and editors
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+backend/.venv/
+
+# Environment variables
+.env
+backend/.env
+.env.local
+*.env.local
+.env.*
+!.env.example
+!backend/.env.example
+
+# JWT Secret Key files (安全文件，存储在 backend/credentials 目录，不应提交到版本控制)
+.jwt_secret
+.jwt_secret.enc
+backend/.jwt_secret
+backend/.jwt_secret.enc
+backend/credentials/.jwt_secret
+backend/credentials/.jwt_secret.enc
+
+# ENCRYPTION_KEY files (主密钥文件，存储在 backend/credentials 目录，不应提交到版本控制)
+backend/credentials/.encryption_key
+
+# Google Cloud 服务账号密钥（保留示例文件）
+backend/credentials/*.json
+!backend/credentials/*.example.json
+backend/credentials/.gitkeep
+
+# Databases
+backend/test.db
+*.db
+!backend/credentials/.gitkeep
+
+# Node modules
+node_modules/
+
+# IDE specific
+.idx/
+nul
+
+# Hypothesis testing cache (属性测试缓存)
+.hypothesis/
+backend/.hypothesis/
+
+# Kiro specs directory (排除 .kiro/specs 目录)
+.kiro/specs/
+
+# Temporary Claude working directory files (临时工作目录文件，不应提交)
+**/tmpclaude-*
+backend/app/tmpclaude-*
+backend/tmpclaude-*
+
+# Claude settings with sensitive data
+.claude/settings.local.json
+
+# Cursor debug log files (调试日志文件，不应提交)
+.cursor/erron/
+.cursor/erron/**
+*.log.md
+
+# 官方SDK参考文档 (体积大，不应提交到版本控制)
+官方SDK/
+原始/
+
+# Temp files and binary exports
+backend/app/temp/
+tmp/
+*.jpg
+*.jpeg
+*.png
+*.xlsx
+
+# Build artifacts and archives
+dist/
+build/
+*.zip
+
+# Frontend build output
+frontend/dist/

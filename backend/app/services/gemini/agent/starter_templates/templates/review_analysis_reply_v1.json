@@ -1,0 +1,150 @@
+{
+  "starter_key": "review_analysis_reply_v1",
+  "starter_version": 2,
+  "name": "客户评论分析与回复",
+  "description": "分析评论情感 → 条件分支 → 差评回复/好评利用，适用于 Review 管理。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "review",
+    "condition",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-review",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 260
+        },
+        "data": {
+          "type": "start",
+          "label": "评论数据",
+          "description": "输入客户评论内容",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "agent-review-analyze",
+        "type": "agent",
+        "position": {
+          "x": 330,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "评论分析",
+          "description": "分析评论情感和关键信息",
+          "icon": "📈",
+          "iconColor": "bg-cyan-500",
+          "agentName": "数据报表分析师",
+          "instructions": "请分析这些客户评论：\n1. 情感分析：正面/中性/负面比例\n2. 关键主题提取：产品质量、物流、使用体验等\n3. 差评核心原因排序\n4. 好评核心卖点排序\n\n重要：请在分析结论中明确标注 sentiment_score，0-1 之间，低于 0.5 表示总体偏负面，高于 0.5 表示总体偏正面。格式：sentiment_score=0.X"
+        }
+      },
+      {
+        "id": "condition-sentiment",
+        "type": "condition",
+        "position": {
+          "x": 600,
+          "y": 260
+        },
+        "data": {
+          "type": "condition",
+          "label": "情感判断",
+          "description": "根据情感分析结果分流",
+          "icon": "🔀",
+          "iconColor": "bg-yellow-500",
+          "expression": "{{prev.output.text}} contains 'sentiment_score=0.0' or {{prev.output.text}} contains 'sentiment_score=0.1' or {{prev.output.text}} contains 'sentiment_score=0.2' or {{prev.output.text}} contains 'sentiment_score=0.3' or {{prev.output.text}} contains 'sentiment_score=0.4'"
+        }
+      },
+      {
+        "id": "agent-negative-reply",
+        "type": "agent",
+        "position": {
+          "x": 870,
+          "y": 140
+        },
+        "data": {
+          "type": "agent",
+          "label": "差评处理",
+          "description": "针对负面评论生成专业回复",
+          "icon": "💬",
+          "iconColor": "bg-teal-500",
+          "agentName": "客户沟通专家",
+          "instructions": "根据评论分析结果，请为差评生成专业回复：\n1. 逐条差评生成中英文回复模板\n2. 表达歉意和理解\n3. 提供解决方案（退款/替换/联系客服）\n4. 避免违反 Amazon 沟通政策\n5. 建议后续跟进策略"
+        }
+      },
+      {
+        "id": "agent-positive-use",
+        "type": "agent",
+        "position": {
+          "x": 870,
+          "y": 380
+        },
+        "data": {
+          "type": "agent",
+          "label": "好评利用",
+          "description": "利用正面评价优化营销策略",
+          "icon": "✏️",
+          "iconColor": "bg-pink-500",
+          "agentName": "电商文案创作师",
+          "instructions": "根据评论分析中的好评内容，请提出营销利用方案：\n1. 提炼 3-5 条核心好评卖点\n2. 生成可用于 Listing 五点的卖点文案\n3. 生成社交媒体分享文案\n4. A+ 内容中可引用的评价摘要\n5. 广告文案中可突出的客户认可点"
+        }
+      },
+      {
+        "id": "end-review",
+        "type": "end",
+        "position": {
+          "x": 1120,
+          "y": 260
+        },
+        "data": {
+          "type": "end",
+          "label": "处理方案",
+          "description": "输出评论处理方案",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-review-1",
+        "source": "start-review",
+        "target": "agent-review-analyze"
+      },
+      {
+        "id": "e-review-2",
+        "source": "agent-review-analyze",
+        "target": "condition-sentiment"
+      },
+      {
+        "id": "e-review-3",
+        "source": "condition-sentiment",
+        "target": "agent-negative-reply",
+        "sourceHandle": "output-true"
+      },
+      {
+        "id": "e-review-4",
+        "source": "condition-sentiment",
+        "target": "agent-positive-use",
+        "sourceHandle": "output-false"
+      },
+      {
+        "id": "e-review-5",
+        "source": "agent-negative-reply",
+        "target": "end-review"
+      },
+      {
+        "id": "e-review-6",
+        "source": "agent-positive-use",
+        "target": "end-review"
+      }
+    ]
+  }
+}

@@ -1,0 +1,294 @@
+{
+  "starter_key": "amazon_listing_content_engine_v1",
+  "starter_version": 1,
+  "name": "亚马逊 Listing 内容工厂",
+  "description": "多来源商品信息输入 → 并行产出标题/五点/关键词 → 合规审校 → 上线版本。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "listing",
+    "seo",
+    "content",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-listing-engine",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 260
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "接收商品与目标站点信息",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-file-listing-engine",
+        "type": "input_file",
+        "position": {
+          "x": 300,
+          "y": 260
+        },
+        "data": {
+          "type": "input_file",
+          "label": "商品数据输入",
+          "description": "上传多卖家/多 SKU 商品信息表",
+          "icon": "📎",
+          "iconColor": "bg-cyan-500",
+          "startFileUrl": ""
+        }
+      },
+      {
+        "id": "input-text-listing-engine",
+        "type": "input_text",
+        "position": {
+          "x": 520,
+          "y": 260
+        },
+        "data": {
+          "type": "input_text",
+          "label": "站点与策略输入",
+          "description": "例如：US 站、品牌调性、目标人群",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-listing-intake",
+        "type": "agent",
+        "position": {
+          "x": 740,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "数据结构化",
+          "description": "识别字段并提取可用卖点资产",
+          "icon": "🧩",
+          "iconColor": "bg-sky-500",
+          "agentName": "数据报表分析师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-listing-engine.output.fileUrl}}",
+          "inputMapping": "文件：{{input-file-listing-engine.output.fileUrl}}\n目标：{{input-text-listing-engine.output.text}}",
+          "instructions": "输出字段映射、缺失字段、可用卖点资产池（功能/材质/场景/人群）。"
+        }
+      },
+      {
+        "id": "parallel-listing-engine",
+        "type": "parallel",
+        "position": {
+          "x": 980,
+          "y": 260
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行内容生成",
+          "description": "关键词、标题五点、结构优化并行生成",
+          "icon": "⚡",
+          "iconColor": "bg-violet-500",
+          "joinMode": "wait_all",
+          "timeoutSeconds": 120
+        }
+      },
+      {
+        "id": "agent-listing-keyword-pack",
+        "type": "agent",
+        "position": {
+          "x": 1220,
+          "y": 120
+        },
+        "data": {
+          "type": "agent",
+          "label": "关键词包",
+          "description": "输出核心词/长尾词/否定词建议",
+          "icon": "🔑",
+          "iconColor": "bg-amber-500",
+          "agentName": "关键词研究专家",
+          "agentTaskType": "data-analysis",
+          "inputMapping": "结构化数据：{{agent-listing-intake.output.text}}\n目标：{{input-text-listing-engine.output.text}}",
+          "instructions": "输出按优先级分层的关键词包：Core / Long-tail / Defense。"
+        }
+      },
+      {
+        "id": "agent-listing-copy-pack",
+        "type": "agent",
+        "position": {
+          "x": 1220,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "标题与五点",
+          "description": "产出标题 + 五点 + 描述草案",
+          "icon": "✍️",
+          "iconColor": "bg-emerald-500",
+          "agentName": "Listing优化专家",
+          "inputMapping": "结构化数据：{{agent-listing-intake.output.text}}\n目标：{{input-text-listing-engine.output.text}}",
+          "instructions": "输出英文版本：Title 3 版、Bullets 5 条、Description 1 版。"
+        }
+      },
+      {
+        "id": "agent-listing-angle-pack",
+        "type": "agent",
+        "position": {
+          "x": 1220,
+          "y": 400
+        },
+        "data": {
+          "type": "agent",
+          "label": "卖点角度与人群场景",
+          "description": "提炼差异化卖点和适配场景",
+          "icon": "🎯",
+          "iconColor": "bg-rose-500",
+          "agentName": "电商文案创作师",
+          "inputMapping": "结构化数据：{{agent-listing-intake.output.text}}\n目标：{{input-text-listing-engine.output.text}}",
+          "instructions": "输出英文版卖点角度矩阵（人群 x 场景 x 卖点），并给 A+ 模块建议。"
+        }
+      },
+      {
+        "id": "merge-listing-engine",
+        "type": "merge",
+        "position": {
+          "x": 1460,
+          "y": 260
+        },
+        "data": {
+          "type": "merge",
+          "label": "内容合并",
+          "description": "汇总并行内容包",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-listing-compliance-check",
+        "type": "agent",
+        "position": {
+          "x": 1700,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "合规审校",
+          "description": "检查政策风险并修订可上线版本",
+          "icon": "🛡️",
+          "iconColor": "bg-cyan-500",
+          "agentName": "亚马逊合规审核师",
+          "inputMapping": "内容包：{{merge-listing-engine.output.text}}",
+          "instructions": "输出 Pass/Fail、风险点和可直接上线的最终英文文案。"
+        }
+      },
+      {
+        "id": "agent-listing-launch-plan",
+        "type": "agent",
+        "position": {
+          "x": 1940,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "上线动作清单",
+          "description": "输出上线步骤与 7 天复盘指标",
+          "icon": "🧭",
+          "iconColor": "bg-indigo-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "合规结果：{{agent-listing-compliance-check.output.text}}",
+          "instructions": "输出 P0/P1 上线动作、监控指标、复盘阈值和回滚条件。"
+        }
+      },
+      {
+        "id": "end-listing-engine",
+        "type": "end",
+        "position": {
+          "x": 2180,
+          "y": 260
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出可上线 Listing 方案",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-lce-1",
+        "source": "start-listing-engine",
+        "target": "input-file-listing-engine"
+      },
+      {
+        "id": "e-lce-2",
+        "source": "input-file-listing-engine",
+        "target": "input-text-listing-engine"
+      },
+      {
+        "id": "e-lce-3",
+        "source": "input-text-listing-engine",
+        "target": "agent-listing-intake"
+      },
+      {
+        "id": "e-lce-4",
+        "source": "agent-listing-intake",
+        "target": "parallel-listing-engine"
+      },
+      {
+        "id": "e-lce-5",
+        "source": "parallel-listing-engine",
+        "target": "agent-listing-keyword-pack"
+      },
+      {
+        "id": "e-lce-6",
+        "source": "parallel-listing-engine",
+        "target": "agent-listing-copy-pack"
+      },
+      {
+        "id": "e-lce-7",
+        "source": "parallel-listing-engine",
+        "target": "agent-listing-angle-pack"
+      },
+      {
+        "id": "e-lce-8",
+        "source": "agent-listing-keyword-pack",
+        "target": "merge-listing-engine"
+      },
+      {
+        "id": "e-lce-9",
+        "source": "agent-listing-copy-pack",
+        "target": "merge-listing-engine"
+      },
+      {
+        "id": "e-lce-10",
+        "source": "agent-listing-angle-pack",
+        "target": "merge-listing-engine"
+      },
+      {
+        "id": "e-lce-11",
+        "source": "merge-listing-engine",
+        "target": "agent-listing-compliance-check"
+      },
+      {
+        "id": "e-lce-12",
+        "source": "agent-listing-compliance-check",
+        "target": "agent-listing-launch-plan"
+      },
+      {
+        "id": "e-lce-13",
+        "source": "agent-listing-launch-plan",
+        "target": "end-listing-engine"
+      }
+    ]
+  }
+}

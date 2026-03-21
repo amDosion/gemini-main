@@ -1,0 +1,412 @@
+{
+  "starter_key": "amazon_multi_dataset_operating_board_v1",
+  "starter_version": 1,
+  "name": "Amazon 多数据集经营看板",
+  "description": "广告/销售/库存多文件输入 + 双层并行分析，输出经营健康看板与执行动作。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "data-analysis",
+    "dashboard",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-op-board",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 300
+        },
+        "data": {
+          "type": "start",
+          "label": "经营目标输入",
+          "description": "输入本周经营目标与约束",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-text-op-board",
+        "type": "input_text",
+        "position": {
+          "x": 320,
+          "y": 300
+        },
+        "data": {
+          "type": "input_text",
+          "label": "目标约束",
+          "description": "例如：库存安全优先，ACoS 控制在 28% 内",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "input-file-ads-op-board",
+        "type": "input_file",
+        "position": {
+          "x": 560,
+          "y": 120
+        },
+        "data": {
+          "type": "input_file",
+          "label": "广告报表",
+          "description": "上传广告数据（campaign/search term）",
+          "icon": "📎",
+          "iconColor": "bg-cyan-500",
+          "startFileUrl": ""
+        }
+      },
+      {
+        "id": "input-file-sales-op-board",
+        "type": "input_file",
+        "position": {
+          "x": 560,
+          "y": 300
+        },
+        "data": {
+          "type": "input_file",
+          "label": "销售报表",
+          "description": "上传销售与转化数据",
+          "icon": "📎",
+          "iconColor": "bg-cyan-500",
+          "startFileUrl": ""
+        }
+      },
+      {
+        "id": "input-file-inventory-op-board",
+        "type": "input_file",
+        "position": {
+          "x": 560,
+          "y": 480
+        },
+        "data": {
+          "type": "input_file",
+          "label": "库存报表",
+          "description": "上传库存、周转和断货风险数据",
+          "icon": "📎",
+          "iconColor": "bg-cyan-500",
+          "startFileUrl": ""
+        }
+      },
+      {
+        "id": "parallel-intake-op-board",
+        "type": "parallel",
+        "position": {
+          "x": 800,
+          "y": 300
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行数据接入",
+          "description": "广告/销售/库存三路并行解析",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-intake-ads-op-board",
+        "type": "agent",
+        "position": {
+          "x": 1040,
+          "y": 120
+        },
+        "data": {
+          "type": "agent",
+          "label": "广告数据接入",
+          "description": "解析广告字段并输出可分析摘要",
+          "icon": "📊",
+          "iconColor": "bg-blue-500",
+          "agentName": "数据报表分析师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-ads-op-board.output.fileUrl}}",
+          "inputMapping": "目标：{{input-text-op-board.output.text}}\n广告文件：{{input-file-ads-op-board.output.fileUrl}}",
+          "instructions": "输出：字段映射、数据质量、核心指标、异常点。"
+        }
+      },
+      {
+        "id": "agent-intake-sales-op-board",
+        "type": "agent",
+        "position": {
+          "x": 1040,
+          "y": 300
+        },
+        "data": {
+          "type": "agent",
+          "label": "销售数据接入",
+          "description": "解析销售与转化字段",
+          "icon": "💹",
+          "iconColor": "bg-emerald-500",
+          "agentName": "数据报表分析师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-sales-op-board.output.fileUrl}}",
+          "inputMapping": "目标：{{input-text-op-board.output.text}}\n销售文件：{{input-file-sales-op-board.output.fileUrl}}",
+          "instructions": "输出：销量/转化/客单价趋势、异常点、可信度评分。"
+        }
+      },
+      {
+        "id": "agent-intake-inventory-op-board",
+        "type": "agent",
+        "position": {
+          "x": 1040,
+          "y": 480
+        },
+        "data": {
+          "type": "agent",
+          "label": "库存数据接入",
+          "description": "解析库存与断货风险",
+          "icon": "📦",
+          "iconColor": "bg-orange-500",
+          "agentName": "数据报表分析师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-inventory-op-board.output.fileUrl}}",
+          "inputMapping": "目标：{{input-text-op-board.output.text}}\n库存文件：{{input-file-inventory-op-board.output.fileUrl}}",
+          "instructions": "输出：周转天数、库存健康度、断货风险清单。"
+        }
+      },
+      {
+        "id": "merge-intake-op-board",
+        "type": "merge",
+        "position": {
+          "x": 1280,
+          "y": 300
+        },
+        "data": {
+          "type": "merge",
+          "label": "接入结果汇总",
+          "description": "汇总多数据源解析结果",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "parallel-strategy-op-board",
+        "type": "parallel",
+        "position": {
+          "x": 1520,
+          "y": 300
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行策略研判",
+          "description": "并行输出投放、转化、风险策略",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-strategy-ads-op-board",
+        "type": "agent",
+        "position": {
+          "x": 1760,
+          "y": 120
+        },
+        "data": {
+          "type": "agent",
+          "label": "广告策略",
+          "description": "给出投放预算和关键词动作",
+          "icon": "🎯",
+          "iconColor": "bg-indigo-500",
+          "agentName": "亚马逊广告分析师",
+          "inputMapping": "汇总底稿：{{merge-intake-op-board.output.text}}\n目标：{{input-text-op-board.output.text}}",
+          "instructions": "输出：预算重分配、关键词动作、7天投放节奏。"
+        }
+      },
+      {
+        "id": "agent-strategy-listing-op-board",
+        "type": "agent",
+        "position": {
+          "x": 1760,
+          "y": 300
+        },
+        "data": {
+          "type": "agent",
+          "label": "转化策略",
+          "description": "输出 Listing 与素材优化方向",
+          "icon": "🧱",
+          "iconColor": "bg-violet-500",
+          "agentName": "Listing优化专家",
+          "inputMapping": "汇总底稿：{{merge-intake-op-board.output.text}}\n目标：{{input-text-op-board.output.text}}",
+          "instructions": "输出：标题五点优化优先级、素材迭代建议、转化瓶颈修复项。"
+        }
+      },
+      {
+        "id": "agent-strategy-risk-op-board",
+        "type": "agent",
+        "position": {
+          "x": 1760,
+          "y": 480
+        },
+        "data": {
+          "type": "agent",
+          "label": "风险策略",
+          "description": "输出库存/现金流/断货风险边界",
+          "icon": "⚠️",
+          "iconColor": "bg-red-500",
+          "agentName": "数据报表分析师",
+          "inputMapping": "汇总底稿：{{merge-intake-op-board.output.text}}\n目标：{{input-text-op-board.output.text}}",
+          "instructions": "输出：风险阈值、预警触发条件、应急动作（减投/补货/调价）。"
+        }
+      },
+      {
+        "id": "merge-strategy-op-board",
+        "type": "merge",
+        "position": {
+          "x": 2000,
+          "y": 300
+        },
+        "data": {
+          "type": "merge",
+          "label": "策略汇总",
+          "description": "汇总多策略建议",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-exec-op-board",
+        "type": "agent",
+        "position": {
+          "x": 2240,
+          "y": 300
+        },
+        "data": {
+          "type": "agent",
+          "label": "经营动作总表",
+          "description": "输出周执行计划与看板指标",
+          "icon": "🧭",
+          "iconColor": "bg-emerald-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "策略汇总：{{merge-strategy-op-board.output.text}}",
+          "instructions": "输出经营看板：\n1) 本周关键动作\n2) 指标目标区间\n3) 日/周复盘节点\n4) 回滚与止损机制。"
+        }
+      },
+      {
+        "id": "end-op-board",
+        "type": "end",
+        "position": {
+          "x": 2480,
+          "y": 300
+        },
+        "data": {
+          "type": "end",
+          "label": "经营看板输出",
+          "description": "输出可执行经营策略",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-op-1",
+        "source": "start-op-board",
+        "target": "input-text-op-board"
+      },
+      {
+        "id": "e-op-2",
+        "source": "input-text-op-board",
+        "target": "input-file-ads-op-board"
+      },
+      {
+        "id": "e-op-3",
+        "source": "input-file-ads-op-board",
+        "target": "input-file-sales-op-board"
+      },
+      {
+        "id": "e-op-4",
+        "source": "input-file-sales-op-board",
+        "target": "input-file-inventory-op-board"
+      },
+      {
+        "id": "e-op-5",
+        "source": "input-file-inventory-op-board",
+        "target": "parallel-intake-op-board"
+      },
+      {
+        "id": "e-op-6",
+        "source": "parallel-intake-op-board",
+        "target": "agent-intake-ads-op-board"
+      },
+      {
+        "id": "e-op-7",
+        "source": "parallel-intake-op-board",
+        "target": "agent-intake-sales-op-board"
+      },
+      {
+        "id": "e-op-8",
+        "source": "parallel-intake-op-board",
+        "target": "agent-intake-inventory-op-board"
+      },
+      {
+        "id": "e-op-9",
+        "source": "agent-intake-ads-op-board",
+        "target": "merge-intake-op-board"
+      },
+      {
+        "id": "e-op-10",
+        "source": "agent-intake-sales-op-board",
+        "target": "merge-intake-op-board"
+      },
+      {
+        "id": "e-op-11",
+        "source": "agent-intake-inventory-op-board",
+        "target": "merge-intake-op-board"
+      },
+      {
+        "id": "e-op-12",
+        "source": "merge-intake-op-board",
+        "target": "parallel-strategy-op-board"
+      },
+      {
+        "id": "e-op-13",
+        "source": "parallel-strategy-op-board",
+        "target": "agent-strategy-ads-op-board"
+      },
+      {
+        "id": "e-op-14",
+        "source": "parallel-strategy-op-board",
+        "target": "agent-strategy-listing-op-board"
+      },
+      {
+        "id": "e-op-15",
+        "source": "parallel-strategy-op-board",
+        "target": "agent-strategy-risk-op-board"
+      },
+      {
+        "id": "e-op-16",
+        "source": "agent-strategy-ads-op-board",
+        "target": "merge-strategy-op-board"
+      },
+      {
+        "id": "e-op-17",
+        "source": "agent-strategy-listing-op-board",
+        "target": "merge-strategy-op-board"
+      },
+      {
+        "id": "e-op-18",
+        "source": "agent-strategy-risk-op-board",
+        "target": "merge-strategy-op-board"
+      },
+      {
+        "id": "e-op-19",
+        "source": "merge-strategy-op-board",
+        "target": "agent-exec-op-board"
+      },
+      {
+        "id": "e-op-20",
+        "source": "agent-exec-op-board",
+        "target": "end-op-board"
+      }
+    ]
+  }
+}

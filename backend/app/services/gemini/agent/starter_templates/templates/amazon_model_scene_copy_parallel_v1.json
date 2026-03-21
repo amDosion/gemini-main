@@ -1,0 +1,373 @@
+{
+  "starter_key": "amazon_model_scene_copy_parallel_v1",
+  "starter_version": 7,
+  "name": "Amazon 模特场景卖点并行工厂",
+  "description": "参考图输入 + 卖点拆解 + 并行多路图生图（模特图/场景图/卖点文案图），输出可直接投放素材。",
+  "category": "图像工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "image-edit",
+    "model",
+    "copy",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-model-scene-copy",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 260
+        },
+        "data": {
+          "type": "start",
+          "label": "模特图目标",
+          "description": "输入本轮场景图目标和卖点方向",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-image-model-scene-copy",
+        "type": "input_image",
+        "position": {
+          "x": 320,
+          "y": 260
+        },
+        "data": {
+          "type": "input_image",
+          "label": "参考图上传",
+          "description": "上传产品原图，作为图生图基准",
+          "icon": "🖼️",
+          "iconColor": "bg-lime-500",
+          "startImageUrl": ""
+        }
+      },
+      {
+        "id": "input-text-model-scene-copy",
+        "type": "input_text",
+        "position": {
+          "x": 560,
+          "y": 260
+        },
+        "data": {
+          "type": "input_text",
+          "label": "English Copy Brief",
+          "description": "Example: comfort / portability / power, English-only copy, model required",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-plan-model-scene-copy",
+        "type": "agent",
+        "position": {
+          "x": 800,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "卖点画面规划",
+          "description": "提炼卖点并生成5路图生图提示词",
+          "icon": "💡",
+          "iconColor": "bg-amber-500",
+          "agentName": "电商文案创作师",
+          "inputMapping": "Reference image: {{input-image-model-scene-copy.output.imageUrl}}\\nCopy brief: {{input-text-model-scene-copy.output.text}}",
+          "instructions": "Return 5 image-edit prompt routes in ENGLISH ONLY:\nA) hero model visual\nB) lifestyle scene visual\nC) vertical mobile visual\nD) square social visual\nE) luxury flat-lay selling-point copy visual.\nHard constraints for every route:\n1. Keep product identity intact (shape/material/logo details stay consistent with reference)\n2. Route A-D require real human model; Route E is product-only flat lay with elegant props\n3. One headline (<=6 words) + two badges (<=4 words each), all in English\n4. Text safe zones: headline at top margin (5-15% from top), badges at top-left/top-right corners\n5. Keep center safe area (35-75% width, 20-85% height) free from text, never cover face/body/product main area.\nFor Route E, include tasteful callout lines and premium e-commerce layout. You may reference luxury style patterns but DO NOT copy any sample wording verbatim.\nOutput format per route: route name, final prompt, headline, badge1, badge2, layout notes."
+        }
+      },
+      {
+        "id": "parallel-model-scene-copy",
+        "type": "parallel",
+        "position": {
+          "x": 1040,
+          "y": 260
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行出图",
+          "description": "并行生成多风格模特卖点图",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-model-hero-scene",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 20
+        },
+        "data": {
+          "type": "agent",
+          "label": "模特主视觉图",
+          "description": "电商主视觉：模特+主文案+卖点角标",
+          "icon": "🌟",
+          "iconColor": "bg-pink-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentAspectRatio": "3:4",
+          "agentReferenceImageUrl": "{{input-image-model-scene-copy.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 0,
+          "continueOnError": true,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "inputMapping": "{{agent-plan-model-scene-copy.output.text}}\\n\\nRoute A: Generate a hero ecommerce visual. Real model uses/holds product. English headline + 2 English badges only. Place text in top margin/corners. Do NOT cover face, torso, or product body.",
+          "instructions": "English-only copy. Layout safety is mandatory. Model and product must stay unobstructed."
+        }
+      },
+      {
+        "id": "agent-model-lifestyle-scene",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 180
+        },
+        "data": {
+          "type": "agent",
+          "label": "生活场景卖点图",
+          "description": "生活化场景：模特真实使用+卖点文案",
+          "icon": "🏞️",
+          "iconColor": "bg-indigo-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentAspectRatio": "4:3",
+          "agentReferenceImageUrl": "{{input-image-model-scene-copy.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 0,
+          "continueOnError": true,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "inputMapping": "{{agent-plan-model-scene-copy.output.text}}\\n\\nRoute B: Lifestyle scene image with real model naturally using product. English headline + 2 English badges only. Keep text at top/side safe zones and away from subject and product.",
+          "instructions": "English-only copy. Keep readability high and never overlay text on key subject/product pixels."
+        }
+      },
+      {
+        "id": "agent-model-mobile-scene",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 340
+        },
+        "data": {
+          "type": "agent",
+          "label": "移动端竖版卖点图",
+          "description": "竖版素材：模特+主卖点文案",
+          "icon": "📱",
+          "iconColor": "bg-violet-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentAspectRatio": "9:16",
+          "agentReferenceImageUrl": "{{input-image-model-scene-copy.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 0,
+          "continueOnError": true,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "inputMapping": "{{agent-plan-model-scene-copy.output.text}}\\n\\nRoute C: Vertical mobile ad creative. Model-focused, product clear. English headline + 2 English badges. Text only at top margin and top corners, with enough spacing.",
+          "instructions": "English-only copy. Mobile-first readability. Avoid covering model face, hands, and product silhouette."
+        }
+      },
+      {
+        "id": "agent-model-square-scene",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 500
+        },
+        "data": {
+          "type": "agent",
+          "label": "方图对比卖点图",
+          "description": "方图风格：模特+差异化卖点文案",
+          "icon": "🧩",
+          "iconColor": "bg-teal-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentAspectRatio": "1:1",
+          "agentReferenceImageUrl": "{{input-image-model-scene-copy.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 0,
+          "continueOnError": true,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "inputMapping": "{{agent-plan-model-scene-copy.output.text}}\\n\\nRoute D: Square social/ad creative. Real model + product in frame. English headline + 2 English badges. Keep copy in non-overlapping corner/top zones.",
+          "instructions": "English-only copy. Clear hierarchy and non-overlap with subject/product are mandatory."
+        }
+      },
+      {
+        "id": "agent-copy-flatlay-scene",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 660
+        },
+        "data": {
+          "type": "agent",
+          "label": "卖点文案平铺图",
+          "description": "高端平铺构图：产品主体 + 卖点文案 + 引导线",
+          "icon": "🪄",
+          "iconColor": "bg-amber-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentAspectRatio": "1:1",
+          "agentReferenceImageUrl": "{{input-image-model-scene-copy.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 0,
+          "continueOnError": true,
+          "agentProductMatchThreshold": 74,
+          "agentOutputLanguage": "en",
+          "inputMapping": "{{agent-plan-model-scene-copy.output.text}}\\n\\nRoute E: Create a professionally designed Amazon secondary image using a premium flat-lay style. Keep the product exactly recognizable from reference, add elegant English headline + 2 badges + subtle callout lines, and apply optional color-variant styling (e.g., white/champagne/pink accents) without changing product structure.",
+          "instructions": "English-only copy. Keep text away from the product body. Luxury composition, balanced spacing, and production-ready typography hierarchy are mandatory."
+        }
+      },
+      {
+        "id": "merge-model-scene-copy",
+        "type": "merge",
+        "position": {
+          "x": 1520,
+          "y": 260
+        },
+        "data": {
+          "type": "merge",
+          "label": "并行结果汇总",
+          "description": "汇总5路模特/场景/卖点文案图结果",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-qa-model-scene-copy",
+        "type": "agent",
+        "position": {
+          "x": 1760,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "交付审校",
+          "description": "输出可交付版本与二次优化建议",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "agentName": "图片编辑优化师",
+          "inputMapping": "并行结果：{{merge-model-scene-copy.output.text}}",
+          "instructions": "Review all branch outputs and report in English only.\nHard rules:\n1) Do NOT ask any follow-up questions.\n2) Do NOT request extra context or files.\n3) If one branch is weak/missing, mark it as FAILED and still finish the full report.\nReturn final deliverables directly in this exact structure:\n- Route scoreboard table (hero / lifestyle / mobile / square / flatlay-copy): quality score 0-100, text overlap risk, pass/fail.\n- Winner list by use-case.\n- Retry prompts only for failed/non-compliant branches.\n- Final launch-ready checklist (max 5 bullets)."
+        }
+      },
+      {
+        "id": "end-model-scene-copy",
+        "type": "end",
+        "position": {
+          "x": 2000,
+          "y": 260
+        },
+        "data": {
+          "type": "end",
+          "label": "模特卖点图交付",
+          "description": "输出多张可用的模特卖点图",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-msc-1",
+        "source": "start-model-scene-copy",
+        "target": "input-image-model-scene-copy"
+      },
+      {
+        "id": "e-msc-2",
+        "source": "input-image-model-scene-copy",
+        "target": "input-text-model-scene-copy"
+      },
+      {
+        "id": "e-msc-3",
+        "source": "input-text-model-scene-copy",
+        "target": "agent-plan-model-scene-copy"
+      },
+      {
+        "id": "e-msc-4",
+        "source": "agent-plan-model-scene-copy",
+        "target": "parallel-model-scene-copy"
+      },
+      {
+        "id": "e-msc-5",
+        "source": "parallel-model-scene-copy",
+        "target": "agent-model-hero-scene"
+      },
+      {
+        "id": "e-msc-6",
+        "source": "parallel-model-scene-copy",
+        "target": "agent-model-lifestyle-scene"
+      },
+      {
+        "id": "e-msc-7",
+        "source": "parallel-model-scene-copy",
+        "target": "agent-model-mobile-scene"
+      },
+      {
+        "id": "e-msc-8",
+        "source": "parallel-model-scene-copy",
+        "target": "agent-model-square-scene"
+      },
+      {
+        "id": "e-msc-9",
+        "source": "parallel-model-scene-copy",
+        "target": "agent-copy-flatlay-scene"
+      },
+      {
+        "id": "e-msc-10",
+        "source": "agent-model-hero-scene",
+        "target": "merge-model-scene-copy"
+      },
+      {
+        "id": "e-msc-11",
+        "source": "agent-model-lifestyle-scene",
+        "target": "merge-model-scene-copy"
+      },
+      {
+        "id": "e-msc-12",
+        "source": "agent-model-mobile-scene",
+        "target": "merge-model-scene-copy"
+      },
+      {
+        "id": "e-msc-13",
+        "source": "agent-model-square-scene",
+        "target": "merge-model-scene-copy"
+      },
+      {
+        "id": "e-msc-14",
+        "source": "agent-copy-flatlay-scene",
+        "target": "merge-model-scene-copy"
+      },
+      {
+        "id": "e-msc-15",
+        "source": "merge-model-scene-copy",
+        "target": "agent-qa-model-scene-copy"
+      },
+      {
+        "id": "e-msc-16",
+        "source": "agent-qa-model-scene-copy",
+        "target": "end-model-scene-copy"
+      }
+    ]
+  }
+}

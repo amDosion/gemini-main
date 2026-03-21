@@ -1,0 +1,82 @@
+{
+  "starter_key": "video_asset_cleanup_v1",
+  "starter_version": 2,
+  "name": "工作流 · 视频资产清理",
+  "description": "删除 Google 视频生成残留资产。可直接接在视频生成节点后面，也可手动输入 providerFileName / providerFileUri / gcsUri。",
+  "category": "多模态工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "video",
+    "video-delete",
+    "google-runtime",
+    "starter"
+  ],
+  "sample_input": {
+    "videoUrl": "https://storage.googleapis.com/cloud-samples-data/generative-ai/video/animals.mp4",
+    "providerFileName": "files/demo-video",
+    "providerFileUri": "files/demo-video",
+    "gcsUri": ""
+  },
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-video-asset-cleanup",
+        "type": "start",
+        "position": { "x": 80, "y": 220 },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "接收待删除的视频资产信息",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-video-asset-cleanup",
+        "type": "input_video",
+        "position": { "x": 300, "y": 220 },
+        "data": {
+          "type": "input_video",
+          "label": "输入视频资产",
+          "description": "从上游视频节点或表单输入中读取待删除的视频资产",
+          "icon": "🎞️",
+          "iconColor": "bg-fuchsia-500",
+          "startVideoUrl": "{{input.videoUrl}}"
+        }
+      },
+      {
+        "id": "tool-video-asset-cleanup",
+        "type": "tool",
+        "position": { "x": 580, "y": 220 },
+        "data": {
+          "type": "tool",
+          "label": "删除视频资产",
+          "description": "删除 Gemini Files 或 Vertex GCS 中的视频资产",
+          "icon": "🗑️",
+          "iconColor": "bg-rose-500",
+          "toolName": "video_delete",
+          "toolProviderId": "google",
+          "toolArgsTemplate": "{\"provider_file_name\":\"{{input-video-asset-cleanup.output.providerFileName}}\",\"provider_file_uri\":\"{{input-video-asset-cleanup.output.providerFileUri}}\",\"gcs_uri\":\"{{input-video-asset-cleanup.output.gcsUri}}\"}"
+        }
+      },
+      {
+        "id": "end-video-asset-cleanup",
+        "type": "end",
+        "position": { "x": 900, "y": 220 },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出删除结果",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      { "id": "edge-video-asset-cleanup-1", "source": "start-video-asset-cleanup", "target": "input-video-asset-cleanup" },
+      { "id": "edge-video-asset-cleanup-2", "source": "input-video-asset-cleanup", "target": "tool-video-asset-cleanup" },
+      { "id": "edge-video-asset-cleanup-3", "source": "tool-video-asset-cleanup", "target": "end-video-asset-cleanup" }
+    ]
+  }
+}

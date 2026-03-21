@@ -1,0 +1,301 @@
+{
+  "starter_key": "amazon_review_driven_listing_factory_v1",
+  "starter_version": 2,
+  "name": "Amazon 评论驱动卖点图工厂",
+  "description": "评论洞察 + 卖点提炼 + 并行文生图，一次产出主图/利益图/异议消除图。",
+  "category": "图像工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "review",
+    "listing",
+    "image-gen",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-review-listing-factory",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 240
+        },
+        "data": {
+          "type": "start",
+          "label": "评论驱动目标",
+          "description": "输入要优化的产品与图片目标",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-file-review-listing-factory",
+        "type": "input_file",
+        "position": {
+          "x": 320,
+          "y": 240
+        },
+        "data": {
+          "type": "input_file",
+          "label": "评论与问答数据",
+          "description": "上传 Review/Q&A 导出文件（Excel/CSV）",
+          "icon": "📎",
+          "iconColor": "bg-cyan-500",
+          "startFileUrl": ""
+        }
+      },
+      {
+        "id": "input-text-review-listing-factory",
+        "type": "input_text",
+        "position": {
+          "x": 560,
+          "y": 240
+        },
+        "data": {
+          "type": "input_text",
+          "label": "品牌与合规约束",
+          "description": "例如：主图白底、禁止医疗夸大、目标人群为宝妈",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-insight-review-listing-factory",
+        "type": "agent",
+        "position": {
+          "x": 800,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "评论洞察提炼",
+          "description": "提炼高频痛点、核心卖点和购买理由",
+          "icon": "🧩",
+          "iconColor": "bg-indigo-500",
+          "agentName": "数据报表分析师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-review-listing-factory.output.fileUrl}}",
+          "inputMapping": "品牌与合规约束：{{input-text-review-listing-factory.output.text}}\\n评论文件：{{input-file-review-listing-factory.output.fileUrl}}",
+          "instructions": "请输出结构化洞察：\n1. 高频痛点 Top 5\n2. 购买动机 Top 5\n3. 可视化卖点建议\n4. 禁止表达与合规风险。"
+        }
+      },
+      {
+        "id": "agent-copy-review-listing-factory",
+        "type": "agent",
+        "position": {
+          "x": 1040,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "卖点提示词规划",
+          "description": "输出三类图片可直接生成的提示词",
+          "icon": "💡",
+          "iconColor": "bg-amber-500",
+          "agentName": "电商文案创作师",
+          "inputMapping": "评论洞察：{{agent-insight-review-listing-factory.output.text}}\\n品牌与合规约束：{{input-text-review-listing-factory.output.text}}",
+          "instructions": "请输出三类提示词：\n1. 主图提示词\n2. 利益点图提示词\n3. 异议消除图提示词\n并标注每类图的核心转化目标。"
+        }
+      },
+      {
+        "id": "parallel-review-listing-factory",
+        "type": "parallel",
+        "position": {
+          "x": 1280,
+          "y": 240
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行出图",
+          "description": "并行生成三类营销图片",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-main-review-listing-image",
+        "type": "agent",
+        "position": {
+          "x": 1520,
+          "y": 80
+        },
+        "data": {
+          "type": "agent",
+          "label": "主图生成",
+          "description": "生成白底主图",
+          "icon": "🖼️",
+          "iconColor": "bg-pink-500",
+          "agentName": "产品图片设计师",
+          "agentTaskType": "image-gen",
+          "agentAspectRatio": "1:1",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-copy-review-listing-factory.output.text}}\\n\\n请执行主图生成：白底、主体完整、无文字。",
+          "instructions": "先优化提示词再出图，确保主图合规。"
+        }
+      },
+      {
+        "id": "agent-benefit-review-listing-image",
+        "type": "agent",
+        "position": {
+          "x": 1520,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "利益点图生成",
+          "description": "生成突出卖点收益的场景图",
+          "icon": "📌",
+          "iconColor": "bg-indigo-500",
+          "agentName": "产品图片设计师",
+          "agentTaskType": "image-gen",
+          "agentAspectRatio": "3:4",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-copy-review-listing-factory.output.text}}\\n\\n请执行利益点图生成：强调用户收益与使用场景。",
+          "instructions": "画面信息聚焦，避免违规承诺。"
+        }
+      },
+      {
+        "id": "agent-objection-review-listing-image",
+        "type": "agent",
+        "position": {
+          "x": 1520,
+          "y": 400
+        },
+        "data": {
+          "type": "agent",
+          "label": "异议消除图生成",
+          "description": "生成用于消除顾虑的视觉内容",
+          "icon": "🔍",
+          "iconColor": "bg-violet-500",
+          "agentName": "产品图片设计师",
+          "agentTaskType": "image-gen",
+          "agentAspectRatio": "1:1",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-copy-review-listing-factory.output.text}}\\n\\n请执行异议消除图生成：围绕评论中的核心顾虑给出画面解决方案。",
+          "instructions": "突出可信感与真实感，避免夸张元素。"
+        }
+      },
+      {
+        "id": "merge-review-listing-factory",
+        "type": "merge",
+        "position": {
+          "x": 1760,
+          "y": 240
+        },
+        "data": {
+          "type": "merge",
+          "label": "图片结果汇总",
+          "description": "汇总三类图片输出",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-delivery-review-listing-factory",
+        "type": "agent",
+        "position": {
+          "x": 2000,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "交付清单输出",
+          "description": "输出最终上架素材清单与迭代建议",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "图片汇总：{{merge-review-listing-factory.output.text}}",
+          "instructions": "请输出交付清单：\n1. 三类图推荐版本\n2. 各图使用场景\n3. 二次迭代提示词\n4. 上线前检查清单。"
+        }
+      },
+      {
+        "id": "end-review-listing-factory",
+        "type": "end",
+        "position": {
+          "x": 2240,
+          "y": 240
+        },
+        "data": {
+          "type": "end",
+          "label": "评论驱动素材包",
+          "description": "输出可用于 Listing 的图片素材方案",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-rlf-1",
+        "source": "start-review-listing-factory",
+        "target": "input-file-review-listing-factory"
+      },
+      {
+        "id": "e-rlf-2",
+        "source": "input-file-review-listing-factory",
+        "target": "input-text-review-listing-factory"
+      },
+      {
+        "id": "e-rlf-3",
+        "source": "input-text-review-listing-factory",
+        "target": "agent-insight-review-listing-factory"
+      },
+      {
+        "id": "e-rlf-4",
+        "source": "agent-insight-review-listing-factory",
+        "target": "agent-copy-review-listing-factory"
+      },
+      {
+        "id": "e-rlf-5",
+        "source": "agent-copy-review-listing-factory",
+        "target": "parallel-review-listing-factory"
+      },
+      {
+        "id": "e-rlf-6",
+        "source": "parallel-review-listing-factory",
+        "target": "agent-main-review-listing-image"
+      },
+      {
+        "id": "e-rlf-7",
+        "source": "parallel-review-listing-factory",
+        "target": "agent-benefit-review-listing-image"
+      },
+      {
+        "id": "e-rlf-8",
+        "source": "parallel-review-listing-factory",
+        "target": "agent-objection-review-listing-image"
+      },
+      {
+        "id": "e-rlf-9",
+        "source": "agent-main-review-listing-image",
+        "target": "merge-review-listing-factory"
+      },
+      {
+        "id": "e-rlf-10",
+        "source": "agent-benefit-review-listing-image",
+        "target": "merge-review-listing-factory"
+      },
+      {
+        "id": "e-rlf-11",
+        "source": "agent-objection-review-listing-image",
+        "target": "merge-review-listing-factory"
+      },
+      {
+        "id": "e-rlf-12",
+        "source": "merge-review-listing-factory",
+        "target": "agent-delivery-review-listing-factory"
+      },
+      {
+        "id": "e-rlf-13",
+        "source": "agent-delivery-review-listing-factory",
+        "target": "end-review-listing-factory"
+      }
+    ]
+  }
+}

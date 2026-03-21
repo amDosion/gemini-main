@@ -1,0 +1,275 @@
+{
+  "starter_key": "amazon_reference_image_edit_studio_v1",
+  "starter_version": 1,
+  "name": "Amazon 参考图编辑工坊",
+  "description": "参考图输入 + 编辑目标 + 并行图生图，输出多版本可投放素材。",
+  "category": "图像工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "image-edit",
+    "reference",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-reference-edit-studio",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 240
+        },
+        "data": {
+          "type": "start",
+          "label": "编辑目标",
+          "description": "输入图片编辑目标与约束",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-image-reference-edit-studio",
+        "type": "input_image",
+        "position": {
+          "x": 320,
+          "y": 240
+        },
+        "data": {
+          "type": "input_image",
+          "label": "参考图上传",
+          "description": "上传原始产品图用于图生图编辑",
+          "icon": "🖼️",
+          "iconColor": "bg-lime-500",
+          "startImageUrl": ""
+        }
+      },
+      {
+        "id": "input-text-reference-edit-studio",
+        "type": "input_text",
+        "position": {
+          "x": 560,
+          "y": 240
+        },
+        "data": {
+          "type": "input_text",
+          "label": "编辑需求输入",
+          "description": "例如：主图白底、场景图生活化、细节图突出材质",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-brief-reference-edit-studio",
+        "type": "agent",
+        "position": {
+          "x": 800,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "编辑提示词规划",
+          "description": "输出主图/场景图/细节图三类编辑提示词",
+          "icon": "💡",
+          "iconColor": "bg-amber-500",
+          "agentName": "电商文案创作师",
+          "inputMapping": "编辑需求：{{input-text-reference-edit-studio.output.text}}",
+          "instructions": "请输出三类图生图提示词：\n1. 主图编辑提示词\n2. 场景图编辑提示词\n3. 细节图编辑提示词\n并附上每类图的质量检查点。"
+        }
+      },
+      {
+        "id": "parallel-reference-edit-studio",
+        "type": "parallel",
+        "position": {
+          "x": 1040,
+          "y": 240
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行图生图",
+          "description": "并行执行三类编辑任务",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-main-reference-edit-studio",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 80
+        },
+        "data": {
+          "type": "agent",
+          "label": "主图编辑",
+          "description": "编辑为白底主图版本",
+          "icon": "🪄",
+          "iconColor": "bg-pink-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentReferenceImageUrl": "{{input-image-reference-edit-studio.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-brief-reference-edit-studio.output.text}}\\n\\n执行主图编辑：主体保持一致，白底，无文字。",
+          "instructions": "优先保证主体一致性和边缘质量，输出可直接上架的主图。"
+        }
+      },
+      {
+        "id": "agent-scene-reference-edit-studio",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "场景图编辑",
+          "description": "编辑为真实使用场景版本",
+          "icon": "🏞️",
+          "iconColor": "bg-indigo-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentReferenceImageUrl": "{{input-image-reference-edit-studio.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-brief-reference-edit-studio.output.text}}\\n\\n执行场景图编辑：保留产品主体，强化使用情境。",
+          "instructions": "保持产品外观一致，避免产生违规元素。"
+        }
+      },
+      {
+        "id": "agent-detail-reference-edit-studio",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 400
+        },
+        "data": {
+          "type": "agent",
+          "label": "细节图编辑",
+          "description": "编辑为材质与工艺细节版本",
+          "icon": "🔍",
+          "iconColor": "bg-violet-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentReferenceImageUrl": "{{input-image-reference-edit-studio.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-brief-reference-edit-studio.output.text}}\\n\\n执行细节图编辑：突出材质、纹理和结构细节。",
+          "instructions": "强调细节清晰度与真实感，禁止不实夸大。"
+        }
+      },
+      {
+        "id": "merge-reference-edit-studio",
+        "type": "merge",
+        "position": {
+          "x": 1520,
+          "y": 240
+        },
+        "data": {
+          "type": "merge",
+          "label": "编辑结果汇总",
+          "description": "汇总三类编辑结果",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-delivery-reference-edit-studio",
+        "type": "agent",
+        "position": {
+          "x": 1760,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "交付审核",
+          "description": "输出最终交付建议与复用提示词",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "编辑结果汇总：{{merge-reference-edit-studio.output.text}}",
+          "instructions": "请输出：\n1. 最终推荐图列表\n2. 各图用途建议\n3. 二次迭代提示词\n4. 上线前审核清单。"
+        }
+      },
+      {
+        "id": "end-reference-edit-studio",
+        "type": "end",
+        "position": {
+          "x": 2000,
+          "y": 240
+        },
+        "data": {
+          "type": "end",
+          "label": "图生图交付包",
+          "description": "输出多版本编辑结果与建议",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-res-1",
+        "source": "start-reference-edit-studio",
+        "target": "input-image-reference-edit-studio"
+      },
+      {
+        "id": "e-res-2",
+        "source": "input-image-reference-edit-studio",
+        "target": "input-text-reference-edit-studio"
+      },
+      {
+        "id": "e-res-3",
+        "source": "input-text-reference-edit-studio",
+        "target": "agent-brief-reference-edit-studio"
+      },
+      {
+        "id": "e-res-4",
+        "source": "agent-brief-reference-edit-studio",
+        "target": "parallel-reference-edit-studio"
+      },
+      {
+        "id": "e-res-5",
+        "source": "parallel-reference-edit-studio",
+        "target": "agent-main-reference-edit-studio"
+      },
+      {
+        "id": "e-res-6",
+        "source": "parallel-reference-edit-studio",
+        "target": "agent-scene-reference-edit-studio"
+      },
+      {
+        "id": "e-res-7",
+        "source": "parallel-reference-edit-studio",
+        "target": "agent-detail-reference-edit-studio"
+      },
+      {
+        "id": "e-res-8",
+        "source": "agent-main-reference-edit-studio",
+        "target": "merge-reference-edit-studio"
+      },
+      {
+        "id": "e-res-9",
+        "source": "agent-scene-reference-edit-studio",
+        "target": "merge-reference-edit-studio"
+      },
+      {
+        "id": "e-res-10",
+        "source": "agent-detail-reference-edit-studio",
+        "target": "merge-reference-edit-studio"
+      },
+      {
+        "id": "e-res-11",
+        "source": "merge-reference-edit-studio",
+        "target": "agent-delivery-reference-edit-studio"
+      },
+      {
+        "id": "e-res-12",
+        "source": "agent-delivery-reference-edit-studio",
+        "target": "end-reference-edit-studio"
+      }
+    ]
+  }
+}

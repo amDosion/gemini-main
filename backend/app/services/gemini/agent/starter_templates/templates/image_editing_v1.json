@@ -1,0 +1,129 @@
+{
+  "starter_key": "image_editing_v1",
+  "starter_version": 9,
+  "name": "工作流 · 图片编辑",
+  "description": "文本输入 + 图片输入 + 当前活跃 Provider 图生图，适合作为 provider-neutral 编辑模板。",
+  "category": "图像工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "image",
+    "edit",
+    "image-edit",
+    "image-to-image",
+    "provider-neutral",
+    "starter"
+  ],
+  "sample_input": {
+    "task": "请把背景改成浅米色桌面，并增强产品边缘高光，但保持杯子的外观和比例不变。",
+    "imageUrl": "https://images.unsplash.com/photo-1514228742587-6b1558fcf93a?auto=format&fit=crop&w=1200&q=80"
+  },
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-image-edit",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 220
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "接收编辑任务与图片地址",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-text-image-edit",
+        "type": "input_text",
+        "position": {
+          "x": 300,
+          "y": 220
+        },
+        "data": {
+          "type": "input_text",
+          "label": "文本输入",
+          "description": "配置编辑任务（input.task）",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "input-image-image-edit",
+        "type": "input_image",
+        "position": {
+          "x": 520,
+          "y": 220
+        },
+        "data": {
+          "type": "input_image",
+          "label": "图片输入",
+          "description": "上传参考图或填写 imageUrl",
+          "icon": "🖼️",
+          "iconColor": "bg-lime-500",
+          "startImageUrl": ""
+        }
+      },
+      {
+        "id": "tool-image-edit",
+        "type": "agent",
+        "position": {
+          "x": 760,
+          "y": 220
+        },
+        "data": {
+          "type": "agent",
+          "label": "图片编辑",
+          "description": "自动使用当前活跃配置里可用的图片编辑模型",
+          "icon": "🪄",
+          "iconColor": "bg-purple-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "image-edit",
+          "agentReferenceImageUrl": "{{input-image-image-edit.output.imageUrl}}",
+          "inputMapping": "编辑目标：{{input-text-image-edit.output.text}}\\n参考图：{{input-image-image-edit.output.imageUrl}}\\n\\n请先优化编辑提示词，再执行图生图，确保主体不变且结果可用于电商。请只返回编辑后的图片，不要返回文字说明。",
+          "instructions": "请采用 image-chat-edit 路线：优先保证主体一致性、边缘质量和电商合规（无无关文字/水印）。"
+        }
+      },
+      {
+        "id": "end-image-edit",
+        "type": "end",
+        "position": {
+          "x": 1000,
+          "y": 220
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出编辑后的图片",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-image-edit-1",
+        "source": "start-image-edit",
+        "target": "input-text-image-edit"
+      },
+      {
+        "id": "edge-image-edit-2",
+        "source": "input-text-image-edit",
+        "target": "input-image-image-edit"
+      },
+      {
+        "id": "edge-image-edit-3",
+        "source": "input-image-image-edit",
+        "target": "tool-image-edit"
+      },
+      {
+        "id": "edge-image-edit-4",
+        "source": "tool-image-edit",
+        "target": "end-image-edit"
+      }
+    ]
+  }
+}

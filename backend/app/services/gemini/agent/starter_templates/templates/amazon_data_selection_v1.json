@@ -1,0 +1,268 @@
+{
+  "starter_key": "amazon_data_selection_v1",
+  "starter_version": 2,
+  "name": "Amazon 数据选品筛选工作流",
+  "description": "文件输入 + 智能解析 + 并行筛选（需求/竞争/利润）+ 决策汇总。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "data-selection",
+    "product-selection",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-select-data",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 260
+        },
+        "data": {
+          "type": "start",
+          "label": "数据选取目标",
+          "description": "输入本轮选品筛选目标与约束",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-file-select-data",
+        "type": "input_file",
+        "position": {
+          "x": 320,
+          "y": 260
+        },
+        "data": {
+          "type": "input_file",
+          "label": "选品数据文件",
+          "description": "上传市场/关键词/利润测算报表（Excel/CSV）",
+          "icon": "📎",
+          "iconColor": "bg-cyan-500",
+          "startFileUrl": ""
+        }
+      },
+      {
+        "id": "input-text-select-data",
+        "type": "input_text",
+        "position": {
+          "x": 560,
+          "y": 260
+        },
+        "data": {
+          "type": "input_text",
+          "label": "筛选约束",
+          "description": "例如：客单价20-40美元，毛利率>35%，评分门槛4.3",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-schema-select-data",
+        "type": "agent",
+        "position": {
+          "x": 800,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "数据结构解析",
+          "description": "识别字段映射并输出可用于筛选的结构化摘要",
+          "icon": "🧩",
+          "iconColor": "bg-indigo-500",
+          "agentName": "数据报表分析师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-select-data.output.fileUrl}}",
+          "inputMapping": "筛选约束：{{input-text-select-data.output.text}}\\n文件地址：{{input-file-select-data.output.fileUrl}}",
+          "instructions": "请输出：\n1. 字段映射（销量/价格/毛利/评分/评论数）\n2. 缺失字段与可替代字段\n3. 可直接用于后续筛选的结构化摘要。"
+        }
+      },
+      {
+        "id": "parallel-select-data",
+        "type": "parallel",
+        "position": {
+          "x": 1040,
+          "y": 260
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行筛选",
+          "description": "并行执行需求、竞争、利润三维筛选",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-demand-select",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 100
+        },
+        "data": {
+          "type": "agent",
+          "label": "需求筛选",
+          "description": "筛选高需求且趋势向上的候选",
+          "icon": "📈",
+          "iconColor": "bg-blue-500",
+          "agentName": "亚马逊选品分析师",
+          "inputMapping": "结构化摘要：{{agent-schema-select-data.output.text}}\\n筛选约束：{{input-text-select-data.output.text}}",
+          "instructions": "请输出需求维度候选清单：\n1. 高需求候选 Top N\n2. 需求趋势依据\n3. 季节性与波动风险。"
+        }
+      },
+      {
+        "id": "agent-competition-select",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "竞争筛选",
+          "description": "筛选竞争可切入的候选",
+          "icon": "🎯",
+          "iconColor": "bg-red-500",
+          "agentName": "竞品分析专家",
+          "inputMapping": "结构化摘要：{{agent-schema-select-data.output.text}}\\n筛选约束：{{input-text-select-data.output.text}}",
+          "instructions": "请输出竞争维度候选清单：\n1. 竞争强度分级\n2. 可差异化切入点\n3. 进入门槛风险。"
+        }
+      },
+      {
+        "id": "agent-profit-select",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 420
+        },
+        "data": {
+          "type": "agent",
+          "label": "利润筛选",
+          "description": "筛选毛利和现金流更健康的候选",
+          "icon": "🧮",
+          "iconColor": "bg-violet-500",
+          "agentName": "数据报表分析师",
+          "inputMapping": "筛选约束：{{input-text-select-data.output.text}}\\n结构化摘要：{{agent-schema-select-data.output.text}}",
+          "instructions": "请输出利润维度候选清单：\n1. 毛利率/净利率筛选结果\n2. 广告成本敏感性分析\n3. 现金流与备货风险。"
+        }
+      },
+      {
+        "id": "merge-select-data",
+        "type": "merge",
+        "position": {
+          "x": 1520,
+          "y": 260
+        },
+        "data": {
+          "type": "merge",
+          "label": "筛选结果汇总",
+          "description": "汇总三维筛选结果",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-decision-select-data",
+        "type": "agent",
+        "position": {
+          "x": 1760,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "选品决策输出",
+          "description": "输出可执行的选品优先级与试单计划",
+          "icon": "🧠",
+          "iconColor": "bg-indigo-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "三维筛选汇总：{{merge-select-data.output.text}}",
+          "instructions": "请输出最终选品决策：\n1. 推荐 Top 3 候选（含评分）\n2. 试单数量和预算建议\n3. 30 天验证指标与淘汰阈值。"
+        }
+      },
+      {
+        "id": "end-select-data",
+        "type": "end",
+        "position": {
+          "x": 2000,
+          "y": 260
+        },
+        "data": {
+          "type": "end",
+          "label": "选品筛选结果",
+          "description": "输出最终选品建议",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-sd-1",
+        "source": "start-select-data",
+        "target": "input-file-select-data"
+      },
+      {
+        "id": "e-sd-2",
+        "source": "input-file-select-data",
+        "target": "input-text-select-data"
+      },
+      {
+        "id": "e-sd-3",
+        "source": "input-text-select-data",
+        "target": "agent-schema-select-data"
+      },
+      {
+        "id": "e-sd-4",
+        "source": "agent-schema-select-data",
+        "target": "parallel-select-data"
+      },
+      {
+        "id": "e-sd-5",
+        "source": "parallel-select-data",
+        "target": "agent-demand-select"
+      },
+      {
+        "id": "e-sd-6",
+        "source": "parallel-select-data",
+        "target": "agent-competition-select"
+      },
+      {
+        "id": "e-sd-7",
+        "source": "parallel-select-data",
+        "target": "agent-profit-select"
+      },
+      {
+        "id": "e-sd-8",
+        "source": "agent-demand-select",
+        "target": "merge-select-data"
+      },
+      {
+        "id": "e-sd-9",
+        "source": "agent-competition-select",
+        "target": "merge-select-data"
+      },
+      {
+        "id": "e-sd-10",
+        "source": "agent-profit-select",
+        "target": "merge-select-data"
+      },
+      {
+        "id": "e-sd-11",
+        "source": "merge-select-data",
+        "target": "agent-decision-select-data"
+      },
+      {
+        "id": "e-sd-12",
+        "source": "agent-decision-select-data",
+        "target": "end-select-data"
+      }
+    ]
+  }
+}

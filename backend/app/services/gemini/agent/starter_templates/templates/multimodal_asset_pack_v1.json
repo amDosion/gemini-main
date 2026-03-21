@@ -1,0 +1,189 @@
+{
+  "starter_key": "multimodal_asset_pack_v1",
+  "starter_version": 1,
+  "name": "工作流 · 多模态素材包",
+  "description": "同一条任务并行产出图片、视频和语音，结束节点内可直接预览多模态交付结果。",
+  "category": "多模态工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "multimodal",
+    "asset-pack",
+    "parallel",
+    "provider-neutral",
+    "starter"
+  ],
+  "sample_input": {
+    "task": "为便携咖啡机新品生成一套首发素材：一张极简主图、一支 6 秒短视频、一段 40 字以内的中文旁白。"
+  },
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-asset-pack",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 260
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "接收多模态素材需求",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-text-asset-pack",
+        "type": "input_text",
+        "position": {
+          "x": 320,
+          "y": 260
+        },
+        "data": {
+          "type": "input_text",
+          "label": "任务输入",
+          "description": "配置多模态交付要求（input.task）",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "parallel-asset-pack",
+        "type": "parallel",
+        "position": {
+          "x": 580,
+          "y": 260
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行分发",
+          "description": "同一任务并行分发到图像、视频、音频分支",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-image-asset-pack",
+        "type": "agent",
+        "position": {
+          "x": 860,
+          "y": 80
+        },
+        "data": {
+          "type": "agent",
+          "label": "主图生成",
+          "description": "自动使用当前活跃配置里可用的图片生成模型",
+          "icon": "🖼️",
+          "iconColor": "bg-pink-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "image-gen",
+          "agentAspectRatio": "1:1",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{input-text-asset-pack.output.text}}\\n\\n请只输出适合首发落地页的一张主图：背景干净、主体清晰、便于电商展示。",
+          "instructions": "优先保证主体识别度和电商合规，不要加入水印或无关文字。"
+        }
+      },
+      {
+        "id": "agent-video-asset-pack",
+        "type": "agent",
+        "position": {
+          "x": 860,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "短视频生成",
+          "description": "自动使用当前活跃配置里可用的视频生成模型",
+          "icon": "🎬",
+          "iconColor": "bg-fuchsia-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "video-gen",
+          "agentAspectRatio": "16:9",
+          "agentResolutionTier": "1K",
+          "agentVideoDurationSeconds": 6,
+          "inputMapping": "{{input-text-asset-pack.output.text}}\\n\\n请输出一支节奏紧凑的产品短视频，突出开箱、使用动作和成品画面。",
+          "instructions": "镜头稳定、转场简洁、主体清晰，适合品牌首发或社媒投放。"
+        }
+      },
+      {
+        "id": "agent-audio-asset-pack",
+        "type": "agent",
+        "position": {
+          "x": 860,
+          "y": 440
+        },
+        "data": {
+          "type": "agent",
+          "label": "旁白生成",
+          "description": "自动使用当前活跃配置里可用的语音生成模型",
+          "icon": "🎙️",
+          "iconColor": "bg-amber-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "audio-gen",
+          "inputMapping": "{{input-text-asset-pack.output.text}}\\n\\n请只朗读一段 40 字以内的中文产品旁白，语气简洁、专业。",
+          "instructions": "控制时长，适合与 6 秒视频同步使用。"
+        }
+      },
+      {
+        "id": "end-asset-pack",
+        "type": "end",
+        "position": {
+          "x": 1140,
+          "y": 260
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "汇总图片、视频与音频结果，结束节点内可直接预览",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-asset-pack-1",
+        "source": "start-asset-pack",
+        "target": "input-text-asset-pack"
+      },
+      {
+        "id": "edge-asset-pack-2",
+        "source": "input-text-asset-pack",
+        "target": "parallel-asset-pack"
+      },
+      {
+        "id": "edge-asset-pack-3",
+        "source": "parallel-asset-pack",
+        "target": "agent-image-asset-pack"
+      },
+      {
+        "id": "edge-asset-pack-4",
+        "source": "parallel-asset-pack",
+        "target": "agent-video-asset-pack"
+      },
+      {
+        "id": "edge-asset-pack-5",
+        "source": "parallel-asset-pack",
+        "target": "agent-audio-asset-pack"
+      },
+      {
+        "id": "edge-asset-pack-6",
+        "source": "agent-image-asset-pack",
+        "target": "end-asset-pack"
+      },
+      {
+        "id": "edge-asset-pack-7",
+        "source": "agent-video-asset-pack",
+        "target": "end-asset-pack"
+      },
+      {
+        "id": "edge-asset-pack-8",
+        "source": "agent-audio-asset-pack",
+        "target": "end-asset-pack"
+      }
+    ]
+  }
+}

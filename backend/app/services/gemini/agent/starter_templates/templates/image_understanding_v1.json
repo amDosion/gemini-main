@@ -1,0 +1,128 @@
+{
+  "starter_key": "image_understanding_v1",
+  "starter_version": 1,
+  "name": "工作流 · 图片理解",
+  "description": "图片输入 + 文本任务 + 当前活跃 Provider 视觉理解，适合作为通用多模态理解模板。",
+  "category": "多模态工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "vision-understand",
+    "image-analysis",
+    "provider-neutral",
+    "starter"
+  ],
+  "sample_input": {
+    "task": "请识别主体、构图、可保留元素和潜在风险，并给出后续图片编辑建议。",
+    "imageUrl": "https://images.unsplash.com/photo-1514228742587-6b1558fcf93a?auto=format&fit=crop&w=1200&q=80"
+  },
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-image-understand",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 240
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "接收图片理解任务",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-image-understand",
+        "type": "input_image",
+        "position": {
+          "x": 300,
+          "y": 160
+        },
+        "data": {
+          "type": "input_image",
+          "label": "图片输入",
+          "description": "上传参考图或填写 imageUrl",
+          "icon": "🖼️",
+          "iconColor": "bg-lime-500",
+          "startImageUrl": ""
+        }
+      },
+      {
+        "id": "input-text-understand",
+        "type": "input_text",
+        "position": {
+          "x": 300,
+          "y": 320
+        },
+        "data": {
+          "type": "input_text",
+          "label": "分析任务",
+          "description": "配置分析要求（input.task）",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-image-understand",
+        "type": "agent",
+        "position": {
+          "x": 580,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "图片理解",
+          "description": "自动使用当前活跃配置里可用的视觉理解模型",
+          "icon": "🧠",
+          "iconColor": "bg-indigo-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "vision-understand",
+          "agentReferenceImageUrl": "{{input-image-understand.output.imageUrl}}",
+          "agentOutputFormat": "markdown",
+          "inputMapping": "分析任务：{{input-text-understand.output.text}}\\n参考图：{{input-image-understand.output.imageUrl}}\\n\\n请只基于图像本身完成识别，不要根据 URL 或文件名猜测。",
+          "instructions": "输出主体识别、构图评价、可保留元素、风险点和下一步编辑建议。"
+        }
+      },
+      {
+        "id": "end-image-understand",
+        "type": "end",
+        "position": {
+          "x": 840,
+          "y": 240
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出图片理解结果",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-image-understand-1",
+        "source": "start-image-understand",
+        "target": "input-image-understand"
+      },
+      {
+        "id": "edge-image-understand-2",
+        "source": "input-image-understand",
+        "target": "input-text-understand"
+      },
+      {
+        "id": "edge-image-understand-3",
+        "source": "input-text-understand",
+        "target": "agent-image-understand"
+      },
+      {
+        "id": "edge-image-understand-4",
+        "source": "agent-image-understand",
+        "target": "end-image-understand"
+      }
+    ]
+  }
+}

@@ -1,0 +1,269 @@
+{
+  "starter_key": "amazon_ads_bid_optimizer_v1",
+  "starter_version": 1,
+  "name": "Amazon 广告竞价优化闭环",
+  "description": "报表输入 + 预分析 + 并行复核 + 竞价/预算闭环执行清单。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "ads",
+    "bid",
+    "optimization",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-ads-bid-opt",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 260
+        },
+        "data": {
+          "type": "start",
+          "label": "广告优化目标",
+          "description": "输入目标 ACoS/转化率/放量目标",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-file-ads-bid-opt",
+        "type": "input_file",
+        "position": {
+          "x": 320,
+          "y": 260
+        },
+        "data": {
+          "type": "input_file",
+          "label": "广告报表输入",
+          "description": "上传 SP/SB/SD 搜索词与活动报表",
+          "icon": "📎",
+          "iconColor": "bg-cyan-500",
+          "startFileUrl": ""
+        }
+      },
+      {
+        "id": "input-text-ads-bid-opt",
+        "type": "input_text",
+        "position": {
+          "x": 560,
+          "y": 260
+        },
+        "data": {
+          "type": "input_text",
+          "label": "优化策略约束",
+          "description": "例如：先控亏后放量，预算上限每日300美元",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-ads-bid-precheck",
+        "type": "agent",
+        "position": {
+          "x": 800,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "广告预分析",
+          "description": "输出候选否定词、加投词和活动层异常",
+          "icon": "🧩",
+          "iconColor": "bg-indigo-500",
+          "agentName": "亚马逊广告分析师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-ads-bid-opt.output.fileUrl}}",
+          "inputMapping": "优化约束：{{input-text-ads-bid-opt.output.text}}\\n报表文件：{{input-file-ads-bid-opt.output.fileUrl}}",
+          "instructions": "请输出预分析：\n1. 否定词候选\n2. 加投词候选\n3. 预算异常活动\n4. 竞价异常活动。"
+        }
+      },
+      {
+        "id": "parallel-ads-bid-opt",
+        "type": "parallel",
+        "position": {
+          "x": 1040,
+          "y": 260
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行复核",
+          "description": "并行输出关键词、竞价和风险三路建议",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-negative-bid-opt",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 100
+        },
+        "data": {
+          "type": "agent",
+          "label": "关键词动作复核",
+          "description": "确认否定词/加投词执行优先级",
+          "icon": "📊",
+          "iconColor": "bg-blue-500",
+          "agentName": "亚马逊广告分析师",
+          "inputMapping": "预分析结果：{{agent-ads-bid-precheck.output.text}}",
+          "instructions": "请输出关键词动作清单：\n1. 立即否定（P0）\n2. 观察否定（P1）\n3. 加投词与建议竞价区间。"
+        }
+      },
+      {
+        "id": "agent-bid-adjust-opt",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "竞价预算复核",
+          "description": "输出活动层竞价与预算调整策略",
+          "icon": "💸",
+          "iconColor": "bg-violet-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "预分析结果：{{agent-ads-bid-precheck.output.text}}\\n优化约束：{{input-text-ads-bid-opt.output.text}}",
+          "instructions": "请输出活动层动作：\n1. 加价/降价/暂停活动清单\n2. 预算上调/下调建议\n3. 7 天节奏与触发阈值。"
+        }
+      },
+      {
+        "id": "agent-risk-bid-opt",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 420
+        },
+        "data": {
+          "type": "agent",
+          "label": "风险与口径校验",
+          "description": "校验建议可信度和执行风险",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "agentName": "数据报表分析师",
+          "inputMapping": "预分析结果：{{agent-ads-bid-precheck.output.text}}",
+          "instructions": "请输出校验结果：\n1. 数据口径风险\n2. 样本不足风险\n3. 建议可信度评分\n4. 执行前检查清单。"
+        }
+      },
+      {
+        "id": "merge-ads-bid-opt",
+        "type": "merge",
+        "position": {
+          "x": 1520,
+          "y": 260
+        },
+        "data": {
+          "type": "merge",
+          "label": "闭环汇总",
+          "description": "汇总三路复核结果",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-ads-bid-output",
+        "type": "agent",
+        "position": {
+          "x": 1760,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "执行看板输出",
+          "description": "生成可直接执行的竞价/预算闭环方案",
+          "icon": "🧠",
+          "iconColor": "bg-indigo-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "闭环汇总：{{merge-ads-bid-opt.output.text}}",
+          "instructions": "请输出执行看板：\n1. 今日执行清单（P0/P1/P2）\n2. 关键词动作表\n3. 活动层竞价与预算表\n4. 回滚条件与复盘指标。"
+        }
+      },
+      {
+        "id": "end-ads-bid-opt",
+        "type": "end",
+        "position": {
+          "x": 2000,
+          "y": 260
+        },
+        "data": {
+          "type": "end",
+          "label": "竞价优化方案",
+          "description": "输出闭环优化执行结果",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-abo-1",
+        "source": "start-ads-bid-opt",
+        "target": "input-file-ads-bid-opt"
+      },
+      {
+        "id": "e-abo-2",
+        "source": "input-file-ads-bid-opt",
+        "target": "input-text-ads-bid-opt"
+      },
+      {
+        "id": "e-abo-3",
+        "source": "input-text-ads-bid-opt",
+        "target": "agent-ads-bid-precheck"
+      },
+      {
+        "id": "e-abo-4",
+        "source": "agent-ads-bid-precheck",
+        "target": "parallel-ads-bid-opt"
+      },
+      {
+        "id": "e-abo-5",
+        "source": "parallel-ads-bid-opt",
+        "target": "agent-negative-bid-opt"
+      },
+      {
+        "id": "e-abo-6",
+        "source": "parallel-ads-bid-opt",
+        "target": "agent-bid-adjust-opt"
+      },
+      {
+        "id": "e-abo-7",
+        "source": "parallel-ads-bid-opt",
+        "target": "agent-risk-bid-opt"
+      },
+      {
+        "id": "e-abo-8",
+        "source": "agent-negative-bid-opt",
+        "target": "merge-ads-bid-opt"
+      },
+      {
+        "id": "e-abo-9",
+        "source": "agent-bid-adjust-opt",
+        "target": "merge-ads-bid-opt"
+      },
+      {
+        "id": "e-abo-10",
+        "source": "agent-risk-bid-opt",
+        "target": "merge-ads-bid-opt"
+      },
+      {
+        "id": "e-abo-11",
+        "source": "merge-ads-bid-opt",
+        "target": "agent-ads-bid-output"
+      },
+      {
+        "id": "e-abo-12",
+        "source": "agent-ads-bid-output",
+        "target": "end-ads-bid-opt"
+      }
+    ]
+  }
+}

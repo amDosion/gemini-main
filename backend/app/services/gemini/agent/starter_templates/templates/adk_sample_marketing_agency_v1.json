@@ -1,0 +1,285 @@
+{
+  "starter_key": "adk_sample_marketing_agency_v1",
+  "starter_version": 1,
+  "name": "官方 ADK · ADK Marketing Agency (Executable)",
+  "description": "图生图营销生产流（理解 → 并行产图 → 终审），对齐 ADK Marketing Agency 思路。（官方样例，已转为可执行工作流模板）",
+  "category": "图像工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "adk",
+    "official",
+    "sample",
+    "multi-agent",
+    "starter",
+    "google-adk",
+    "图像工作流"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-marketing",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 220
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "输入图生图营销任务",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-image-marketing",
+        "type": "input_image",
+        "position": {
+          "x": 300,
+          "y": 220
+        },
+        "data": {
+          "type": "input_image",
+          "label": "参考图输入",
+          "description": "上传产品原图（图生图必填）",
+          "icon": "🖼️",
+          "iconColor": "bg-lime-500",
+          "startImageUrl": ""
+        }
+      },
+      {
+        "id": "input-text-marketing",
+        "type": "input_text",
+        "position": {
+          "x": 520,
+          "y": 220
+        },
+        "data": {
+          "type": "input_text",
+          "label": "营销目标",
+          "description": "输入场景、文案语气、卖点重点",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-plan-marketing",
+        "type": "agent",
+        "position": {
+          "x": 760,
+          "y": 220
+        },
+        "data": {
+          "type": "agent",
+          "label": "编辑规划",
+          "description": "理解原图并输出多路编辑策略",
+          "icon": "🧠",
+          "iconColor": "bg-violet-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentReferenceImageUrl": "{{input-image-marketing.output.imageUrl}}",
+          "inputMapping": "目标：{{input-text-marketing.output.text}}\n参考图：{{input-image-marketing.output.imageUrl}}\n\n请输出三路图生图策略：模特图、场景图、卖点文案图。",
+          "instructions": "只给出可执行编辑规划，强调主体一致性与电商可用性。"
+        }
+      },
+      {
+        "id": "parallel-marketing",
+        "type": "parallel",
+        "position": {
+          "x": 1000,
+          "y": 220
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行产图",
+          "description": "并行生成多种营销图片",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-model-marketing",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": 80
+        },
+        "data": {
+          "type": "agent",
+          "label": "模特图分支",
+          "description": "基于参考图生成模特展示图",
+          "icon": "🧍",
+          "iconColor": "bg-fuchsia-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentReferenceImageUrl": "{{input-image-marketing.output.imageUrl}}",
+          "agentNumberOfImages": 2,
+          "agentOutputLanguage": "en",
+          "inputMapping": "编辑规划：{{agent-plan-marketing.output.text}}\n请执行模特图分支，输出英文卖点文案且不遮挡主体。",
+          "instructions": "必须保持产品主体一致；文本布局避开主体关键区域。"
+        }
+      },
+      {
+        "id": "agent-scene-marketing",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": 220
+        },
+        "data": {
+          "type": "agent",
+          "label": "场景图分支",
+          "description": "生成真实使用场景营销图",
+          "icon": "🏞️",
+          "iconColor": "bg-indigo-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentReferenceImageUrl": "{{input-image-marketing.output.imageUrl}}",
+          "agentNumberOfImages": 2,
+          "agentOutputLanguage": "en",
+          "inputMapping": "编辑规划：{{agent-plan-marketing.output.text}}\n请执行场景图分支，场景自然、卖点清晰。"
+        }
+      },
+      {
+        "id": "agent-sellpoint-marketing",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": 360
+        },
+        "data": {
+          "type": "agent",
+          "label": "卖点图分支",
+          "description": "生成带排版卖点文案图",
+          "icon": "💡",
+          "iconColor": "bg-amber-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentReferenceImageUrl": "{{input-image-marketing.output.imageUrl}}",
+          "agentNumberOfImages": 2,
+          "agentOutputLanguage": "en",
+          "inputMapping": "编辑规划：{{agent-plan-marketing.output.text}}\n请执行卖点图分支，英文文案排版需避开主体。",
+          "instructions": "卖点标题+短描述，信息层次清晰，避免文字遮挡产品主体。"
+        }
+      },
+      {
+        "id": "merge-marketing",
+        "type": "merge",
+        "position": {
+          "x": 1480,
+          "y": 220
+        },
+        "data": {
+          "type": "merge",
+          "label": "结果汇总",
+          "description": "汇总并行产图结果",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-qa-marketing",
+        "type": "agent",
+        "position": {
+          "x": 1720,
+          "y": 220
+        },
+        "data": {
+          "type": "agent",
+          "label": "质量终审",
+          "description": "输出可交付版本与迭代建议",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "agentName": "图片编辑优化师",
+          "inputMapping": "汇总结果：{{merge-marketing.output.text}}",
+          "instructions": "输出最终交付清单（各分支推荐图、风险点、可选迭代提示词）。"
+        }
+      },
+      {
+        "id": "end-marketing",
+        "type": "end",
+        "position": {
+          "x": 1960,
+          "y": 220
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出营销图交付结果",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "mk-e1",
+        "source": "start-marketing",
+        "target": "input-image-marketing"
+      },
+      {
+        "id": "mk-e2",
+        "source": "input-image-marketing",
+        "target": "input-text-marketing"
+      },
+      {
+        "id": "mk-e3",
+        "source": "input-text-marketing",
+        "target": "agent-plan-marketing"
+      },
+      {
+        "id": "mk-e4",
+        "source": "agent-plan-marketing",
+        "target": "parallel-marketing"
+      },
+      {
+        "id": "mk-e5",
+        "source": "parallel-marketing",
+        "target": "agent-model-marketing"
+      },
+      {
+        "id": "mk-e6",
+        "source": "parallel-marketing",
+        "target": "agent-scene-marketing"
+      },
+      {
+        "id": "mk-e7",
+        "source": "parallel-marketing",
+        "target": "agent-sellpoint-marketing"
+      },
+      {
+        "id": "mk-e8",
+        "source": "agent-model-marketing",
+        "target": "merge-marketing"
+      },
+      {
+        "id": "mk-e9",
+        "source": "agent-scene-marketing",
+        "target": "merge-marketing"
+      },
+      {
+        "id": "mk-e10",
+        "source": "agent-sellpoint-marketing",
+        "target": "merge-marketing"
+      },
+      {
+        "id": "mk-e11",
+        "source": "merge-marketing",
+        "target": "agent-qa-marketing"
+      },
+      {
+        "id": "mk-e12",
+        "source": "agent-qa-marketing",
+        "target": "end-marketing"
+      }
+    ],
+    "_templateMeta": {
+      "source": "adk-samples",
+      "sampleId": "marketing-agency"
+    }
+  }
+}

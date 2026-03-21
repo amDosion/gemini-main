@@ -1,0 +1,518 @@
+{
+  "starter_key": "amazon_product_selection_v1",
+  "starter_version": 2,
+  "name": "亚马逊选品分析工作流",
+  "description": "先用真实 Sorftime MCP 抓取类目、关键词、商品与流量数据，再并行评估市场空间、竞争强度和利润风险，适用于 Amazon 新品选品。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "product-selection",
+    "multi-agent",
+    "provider-neutral",
+    "starter",
+    "mcp",
+    "browser",
+    "ecommerce"
+  ],
+  "sample_input": {
+    "task": "US 站 wireless keyboard，预算 8000 美元，优先轻小件，避免高退货类目。"
+  },
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-select",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 220
+        },
+        "data": {
+          "type": "start",
+          "label": "选品需求",
+          "description": "输入目标类目、预算范围、偏好条件",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-text-select",
+        "type": "input_text",
+        "position": {
+          "x": 300,
+          "y": 140
+        },
+        "data": {
+          "type": "input_text",
+          "label": "站点",
+          "description": "输入 Amazon 站点，例如 US / UK / DE / JP",
+          "icon": "🌐",
+          "iconColor": "bg-sky-500",
+          "startTask": "US"
+        }
+      },
+      {
+        "id": "input-brief-select",
+        "type": "input_text",
+        "position": {
+          "x": 300,
+          "y": 220
+        },
+        "data": {
+          "type": "input_text",
+          "label": "选品需求",
+          "description": "输入站点、种子关键词、预算与限制条件",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "parallel-intake-select",
+        "type": "parallel",
+        "position": {
+          "x": 520,
+          "y": 220
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行数据抓取",
+          "description": "类目、商品与网页线索同时抓取",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "tool-category-search-select",
+        "type": "tool",
+        "position": {
+          "x": 760,
+          "y": 40
+        },
+        "data": {
+          "type": "tool",
+          "label": "类目搜索",
+          "description": "用 Sorftime 识别最匹配的 Amazon 类目节点",
+          "icon": "🧩",
+          "iconColor": "bg-violet-500",
+          "toolName": "mcp_tool_call",
+          "toolArgsTemplate": "{\"mcp_tool_name\":\"category_name_search\",\"arguments\":{\"amzSite\":\"{{input-text-select.output.text}}\",\"searchName\":\"{{input-brief-select.output.text}}\"}}"
+        }
+      },
+      {
+        "id": "tool-product-search-select",
+        "type": "tool",
+        "position": {
+          "x": 760,
+          "y": 220
+        },
+        "data": {
+          "type": "tool",
+          "label": "商品搜索",
+          "description": "抓取种子词下的商品样本与核心指标",
+          "icon": "🛒",
+          "iconColor": "bg-red-500",
+          "toolName": "mcp_tool_call",
+          "toolArgsTemplate": "{\"mcp_tool_name\":\"product_search\",\"arguments\":{\"amzSite\":\"{{input-text-select.output.text}}\",\"searchName\":\"{{input-brief-select.output.text}}\",\"page\":1}}"
+        }
+      },
+      {
+        "id": "tool-web-search-select",
+        "type": "tool",
+        "position": {
+          "x": 760,
+          "y": 400
+        },
+        "data": {
+          "type": "tool",
+          "label": "网页线索搜索",
+          "description": "补充站外市场与趋势线索",
+          "icon": "🔍",
+          "iconColor": "bg-cyan-500",
+          "toolName": "web_search",
+          "toolArgsTemplate": "{\"query\":\"Amazon {{input-brief-select.output.text}} market trend demand signals {{input-text-select.output.text}}\",\"max_items\":5}"
+        }
+      },
+      {
+        "id": "tool-category-report-select",
+        "type": "tool",
+        "position": {
+          "x": 1020,
+          "y": -40
+        },
+        "data": {
+          "type": "tool",
+          "label": "类目 Top100 报告",
+          "description": "抓取类目头部商品、销量和价格带",
+          "icon": "📊",
+          "iconColor": "bg-fuchsia-500",
+          "toolName": "mcp_tool_call",
+          "toolArgsTemplate": "{\"mcp_tool_name\":\"category_report\",\"arguments\":{\"amzSite\":\"{{input-text-select.output.text}}\",\"nodeId\":\"{{tool-category-search-select.output.normalized.items.0.nodeId}}\"}}"
+        }
+      },
+      {
+        "id": "tool-category-keywords-select",
+        "type": "tool",
+        "position": {
+          "x": 1020,
+          "y": 120
+        },
+        "data": {
+          "type": "tool",
+          "label": "类目关键词",
+          "description": "抓取类目核心关键词热度与竞争度",
+          "icon": "🔑",
+          "iconColor": "bg-amber-500",
+          "toolName": "mcp_tool_call",
+          "toolArgsTemplate": "{\"mcp_tool_name\":\"category_keywords\",\"arguments\":{\"amzSite\":\"{{input-text-select.output.text}}\",\"nodeId\":\"{{tool-category-search-select.output.normalized.items.0.nodeId}}\"}}"
+        }
+      },
+      {
+        "id": "tool-product-detail-select",
+        "type": "tool",
+        "position": {
+          "x": 1020,
+          "y": 220
+        },
+        "data": {
+          "type": "tool",
+          "label": "商品详情",
+          "description": "抓取头部商品详情、价格和销量",
+          "icon": "📦",
+          "iconColor": "bg-sky-500",
+          "toolName": "mcp_tool_call",
+          "toolArgsTemplate": "{\"mcp_tool_name\":\"product_detail\",\"arguments\":{\"amzSite\":\"{{input-text-select.output.text}}\",\"asin\":\"{{tool-product-search-select.output.normalized.items.0.asin}}\"}}"
+        }
+      },
+      {
+        "id": "tool-product-traffic-select",
+        "type": "tool",
+        "position": {
+          "x": 1020,
+          "y": 380
+        },
+        "data": {
+          "type": "tool",
+          "label": "流量词",
+          "description": "抓取头部商品流量词与曝光位次",
+          "icon": "📈",
+          "iconColor": "bg-cyan-500",
+          "toolName": "mcp_tool_call",
+          "toolArgsTemplate": "{\"mcp_tool_name\":\"product_traffic_terms\",\"arguments\":{\"amzSite\":\"{{input-text-select.output.text}}\",\"asin\":\"{{tool-product-search-select.output.normalized.items.0.asin}}\"}}"
+        }
+      },
+      {
+        "id": "tool-competitor-keywords-select",
+        "type": "tool",
+        "position": {
+          "x": 1020,
+          "y": 540
+        },
+        "data": {
+          "type": "tool",
+          "label": "竞品关键词",
+          "description": "抓取头部商品竞品关键词与排名",
+          "icon": "🎯",
+          "iconColor": "bg-rose-500",
+          "toolName": "mcp_tool_call",
+          "toolArgsTemplate": "{\"mcp_tool_name\":\"competitor_product_keywords\",\"arguments\":{\"amzSite\":\"{{input-text-select.output.text}}\",\"asin\":\"{{tool-product-search-select.output.normalized.items.0.asin}}\"}}"
+        }
+      },
+      {
+        "id": "tool-read-webpage-select",
+        "type": "tool",
+        "position": {
+          "x": 1020,
+          "y": 700
+        },
+        "data": {
+          "type": "tool",
+          "label": "网页读取",
+          "description": "读取首条站外线索页面，用于补充市场背景",
+          "icon": "📖",
+          "iconColor": "bg-lime-500",
+          "toolName": "read_webpage",
+          "toolArgsTemplate": "{\"url\":\"{{tool-web-search-select.output.items.0.url}}\",\"max_length\":12000}"
+        }
+      },
+      {
+        "id": "merge-research-select",
+        "type": "merge",
+        "position": {
+          "x": 1280,
+          "y": 280
+        },
+        "data": {
+          "type": "merge",
+          "label": "数据底稿合并",
+          "description": "汇总 MCP 与网页抓取结果",
+          "icon": "🔗",
+          "iconColor": "bg-slate-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "parallel-analysis-select",
+        "type": "parallel",
+        "position": {
+          "x": 1520,
+          "y": 280
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行专项分析",
+          "description": "市场、竞争与利润风险并行评估",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-market-select",
+        "type": "agent",
+        "position": {
+          "x": 1760,
+          "y": 40
+        },
+        "data": {
+          "type": "agent",
+          "label": "市场空间判断",
+          "description": "结合类目和关键词数据判断市场容量与进入窗口",
+          "icon": "🌍",
+          "iconColor": "bg-violet-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "站点：{{input-text-select.output.text}}\n选品需求：{{input-brief-select.output.text}}\n\n类目匹配：{{tool-category-search-select.output.rawText}}\n\n类目 Top100：{{tool-category-report-select.output.rawText}}\n\n类目关键词：{{tool-category-keywords-select.output.rawText}}\n\n网页线索：{{tool-read-webpage-select.output.content}}",
+          "instructions": "请判断市场是否值得进入，并输出：1) 市场容量与需求强度；2) 关键词机会层级；3) 是否存在明显季节性或热点驱动；4) 进入窗口评分（1-10）；5) 需要警惕的市场风险。"
+        }
+      },
+      {
+        "id": "agent-competition-select",
+        "type": "agent",
+        "position": {
+          "x": 1760,
+          "y": 280
+        },
+        "data": {
+          "type": "agent",
+          "label": "竞争强度分析",
+          "description": "结合商品样本和关键词排名判断竞争壁垒",
+          "icon": "🛡️",
+          "iconColor": "bg-red-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "站点：{{input-text-select.output.text}}\n选品需求：{{input-brief-select.output.text}}\n\n商品搜索结果：{{tool-product-search-select.output.rawText}}\n\n商品详情：{{tool-product-detail-select.output.rawText}}\n\n流量词：{{tool-product-traffic-select.output.rawText}}\n\n竞品关键词：{{tool-competitor-keywords-select.output.rawText}}",
+          "instructions": "请输出竞争格局分析：1) 头部品牌与价格带；2) 评论和评分门槛；3) 关键词拥挤度与自然位次压力；4) 可切入差异化方向；5) 竞争难度评分（1-10）。"
+        }
+      },
+      {
+        "id": "agent-economics-select",
+        "type": "agent",
+        "position": {
+          "x": 1760,
+          "y": 520
+        },
+        "data": {
+          "type": "agent",
+          "label": "利润与风险测算",
+          "description": "根据销量、价格和约束条件做粗测算",
+          "icon": "💹",
+          "iconColor": "bg-emerald-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "站点：{{input-text-select.output.text}}\n选品需求：{{input-brief-select.output.text}}\n\n类目 Top100：{{tool-category-report-select.output.rawText}}\n\n商品详情：{{tool-product-detail-select.output.rawText}}\n\n流量词：{{tool-product-traffic-select.output.rawText}}",
+          "instructions": "请基于现有销量、价格和用户约束，做粗粒度利润与风险测算：1) 合理售价与销量区间；2) 预估广告/履约/退货压力；3) ROI 与回本周期区间；4) 高风险假设；5) 是否建议继续验证。"
+        }
+      },
+      {
+        "id": "merge-analysis-select",
+        "type": "merge",
+        "position": {
+          "x": 2000,
+          "y": 280
+        },
+        "data": {
+          "type": "merge",
+          "label": "合并分析结论",
+          "description": "汇总三路专项分析结论",
+          "icon": "🔗",
+          "iconColor": "bg-slate-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-decision-select",
+        "type": "agent",
+        "position": {
+          "x": 2240,
+          "y": 280
+        },
+        "data": {
+          "type": "agent",
+          "label": "选品决策",
+          "description": "输出是否进入、验证计划与执行建议",
+          "icon": "🧠",
+          "iconColor": "bg-indigo-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "站点：{{input-text-select.output.text}}\n选品需求：{{input-brief-select.output.text}}\n\n专项分析汇总：{{merge-analysis-select.output.text}}\n\nMCP 数据底稿：{{merge-research-select.output.text}}",
+          "instructions": "请输出最终选品决策报告：1) 是否建议进入；2) 进入优先级评分与理由；3) 首轮验证动作（关键词、供应链、成本、样品）；4) 预算与节奏建议；5) 明确的 go / no-go 条件。要求细致，不要只给一句结论。"
+        }
+      },
+      {
+        "id": "end-select",
+        "type": "end",
+        "position": {
+          "x": 2480,
+          "y": 280
+        },
+        "data": {
+          "type": "end",
+          "label": "选品报告",
+          "description": "输出完整的选品分析报告",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-select-1",
+        "source": "start-select",
+        "target": "input-text-select"
+      },
+      {
+        "id": "e-select-2",
+        "source": "input-text-select",
+        "target": "input-brief-select"
+      },
+      {
+        "id": "e-select-3",
+        "source": "input-brief-select",
+        "target": "parallel-intake-select"
+      },
+      {
+        "id": "e-select-4",
+        "source": "parallel-intake-select",
+        "target": "tool-category-search-select"
+      },
+      {
+        "id": "e-select-5",
+        "source": "parallel-intake-select",
+        "target": "tool-product-search-select"
+      },
+      {
+        "id": "e-select-6",
+        "source": "parallel-intake-select",
+        "target": "tool-web-search-select"
+      },
+      {
+        "id": "e-select-7",
+        "source": "tool-category-search-select",
+        "target": "tool-category-report-select"
+      },
+      {
+        "id": "e-select-8",
+        "source": "tool-category-search-select",
+        "target": "tool-category-keywords-select"
+      },
+      {
+        "id": "e-select-9",
+        "source": "tool-product-search-select",
+        "target": "tool-product-detail-select"
+      },
+      {
+        "id": "e-select-10",
+        "source": "tool-product-search-select",
+        "target": "tool-product-traffic-select"
+      },
+      {
+        "id": "e-select-11",
+        "source": "tool-product-search-select",
+        "target": "tool-competitor-keywords-select"
+      },
+      {
+        "id": "e-select-12",
+        "source": "tool-web-search-select",
+        "target": "tool-read-webpage-select"
+      },
+      {
+        "id": "e-select-13",
+        "source": "tool-category-report-select",
+        "target": "merge-research-select"
+      },
+      {
+        "id": "e-select-14",
+        "source": "tool-category-keywords-select",
+        "target": "merge-research-select"
+      },
+      {
+        "id": "e-select-15",
+        "source": "tool-product-detail-select",
+        "target": "merge-research-select"
+      },
+      {
+        "id": "e-select-16",
+        "source": "tool-product-traffic-select",
+        "target": "merge-research-select"
+      },
+      {
+        "id": "e-select-17",
+        "source": "tool-competitor-keywords-select",
+        "target": "merge-research-select"
+      },
+      {
+        "id": "e-select-18",
+        "source": "tool-read-webpage-select",
+        "target": "merge-research-select"
+      },
+      {
+        "id": "e-select-19",
+        "source": "merge-research-select",
+        "target": "parallel-analysis-select"
+      },
+      {
+        "id": "e-select-20",
+        "source": "parallel-analysis-select",
+        "target": "agent-market-select"
+      },
+      {
+        "id": "e-select-21",
+        "source": "parallel-analysis-select",
+        "target": "agent-competition-select"
+      },
+      {
+        "id": "e-select-22",
+        "source": "parallel-analysis-select",
+        "target": "agent-economics-select"
+      },
+      {
+        "id": "e-select-23",
+        "source": "agent-market-select",
+        "target": "merge-analysis-select"
+      },
+      {
+        "id": "e-select-24",
+        "source": "agent-competition-select",
+        "target": "merge-analysis-select"
+      },
+      {
+        "id": "e-select-25",
+        "source": "agent-economics-select",
+        "target": "merge-analysis-select"
+      },
+      {
+        "id": "e-select-26",
+        "source": "merge-analysis-select",
+        "target": "agent-decision-select"
+      },
+      {
+        "id": "e-select-27",
+        "source": "agent-decision-select",
+        "target": "end-select"
+      }
+    ]
+  }
+}

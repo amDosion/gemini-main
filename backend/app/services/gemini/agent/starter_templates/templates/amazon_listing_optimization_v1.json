@@ -1,0 +1,492 @@
+{
+  "starter_key": "amazon_listing_optimization_v1",
+  "starter_version": 2,
+  "name": "Amazon Listing 全面优化",
+  "description": "用真实 Sorftime MCP 抓取关键词、竞品与流量词，再结合网页资料并行生成关键词地图、竞品差异和最终 Listing 方案。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "listing",
+    "optimization",
+    "multi-agent",
+    "provider-neutral",
+    "starter",
+    "mcp",
+    "browser",
+    "ecommerce"
+  ],
+  "sample_input": {
+    "task": "US 站 ergonomic office chair，重点强调腰靠、安装简单、适合 home office。"
+  },
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-listing",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 220
+        },
+        "data": {
+          "type": "start",
+          "label": "产品信息",
+          "description": "输入产品名称、特征、目标市场",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-site-listing",
+        "type": "input_text",
+        "position": {
+          "x": 320,
+          "y": 140
+        },
+        "data": {
+          "type": "input_text",
+          "label": "站点",
+          "description": "输入 Amazon 站点，例如 US / UK / DE / JP",
+          "icon": "🌐",
+          "iconColor": "bg-sky-500",
+          "startTask": "US"
+        }
+      },
+      {
+        "id": "input-text-listing",
+        "type": "input_text",
+        "position": {
+          "x": 320,
+          "y": 220
+        },
+        "data": {
+          "type": "input_text",
+          "label": "产品需求",
+          "description": "输入站点、产品关键词、卖点和风格限制",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "parallel-intake-listing",
+        "type": "parallel",
+        "position": {
+          "x": 540,
+          "y": 220
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行抓取",
+          "description": "关键词、竞品样本与网页资料并行抓取",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "tool-product-search-listing",
+        "type": "tool",
+        "position": {
+          "x": 780,
+          "y": 40
+        },
+        "data": {
+          "type": "tool",
+          "label": "商品搜索",
+          "description": "抓取竞品样本与基础指标",
+          "icon": "🛒",
+          "iconColor": "bg-red-500",
+          "toolName": "mcp_tool_call",
+          "toolArgsTemplate": "{\"mcp_tool_name\":\"product_search\",\"arguments\":{\"amzSite\":\"{{input-site-listing.output.text}}\",\"searchName\":\"{{input-text-listing.output.text}}\",\"page\":1}}"
+        }
+      },
+      {
+        "id": "tool-category-search-listing",
+        "type": "tool",
+        "position": {
+          "x": 780,
+          "y": 220
+        },
+        "data": {
+          "type": "tool",
+          "label": "类目识别",
+          "description": "识别最相关的 Amazon 类目",
+          "icon": "🧩",
+          "iconColor": "bg-violet-500",
+          "toolName": "mcp_tool_call",
+          "toolArgsTemplate": "{\"mcp_tool_name\":\"category_name_search\",\"arguments\":{\"amzSite\":\"{{input-site-listing.output.text}}\",\"searchName\":\"{{input-text-listing.output.text}}\"}}"
+        }
+      },
+      {
+        "id": "tool-web-search-listing",
+        "type": "tool",
+        "position": {
+          "x": 780,
+          "y": 400
+        },
+        "data": {
+          "type": "tool",
+          "label": "网页搜索",
+          "description": "补充站外卖点与内容策略线索",
+          "icon": "🔍",
+          "iconColor": "bg-cyan-500",
+          "toolName": "web_search",
+          "toolArgsTemplate": "{\"query\":\"Amazon {{input-text-listing.output.text}} listing optimization best practices {{input-site-listing.output.text}}\",\"max_items\":5}"
+        }
+      },
+      {
+        "id": "tool-product-detail-listing",
+        "type": "tool",
+        "position": {
+          "x": 1040,
+          "y": -40
+        },
+        "data": {
+          "type": "tool",
+          "label": "竞品详情",
+          "description": "抓取头部竞品详情",
+          "icon": "📦",
+          "iconColor": "bg-sky-500",
+          "toolName": "mcp_tool_call",
+          "toolArgsTemplate": "{\"mcp_tool_name\":\"product_detail\",\"arguments\":{\"amzSite\":\"{{input-site-listing.output.text}}\",\"asin\":\"{{tool-product-search-listing.output.normalized.items.0.asin}}\"}}"
+        }
+      },
+      {
+        "id": "tool-product-traffic-listing",
+        "type": "tool",
+        "position": {
+          "x": 1040,
+          "y": 120
+        },
+        "data": {
+          "type": "tool",
+          "label": "流量词",
+          "description": "抓取头部竞品流量词与曝光位次",
+          "icon": "📈",
+          "iconColor": "bg-emerald-500",
+          "toolName": "mcp_tool_call",
+          "toolArgsTemplate": "{\"mcp_tool_name\":\"product_traffic_terms\",\"arguments\":{\"amzSite\":\"{{input-site-listing.output.text}}\",\"asin\":\"{{tool-product-search-listing.output.normalized.items.0.asin}}\"}}"
+        }
+      },
+      {
+        "id": "tool-competitor-keywords-listing",
+        "type": "tool",
+        "position": {
+          "x": 1040,
+          "y": 280
+        },
+        "data": {
+          "type": "tool",
+          "label": "竞品关键词",
+          "description": "抓取竞品关键词池与自然位次",
+          "icon": "🎯",
+          "iconColor": "bg-rose-500",
+          "toolName": "mcp_tool_call",
+          "toolArgsTemplate": "{\"mcp_tool_name\":\"competitor_product_keywords\",\"arguments\":{\"amzSite\":\"{{input-site-listing.output.text}}\",\"asin\":\"{{tool-product-search-listing.output.normalized.items.0.asin}}\"}}"
+        }
+      },
+      {
+        "id": "tool-category-keywords-listing",
+        "type": "tool",
+        "position": {
+          "x": 1040,
+          "y": 440
+        },
+        "data": {
+          "type": "tool",
+          "label": "类目关键词",
+          "description": "抓取类目核心关键词热度",
+          "icon": "🔑",
+          "iconColor": "bg-amber-500",
+          "toolName": "mcp_tool_call",
+          "toolArgsTemplate": "{\"mcp_tool_name\":\"category_keywords\",\"arguments\":{\"amzSite\":\"{{input-site-listing.output.text}}\",\"nodeId\":\"{{tool-category-search-listing.output.normalized.items.0.nodeId}}\"}}"
+        }
+      },
+      {
+        "id": "tool-read-webpage-listing",
+        "type": "tool",
+        "position": {
+          "x": 1040,
+          "y": 600
+        },
+        "data": {
+          "type": "tool",
+          "label": "网页读取",
+          "description": "读取首条网页线索页面",
+          "icon": "📖",
+          "iconColor": "bg-lime-500",
+          "toolName": "read_webpage",
+          "toolArgsTemplate": "{\"url\":\"{{tool-web-search-listing.output.items.0.url}}\",\"max_length\":12000}"
+        }
+      },
+      {
+        "id": "merge-research-listing",
+        "type": "merge",
+        "position": {
+          "x": 1300,
+          "y": 280
+        },
+        "data": {
+          "type": "merge",
+          "label": "资料汇总",
+          "description": "汇总关键词、竞品与网页资料",
+          "icon": "🔗",
+          "iconColor": "bg-slate-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "parallel-analysis-listing",
+        "type": "parallel",
+        "position": {
+          "x": 1540,
+          "y": 280
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行分析",
+          "description": "关键词、竞品差异和转化结构并行分析",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-keywords-listing",
+        "type": "agent",
+        "position": {
+          "x": 1780,
+          "y": 40
+        },
+        "data": {
+          "type": "agent",
+          "label": "关键词地图",
+          "description": "输出标题词、卖点词、后台词的分层策略",
+          "icon": "🗺️",
+          "iconColor": "bg-amber-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "站点：{{input-site-listing.output.text}}\n产品需求：{{input-text-listing.output.text}}\n\n类目关键词：{{tool-category-keywords-listing.output.rawText}}\n\n流量词：{{tool-product-traffic-listing.output.rawText}}\n\n竞品关键词：{{tool-competitor-keywords-listing.output.rawText}}",
+          "instructions": "请输出 Listing 关键词地图：1) Title 核心词；2) Bullet 卖点词；3) Search Terms 后台词；4) 需要避开的重复/低质词；5) 按高优先级/次优先级/补充词分层。"
+        }
+      },
+      {
+        "id": "agent-competitor-listing",
+        "type": "agent",
+        "position": {
+          "x": 1780,
+          "y": 280
+        },
+        "data": {
+          "type": "agent",
+          "label": "竞品差异化",
+          "description": "总结竞品结构和可打差异点",
+          "icon": "🧠",
+          "iconColor": "bg-red-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "站点：{{input-site-listing.output.text}}\n产品需求：{{input-text-listing.output.text}}\n\n商品搜索结果：{{tool-product-search-listing.output.rawText}}\n\n竞品详情：{{tool-product-detail-listing.output.rawText}}\n\n网页线索：{{tool-read-webpage-listing.output.content}}",
+          "instructions": "请输出竞品差异化分析：1) 标题和 Bullet 常见结构；2) 竞品主打卖点；3) 空白机会；4) 需要回避的夸张表达；5) 可落地的差异化角度。"
+        }
+      },
+      {
+        "id": "agent-conversion-listing",
+        "type": "agent",
+        "position": {
+          "x": 1780,
+          "y": 520
+        },
+        "data": {
+          "type": "agent",
+          "label": "转化结构规划",
+          "description": "把卖点、场景和证据组织成转化结构",
+          "icon": "🧱",
+          "iconColor": "bg-emerald-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "站点：{{input-site-listing.output.text}}\n产品需求：{{input-text-listing.output.text}}\n\n竞品详情：{{tool-product-detail-listing.output.rawText}}\n\n流量词：{{tool-product-traffic-listing.output.rawText}}\n\n网页线索：{{tool-read-webpage-listing.output.content}}",
+          "instructions": "请规划转化结构：1) 主标题信息顺序；2) 五点卖点顺序；3) 产品描述和 A+ 模块建议；4) 每个模块对应的证据与场景；5) 哪些内容需要图片配合。"
+        }
+      },
+      {
+        "id": "merge-analysis-listing",
+        "type": "merge",
+        "position": {
+          "x": 2020,
+          "y": 280
+        },
+        "data": {
+          "type": "merge",
+          "label": "合并分析",
+          "description": "汇总关键词、差异化和转化结构分析",
+          "icon": "🔗",
+          "iconColor": "bg-slate-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-listing-output",
+        "type": "agent",
+        "position": {
+          "x": 2260,
+          "y": 280
+        },
+        "data": {
+          "type": "agent",
+          "label": "Listing 方案输出",
+          "description": "输出标题、五点、描述和后台词",
+          "icon": "✍️",
+          "iconColor": "bg-indigo-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "chat",
+          "inputMapping": "站点：{{input-site-listing.output.text}}\n产品需求：{{input-text-listing.output.text}}\n\n并行分析汇总：{{merge-analysis-listing.output.text}}\n\nMCP 资料汇总：{{merge-research-listing.output.text}}",
+          "instructions": "请输出完整 Listing 方案：1) 2 个标题方案（控制在 Amazon 常见字符范围内）；2) 5 条 Bullet；3) 产品描述；4) Search Terms；5) A+ 模块建议；6) 用表格注明每一段使用了哪些关键词和卖点。结果要详细、可直接给运营改稿。"
+        }
+      },
+      {
+        "id": "end-listing",
+        "type": "end",
+        "position": {
+          "x": 2500,
+          "y": 280
+        },
+        "data": {
+          "type": "end",
+          "label": "优化方案",
+          "description": "输出完整的 Listing 优化方案",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-listing-1",
+        "source": "start-listing",
+        "target": "input-site-listing"
+      },
+      {
+        "id": "e-listing-2",
+        "source": "input-site-listing",
+        "target": "input-text-listing"
+      },
+      {
+        "id": "e-listing-3",
+        "source": "input-text-listing",
+        "target": "parallel-intake-listing"
+      },
+      {
+        "id": "e-listing-4",
+        "source": "parallel-intake-listing",
+        "target": "tool-product-search-listing"
+      },
+      {
+        "id": "e-listing-5",
+        "source": "parallel-intake-listing",
+        "target": "tool-category-search-listing"
+      },
+      {
+        "id": "e-listing-6",
+        "source": "parallel-intake-listing",
+        "target": "tool-web-search-listing"
+      },
+      {
+        "id": "e-listing-7",
+        "source": "tool-product-search-listing",
+        "target": "tool-product-detail-listing"
+      },
+      {
+        "id": "e-listing-8",
+        "source": "tool-product-search-listing",
+        "target": "tool-product-traffic-listing"
+      },
+      {
+        "id": "e-listing-9",
+        "source": "tool-product-search-listing",
+        "target": "tool-competitor-keywords-listing"
+      },
+      {
+        "id": "e-listing-10",
+        "source": "tool-category-search-listing",
+        "target": "tool-category-keywords-listing"
+      },
+      {
+        "id": "e-listing-11",
+        "source": "tool-web-search-listing",
+        "target": "tool-read-webpage-listing"
+      },
+      {
+        "id": "e-listing-12",
+        "source": "tool-product-detail-listing",
+        "target": "merge-research-listing"
+      },
+      {
+        "id": "e-listing-13",
+        "source": "tool-product-traffic-listing",
+        "target": "merge-research-listing"
+      },
+      {
+        "id": "e-listing-14",
+        "source": "tool-competitor-keywords-listing",
+        "target": "merge-research-listing"
+      },
+      {
+        "id": "e-listing-15",
+        "source": "tool-category-keywords-listing",
+        "target": "merge-research-listing"
+      },
+      {
+        "id": "e-listing-16",
+        "source": "tool-read-webpage-listing",
+        "target": "merge-research-listing"
+      },
+      {
+        "id": "e-listing-17",
+        "source": "merge-research-listing",
+        "target": "parallel-analysis-listing"
+      },
+      {
+        "id": "e-listing-18",
+        "source": "parallel-analysis-listing",
+        "target": "agent-keywords-listing"
+      },
+      {
+        "id": "e-listing-19",
+        "source": "parallel-analysis-listing",
+        "target": "agent-competitor-listing"
+      },
+      {
+        "id": "e-listing-20",
+        "source": "parallel-analysis-listing",
+        "target": "agent-conversion-listing"
+      },
+      {
+        "id": "e-listing-21",
+        "source": "agent-keywords-listing",
+        "target": "merge-analysis-listing"
+      },
+      {
+        "id": "e-listing-22",
+        "source": "agent-competitor-listing",
+        "target": "merge-analysis-listing"
+      },
+      {
+        "id": "e-listing-23",
+        "source": "agent-conversion-listing",
+        "target": "merge-analysis-listing"
+      },
+      {
+        "id": "e-listing-24",
+        "source": "merge-analysis-listing",
+        "target": "agent-listing-output"
+      },
+      {
+        "id": "e-listing-25",
+        "source": "agent-listing-output",
+        "target": "end-listing"
+      }
+    ]
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "starter_key": "video_generation_v1",
+  "starter_version": 2,
+  "name": "工作流 · 视频生成",
+  "description": "文本输入 + 当前活跃 Provider 视频生成，适合作为 provider-neutral 文生视频起步模板。",
+  "category": "多模态工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "video",
+    "video-gen",
+    "text-to-video",
+    "provider-neutral",
+    "starter"
+  ],
+  "sample_input": {
+    "task": "请生成一支 8 秒产品短片：白色耳机盒在浅灰桌面上缓慢旋转，柔和侧光，镜头平稳推进，适合电商首屏展示。"
+  },
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-video-gen",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 220
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "接收视频生成任务",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-text-video-gen",
+        "type": "input_text",
+        "position": {
+          "x": 320,
+          "y": 220
+        },
+        "data": {
+          "type": "input_text",
+          "label": "文本输入",
+          "description": "配置视频脚本（input.task）",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-video-gen",
+        "type": "agent",
+        "position": {
+          "x": 580,
+          "y": 220
+        },
+        "data": {
+          "type": "agent",
+          "label": "视频生成",
+          "description": "自动使用当前活跃配置里可用的视频生成模型",
+          "icon": "🎬",
+          "iconColor": "bg-fuchsia-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "video-gen",
+          "agentAspectRatio": "16:9",
+          "agentResolutionTier": "1K",
+          "agentVideoDurationSeconds": 8,
+          "inputMapping": "原始需求：{{input-text-video-gen.output.text}}\\n\\n请先把需求整理成适合视频生成模型执行的镜头脚本，再直接生成视频。镜头脚本必须明确：1) 主体是谁；2) 主体如何运动；3) 镜头如何运动；4) 光线、背景、景别与节奏；5) 画面里绝对不要出现什么。若用户需求过于抽象，请主动补齐连续镜头语言，但不要发散到用户没要求的剧情。",
+          "instructions": "你是商业视频导演型生成节点。输出的视频必须满足：主体稳定、构图清楚、动作连贯、镜头语言明确、背景干净、无字幕无水印无品牌 logo（除非用户明确要求）、不要生成多主体抢镜。若需求是产品视频，优先采用平稳推拉摇移和柔和布光；若需求是叙事镜头，优先保证动作连贯和场景一致性。只返回视频结果，不返回解释文本。"
+        }
+      },
+      {
+        "id": "end-video-gen",
+        "type": "end",
+        "position": {
+          "x": 840,
+          "y": 220
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出视频结果",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-video-gen-1",
+        "source": "start-video-gen",
+        "target": "input-text-video-gen"
+      },
+      {
+        "id": "edge-video-gen-2",
+        "source": "input-text-video-gen",
+        "target": "agent-video-gen"
+      },
+      {
+        "id": "edge-video-gen-3",
+        "source": "agent-video-gen",
+        "target": "end-video-gen"
+      }
+    ]
+  }
+}

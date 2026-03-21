@@ -1,0 +1,22 @@
+
+{
+  "manifest_version": 3,
+  "name": "Gemini Flux Chat",
+  "version": "1.1.0",
+  "description": "A high-performance AI chat interface powered by Google Gemini 2.5 Flash and DashScope.",
+  "action": {
+    "default_popup": "index.html",
+    "default_title": "Chat with Gemini"
+  },
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://generativelanguage.googleapis.com/*",
+    "https://dashscope.aliyuncs.com/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

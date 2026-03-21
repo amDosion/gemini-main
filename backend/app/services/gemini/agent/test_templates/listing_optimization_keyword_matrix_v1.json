@@ -1,0 +1,131 @@
+{
+  "name": "Listing 优化 · 关键词矩阵版",
+  "description": "基于核心词与场景词生成 Title/Bullet/A+ 的关键词覆盖矩阵，输出可直接上线的 Listing 草稿。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "listing",
+    "optimization",
+    "seo",
+    "keyword"
+  ],
+  "prompt_hint": "输入品类、目标站点、核心词、禁用词、竞品 ASIN。",
+  "prompt_example": {
+    "task": "优化无线耳机 Listing，目标美国站，强调降噪与佩戴舒适。",
+    "market": "US",
+    "category": "Electronics",
+    "seedKeywords": [
+      "wireless earbuds",
+      "noise cancelling earbuds",
+      "bluetooth earbuds"
+    ],
+    "negativeKeywords": [
+      "kids toy",
+      "wired headset"
+    ],
+    "competitorAsins": [
+      "B0AAAA1111",
+      "B0BBBB2222"
+    ]
+  },
+  "requires_image": false,
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-listing-keyword-matrix",
+        "type": "start",
+        "position": {
+          "x": 120,
+          "y": 200
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "输入优化目标",
+          "icon": "▶️",
+          "iconColor": "bg-emerald-500"
+        }
+      },
+      {
+        "id": "agent-listing-keyword-cluster",
+        "type": "agent",
+        "position": {
+          "x": 420,
+          "y": 150
+        },
+        "data": {
+          "type": "agent",
+          "label": "关键词聚类师",
+          "description": "输出关键词覆盖矩阵与优先级",
+          "icon": "🧠",
+          "iconColor": "bg-sky-500",
+          "agentTaskType": "data-analysis",
+          "instructions": "按 Search Intent 将关键词拆分为核心词/修饰词/场景词，并给出优先级。"
+        }
+      },
+      {
+        "id": "agent-listing-copywriter",
+        "type": "agent",
+        "position": {
+          "x": 760,
+          "y": 150
+        },
+        "data": {
+          "type": "agent",
+          "label": "Listing 文案优化师",
+          "description": "生成 Title/Bullet/A+ 草稿",
+          "icon": "✍️",
+          "iconColor": "bg-fuchsia-500",
+          "agentTaskType": "chat",
+          "instructions": "输出英文 Listing：1 个标题，5 条 Bullet，A+ 模块标题与文案。"
+        }
+      },
+      {
+        "id": "end-listing-keyword-matrix",
+        "type": "end",
+        "position": {
+          "x": 1080,
+          "y": 200
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出 Listing 优化结果",
+          "icon": "🏁",
+          "iconColor": "bg-rose-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e1",
+        "source": "start-listing-keyword-matrix",
+        "target": "agent-listing-keyword-cluster"
+      },
+      {
+        "id": "e2",
+        "source": "agent-listing-keyword-cluster",
+        "target": "agent-listing-copywriter"
+      },
+      {
+        "id": "e3",
+        "source": "agent-listing-copywriter",
+        "target": "end-listing-keyword-matrix"
+      }
+    ],
+    "_templateMeta": {
+      "workflowType": "graph",
+      "tags": [
+        "amazon",
+        "listing",
+        "optimization",
+        "seo",
+        "keyword"
+      ],
+      "starterKey": "test_listing_optimization_keyword_matrix_v1"
+    }
+  }
+}
+

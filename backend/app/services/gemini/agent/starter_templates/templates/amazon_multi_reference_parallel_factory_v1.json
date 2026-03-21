@@ -1,0 +1,346 @@
+{
+  "starter_key": "amazon_multi_reference_parallel_factory_v1",
+  "starter_version": 2,
+  "name": "Amazon 多参考图并行工厂",
+  "description": "在同一工作流中处理多张参考图（不同提示词/分支），最终合并交付并输出分图建议。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "image",
+    "multi-reference",
+    "parallel",
+    "multi-agent",
+    "image-edit"
+  ],
+  "sample_input": {
+    "task": "为同一服装产品生成三路并行广告图：A 主图强化、B 场景转化、C 卖点特写。",
+    "imageUrls": [
+      "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=1200&q=80"
+    ],
+    "prompts": [
+      "分支A：白底高对比，强调轮廓与质感，适合主图。",
+      "分支B：生活化场景，突出使用情境和舒适感。",
+      "分支C：卖点特写，放大关键细节并保留商品一致性。"
+    ]
+  },
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-multi-ref-factory",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 280
+        },
+        "data": {
+          "type": "start",
+          "label": "任务输入",
+          "description": "输入多图任务目标",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-text-multi-ref-factory",
+        "type": "input_text",
+        "position": {
+          "x": 300,
+          "y": 280
+        },
+        "data": {
+          "type": "input_text",
+          "label": "全局目标",
+          "description": "输入统一文案风格、禁用词和品牌要求",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "input-image-multi-ref-a",
+        "type": "input_image",
+        "position": {
+          "x": 540,
+          "y": 120
+        },
+        "data": {
+          "type": "input_image",
+          "label": "参考图 A",
+          "description": "上传第一张参考图",
+          "icon": "🖼️",
+          "iconColor": "bg-lime-500",
+          "startImageUrl": ""
+        }
+      },
+      {
+        "id": "input-image-multi-ref-b",
+        "type": "input_image",
+        "position": {
+          "x": 540,
+          "y": 280
+        },
+        "data": {
+          "type": "input_image",
+          "label": "参考图 B",
+          "description": "上传第二张参考图",
+          "icon": "🖼️",
+          "iconColor": "bg-lime-500",
+          "startImageUrl": ""
+        }
+      },
+      {
+        "id": "input-image-multi-ref-c",
+        "type": "input_image",
+        "position": {
+          "x": 540,
+          "y": 440
+        },
+        "data": {
+          "type": "input_image",
+          "label": "参考图 C",
+          "description": "上传第三张参考图",
+          "icon": "🖼️",
+          "iconColor": "bg-lime-500",
+          "startImageUrl": ""
+        }
+      },
+      {
+        "id": "agent-brief-multi-ref-factory",
+        "type": "agent",
+        "position": {
+          "x": 780,
+          "y": 280
+        },
+        "data": {
+          "type": "agent",
+          "label": "多图任务拆解",
+          "description": "生成 A/B/C 三路差异化编辑计划",
+          "icon": "🧠",
+          "iconColor": "bg-indigo-500",
+          "agentName": "电商文案创作师",
+          "inputMapping": "Global goal: {{input-text-multi-ref-factory.output.text}}\nImage A: {{input-image-multi-ref-a.output.imageUrl}}\nImage B: {{input-image-multi-ref-b.output.imageUrl}}\nImage C: {{input-image-multi-ref-c.output.imageUrl}}",
+          "instructions": "输出三路并行任务（A/B/C）：每路给出场景方向、headline、2个 badges、safe-zone 规则，英文输出。"
+        }
+      },
+      {
+        "id": "parallel-multi-ref-factory",
+        "type": "parallel",
+        "position": {
+          "x": 1020,
+          "y": 280
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行分支",
+          "description": "A/B/C 三路并行图生图",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-edit-multi-ref-a",
+        "type": "agent",
+        "position": {
+          "x": 1260,
+          "y": 120
+        },
+        "data": {
+          "type": "agent",
+          "label": "分支 A 产图",
+          "description": "基于参考图 A 执行并行产图",
+          "icon": "🅰️",
+          "iconColor": "bg-pink-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentReferenceImageUrl": "{{input-image-multi-ref-a.output.imageUrl}}",
+          "agentNumberOfImages": 2,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 2,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "inputMapping": "{{agent-brief-multi-ref-factory.output.text}}\n\nRoute A: Execute branch-A edits with non-overlap layout and English-only copy.",
+          "instructions": "Preserve product identity and avoid text covering subject."
+        }
+      },
+      {
+        "id": "agent-edit-multi-ref-b",
+        "type": "agent",
+        "position": {
+          "x": 1260,
+          "y": 280
+        },
+        "data": {
+          "type": "agent",
+          "label": "分支 B 产图",
+          "description": "基于参考图 B 执行并行产图",
+          "icon": "🅱️",
+          "iconColor": "bg-violet-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentReferenceImageUrl": "{{input-image-multi-ref-b.output.imageUrl}}",
+          "agentNumberOfImages": 2,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 2,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "inputMapping": "{{agent-brief-multi-ref-factory.output.text}}\n\nRoute B: Execute branch-B edits with distinct scene and English copy.",
+          "instructions": "Keep composition varied from branch A while preserving product geometry."
+        }
+      },
+      {
+        "id": "agent-edit-multi-ref-c",
+        "type": "agent",
+        "position": {
+          "x": 1260,
+          "y": 440
+        },
+        "data": {
+          "type": "agent",
+          "label": "分支 C 产图",
+          "description": "基于参考图 C 执行并行产图",
+          "icon": "🆑",
+          "iconColor": "bg-sky-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentReferenceImageUrl": "{{input-image-multi-ref-c.output.imageUrl}}",
+          "agentNumberOfImages": 2,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 2,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "inputMapping": "{{agent-brief-multi-ref-factory.output.text}}\n\nRoute C: Execute branch-C edits with campaign-ready composition and English copy.",
+          "instructions": "Maintain clarity on mobile thumbnail and keep product unblocked."
+        }
+      },
+      {
+        "id": "merge-multi-ref-factory",
+        "type": "merge",
+        "position": {
+          "x": 1500,
+          "y": 280
+        },
+        "data": {
+          "type": "merge",
+          "label": "并行汇总",
+          "description": "汇总 A/B/C 三路结果",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-deliver-multi-ref-factory",
+        "type": "agent",
+        "position": {
+          "x": 1740,
+          "y": 280
+        },
+        "data": {
+          "type": "agent",
+          "label": "交付编排",
+          "description": "输出每路最优图和投放建议",
+          "icon": "📦",
+          "iconColor": "bg-emerald-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "Merged outputs: {{merge-multi-ref-factory.output.text}}",
+          "instructions": "输出交付清单：\n1. A/B/C 每路推荐图\n2. 建议投放位（主图/副图/广告图）\n3. 风险说明与重跑提示词"
+        }
+      },
+      {
+        "id": "end-multi-ref-factory",
+        "type": "end",
+        "position": {
+          "x": 1980,
+          "y": 280
+        },
+        "data": {
+          "type": "end",
+          "label": "批量交付输出",
+          "description": "输出多参考图最终素材",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-mrf-1",
+        "source": "start-multi-ref-factory",
+        "target": "input-text-multi-ref-factory"
+      },
+      {
+        "id": "e-mrf-2",
+        "source": "input-text-multi-ref-factory",
+        "target": "input-image-multi-ref-a"
+      },
+      {
+        "id": "e-mrf-3",
+        "source": "input-image-multi-ref-a",
+        "target": "input-image-multi-ref-b"
+      },
+      {
+        "id": "e-mrf-4",
+        "source": "input-image-multi-ref-b",
+        "target": "input-image-multi-ref-c"
+      },
+      {
+        "id": "e-mrf-5",
+        "source": "input-image-multi-ref-c",
+        "target": "agent-brief-multi-ref-factory"
+      },
+      {
+        "id": "e-mrf-6",
+        "source": "agent-brief-multi-ref-factory",
+        "target": "parallel-multi-ref-factory"
+      },
+      {
+        "id": "e-mrf-7",
+        "source": "parallel-multi-ref-factory",
+        "target": "agent-edit-multi-ref-a"
+      },
+      {
+        "id": "e-mrf-8",
+        "source": "parallel-multi-ref-factory",
+        "target": "agent-edit-multi-ref-b"
+      },
+      {
+        "id": "e-mrf-9",
+        "source": "parallel-multi-ref-factory",
+        "target": "agent-edit-multi-ref-c"
+      },
+      {
+        "id": "e-mrf-10",
+        "source": "agent-edit-multi-ref-a",
+        "target": "merge-multi-ref-factory"
+      },
+      {
+        "id": "e-mrf-11",
+        "source": "agent-edit-multi-ref-b",
+        "target": "merge-multi-ref-factory"
+      },
+      {
+        "id": "e-mrf-12",
+        "source": "agent-edit-multi-ref-c",
+        "target": "merge-multi-ref-factory"
+      },
+      {
+        "id": "e-mrf-13",
+        "source": "merge-multi-ref-factory",
+        "target": "agent-deliver-multi-ref-factory"
+      },
+      {
+        "id": "e-mrf-14",
+        "source": "agent-deliver-multi-ref-factory",
+        "target": "end-multi-ref-factory"
+      }
+    ]
+  }
+}

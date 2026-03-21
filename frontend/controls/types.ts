@@ -1,0 +1,410 @@
+/**
+ * Controls 模式参数控制类型定义
+ */
+import { ReactNode } from 'react';
+import { AppMode, ModelConfig, LoraConfig, PdfExtractionTemplate, Persona } from '../types/types';
+import type { ModeControlsSchema } from '../hooks/useModeControlsSchema';
+
+// ============================================
+// Shared Component Props
+// ============================================
+
+export interface ToggleButtonProps {
+  enabled: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+  icon: ReactNode;
+  label: string;
+  activeColor?: string;
+  title?: string;
+}
+
+export interface DropdownSelectorProps<T = string> {
+  value: T;
+  onChange: (v: T) => void;
+  options: { label: string; value: T }[];
+  icon?: ReactNode;
+  iconColor?: string;
+  placeholder?: string;
+  className?: string;
+}
+
+export interface SliderControlProps {
+  value: number;
+  onChange: (v: number) => void;
+  min: number;
+  max: number;
+  step: number;
+  label: string;
+  formatValue?: (v: number) => string;
+}
+
+export interface AdvancedToggleProps {
+  showAdvanced: boolean;
+  setShowAdvanced: (v: boolean) => void;
+  title?: string;
+}
+
+
+// ============================================
+// Mode Control Component Props
+// ============================================
+
+export interface ChatControlsProps {
+  currentModel?: ModelConfig;
+  personas?: Persona[];
+  activePersonaId?: string;
+  onSelectPersona?: (id: string) => void;
+  selectedMcpServerKey?: string;
+  setSelectedMcpServerKey?: (v: string) => void;
+  enableSearch: boolean;
+  setEnableSearch: (v: boolean) => void;
+  enableThinking: boolean;
+  setEnableThinking: (v: boolean) => void;
+  enableCodeExecution: boolean;
+  setEnableCodeExecution: (v: boolean) => void;
+  enableUrlContext: boolean;
+  setEnableUrlContext: (v: boolean) => void;
+  enableBrowser?: boolean;
+  setEnableBrowser?: (v: boolean) => void;
+  enableRAG?: boolean;
+  setEnableRAG?: (v: boolean) => void;
+  enableEnhancedRetrieval: boolean;
+  setEnableEnhancedRetrieval: (v: boolean) => void;
+  enableDeepResearch: boolean;
+  setEnableDeepResearch: (v: boolean) => void;
+  enableAutoDeepResearch: boolean;
+  setEnableAutoDeepResearch: (v: boolean) => void;
+  deepResearchAgentId: string;
+  setDeepResearchAgentId: (v: string) => void;
+  deepResearchModelCandidates?: ModelConfig[];
+  onOpenDocuments?: () => void;
+  googleCacheMode?: 'none' | 'exact' | 'semantic';
+  setGoogleCacheMode?: (v: 'none' | 'exact' | 'semantic') => void;
+}
+
+export interface ImageGenControlsProps {
+  providerId: string;
+  currentModel?: ModelConfig;
+  /** 传递 controls 状态对象 */
+  controls?: ControlsState;
+  /** 最大图片生成数量 */
+  maxImageCount?: number;
+  // 单独 props（向后兼容）
+  style?: string;
+  setStyle?: (v: string) => void;
+  numberOfImages?: number;
+  setNumberOfImages?: (v: number) => void;
+  aspectRatio?: string;
+  setAspectRatio?: (v: string) => void;
+  resolution?: string;
+  setResolution?: (v: string) => void;
+  showAdvanced?: boolean;
+  setShowAdvanced?: (v: boolean) => void;
+  // Imagen advanced parameters
+  negativePrompt?: string;
+  setNegativePrompt?: (v: string) => void;
+  seed?: number;
+  setSeed?: (v: number) => void;
+  outputMimeType?: string;
+  setOutputMimeType?: (v: string) => void;
+  outputCompressionQuality?: number;
+  setOutputCompressionQuality?: (v: number) => void;
+  enhancePrompt?: boolean;
+  setEnhancePrompt?: (v: boolean) => void;
+}
+
+export interface ImageEditControlsProps {
+  providerId: string;
+  /** 传递 controls 状态对象 */
+  controls?: ControlsState;
+  /** 可用模型列表（用于增强提示词模型选择） */
+  availableModels?: ModelConfig[];
+  /** 最大图片生成数量 */
+  maxImageCount?: number;
+  // 单独 props（向后兼容）
+  numberOfImages?: number;
+  setNumberOfImages?: (v: number) => void;
+  aspectRatio?: string;
+  setAspectRatio?: (v: string) => void;
+  resolution?: string;
+  setResolution?: (v: string) => void;
+  showAdvanced?: boolean;
+  setShowAdvanced?: (v: boolean) => void;
+}
+
+export interface ImageMaskEditControlsProps {
+  providerId: string;
+  /** 传递 controls 状态对象 */
+  controls?: ControlsState;
+  // 单独 props（向后兼容）
+  editMode?: string;
+  setEditMode?: (v: string) => void;
+  maskDilation?: number;
+  setMaskDilation?: (v: number) => void;
+  guidanceScale?: number;
+  setGuidanceScale?: (v: number) => void;
+  numberOfImages?: number;
+  setNumberOfImages?: (v: number) => void;
+  negativePrompt?: string;
+  setNegativePrompt?: (v: string) => void;
+  outputMimeType?: string;
+  setOutputMimeType?: (v: string) => void;
+  outputCompressionQuality?: number;
+  setOutputCompressionQuality?: (v: number) => void;
+  showAdvanced?: boolean;
+  setShowAdvanced?: (v: boolean) => void;
+}
+
+
+export interface OffsetPixels {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+export interface ImageOutpaintControlsProps {
+  providerId?: string;
+  /** 传递 controls 状态对象 */
+  controls?: ControlsState;
+  /** 最大图片生成数量 */
+  maxImageCount?: number;
+  // 单独 props（向后兼容）
+  showAdvanced?: boolean;
+  setShowAdvanced?: (v: boolean) => void;
+  // Out-painting 专用参数
+  outPaintingMode?: 'scale' | 'offset';
+  setOutPaintingMode?: (v: 'scale' | 'offset') => void;
+  scaleFactor?: number;
+  setScaleFactor?: (v: number) => void;
+  offsetPixels?: OffsetPixels;
+  setOffsetPixels?: (v: React.SetStateAction<OffsetPixels>) => void;
+}
+
+export interface VideoGenControlsProps {
+  providerId: string;
+  currentModel?: ModelConfig;
+  /** 传递 controls 状态对象 */
+  controls?: ControlsState;
+  controlsSchema?: ModeControlsSchema | null;
+  controlsSchemaLoading?: boolean;
+  controlsSchemaError?: string | null;
+  // 单独 props（向后兼容）
+  aspectRatio?: string;
+  setAspectRatio?: (v: string) => void;
+  resolution?: string;
+  setResolution?: (v: string) => void;
+  videoSeconds?: string;
+  setVideoSeconds?: (v: string) => void;
+  videoExtensionCount?: number;
+  setVideoExtensionCount?: (v: number) => void;
+  storyboardShotSeconds?: number;
+  setStoryboardShotSeconds?: (v: number) => void;
+  generateAudio?: boolean;
+  setGenerateAudio?: (v: boolean) => void;
+  personGeneration?: string;
+  setPersonGeneration?: (v: string) => void;
+  subtitleMode?: string;
+  setSubtitleMode?: (v: string) => void;
+  subtitleLanguage?: string;
+  setSubtitleLanguage?: (v: string) => void;
+  subtitleScript?: string;
+  setSubtitleScript?: (v: string) => void;
+  storyboardPrompt?: string;
+  setStoryboardPrompt?: (v: string) => void;
+  showAdvanced?: boolean;
+  setShowAdvanced?: (v: boolean) => void;
+  negativePrompt?: string;
+  setNegativePrompt?: (v: string) => void;
+  seed?: number;
+  setSeed?: (v: number) => void;
+  enhancePrompt?: boolean;
+  setEnhancePrompt?: (v: boolean) => void;
+}
+
+export interface AudioGenControlsProps {
+  providerId?: string;
+  /** 传递 controls 状态对象 */
+  controls?: ControlsState;
+  // 单独 props（向后兼容）
+  voice?: string;
+  setVoice?: (v: string) => void;
+}
+
+export interface PdfExtractControlsProps {
+  selectedTemplate: string;
+  setSelectedTemplate: (v: string) => void;
+  templates?: PdfExtractionTemplate[];
+  showAdvanced: boolean;
+  setShowAdvanced: (v: boolean) => void;
+}
+
+export interface VirtualTryOnControlsProps {
+  providerId?: string;
+  /** 传递 controls 状态对象 */
+  controls?: ControlsState;
+  // 单独 props（向后兼容）
+  baseSteps?: number;
+  setBaseSteps?: (v: number) => void;
+  numberOfImages?: number;
+  setNumberOfImages?: (v: number) => void;
+  // output_mime_type 和 output_compression_quality 使用固定默认值（image/jpeg, 100）
+  // 不提供 UI 设置，但在 ChatOptions 中传递给后端
+}
+
+export interface MultiAgentControlsProps {
+  // Multi-Agent 模式目前主要在工作流编辑器中配置
+  // 这里可以添加一些全局设置，如默认节点配置等
+  currentModel?: ModelConfig;
+  enableMultiAgent?: boolean;
+  setEnableMultiAgent?: (v: boolean) => void;
+}
+
+
+// ============================================
+// Coordinator Props
+// ============================================
+
+export interface ModeControlsCoordinatorProps {
+  mode: AppMode;
+  providerId: string;
+  currentModel?: ModelConfig;
+  [key: string]: any;
+}
+
+// ============================================
+// Controls State (for useControlsState hook)
+// ============================================
+
+export interface ControlsState {
+  // Chat Controls
+  enableSearch: boolean;
+  setEnableSearch: (v: boolean) => void;
+  enableThinking: boolean;
+  setEnableThinking: (v: boolean) => void;
+  enableCodeExecution: boolean;
+  setEnableCodeExecution: (v: boolean) => void;
+  enableUrlContext: boolean;
+  setEnableUrlContext: (v: boolean) => void;
+  enableBrowser: boolean;
+  setEnableBrowser: (v: boolean) => void;
+  enableRAG: boolean;
+  setEnableRAG: (v: boolean) => void;
+  enableEnhancedRetrieval: boolean;
+  setEnableEnhancedRetrieval: (v: boolean) => void;
+  enableDeepResearch: boolean;
+  setEnableDeepResearch: (v: boolean) => void;
+  enableAutoDeepResearch: boolean;
+  setEnableAutoDeepResearch: (v: boolean) => void;
+  deepResearchAgentId: string;
+  setDeepResearchAgentId: (v: string) => void;
+  googleCacheMode: 'none' | 'exact' | 'semantic';
+  setGoogleCacheMode: (v: 'none' | 'exact' | 'semantic') => void;
+  selectedMcpServerKey: string;
+  setSelectedMcpServerKey: (v: string) => void;
+
+  // Generation Controls
+  aspectRatio: string;
+  setAspectRatio: (v: string) => void;
+  resolution: string;
+  setResolution: (v: string) => void;
+  videoSeconds: string;
+  setVideoSeconds: (v: string) => void;
+  videoExtensionCount: number;
+  setVideoExtensionCount: (v: number) => void;
+  storyboardShotSeconds: number;
+  setStoryboardShotSeconds: (v: number) => void;
+  generateAudio: boolean;
+  setGenerateAudio: (v: boolean) => void;
+  personGeneration: string;
+  setPersonGeneration: (v: string) => void;
+  subtitleMode: string;
+  setSubtitleMode: (v: string) => void;
+  subtitleLanguage: string;
+  setSubtitleLanguage: (v: string) => void;
+  subtitleScript: string;
+  setSubtitleScript: (v: string) => void;
+  storyboardPrompt: string;
+  setStoryboardPrompt: (v: string) => void;
+  numberOfImages: number;
+  setNumberOfImages: (v: number) => void;
+  style: string;
+  setStyle: (v: string) => void;
+
+  // Advanced Settings
+  showAdvanced: boolean;
+  setShowAdvanced: (v: boolean) => void;
+  negativePrompt: string;
+  setNegativePrompt: (v: string) => void;
+  seed: number;
+  setSeed: (v: number) => void;
+  loraConfig: LoraConfig;
+  setLoraConfig: (v: LoraConfig) => void;
+
+  // Imagen advanced parameters
+  // guidanceScale removed - not officially documented by Google Imagen
+  // personGeneration removed - API uses default (allow_adult)
+  outputMimeType: string;
+  setOutputMimeType: (v: string) => void;
+  outputCompressionQuality: number;
+  setOutputCompressionQuality: (v: number) => void;
+  enhancePrompt: boolean;
+  setEnhancePrompt: (v: boolean) => void;
+  enhancePromptModel: string;
+  setEnhancePromptModel: (v: string) => void;
+
+  // TongYi Specific Parameters
+  promptExtend: boolean;
+  setPromptExtend: (v: boolean) => void;
+  addMagicSuffix: boolean;
+  setAddMagicSuffix: (v: boolean) => void;
+
+  // Out-Painting (旧参数，保留向后兼容)
+  outPaintingMode: 'scale' | 'offset';
+  setOutPaintingMode: (v: 'scale' | 'offset') => void;
+  scaleFactor: number;
+  setScaleFactor: (v: number) => void;
+  offsetPixels: OffsetPixels;
+  setOffsetPixels: (v: React.SetStateAction<OffsetPixels>) => void;
+
+  // Out-Painting (新参数)
+  outpaintMode: 'ratio' | 'scale' | 'offset' | 'upscale';
+  setOutpaintMode: (v: 'ratio' | 'scale' | 'offset' | 'upscale') => void;
+  xScale: number;
+  setXScale: (v: number) => void;
+  yScale: number;
+  setYScale: (v: number) => void;
+  upscaleFactor: 'x2' | 'x3' | 'x4';
+  setUpscaleFactor: (v: 'x2' | 'x3' | 'x4') => void;
+
+  // Audio
+  voice: string;
+  setVoice: (v: string) => void;
+
+  // PDF
+  pdfTemplate: string;
+  setPdfTemplate: (v: string) => void;
+  pdfAdditionalInstructions: string;
+  setPdfAdditionalInstructions: (v: string) => void;
+
+  // Virtual Try-On
+  baseSteps: number;
+  setBaseSteps: (v: number) => void;
+  // output_mime_type 和 output_compression_quality 使用固定默认值（image/jpeg, 100）
+
+  // Multi-Agent Controls (保留用于向后兼容，但主要在工作流编辑器中管理)
+  enableMultiAgent: boolean;
+  setEnableMultiAgent: (v: boolean) => void;
+
+  // Mask Edit Controls (仅用于 image-mask-edit 模式)
+  editMode: string;
+  setEditMode: (v: string) => void;
+  maskDilation: number;
+  setMaskDilation: (v: number) => void;
+  guidanceScale: number;
+  setGuidanceScale: (v: number) => void;
+  // Mask 模式 (对应 Vertex AI MaskReferenceConfig.mask_mode)
+  maskMode: 'MASK_MODE_USER_PROVIDED' | 'MASK_MODE_BACKGROUND' | 'MASK_MODE_FOREGROUND' | 'MASK_MODE_SEMANTIC';
+  setMaskMode: (v: 'MASK_MODE_USER_PROVIDED' | 'MASK_MODE_BACKGROUND' | 'MASK_MODE_FOREGROUND' | 'MASK_MODE_SEMANTIC') => void;
+}

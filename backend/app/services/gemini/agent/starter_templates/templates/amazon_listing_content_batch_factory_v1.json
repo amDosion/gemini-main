@@ -1,0 +1,297 @@
+{
+  "starter_key": "amazon_listing_content_batch_factory_v1",
+  "starter_version": 1,
+  "name": "Amazon Listing 文案批量工厂",
+  "description": "支持批量产品/卖家素材输入，自动并行产出标题、五点、描述、后台搜索词和上架执行表。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "listing",
+    "content",
+    "batch",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-listing-batch-factory",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 260
+        },
+        "data": {
+          "type": "start",
+          "label": "批量任务输入",
+          "description": "输入本轮 Listing 产出目标",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-file-listing-batch-factory",
+        "type": "input_file",
+        "position": {
+          "x": 320,
+          "y": 220
+        },
+        "data": {
+          "type": "input_file",
+          "label": "产品资料文件",
+          "description": "上传产品信息/竞品信息/卖家资料 Excel 或 CSV",
+          "icon": "📎",
+          "iconColor": "bg-cyan-500",
+          "startFileUrl": ""
+        }
+      },
+      {
+        "id": "input-text-listing-batch-factory",
+        "type": "input_text",
+        "position": {
+          "x": 320,
+          "y": 380
+        },
+        "data": {
+          "type": "input_text",
+          "label": "文案约束",
+          "description": "输入类目、品牌调性、禁用词、字符上限、输出语言",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-intake-listing-batch-factory",
+        "type": "agent",
+        "position": {
+          "x": 560,
+          "y": 300
+        },
+        "data": {
+          "type": "agent",
+          "label": "数据接入与结构化",
+          "description": "读取文件并结构化为可生成文案的产品条目",
+          "icon": "🧮",
+          "iconColor": "bg-indigo-500",
+          "agentName": "数据报表分析师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-listing-batch-factory.output.fileUrl}}",
+          "inputMapping": "文件：{{input-file-listing-batch-factory.output.fileUrl}}\n约束：{{input-text-listing-batch-factory.output.text}}",
+          "instructions": "请输出结构化条目（按产品/ASIN）：核心卖点、目标人群、关键词种子、差异化信息、风险词。若字段缺失，标注缺失项并给出默认回填策略。"
+        }
+      },
+      {
+        "id": "parallel-listing-batch-factory",
+        "type": "parallel",
+        "position": {
+          "x": 800,
+          "y": 300
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行文案产出",
+          "description": "并行产出标题/五点/描述/后台词",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-title-listing-batch-factory",
+        "type": "agent",
+        "position": {
+          "x": 1040,
+          "y": 40
+        },
+        "data": {
+          "type": "agent",
+          "label": "标题产出",
+          "description": "批量产出 SEO 标题",
+          "icon": "🏷️",
+          "iconColor": "bg-blue-500",
+          "agentName": "Listing优化专家",
+          "inputMapping": "结构化条目：{{agent-intake-listing-batch-factory.output.text}}\n约束：{{input-text-listing-batch-factory.output.text}}",
+          "instructions": "仅输出英文。按产品输出 3 个标题候选（主标题+备选），遵守字符上限并避免夸张承诺。"
+        }
+      },
+      {
+        "id": "agent-bullets-listing-batch-factory",
+        "type": "agent",
+        "position": {
+          "x": 1040,
+          "y": 200
+        },
+        "data": {
+          "type": "agent",
+          "label": "五点产出",
+          "description": "批量产出五点描述",
+          "icon": "📌",
+          "iconColor": "bg-emerald-500",
+          "agentName": "电商文案创作师",
+          "inputMapping": "结构化条目：{{agent-intake-listing-batch-factory.output.text}}\n约束：{{input-text-listing-batch-factory.output.text}}",
+          "instructions": "仅输出英文。每个产品输出 5 bullets：先利益点再证据，避免重复，遵守合规表达。"
+        }
+      },
+      {
+        "id": "agent-description-listing-batch-factory",
+        "type": "agent",
+        "position": {
+          "x": 1040,
+          "y": 360
+        },
+        "data": {
+          "type": "agent",
+          "label": "长描述产出",
+          "description": "批量产出产品描述与场景文案",
+          "icon": "🧾",
+          "iconColor": "bg-violet-500",
+          "agentName": "电商文案创作师",
+          "inputMapping": "结构化条目：{{agent-intake-listing-batch-factory.output.text}}\n约束：{{input-text-listing-batch-factory.output.text}}",
+          "instructions": "仅输出英文。每个产品输出 1 版可直接上架的 Description，突出场景、痛点与差异化。"
+        }
+      },
+      {
+        "id": "agent-searchterms-listing-batch-factory",
+        "type": "agent",
+        "position": {
+          "x": 1040,
+          "y": 520
+        },
+        "data": {
+          "type": "agent",
+          "label": "后台搜索词",
+          "description": "批量产出后台搜索词建议",
+          "icon": "🔎",
+          "iconColor": "bg-orange-500",
+          "agentName": "Listing优化专家",
+          "inputMapping": "结构化条目：{{agent-intake-listing-batch-factory.output.text}}\n约束：{{input-text-listing-batch-factory.output.text}}",
+          "instructions": "仅输出英文。每个产品输出 backend search terms（去重、无品牌侵权词、无标点垃圾词），并给出优先级。"
+        }
+      },
+      {
+        "id": "merge-listing-batch-factory",
+        "type": "merge",
+        "position": {
+          "x": 1280,
+          "y": 300
+        },
+        "data": {
+          "type": "merge",
+          "label": "文案结果汇总",
+          "description": "汇总并行文案产出",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-compliance-listing-batch-factory",
+        "type": "agent",
+        "position": {
+          "x": 1520,
+          "y": 300
+        },
+        "data": {
+          "type": "agent",
+          "label": "上架质检与动作单",
+          "description": "校验文案一致性并生成执行清单",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "汇总文案：{{merge-listing-batch-factory.output.text}}",
+          "instructions": "仅输出英文。按产品输出：1) Title/Bullets/Description/SearchTerms 质检结果；2) 需修正项；3) 可直接上架版本；4) A/B 测试建议。"
+        }
+      },
+      {
+        "id": "end-listing-batch-factory",
+        "type": "end",
+        "position": {
+          "x": 1760,
+          "y": 300
+        },
+        "data": {
+          "type": "end",
+          "label": "文案批量交付",
+          "description": "输出可执行上架文案结果",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-lbf-1",
+        "source": "start-listing-batch-factory",
+        "target": "input-file-listing-batch-factory"
+      },
+      {
+        "id": "e-lbf-2",
+        "source": "input-file-listing-batch-factory",
+        "target": "input-text-listing-batch-factory"
+      },
+      {
+        "id": "e-lbf-3",
+        "source": "input-text-listing-batch-factory",
+        "target": "agent-intake-listing-batch-factory"
+      },
+      {
+        "id": "e-lbf-4",
+        "source": "agent-intake-listing-batch-factory",
+        "target": "parallel-listing-batch-factory"
+      },
+      {
+        "id": "e-lbf-5",
+        "source": "parallel-listing-batch-factory",
+        "target": "agent-title-listing-batch-factory"
+      },
+      {
+        "id": "e-lbf-6",
+        "source": "parallel-listing-batch-factory",
+        "target": "agent-bullets-listing-batch-factory"
+      },
+      {
+        "id": "e-lbf-7",
+        "source": "parallel-listing-batch-factory",
+        "target": "agent-description-listing-batch-factory"
+      },
+      {
+        "id": "e-lbf-8",
+        "source": "parallel-listing-batch-factory",
+        "target": "agent-searchterms-listing-batch-factory"
+      },
+      {
+        "id": "e-lbf-9",
+        "source": "agent-title-listing-batch-factory",
+        "target": "merge-listing-batch-factory"
+      },
+      {
+        "id": "e-lbf-10",
+        "source": "agent-bullets-listing-batch-factory",
+        "target": "merge-listing-batch-factory"
+      },
+      {
+        "id": "e-lbf-11",
+        "source": "agent-description-listing-batch-factory",
+        "target": "merge-listing-batch-factory"
+      },
+      {
+        "id": "e-lbf-12",
+        "source": "agent-searchterms-listing-batch-factory",
+        "target": "merge-listing-batch-factory"
+      },
+      {
+        "id": "e-lbf-13",
+        "source": "merge-listing-batch-factory",
+        "target": "agent-compliance-listing-batch-factory"
+      },
+      {
+        "id": "e-lbf-14",
+        "source": "agent-compliance-listing-batch-factory",
+        "target": "end-listing-batch-factory"
+      }
+    ]
+  }
+}

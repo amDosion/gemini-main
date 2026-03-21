@@ -1,0 +1,326 @@
+{
+  "starter_key": "amazon_new_product_launch_14d_v1",
+  "starter_version": 1,
+  "name": "亚马逊新品 14 天启动计划",
+  "description": "新品信息输入 → 并行产出关键词/Listing/素材/广告方案 → 合规审校 → 14天执行排期。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "new-product",
+    "launch",
+    "14d",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-launch-14d",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 280
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "接收新品启动任务",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-file-launch-14d",
+        "type": "input_file",
+        "position": {
+          "x": 300,
+          "y": 280
+        },
+        "data": {
+          "type": "input_file",
+          "label": "新品数据输入",
+          "description": "上传新品参数、竞品、成本或调研表",
+          "icon": "📎",
+          "iconColor": "bg-cyan-500",
+          "startFileUrl": ""
+        }
+      },
+      {
+        "id": "input-text-launch-14d",
+        "type": "input_text",
+        "position": {
+          "x": 520,
+          "y": 280
+        },
+        "data": {
+          "type": "input_text",
+          "label": "启动目标输入",
+          "description": "例如：站点、预算、目标销量、目标 ACoS",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-launch-14d-intake",
+        "type": "agent",
+        "position": {
+          "x": 740,
+          "y": 280
+        },
+        "data": {
+          "type": "agent",
+          "label": "启动前质检",
+          "description": "识别关键字段与缺口，输出统一口径",
+          "icon": "🧪",
+          "iconColor": "bg-sky-500",
+          "agentName": "数据报表分析师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-launch-14d.output.fileUrl}}",
+          "inputMapping": "文件：{{input-file-launch-14d.output.fileUrl}}\n目标：{{input-text-launch-14d.output.text}}",
+          "instructions": "输出字段映射、缺失项、可执行前置条件清单。"
+        }
+      },
+      {
+        "id": "parallel-launch-14d",
+        "type": "parallel",
+        "position": {
+          "x": 980,
+          "y": 280
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行方案生成",
+          "description": "关键词、Listing、素材、广告四路并行",
+          "icon": "⚡",
+          "iconColor": "bg-violet-500",
+          "joinMode": "wait_all",
+          "timeoutSeconds": 150
+        }
+      },
+      {
+        "id": "agent-launch-14d-keyword",
+        "type": "agent",
+        "position": {
+          "x": 1220,
+          "y": 80
+        },
+        "data": {
+          "type": "agent",
+          "label": "关键词与投放结构",
+          "description": "输出 Core/Long-tail/Defense 词包",
+          "icon": "🔑",
+          "iconColor": "bg-amber-500",
+          "agentName": "关键词研究专家",
+          "agentTaskType": "data-analysis",
+          "inputMapping": "质检结果：{{agent-launch-14d-intake.output.text}}\n目标：{{input-text-launch-14d.output.text}}",
+          "instructions": "输出 14 天投放词包与匹配策略（exact/phrase/broad）。"
+        }
+      },
+      {
+        "id": "agent-launch-14d-listing",
+        "type": "agent",
+        "position": {
+          "x": 1220,
+          "y": 220
+        },
+        "data": {
+          "type": "agent",
+          "label": "Listing 初版",
+          "description": "产出标题、五点、描述初版",
+          "icon": "✍️",
+          "iconColor": "bg-emerald-500",
+          "agentName": "Listing优化专家",
+          "inputMapping": "质检结果：{{agent-launch-14d-intake.output.text}}\n目标：{{input-text-launch-14d.output.text}}",
+          "instructions": "输出目标站点语言版本（默认英文），并给迭代优先级。"
+        }
+      },
+      {
+        "id": "agent-launch-14d-image",
+        "type": "agent",
+        "position": {
+          "x": 1220,
+          "y": 360
+        },
+        "data": {
+          "type": "agent",
+          "label": "首批素材生成",
+          "description": "输出主图/场景图/卖点图首批样稿",
+          "icon": "🎨",
+          "iconColor": "bg-pink-500",
+          "agentName": "产品图片设计师",
+          "agentTaskType": "image-gen",
+          "agentAspectRatio": "1:1",
+          "agentNumberOfImages": 2,
+          "inputMapping": "质检结果：{{agent-launch-14d-intake.output.text}}\n目标：{{input-text-launch-14d.output.text}}\n\n请基于新品定位生成可用于亚马逊二级图的首批素材。",
+          "instructions": "输出英文卖点文案，避免遮挡主体。"
+        }
+      },
+      {
+        "id": "agent-launch-14d-ads",
+        "type": "agent",
+        "position": {
+          "x": 1220,
+          "y": 500
+        },
+        "data": {
+          "type": "agent",
+          "label": "广告启动计划",
+          "description": "输出 Day1-Day14 广告动作与预算节奏",
+          "icon": "📈",
+          "iconColor": "bg-blue-500",
+          "agentName": "亚马逊广告分析师",
+          "agentTaskType": "data-analysis",
+          "inputMapping": "质检结果：{{agent-launch-14d-intake.output.text}}\n目标：{{input-text-launch-14d.output.text}}",
+          "instructions": "按 Day1-3 / Day4-7 / Day8-14 输出预算与竞价策略。"
+        }
+      },
+      {
+        "id": "merge-launch-14d",
+        "type": "merge",
+        "position": {
+          "x": 1460,
+          "y": 280
+        },
+        "data": {
+          "type": "merge",
+          "label": "启动方案合并",
+          "description": "合并四路方案输出",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-launch-14d-compliance",
+        "type": "agent",
+        "position": {
+          "x": 1700,
+          "y": 280
+        },
+        "data": {
+          "type": "agent",
+          "label": "上线前合规审校",
+          "description": "校验文案和素材风险",
+          "icon": "🛡️",
+          "iconColor": "bg-cyan-500",
+          "agentName": "亚马逊合规审核师",
+          "inputMapping": "并行方案：{{merge-launch-14d.output.text}}",
+          "instructions": "输出 Pass/Fail、风险项、可直接上线版本。"
+        }
+      },
+      {
+        "id": "agent-launch-14d-plan",
+        "type": "agent",
+        "position": {
+          "x": 1940,
+          "y": 280
+        },
+        "data": {
+          "type": "agent",
+          "label": "14天执行排期",
+          "description": "输出任务排期、负责人与复盘指标",
+          "icon": "🧭",
+          "iconColor": "bg-indigo-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "合规结论：{{agent-launch-14d-compliance.output.text}}",
+          "instructions": "输出 Day1-Day14 逐日动作、KPI 与回滚条件。"
+        }
+      },
+      {
+        "id": "end-launch-14d",
+        "type": "end",
+        "position": {
+          "x": 2180,
+          "y": 280
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出新品启动完整方案",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-l14-1",
+        "source": "start-launch-14d",
+        "target": "input-file-launch-14d"
+      },
+      {
+        "id": "e-l14-2",
+        "source": "input-file-launch-14d",
+        "target": "input-text-launch-14d"
+      },
+      {
+        "id": "e-l14-3",
+        "source": "input-text-launch-14d",
+        "target": "agent-launch-14d-intake"
+      },
+      {
+        "id": "e-l14-4",
+        "source": "agent-launch-14d-intake",
+        "target": "parallel-launch-14d"
+      },
+      {
+        "id": "e-l14-5",
+        "source": "parallel-launch-14d",
+        "target": "agent-launch-14d-keyword"
+      },
+      {
+        "id": "e-l14-6",
+        "source": "parallel-launch-14d",
+        "target": "agent-launch-14d-listing"
+      },
+      {
+        "id": "e-l14-7",
+        "source": "parallel-launch-14d",
+        "target": "agent-launch-14d-image"
+      },
+      {
+        "id": "e-l14-8",
+        "source": "parallel-launch-14d",
+        "target": "agent-launch-14d-ads"
+      },
+      {
+        "id": "e-l14-9",
+        "source": "agent-launch-14d-keyword",
+        "target": "merge-launch-14d"
+      },
+      {
+        "id": "e-l14-10",
+        "source": "agent-launch-14d-listing",
+        "target": "merge-launch-14d"
+      },
+      {
+        "id": "e-l14-11",
+        "source": "agent-launch-14d-image",
+        "target": "merge-launch-14d"
+      },
+      {
+        "id": "e-l14-12",
+        "source": "agent-launch-14d-ads",
+        "target": "merge-launch-14d"
+      },
+      {
+        "id": "e-l14-13",
+        "source": "merge-launch-14d",
+        "target": "agent-launch-14d-compliance"
+      },
+      {
+        "id": "e-l14-14",
+        "source": "agent-launch-14d-compliance",
+        "target": "agent-launch-14d-plan"
+      },
+      {
+        "id": "e-l14-15",
+        "source": "agent-launch-14d-plan",
+        "target": "end-launch-14d"
+      }
+    ]
+  }
+}

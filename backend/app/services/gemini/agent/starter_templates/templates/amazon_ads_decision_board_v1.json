@@ -1,0 +1,271 @@
+{
+  "starter_key": "amazon_ads_decision_board_v1",
+  "starter_version": 3,
+  "name": "Amazon 广告决策看板工作流",
+  "description": "关键词分析 Agent + 报表审计 Agent + PPC 复核并行执行，交叉校验后输出预算决策看板。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "ads",
+    "analysis",
+    "validation",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-ads-board",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 240
+        },
+        "data": {
+          "type": "start",
+          "label": "广告数据输入",
+          "description": "输入本轮广告优化目标",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-file-ads-board",
+        "type": "input_file",
+        "position": {
+          "x": 320,
+          "y": 240
+        },
+        "data": {
+          "type": "input_file",
+          "label": "广告报表文件",
+          "description": "上传搜索词报表（Excel/CSV）",
+          "icon": "📎",
+          "iconColor": "bg-cyan-500",
+          "startFileUrl": ""
+        }
+      },
+      {
+        "id": "input-text-ads-board",
+        "type": "input_text",
+        "position": {
+          "x": 560,
+          "y": 240
+        },
+        "data": {
+          "type": "input_text",
+          "label": "目标设定",
+          "description": "例如：目标 ACoS 28%，优先放量高转化词",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "parallel-ads-board",
+        "type": "parallel",
+        "position": {
+          "x": 800,
+          "y": 240
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行诊断",
+          "description": "关键词优化、表格审计、PPC 复核并行执行",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-ads-keyword-board",
+        "type": "agent",
+        "position": {
+          "x": 1060,
+          "y": 100
+        },
+        "data": {
+          "type": "agent",
+          "label": "关键词优化诊断",
+          "description": "识别否定词和加投词",
+          "icon": "🧩",
+          "iconColor": "bg-indigo-500",
+          "agentName": "亚马逊广告分析师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-ads-board.output.fileUrl}}",
+          "inputMapping": "投放目标：{{input-text-ads-board.output.text}}\\n报表文件：{{input-file-ads-board.output.fileUrl}}\\n\\n请输出关键词优化诊断：\\n1. 否定词候选（P0/P1）\\n2. 加投词候选（预算建议）\\n3. 竞价调整建议。",
+          "instructions": "请按“立即执行/观察/暂缓”三级输出，并标注每个建议的证据字段与阈值。"
+        }
+      },
+      {
+        "id": "agent-ads-table-audit",
+        "type": "agent",
+        "position": {
+          "x": 1060,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "报表结构审计",
+          "description": "检查字段映射和数据异常",
+          "icon": "📊",
+          "iconColor": "bg-cyan-500",
+          "agentName": "数据报表分析师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-ads-board.output.fileUrl}}",
+          "inputMapping": "报表文件：{{input-file-ads-board.output.fileUrl}}\\n\\n请完成结构审计：\\n1. 字段映射校验\\n2. 异常值/缺失值定位\\n3. 样本量与统计口径风险。",
+          "instructions": "请输出审计摘要、风险等级、对后续广告决策的影响说明。"
+        }
+      },
+      {
+        "id": "agent-ads-ppc-review",
+        "type": "agent",
+        "position": {
+          "x": 1060,
+          "y": 380
+        },
+        "data": {
+          "type": "agent",
+          "label": "PPC 策略复核",
+          "description": "评估竞价与预算调整方案",
+          "icon": "📈",
+          "iconColor": "bg-blue-500",
+          "agentName": "亚马逊广告分析师",
+          "inputMapping": "投放目标：{{input-text-ads-board.output.text}}\\n报表文件：{{input-file-ads-board.output.fileUrl}}",
+          "instructions": "请仅输出 PPC 执行层面的结论：\n1. 否定词优先级（P0/P1）\n2. 加投词竞价策略（增幅范围）\n3. 应暂停/降价关键词\n4. 预算分配建议（品牌词/品类词/竞品词）"
+        }
+      },
+      {
+        "id": "merge-ads-board",
+        "type": "merge",
+        "position": {
+          "x": 1320,
+          "y": 240
+        },
+        "data": {
+          "type": "merge",
+          "label": "诊断汇总",
+          "description": "汇总三路诊断结果",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-ads-cross-check",
+        "type": "agent",
+        "position": {
+          "x": 1560,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "一致性验证",
+          "description": "验证诊断结果是否存在冲突",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "agentName": "数据报表分析师",
+          "inputMapping": "三路诊断汇总：{{merge-ads-board.output.text}}",
+          "instructions": "请对三路输出做一致性验证：\n1. 识别冲突结论并解释\n2. 标注证据不足项\n3. 给出可信建议清单\n4. 输出“通过/有条件通过/不通过”结果"
+        }
+      },
+      {
+        "id": "agent-ads-decision",
+        "type": "agent",
+        "position": {
+          "x": 1800,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "决策看板输出",
+          "description": "输出可执行的预算与投放决策看板",
+          "icon": "🧠",
+          "iconColor": "bg-violet-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "一致性验证结果：{{agent-ads-cross-check.output.text}}",
+          "instructions": "请输出广告决策看板：\n1. 否定词执行清单\n2. 加投词预算与竞价调整\n3. 7 天投放节奏\n4. 预期指标变化（ACoS/订单/花费）\n5. 回滚阈值与复盘节点"
+        }
+      },
+      {
+        "id": "end-ads-board",
+        "type": "end",
+        "position": {
+          "x": 2040,
+          "y": 240
+        },
+        "data": {
+          "type": "end",
+          "label": "决策看板",
+          "description": "输出最终广告执行建议",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-ab-1",
+        "source": "start-ads-board",
+        "target": "input-file-ads-board"
+      },
+      {
+        "id": "e-ab-2",
+        "source": "input-file-ads-board",
+        "target": "input-text-ads-board"
+      },
+      {
+        "id": "e-ab-3",
+        "source": "input-text-ads-board",
+        "target": "parallel-ads-board"
+      },
+      {
+        "id": "e-ab-4",
+        "source": "parallel-ads-board",
+        "target": "agent-ads-keyword-board"
+      },
+      {
+        "id": "e-ab-5",
+        "source": "parallel-ads-board",
+        "target": "agent-ads-table-audit"
+      },
+      {
+        "id": "e-ab-6",
+        "source": "parallel-ads-board",
+        "target": "agent-ads-ppc-review"
+      },
+      {
+        "id": "e-ab-7",
+        "source": "agent-ads-keyword-board",
+        "target": "merge-ads-board"
+      },
+      {
+        "id": "e-ab-8",
+        "source": "agent-ads-table-audit",
+        "target": "merge-ads-board"
+      },
+      {
+        "id": "e-ab-9",
+        "source": "agent-ads-ppc-review",
+        "target": "merge-ads-board"
+      },
+      {
+        "id": "e-ab-10",
+        "source": "merge-ads-board",
+        "target": "agent-ads-cross-check"
+      },
+      {
+        "id": "e-ab-11",
+        "source": "agent-ads-cross-check",
+        "target": "agent-ads-decision"
+      },
+      {
+        "id": "e-ab-12",
+        "source": "agent-ads-decision",
+        "target": "end-ads-board"
+      }
+    ]
+  }
+}

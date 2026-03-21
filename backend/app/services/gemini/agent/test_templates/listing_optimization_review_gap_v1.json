@@ -1,0 +1,152 @@
+{
+  "name": "Listing 优化 · 评论差距修复版",
+  "description": "把差评痛点映射为卖点与 FAQ，生成“问题-改写-证据”对照输出，减少 Listing 与用户反馈错位。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "listing",
+    "optimization",
+    "review",
+    "qa"
+  ],
+  "prompt_hint": "输入近期评论摘录、评分分布、已上线 Listing 文案。",
+  "prompt_example": {
+    "task": "根据差评优化保温杯 Listing，重点修复漏水与异味问题感知。",
+    "market": "US",
+    "existingListing": {
+      "title": "Insulated Stainless Steel Tumbler with Lid",
+      "bullets": [
+        "Keeps drinks hot and cold",
+        "Leak-resistant lid",
+        "BPA-free"
+      ]
+    },
+    "reviewSnippets": [
+      "Lid started leaking after one week.",
+      "The cup keeps temperature well but has a slight smell at first use.",
+      "Good value, but I wish cleaning instructions were clearer."
+    ]
+  },
+  "requires_image": false,
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-listing-review-gap",
+        "type": "start",
+        "position": {
+          "x": 120,
+          "y": 220
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "输入评论与原文案",
+          "icon": "▶️",
+          "iconColor": "bg-emerald-500"
+        }
+      },
+      {
+        "id": "agent-review-analyzer",
+        "type": "agent",
+        "position": {
+          "x": 430,
+          "y": 130
+        },
+        "data": {
+          "type": "agent",
+          "label": "评论洞察分析师",
+          "description": "抽取高频痛点与可证明卖点",
+          "icon": "🔎",
+          "iconColor": "bg-amber-500",
+          "agentTaskType": "data-analysis",
+          "instructions": "输出痛点优先级、触发词、建议证据表达方式。"
+        }
+      },
+      {
+        "id": "agent-listing-rewriter",
+        "type": "agent",
+        "position": {
+          "x": 760,
+          "y": 130
+        },
+        "data": {
+          "type": "agent",
+          "label": "Listing 改写师",
+          "description": "生成修复后的标题/要点/FAQ",
+          "icon": "🛠️",
+          "iconColor": "bg-indigo-500",
+          "agentTaskType": "chat",
+          "instructions": "必须输出：新标题、5 条 Bullet、FAQ 3 条、以及修改前后对照表。"
+        }
+      },
+      {
+        "id": "agent-compliance-check",
+        "type": "agent",
+        "position": {
+          "x": 760,
+          "y": 300
+        },
+        "data": {
+          "type": "agent",
+          "label": "合规校对",
+          "description": "检查绝对化、医疗化、夸张承诺词",
+          "icon": "✅",
+          "iconColor": "bg-teal-500",
+          "agentTaskType": "chat",
+          "instructions": "输出风险词列表、替代写法、最终可上线版本。"
+        }
+      },
+      {
+        "id": "end-listing-review-gap",
+        "type": "end",
+        "position": {
+          "x": 1080,
+          "y": 220
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出评论驱动优化结果",
+          "icon": "🏁",
+          "iconColor": "bg-rose-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e1",
+        "source": "start-listing-review-gap",
+        "target": "agent-review-analyzer"
+      },
+      {
+        "id": "e2",
+        "source": "agent-review-analyzer",
+        "target": "agent-listing-rewriter"
+      },
+      {
+        "id": "e3",
+        "source": "agent-listing-rewriter",
+        "target": "agent-compliance-check"
+      },
+      {
+        "id": "e4",
+        "source": "agent-compliance-check",
+        "target": "end-listing-review-gap"
+      }
+    ],
+    "_templateMeta": {
+      "workflowType": "graph",
+      "tags": [
+        "amazon",
+        "listing",
+        "optimization",
+        "review",
+        "qa"
+      ],
+      "starterKey": "test_listing_optimization_review_gap_v1"
+    }
+  }
+}
+

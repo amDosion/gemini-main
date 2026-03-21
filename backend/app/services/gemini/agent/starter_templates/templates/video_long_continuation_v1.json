@@ -1,0 +1,103 @@
+{
+  "starter_key": "video_long_continuation_v1",
+  "starter_version": 4,
+  "name": "工作流 · 长视频续写",
+  "description": "输入上一段视频 + 续写任务，默认使用上一段最后一帧桥接下一段首帧，稳定生成可拼接的长视频续写结果。",
+  "category": "多模态工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "video",
+    "video-gen",
+    "video-continuation",
+    "long-video",
+    "provider-neutral",
+    "starter"
+  ],
+  "sample_input": {
+    "task": "请在上一段镜头后继续 8 秒：角色从走廊尽头转身走向窗边，镜头缓慢跟拍，动作自然衔接，光线从冷色过渡到暖色。",
+    "videoUrl": "sample://video_continuation_source_sample.mp4"
+  },
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-video-long-continuation",
+        "type": "start",
+        "position": { "x": 80, "y": 240 },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "接收上一段视频和续写目标",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-video-long-continuation",
+        "type": "input_video",
+        "position": { "x": 300, "y": 160 },
+        "data": {
+          "type": "input_video",
+          "label": "上一段视频",
+          "description": "输入要续写的视频片段",
+          "icon": "🎬",
+          "iconColor": "bg-indigo-500",
+          "startVideoUrl": ""
+        }
+      },
+      {
+        "id": "input-text-long-continuation",
+        "type": "input_text",
+        "position": { "x": 300, "y": 320 },
+        "data": {
+          "type": "input_text",
+          "label": "续写目标",
+          "description": "配置下一段剧情 / 镜头目标（input.task）",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-video-long-continuation",
+        "type": "agent",
+        "position": { "x": 620, "y": 240 },
+        "data": {
+          "type": "agent",
+          "label": "长视频续写",
+          "description": "默认使用尾帧桥接下一段首帧，稳定生成可拼接的长视频续写结果",
+          "icon": "🎞️",
+          "iconColor": "bg-fuchsia-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "video-gen",
+          "agentAspectRatio": "16:9",
+          "agentResolutionTier": "1K",
+          "agentVideoDurationSeconds": 8,
+          "agentContinueFromPreviousVideo": true,
+          "agentContinueFromPreviousLastFrame": true,
+          "agentSourceVideoUrl": "{{input-video-long-continuation.output}}",
+          "inputMapping": "上一段视频：{{input-video-long-continuation.output.videoUrl}}\\n续写要求：{{input-text-long-continuation.output.text}}\\n\\n请把上一段最后一帧稳定衔接为下一段首帧，让续写像同一支长视频中的自然延续。要求：1) 主体身份、服装、材质与比例保持稳定；2) 运动方向和速度连续，不突然反向；3) 镜头运动延续上一段，不跳轴、不重置景别；4) 背景、光线和景深连续；5) 如果引入新动作或新事件，必须从上一段尾帧自然展开。",
+          "instructions": "你是长视频续写节点。必须把上一段最后一帧当作下一段的自然起点，输出一个可直接拼接到上一段后面的连续镜头。优先保持主体身份、动作动量、镜头方向、背景结构和光线连续性；不要重新开场，不要切成新镜头，不要突然更换服装、场景或时间。只返回视频结果。"
+        }
+      },
+      {
+        "id": "end-video-long-continuation",
+        "type": "end",
+        "position": { "x": 900, "y": 240 },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出续写后的视频",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      { "id": "edge-video-long-continuation-1", "source": "start-video-long-continuation", "target": "input-video-long-continuation" },
+      { "id": "edge-video-long-continuation-2", "source": "input-video-long-continuation", "target": "input-text-long-continuation" },
+      { "id": "edge-video-long-continuation-3", "source": "input-text-long-continuation", "target": "agent-video-long-continuation" },
+      { "id": "edge-video-long-continuation-4", "source": "agent-video-long-continuation", "target": "end-video-long-continuation" }
+    ]
+  }
+}

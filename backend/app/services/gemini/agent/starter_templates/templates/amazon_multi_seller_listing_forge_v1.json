@@ -1,0 +1,292 @@
+{
+  "starter_key": "amazon_multi_seller_listing_forge_v1",
+  "starter_version": 1,
+  "name": "Amazon 多卖家信息整合与 Listing 产出",
+  "description": "上传多卖家产品信息表后，自动整合卖点、关键词与定位，生成标题/五点/描述并做合规审核。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "listing",
+    "multi-seller",
+    "data-analysis",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-multi-listing",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 260
+        },
+        "data": {
+          "type": "start",
+          "label": "任务输入",
+          "description": "输入目标站点、类目和运营目标",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-file-multi-listing",
+        "type": "input_file",
+        "position": {
+          "x": 320,
+          "y": 260
+        },
+        "data": {
+          "type": "input_file",
+          "label": "卖家数据文件",
+          "description": "上传多卖家产品信息表（Excel/CSV）",
+          "icon": "📎",
+          "iconColor": "bg-cyan-500",
+          "startFileUrl": ""
+        }
+      },
+      {
+        "id": "input-text-multi-listing",
+        "type": "input_text",
+        "position": {
+          "x": 560,
+          "y": 260
+        },
+        "data": {
+          "type": "input_text",
+          "label": "目标约束",
+          "description": "例如：US站、女童袜、优先提升CTR与转化",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-structure-multi-listing",
+        "type": "agent",
+        "position": {
+          "x": 800,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "数据整合底稿",
+          "description": "识别字段、统一口径、输出可分析底稿",
+          "icon": "🧩",
+          "iconColor": "bg-indigo-500",
+          "agentName": "多店铺运营整合师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-multi-listing.output.fileUrl}}",
+          "inputMapping": "任务目标：{{input-text-multi-listing.output.text}}\\n数据文件：{{input-file-multi-listing.output.fileUrl}}",
+          "instructions": "请自动识别不同卖家表头与字段别名，统一映射到标准结构：brand/seller、title、bullet points、price、rating、review count、keywords、category。输出：\n1. 字段映射表\n2. 数据质量问题（缺失/异常/冲突）\n3. 可用于下游的统一分析摘要"
+        }
+      },
+      {
+        "id": "parallel-multi-listing",
+        "type": "parallel",
+        "position": {
+          "x": 1040,
+          "y": 260
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行策略分析",
+          "description": "并行输出关键词、定位与分层策略",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-keyword-multi-listing",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 80
+        },
+        "data": {
+          "type": "agent",
+          "label": "关键词策略",
+          "description": "提炼核心词/长尾词/否定词建议",
+          "icon": "🔑",
+          "iconColor": "bg-amber-500",
+          "agentName": "关键词研究专家",
+          "inputMapping": "任务目标：{{input-text-multi-listing.output.text}}\\n数据底稿：{{agent-structure-multi-listing.output.text}}",
+          "instructions": "输出关键词结构：\n1. 核心词（高相关高价值）\n2. 长尾词（场景/人群/属性）\n3. 风险词与否定词建议\n4. 标题与五点的关键词分配规则"
+        }
+      },
+      {
+        "id": "agent-positioning-multi-listing",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "定位与差异化",
+          "description": "提炼可打差异化的卖点定位",
+          "icon": "🎯",
+          "iconColor": "bg-red-500",
+          "agentName": "竞品分析专家",
+          "inputMapping": "任务目标：{{input-text-multi-listing.output.text}}\\n数据底稿：{{agent-structure-multi-listing.output.text}}",
+          "instructions": "输出定位框架：\n1. 不同卖家的共性卖点与弱点\n2. 可放大的差异化卖点（按优先级）\n3. 各卖点对应的目标人群与场景"
+        }
+      },
+      {
+        "id": "agent-segment-multi-listing",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 440
+        },
+        "data": {
+          "type": "agent",
+          "label": "多店铺分层",
+          "description": "按价格带/评分/转化信号做分层策略",
+          "icon": "📊",
+          "iconColor": "bg-cyan-500",
+          "agentName": "多店铺运营整合师",
+          "inputMapping": "任务目标：{{input-text-multi-listing.output.text}}\\n数据底稿：{{agent-structure-multi-listing.output.text}}",
+          "instructions": "输出分层策略：\n1. 价格带与评分带分层\n2. 每层建议主打卖点与文案语气\n3. 每层建议的标题/五点重点"
+        }
+      },
+      {
+        "id": "merge-multi-listing",
+        "type": "merge",
+        "position": {
+          "x": 1520,
+          "y": 260
+        },
+        "data": {
+          "type": "merge",
+          "label": "并行结果汇总",
+          "description": "汇总关键词/定位/分层策略",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-listing-draft-multi-listing",
+        "type": "agent",
+        "position": {
+          "x": 1760,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "Listing 成稿",
+          "description": "产出标题、五点、描述与search terms",
+          "icon": "✍️",
+          "iconColor": "bg-emerald-500",
+          "agentName": "Listing优化专家",
+          "inputMapping": "策略汇总：{{merge-multi-listing.output.text}}",
+          "instructions": "请输出可直接落地的 Listing：\n1. 标题 3 个版本（200字符内）\n2. 五点描述 5 条（每条尽量<=200字符）\n3. 产品描述 1 个版本\n4. Search Terms 建议（分组）\n5. 每个版本说明适配人群与场景"
+        }
+      },
+      {
+        "id": "agent-compliance-multi-listing",
+        "type": "agent",
+        "position": {
+          "x": 2000,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "合规终审",
+          "description": "输出可上线版本与风险修订",
+          "icon": "🛡️",
+          "iconColor": "bg-sky-500",
+          "agentName": "亚马逊合规审核师",
+          "inputMapping": "Listing草案：{{agent-listing-draft-multi-listing.output.text}}",
+          "instructions": "请做最终合规审校并直接输出：\n1. Pass/Pass with edits/Fail\n2. 风险点清单（P0/P1/P2）\n3. 最终可上线标题+五点+描述\n4. 若不通过，给出一键替换修订文本"
+        }
+      },
+      {
+        "id": "end-multi-listing",
+        "type": "end",
+        "position": {
+          "x": 2240,
+          "y": 260
+        },
+        "data": {
+          "type": "end",
+          "label": "Listing交付",
+          "description": "输出多卖家整合后的最终文案方案",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-ml-1",
+        "source": "start-multi-listing",
+        "target": "input-file-multi-listing"
+      },
+      {
+        "id": "e-ml-2",
+        "source": "input-file-multi-listing",
+        "target": "input-text-multi-listing"
+      },
+      {
+        "id": "e-ml-3",
+        "source": "input-text-multi-listing",
+        "target": "agent-structure-multi-listing"
+      },
+      {
+        "id": "e-ml-4",
+        "source": "agent-structure-multi-listing",
+        "target": "parallel-multi-listing"
+      },
+      {
+        "id": "e-ml-5",
+        "source": "parallel-multi-listing",
+        "target": "agent-keyword-multi-listing"
+      },
+      {
+        "id": "e-ml-6",
+        "source": "parallel-multi-listing",
+        "target": "agent-positioning-multi-listing"
+      },
+      {
+        "id": "e-ml-7",
+        "source": "parallel-multi-listing",
+        "target": "agent-segment-multi-listing"
+      },
+      {
+        "id": "e-ml-8",
+        "source": "agent-keyword-multi-listing",
+        "target": "merge-multi-listing"
+      },
+      {
+        "id": "e-ml-9",
+        "source": "agent-positioning-multi-listing",
+        "target": "merge-multi-listing"
+      },
+      {
+        "id": "e-ml-10",
+        "source": "agent-segment-multi-listing",
+        "target": "merge-multi-listing"
+      },
+      {
+        "id": "e-ml-11",
+        "source": "merge-multi-listing",
+        "target": "agent-listing-draft-multi-listing"
+      },
+      {
+        "id": "e-ml-12",
+        "source": "agent-listing-draft-multi-listing",
+        "target": "agent-compliance-multi-listing"
+      },
+      {
+        "id": "e-ml-13",
+        "source": "agent-compliance-multi-listing",
+        "target": "end-multi-listing"
+      }
+    ]
+  }
+}

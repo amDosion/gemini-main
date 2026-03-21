@@ -1,0 +1,2570 @@
+{
+  "version": "2026-03-02-v2",
+  "providers": {
+    "google": {
+      "modes": {
+        "image-gen": {
+          "defaults": {
+            "aspect_ratio": "1:1",
+            "resolution": "1K",
+            "number_of_images": 1,
+            "style": "None",
+            "output_mime_type": "image/png",
+            "output_compression_quality": 80,
+            "enhance_prompt": false,
+            "seed": -1,
+            "negative_prompt": ""
+          },
+          "constraints": {
+            "max_image_count": 4
+          },
+          "aspect_ratios": [
+            {
+              "label": "1:1 Square",
+              "value": "1:1"
+            },
+            {
+              "label": "2:3 Portrait",
+              "value": "2:3"
+            },
+            {
+              "label": "3:2 Landscape",
+              "value": "3:2"
+            },
+            {
+              "label": "3:4 Portrait",
+              "value": "3:4"
+            },
+            {
+              "label": "4:3 Landscape",
+              "value": "4:3"
+            },
+            {
+              "label": "4:5 Portrait",
+              "value": "4:5"
+            },
+            {
+              "label": "5:4 Landscape",
+              "value": "5:4"
+            },
+            {
+              "label": "9:16 Portrait",
+              "value": "9:16"
+            },
+            {
+              "label": "16:9 Landscape",
+              "value": "16:9"
+            },
+            {
+              "label": "21:9 Ultrawide",
+              "value": "21:9"
+            }
+          ],
+          "resolution_tiers": [
+            {
+              "label": "1K Standard (1024×1024 base)",
+              "value": "1K",
+              "baseResolution": "1024×1024"
+            },
+            {
+              "label": "2K High (2048×2048 base)",
+              "value": "2K",
+              "baseResolution": "2048×2048"
+            }
+          ],
+          "resolution_map": {
+            "1K": {
+              "1:1": "1024*1024",
+              "1:4": "512*2048",
+              "1:8": "384*3072",
+              "2:3": "848*1264",
+              "3:2": "1264*848",
+              "3:4": "896*1200",
+              "4:1": "2048*512",
+              "4:3": "1200*896",
+              "4:5": "928*1152",
+              "5:4": "1152*928",
+              "8:1": "3072*384",
+              "9:16": "768*1376",
+              "16:9": "1376*768",
+              "21:9": "1584*672"
+            },
+            "2K": {
+              "1:1": "2048*2048",
+              "1:4": "1024*4096",
+              "1:8": "768*6144",
+              "2:3": "1696*2528",
+              "3:2": "2528*1696",
+              "3:4": "1792*2400",
+              "4:1": "4096*1024",
+              "4:3": "2400*1792",
+              "4:5": "1856*2304",
+              "5:4": "2304*1856",
+              "8:1": "6144*768",
+              "9:16": "1536*2752",
+              "16:9": "2752*1536",
+              "21:9": "3168*1344"
+            },
+            "4K": {
+              "1:1": "4096*4096",
+              "1:4": "2048*8192",
+              "1:8": "1536*12288",
+              "2:3": "3392*5056",
+              "3:2": "5056*3392",
+              "3:4": "3584*4800",
+              "4:1": "8192*2048",
+              "4:3": "4800*3584",
+              "4:5": "3712*4608",
+              "5:4": "4608*3712",
+              "8:1": "12288*1536",
+              "9:16": "3072*5504",
+              "16:9": "5504*3072",
+              "21:9": "6336*2688"
+            }
+          },
+          "param_options": {
+            "style": [
+              {
+                "label": "No Style",
+                "value": "None"
+              },
+              {
+                "label": "Photorealistic",
+                "value": "Photorealistic"
+              },
+              {
+                "label": "Anime",
+                "value": "Anime"
+              },
+              {
+                "label": "Digital Art",
+                "value": "Digital Art"
+              },
+              {
+                "label": "Oil Painting",
+                "value": "Oil Painting"
+              },
+              {
+                "label": "Cyberpunk",
+                "value": "Cyberpunk"
+              },
+              {
+                "label": "Watercolor",
+                "value": "Watercolor"
+              }
+            ],
+            "number_of_images": [
+              {
+                "label": "1",
+                "value": 1
+              },
+              {
+                "label": "2",
+                "value": 2
+              },
+              {
+                "label": "3",
+                "value": 3
+              },
+              {
+                "label": "4",
+                "value": 4
+              }
+            ],
+            "output_mime_type": [
+              {
+                "label": "PNG",
+                "value": "image/png"
+              },
+              {
+                "label": "JPEG",
+                "value": "image/jpeg"
+              }
+            ]
+          },
+          "numeric_ranges": {
+            "seed": {
+              "min": -1,
+              "max": 2147483647,
+              "step": 1
+            },
+            "output_compression_quality": {
+              "min": 1,
+              "max": 100,
+              "step": 1
+            }
+          }
+        },
+        "image-edit": {
+          "defaults": {
+            "aspect_ratio": "1:1",
+            "resolution": "1K",
+            "number_of_images": 1,
+            "output_mime_type": "image/png",
+            "output_compression_quality": 80,
+            "enhance_prompt": false,
+            "seed": -1,
+            "negative_prompt": "",
+            "enhance_prompt_model": ""
+          },
+          "constraints": {
+            "max_image_count": 4
+          },
+          "aspect_ratios": [
+            {
+              "label": "1:1 Square",
+              "value": "1:1"
+            },
+            {
+              "label": "1:4 Extreme Portrait",
+              "value": "1:4"
+            },
+            {
+              "label": "1:8 Ultra Portrait",
+              "value": "1:8"
+            },
+            {
+              "label": "2:3 Portrait",
+              "value": "2:3"
+            },
+            {
+              "label": "3:2 Landscape",
+              "value": "3:2"
+            },
+            {
+              "label": "3:4 Portrait",
+              "value": "3:4"
+            },
+            {
+              "label": "4:1 Extreme Landscape",
+              "value": "4:1"
+            },
+            {
+              "label": "4:3 Landscape",
+              "value": "4:3"
+            },
+            {
+              "label": "4:5 Portrait",
+              "value": "4:5"
+            },
+            {
+              "label": "5:4 Landscape",
+              "value": "5:4"
+            },
+            {
+              "label": "8:1 Ultra Landscape",
+              "value": "8:1"
+            },
+            {
+              "label": "9:16 Portrait",
+              "value": "9:16"
+            },
+            {
+              "label": "16:9 Landscape",
+              "value": "16:9"
+            },
+            {
+              "label": "21:9 Ultrawide",
+              "value": "21:9"
+            }
+          ],
+          "resolution_tiers": [
+            {
+              "label": "1K Standard (1024×1024 base)",
+              "value": "1K",
+              "baseResolution": "1024×1024"
+            },
+            {
+              "label": "2K High (2048×2048 base)",
+              "value": "2K",
+              "baseResolution": "2048×2048"
+            },
+            {
+              "label": "4K Ultra (4096×4096 base)",
+              "value": "4K",
+              "baseResolution": "4096×4096"
+            }
+          ],
+          "resolution_map": {
+            "1K": {
+              "1:1": "1024*1024",
+              "1:4": "512*2048",
+              "1:8": "384*3072",
+              "2:3": "848*1264",
+              "3:2": "1264*848",
+              "3:4": "896*1200",
+              "4:1": "2048*512",
+              "4:3": "1200*896",
+              "4:5": "928*1152",
+              "5:4": "1152*928",
+              "8:1": "3072*384",
+              "9:16": "768*1376",
+              "16:9": "1376*768",
+              "21:9": "1584*672"
+            },
+            "2K": {
+              "1:1": "2048*2048",
+              "1:4": "1024*4096",
+              "1:8": "768*6144",
+              "2:3": "1696*2528",
+              "3:2": "2528*1696",
+              "3:4": "1792*2400",
+              "4:1": "4096*1024",
+              "4:3": "2400*1792",
+              "4:5": "1856*2304",
+              "5:4": "2304*1856",
+              "8:1": "6144*768",
+              "9:16": "1536*2752",
+              "16:9": "2752*1536",
+              "21:9": "3168*1344"
+            },
+            "4K": {
+              "1:1": "4096*4096",
+              "1:4": "2048*8192",
+              "1:8": "1536*12288",
+              "2:3": "3392*5056",
+              "3:2": "5056*3392",
+              "3:4": "3584*4800",
+              "4:1": "8192*2048",
+              "4:3": "4800*3584",
+              "4:5": "3712*4608",
+              "5:4": "4608*3712",
+              "8:1": "12288*1536",
+              "9:16": "3072*5504",
+              "16:9": "5504*3072",
+              "21:9": "6336*2688"
+            }
+          },
+          "param_options": {
+            "number_of_images": [
+              {
+                "label": "1",
+                "value": 1
+              },
+              {
+                "label": "2",
+                "value": 2
+              },
+              {
+                "label": "3",
+                "value": 3
+              },
+              {
+                "label": "4",
+                "value": 4
+              }
+            ],
+            "output_mime_type": [
+              {
+                "label": "PNG",
+                "value": "image/png"
+              },
+              {
+                "label": "JPEG",
+                "value": "image/jpeg"
+              }
+            ]
+          },
+          "numeric_ranges": {
+            "seed": {
+              "min": -1,
+              "max": 2147483647,
+              "step": 1
+            },
+            "output_compression_quality": {
+              "min": 1,
+              "max": 100,
+              "step": 1
+            }
+          }
+        },
+        "image-outpainting": {
+          "defaults": {
+            "aspect_ratio": "1:1",
+            "outpaint_mode": "ratio",
+            "number_of_images": 1,
+            "output_mime_type": "image/png",
+            "output_compression_quality": 80,
+            "seed": -1,
+            "negative_prompt": "",
+            "x_scale": 1.5,
+            "y_scale": 1.5,
+            "upscale_factor": "x2"
+          },
+          "constraints": {
+            "max_image_count": 4,
+            "outpaint_modes": [
+              "ratio",
+              "scale",
+              "offset",
+              "upscale"
+            ]
+          },
+          "aspect_ratios": [
+            {
+              "label": "1:1 Square",
+              "value": "1:1"
+            },
+            {
+              "label": "1:4 Extreme Portrait",
+              "value": "1:4"
+            },
+            {
+              "label": "1:8 Ultra Portrait",
+              "value": "1:8"
+            },
+            {
+              "label": "2:3 Portrait",
+              "value": "2:3"
+            },
+            {
+              "label": "3:2 Landscape",
+              "value": "3:2"
+            },
+            {
+              "label": "3:4 Portrait",
+              "value": "3:4"
+            },
+            {
+              "label": "4:1 Extreme Landscape",
+              "value": "4:1"
+            },
+            {
+              "label": "4:3 Landscape",
+              "value": "4:3"
+            },
+            {
+              "label": "4:5 Portrait",
+              "value": "4:5"
+            },
+            {
+              "label": "5:4 Landscape",
+              "value": "5:4"
+            },
+            {
+              "label": "8:1 Ultra Landscape",
+              "value": "8:1"
+            },
+            {
+              "label": "9:16 Portrait",
+              "value": "9:16"
+            },
+            {
+              "label": "16:9 Landscape",
+              "value": "16:9"
+            },
+            {
+              "label": "21:9 Ultrawide",
+              "value": "21:9"
+            }
+          ],
+          "param_options": {
+            "outpaint_mode": [
+              {
+                "label": "按比例",
+                "value": "ratio"
+              },
+              {
+                "label": "等比缩放",
+                "value": "scale"
+              },
+              {
+                "label": "像素偏移",
+                "value": "offset"
+              },
+              {
+                "label": "图片放大",
+                "value": "upscale"
+              }
+            ],
+            "mode": [
+              {
+                "label": "按比例",
+                "value": "ratio"
+              },
+              {
+                "label": "等比缩放",
+                "value": "scale"
+              },
+              {
+                "label": "像素偏移",
+                "value": "offset"
+              },
+              {
+                "label": "图片放大",
+                "value": "upscale"
+              }
+            ],
+            "upscale_factor": [
+              {
+                "label": "2x",
+                "value": "x2"
+              },
+              {
+                "label": "3x",
+                "value": "x3"
+              },
+              {
+                "label": "4x",
+                "value": "x4"
+              }
+            ],
+            "number_of_images": [
+              {
+                "label": "1",
+                "value": 1
+              },
+              {
+                "label": "2",
+                "value": 2
+              },
+              {
+                "label": "3",
+                "value": 3
+              },
+              {
+                "label": "4",
+                "value": 4
+              }
+            ],
+            "output_mime_type": [
+              {
+                "label": "PNG",
+                "value": "image/png"
+              },
+              {
+                "label": "JPEG",
+                "value": "image/jpeg"
+              }
+            ]
+          },
+          "numeric_ranges": {
+            "x_scale": {
+              "min": 1.1,
+              "max": 3.0,
+              "step": 0.1
+            },
+            "y_scale": {
+              "min": 1.1,
+              "max": 3.0,
+              "step": 0.1
+            },
+            "left_offset": {
+              "min": 0,
+              "max": 1000,
+              "step": 1
+            },
+            "right_offset": {
+              "min": 0,
+              "max": 1000,
+              "step": 1
+            },
+            "top_offset": {
+              "min": 0,
+              "max": 1000,
+              "step": 1
+            },
+            "bottom_offset": {
+              "min": 0,
+              "max": 1000,
+              "step": 1
+            },
+            "seed": {
+              "min": -1,
+              "max": 2147483647,
+              "step": 1
+            },
+            "output_compression_quality": {
+              "min": 1,
+              "max": 100,
+              "step": 1
+            }
+          }
+        },
+        "image-mask-edit": {
+          "defaults": {
+            "edit_mode": "EDIT_MODE_INPAINT_INSERTION",
+            "mask_dilation": 0.06,
+            "guidance_scale": 15.0,
+            "number_of_images": 1,
+            "output_mime_type": "image/png",
+            "output_compression_quality": 80,
+            "negative_prompt": ""
+          },
+          "constraints": {
+            "max_image_count": 4
+          },
+          "param_options": {
+            "edit_mode": [
+              {
+                "value": "EDIT_MODE_INPAINT_INSERTION",
+                "label": "插入内容"
+              },
+              {
+                "value": "EDIT_MODE_INPAINT_REMOVAL",
+                "label": "移除内容"
+              },
+              {
+                "value": "EDIT_MODE_OUTPAINT",
+                "label": "扩展图像"
+              },
+              {
+                "value": "EDIT_MODE_BGSWAP",
+                "label": "背景替换"
+              }
+            ],
+            "number_of_images": [
+              {
+                "label": "1",
+                "value": 1
+              },
+              {
+                "label": "2",
+                "value": 2
+              },
+              {
+                "label": "3",
+                "value": 3
+              },
+              {
+                "label": "4",
+                "value": 4
+              }
+            ],
+            "output_mime_type": [
+              {
+                "label": "PNG",
+                "value": "image/png"
+              },
+              {
+                "label": "JPEG",
+                "value": "image/jpeg"
+              }
+            ]
+          },
+          "numeric_ranges": {
+            "mask_dilation": {
+              "min": 0.0,
+              "max": 1.0,
+              "step": 0.01
+            },
+            "guidance_scale": {
+              "min": 1.0,
+              "max": 20.0,
+              "step": 0.5
+            },
+            "output_compression_quality": {
+              "min": 1,
+              "max": 100,
+              "step": 1
+            }
+          }
+        },
+        "video-gen": {
+          "defaults": {
+            "aspect_ratio": "16:9",
+            "resolution": "720p",
+            "seconds": "8",
+            "enhance_prompt": false,
+            "generate_audio": false,
+            "person_generation": "allow_adult",
+            "subtitle_mode": "none",
+            "subtitle_language": "zh-CN",
+            "storyboard_shot_seconds": 4,
+            "tracked_feature": "",
+            "tracking_overlay_text": "",
+            "subtitle_script": "",
+            "seed": -1,
+            "negative_prompt": ""
+          },
+          "aspect_ratios": [
+            {
+              "label": "16:9 Landscape",
+              "value": "16:9"
+            },
+            {
+              "label": "9:16 Portrait",
+              "value": "9:16"
+            }
+          ],
+          "resolution_tiers": [
+            {
+              "label": "720p HD",
+              "value": "720p",
+              "baseResolution": "1280×720"
+            },
+            {
+              "label": "1080p Full HD",
+              "value": "1080p",
+              "baseResolution": "1920×1080"
+            }
+          ],
+          "resolution_map": {
+            "720p": {
+              "16:9": "1280*720",
+              "9:16": "720*1280"
+            },
+            "1080p": {
+              "16:9": "1920*1080",
+              "9:16": "1080*1920"
+            }
+          },
+          "param_options": {
+            "seconds": [
+              {
+                "label": "4s",
+                "value": "4"
+              },
+              {
+                "label": "6s",
+                "value": "6"
+              },
+              {
+                "label": "8s",
+                "value": "8"
+              }
+            ],
+            "generate_audio": [
+              {
+                "label": "无配音",
+                "value": false
+              },
+              {
+                "label": "生成音频",
+                "value": true
+              }
+            ],
+            "person_generation": [
+              {
+                "label": "允许成人",
+                "value": "allow_adult"
+              },
+              {
+                "label": "允许所有人",
+                "value": "allow_all"
+              },
+              {
+                "label": "不允许人物",
+                "value": "dont_allow"
+              }
+            ],
+            "subtitle_mode": [
+              {
+                "label": "无字幕",
+                "value": "none"
+              },
+              {
+                "label": "字幕",
+                "value": "vtt"
+              }
+            ],
+            "subtitle_language": [
+              {
+                "label": "中文",
+                "value": "zh-CN"
+              },
+              {
+                "label": "English",
+                "value": "en-US"
+              },
+              {
+                "label": "日本語",
+                "value": "ja-JP"
+              }
+            ],
+            "storyboard_shot_seconds": [
+              {
+                "label": "4s / 镜头",
+                "value": 4
+              },
+              {
+                "label": "6s / 镜头",
+                "value": 6
+              },
+              {
+                "label": "8s / 镜头",
+                "value": 8
+              }
+            ]
+          },
+          "model_variants": [
+            {
+              "match": {
+                "contains": "veo-2"
+              },
+              "param_options": {
+                "seconds": [
+                  {
+                    "label": "5s",
+                    "value": "5"
+                  },
+                  {
+                    "label": "6s",
+                    "value": "6"
+                  },
+                  {
+                    "label": "7s",
+                    "value": "7"
+                  },
+                  {
+                    "label": "8s",
+                    "value": "8"
+                  }
+                ]
+              }
+            },
+            {
+              "match": {
+                "contains": "veo-3.1"
+              },
+              "defaults": {
+                "enhance_prompt": true,
+                "video_extension_count": 0
+              },
+              "param_options": {
+                "video_extension_count": [
+                  {
+                    "label": "不延长",
+                    "value": 0
+                  },
+                  {
+                    "label": "延长 1 次",
+                    "value": 1
+                  },
+                  {
+                    "label": "延长 2 次",
+                    "value": 2
+                  },
+                  {
+                    "label": "延长 3 次",
+                    "value": 3
+                  },
+                  {
+                    "label": "延长 4 次",
+                    "value": 4
+                  },
+                  {
+                    "label": "延长 5 次",
+                    "value": 5
+                  },
+                  {
+                    "label": "延长 6 次",
+                    "value": 6
+                  },
+                  {
+                    "label": "延长 7 次",
+                    "value": 7
+                  },
+                  {
+                    "label": "延长 8 次",
+                    "value": 8
+                  },
+                  {
+                    "label": "延长 9 次",
+                    "value": 9
+                  },
+                  {
+                    "label": "延长 10 次",
+                    "value": 10
+                  },
+                  {
+                    "label": "延长 11 次",
+                    "value": 11
+                  },
+                  {
+                    "label": "延长 12 次",
+                    "value": 12
+                  },
+                  {
+                    "label": "延长 13 次",
+                    "value": 13
+                  },
+                  {
+                    "label": "延长 14 次",
+                    "value": 14
+                  },
+                  {
+                    "label": "延长 15 次",
+                    "value": 15
+                  },
+                  {
+                    "label": "延长 16 次",
+                    "value": 16
+                  },
+                  {
+                    "label": "延长 17 次",
+                    "value": 17
+                  },
+                  {
+                    "label": "延长 18 次",
+                    "value": 18
+                  },
+                  {
+                    "label": "延长 19 次",
+                    "value": 19
+                  },
+                  {
+                    "label": "延长 20 次",
+                    "value": 20
+                  }
+                ]
+              },
+              "resolution_tiers": [
+                {
+                  "label": "720p HD",
+                  "value": "720p",
+                  "baseResolution": "1280×720"
+                },
+                {
+                  "label": "1080p Full HD",
+                  "value": "1080p",
+                  "baseResolution": "1920×1080"
+                },
+                {
+                  "label": "4K UHD",
+                  "value": "4k",
+                  "baseResolution": "3840×2160"
+                }
+              ],
+              "resolution_map": {
+                "4k": {
+                  "16:9": "3840*2160",
+                  "9:16": "2160*3840"
+                }
+              },
+              "constraints": {
+                "max_reference_image_count": 3,
+                "enhance_prompt_mandatory": true,
+                "supports_generate_audio": true,
+                "supports_person_generation": true,
+                "supports_subtitle_sidecar": true,
+                "supports_tracking_overlay_prompt": true,
+                "supports_storyboard_prompting": true,
+                "reference_images_require_duration_seconds": [
+                  "8"
+                ],
+                "high_resolution_values": [
+                  "1080p",
+                  "4k"
+                ],
+                "high_resolution_require_duration_seconds": [
+                  "8"
+                ],
+                "video_extension_require_duration_seconds": [
+                  "8"
+                ],
+                "video_extension_require_resolution_values": [
+                  "720p"
+                ],
+                "video_extension_added_seconds": 7,
+                "max_video_extension_count": 20,
+                "max_source_video_seconds": 141,
+                "max_output_video_seconds": 148
+              }
+            }
+          ],
+          "numeric_ranges": {
+            "seed": {
+              "min": -1,
+              "max": 2147483647,
+              "step": 1
+            }
+          }
+        },
+        "audio-gen": {
+          "defaults": {
+            "voice": "Puck"
+          },
+          "param_options": {
+            "voice": [
+              {
+                "label": "Puck",
+                "value": "Puck"
+              },
+              {
+                "label": "Charon",
+                "value": "Charon"
+              },
+              {
+                "label": "Kore",
+                "value": "Kore"
+              },
+              {
+                "label": "Fenrir",
+                "value": "Fenrir"
+              },
+              {
+                "label": "Aoede",
+                "value": "Aoede"
+              }
+            ]
+          }
+        },
+        "virtual-try-on": {
+          "defaults": {
+            "base_steps": 32,
+            "number_of_images": 1,
+            "output_mime_type": "image/jpeg",
+            "output_compression_quality": 100
+          },
+          "constraints": {
+            "max_image_count": 4
+          },
+          "param_options": {
+            "number_of_images": [
+              {
+                "label": "1",
+                "value": 1
+              },
+              {
+                "label": "2",
+                "value": 2
+              },
+              {
+                "label": "3",
+                "value": 3
+              },
+              {
+                "label": "4",
+                "value": 4
+              }
+            ]
+          },
+          "numeric_ranges": {
+            "base_steps": {
+              "min": 8,
+              "max": 48,
+              "step": 8
+            }
+          }
+        },
+        "chat": {
+          "defaults": {
+            "enable_search": false,
+            "enable_thinking": false,
+            "enable_code_execution": false,
+            "enable_url_context": false,
+            "enable_browser": false,
+            "enable_rag": false,
+            "enable_enhanced_retrieval": false,
+            "enable_deep_research": false,
+            "google_cache_mode": "none"
+          },
+          "param_options": {
+            "google_cache_mode": [
+              {
+                "label": "Off",
+                "value": "none"
+              },
+              {
+                "label": "Exact",
+                "value": "exact"
+              },
+              {
+                "label": "Smart",
+                "value": "semantic"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "tongyi": {
+      "modes": {
+        "image-gen": {
+          "defaults": {
+            "aspect_ratio": "1:1",
+            "resolution": "1.25K",
+            "number_of_images": 1,
+            "style": "None",
+            "prompt_extend": false,
+            "add_magic_suffix": true,
+            "seed": -1,
+            "negative_prompt": ""
+          },
+          "constraints": {
+            "max_image_count": 4
+          },
+          "aspect_ratios": [
+            {
+              "label": "1:1 Square",
+              "value": "1:1"
+            },
+            {
+              "label": "2:3 Portrait",
+              "value": "2:3"
+            },
+            {
+              "label": "3:2 Landscape",
+              "value": "3:2"
+            },
+            {
+              "label": "3:4 Portrait",
+              "value": "3:4"
+            },
+            {
+              "label": "4:3 Landscape",
+              "value": "4:3"
+            },
+            {
+              "label": "9:16 Portrait",
+              "value": "9:16"
+            },
+            {
+              "label": "16:9 Landscape",
+              "value": "16:9"
+            },
+            {
+              "label": "21:9 Ultrawide",
+              "value": "21:9"
+            }
+          ],
+          "resolution_tiers": [
+            {
+              "label": "1K (1280×1280 base)",
+              "value": "1K",
+              "baseResolution": "1280×1280"
+            },
+            {
+              "label": "1.25K (1440×1440 base)",
+              "value": "1.25K",
+              "baseResolution": "1440×1440"
+            }
+          ],
+          "resolution_map": {
+            "1K": {
+              "1:1": "1280*1280",
+              "2:3": "800*1200",
+              "3:2": "1200*800",
+              "3:4": "960*1280",
+              "4:3": "1280*960",
+              "9:16": "720*1280",
+              "16:9": "1280*720",
+              "21:9": "1344*576"
+            },
+            "1.25K": {
+              "1:1": "1440*1440",
+              "2:3": "900*1350",
+              "3:2": "1350*900",
+              "3:4": "1080*1440",
+              "4:3": "1440*1080",
+              "9:16": "810*1440",
+              "16:9": "1440*810",
+              "21:9": "1512*648"
+            },
+            "1.5K": {
+              "1:1": "1536*1536",
+              "2:3": "960*1440",
+              "3:2": "1440*960",
+              "3:4": "1152*1536",
+              "4:3": "1536*1152",
+              "9:16": "864*1536",
+              "16:9": "1536*864",
+              "21:9": "1680*720"
+            }
+          },
+          "model_variants": [
+            {
+              "match": {
+                "contains": "z-image-turbo"
+              },
+              "constraints": {
+                "max_image_count": 1
+              },
+              "aspect_ratios": [
+                {
+                  "label": "1:1 Square",
+                  "value": "1:1"
+                },
+                {
+                  "label": "2:3 Portrait",
+                  "value": "2:3"
+                },
+                {
+                  "label": "3:2 Landscape",
+                  "value": "3:2"
+                },
+                {
+                  "label": "3:4 Portrait",
+                  "value": "3:4"
+                },
+                {
+                  "label": "4:3 Landscape",
+                  "value": "4:3"
+                },
+                {
+                  "label": "7:9 Portrait",
+                  "value": "7:9"
+                },
+                {
+                  "label": "9:7 Landscape",
+                  "value": "9:7"
+                },
+                {
+                  "label": "9:16 Portrait",
+                  "value": "9:16"
+                },
+                {
+                  "label": "9:21 Tall",
+                  "value": "9:21"
+                },
+                {
+                  "label": "16:9 Landscape",
+                  "value": "16:9"
+                },
+                {
+                  "label": "21:9 Ultrawide",
+                  "value": "21:9"
+                }
+              ],
+              "resolution_tiers": [
+                {
+                  "label": "1K (1024×1024 base)",
+                  "value": "1K",
+                  "baseResolution": "1024×1024"
+                },
+                {
+                  "label": "1.25K (1280×1280 base)",
+                  "value": "1.25K",
+                  "baseResolution": "1280×1280"
+                },
+                {
+                  "label": "1.5K (1536×1536 base)",
+                  "value": "1.5K",
+                  "baseResolution": "1536×1536"
+                },
+                {
+                  "label": "2K (2048×2048 base)",
+                  "value": "2K",
+                  "baseResolution": "2048×2048"
+                }
+              ],
+              "resolution_map": {
+                "1K": {
+                  "1:1": "1024*1024",
+                  "2:3": "832*1248",
+                  "3:2": "1248*832",
+                  "3:4": "864*1152",
+                  "4:3": "1152*864",
+                  "7:9": "896*1152",
+                  "9:7": "1152*896",
+                  "9:16": "720*1280",
+                  "9:21": "576*1344",
+                  "16:9": "1280*720",
+                  "21:9": "1344*576"
+                },
+                "1.25K": {
+                  "1:1": "1280*1280",
+                  "2:3": "1024*1536",
+                  "3:2": "1536*1024",
+                  "3:4": "1104*1472",
+                  "4:3": "1472*1104",
+                  "7:9": "1120*1440",
+                  "9:7": "1440*1120",
+                  "9:16": "864*1536",
+                  "9:21": "720*1680",
+                  "16:9": "1536*864",
+                  "21:9": "1680*720"
+                },
+                "1.5K": {
+                  "1:1": "1536*1536",
+                  "2:3": "1248*1872",
+                  "3:2": "1872*1248",
+                  "3:4": "1296*1728",
+                  "4:3": "1728*1296",
+                  "7:9": "1344*1728",
+                  "9:7": "1728*1344",
+                  "9:16": "1152*2048",
+                  "9:21": "864*2016",
+                  "16:9": "2048*1152",
+                  "21:9": "2016*864"
+                },
+                "2K": {
+                  "1:1": "2048*2048",
+                  "2:3": "1664*2496",
+                  "3:2": "2496*1664",
+                  "3:4": "1728*2304",
+                  "4:3": "2304*1728",
+                  "7:9": "1792*2304",
+                  "9:7": "2304*1792",
+                  "9:16": "1536*2730",
+                  "9:21": "1152*2688",
+                  "16:9": "2730*1536",
+                  "21:9": "2688*1152"
+                }
+              },
+              "param_options": {
+                "number_of_images": [
+                  {
+                    "label": "1",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            {
+              "match": {
+                "contains": "wan2.6-image"
+              },
+              "defaults": {
+                "resolution": "1K"
+              },
+              "aspect_ratios": [
+                {
+                  "label": "1:1 Square",
+                  "value": "1:1"
+                },
+                {
+                  "label": "2:3 Portrait",
+                  "value": "2:3"
+                },
+                {
+                  "label": "3:2 Landscape",
+                  "value": "3:2"
+                },
+                {
+                  "label": "3:4 Portrait",
+                  "value": "3:4"
+                },
+                {
+                  "label": "4:3 Landscape",
+                  "value": "4:3"
+                },
+                {
+                  "label": "9:16 Portrait",
+                  "value": "9:16"
+                },
+                {
+                  "label": "16:9 Landscape",
+                  "value": "16:9"
+                },
+                {
+                  "label": "21:9 Ultrawide",
+                  "value": "21:9"
+                },
+                {
+                  "label": "1:4 Extreme Portrait",
+                  "value": "1:4"
+                },
+                {
+                  "label": "4:1 Extreme Landscape",
+                  "value": "4:1"
+                }
+              ],
+              "resolution_tiers": [],
+              "resolution_map": {
+                "1K": {
+                  "1:1": "1280*1280",
+                  "2:3": "800*1200",
+                  "3:2": "1200*800",
+                  "3:4": "960*1280",
+                  "4:3": "1280*960",
+                  "9:16": "720*1280",
+                  "16:9": "1280*720",
+                  "21:9": "1344*576",
+                  "1:4": "640*2560",
+                  "4:1": "2560*640"
+                }
+              },
+              "param_options": {
+                "number_of_images": [
+                  {
+                    "label": "1",
+                    "value": 1
+                  },
+                  {
+                    "label": "2",
+                    "value": 2
+                  },
+                  {
+                    "label": "3",
+                    "value": 3
+                  },
+                  {
+                    "label": "4",
+                    "value": 4
+                  }
+                ]
+              }
+            }
+          ],
+          "param_options": {
+            "style": [
+              {
+                "label": "No Style",
+                "value": "None"
+              },
+              {
+                "label": "Photorealistic",
+                "value": "Photorealistic"
+              },
+              {
+                "label": "Anime",
+                "value": "Anime"
+              },
+              {
+                "label": "Digital Art",
+                "value": "Digital Art"
+              },
+              {
+                "label": "Oil Painting",
+                "value": "Oil Painting"
+              },
+              {
+                "label": "Cyberpunk",
+                "value": "Cyberpunk"
+              },
+              {
+                "label": "Watercolor",
+                "value": "Watercolor"
+              }
+            ],
+            "number_of_images": [
+              {
+                "label": "1",
+                "value": 1
+              },
+              {
+                "label": "2",
+                "value": 2
+              },
+              {
+                "label": "3",
+                "value": 3
+              },
+              {
+                "label": "4",
+                "value": 4
+              }
+            ]
+          },
+          "numeric_ranges": {
+            "seed": {
+              "min": -1,
+              "max": 2147483647,
+              "step": 1
+            }
+          }
+        },
+        "image-edit": {
+          "defaults": {
+            "aspect_ratio": "1:1",
+            "resolution": "1K",
+            "number_of_images": 1,
+            "prompt_extend": false,
+            "seed": -1,
+            "negative_prompt": ""
+          },
+          "constraints": {
+            "max_image_count": 4
+          },
+          "aspect_ratios": [
+            {
+              "label": "1:1 Square",
+              "value": "1:1"
+            },
+            {
+              "label": "2:3 Portrait",
+              "value": "2:3"
+            },
+            {
+              "label": "3:2 Landscape",
+              "value": "3:2"
+            },
+            {
+              "label": "3:4 Portrait",
+              "value": "3:4"
+            },
+            {
+              "label": "4:3 Landscape",
+              "value": "4:3"
+            },
+            {
+              "label": "9:16 Portrait",
+              "value": "9:16"
+            },
+            {
+              "label": "16:9 Landscape",
+              "value": "16:9"
+            },
+            {
+              "label": "21:9 Ultrawide",
+              "value": "21:9"
+            }
+          ],
+          "resolution_tiers": [
+            {
+              "label": "1K (1280×1280 base)",
+              "value": "1K",
+              "baseResolution": "1280×1280"
+            },
+            {
+              "label": "1.25K (1440×1440 base)",
+              "value": "1.25K",
+              "baseResolution": "1440×1440"
+            }
+          ],
+          "resolution_map": {
+            "1K": {
+              "1:1": "1280*1280",
+              "2:3": "800*1200",
+              "3:2": "1200*800",
+              "3:4": "960*1280",
+              "4:3": "1280*960",
+              "9:16": "720*1280",
+              "16:9": "1280*720",
+              "21:9": "1344*576"
+            },
+            "1.25K": {
+              "1:1": "1440*1440",
+              "2:3": "900*1350",
+              "3:2": "1350*900",
+              "3:4": "1080*1440",
+              "4:3": "1440*1080",
+              "9:16": "810*1440",
+              "16:9": "1440*810",
+              "21:9": "1512*648"
+            }
+          },
+          "param_options": {
+            "number_of_images": [
+              {
+                "label": "1",
+                "value": 1
+              },
+              {
+                "label": "2",
+                "value": 2
+              },
+              {
+                "label": "3",
+                "value": 3
+              },
+              {
+                "label": "4",
+                "value": 4
+              }
+            ]
+          },
+          "numeric_ranges": {
+            "seed": {
+              "min": -1,
+              "max": 2147483647,
+              "step": 1
+            }
+          }
+        },
+        "image-outpainting": {
+          "defaults": {
+            "outpaint_mode": "scale",
+            "mode": "scale",
+            "number_of_images": 1,
+            "x_scale": 1.5,
+            "y_scale": 1.5,
+            "seed": -1,
+            "negative_prompt": ""
+          },
+          "constraints": {
+            "outpaint_modes": [
+              "scale",
+              "offset"
+            ]
+          },
+          "aspect_ratios": [],
+          "resolution_tiers": [],
+          "resolution_map": {},
+          "param_options": {
+            "outpaint_mode": [
+              {
+                "label": "等比缩放",
+                "value": "scale"
+              },
+              {
+                "label": "像素偏移",
+                "value": "offset"
+              }
+            ],
+            "mode": [
+              {
+                "label": "等比缩放",
+                "value": "scale"
+              },
+              {
+                "label": "像素偏移",
+                "value": "offset"
+              }
+            ],
+            "number_of_images": [
+              {
+                "label": "1",
+                "value": 1
+              },
+              {
+                "label": "2",
+                "value": 2
+              },
+              {
+                "label": "3",
+                "value": 3
+              },
+              {
+                "label": "4",
+                "value": 4
+              }
+            ]
+          },
+          "numeric_ranges": {
+            "x_scale": {
+              "min": 1.0,
+              "max": 4.0,
+              "step": 0.1
+            },
+            "y_scale": {
+              "min": 1.0,
+              "max": 4.0,
+              "step": 0.1
+            },
+            "left_offset": {
+              "min": 0,
+              "max": 2000,
+              "step": 64
+            },
+            "right_offset": {
+              "min": 0,
+              "max": 2000,
+              "step": 64
+            },
+            "top_offset": {
+              "min": 0,
+              "max": 2000,
+              "step": 64
+            },
+            "bottom_offset": {
+              "min": 0,
+              "max": 2000,
+              "step": 64
+            },
+            "seed": {
+              "min": -1,
+              "max": 2147483647,
+              "step": 1
+            }
+          }
+        },
+        "video-gen": {
+          "defaults": {
+            "aspect_ratio": "16:9",
+            "resolution": "1K",
+            "seconds": "4"
+          },
+          "aspect_ratios": [
+            {
+              "label": "16:9 Landscape",
+              "value": "16:9"
+            },
+            {
+              "label": "9:16 Portrait",
+              "value": "9:16"
+            }
+          ],
+          "resolution_tiers": [
+            {
+              "label": "720p (HD)",
+              "value": "1K",
+              "baseResolution": "1280×720"
+            }
+          ],
+          "resolution_map": {
+            "1K": {
+              "16:9": "1280*720",
+              "9:16": "720*1280"
+            }
+          },
+          "param_options": {
+            "seconds": [
+              {
+                "label": "4s",
+                "value": "4"
+              },
+              {
+                "label": "8s",
+                "value": "8"
+              },
+              {
+                "label": "12s",
+                "value": "12"
+              }
+            ]
+          },
+          "model_variants": [
+            {
+              "match": {
+                "contains": "sora-2-pro"
+              },
+              "resolution_tiers": [
+                {
+                  "label": "720p (HD)",
+                  "value": "1K",
+                  "baseResolution": "1280×720"
+                },
+                {
+                  "label": "1792×1024",
+                  "value": "2K",
+                  "baseResolution": "1792×1024"
+                }
+              ],
+              "resolution_map": {
+                "2K": {
+                  "16:9": "1792*1024",
+                  "9:16": "1024*1792"
+                }
+              }
+            }
+          ]
+        },
+        "audio-gen": {
+          "defaults": {
+            "voice": "Puck"
+          },
+          "param_options": {
+            "voice": [
+              {
+                "label": "Puck",
+                "value": "Puck"
+              },
+              {
+                "label": "Charon",
+                "value": "Charon"
+              },
+              {
+                "label": "Kore",
+                "value": "Kore"
+              },
+              {
+                "label": "Fenrir",
+                "value": "Fenrir"
+              },
+              {
+                "label": "Aoede",
+                "value": "Aoede"
+              }
+            ]
+          }
+        },
+        "virtual-try-on": {
+          "defaults": {
+            "base_steps": 32,
+            "number_of_images": 1,
+            "output_mime_type": "image/jpeg",
+            "output_compression_quality": 100
+          },
+          "constraints": {
+            "max_image_count": 4
+          },
+          "param_options": {
+            "number_of_images": [
+              {
+                "label": "1",
+                "value": 1
+              },
+              {
+                "label": "2",
+                "value": 2
+              },
+              {
+                "label": "3",
+                "value": 3
+              },
+              {
+                "label": "4",
+                "value": 4
+              }
+            ]
+          },
+          "numeric_ranges": {
+            "base_steps": {
+              "min": 8,
+              "max": 48,
+              "step": 8
+            }
+          }
+        },
+        "chat": {
+          "defaults": {
+            "enable_search": false,
+            "enable_thinking": false,
+            "enable_code_execution": false,
+            "enable_url_context": false,
+            "enable_browser": false,
+            "enable_rag": false,
+            "enable_enhanced_retrieval": false,
+            "enable_deep_research": false,
+            "google_cache_mode": "none"
+          },
+          "param_options": {
+            "google_cache_mode": [
+              {
+                "label": "Off",
+                "value": "none"
+              },
+              {
+                "label": "Exact",
+                "value": "exact"
+              },
+              {
+                "label": "Smart",
+                "value": "semantic"
+              }
+            ]
+          }
+        },
+        "image-mask-edit": {
+          "defaults": {
+            "edit_mode": "EDIT_MODE_INPAINT_INSERTION",
+            "mask_dilation": 0.06,
+            "guidance_scale": 15.0,
+            "number_of_images": 1,
+            "output_mime_type": "image/png",
+            "output_compression_quality": 80,
+            "negative_prompt": ""
+          },
+          "constraints": {
+            "max_image_count": 4
+          },
+          "param_options": {
+            "edit_mode": [
+              {
+                "value": "EDIT_MODE_INPAINT_INSERTION",
+                "label": "插入内容"
+              },
+              {
+                "value": "EDIT_MODE_INPAINT_REMOVAL",
+                "label": "移除内容"
+              },
+              {
+                "value": "EDIT_MODE_OUTPAINT",
+                "label": "扩展图像"
+              },
+              {
+                "value": "EDIT_MODE_BGSWAP",
+                "label": "背景替换"
+              }
+            ],
+            "number_of_images": [
+              {
+                "label": "1",
+                "value": 1
+              },
+              {
+                "label": "2",
+                "value": 2
+              },
+              {
+                "label": "3",
+                "value": 3
+              },
+              {
+                "label": "4",
+                "value": 4
+              }
+            ],
+            "output_mime_type": [
+              {
+                "label": "PNG",
+                "value": "image/png"
+              },
+              {
+                "label": "JPEG",
+                "value": "image/jpeg"
+              }
+            ]
+          },
+          "numeric_ranges": {
+            "mask_dilation": {
+              "min": 0.0,
+              "max": 1.0,
+              "step": 0.01
+            },
+            "guidance_scale": {
+              "min": 1.0,
+              "max": 20.0,
+              "step": 0.5
+            },
+            "output_compression_quality": {
+              "min": 1,
+              "max": 100,
+              "step": 1
+            }
+          }
+        }
+      }
+    },
+    "openai": {
+      "modes": {
+        "image-gen": {
+          "defaults": {
+            "aspect_ratio": "1:1",
+            "number_of_images": 1
+          },
+          "constraints": {
+            "max_image_count": 1
+          },
+          "aspect_ratios": [
+            {
+              "label": "1:1 Square",
+              "value": "1:1"
+            },
+            {
+              "label": "Portrait (1024x1792)",
+              "value": "9:16"
+            },
+            {
+              "label": "Landscape (1792x1024)",
+              "value": "16:9"
+            }
+          ],
+          "resolution_tiers": [],
+          "resolution_map": {},
+          "param_options": {
+            "number_of_images": [
+              {
+                "label": "1",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "image-edit": {
+          "defaults": {
+            "aspect_ratio": "1:1",
+            "resolution": "1K",
+            "number_of_images": 1,
+            "output_mime_type": "image/png",
+            "output_compression_quality": 80,
+            "seed": -1,
+            "negative_prompt": ""
+          },
+          "constraints": {
+            "max_image_count": 4
+          },
+          "aspect_ratios": [
+            {
+              "label": "1:1 Square",
+              "value": "1:1"
+            },
+            {
+              "label": "1:4 Extreme Portrait",
+              "value": "1:4"
+            },
+            {
+              "label": "1:8 Ultra Portrait",
+              "value": "1:8"
+            },
+            {
+              "label": "2:3 Portrait",
+              "value": "2:3"
+            },
+            {
+              "label": "3:2 Landscape",
+              "value": "3:2"
+            },
+            {
+              "label": "3:4 Portrait",
+              "value": "3:4"
+            },
+            {
+              "label": "4:1 Extreme Landscape",
+              "value": "4:1"
+            },
+            {
+              "label": "4:3 Landscape",
+              "value": "4:3"
+            },
+            {
+              "label": "4:5 Portrait",
+              "value": "4:5"
+            },
+            {
+              "label": "5:4 Landscape",
+              "value": "5:4"
+            },
+            {
+              "label": "8:1 Ultra Landscape",
+              "value": "8:1"
+            },
+            {
+              "label": "9:16 Portrait",
+              "value": "9:16"
+            },
+            {
+              "label": "16:9 Landscape",
+              "value": "16:9"
+            },
+            {
+              "label": "21:9 Ultrawide",
+              "value": "21:9"
+            }
+          ],
+          "resolution_tiers": [
+            {
+              "label": "1K Standard (1024×1024 base)",
+              "value": "1K",
+              "baseResolution": "1024×1024"
+            },
+            {
+              "label": "2K High (2048×2048 base)",
+              "value": "2K",
+              "baseResolution": "2048×2048"
+            },
+            {
+              "label": "4K Ultra (4096×4096 base)",
+              "value": "4K",
+              "baseResolution": "4096×4096"
+            }
+          ],
+          "resolution_map": {
+            "1K": {
+              "1:1": "1024*1024",
+              "1:4": "512*2048",
+              "1:8": "384*3072",
+              "2:3": "848*1264",
+              "3:2": "1264*848",
+              "3:4": "896*1200",
+              "4:1": "2048*512",
+              "4:3": "1200*896",
+              "4:5": "928*1152",
+              "5:4": "1152*928",
+              "8:1": "3072*384",
+              "9:16": "768*1376",
+              "16:9": "1376*768",
+              "21:9": "1584*672"
+            },
+            "2K": {
+              "1:1": "2048*2048",
+              "1:4": "1024*4096",
+              "1:8": "768*6144",
+              "2:3": "1696*2528",
+              "3:2": "2528*1696",
+              "3:4": "1792*2400",
+              "4:1": "4096*1024",
+              "4:3": "2400*1792",
+              "4:5": "1856*2304",
+              "5:4": "2304*1856",
+              "8:1": "6144*768",
+              "9:16": "1536*2752",
+              "16:9": "2752*1536",
+              "21:9": "3168*1344"
+            },
+            "4K": {
+              "1:1": "4096*4096",
+              "1:4": "2048*8192",
+              "1:8": "1536*12288",
+              "2:3": "3392*5056",
+              "3:2": "5056*3392",
+              "3:4": "3584*4800",
+              "4:1": "8192*2048",
+              "4:3": "4800*3584",
+              "4:5": "3712*4608",
+              "5:4": "4608*3712",
+              "8:1": "12288*1536",
+              "9:16": "3072*5504",
+              "16:9": "5504*3072",
+              "21:9": "6336*2688"
+            }
+          },
+          "param_options": {
+            "number_of_images": [
+              {
+                "label": "1",
+                "value": 1
+              },
+              {
+                "label": "2",
+                "value": 2
+              },
+              {
+                "label": "3",
+                "value": 3
+              },
+              {
+                "label": "4",
+                "value": 4
+              }
+            ],
+            "output_mime_type": [
+              {
+                "label": "PNG",
+                "value": "image/png"
+              },
+              {
+                "label": "JPEG",
+                "value": "image/jpeg"
+              }
+            ]
+          },
+          "numeric_ranges": {
+            "seed": {
+              "min": -1,
+              "max": 2147483647,
+              "step": 1
+            },
+            "output_compression_quality": {
+              "min": 1,
+              "max": 100,
+              "step": 1
+            }
+          }
+        },
+        "image-outpainting": {
+          "defaults": {
+            "aspect_ratio": "1:1",
+            "outpaint_mode": "ratio",
+            "number_of_images": 1,
+            "output_mime_type": "image/png",
+            "output_compression_quality": 80,
+            "seed": -1,
+            "negative_prompt": "",
+            "x_scale": 1.5,
+            "y_scale": 1.5,
+            "upscale_factor": "x2"
+          },
+          "constraints": {
+            "max_image_count": 4,
+            "outpaint_modes": [
+              "ratio",
+              "scale",
+              "offset",
+              "upscale"
+            ]
+          },
+          "aspect_ratios": [
+            {
+              "label": "1:1 Square",
+              "value": "1:1"
+            },
+            {
+              "label": "1:4 Extreme Portrait",
+              "value": "1:4"
+            },
+            {
+              "label": "1:8 Ultra Portrait",
+              "value": "1:8"
+            },
+            {
+              "label": "2:3 Portrait",
+              "value": "2:3"
+            },
+            {
+              "label": "3:2 Landscape",
+              "value": "3:2"
+            },
+            {
+              "label": "3:4 Portrait",
+              "value": "3:4"
+            },
+            {
+              "label": "4:1 Extreme Landscape",
+              "value": "4:1"
+            },
+            {
+              "label": "4:3 Landscape",
+              "value": "4:3"
+            },
+            {
+              "label": "4:5 Portrait",
+              "value": "4:5"
+            },
+            {
+              "label": "5:4 Landscape",
+              "value": "5:4"
+            },
+            {
+              "label": "8:1 Ultra Landscape",
+              "value": "8:1"
+            },
+            {
+              "label": "9:16 Portrait",
+              "value": "9:16"
+            },
+            {
+              "label": "16:9 Landscape",
+              "value": "16:9"
+            },
+            {
+              "label": "21:9 Ultrawide",
+              "value": "21:9"
+            }
+          ],
+          "param_options": {
+            "outpaint_mode": [
+              {
+                "label": "按比例",
+                "value": "ratio"
+              },
+              {
+                "label": "等比缩放",
+                "value": "scale"
+              },
+              {
+                "label": "像素偏移",
+                "value": "offset"
+              },
+              {
+                "label": "图片放大",
+                "value": "upscale"
+              }
+            ],
+            "mode": [
+              {
+                "label": "按比例",
+                "value": "ratio"
+              },
+              {
+                "label": "等比缩放",
+                "value": "scale"
+              },
+              {
+                "label": "像素偏移",
+                "value": "offset"
+              },
+              {
+                "label": "图片放大",
+                "value": "upscale"
+              }
+            ],
+            "upscale_factor": [
+              {
+                "label": "2x",
+                "value": "x2"
+              },
+              {
+                "label": "3x",
+                "value": "x3"
+              },
+              {
+                "label": "4x",
+                "value": "x4"
+              }
+            ],
+            "number_of_images": [
+              {
+                "label": "1",
+                "value": 1
+              },
+              {
+                "label": "2",
+                "value": 2
+              },
+              {
+                "label": "3",
+                "value": 3
+              },
+              {
+                "label": "4",
+                "value": 4
+              }
+            ],
+            "output_mime_type": [
+              {
+                "label": "PNG",
+                "value": "image/png"
+              },
+              {
+                "label": "JPEG",
+                "value": "image/jpeg"
+              }
+            ]
+          },
+          "numeric_ranges": {
+            "x_scale": {
+              "min": 1.1,
+              "max": 3.0,
+              "step": 0.1
+            },
+            "y_scale": {
+              "min": 1.1,
+              "max": 3.0,
+              "step": 0.1
+            },
+            "left_offset": {
+              "min": 0,
+              "max": 1000,
+              "step": 1
+            },
+            "right_offset": {
+              "min": 0,
+              "max": 1000,
+              "step": 1
+            },
+            "top_offset": {
+              "min": 0,
+              "max": 1000,
+              "step": 1
+            },
+            "bottom_offset": {
+              "min": 0,
+              "max": 1000,
+              "step": 1
+            },
+            "seed": {
+              "min": -1,
+              "max": 2147483647,
+              "step": 1
+            },
+            "output_compression_quality": {
+              "min": 1,
+              "max": 100,
+              "step": 1
+            }
+          }
+        },
+        "video-gen": {
+          "defaults": {
+            "aspect_ratio": "16:9",
+            "resolution": "1K",
+            "seconds": "4"
+          },
+          "aspect_ratios": [
+            {
+              "label": "16:9 Landscape",
+              "value": "16:9"
+            },
+            {
+              "label": "9:16 Portrait",
+              "value": "9:16"
+            }
+          ],
+          "resolution_tiers": [
+            {
+              "label": "720p (HD)",
+              "value": "1K",
+              "baseResolution": "1280×720"
+            }
+          ],
+          "resolution_map": {
+            "1K": {
+              "16:9": "1280*720",
+              "9:16": "720*1280"
+            }
+          },
+          "param_options": {
+            "seconds": [
+              {
+                "label": "4s",
+                "value": "4"
+              },
+              {
+                "label": "8s",
+                "value": "8"
+              },
+              {
+                "label": "12s",
+                "value": "12"
+              }
+            ]
+          },
+          "model_variants": [
+            {
+              "match": {
+                "contains": "sora-2-pro"
+              },
+              "resolution_tiers": [
+                {
+                  "label": "720p (HD)",
+                  "value": "1K",
+                  "baseResolution": "1280×720"
+                },
+                {
+                  "label": "1792×1024",
+                  "value": "2K",
+                  "baseResolution": "1792×1024"
+                }
+              ],
+              "resolution_map": {
+                "2K": {
+                  "16:9": "1792*1024",
+                  "9:16": "1024*1792"
+                }
+              }
+            }
+          ]
+        },
+        "audio-gen": {
+          "defaults": {
+            "voice": "Puck"
+          },
+          "param_options": {
+            "voice": [
+              {
+                "label": "Puck",
+                "value": "Puck"
+              },
+              {
+                "label": "Charon",
+                "value": "Charon"
+              },
+              {
+                "label": "Kore",
+                "value": "Kore"
+              },
+              {
+                "label": "Fenrir",
+                "value": "Fenrir"
+              },
+              {
+                "label": "Aoede",
+                "value": "Aoede"
+              }
+            ]
+          }
+        },
+        "virtual-try-on": {
+          "defaults": {
+            "base_steps": 32,
+            "number_of_images": 1,
+            "output_mime_type": "image/jpeg",
+            "output_compression_quality": 100
+          },
+          "constraints": {
+            "max_image_count": 4
+          },
+          "param_options": {
+            "number_of_images": [
+              {
+                "label": "1",
+                "value": 1
+              },
+              {
+                "label": "2",
+                "value": 2
+              },
+              {
+                "label": "3",
+                "value": 3
+              },
+              {
+                "label": "4",
+                "value": 4
+              }
+            ]
+          },
+          "numeric_ranges": {
+            "base_steps": {
+              "min": 8,
+              "max": 48,
+              "step": 8
+            }
+          }
+        },
+        "chat": {
+          "defaults": {
+            "enable_search": false,
+            "enable_thinking": false,
+            "enable_code_execution": false,
+            "enable_url_context": false,
+            "enable_browser": false,
+            "enable_rag": false,
+            "enable_enhanced_retrieval": false,
+            "enable_deep_research": false,
+            "google_cache_mode": "none"
+          },
+          "param_options": {
+            "google_cache_mode": [
+              {
+                "label": "Off",
+                "value": "none"
+              },
+              {
+                "label": "Exact",
+                "value": "exact"
+              },
+              {
+                "label": "Smart",
+                "value": "semantic"
+              }
+            ]
+          }
+        },
+        "image-mask-edit": {
+          "defaults": {
+            "edit_mode": "EDIT_MODE_INPAINT_INSERTION",
+            "mask_dilation": 0.06,
+            "guidance_scale": 15.0,
+            "number_of_images": 1,
+            "output_mime_type": "image/png",
+            "output_compression_quality": 80,
+            "negative_prompt": ""
+          },
+          "constraints": {
+            "max_image_count": 4
+          },
+          "param_options": {
+            "edit_mode": [
+              {
+                "value": "EDIT_MODE_INPAINT_INSERTION",
+                "label": "插入内容"
+              },
+              {
+                "value": "EDIT_MODE_INPAINT_REMOVAL",
+                "label": "移除内容"
+              },
+              {
+                "value": "EDIT_MODE_OUTPAINT",
+                "label": "扩展图像"
+              },
+              {
+                "value": "EDIT_MODE_BGSWAP",
+                "label": "背景替换"
+              }
+            ],
+            "number_of_images": [
+              {
+                "label": "1",
+                "value": 1
+              },
+              {
+                "label": "2",
+                "value": 2
+              },
+              {
+                "label": "3",
+                "value": 3
+              },
+              {
+                "label": "4",
+                "value": 4
+              }
+            ],
+            "output_mime_type": [
+              {
+                "label": "PNG",
+                "value": "image/png"
+              },
+              {
+                "label": "JPEG",
+                "value": "image/jpeg"
+              }
+            ]
+          },
+          "numeric_ranges": {
+            "mask_dilation": {
+              "min": 0.0,
+              "max": 1.0,
+              "step": 0.01
+            },
+            "guidance_scale": {
+              "min": 1.0,
+              "max": 20.0,
+              "step": 0.5
+            },
+            "output_compression_quality": {
+              "min": 1,
+              "max": 100,
+              "step": 1
+            }
+          }
+        }
+      }
+    }
+  }
+}

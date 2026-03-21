@@ -1,0 +1,106 @@
+{
+  "starter_key": "audio_generation_v1",
+  "starter_version": 1,
+  "name": "工作流 · 语音生成",
+  "description": "文本输入 + 当前活跃 Provider 语音生成，适合作为 provider-neutral TTS 模板。",
+  "category": "多模态工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "audio",
+    "audio-gen",
+    "text-to-speech",
+    "tts",
+    "provider-neutral",
+    "starter"
+  ],
+  "sample_input": {
+    "task": "请用平稳、专业的语气朗读这段产品介绍：这款便携保温杯采用双层真空结构，适合通勤和户外场景，6 小时保温、4 小时保冷。"
+  },
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-audio-gen",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 220
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "接收语音生成文本",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-text-audio-gen",
+        "type": "input_text",
+        "position": {
+          "x": 320,
+          "y": 220
+        },
+        "data": {
+          "type": "input_text",
+          "label": "文本输入",
+          "description": "配置朗读内容（input.task）",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-audio-gen",
+        "type": "agent",
+        "position": {
+          "x": 580,
+          "y": 220
+        },
+        "data": {
+          "type": "agent",
+          "label": "语音生成",
+          "description": "自动使用当前活跃配置里可用的语音生成模型",
+          "icon": "🎙️",
+          "iconColor": "bg-amber-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "audio-gen",
+          "inputMapping": "{{input-text-audio-gen.output.text}}",
+          "instructions": "输出可直接试听的语音结果，语速自然，适合产品介绍或旁白场景。"
+        }
+      },
+      {
+        "id": "end-audio-gen",
+        "type": "end",
+        "position": {
+          "x": 820,
+          "y": 220
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出音频结果",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-audio-gen-1",
+        "source": "start-audio-gen",
+        "target": "input-text-audio-gen"
+      },
+      {
+        "id": "edge-audio-gen-2",
+        "source": "input-text-audio-gen",
+        "target": "agent-audio-gen"
+      },
+      {
+        "id": "edge-audio-gen-3",
+        "source": "agent-audio-gen",
+        "target": "end-audio-gen"
+      }
+    ]
+  }
+}

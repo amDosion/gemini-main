@@ -1,0 +1,247 @@
+{
+  "starter_key": "adk_sample_camel_v1",
+  "starter_version": 1,
+  "name": "官方 ADK · ADK CAMEL (Executable)",
+  "description": "任务分解 + 并行执行 + 汇总策略的多 Agent 协作流，对齐 CAMEL 协作思路。（官方样例，已转为可执行工作流模板）",
+  "category": "运营协同",
+  "workflow_type": "graph",
+  "tags": [
+    "adk",
+    "official",
+    "sample",
+    "multi-agent",
+    "starter",
+    "google-adk",
+    "运营协同"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-camel",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 240
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "输入综合任务",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-camel",
+        "type": "input_text",
+        "position": {
+          "x": 300,
+          "y": 240
+        },
+        "data": {
+          "type": "input_text",
+          "label": "任务文本",
+          "description": "输入电商运营复合任务",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-decompose-camel",
+        "type": "agent",
+        "position": {
+          "x": 540,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "任务分解",
+          "description": "拆分为关键词/Listing/投放子任务",
+          "icon": "🧩",
+          "iconColor": "bg-violet-500",
+          "agentName": "多店铺运营整合师",
+          "instructions": "将任务拆解为可并行执行的子任务，并明确目标与约束。"
+        }
+      },
+      {
+        "id": "parallel-camel",
+        "type": "parallel",
+        "position": {
+          "x": 780,
+          "y": 240
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行执行",
+          "description": "多专家并行处理",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-keyword-camel",
+        "type": "agent",
+        "position": {
+          "x": 1020,
+          "y": 80
+        },
+        "data": {
+          "type": "agent",
+          "label": "关键词子任务",
+          "description": "提炼关键词策略",
+          "icon": "🔑",
+          "iconColor": "bg-amber-500",
+          "agentName": "关键词研究专家",
+          "inputMapping": "分解结果：{{agent-decompose-camel.output.text}}"
+        }
+      },
+      {
+        "id": "agent-listing-camel",
+        "type": "agent",
+        "position": {
+          "x": 1020,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "Listing 子任务",
+          "description": "生成标题/五点/描述",
+          "icon": "✍️",
+          "iconColor": "bg-emerald-500",
+          "agentName": "Listing优化专家",
+          "inputMapping": "分解结果：{{agent-decompose-camel.output.text}}"
+        }
+      },
+      {
+        "id": "agent-ads-camel",
+        "type": "agent",
+        "position": {
+          "x": 1020,
+          "y": 400
+        },
+        "data": {
+          "type": "agent",
+          "label": "投放子任务",
+          "description": "产出广告动作建议",
+          "icon": "📊",
+          "iconColor": "bg-blue-500",
+          "agentName": "亚马逊广告分析师",
+          "inputMapping": "分解结果：{{agent-decompose-camel.output.text}}"
+        }
+      },
+      {
+        "id": "merge-camel",
+        "type": "merge",
+        "position": {
+          "x": 1260,
+          "y": 240
+        },
+        "data": {
+          "type": "merge",
+          "label": "汇总结果",
+          "description": "汇总并行子任务结果",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-final-camel",
+        "type": "agent",
+        "position": {
+          "x": 1500,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "统一执行方案",
+          "description": "输出统一节奏与落地计划",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "并行汇总：{{merge-camel.output.text}}",
+          "instructions": "输出周计划：任务优先级、执行顺序、风险回滚。"
+        }
+      },
+      {
+        "id": "end-camel",
+        "type": "end",
+        "position": {
+          "x": 1740,
+          "y": 240
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出综合方案",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "cm-e1",
+        "source": "start-camel",
+        "target": "input-camel"
+      },
+      {
+        "id": "cm-e2",
+        "source": "input-camel",
+        "target": "agent-decompose-camel"
+      },
+      {
+        "id": "cm-e3",
+        "source": "agent-decompose-camel",
+        "target": "parallel-camel"
+      },
+      {
+        "id": "cm-e4",
+        "source": "parallel-camel",
+        "target": "agent-keyword-camel"
+      },
+      {
+        "id": "cm-e5",
+        "source": "parallel-camel",
+        "target": "agent-listing-camel"
+      },
+      {
+        "id": "cm-e6",
+        "source": "parallel-camel",
+        "target": "agent-ads-camel"
+      },
+      {
+        "id": "cm-e7",
+        "source": "agent-keyword-camel",
+        "target": "merge-camel"
+      },
+      {
+        "id": "cm-e8",
+        "source": "agent-listing-camel",
+        "target": "merge-camel"
+      },
+      {
+        "id": "cm-e9",
+        "source": "agent-ads-camel",
+        "target": "merge-camel"
+      },
+      {
+        "id": "cm-e10",
+        "source": "merge-camel",
+        "target": "agent-final-camel"
+      },
+      {
+        "id": "cm-e11",
+        "source": "agent-final-camel",
+        "target": "end-camel"
+      }
+    ],
+    "_templateMeta": {
+      "source": "adk-samples",
+      "sampleId": "camel"
+    }
+  }
+}

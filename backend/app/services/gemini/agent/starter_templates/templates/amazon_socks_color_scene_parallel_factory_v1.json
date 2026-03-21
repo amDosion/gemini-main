@@ -1,0 +1,449 @@
+{
+  "starter_key": "amazon_socks_color_scene_parallel_factory_v1",
+  "starter_version": 3,
+  "name": "Amazon 袜子多色场景并行工厂",
+  "description": "基于单张袜子参考图，并行产出多色模特图、场景图、平铺卖点图和对比文案图。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "image-edit",
+    "socks",
+    "colorway",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-socks-color-factory",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 280
+        },
+        "data": {
+          "type": "start",
+          "label": "任务输入",
+          "description": "输入本轮袜子素材目标",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-image-socks-color-factory",
+        "type": "input_image",
+        "position": {
+          "x": 320,
+          "y": 220
+        },
+        "data": {
+          "type": "input_image",
+          "label": "袜子参考图",
+          "description": "上传原始袜子图片（用于保形保材质）",
+          "icon": "🖼️",
+          "iconColor": "bg-lime-500",
+          "startImageUrl": ""
+        }
+      },
+      {
+        "id": "input-text-socks-color-factory",
+        "type": "input_text",
+        "position": {
+          "x": 320,
+          "y": 380
+        },
+        "data": {
+          "type": "input_text",
+          "label": "文案与颜色约束",
+          "description": "输入目标颜色、卖点文案、禁用词和版式安全区",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-understand-socks-color-factory",
+        "type": "agent",
+        "position": {
+          "x": 560,
+          "y": 140
+        },
+        "data": {
+          "type": "agent",
+          "label": "图片理解与品类识别",
+          "description": "先基于附件做视觉理解，避免误识别品类",
+          "icon": "🧿",
+          "iconColor": "bg-cyan-500",
+          "agentName": "图片视觉理解师",
+          "agentTaskType": "vision-understand",
+          "agentReferenceImageUrl": "{{input-image-socks-color-factory.output.imageUrl}}",
+          "agentOutputLanguage": "en",
+          "inputMapping": "Reference image: {{input-image-socks-color-factory.output.imageUrl}}\\nUser constraints: {{input-text-socks-color-factory.output.text}}\\n\\nOutput English only: product category, material, color family, shape-preservation rules, text-safe-zones, forbidden overlap zones.",
+          "instructions": "Must use the attached image as visual evidence. Do not infer category from filename or URL text."
+        }
+      },
+      {
+        "id": "agent-plan-socks-color-factory",
+        "type": "agent",
+        "position": {
+          "x": 560,
+          "y": 300
+        },
+        "data": {
+          "type": "agent",
+          "label": "卖点与色板规划",
+          "description": "生成多色卖点文案和各分支排版规则",
+          "icon": "🧠",
+          "iconColor": "bg-indigo-500",
+          "agentName": "电商文案创作师",
+          "inputMapping": "视觉理解：{{agent-understand-socks-color-factory.output.text}}\n约束：{{input-text-socks-color-factory.output.text}}",
+          "instructions": "仅输出英文。默认输出 3 个颜色主题（white/champagne/black）及每个主题的 headline、2 badges、安全区和禁放区域规则。"
+        }
+      },
+      {
+        "id": "parallel-socks-color-factory",
+        "type": "parallel",
+        "position": {
+          "x": 800,
+          "y": 300
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行产图",
+          "description": "多分支并行出图",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-model-prompt-socks-color-factory",
+        "type": "agent",
+        "position": {
+          "x": 1040,
+          "y": 40
+        },
+        "data": {
+          "type": "agent",
+          "label": "模特图提示词",
+          "description": "输出模特图分支专用 editPrompt",
+          "icon": "🧾",
+          "iconColor": "bg-fuchsia-500",
+          "agentName": "图片编辑优化师",
+          "agentOutputLanguage": "en",
+          "inputMapping": "视觉理解：{{agent-understand-socks-color-factory.output.text}}\\n色板规划：{{agent-plan-socks-color-factory.output.text}}\\n\\n请只输出 model 分支可执行英文 editPrompt：真实模特穿搭场景、产品形态不变、文案不遮挡主体。",
+          "instructions": "只输出可执行英文 editPrompt，不要解释，不要 Markdown。"
+        }
+      },
+      {
+        "id": "agent-scene-prompt-socks-color-factory",
+        "type": "agent",
+        "position": {
+          "x": 1040,
+          "y": 200
+        },
+        "data": {
+          "type": "agent",
+          "label": "场景图提示词",
+          "description": "输出场景图分支专用 editPrompt",
+          "icon": "🏞️",
+          "iconColor": "bg-sky-500",
+          "agentName": "图片编辑优化师",
+          "agentOutputLanguage": "en",
+          "inputMapping": "视觉理解：{{agent-understand-socks-color-factory.output.text}}\\n色板规划：{{agent-plan-socks-color-factory.output.text}}\\n\\n请只输出 scene 分支可执行英文 editPrompt：家庭/派对/户外场景，构图自然，文案避开主体。",
+          "instructions": "只输出可执行英文 editPrompt，不要解释，不要 Markdown。"
+        }
+      },
+      {
+        "id": "agent-flatlay-prompt-socks-color-factory",
+        "type": "agent",
+        "position": {
+          "x": 1040,
+          "y": 360
+        },
+        "data": {
+          "type": "agent",
+          "label": "平铺图提示词",
+          "description": "输出平铺图分支专用 editPrompt",
+          "icon": "📐",
+          "iconColor": "bg-violet-500",
+          "agentName": "图片编辑优化师",
+          "agentOutputLanguage": "en",
+          "inputMapping": "视觉理解：{{agent-understand-socks-color-factory.output.text}}\\n色板规划：{{agent-plan-socks-color-factory.output.text}}\\n\\n请只输出 flatlay 分支可执行英文 editPrompt：高级平铺、标题+副标题+3个callout、线条不交叉不遮挡主体。",
+          "instructions": "只输出可执行英文 editPrompt，不要解释，不要 Markdown。"
+        }
+      },
+      {
+        "id": "agent-benefit-prompt-socks-color-factory",
+        "type": "agent",
+        "position": {
+          "x": 1040,
+          "y": 520
+        },
+        "data": {
+          "type": "agent",
+          "label": "对比图提示词",
+          "description": "输出对比卖点图分支专用 editPrompt",
+          "icon": "🧪",
+          "iconColor": "bg-cyan-500",
+          "agentName": "图片编辑优化师",
+          "agentOutputLanguage": "en",
+          "inputMapping": "视觉理解：{{agent-understand-socks-color-factory.output.text}}\\n色板规划：{{agent-plan-socks-color-factory.output.text}}\\n\\n请只输出 benefit 分支可执行英文 editPrompt：对比卖点明确，标题+2徽章，文本避开主体。",
+          "instructions": "只输出可执行英文 editPrompt，不要解释，不要 Markdown。"
+        }
+      },
+      {
+        "id": "agent-model-socks-color-factory",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 40
+        },
+        "data": {
+          "type": "agent",
+          "label": "多色模特图",
+          "description": "输出多色模特穿搭图",
+          "icon": "👧",
+          "iconColor": "bg-pink-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentReferenceImageUrl": "{{input-image-socks-color-factory.output.imageUrl}}",
+          "agentNumberOfImages": 3,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 2,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "inputMapping": "Model editPrompt: {{agent-model-prompt-socks-color-factory.output.text}}\\nReference: {{input-image-socks-color-factory.output.imageUrl}}",
+          "instructions": "Do not alter sock structure, ruffle geometry, or material texture. Keep overlays in safe zones."
+        }
+      },
+      {
+        "id": "agent-scene-socks-color-factory",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 200
+        },
+        "data": {
+          "type": "agent",
+          "label": "多色场景图",
+          "description": "输出多色生活场景图",
+          "icon": "🏡",
+          "iconColor": "bg-orange-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentReferenceImageUrl": "{{input-image-socks-color-factory.output.imageUrl}}",
+          "agentNumberOfImages": 3,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 2,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "inputMapping": "Scene editPrompt: {{agent-scene-prompt-socks-color-factory.output.text}}\\nReference: {{input-image-socks-color-factory.output.imageUrl}}",
+          "instructions": "Use premium ecommerce lighting and keep composition natural."
+        }
+      },
+      {
+        "id": "agent-flatlay-socks-color-factory",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 360
+        },
+        "data": {
+          "type": "agent",
+          "label": "多色平铺卖点图",
+          "description": "输出多色平铺与线条标注图",
+          "icon": "🧷",
+          "iconColor": "bg-violet-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentReferenceImageUrl": "{{input-image-socks-color-factory.output.imageUrl}}",
+          "agentNumberOfImages": 3,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 2,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "inputMapping": "Flatlay editPrompt: {{agent-flatlay-prompt-socks-color-factory.output.text}}\\nReference: {{input-image-socks-color-factory.output.imageUrl}}",
+          "instructions": "Typography must be English and positioned outside the product body region."
+        }
+      },
+      {
+        "id": "agent-benefit-socks-color-factory",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 520
+        },
+        "data": {
+          "type": "agent",
+          "label": "多色对比卖点图",
+          "description": "输出礼品/舒适度等对比卖点图",
+          "icon": "🆚",
+          "iconColor": "bg-sky-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentReferenceImageUrl": "{{input-image-socks-color-factory.output.imageUrl}}",
+          "agentNumberOfImages": 3,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 2,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "inputMapping": "Benefit editPrompt: {{agent-benefit-prompt-socks-color-factory.output.text}}\\nReference: {{input-image-socks-color-factory.output.imageUrl}}",
+          "instructions": "Avoid covering the key tulle ruffle and sock cuff details."
+        }
+      },
+      {
+        "id": "merge-socks-color-factory",
+        "type": "merge",
+        "position": {
+          "x": 1520,
+          "y": 300
+        },
+        "data": {
+          "type": "merge",
+          "label": "素材汇总",
+          "description": "汇总各分支产图结果",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-qa-socks-color-factory",
+        "type": "agent",
+        "position": {
+          "x": 1760,
+          "y": 300
+        },
+        "data": {
+          "type": "agent",
+          "label": "交付质检",
+          "description": "按亚马逊投放标准给出筛选与复做建议",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "汇总素材：{{merge-socks-color-factory.output.text}}\\nModel prompt: {{agent-model-prompt-socks-color-factory.output.text}}\\nScene prompt: {{agent-scene-prompt-socks-color-factory.output.text}}\\nFlatlay prompt: {{agent-flatlay-prompt-socks-color-factory.output.text}}\\nBenefit prompt: {{agent-benefit-prompt-socks-color-factory.output.text}}",
+          "instructions": "仅输出英文。按场景输出 pass/fail、overlap risk、best-use placement（main/gallery/ads）和失败分支的 retry prompt。"
+        }
+      },
+      {
+        "id": "end-socks-color-factory",
+        "type": "end",
+        "position": {
+          "x": 2000,
+          "y": 300
+        },
+        "data": {
+          "type": "end",
+          "label": "素材交付输出",
+          "description": "输出多色并行素材结果",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-scf-1",
+        "source": "start-socks-color-factory",
+        "target": "input-image-socks-color-factory"
+      },
+      {
+        "id": "e-scf-2",
+        "source": "input-image-socks-color-factory",
+        "target": "input-text-socks-color-factory"
+      },
+      {
+        "id": "e-scf-3",
+        "source": "input-text-socks-color-factory",
+        "target": "agent-understand-socks-color-factory"
+      },
+      {
+        "id": "e-scf-4",
+        "source": "agent-understand-socks-color-factory",
+        "target": "agent-plan-socks-color-factory"
+      },
+      {
+        "id": "e-scf-5",
+        "source": "agent-plan-socks-color-factory",
+        "target": "parallel-socks-color-factory"
+      },
+      {
+        "id": "e-scf-6",
+        "source": "parallel-socks-color-factory",
+        "target": "agent-model-prompt-socks-color-factory"
+      },
+      {
+        "id": "e-scf-7",
+        "source": "parallel-socks-color-factory",
+        "target": "agent-scene-prompt-socks-color-factory"
+      },
+      {
+        "id": "e-scf-8",
+        "source": "parallel-socks-color-factory",
+        "target": "agent-flatlay-prompt-socks-color-factory"
+      },
+      {
+        "id": "e-scf-9",
+        "source": "parallel-socks-color-factory",
+        "target": "agent-benefit-prompt-socks-color-factory"
+      },
+      {
+        "id": "e-scf-10",
+        "source": "agent-model-prompt-socks-color-factory",
+        "target": "agent-model-socks-color-factory"
+      },
+      {
+        "id": "e-scf-11",
+        "source": "agent-scene-prompt-socks-color-factory",
+        "target": "agent-scene-socks-color-factory"
+      },
+      {
+        "id": "e-scf-12",
+        "source": "agent-flatlay-prompt-socks-color-factory",
+        "target": "agent-flatlay-socks-color-factory"
+      },
+      {
+        "id": "e-scf-13",
+        "source": "agent-benefit-prompt-socks-color-factory",
+        "target": "agent-benefit-socks-color-factory"
+      },
+      {
+        "id": "e-scf-14",
+        "source": "agent-model-socks-color-factory",
+        "target": "merge-socks-color-factory"
+      },
+      {
+        "id": "e-scf-15",
+        "source": "agent-scene-socks-color-factory",
+        "target": "merge-socks-color-factory"
+      },
+      {
+        "id": "e-scf-16",
+        "source": "agent-flatlay-socks-color-factory",
+        "target": "merge-socks-color-factory"
+      },
+      {
+        "id": "e-scf-17",
+        "source": "agent-benefit-socks-color-factory",
+        "target": "merge-socks-color-factory"
+      },
+      {
+        "id": "e-scf-18",
+        "source": "merge-socks-color-factory",
+        "target": "agent-qa-socks-color-factory"
+      },
+      {
+        "id": "e-scf-19",
+        "source": "agent-qa-socks-color-factory",
+        "target": "end-socks-color-factory"
+      }
+    ]
+  }
+}

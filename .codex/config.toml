@@ -1,0 +1,50 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+[features]
+multi_agent = true
+
+[agents]
+# Codex defaults max_threads to 6 when this field is unset.
+# Set max_threads here only when you intentionally want a higher concurrent thread cap.
+max_depth = 2
+# job_max_runtime_seconds = 5400
+
+[agents.project_owner]
+description = "Department manager for requirements, decomposition, acceptance criteria, and cross-team planning."
+config_file = "agents/project-owner.toml"
+
+[agents.frontend]
+description = "Frontend department manager for UI, UX, and client integration work."
+config_file = "agents/frontend.toml"
+
+[agents.backend]
+description = "Backend department manager for API, data, and domain logic work."
+config_file = "agents/backend.toml"
+
+[agents.devops]
+description = "DevOps department manager for CI/CD, runtime operations, and observability work."
+config_file = "agents/devops.toml"
+
+[agents.qa]
+description = "QA department manager for validation strategy, regressions, and release evidence."
+config_file = "agents/qa.toml"
+
+[agents.security]
+description = "Security department manager for hardening, dependency risk, and threat review."
+config_file = "agents/security.toml"
+
+[agents.reviewer]
+description = "Read-only review gate owner for correctness, risk, and release readiness."
+config_file = "agents/reviewer.toml"
+
+[agents.worker]
+description = "Scoped implementation worker for one concrete task."
+config_file = "agents/worker.toml"
+
+[agents.explorer]
+description = "Read-heavy explorer for mapping code paths, evidence, and dependencies."
+config_file = "agents/explorer.toml"
+
+[agents.monitor]
+description = "Wait-heavy monitor for long-running commands, polling, and heartbeat checks."
+config_file = "agents/monitor.toml"

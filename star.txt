@@ -1,0 +1,23 @@
+=====================================
+项目启动方式
+=====================================
+
+一键启动前后端：npm run dev
+
+分别启动：
+  后端：
+  cd backend && PYTHONUNBUFFERED=1 .venv/bin/uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 21574 --log-level info
+  前端：npx vite
+
+Kiro 分别启动（推荐）：
+  后端：cwd=backend, command=PYTHONUNBUFFERED=1 .venv/bin/uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 21574 --log-level info
+  前端：npx vite
+
+安装后端依赖：pip install -r backend/requirements.txt
+
+=====================================
+管理员账号
+=====================================
+
+邮箱：admin@example.com
+密码：Admin@2026

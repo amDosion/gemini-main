@@ -1,0 +1,272 @@
+{
+  "starter_key": "adk_sample_data_engineering_v1",
+  "starter_version": 1,
+  "name": "官方 ADK · ADK Data Engineering (Executable)",
+  "description": "数据分析执行流（解析 → 并行复核 → 决策输出），对齐 ADK Data Engineering 思路。（官方样例，已转为可执行工作流模板）",
+  "category": "数据分析",
+  "workflow_type": "graph",
+  "tags": [
+    "adk",
+    "official",
+    "sample",
+    "multi-agent",
+    "starter",
+    "google-adk",
+    "数据分析"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-data",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 240
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "输入分析目标",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-file-data",
+        "type": "input_file",
+        "position": {
+          "x": 300,
+          "y": 240
+        },
+        "data": {
+          "type": "input_file",
+          "label": "报表文件",
+          "description": "上传 Excel/CSV 数据文件",
+          "icon": "📎",
+          "iconColor": "bg-cyan-500",
+          "startFileUrl": ""
+        }
+      },
+      {
+        "id": "input-text-data",
+        "type": "input_text",
+        "position": {
+          "x": 520,
+          "y": 240
+        },
+        "data": {
+          "type": "input_text",
+          "label": "分析目标",
+          "description": "例如：控 ACoS + 找增量词",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-parse-data",
+        "type": "agent",
+        "position": {
+          "x": 760,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "数据解析底稿",
+          "description": "识别字段并输出标准化分析底稿",
+          "icon": "🧩",
+          "iconColor": "bg-indigo-500",
+          "agentName": "数据报表分析师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-data.output.fileUrl}}",
+          "inputMapping": "目标：{{input-text-data.output.text}}\n文件：{{input-file-data.output.fileUrl}}",
+          "instructions": "自动识别表头和字段别名，统一映射并输出底稿。"
+        }
+      },
+      {
+        "id": "parallel-data",
+        "type": "parallel",
+        "position": {
+          "x": 1000,
+          "y": 240
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行复核",
+          "description": "多 Agent 并行复核策略",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-quality-data",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": 80
+        },
+        "data": {
+          "type": "agent",
+          "label": "数据质量复核",
+          "description": "核对字段映射与统计口径",
+          "icon": "📈",
+          "iconColor": "bg-cyan-500",
+          "agentName": "数据报表分析师",
+          "inputMapping": "底稿：{{agent-parse-data.output.text}}",
+          "instructions": "输出数据可靠性评分、异常和样本风险。"
+        }
+      },
+      {
+        "id": "agent-ads-data",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "广告动作复核",
+          "description": "审阅否定词/加投词与预算建议",
+          "icon": "📊",
+          "iconColor": "bg-blue-500",
+          "agentName": "亚马逊广告分析师",
+          "inputMapping": "底稿：{{agent-parse-data.output.text}}\n目标：{{input-text-data.output.text}}"
+        }
+      },
+      {
+        "id": "agent-strategy-data",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": 400
+        },
+        "data": {
+          "type": "agent",
+          "label": "经营策略复核",
+          "description": "结合目标给出执行节奏",
+          "icon": "🧮",
+          "iconColor": "bg-violet-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "底稿：{{agent-parse-data.output.text}}\n目标：{{input-text-data.output.text}}"
+        }
+      },
+      {
+        "id": "merge-data",
+        "type": "merge",
+        "position": {
+          "x": 1480,
+          "y": 240
+        },
+        "data": {
+          "type": "merge",
+          "label": "复核汇总",
+          "description": "汇总并行复核结果",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-final-data",
+        "type": "agent",
+        "position": {
+          "x": 1720,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "最终决策报告",
+          "description": "输出可执行动作 + 阈值 + 回滚条件",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "并行汇总：{{merge-data.output.text}}",
+          "instructions": "输出可执行清单：否定词、加投词、预算动作、风险阈值。"
+        }
+      },
+      {
+        "id": "end-data",
+        "type": "end",
+        "position": {
+          "x": 1960,
+          "y": 240
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出分析结果",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "de-e1",
+        "source": "start-data",
+        "target": "input-file-data"
+      },
+      {
+        "id": "de-e2",
+        "source": "input-file-data",
+        "target": "input-text-data"
+      },
+      {
+        "id": "de-e3",
+        "source": "input-text-data",
+        "target": "agent-parse-data"
+      },
+      {
+        "id": "de-e4",
+        "source": "agent-parse-data",
+        "target": "parallel-data"
+      },
+      {
+        "id": "de-e5",
+        "source": "parallel-data",
+        "target": "agent-quality-data"
+      },
+      {
+        "id": "de-e6",
+        "source": "parallel-data",
+        "target": "agent-ads-data"
+      },
+      {
+        "id": "de-e7",
+        "source": "parallel-data",
+        "target": "agent-strategy-data"
+      },
+      {
+        "id": "de-e8",
+        "source": "agent-quality-data",
+        "target": "merge-data"
+      },
+      {
+        "id": "de-e9",
+        "source": "agent-ads-data",
+        "target": "merge-data"
+      },
+      {
+        "id": "de-e10",
+        "source": "agent-strategy-data",
+        "target": "merge-data"
+      },
+      {
+        "id": "de-e11",
+        "source": "merge-data",
+        "target": "agent-final-data"
+      },
+      {
+        "id": "de-e12",
+        "source": "agent-final-data",
+        "target": "end-data"
+      }
+    ],
+    "_templateMeta": {
+      "source": "adk-samples",
+      "sampleId": "data-engineering"
+    }
+  }
+}

@@ -1,0 +1,285 @@
+{
+  "starter_key": "product_image_prompt_matrix_v1",
+  "starter_version": 6,
+  "name": "电商文生图提示词矩阵工作流",
+  "description": "提示词增强 + 并行多 Agent 产图，一次生成主图、场景图、细节图和 UGC 风格图。",
+  "category": "图像工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "image",
+    "text-to-image",
+    "prompt",
+    "parallel",
+    "ecommerce",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-prompt-matrix",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 240
+        },
+        "data": {
+          "type": "start",
+          "label": "文生图需求输入",
+          "description": "输入产品信息、卖点和目标受众",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-text-prompt-matrix",
+        "type": "input_text",
+        "position": {
+          "x": 320,
+          "y": 240
+        },
+        "data": {
+          "type": "input_text",
+          "label": "任务描述",
+          "description": "填写文生图目标（input.task）",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-prompt-enhance",
+        "type": "agent",
+        "position": {
+          "x": 560,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "提示词增强",
+          "description": "生成可落地的多风格提示词矩阵",
+          "icon": "✨",
+          "iconColor": "bg-violet-500",
+          "agentName": "电商文案创作师",
+          "instructions": "请把用户输入增强为 4 组可直接用于文生图的提示词：\n1. Amazon 主图（纯白背景，主体清晰）\n2. 场景生活图（体现使用场景）\n3. 卖点细节图（突出材质/工艺）\n4. UGC 风格图（真实生活感）\n\n每组输出都要包含：主体、环境、光线、构图、禁止元素。"
+        }
+      },
+      {
+        "id": "parallel-prompt-matrix",
+        "type": "parallel",
+        "position": {
+          "x": 800,
+          "y": 240
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行产图",
+          "description": "四路并行生成不同用途素材",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "tool-generate-main-white",
+        "type": "agent",
+        "position": {
+          "x": 1060,
+          "y": 40
+        },
+        "data": {
+          "type": "agent",
+          "label": "主图生成",
+          "description": "主图智能体输出合规主图素材",
+          "icon": "🖼️",
+          "iconColor": "bg-pink-500",
+          "agentName": "产品图片设计师",
+          "agentTaskType": "image-gen",
+          "agentAspectRatio": "1:1",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-prompt-enhance.output.text}}\\n\\n请执行主图路线：纯白背景、主体占比 85%+、无文字水印。",
+          "instructions": "先优化提示词，再输出可直接用于主图的生成结果。"
+        }
+      },
+      {
+        "id": "tool-generate-lifestyle",
+        "type": "agent",
+        "position": {
+          "x": 1060,
+          "y": 180
+        },
+        "data": {
+          "type": "agent",
+          "label": "场景图生成",
+          "description": "场景智能体输出生活化场景图",
+          "icon": "🏞️",
+          "iconColor": "bg-indigo-500",
+          "agentName": "产品图片设计师",
+          "agentTaskType": "image-gen",
+          "agentAspectRatio": "3:4",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-prompt-enhance.output.text}}\\n\\n请执行场景路线：真实生活感、产品主体保持清晰。",
+          "instructions": "保持主体一致，突出场景代入感与卖点表达。"
+        }
+      },
+      {
+        "id": "tool-generate-detail",
+        "type": "agent",
+        "position": {
+          "x": 1060,
+          "y": 320
+        },
+        "data": {
+          "type": "agent",
+          "label": "卖点图生成",
+          "description": "卖点智能体输出细节卖点图",
+          "icon": "🔍",
+          "iconColor": "bg-violet-500",
+          "agentName": "产品图片设计师",
+          "agentTaskType": "image-gen",
+          "agentAspectRatio": "1:1",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-prompt-enhance.output.text}}\\n\\n请执行卖点路线：特写镜头，突出材质和工艺细节。",
+          "instructions": "聚焦细节与质感，避免冗余背景干扰。"
+        }
+      },
+      {
+        "id": "tool-generate-ugc",
+        "type": "agent",
+        "position": {
+          "x": 1060,
+          "y": 460
+        },
+        "data": {
+          "type": "agent",
+          "label": "UGC 图生成",
+          "description": "UGC 智能体输出真实感社媒素材",
+          "icon": "📱",
+          "iconColor": "bg-amber-500",
+          "agentName": "产品图片设计师",
+          "agentTaskType": "image-gen",
+          "agentAspectRatio": "3:4",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-prompt-enhance.output.text}}\\n\\n请执行 UGC 路线：像用户真实拍摄，保留产品主体和自然光感。",
+          "instructions": "输出接近真实用户拍摄的社媒风格图片。"
+        }
+      },
+      {
+        "id": "merge-prompt-matrix",
+        "type": "merge",
+        "position": {
+          "x": 1320,
+          "y": 240
+        },
+        "data": {
+          "type": "merge",
+          "label": "多路结果汇总",
+          "description": "汇总四路并行输出",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-prompt-matrix-qa",
+        "type": "agent",
+        "position": {
+          "x": 1560,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "交付审阅",
+          "description": "输出最终交付清单和二次迭代建议",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "agentName": "图片编辑优化师",
+          "inputMapping": "四路文生图结果摘要：{{merge-prompt-matrix.output.text}}",
+          "instructions": "请按主图/场景图/卖点图/UGC 四个类型输出交付审阅（不要再索要输入）：\n1. 每类推荐结果与理由\n2. 不合规风险（如主图规范、清晰度）\n3. 二次迭代提示词（可选）\n4. 最终交付清单"
+        }
+      },
+      {
+        "id": "end-prompt-matrix",
+        "type": "end",
+        "position": {
+          "x": 1800,
+          "y": 240
+        },
+        "data": {
+          "type": "end",
+          "label": "文生图交付结果",
+          "description": "输出可直接使用的素材建议",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-pm-1",
+        "source": "start-prompt-matrix",
+        "target": "input-text-prompt-matrix"
+      },
+      {
+        "id": "e-pm-2",
+        "source": "input-text-prompt-matrix",
+        "target": "agent-prompt-enhance"
+      },
+      {
+        "id": "e-pm-3",
+        "source": "agent-prompt-enhance",
+        "target": "parallel-prompt-matrix"
+      },
+      {
+        "id": "e-pm-4",
+        "source": "parallel-prompt-matrix",
+        "target": "tool-generate-main-white"
+      },
+      {
+        "id": "e-pm-5",
+        "source": "parallel-prompt-matrix",
+        "target": "tool-generate-lifestyle"
+      },
+      {
+        "id": "e-pm-6",
+        "source": "parallel-prompt-matrix",
+        "target": "tool-generate-detail"
+      },
+      {
+        "id": "e-pm-7",
+        "source": "parallel-prompt-matrix",
+        "target": "tool-generate-ugc"
+      },
+      {
+        "id": "e-pm-8",
+        "source": "tool-generate-main-white",
+        "target": "merge-prompt-matrix"
+      },
+      {
+        "id": "e-pm-9",
+        "source": "tool-generate-lifestyle",
+        "target": "merge-prompt-matrix"
+      },
+      {
+        "id": "e-pm-10",
+        "source": "tool-generate-detail",
+        "target": "merge-prompt-matrix"
+      },
+      {
+        "id": "e-pm-11",
+        "source": "tool-generate-ugc",
+        "target": "merge-prompt-matrix"
+      },
+      {
+        "id": "e-pm-12",
+        "source": "merge-prompt-matrix",
+        "target": "agent-prompt-matrix-qa"
+      },
+      {
+        "id": "e-pm-13",
+        "source": "agent-prompt-matrix-qa",
+        "target": "end-prompt-matrix"
+      }
+    ]
+  }
+}

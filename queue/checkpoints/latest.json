@@ -1,0 +1,118 @@
+{
+  "generatedAt": "2026-03-17T07:43:00.000Z",
+  "label": "latest",
+  "projectDir": "/Users/xuelihong/gemini-main/gemini-main",
+  "mission": "Converge standalone video mode into a backend-first contract-driven architecture before broadening scope.",
+  "runtimeConfig": {
+    "mode": "same-run-long-running",
+    "analysisBoundaryRequired": true,
+    "sameRunContinuationRequired": true
+  },
+  "mainAgent": {
+    "nextSession": 7,
+    "successStreak": 4,
+    "pendingPlan": {
+      "phase": "complete",
+      "focus": "video-batch-converged"
+    },
+    "queueFingerprint": "video-domain-2026-03-17-r1",
+    "lastCompletedQueueFingerprint": null,
+    "lastPlanning": {
+      "timestamp": "2026-03-17T00:00:00+08:00",
+      "summary": "Bootstrapped long-running artifacts and wrote a backend-first video-mode convergence plan."
+    },
+    "lastExecution": {
+      "timestamp": "2026-03-17T15:43:00+08:00",
+      "summary": "RV-910 passed: standalone video mode converged to a backend-first contract-driven batch with no new blocking review findings."
+    }
+  },
+  "reviewGate": {
+    "status": "success"
+  },
+  "totals": {
+    "tasks": 8,
+    "pending": 0,
+    "running": 0,
+    "success": 8,
+    "blocked": 0,
+    "failed": 0
+  },
+  "unresolvedTasks": [],
+  "recentHistory": [
+    {
+      "timestamp": "2026-03-17T15:43:00+08:00",
+      "taskId": "RV-910",
+      "status": "success",
+      "error": null,
+      "summary": "Read-only review found no new blocking defects in the standalone video convergence batch; backend/frontend responsibility split and live persistence evidence are acceptable for the current scope.",
+      "sessionId": null
+    },
+    {
+      "timestamp": "2026-03-17T15:40:00+08:00",
+      "taskId": "QA-910",
+      "status": "success",
+      "error": null,
+      "summary": "Focused standalone video regression passed, and live API evidence confirmed persisted session metadata plus playable preview URLs for extension and subtitle sessions.",
+      "sessionId": null
+    },
+    {
+      "timestamp": "2026-03-17T15:36:00+08:00",
+      "taskId": "FE-911",
+      "status": "success",
+      "error": null,
+      "summary": "Frontend video reset/default handling now follows backend contract-derived defaults, and remaining standalone video state branching was reduced.",
+      "sessionId": null
+    },
+    {
+      "timestamp": "2026-03-17T15:27:00+08:00",
+      "taskId": "FE-910",
+      "status": "success",
+      "error": null,
+      "summary": "Frontend video controls now parse backend video_contract and consume backend-defined extension matrix, subtitle defaults, and enhance-prompt policy instead of locally deriving them.",
+      "sessionId": null
+    },
+    {
+      "timestamp": "2026-03-17T15:09:00+08:00",
+      "taskId": "BE-911",
+      "status": "success",
+      "error": null,
+      "summary": "Backend request normalization and contract field policies added for standalone video mode; explicit storyboard prompt now overrides deprecated tracking companion fields.",
+      "sessionId": null
+    },
+    {
+      "timestamp": "2026-03-17T14:58:25+08:00",
+      "taskId": "BE-910",
+      "status": "success",
+      "error": null,
+      "summary": "Backend video contract helper added, router-level video attachment semantics moved into backend service code, and focused pytest validation passed.",
+      "sessionId": null
+    },
+    {
+      "timestamp": "2026-03-17T00:00:00+08:00",
+      "taskId": "P-911",
+      "status": "success",
+      "error": null,
+      "summary": "Backend-first implementation queue written and validated.",
+      "sessionId": null
+    },
+    {
+      "timestamp": "2026-03-17T00:00:00+08:00",
+      "taskId": "P-910",
+      "status": "success",
+      "error": null,
+      "summary": "Video domain research baseline documented.",
+      "sessionId": null
+    }
+  ],
+  "resumeHandles": {
+    "plannerSessionId": null,
+    "reviewSessionId": null,
+    "tasks": []
+  },
+  "files": {
+    "mainAgentStatePath": "/Users/xuelihong/gemini-main/gemini-main/queue/main-agent-state.json",
+    "statePath": "/Users/xuelihong/gemini-main/gemini-main/queue/state.json",
+    "summaryPath": null,
+    "tasksPath": "/Users/xuelihong/gemini-main/gemini-main/queue/tasks.csv"
+  }
+}

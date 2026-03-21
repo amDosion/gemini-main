@@ -1,0 +1,252 @@
+{
+  "starter_key": "product_image_creation_v1",
+  "starter_version": 8,
+  "name": "产品图片文生图工作流",
+  "description": "纯文生图流程：创意规划 → 并行多 Agent 出图 → 质量汇总（不依赖参考图）。",
+  "category": "图像工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "image",
+    "text-to-image",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-img-create",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 220
+        },
+        "data": {
+          "type": "start",
+          "label": "文生图输入",
+          "description": "输入产品卖点、风格和目标场景",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-text-img-create",
+        "type": "input_text",
+        "position": {
+          "x": 320,
+          "y": 220
+        },
+        "data": {
+          "type": "input_text",
+          "label": "需求文本",
+          "description": "填写文生图任务描述（input.task）",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-creative-brief",
+        "type": "agent",
+        "position": {
+          "x": 560,
+          "y": 220
+        },
+        "data": {
+          "type": "agent",
+          "label": "创意规划",
+          "description": "生成主图/场景图/卖点图三路提示词方案",
+          "icon": "🎨",
+          "iconColor": "bg-purple-500",
+          "agentName": "产品图片设计师",
+          "instructions": "请基于需求文本输出三类文生图提示词：\n1. Amazon 白底主图提示词（无文字无水印）\n2. 使用场景图提示词（强调使用场景与氛围）\n3. 卖点特写图提示词（突出材质/细节/功能）\n\n输出格式：\n- 主图提示词：...\n- 场景图提示词：...\n- 卖点图提示词：..."
+        }
+      },
+      {
+        "id": "parallel-img-generate",
+        "type": "parallel",
+        "position": {
+          "x": 820,
+          "y": 220
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行产图",
+          "description": "并行生成主图/场景图/卖点图",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "tool-image-main-generate",
+        "type": "agent",
+        "position": {
+          "x": 1080,
+          "y": 80
+        },
+        "data": {
+          "type": "agent",
+          "label": "主图生成",
+          "description": "主图智能体生成白底主图",
+          "icon": "🖼️",
+          "iconColor": "bg-pink-500",
+          "agentName": "产品图片设计师",
+          "agentTaskType": "image-gen",
+          "agentAspectRatio": "1:1",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-creative-brief.output.text}}\\n\\n请严格执行：输出 Amazon 主图，纯白背景，主体占比 85% 以上，无文字无水印。",
+          "instructions": "先优化提示词，再执行文生图，确保主体完整且适合电商主图。"
+        }
+      },
+      {
+        "id": "tool-image-scene-generate",
+        "type": "agent",
+        "position": {
+          "x": 1080,
+          "y": 220
+        },
+        "data": {
+          "type": "agent",
+          "label": "场景图生成",
+          "description": "场景智能体生成场景卖点图",
+          "icon": "🏞️",
+          "iconColor": "bg-indigo-500",
+          "agentName": "产品图片设计师",
+          "agentTaskType": "image-gen",
+          "agentAspectRatio": "3:4",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-creative-brief.output.text}}\\n\\n请严格执行：输出产品使用场景图，画面真实自然，突出核心卖点。",
+          "instructions": "保持产品主体一致，强化真实使用场景与氛围。"
+        }
+      },
+      {
+        "id": "tool-image-detail-generate",
+        "type": "agent",
+        "position": {
+          "x": 1080,
+          "y": 360
+        },
+        "data": {
+          "type": "agent",
+          "label": "卖点图生成",
+          "description": "卖点智能体生成细节特写图",
+          "icon": "🔍",
+          "iconColor": "bg-violet-500",
+          "agentName": "产品图片设计师",
+          "agentTaskType": "image-gen",
+          "agentAspectRatio": "1:1",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-creative-brief.output.text}}\\n\\n请严格执行：输出产品细节特写图，强调材质、结构和做工。",
+          "instructions": "聚焦卖点细节与材质纹理，保持画面干净。"
+        }
+      },
+      {
+        "id": "merge-img-generate",
+        "type": "merge",
+        "position": {
+          "x": 1340,
+          "y": 220
+        },
+        "data": {
+          "type": "merge",
+          "label": "结果汇总",
+          "description": "汇总并行生成结果",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-image-qa",
+        "type": "agent",
+        "position": {
+          "x": 1600,
+          "y": 220
+        },
+        "data": {
+          "type": "agent",
+          "label": "质量审阅",
+          "description": "输出可落地的选图与迭代建议",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "agentName": "图片编辑优化师",
+          "inputMapping": "并行生成结果摘要：{{merge-img-generate.output.text}}\\n创意规划：{{agent-creative-brief.output.text}}",
+          "instructions": "请基于已生成图片直接做交付审阅（不要再索要输入）：\n1. 按主图/场景图/卖点图各推荐 1-2 张\n2. 标注是否满足 Amazon 图片规范\n3. 输出二次迭代提示词（如需）\n4. 给出最终交付清单"
+        }
+      },
+      {
+        "id": "end-img-create",
+        "type": "end",
+        "position": {
+          "x": 1860,
+          "y": 220
+        },
+        "data": {
+          "type": "end",
+          "label": "设计方案",
+          "description": "输出完整的图片设计方案",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-img-1",
+        "source": "start-img-create",
+        "target": "input-text-img-create"
+      },
+      {
+        "id": "e-img-2",
+        "source": "input-text-img-create",
+        "target": "agent-creative-brief"
+      },
+      {
+        "id": "e-img-3",
+        "source": "agent-creative-brief",
+        "target": "parallel-img-generate"
+      },
+      {
+        "id": "e-img-4",
+        "source": "parallel-img-generate",
+        "target": "tool-image-main-generate"
+      },
+      {
+        "id": "e-img-5",
+        "source": "parallel-img-generate",
+        "target": "tool-image-scene-generate"
+      },
+      {
+        "id": "e-img-6",
+        "source": "parallel-img-generate",
+        "target": "tool-image-detail-generate"
+      },
+      {
+        "id": "e-img-7",
+        "source": "tool-image-main-generate",
+        "target": "merge-img-generate"
+      },
+      {
+        "id": "e-img-8",
+        "source": "tool-image-scene-generate",
+        "target": "merge-img-generate"
+      },
+      {
+        "id": "e-img-9",
+        "source": "tool-image-detail-generate",
+        "target": "merge-img-generate"
+      },
+      {
+        "id": "e-img-10",
+        "source": "merge-img-generate",
+        "target": "agent-image-qa"
+      },
+      {
+        "id": "e-img-11",
+        "source": "agent-image-qa",
+        "target": "end-img-create"
+      }
+    ]
+  }
+}

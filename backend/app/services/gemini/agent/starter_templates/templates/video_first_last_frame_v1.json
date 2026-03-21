@@ -1,0 +1,124 @@
+{
+  "starter_key": "video_first_last_frame_v1",
+  "starter_version": 2,
+  "name": "工作流 · 首尾帧视频生成",
+  "description": "用首帧参考图 + 末帧目标图生成连贯视频，适合做短片镜头桥接、动作收束和长视频分段衔接。",
+  "category": "多模态工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "video",
+    "video-gen",
+    "image-to-video",
+    "first-last-frame",
+    "provider-neutral",
+    "starter"
+  ],
+  "sample_input": {
+    "imageUrl": "sample://video_first_frame_sample.jpg",
+    "imageUrls": [
+      "sample://video_first_frame_sample.jpg",
+      "sample://video_last_frame_sample.jpg"
+    ],
+    "task": "让主体从第一帧自然运动到最后一帧的构图与姿态，镜头平滑推进，保持材质和光线连续。"
+  },
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-video-first-last-frame",
+        "type": "start",
+        "position": { "x": 60, "y": 240 },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "接收首帧图、末帧图和视频需求",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-image-first-frame",
+        "type": "input_image",
+        "position": { "x": 280, "y": 110 },
+        "data": {
+          "type": "input_image",
+          "label": "首帧参考图",
+          "description": "视频的起始构图、主体和材质参考",
+          "icon": "🖼️",
+          "iconColor": "bg-emerald-500",
+          "startImageUrl": "{{input.imageUrl}}"
+        }
+      },
+      {
+        "id": "input-image-last-frame",
+        "type": "input_image",
+        "position": { "x": 280, "y": 370 },
+        "data": {
+          "type": "input_image",
+          "label": "末帧目标图",
+          "description": "视频最终停驻的构图与姿态目标",
+          "icon": "🏁",
+          "iconColor": "bg-amber-500",
+          "startImageUrl": "{{input.imageUrls[1]}}"
+        }
+      },
+      {
+        "id": "input-text-first-last-frame",
+        "type": "input_text",
+        "position": { "x": 280, "y": 240 },
+        "data": {
+          "type": "input_text",
+          "label": "镜头需求",
+          "description": "补充动作、运镜和节奏",
+          "icon": "✍️",
+          "iconColor": "bg-sky-500",
+          "presetText": "{{input.task}}"
+        }
+      },
+      {
+        "id": "agent-video-first-last-frame",
+        "type": "agent",
+        "position": { "x": 640, "y": 240 },
+        "data": {
+          "type": "agent",
+          "label": "生成首尾帧连贯视频",
+          "description": "综合首帧、末帧与镜头需求生成连贯视频",
+          "icon": "🎬",
+          "iconColor": "bg-fuchsia-500",
+          "inlineUseActiveProfile": true,
+          "inlineProviderId": "google",
+          "inlineModelId": "veo-3.1-generate-preview",
+          "inlineSystemPrompt": "你是视频分镜导演与运动设计师。目标是在保持主体身份、材质、空间关系和光线连续的前提下，把首帧平滑过渡到末帧。输出给视频模型的提示必须包含：主体、动作、运镜、节奏、镜头长度、场景约束、禁止项，以及从首帧过渡到末帧时的关键中间动作设计。不要把视频切成多个镜头，也不要改写用户核心目标。",
+          "agentTaskType": "video-gen",
+          "agentAspectRatio": "16:9",
+          "agentResolutionTier": "1K",
+          "agentVideoDurationSeconds": 8,
+          "agentReferenceImageUrl": "{{input-image-first-frame.output.imageUrl}}",
+          "agentLastFrameImageUrl": "{{input-image-last-frame.output.imageUrl}}",
+          "inputMapping": "首帧参考图：{{input-image-first-frame.output.imageUrl}}\n末帧目标图：{{input-image-last-frame.output.imageUrl}}\n镜头需求：{{input-text-first-last-frame.output.text}}\n\n请生成一段能够自然从首帧过渡到末帧的单镜头视频。要求：1) 主体身份、服装、材质和比例保持稳定；2) 动作轨迹连续，不突然跳切；3) 镜头运动平滑，避免瞬移和突兀变焦；4) 光线与景深连续；5) 结尾画面尽量落到末帧构图和姿态。"
+        }
+      },
+      {
+        "id": "end-video-first-last-frame",
+        "type": "end",
+        "position": { "x": 980, "y": 240 },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出首尾帧连贯视频结果",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      { "id": "edge-video-first-last-frame-1", "source": "start-video-first-last-frame", "target": "input-image-first-frame" },
+      { "id": "edge-video-first-last-frame-2", "source": "start-video-first-last-frame", "target": "input-text-first-last-frame" },
+      { "id": "edge-video-first-last-frame-3", "source": "start-video-first-last-frame", "target": "input-image-last-frame" },
+      { "id": "edge-video-first-last-frame-4", "source": "input-image-first-frame", "target": "agent-video-first-last-frame" },
+      { "id": "edge-video-first-last-frame-5", "source": "input-text-first-last-frame", "target": "agent-video-first-last-frame" },
+      { "id": "edge-video-first-last-frame-6", "source": "input-image-last-frame", "target": "agent-video-first-last-frame" },
+      { "id": "edge-video-first-last-frame-7", "source": "agent-video-first-last-frame", "target": "end-video-first-last-frame" }
+    ]
+  }
+}

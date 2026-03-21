@@ -1,0 +1,225 @@
+{
+  "starter_key": "adk_sample_customer_service_v1",
+  "starter_version": 1,
+  "name": "官方 ADK · ADK Customer Service (Executable)",
+  "description": "客服协同流（并行会诊 → 答复生成），对齐 ADK Coordinator/Dispatcher 思路。（官方样例，已转为可执行工作流模板）",
+  "category": "运营协同",
+  "workflow_type": "graph",
+  "tags": [
+    "adk",
+    "official",
+    "sample",
+    "multi-agent",
+    "starter",
+    "google-adk",
+    "运营协同"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-cs",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 220
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "输入客户任务",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-cs",
+        "type": "input_text",
+        "position": {
+          "x": 300,
+          "y": 220
+        },
+        "data": {
+          "type": "input_text",
+          "label": "客户需求",
+          "description": "输入客服问题和约束",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "parallel-cs",
+        "type": "parallel",
+        "position": {
+          "x": 540,
+          "y": 220
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行会诊",
+          "description": "并行评估问题与风险",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-copy-cs",
+        "type": "agent",
+        "position": {
+          "x": 780,
+          "y": 80
+        },
+        "data": {
+          "type": "agent",
+          "label": "回复草稿",
+          "description": "产出结构化回复草稿",
+          "icon": "✍️",
+          "iconColor": "bg-pink-500",
+          "agentName": "电商文案创作师",
+          "inputMapping": "需求：{{input-cs.output.text}}"
+        }
+      },
+      {
+        "id": "agent-policy-cs",
+        "type": "agent",
+        "position": {
+          "x": 780,
+          "y": 220
+        },
+        "data": {
+          "type": "agent",
+          "label": "合规检查",
+          "description": "检查政策风险与措辞边界",
+          "icon": "🛡️",
+          "iconColor": "bg-sky-500",
+          "agentName": "亚马逊合规审核师",
+          "inputMapping": "需求：{{input-cs.output.text}}"
+        }
+      },
+      {
+        "id": "agent-strategy-cs",
+        "type": "agent",
+        "position": {
+          "x": 780,
+          "y": 360
+        },
+        "data": {
+          "type": "agent",
+          "label": "策略建议",
+          "description": "给出沟通与升级策略",
+          "icon": "🧠",
+          "iconColor": "bg-indigo-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "需求：{{input-cs.output.text}}"
+        }
+      },
+      {
+        "id": "merge-cs",
+        "type": "merge",
+        "position": {
+          "x": 1020,
+          "y": 220
+        },
+        "data": {
+          "type": "merge",
+          "label": "汇总",
+          "description": "汇总并行结果",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-final-cs",
+        "type": "agent",
+        "position": {
+          "x": 1260,
+          "y": 220
+        },
+        "data": {
+          "type": "agent",
+          "label": "最终答复",
+          "description": "输出可发送版本与后续动作",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "agentName": "电商文案创作师",
+          "inputMapping": "汇总：{{merge-cs.output.text}}",
+          "instructions": "输出最终客户回复、内部处理步骤和升级条件。"
+        }
+      },
+      {
+        "id": "end-cs",
+        "type": "end",
+        "position": {
+          "x": 1500,
+          "y": 220
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出客服方案",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "cs-e1",
+        "source": "start-cs",
+        "target": "input-cs"
+      },
+      {
+        "id": "cs-e2",
+        "source": "input-cs",
+        "target": "parallel-cs"
+      },
+      {
+        "id": "cs-e3",
+        "source": "parallel-cs",
+        "target": "agent-copy-cs"
+      },
+      {
+        "id": "cs-e4",
+        "source": "parallel-cs",
+        "target": "agent-policy-cs"
+      },
+      {
+        "id": "cs-e5",
+        "source": "parallel-cs",
+        "target": "agent-strategy-cs"
+      },
+      {
+        "id": "cs-e6",
+        "source": "agent-copy-cs",
+        "target": "merge-cs"
+      },
+      {
+        "id": "cs-e7",
+        "source": "agent-policy-cs",
+        "target": "merge-cs"
+      },
+      {
+        "id": "cs-e8",
+        "source": "agent-strategy-cs",
+        "target": "merge-cs"
+      },
+      {
+        "id": "cs-e9",
+        "source": "merge-cs",
+        "target": "agent-final-cs"
+      },
+      {
+        "id": "cs-e10",
+        "source": "agent-final-cs",
+        "target": "end-cs"
+      }
+    ],
+    "_templateMeta": {
+      "source": "adk-samples",
+      "sampleId": "customer-service"
+    }
+  }
+}

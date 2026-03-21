@@ -1,0 +1,335 @@
+{
+  "starter_key": "amazon_reference_image_parallel_studio_v1",
+  "starter_version": 2,
+  "name": "亚马逊参考图并行素材工厂",
+  "description": "参考图输入 → 文案规划 → 并行生成配色/模特/场景/卖点图 → 英文交付审校。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "image-edit",
+    "reference",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-reference-studio",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 260
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "接收参考图与目标诉求",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-image-reference-studio",
+        "type": "input_image",
+        "position": {
+          "x": 300,
+          "y": 260
+        },
+        "data": {
+          "type": "input_image",
+          "label": "参考图输入",
+          "description": "上传产品原图（支持图生图）",
+          "icon": "🖼️",
+          "iconColor": "bg-lime-500",
+          "startImageUrl": ""
+        }
+      },
+      {
+        "id": "input-text-reference-studio",
+        "type": "input_text",
+        "position": {
+          "x": 520,
+          "y": 260
+        },
+        "data": {
+          "type": "input_text",
+          "label": "营销目标输入",
+          "description": "例如：站点、人群、卖点、色彩方向",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-reference-studio-plan",
+        "type": "agent",
+        "position": {
+          "x": 740,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "创意规划",
+          "description": "拆分多路素材生成策略与英文文案主线",
+          "icon": "🧠",
+          "iconColor": "bg-violet-500",
+          "agentName": "产品图片设计师",
+          "inputMapping": "参考图：{{input-image-reference-studio.output.imageUrl}}\n目标：{{input-text-reference-studio.output.text}}",
+          "instructions": "只输出英文创意规划，不生成图片；需包含 Hero/Lifestyle/Model/Flatlay 4 路构图与文案方向。"
+        }
+      },
+      {
+        "id": "parallel-reference-studio",
+        "type": "parallel",
+        "position": {
+          "x": 980,
+          "y": 260
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行生成",
+          "description": "四路并行生成不同场景素材",
+          "icon": "⚡",
+          "iconColor": "bg-cyan-500",
+          "joinMode": "wait_all",
+          "timeoutSeconds": 160
+        }
+      },
+      {
+        "id": "agent-reference-studio-colorway",
+        "type": "agent",
+        "position": {
+          "x": 1220,
+          "y": 80
+        },
+        "data": {
+          "type": "agent",
+          "label": "配色变体卖点图",
+          "description": "保留结构，替换颜色并生成英文卖点文案",
+          "icon": "🎨",
+          "iconColor": "bg-rose-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentAspectRatio": "1:1",
+          "agentReferenceImageUrl": "{{input-image-reference-studio.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 0,
+          "continueOnError": true,
+          "agentProductMatchThreshold": 74,
+          "agentOutputLanguage": "en",
+          "inputMapping": "{{agent-reference-studio-plan.output.text}}\n\nRoute A: Colorway variant hero. Keep structure unchanged, generate premium color variants and English callout copy.",
+          "instructions": "English-only copy. Keep text in top margin / corner zones. Never overlap model face or core product body."
+        }
+      },
+      {
+        "id": "agent-reference-studio-model",
+        "type": "agent",
+        "position": {
+          "x": 1220,
+          "y": 220
+        },
+        "data": {
+          "type": "agent",
+          "label": "模特卖点图",
+          "description": "真人模特 + 产品主体 + 英文主文案",
+          "icon": "🧍",
+          "iconColor": "bg-teal-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentAspectRatio": "4:5",
+          "agentReferenceImageUrl": "{{input-image-reference-studio.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 0,
+          "continueOnError": true,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "inputMapping": "{{agent-reference-studio-plan.output.text}}\n\nRoute B: Model-focused ad visual. Real model interaction + product clarity + 2 short English badges.",
+          "instructions": "English-only copy. Text layout must avoid covering model face, hands, and product silhouette."
+        }
+      },
+      {
+        "id": "agent-reference-studio-lifestyle",
+        "type": "agent",
+        "position": {
+          "x": 1220,
+          "y": 360
+        },
+        "data": {
+          "type": "agent",
+          "label": "场景生活图",
+          "description": "真实使用场景 + 品牌氛围",
+          "icon": "🏞️",
+          "iconColor": "bg-emerald-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentAspectRatio": "1:1",
+          "agentReferenceImageUrl": "{{input-image-reference-studio.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 0,
+          "continueOnError": true,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "inputMapping": "{{agent-reference-studio-plan.output.text}}\n\nRoute C: Lifestyle scene image for Amazon secondary slot. Natural environment, product usage moment, clean English headline.",
+          "instructions": "English-only copy. Keep composition balanced and avoid text-body overlap."
+        }
+      },
+      {
+        "id": "agent-reference-studio-flatlay",
+        "type": "agent",
+        "position": {
+          "x": 1220,
+          "y": 500
+        },
+        "data": {
+          "type": "agent",
+          "label": "平铺文案图",
+          "description": "高质感平铺 + 英文文案引导线",
+          "icon": "🪄",
+          "iconColor": "bg-amber-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentAspectRatio": "1:1",
+          "agentReferenceImageUrl": "{{input-image-reference-studio.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 0,
+          "continueOnError": true,
+          "agentProductMatchThreshold": 74,
+          "agentOutputLanguage": "en",
+          "inputMapping": "{{agent-reference-studio-plan.output.text}}\n\nRoute D: Premium flat-lay infographic with elegant English headline, badges, and callout lines.",
+          "instructions": "English-only copy. Typography hierarchy and safe margins are mandatory."
+        }
+      },
+      {
+        "id": "merge-reference-studio",
+        "type": "merge",
+        "position": {
+          "x": 1460,
+          "y": 260
+        },
+        "data": {
+          "type": "merge",
+          "label": "并行结果汇总",
+          "description": "合并四路素材输出",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-reference-studio-qa",
+        "type": "agent",
+        "position": {
+          "x": 1700,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "英文交付审校",
+          "description": "输出可交付清单、失败分支与重试提示词",
+          "icon": "✅",
+          "iconColor": "bg-indigo-500",
+          "agentName": "图片编辑优化师",
+          "inputMapping": "并行结果：{{merge-reference-studio.output.text}}",
+          "instructions": "Return in English only. Provide route-by-route pass/fail table, winner picks, retry prompts for failed routes, and final launch checklist."
+        }
+      },
+      {
+        "id": "end-reference-studio",
+        "type": "end",
+        "position": {
+          "x": 1940,
+          "y": 260
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出多路可交付素材",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-ars-1",
+        "source": "start-reference-studio",
+        "target": "input-image-reference-studio"
+      },
+      {
+        "id": "e-ars-2",
+        "source": "input-image-reference-studio",
+        "target": "input-text-reference-studio"
+      },
+      {
+        "id": "e-ars-3",
+        "source": "input-text-reference-studio",
+        "target": "agent-reference-studio-plan"
+      },
+      {
+        "id": "e-ars-4",
+        "source": "agent-reference-studio-plan",
+        "target": "parallel-reference-studio"
+      },
+      {
+        "id": "e-ars-5",
+        "source": "parallel-reference-studio",
+        "target": "agent-reference-studio-colorway"
+      },
+      {
+        "id": "e-ars-6",
+        "source": "parallel-reference-studio",
+        "target": "agent-reference-studio-model"
+      },
+      {
+        "id": "e-ars-7",
+        "source": "parallel-reference-studio",
+        "target": "agent-reference-studio-lifestyle"
+      },
+      {
+        "id": "e-ars-8",
+        "source": "parallel-reference-studio",
+        "target": "agent-reference-studio-flatlay"
+      },
+      {
+        "id": "e-ars-9",
+        "source": "agent-reference-studio-colorway",
+        "target": "merge-reference-studio"
+      },
+      {
+        "id": "e-ars-10",
+        "source": "agent-reference-studio-model",
+        "target": "merge-reference-studio"
+      },
+      {
+        "id": "e-ars-11",
+        "source": "agent-reference-studio-lifestyle",
+        "target": "merge-reference-studio"
+      },
+      {
+        "id": "e-ars-12",
+        "source": "agent-reference-studio-flatlay",
+        "target": "merge-reference-studio"
+      },
+      {
+        "id": "e-ars-13",
+        "source": "merge-reference-studio",
+        "target": "agent-reference-studio-qa"
+      },
+      {
+        "id": "e-ars-14",
+        "source": "agent-reference-studio-qa",
+        "target": "end-reference-studio"
+      }
+    ]
+  }
+}

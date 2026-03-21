@@ -1,0 +1,292 @@
+{
+  "starter_key": "amazon_ads_searchterm_quality_gate_v1",
+  "starter_version": 1,
+  "name": "Amazon 搜索词质检闭环",
+  "description": "报表输入 + 并行否定词/加投词/异常校验 + 一致性质检，输出可执行搜索词优化清单。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "ads",
+    "search-term",
+    "data-analysis",
+    "parallel",
+    "quality-gate"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-ads-quality-gate",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 240
+        },
+        "data": {
+          "type": "start",
+          "label": "优化任务输入",
+          "description": "输入目标 ACoS、预算边界和策略偏好",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-file-ads-quality-gate",
+        "type": "input_file",
+        "position": {
+          "x": 320,
+          "y": 240
+        },
+        "data": {
+          "type": "input_file",
+          "label": "搜索词报表",
+          "description": "上传 SP/SB/SD 搜索词明细（Excel/CSV）",
+          "icon": "📎",
+          "iconColor": "bg-cyan-500",
+          "startFileUrl": ""
+        }
+      },
+      {
+        "id": "input-text-ads-quality-gate",
+        "type": "input_text",
+        "position": {
+          "x": 560,
+          "y": 240
+        },
+        "data": {
+          "type": "input_text",
+          "label": "优化目标",
+          "description": "例如：优先控亏，再扩大高转化词预算",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-intake-ads-quality-gate",
+        "type": "agent",
+        "position": {
+          "x": 800,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "数据接入与映射",
+          "description": "自动识别字段、修复口径、输出统一底稿",
+          "icon": "🧩",
+          "iconColor": "bg-indigo-500",
+          "agentName": "数据报表分析师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-ads-quality-gate.output.fileUrl}}",
+          "inputMapping": "目标：{{input-text-ads-quality-gate.output.text}}\n报表：{{input-file-ads-quality-gate.output.fileUrl}}",
+          "instructions": "输出结构化底稿：\n1) 字段映射与单位统一\n2) 缺失/异常/重复项\n3) 可分析性结论（pass/fail）\n4) 数据风险与降级策略。"
+        }
+      },
+      {
+        "id": "parallel-ads-quality-gate",
+        "type": "parallel",
+        "position": {
+          "x": 1040,
+          "y": 240
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行复核",
+          "description": "并行输出否定词、加投词、异常检测",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-negative-ads-quality-gate",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 80
+        },
+        "data": {
+          "type": "agent",
+          "label": "否定词清单",
+          "description": "输出 P0/P1 否定词与执行顺序",
+          "icon": "⛔",
+          "iconColor": "bg-red-500",
+          "agentName": "亚马逊广告分析师",
+          "inputMapping": "目标：{{input-text-ads-quality-gate.output.text}}\n数据底稿：{{agent-intake-ads-quality-gate.output.text}}",
+          "instructions": "输出否定词清单：\n1) P0/P1 分层\n2) 触发阈值（click/spend/acos）\n3) 否定粒度（exact/phrase）\n4) 误杀风险说明。"
+        }
+      },
+      {
+        "id": "agent-scale-ads-quality-gate",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "加投词清单",
+          "description": "输出放量词、竞价与预算建议",
+          "icon": "📈",
+          "iconColor": "bg-blue-500",
+          "agentName": "亚马逊广告分析师",
+          "inputMapping": "目标：{{input-text-ads-quality-gate.output.text}}\n数据底稿：{{agent-intake-ads-quality-gate.output.text}}",
+          "instructions": "输出加投词策略：\n1) 关键词优先级\n2) bid 调整幅度\n3) budget 增量建议\n4) 7天预期影响。"
+        }
+      },
+      {
+        "id": "agent-anomaly-ads-quality-gate",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 400
+        },
+        "data": {
+          "type": "agent",
+          "label": "异常与冲突检测",
+          "description": "校验冲突词、样本不足和统计异常",
+          "icon": "🧪",
+          "iconColor": "bg-violet-500",
+          "agentName": "数据报表分析师",
+          "inputMapping": "数据底稿：{{agent-intake-ads-quality-gate.output.text}}",
+          "instructions": "输出异常报告：\n1) negative/scale 冲突词\n2) 小样本高波动词\n3) 数据异常点与可信度评分。"
+        }
+      },
+      {
+        "id": "merge-ads-quality-gate",
+        "type": "merge",
+        "position": {
+          "x": 1520,
+          "y": 240
+        },
+        "data": {
+          "type": "merge",
+          "label": "复核汇总",
+          "description": "汇总并行复核结果",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-quality-gate-ads-quality-gate",
+        "type": "agent",
+        "position": {
+          "x": 1760,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "一致性质检",
+          "description": "输出 pass/fail 及保留建议",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "agentName": "数据报表分析师",
+          "inputMapping": "复核结果：{{merge-ads-quality-gate.output.text}}",
+          "instructions": "输出质检结论：\n1) pass / pass_with_warning / fail\n2) 证据充分建议\n3) 应剔除建议\n4) 最终执行前检查项。"
+        }
+      },
+      {
+        "id": "agent-action-ads-quality-gate",
+        "type": "agent",
+        "position": {
+          "x": 2000,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "执行动作单",
+          "description": "输出可直接执行的搜索词优化动作",
+          "icon": "🗂️",
+          "iconColor": "bg-indigo-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "质检结论：{{agent-quality-gate-ads-quality-gate.output.text}}",
+          "instructions": "输出 7 天动作单：\n1) 否定词执行顺序\n2) 加投词竞价与预算\n3) 日监控指标\n4) 回滚阈值。"
+        }
+      },
+      {
+        "id": "end-ads-quality-gate",
+        "type": "end",
+        "position": {
+          "x": 2240,
+          "y": 240
+        },
+        "data": {
+          "type": "end",
+          "label": "搜索词优化结果",
+          "description": "输出质检后可执行结果",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-asq-1",
+        "source": "start-ads-quality-gate",
+        "target": "input-file-ads-quality-gate"
+      },
+      {
+        "id": "e-asq-2",
+        "source": "input-file-ads-quality-gate",
+        "target": "input-text-ads-quality-gate"
+      },
+      {
+        "id": "e-asq-3",
+        "source": "input-text-ads-quality-gate",
+        "target": "agent-intake-ads-quality-gate"
+      },
+      {
+        "id": "e-asq-4",
+        "source": "agent-intake-ads-quality-gate",
+        "target": "parallel-ads-quality-gate"
+      },
+      {
+        "id": "e-asq-5",
+        "source": "parallel-ads-quality-gate",
+        "target": "agent-negative-ads-quality-gate"
+      },
+      {
+        "id": "e-asq-6",
+        "source": "parallel-ads-quality-gate",
+        "target": "agent-scale-ads-quality-gate"
+      },
+      {
+        "id": "e-asq-7",
+        "source": "parallel-ads-quality-gate",
+        "target": "agent-anomaly-ads-quality-gate"
+      },
+      {
+        "id": "e-asq-8",
+        "source": "agent-negative-ads-quality-gate",
+        "target": "merge-ads-quality-gate"
+      },
+      {
+        "id": "e-asq-9",
+        "source": "agent-scale-ads-quality-gate",
+        "target": "merge-ads-quality-gate"
+      },
+      {
+        "id": "e-asq-10",
+        "source": "agent-anomaly-ads-quality-gate",
+        "target": "merge-ads-quality-gate"
+      },
+      {
+        "id": "e-asq-11",
+        "source": "merge-ads-quality-gate",
+        "target": "agent-quality-gate-ads-quality-gate"
+      },
+      {
+        "id": "e-asq-12",
+        "source": "agent-quality-gate-ads-quality-gate",
+        "target": "agent-action-ads-quality-gate"
+      },
+      {
+        "id": "e-asq-13",
+        "source": "agent-action-ads-quality-gate",
+        "target": "end-ads-quality-gate"
+      }
+    ]
+  }
+}

@@ -1,0 +1,269 @@
+{
+  "starter_key": "amazon_campaign_budget_allocator_v1",
+  "starter_version": 1,
+  "name": "Amazon 广告预算分配器",
+  "description": "Campaign 报表解析 + 并行预算重分配 + 风险校验 + 执行排期。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "ads",
+    "budget",
+    "campaign",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-campaign-budget",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 240
+        },
+        "data": {
+          "type": "start",
+          "label": "预算目标",
+          "description": "输入预算约束与增长目标",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-file-campaign-budget",
+        "type": "input_file",
+        "position": {
+          "x": 320,
+          "y": 240
+        },
+        "data": {
+          "type": "input_file",
+          "label": "Campaign 报表",
+          "description": "上传活动层表现与预算消耗报表",
+          "icon": "📎",
+          "iconColor": "bg-cyan-500",
+          "startFileUrl": ""
+        }
+      },
+      {
+        "id": "input-text-campaign-budget",
+        "type": "input_text",
+        "position": {
+          "x": 560,
+          "y": 240
+        },
+        "data": {
+          "type": "input_text",
+          "label": "预算约束",
+          "description": "例如：日预算上限500美元，品牌词优先保量",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-baseline-campaign-budget",
+        "type": "agent",
+        "position": {
+          "x": 800,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "基线分析",
+          "description": "建立活动层效率与预算使用基线",
+          "icon": "🧩",
+          "iconColor": "bg-indigo-500",
+          "agentName": "亚马逊广告分析师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-campaign-budget.output.fileUrl}}",
+          "inputMapping": "预算约束：{{input-text-campaign-budget.output.text}}\\n报表文件：{{input-file-campaign-budget.output.fileUrl}}",
+          "instructions": "请输出活动层基线：\n1. 高效活动/低效活动分组\n2. 预算耗尽风险\n3. 花费集中度\n4. 可重分配预算池。"
+        }
+      },
+      {
+        "id": "parallel-campaign-budget",
+        "type": "parallel",
+        "position": {
+          "x": 1040,
+          "y": 240
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行策略生成",
+          "description": "并行生成分配策略与风险边界",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-efficiency-campaign-budget",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 80
+        },
+        "data": {
+          "type": "agent",
+          "label": "效率优先分配",
+          "description": "向高效率活动倾斜预算",
+          "icon": "📈",
+          "iconColor": "bg-emerald-500",
+          "agentName": "亚马逊广告分析师",
+          "inputMapping": "基线分析：{{agent-baseline-campaign-budget.output.text}}\\n预算约束：{{input-text-campaign-budget.output.text}}",
+          "instructions": "请输出效率优先预算方案：\n1. 建议增配活动\n2. 建议降配活动\n3. 预计 ACoS 与订单变化。"
+        }
+      },
+      {
+        "id": "agent-structure-campaign-budget",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "结构化重分配",
+          "description": "按品牌词/类目词/竞品词重构预算结构",
+          "icon": "📊",
+          "iconColor": "bg-blue-500",
+          "agentName": "关键词研究专家",
+          "inputMapping": "基线分析：{{agent-baseline-campaign-budget.output.text}}\\n预算约束：{{input-text-campaign-budget.output.text}}",
+          "instructions": "请输出结构化分配方案：\n1. 品牌词预算占比\n2. 非品牌词预算占比\n3. 竞品拦截预算占比\n4. 预算切换触发条件。"
+        }
+      },
+      {
+        "id": "agent-risk-campaign-budget",
+        "type": "agent",
+        "position": {
+          "x": 1280,
+          "y": 400
+        },
+        "data": {
+          "type": "agent",
+          "label": "风险护栏校验",
+          "description": "校验预算变更风险与稳定性",
+          "icon": "🛡️",
+          "iconColor": "bg-violet-500",
+          "agentName": "数据报表分析师",
+          "inputMapping": "基线分析：{{agent-baseline-campaign-budget.output.text}}",
+          "instructions": "请输出风险校验：\n1. 数据波动风险\n2. 样本不足风险\n3. 执行顺序建议\n4. 监控指标与报警阈值。"
+        }
+      },
+      {
+        "id": "merge-campaign-budget",
+        "type": "merge",
+        "position": {
+          "x": 1520,
+          "y": 240
+        },
+        "data": {
+          "type": "merge",
+          "label": "预算方案汇总",
+          "description": "汇总三路预算策略",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-plan-campaign-budget",
+        "type": "agent",
+        "position": {
+          "x": 1760,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "执行排期输出",
+          "description": "输出可执行的 7 天预算动作计划",
+          "icon": "✅",
+          "iconColor": "bg-indigo-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "预算方案汇总：{{merge-campaign-budget.output.text}}",
+          "instructions": "请输出 7 天执行排期：\n1. Day1-Day7 每日预算动作\n2. 优先级（P0/P1/P2）\n3. 复盘节奏与回滚条件。"
+        }
+      },
+      {
+        "id": "end-campaign-budget",
+        "type": "end",
+        "position": {
+          "x": 2000,
+          "y": 240
+        },
+        "data": {
+          "type": "end",
+          "label": "预算分配方案",
+          "description": "输出可执行预算调度计划",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-cb-1",
+        "source": "start-campaign-budget",
+        "target": "input-file-campaign-budget"
+      },
+      {
+        "id": "e-cb-2",
+        "source": "input-file-campaign-budget",
+        "target": "input-text-campaign-budget"
+      },
+      {
+        "id": "e-cb-3",
+        "source": "input-text-campaign-budget",
+        "target": "agent-baseline-campaign-budget"
+      },
+      {
+        "id": "e-cb-4",
+        "source": "agent-baseline-campaign-budget",
+        "target": "parallel-campaign-budget"
+      },
+      {
+        "id": "e-cb-5",
+        "source": "parallel-campaign-budget",
+        "target": "agent-efficiency-campaign-budget"
+      },
+      {
+        "id": "e-cb-6",
+        "source": "parallel-campaign-budget",
+        "target": "agent-structure-campaign-budget"
+      },
+      {
+        "id": "e-cb-7",
+        "source": "parallel-campaign-budget",
+        "target": "agent-risk-campaign-budget"
+      },
+      {
+        "id": "e-cb-8",
+        "source": "agent-efficiency-campaign-budget",
+        "target": "merge-campaign-budget"
+      },
+      {
+        "id": "e-cb-9",
+        "source": "agent-structure-campaign-budget",
+        "target": "merge-campaign-budget"
+      },
+      {
+        "id": "e-cb-10",
+        "source": "agent-risk-campaign-budget",
+        "target": "merge-campaign-budget"
+      },
+      {
+        "id": "e-cb-11",
+        "source": "merge-campaign-budget",
+        "target": "agent-plan-campaign-budget"
+      },
+      {
+        "id": "e-cb-12",
+        "source": "agent-plan-campaign-budget",
+        "target": "end-campaign-budget"
+      }
+    ]
+  }
+}

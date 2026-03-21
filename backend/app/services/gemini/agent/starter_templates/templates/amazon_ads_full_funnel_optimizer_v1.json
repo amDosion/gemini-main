@@ -1,0 +1,300 @@
+{
+  "starter_key": "amazon_ads_full_funnel_optimizer_v1",
+  "starter_version": 1,
+  "name": "亚马逊广告全链路优化闭环",
+  "description": "广告报表输入 → 数据质检 → 并行策略 → 交叉验证 → 可执行动作清单。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "ads",
+    "optimization",
+    "validation",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-ads-funnel",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 260
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "接收广告优化任务",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-file-ads-funnel",
+        "type": "input_file",
+        "position": {
+          "x": 300,
+          "y": 260
+        },
+        "data": {
+          "type": "input_file",
+          "label": "广告报表输入",
+          "description": "上传 ERP/广告搜索词报表（Excel/CSV）",
+          "icon": "📎",
+          "iconColor": "bg-cyan-500",
+          "startFileUrl": ""
+        }
+      },
+      {
+        "id": "input-text-ads-funnel",
+        "type": "input_text",
+        "position": {
+          "x": 520,
+          "y": 260
+        },
+        "data": {
+          "type": "input_text",
+          "label": "优化目标输入",
+          "description": "例如：目标 ACoS、品牌词策略、预算约束",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-ads-funnel-intake",
+        "type": "agent",
+        "position": {
+          "x": 740,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "报表质检与字段映射",
+          "description": "识别字段、缺失值、异常值并输出可用口径",
+          "icon": "🧪",
+          "iconColor": "bg-sky-500",
+          "agentName": "数据报表分析师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-ads-funnel.output.fileUrl}}",
+          "inputMapping": "文件：{{input-file-ads-funnel.output.fileUrl}}\n业务目标：{{input-text-ads-funnel.output.text}}\n\n请输出：\n1) 字段映射（search_term/keyword/impressions/clicks/spend/sales/orders/acos/cvr）\n2) 数据质量问题（缺失、异常、重复）\n3) 分析可用性结论（pass/fail + 原因）",
+          "instructions": "输出结构化结论，优先确保口径正确，避免直接给动作建议。"
+        }
+      },
+      {
+        "id": "parallel-ads-funnel",
+        "type": "parallel",
+        "position": {
+          "x": 980,
+          "y": 260
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行策略分析",
+          "description": "分拆否定词、扩量、预算三路策略",
+          "icon": "⚡",
+          "iconColor": "bg-violet-500",
+          "joinMode": "wait_all",
+          "timeoutSeconds": 120
+        }
+      },
+      {
+        "id": "agent-ads-funnel-negative",
+        "type": "agent",
+        "position": {
+          "x": 1220,
+          "y": 120
+        },
+        "data": {
+          "type": "agent",
+          "label": "否定词策略",
+          "description": "输出可直接执行的否定词清单与原因",
+          "icon": "🧹",
+          "iconColor": "bg-rose-500",
+          "agentName": "亚马逊广告分析师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-ads-funnel.output.fileUrl}}",
+          "inputMapping": "质检结果：{{agent-ads-funnel-intake.output.text}}\n业务目标：{{input-text-ads-funnel.output.text}}",
+          "instructions": "只输出否定词方案：term、建议匹配方式(exact/phrase)、触发规则、预计节省花费。"
+        }
+      },
+      {
+        "id": "agent-ads-funnel-scale",
+        "type": "agent",
+        "position": {
+          "x": 1220,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "扩量策略",
+          "description": "识别高效词并给出加价/加预算建议",
+          "icon": "📈",
+          "iconColor": "bg-emerald-500",
+          "agentName": "亚马逊广告分析师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-ads-funnel.output.fileUrl}}",
+          "inputMapping": "质检结果：{{agent-ads-funnel-intake.output.text}}\n业务目标：{{input-text-ads-funnel.output.text}}",
+          "instructions": "只输出扩量方案：term、建议加价百分比、预算乘数、预期增量与风险。"
+        }
+      },
+      {
+        "id": "agent-ads-funnel-budget",
+        "type": "agent",
+        "position": {
+          "x": 1220,
+          "y": 400
+        },
+        "data": {
+          "type": "agent",
+          "label": "预算与节奏策略",
+          "description": "按 campaign 层级分配预算与执行顺序",
+          "icon": "💰",
+          "iconColor": "bg-amber-500",
+          "agentName": "运营策略顾问",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-ads-funnel.output.fileUrl}}",
+          "inputMapping": "质检结果：{{agent-ads-funnel-intake.output.text}}\n业务目标：{{input-text-ads-funnel.output.text}}",
+          "instructions": "按 P0/P1/P2 输出预算重分配计划，附 7 天执行节奏与复盘指标。"
+        }
+      },
+      {
+        "id": "merge-ads-funnel",
+        "type": "merge",
+        "position": {
+          "x": 1460,
+          "y": 260
+        },
+        "data": {
+          "type": "merge",
+          "label": "策略合并",
+          "description": "汇总三路策略结果",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-ads-funnel-validate",
+        "type": "agent",
+        "position": {
+          "x": 1700,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "一致性校验",
+          "description": "审查冲突建议、重复词和阈值矛盾",
+          "icon": "🛡️",
+          "iconColor": "bg-indigo-500",
+          "agentName": "数据报表分析师",
+          "agentTaskType": "data-analysis",
+          "inputMapping": "并行策略汇总：{{merge-ads-funnel.output.text}}",
+          "instructions": "输出冲突清单（若有）+ 修复建议 + 可信度评分（0-100）。"
+        }
+      },
+      {
+        "id": "agent-ads-funnel-decision",
+        "type": "agent",
+        "position": {
+          "x": 1940,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "决策看板",
+          "description": "输出可执行动作与优先级",
+          "icon": "🧭",
+          "iconColor": "bg-teal-500",
+          "agentName": "亚马逊广告分析师",
+          "inputMapping": "策略汇总：{{merge-ads-funnel.output.text}}\n校验结论：{{agent-ads-funnel-validate.output.text}}",
+          "instructions": "输出最终动作板：P0/P1/P2、执行人、预计影响、回滚条件。"
+        }
+      },
+      {
+        "id": "end-ads-funnel",
+        "type": "end",
+        "position": {
+          "x": 2180,
+          "y": 260
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出广告闭环策略",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-af-1",
+        "source": "start-ads-funnel",
+        "target": "input-file-ads-funnel"
+      },
+      {
+        "id": "e-af-2",
+        "source": "input-file-ads-funnel",
+        "target": "input-text-ads-funnel"
+      },
+      {
+        "id": "e-af-3",
+        "source": "input-text-ads-funnel",
+        "target": "agent-ads-funnel-intake"
+      },
+      {
+        "id": "e-af-4",
+        "source": "agent-ads-funnel-intake",
+        "target": "parallel-ads-funnel"
+      },
+      {
+        "id": "e-af-5",
+        "source": "parallel-ads-funnel",
+        "target": "agent-ads-funnel-negative"
+      },
+      {
+        "id": "e-af-6",
+        "source": "parallel-ads-funnel",
+        "target": "agent-ads-funnel-scale"
+      },
+      {
+        "id": "e-af-7",
+        "source": "parallel-ads-funnel",
+        "target": "agent-ads-funnel-budget"
+      },
+      {
+        "id": "e-af-8",
+        "source": "agent-ads-funnel-negative",
+        "target": "merge-ads-funnel"
+      },
+      {
+        "id": "e-af-9",
+        "source": "agent-ads-funnel-scale",
+        "target": "merge-ads-funnel"
+      },
+      {
+        "id": "e-af-10",
+        "source": "agent-ads-funnel-budget",
+        "target": "merge-ads-funnel"
+      },
+      {
+        "id": "e-af-11",
+        "source": "merge-ads-funnel",
+        "target": "agent-ads-funnel-validate"
+      },
+      {
+        "id": "e-af-12",
+        "source": "agent-ads-funnel-validate",
+        "target": "agent-ads-funnel-decision"
+      },
+      {
+        "id": "e-af-13",
+        "source": "agent-ads-funnel-decision",
+        "target": "end-ads-funnel"
+      }
+    ]
+  }
+}

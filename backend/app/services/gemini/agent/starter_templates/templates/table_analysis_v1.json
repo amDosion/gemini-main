@@ -1,0 +1,302 @@
+{
+  "starter_key": "table_analysis_v1",
+  "starter_version": 7,
+  "name": "工作流 · 表格分析",
+  "description": "先做全量表格剖析，再并行输出字段字典、数据质量、核心洞察与行动建议，适合通用 CSV/XLSX 深度分析。",
+  "category": "数据分析",
+  "workflow_type": "graph",
+  "tags": [
+    "table",
+    "analysis",
+    "data-analysis",
+    "provider-neutral",
+    "starter"
+  ],
+  "sample_input": {
+    "task": "请基于表格输出字段说明、关键指标、异常项和可执行建议。",
+    "fileUrl": "https://raw.githubusercontent.com/plotly/datasets/master/2014_apple_stock.csv"
+  },
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-table-analysis",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 280
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "接收分析请求",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-file-table-analysis",
+        "type": "input_file",
+        "position": {
+          "x": 300,
+          "y": 280
+        },
+        "data": {
+          "type": "input_file",
+          "label": "数据文件",
+          "description": "上传 CSV / XLSX / TSV / JSON 文件",
+          "icon": "📎",
+          "iconColor": "bg-cyan-500",
+          "startFileUrl": ""
+        }
+      },
+      {
+        "id": "input-text-table-analysis",
+        "type": "input_text",
+        "position": {
+          "x": 520,
+          "y": 280
+        },
+        "data": {
+          "type": "input_text",
+          "label": "分析目标",
+          "description": "补充业务问题、口径或约束",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "tool-sheet-profile-table-analysis",
+        "type": "tool",
+        "position": {
+          "x": 760,
+          "y": 280
+        },
+        "data": {
+          "type": "tool",
+          "label": "全量表格剖析",
+          "description": "基于完整数据集输出字段、缺失、分类、时间、相关性与异常概览",
+          "icon": "🧾",
+          "iconColor": "bg-cyan-500",
+          "toolName": "sheet_analyze",
+          "toolArgsTemplate": "{\"file_url\":\"{{input-file-table-analysis.output.fileUrl}}\",\"sample_rows\":12,\"export_format\":\"json\"}"
+        }
+      },
+      {
+        "id": "parallel-table-analysis",
+        "type": "parallel",
+        "position": {
+          "x": 1000,
+          "y": 280
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行专项分析",
+          "description": "拆分字段、质量、洞察与行动四路分析",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-dictionary-table-analysis",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": -40
+        },
+        "data": {
+          "type": "agent",
+          "label": "字段字典整理",
+          "description": "把字段、类型、口径和候选主键整理成可直接复用的字段字典",
+          "icon": "🗂️",
+          "iconColor": "bg-cyan-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "分析目标：{{input-text-table-analysis.output.text}}\n\n全量剖析 JSON：{{tool-sheet-profile-table-analysis.output.text}}\n\n字段列表：{{tool-sheet-profile-table-analysis.output.analysis.fields}}\n\n质量旗标：{{tool-sheet-profile-table-analysis.output.analysis.quality_flags}}",
+          "instructions": "请输出字段字典：字段名、类型、业务含义猜测、是否可作为主键/时间字段/指标字段、需要补充的口径说明。"
+        }
+      },
+      {
+        "id": "agent-quality-table-analysis",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": 120
+        },
+        "data": {
+          "type": "agent",
+          "label": "数据质量审计",
+          "description": "输出字段口径、缺失、重复与可信度评估",
+          "icon": "🧪",
+          "iconColor": "bg-sky-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "分析目标：{{input-text-table-analysis.output.text}}\n\n全量剖析 JSON：{{tool-sheet-profile-table-analysis.output.text}}\n\n质量旗标：{{tool-sheet-profile-table-analysis.output.analysis.quality_flags}}\n\n异常摘要：{{tool-sheet-profile-table-analysis.output.analysis.outlier_summary}}",
+          "instructions": "请输出：1) 字段含义与可疑映射；2) 缺失/重复/异常风险；3) 哪些字段可以直接用于后续分析，哪些需要回填或清洗；4) 需要优先修复的数据问题。"
+        }
+      },
+      {
+        "id": "agent-insight-table-analysis",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": 280
+        },
+        "data": {
+          "type": "agent",
+          "label": "核心洞察提炼",
+          "description": "围绕完整统计结果提炼关键指标、趋势与结构性问题",
+          "icon": "📊",
+          "iconColor": "bg-indigo-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "分析目标：{{input-text-table-analysis.output.text}}\n\n全量剖析 JSON：{{tool-sheet-profile-table-analysis.output.text}}\n\n数值摘要：{{tool-sheet-profile-table-analysis.output.analysis.numeric_summary}}\n\n相关性：{{tool-sheet-profile-table-analysis.output.analysis.correlation_summary}}\n\n时间摘要：{{tool-sheet-profile-table-analysis.output.analysis.datetime_summary}}",
+          "instructions": "请输出：1) 最重要的 5 条洞察；2) 指标/分布/时间趋势；3) 强相关或反相关关系；4) 哪些异常值得继续钻取。"
+        }
+      },
+      {
+        "id": "agent-action-table-analysis",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": 440
+        },
+        "data": {
+          "type": "agent",
+          "label": "行动建议生成",
+          "description": "把分析结果转成优先级清单",
+          "icon": "🛠️",
+          "iconColor": "bg-emerald-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "分析目标：{{input-text-table-analysis.output.text}}\n\n全量剖析 JSON：{{tool-sheet-profile-table-analysis.output.text}}\n\n列分组：{{tool-sheet-profile-table-analysis.output.analysis.column_groups}}\n\n质量旗标：{{tool-sheet-profile-table-analysis.output.analysis.quality_flags}}",
+          "instructions": "请输出：1) 立刻执行的动作；2) 后续验证问题；3) 需要补采的数据；4) 用 P0/P1/P2 标记优先级；5) 对应到具体字段。"
+        }
+      },
+      {
+        "id": "merge-table-analysis",
+        "type": "merge",
+        "position": {
+          "x": 1480,
+          "y": 280
+        },
+        "data": {
+          "type": "merge",
+          "label": "合并专项结果",
+          "description": "汇总字段、质量、洞察与行动建议",
+          "icon": "🔗",
+          "iconColor": "bg-slate-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-report-table-analysis",
+        "type": "agent",
+        "position": {
+          "x": 1720,
+          "y": 280
+        },
+        "data": {
+          "type": "agent",
+          "label": "最终分析报告",
+          "description": "生成结构化最终报告",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "分析目标：{{input-text-table-analysis.output.text}}\n\n全量剖析 JSON：{{tool-sheet-profile-table-analysis.output.text}}\n\n专项结果：{{merge-table-analysis.output.text}}",
+          "instructions": "请按 Markdown 输出：执行摘要、字段字典、数据质量问题、关键指标与相关性、异常与风险、详细建议、后续分析问题。要详细，不要只给简短总结。"
+        }
+      },
+      {
+        "id": "end-table-analysis",
+        "type": "end",
+        "position": {
+          "x": 1960,
+          "y": 280
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出分析结果",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-table-analysis-1",
+        "source": "start-table-analysis",
+        "target": "input-file-table-analysis"
+      },
+      {
+        "id": "edge-table-analysis-2",
+        "source": "input-file-table-analysis",
+        "target": "input-text-table-analysis"
+      },
+      {
+        "id": "edge-table-analysis-3",
+        "source": "input-text-table-analysis",
+        "target": "tool-sheet-profile-table-analysis"
+      },
+      {
+        "id": "edge-table-analysis-4",
+        "source": "tool-sheet-profile-table-analysis",
+        "target": "parallel-table-analysis"
+      },
+      {
+        "id": "edge-table-analysis-5",
+        "source": "parallel-table-analysis",
+        "target": "agent-dictionary-table-analysis"
+      },
+      {
+        "id": "edge-table-analysis-6",
+        "source": "parallel-table-analysis",
+        "target": "agent-quality-table-analysis"
+      },
+      {
+        "id": "edge-table-analysis-7",
+        "source": "parallel-table-analysis",
+        "target": "agent-insight-table-analysis"
+      },
+      {
+        "id": "edge-table-analysis-8",
+        "source": "parallel-table-analysis",
+        "target": "agent-action-table-analysis"
+      },
+      {
+        "id": "edge-table-analysis-9",
+        "source": "agent-dictionary-table-analysis",
+        "target": "merge-table-analysis"
+      },
+      {
+        "id": "edge-table-analysis-10",
+        "source": "agent-quality-table-analysis",
+        "target": "merge-table-analysis"
+      },
+      {
+        "id": "edge-table-analysis-11",
+        "source": "agent-insight-table-analysis",
+        "target": "merge-table-analysis"
+      },
+      {
+        "id": "edge-table-analysis-12",
+        "source": "agent-action-table-analysis",
+        "target": "merge-table-analysis"
+      },
+      {
+        "id": "edge-table-analysis-13",
+        "source": "merge-table-analysis",
+        "target": "agent-report-table-analysis"
+      },
+      {
+        "id": "edge-table-analysis-14",
+        "source": "agent-report-table-analysis",
+        "target": "end-table-analysis"
+      }
+    ]
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "starter_key": "image_generation_v1",
+  "starter_version": 6,
+  "name": "工作流 · 图片生成",
+  "description": "文本输入 + 当前活跃 Provider 文生图，适合作为 provider-neutral 起步模板。",
+  "category": "图像工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "image",
+    "generation",
+    "image-gen",
+    "text-to-image",
+    "provider-neutral",
+    "starter"
+  ],
+  "sample_input": {
+    "task": "请生成一张极简电商主图：一只浅灰色保温杯放在白色桌面上，柔和自然光，干净留白。"
+  },
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-image-gen",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 200
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "接收生成任务输入",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-text-image-gen",
+        "type": "input_text",
+        "position": {
+          "x": 300,
+          "y": 200
+        },
+        "data": {
+          "type": "input_text",
+          "label": "文本输入",
+          "description": "配置提示词（input.task）",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "tool-image-gen",
+        "type": "agent",
+        "position": {
+          "x": 540,
+          "y": 200
+        },
+        "data": {
+          "type": "agent",
+          "label": "图片生成",
+          "description": "自动使用当前活跃配置里可用的图片生成模型",
+          "icon": "🖼️",
+          "iconColor": "bg-pink-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "image-gen",
+          "agentAspectRatio": "1:1",
+          "agentNumberOfImages": 1,
+          "inputMapping": "用户需求：{{input-text-image-gen.output.text}}\\n\\n请先优化提示词，再输出最终用于文生图的描述并直接生成图片。",
+          "instructions": "请进行两步：1) 优化提示词（明确主体、背景、光线、镜头、风格、禁用元素）；2) 生成可交付图片。"
+        }
+      },
+      {
+        "id": "end-image-gen",
+        "type": "end",
+        "position": {
+          "x": 800,
+          "y": 200
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出图片结果",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-image-gen-1",
+        "source": "start-image-gen",
+        "target": "input-text-image-gen"
+      },
+      {
+        "id": "edge-image-gen-2",
+        "source": "input-text-image-gen",
+        "target": "tool-image-gen"
+      },
+      {
+        "id": "edge-image-gen-3",
+        "source": "tool-image-gen",
+        "target": "end-image-gen"
+      }
+    ]
+  }
+}

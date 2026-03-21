@@ -1,0 +1,370 @@
+{
+  "starter_key": "product_image_understand_edit_v1",
+  "starter_version": 12,
+  "name": "先理解后图生图工作流",
+  "description": "参考图理解 + 卖点提炼 + 提示词优化 + 并行图生图执行，适合电商精修迭代。",
+  "category": "图像工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "image",
+    "image-to-image",
+    "analysis",
+    "parallel",
+    "ecommerce",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-understand-edit",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 240
+        },
+        "data": {
+          "type": "start",
+          "label": "图生图输入",
+          "description": "输入编辑目标和使用场景",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-image-understand-edit",
+        "type": "input_image",
+        "position": {
+          "x": 300,
+          "y": 240
+        },
+        "data": {
+          "type": "input_image",
+          "label": "参考图输入",
+          "description": "上传或填写参考图地址（图生图必填）",
+          "icon": "🖼️",
+          "iconColor": "bg-lime-500",
+          "startImageUrl": ""
+        }
+      },
+      {
+        "id": "input-text-understand-edit",
+        "type": "input_text",
+        "position": {
+          "x": 520,
+          "y": 240
+        },
+        "data": {
+          "type": "input_text",
+          "label": "编辑目标",
+          "description": "例如：主图白底、场景图、卖点细节图",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-selling-point-extract",
+        "type": "agent",
+        "position": {
+          "x": 760,
+          "y": 320
+        },
+        "data": {
+          "type": "agent",
+          "label": "卖点提炼",
+          "description": "从任务目标中提炼核心卖点与视觉优先级",
+          "icon": "💡",
+          "iconColor": "bg-amber-500",
+          "agentName": "电商文案创作师",
+          "inputMapping": "用户编辑目标：{{input-text-understand-edit.output.text}}",
+          "instructions": "请输出电商图片可视化卖点：\n1. 核心卖点（3-5 条）\n2. 每条卖点的视觉呈现建议\n3. 禁止弱化的关键信息"
+        }
+      },
+      {
+        "id": "agent-image-understand",
+        "type": "agent",
+        "position": {
+          "x": 760,
+          "y": 160
+        },
+        "data": {
+          "type": "agent",
+          "label": "图片理解",
+          "description": "分析参考图主体、背景和风险点",
+          "icon": "🧠",
+          "iconColor": "bg-indigo-500",
+          "agentName": "图片视觉理解师",
+          "agentTaskType": "vision-understand",
+          "agentReferenceImageUrl": "{{input-image-understand-edit.output.imageUrl}}",
+          "inputMapping": "编辑目标：{{input-text-understand-edit.output.text}}\\n卖点提炼：{{agent-selling-point-extract.output.text}}\\n参考图：{{input-image-understand-edit.output.imageUrl}}\\n\\n请完成参考图理解：\\n1. 主体识别\\n2. 可保留元素\\n3. 需规避元素\\n4. 输出可编辑约束。",
+          "instructions": "必须基于附件图片本身进行视觉识别，不得依据文件名或 URL 猜测品类。"
+        }
+      },
+      {
+        "id": "parallel-understand-edit",
+        "type": "parallel",
+        "position": {
+          "x": 1000,
+          "y": 240
+        },
+        "data": {
+          "type": "parallel",
+          "label": "提示词并行编排",
+          "description": "分别生成主图/场景图/卖点图的独立提示词",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-main-prompt-understand",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": 80
+        },
+        "data": {
+          "type": "agent",
+          "label": "主图提示词",
+          "description": "基于图片理解生成主图专用 edit prompt",
+          "icon": "🧾",
+          "iconColor": "bg-fuchsia-500",
+          "agentName": "图片编辑优化师",
+          "inputMapping": "图片理解：{{agent-image-understand.output.text}}\n卖点提炼：{{agent-selling-point-extract.output.text}}\n用户目标：{{input-text-understand-edit.output.text}}\n\n请仅输出主图图生图 editPrompt（英文）：白底、合规、主体不变、禁文本覆盖主体。",
+          "instructions": "只输出可执行的英文 editPrompt，不要解释，不要 Markdown。"
+        }
+      },
+      {
+        "id": "agent-scene-prompt-understand",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "场景图提示词",
+          "description": "基于图片理解生成场景图专用 edit prompt",
+          "icon": "🏞️",
+          "iconColor": "bg-sky-500",
+          "agentName": "图片编辑优化师",
+          "inputMapping": "图片理解：{{agent-image-understand.output.text}}\n卖点提炼：{{agent-selling-point-extract.output.text}}\n用户目标：{{input-text-understand-edit.output.text}}\n\n请仅输出场景图图生图 editPrompt（英文）：真实场景、主体一致、构图自然、文案避开主体。",
+          "instructions": "只输出可执行的英文 editPrompt，不要解释，不要 Markdown。"
+        }
+      },
+      {
+        "id": "agent-detail-prompt-understand",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": 400
+        },
+        "data": {
+          "type": "agent",
+          "label": "卖点图提示词",
+          "description": "基于图片理解生成卖点图专用 edit prompt",
+          "icon": "🔬",
+          "iconColor": "bg-rose-500",
+          "agentName": "图片编辑优化师",
+          "inputMapping": "图片理解：{{agent-image-understand.output.text}}\n卖点提炼：{{agent-selling-point-extract.output.text}}\n用户目标：{{input-text-understand-edit.output.text}}\n\n请仅输出卖点图图生图 editPrompt（英文）：突出材质工艺、局部细节清晰、标注线条不遮挡主体。",
+          "instructions": "只输出可执行的英文 editPrompt，不要解释，不要 Markdown。"
+        }
+      },
+      {
+        "id": "tool-understand-main-edit",
+        "type": "agent",
+        "position": {
+          "x": 1500,
+          "y": 80
+        },
+        "data": {
+          "type": "agent",
+          "label": "主图精修",
+          "description": "主图智能体图生图精修",
+          "icon": "🪄",
+          "iconColor": "bg-purple-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentReferenceImageUrl": "{{input-image-understand-edit.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "inputMapping": "主图 editPrompt：{{agent-main-prompt-understand.output.text}}\\n参考图：{{input-image-understand-edit.output.imageUrl}}\\n\\n请直接输出编辑后的图片，不要返回文本。",
+          "instructions": "执行 image-chat-edit，确保主图合规并保持主体一致。"
+        }
+      },
+      {
+        "id": "tool-understand-scene-edit",
+        "type": "agent",
+        "position": {
+          "x": 1500,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "场景精修",
+          "description": "场景智能体图生图精修",
+          "icon": "🏞️",
+          "iconColor": "bg-indigo-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentReferenceImageUrl": "{{input-image-understand-edit.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "inputMapping": "场景图 editPrompt：{{agent-scene-prompt-understand.output.text}}\\n参考图：{{input-image-understand-edit.output.imageUrl}}\\n\\n请直接输出编辑后的图片，不要返回文本。",
+          "instructions": "执行 image-chat-edit，增强真实场景感并保持主体一致。"
+        }
+      },
+      {
+        "id": "tool-understand-detail-edit",
+        "type": "agent",
+        "position": {
+          "x": 1500,
+          "y": 400
+        },
+        "data": {
+          "type": "agent",
+          "label": "卖点精修",
+          "description": "卖点智能体图生图精修",
+          "icon": "🔍",
+          "iconColor": "bg-violet-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentReferenceImageUrl": "{{input-image-understand-edit.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "inputMapping": "卖点图 editPrompt：{{agent-detail-prompt-understand.output.text}}\\n参考图：{{input-image-understand-edit.output.imageUrl}}\\n\\n请直接输出编辑后的图片，不要返回文本。",
+          "instructions": "执行 image-chat-edit，聚焦卖点细节和材质纹理。"
+        }
+      },
+      {
+        "id": "merge-understand-edit",
+        "type": "merge",
+        "position": {
+          "x": 1760,
+          "y": 240
+        },
+        "data": {
+          "type": "merge",
+          "label": "编辑结果汇总",
+          "description": "汇总三路图生图输出",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-understand-edit-qa",
+        "type": "agent",
+        "position": {
+          "x": 2000,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "交付质检",
+          "description": "输出最终交付图和返修清单",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "agentName": "图片编辑优化师",
+          "inputMapping": "三路图生图结果摘要：{{merge-understand-edit.output.text}}\\n主图提示词：{{agent-main-prompt-understand.output.text}}\\n场景提示词：{{agent-scene-prompt-understand.output.text}}\\n卖点提示词：{{agent-detail-prompt-understand.output.text}}",
+          "instructions": "请按主图/场景图/卖点图输出最终交付建议（不要再索要图片或数据）：\n1. 每类推荐结果\n2. 不合规风险说明\n3. 返修项与原因\n4. 下一轮可执行提示词"
+        }
+      },
+      {
+        "id": "end-understand-edit",
+        "type": "end",
+        "position": {
+          "x": 2240,
+          "y": 240
+        },
+        "data": {
+          "type": "end",
+          "label": "图生图交付结果",
+          "description": "输出可直接落地的图生图成果",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-ue-1",
+        "source": "start-understand-edit",
+        "target": "input-image-understand-edit"
+      },
+      {
+        "id": "e-ue-2",
+        "source": "input-image-understand-edit",
+        "target": "input-text-understand-edit"
+      },
+      {
+        "id": "e-ue-3",
+        "source": "input-text-understand-edit",
+        "target": "agent-selling-point-extract"
+      },
+      {
+        "id": "e-ue-4",
+        "source": "agent-selling-point-extract",
+        "target": "agent-image-understand"
+      },
+      {
+        "id": "e-ue-5",
+        "source": "agent-image-understand",
+        "target": "parallel-understand-edit"
+      },
+      {
+        "id": "e-ue-6",
+        "source": "parallel-understand-edit",
+        "target": "agent-main-prompt-understand"
+      },
+      {
+        "id": "e-ue-7",
+        "source": "parallel-understand-edit",
+        "target": "agent-scene-prompt-understand"
+      },
+      {
+        "id": "e-ue-8",
+        "source": "parallel-understand-edit",
+        "target": "agent-detail-prompt-understand"
+      },
+      {
+        "id": "e-ue-9",
+        "source": "agent-main-prompt-understand",
+        "target": "tool-understand-main-edit"
+      },
+      {
+        "id": "e-ue-10",
+        "source": "agent-scene-prompt-understand",
+        "target": "tool-understand-scene-edit"
+      },
+      {
+        "id": "e-ue-11",
+        "source": "agent-detail-prompt-understand",
+        "target": "tool-understand-detail-edit"
+      },
+      {
+        "id": "e-ue-12",
+        "source": "tool-understand-main-edit",
+        "target": "merge-understand-edit"
+      },
+      {
+        "id": "e-ue-13",
+        "source": "tool-understand-scene-edit",
+        "target": "merge-understand-edit"
+      },
+      {
+        "id": "e-ue-14",
+        "source": "tool-understand-detail-edit",
+        "target": "merge-understand-edit"
+      },
+      {
+        "id": "e-ue-15",
+        "source": "merge-understand-edit",
+        "target": "agent-understand-edit-qa"
+      },
+      {
+        "id": "e-ue-16",
+        "source": "agent-understand-edit-qa",
+        "target": "end-understand-edit"
+      }
+    ]
+  }
+}

@@ -1,0 +1,399 @@
+{
+  "starter_key": "amazon_parallel_image_batch_studio_v1",
+  "starter_version": 2,
+  "name": "Amazon 批量卖点图并行矩阵",
+  "description": "单参考图 + 英文文案目标，一次并行产出 6 路可投放素材（主图/场景/对比/UGC/平铺/季节图）。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "image",
+    "batch",
+    "parallel",
+    "multi-agent",
+    "image-edit"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-batch-matrix",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 260
+        },
+        "data": {
+          "type": "start",
+          "label": "批量任务输入",
+          "description": "输入本轮素材生产目标",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-image-batch-matrix",
+        "type": "input_image",
+        "position": {
+          "x": 300,
+          "y": 260
+        },
+        "data": {
+          "type": "input_image",
+          "label": "参考图",
+          "description": "上传单张原图作为批量素材基准",
+          "icon": "🖼️",
+          "iconColor": "bg-lime-500",
+          "startImageUrl": ""
+        }
+      },
+      {
+        "id": "input-text-batch-matrix",
+        "type": "input_text",
+        "position": {
+          "x": 540,
+          "y": 260
+        },
+        "data": {
+          "type": "input_text",
+          "label": "英文文案目标",
+          "description": "输入卖点、禁用词、品牌语气和版式约束",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-plan-batch-matrix",
+        "type": "agent",
+        "position": {
+          "x": 780,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "批量路由规划",
+          "description": "拆解 6 路素材任务，统一英文文案与排版规则",
+          "icon": "🧠",
+          "iconColor": "bg-indigo-500",
+          "agentName": "电商文案创作师",
+          "inputMapping": "Reference image: {{input-image-batch-matrix.output.imageUrl}}\nCopy goal: {{input-text-batch-matrix.output.text}}",
+          "instructions": "输出 6 路素材规划：hero/lifestyle/comparison/ugc/flatlay/seasonal。每一路都给 headline、2 个 badges、禁止遮挡区域、safe-zone 排版规则。仅输出英文。"
+        }
+      },
+      {
+        "id": "parallel-batch-matrix",
+        "type": "parallel",
+        "position": {
+          "x": 1020,
+          "y": 260
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行产图",
+          "description": "六路并行图生图执行",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-batch-hero-matrix",
+        "type": "agent",
+        "position": {
+          "x": 1260,
+          "y": -20
+        },
+        "data": {
+          "type": "agent",
+          "label": "Hero 主图",
+          "description": "主视觉卖点图",
+          "icon": "🌟",
+          "iconColor": "bg-pink-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentReferenceImageUrl": "{{input-image-batch-matrix.output.imageUrl}}",
+          "agentNumberOfImages": 2,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 2,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "inputMapping": "{{agent-plan-batch-matrix.output.text}}\n\nRoute hero: Produce Amazon hero image. English headline + 2 badges. Keep text in top corners; do not cover model face/torso or product body.",
+          "instructions": "English-only overlays. Keep product geometry and key texture unchanged."
+        }
+      },
+      {
+        "id": "agent-batch-lifestyle-matrix",
+        "type": "agent",
+        "position": {
+          "x": 1260,
+          "y": 110
+        },
+        "data": {
+          "type": "agent",
+          "label": "Lifestyle 场景图",
+          "description": "生活方式卖点图",
+          "icon": "🏡",
+          "iconColor": "bg-orange-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentReferenceImageUrl": "{{input-image-batch-matrix.output.imageUrl}}",
+          "agentNumberOfImages": 2,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 2,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "inputMapping": "{{agent-plan-batch-matrix.output.text}}\n\nRoute lifestyle: Create daily-life usage scene with natural light. English headline + 2 badges in safe zones only.",
+          "instructions": "Prioritize realistic model pose and product usage context."
+        }
+      },
+      {
+        "id": "agent-batch-comparison-matrix",
+        "type": "agent",
+        "position": {
+          "x": 1260,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "对比卖点图",
+          "description": "场景对比和优势强调",
+          "icon": "🆚",
+          "iconColor": "bg-violet-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentReferenceImageUrl": "{{input-image-batch-matrix.output.imageUrl}}",
+          "agentNumberOfImages": 2,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 2,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "inputMapping": "{{agent-plan-batch-matrix.output.text}}\n\nRoute comparison: Build a clean comparative benefit layout with English copy. Keep product unobstructed and avoid dense text blocks.",
+          "instructions": "Use high contrast callouts while preserving premium ecommerce style."
+        }
+      },
+      {
+        "id": "agent-batch-ugc-matrix",
+        "type": "agent",
+        "position": {
+          "x": 1260,
+          "y": 370
+        },
+        "data": {
+          "type": "agent",
+          "label": "UGC 风格图",
+          "description": "真实用户风格素材",
+          "icon": "📱",
+          "iconColor": "bg-sky-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentReferenceImageUrl": "{{input-image-batch-matrix.output.imageUrl}}",
+          "agentNumberOfImages": 2,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 2,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "inputMapping": "{{agent-plan-batch-matrix.output.text}}\n\nRoute ugc: Generate social-friendly UGC style creative with short English headline and 2 badges only.",
+          "instructions": "Keep authentic tone, avoid over-polished rendering artifacts."
+        }
+      },
+      {
+        "id": "agent-batch-flatlay-matrix",
+        "type": "agent",
+        "position": {
+          "x": 1260,
+          "y": 500
+        },
+        "data": {
+          "type": "agent",
+          "label": "Flat Lay 平铺图",
+          "description": "高质感平铺文案图",
+          "icon": "🧷",
+          "iconColor": "bg-rose-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentReferenceImageUrl": "{{input-image-batch-matrix.output.imageUrl}}",
+          "agentNumberOfImages": 2,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 2,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "inputMapping": "{{agent-plan-batch-matrix.output.text}}\n\nRoute flatlay: Luxury flat-lay composition, English headline + 2 badges + optional thin callout lines. Keep copy away from product body.",
+          "instructions": "Use premium lighting and high-end ecommerce composition."
+        }
+      },
+      {
+        "id": "agent-batch-seasonal-matrix",
+        "type": "agent",
+        "position": {
+          "x": 1260,
+          "y": 630
+        },
+        "data": {
+          "type": "agent",
+          "label": "季节营销图",
+          "description": "节日/季节促销素材",
+          "icon": "🎁",
+          "iconColor": "bg-green-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentEditMode": "image-chat-edit",
+          "agentReferenceImageUrl": "{{input-image-batch-matrix.output.imageUrl}}",
+          "agentNumberOfImages": 2,
+          "agentPreserveProductIdentity": true,
+          "agentImageEditMaxRetries": 2,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "inputMapping": "{{agent-plan-batch-matrix.output.text}}\n\nRoute seasonal: Seasonal campaign visual (gift/holiday tone). English headline + 2 badges. Keep model/product clear.",
+          "instructions": "Do not change product category identity or core shape."
+        }
+      },
+      {
+        "id": "merge-batch-matrix",
+        "type": "merge",
+        "position": {
+          "x": 1500,
+          "y": 260
+        },
+        "data": {
+          "type": "merge",
+          "label": "批量汇总",
+          "description": "汇总六路批量出图结果",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-qa-batch-matrix",
+        "type": "agent",
+        "position": {
+          "x": 1740,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "交付审校",
+          "description": "按可投放标准打分并输出交付清单",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "Batch outputs: {{merge-batch-matrix.output.text}}",
+          "instructions": "你只做素材交付评分，不要索要额外输入。请输出英文：\n1) Route scorecard（quality / overlap risk / pass-fail）\n2) Best picks by use-case（hero/ads/secondary）\n3) Retry prompts（仅对 fail 或 medium-risk 分支）\n4) Final delivery checklist。"
+        }
+      },
+      {
+        "id": "end-batch-matrix",
+        "type": "end",
+        "position": {
+          "x": 1980,
+          "y": 260
+        },
+        "data": {
+          "type": "end",
+          "label": "批量交付",
+          "description": "输出批量素材结果",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-bm-1",
+        "source": "start-batch-matrix",
+        "target": "input-image-batch-matrix"
+      },
+      {
+        "id": "e-bm-2",
+        "source": "input-image-batch-matrix",
+        "target": "input-text-batch-matrix"
+      },
+      {
+        "id": "e-bm-3",
+        "source": "input-text-batch-matrix",
+        "target": "agent-plan-batch-matrix"
+      },
+      {
+        "id": "e-bm-4",
+        "source": "agent-plan-batch-matrix",
+        "target": "parallel-batch-matrix"
+      },
+      {
+        "id": "e-bm-5",
+        "source": "parallel-batch-matrix",
+        "target": "agent-batch-hero-matrix"
+      },
+      {
+        "id": "e-bm-6",
+        "source": "parallel-batch-matrix",
+        "target": "agent-batch-lifestyle-matrix"
+      },
+      {
+        "id": "e-bm-7",
+        "source": "parallel-batch-matrix",
+        "target": "agent-batch-comparison-matrix"
+      },
+      {
+        "id": "e-bm-8",
+        "source": "parallel-batch-matrix",
+        "target": "agent-batch-ugc-matrix"
+      },
+      {
+        "id": "e-bm-9",
+        "source": "parallel-batch-matrix",
+        "target": "agent-batch-flatlay-matrix"
+      },
+      {
+        "id": "e-bm-10",
+        "source": "parallel-batch-matrix",
+        "target": "agent-batch-seasonal-matrix"
+      },
+      {
+        "id": "e-bm-11",
+        "source": "agent-batch-hero-matrix",
+        "target": "merge-batch-matrix"
+      },
+      {
+        "id": "e-bm-12",
+        "source": "agent-batch-lifestyle-matrix",
+        "target": "merge-batch-matrix"
+      },
+      {
+        "id": "e-bm-13",
+        "source": "agent-batch-comparison-matrix",
+        "target": "merge-batch-matrix"
+      },
+      {
+        "id": "e-bm-14",
+        "source": "agent-batch-ugc-matrix",
+        "target": "merge-batch-matrix"
+      },
+      {
+        "id": "e-bm-15",
+        "source": "agent-batch-flatlay-matrix",
+        "target": "merge-batch-matrix"
+      },
+      {
+        "id": "e-bm-16",
+        "source": "agent-batch-seasonal-matrix",
+        "target": "merge-batch-matrix"
+      },
+      {
+        "id": "e-bm-17",
+        "source": "merge-batch-matrix",
+        "target": "agent-qa-batch-matrix"
+      },
+      {
+        "id": "e-bm-18",
+        "source": "agent-qa-batch-matrix",
+        "target": "end-batch-matrix"
+      }
+    ]
+  }
+}

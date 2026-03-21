@@ -1,0 +1,349 @@
+{
+  "starter_key": "product_image_batch_edit_v1",
+  "starter_version": 10,
+  "name": "多图并行图生图工作流",
+  "description": "同一工作流并行处理多张参考图（不同提示词/不同 Agent 分支），最终汇总交付。",
+  "category": "图像工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "image",
+    "batch",
+    "image-to-image",
+    "parallel",
+    "multi-agent"
+  ],
+  "sample_input": {
+    "task": "批量图生图：同一产品分别生成主图、场景图、卖点特写图。",
+    "imageUrls": [
+      "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1512436991641-6745cdb1723f?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&w=1200&q=80"
+    ],
+    "prompts": [
+      "输出亚马逊主图版本：白底、主体完整、无文字水印、边缘清晰。",
+      "输出场景图版本：通勤穿搭场景，主体占比>60%，色调自然。",
+      "输出卖点特写版本：突出材质纹理与细节工艺，避免遮挡关键部位。"
+    ]
+  },
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-batch-edit",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 260
+        },
+        "data": {
+          "type": "start",
+          "label": "批量图生图输入",
+          "description": "输入批量处理目标（支持多图多提示词）",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "parallel-batch-dispatch",
+        "type": "parallel",
+        "position": {
+          "x": 300,
+          "y": 260
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行分发",
+          "description": "分发到多图分支并行执行",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "input-image-batch-1",
+        "type": "input_image",
+        "position": {
+          "x": 560,
+          "y": 80
+        },
+        "data": {
+          "type": "input_image",
+          "label": "参考图 #1",
+          "description": "主图分支参考图",
+          "icon": "🖼️",
+          "iconColor": "bg-lime-500",
+          "startImageUrl": "{{input.imageUrls[0]}}"
+        }
+      },
+      {
+        "id": "input-text-batch-1",
+        "type": "input_text",
+        "position": {
+          "x": 560,
+          "y": 160
+        },
+        "data": {
+          "type": "input_text",
+          "label": "提示词 #1",
+          "description": "主图分支编辑指令",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": "{{input.prompts[0]}}"
+        }
+      },
+      {
+        "id": "tool-batch-edit-1",
+        "type": "agent",
+        "position": {
+          "x": 820,
+          "y": 120
+        },
+        "data": {
+          "type": "agent",
+          "label": "主图编辑分支",
+          "description": "分支 #1 智能体图生图",
+          "icon": "🪄",
+          "iconColor": "bg-purple-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentReferenceImageUrl": "{{input-image-batch-1.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{input-text-batch-1.output.text}}\\n\\n请输出电商主图编辑结果：白底、主体清晰、无无关文字。",
+          "instructions": "执行 image-chat-edit，主图分支优先保证合规与清晰度。"
+        }
+      },
+      {
+        "id": "input-image-batch-2",
+        "type": "input_image",
+        "position": {
+          "x": 560,
+          "y": 260
+        },
+        "data": {
+          "type": "input_image",
+          "label": "参考图 #2",
+          "description": "场景分支参考图",
+          "icon": "🖼️",
+          "iconColor": "bg-lime-500",
+          "startImageUrl": "{{input.imageUrls[1]}}"
+        }
+      },
+      {
+        "id": "input-text-batch-2",
+        "type": "input_text",
+        "position": {
+          "x": 560,
+          "y": 340
+        },
+        "data": {
+          "type": "input_text",
+          "label": "提示词 #2",
+          "description": "场景分支编辑指令",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": "{{input.prompts[1]}}"
+        }
+      },
+      {
+        "id": "tool-batch-edit-2",
+        "type": "agent",
+        "position": {
+          "x": 820,
+          "y": 300
+        },
+        "data": {
+          "type": "agent",
+          "label": "场景编辑分支",
+          "description": "分支 #2 智能体图生图",
+          "icon": "🏞️",
+          "iconColor": "bg-indigo-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentReferenceImageUrl": "{{input-image-batch-2.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{input-text-batch-2.output.text}}\\n\\n请输出场景化编辑结果，保持主体一致并增强真实使用感。",
+          "instructions": "执行 image-chat-edit，场景分支强调真实氛围与产品一致性。"
+        }
+      },
+      {
+        "id": "input-image-batch-3",
+        "type": "input_image",
+        "position": {
+          "x": 560,
+          "y": 440
+        },
+        "data": {
+          "type": "input_image",
+          "label": "参考图 #3",
+          "description": "卖点分支参考图",
+          "icon": "🖼️",
+          "iconColor": "bg-lime-500",
+          "startImageUrl": "{{input.imageUrls[2]}}"
+        }
+      },
+      {
+        "id": "input-text-batch-3",
+        "type": "input_text",
+        "position": {
+          "x": 560,
+          "y": 520
+        },
+        "data": {
+          "type": "input_text",
+          "label": "提示词 #3",
+          "description": "卖点分支编辑指令",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": "{{input.prompts[2]}}"
+        }
+      },
+      {
+        "id": "tool-batch-edit-3",
+        "type": "agent",
+        "position": {
+          "x": 820,
+          "y": 480
+        },
+        "data": {
+          "type": "agent",
+          "label": "卖点编辑分支",
+          "description": "分支 #3 智能体图生图",
+          "icon": "🔍",
+          "iconColor": "bg-violet-500",
+          "agentName": "图片编辑优化师",
+          "agentTaskType": "image-edit",
+          "agentReferenceImageUrl": "{{input-image-batch-3.output.imageUrl}}",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{input-text-batch-3.output.text}}\\n\\n请输出卖点特写编辑结果，突出材质、工艺和细节。",
+          "instructions": "执行 image-chat-edit，卖点分支强调细节与材质表现。"
+        }
+      },
+      {
+        "id": "merge-batch-edit",
+        "type": "merge",
+        "position": {
+          "x": 1080,
+          "y": 300
+        },
+        "data": {
+          "type": "merge",
+          "label": "批量结果汇总",
+          "description": "汇总三个并行分支结果",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-batch-qa",
+        "type": "agent",
+        "position": {
+          "x": 1320,
+          "y": 300
+        },
+        "data": {
+          "type": "agent",
+          "label": "批量质检汇总",
+          "description": "输出每张图的交付建议和问题清单",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "agentName": "图片编辑优化师",
+          "inputMapping": "批量分支结果摘要：{{merge-batch-edit.output.text}}",
+          "instructions": "请对三个分支结果逐一评估并输出（不要再索要输入）：\n1. 每个分支最优图推荐\n2. 每张图的合规风险和质量问题\n3. 需要返工的图及原因\n4. 批量交付清单（可直接下载）"
+        }
+      },
+      {
+        "id": "end-batch-edit",
+        "type": "end",
+        "position": {
+          "x": 1560,
+          "y": 300
+        },
+        "data": {
+          "type": "end",
+          "label": "批量图生图结果",
+          "description": "输出批量处理结果与交付建议",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-batch-1",
+        "source": "start-batch-edit",
+        "target": "parallel-batch-dispatch"
+      },
+      {
+        "id": "e-batch-2",
+        "source": "parallel-batch-dispatch",
+        "target": "input-image-batch-1"
+      },
+      {
+        "id": "e-batch-3",
+        "source": "input-image-batch-1",
+        "target": "input-text-batch-1"
+      },
+      {
+        "id": "e-batch-4",
+        "source": "input-text-batch-1",
+        "target": "tool-batch-edit-1"
+      },
+      {
+        "id": "e-batch-5",
+        "source": "tool-batch-edit-1",
+        "target": "merge-batch-edit"
+      },
+      {
+        "id": "e-batch-6",
+        "source": "parallel-batch-dispatch",
+        "target": "input-image-batch-2"
+      },
+      {
+        "id": "e-batch-7",
+        "source": "input-image-batch-2",
+        "target": "input-text-batch-2"
+      },
+      {
+        "id": "e-batch-8",
+        "source": "input-text-batch-2",
+        "target": "tool-batch-edit-2"
+      },
+      {
+        "id": "e-batch-9",
+        "source": "tool-batch-edit-2",
+        "target": "merge-batch-edit"
+      },
+      {
+        "id": "e-batch-10",
+        "source": "parallel-batch-dispatch",
+        "target": "input-image-batch-3"
+      },
+      {
+        "id": "e-batch-11",
+        "source": "input-image-batch-3",
+        "target": "input-text-batch-3"
+      },
+      {
+        "id": "e-batch-12",
+        "source": "input-text-batch-3",
+        "target": "tool-batch-edit-3"
+      },
+      {
+        "id": "e-batch-13",
+        "source": "tool-batch-edit-3",
+        "target": "merge-batch-edit"
+      },
+      {
+        "id": "e-batch-14",
+        "source": "merge-batch-edit",
+        "target": "agent-batch-qa"
+      },
+      {
+        "id": "e-batch-15",
+        "source": "agent-batch-qa",
+        "target": "end-batch-edit"
+      }
+    ]
+  }
+}

@@ -1,0 +1,402 @@
+{
+  "starter_key": "large_table_diagnostic_v1",
+  "starter_version": 3,
+  "name": "工作流 · 大文件全量诊断",
+  "description": "面向 1000+ 行 CSV/XLSX 的分阶段分析模板。先走 sheet-stage ingest/profile/query/export 保留可回放执行链，再并行输出质量、结构、异常和验证诊断。",
+  "category": "数据分析",
+  "workflow_type": "graph",
+  "tags": [
+    "table",
+    "analysis",
+    "data-analysis",
+    "provider-neutral",
+    "starter",
+    "large-file",
+    "deep-dive",
+    "sheet-stage"
+  ],
+  "sample_input": {
+    "task": "请对这份大表做全量诊断，输出字段口径、异常清单、关键指标结构和下一步行动方案。",
+    "fileUrl": "https://raw.githubusercontent.com/plotly/datasets/master/finance-charts-apple.csv"
+  },
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-large-table",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 320
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "输入大文件分析请求",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-file-large-table",
+        "type": "input_file",
+        "position": {
+          "x": 300,
+          "y": 320
+        },
+        "data": {
+          "type": "input_file",
+          "label": "大文件输入",
+          "description": "上传大体量 CSV / XLSX / TSV",
+          "icon": "📎",
+          "iconColor": "bg-cyan-500",
+          "startFileUrl": ""
+        }
+      },
+      {
+        "id": "input-text-large-table",
+        "type": "input_text",
+        "position": {
+          "x": 520,
+          "y": 320
+        },
+        "data": {
+          "type": "input_text",
+          "label": "关注问题",
+          "description": "写清楚你最关心的业务问题、口径或阈值",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "tool-ingest-large-table",
+        "type": "tool",
+        "position": {
+          "x": 760,
+          "y": 320
+        },
+        "data": {
+          "type": "tool",
+          "label": "Sheet Stage Ingest",
+          "description": "完整扫描大表并产出 ingest 阶段 artifact，保留后续 profile/query/export 的回放锚点",
+          "icon": "🧱",
+          "iconColor": "bg-cyan-500",
+          "toolName": "sheet_stage_ingest",
+          "toolArgsTemplate": "{\"file_url\":\"{{input-file-large-table.output.fileUrl}}\",\"sample_rows\":20}"
+        }
+      },
+      {
+        "id": "parallel-large-table",
+        "type": "parallel",
+        "position": {
+          "x": 1000,
+          "y": 140
+        },
+        "data": {
+          "type": "parallel",
+          "label": "多视角诊断",
+          "description": "按质量、结构、异常、验证四路并行诊断",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-quality-large-table",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": -60
+        },
+        "data": {
+          "type": "agent",
+          "label": "质量与口径诊断",
+          "description": "判断字段可信度、缺失风险和数据准备度",
+          "icon": "🧪",
+          "iconColor": "bg-sky-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "关注问题：{{input-text-large-table.output.text}}\n\nIngest 阶段摘要：{{tool-ingest-large-table.output.text}}\n\n字段列表：{{tool-ingest-large-table.output.result.data.payload.analysis.columns}}\n\n质量旗标：{{tool-ingest-large-table.output.result.data.payload.analysis.quality_flags}}",
+          "instructions": "输出：字段口径表、疑似脏数据、缺失高风险字段、是否适合直接建模/分析，以及必须先修复的质量问题。"
+        }
+      },
+      {
+        "id": "agent-structure-large-table",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": 140
+        },
+        "data": {
+          "type": "agent",
+          "label": "指标结构诊断",
+          "description": "基于完整统计结果梳理指标结构与关键关系",
+          "icon": "📐",
+          "iconColor": "bg-indigo-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "关注问题：{{input-text-large-table.output.text}}\n\nIngest 阶段摘要：{{tool-ingest-large-table.output.text}}\n\n数值摘要：{{tool-ingest-large-table.output.result.data.payload.analysis.numeric_summary}}\n\n相关性：{{tool-ingest-large-table.output.result.data.payload.analysis.correlation_summary}}\n\n列分组：{{tool-ingest-large-table.output.result.data.payload.analysis.column_groups}}",
+          "instructions": "输出：指标层次、主要驱动因子、需要继续拆解的结构问题，以及最值得深挖的相关性关系。"
+        }
+      },
+      {
+        "id": "agent-anomaly-large-table",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": 340
+        },
+        "data": {
+          "type": "agent",
+          "label": "异常与风险清单",
+          "description": "整理异常值、离群区间和风险场景",
+          "icon": "🚨",
+          "iconColor": "bg-rose-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "关注问题：{{input-text-large-table.output.text}}\n\nIngest 阶段摘要：{{tool-ingest-large-table.output.text}}\n\n异常摘要：{{tool-ingest-large-table.output.result.data.payload.analysis.outlier_summary}}\n\n时间摘要：{{tool-ingest-large-table.output.result.data.payload.analysis.datetime_summary}}",
+          "instructions": "输出：异常分组、可能原因、影响范围、优先排查顺序，以及需要单独回查的时间区间或字段组合。"
+        }
+      },
+      {
+        "id": "agent-validation-large-table",
+        "type": "agent",
+        "position": {
+          "x": 1240,
+          "y": 540
+        },
+        "data": {
+          "type": "agent",
+          "label": "验证路径设计",
+          "description": "把全量诊断转成后续验证问题与补数计划",
+          "icon": "🧭",
+          "iconColor": "bg-amber-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "关注问题：{{input-text-large-table.output.text}}\n\nIngest 阶段摘要：{{tool-ingest-large-table.output.text}}\n\n质量旗标：{{tool-ingest-large-table.output.result.data.payload.analysis.quality_flags}}\n\n相关性：{{tool-ingest-large-table.output.result.data.payload.analysis.correlation_summary}}",
+          "instructions": "输出：1) 还需要验证的业务假设；2) 需要补采/补算的数据；3) 建议新增的分组与切片；4) 下一轮分析的执行顺序。"
+        }
+      },
+      {
+        "id": "merge-large-table",
+        "type": "merge",
+        "position": {
+          "x": 1480,
+          "y": 140
+        },
+        "data": {
+          "type": "merge",
+          "label": "诊断结果汇总",
+          "description": "合并四路诊断",
+          "icon": "🔗",
+          "iconColor": "bg-slate-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "tool-profile-large-table",
+        "type": "tool",
+        "position": {
+          "x": 1000,
+          "y": 500
+        },
+        "data": {
+          "type": "tool",
+          "label": "Sheet Stage Profile",
+          "description": "从 ingest artifact 中提炼结构化 profile，形成后续 query/export 的中间状态",
+          "icon": "📐",
+          "iconColor": "bg-indigo-500",
+          "toolName": "sheet_stage_profile",
+          "toolArgsTemplate": "{\"session_id\":\"{{tool-ingest-large-table.output.result.session_id}}\",\"artifact\":\"{{tool-ingest-large-table.output.result.artifact}}\"}"
+        }
+      },
+      {
+        "id": "tool-query-large-table",
+        "type": "tool",
+        "position": {
+          "x": 1240,
+          "y": 760
+        },
+        "data": {
+          "type": "tool",
+          "label": "Sheet Stage Query",
+          "description": "把关注问题固化成可回放 query 阶段结果，便于后续导出与对比",
+          "icon": "🔎",
+          "iconColor": "bg-violet-500",
+          "toolName": "sheet_stage_query",
+          "toolArgsTemplate": "{\"session_id\":\"{{tool-profile-large-table.output.result.session_id}}\",\"artifact\":\"{{tool-profile-large-table.output.result.artifact}}\",\"query\":\"{{input-text-large-table.output.text}}\"}"
+        }
+      },
+      {
+        "id": "tool-export-large-table",
+        "type": "tool",
+        "position": {
+          "x": 1480,
+          "y": 760
+        },
+        "data": {
+          "type": "tool",
+          "label": "Sheet Stage Export",
+          "description": "输出 markdown 导出视图，并保留 export artifact 供回放与差异比较",
+          "icon": "📤",
+          "iconColor": "bg-emerald-500",
+          "toolName": "sheet_stage_export",
+          "toolArgsTemplate": "{\"session_id\":\"{{tool-query-large-table.output.result.session_id}}\",\"artifact\":\"{{tool-query-large-table.output.result.artifact}}\",\"export_format\":\"markdown\"}"
+        }
+      },
+      {
+        "id": "agent-report-large-table",
+        "type": "agent",
+        "position": {
+          "x": 1960,
+          "y": 420
+        },
+        "data": {
+          "type": "agent",
+          "label": "深度诊断报告",
+          "description": "汇总专项诊断与 sheet-stage 导出结果，输出详细报告和行动路线图",
+          "icon": "📘",
+          "iconColor": "bg-emerald-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "关注问题：{{input-text-large-table.output.text}}\n\nIngest 阶段摘要：{{tool-ingest-large-table.output.text}}\n\nProfile 阶段结构：{{tool-profile-large-table.output.result.data.payload}}\n\nQuery 阶段回答：{{tool-query-large-table.output.result.data.payload.answer}}\n\nExport 渲染结果：{{tool-export-large-table.output.result.data.payload.rendered}}\n\n已合并上下文：{{merge-context-large-table.output.text}}",
+          "instructions": "请输出详细 Markdown 报告：执行摘要、字段字典、质量问题、结构洞察、强相关关系、异常清单、验证路径、优先级行动、后续分析建议。必须详细，不要只给概览。"
+        }
+      },
+      {
+        "id": "merge-context-large-table",
+        "type": "merge",
+        "position": {
+          "x": 1720,
+          "y": 500
+        },
+        "data": {
+          "type": "merge",
+          "label": "执行上下文汇总",
+          "description": "等待专项诊断和 sheet-stage export 都完成，再统一交给报告 Agent",
+          "icon": "🧩",
+          "iconColor": "bg-slate-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "end-large-table",
+        "type": "end",
+        "position": {
+          "x": 2200,
+          "y": 420
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "同时保留诊断报告和 sheet-stage export 结果，便于结果展示与回放",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-large-table-1",
+        "source": "start-large-table",
+        "target": "input-file-large-table"
+      },
+      {
+        "id": "edge-large-table-2",
+        "source": "input-file-large-table",
+        "target": "input-text-large-table"
+      },
+      {
+        "id": "edge-large-table-3",
+        "source": "input-text-large-table",
+        "target": "tool-ingest-large-table"
+      },
+      {
+        "id": "edge-large-table-4",
+        "source": "tool-ingest-large-table",
+        "target": "parallel-large-table"
+      },
+      {
+        "id": "edge-large-table-5",
+        "source": "parallel-large-table",
+        "target": "agent-quality-large-table"
+      },
+      {
+        "id": "edge-large-table-6",
+        "source": "parallel-large-table",
+        "target": "agent-structure-large-table"
+      },
+      {
+        "id": "edge-large-table-7",
+        "source": "parallel-large-table",
+        "target": "agent-anomaly-large-table"
+      },
+      {
+        "id": "edge-large-table-8",
+        "source": "parallel-large-table",
+        "target": "agent-validation-large-table"
+      },
+      {
+        "id": "edge-large-table-9",
+        "source": "agent-quality-large-table",
+        "target": "merge-large-table"
+      },
+      {
+        "id": "edge-large-table-10",
+        "source": "agent-structure-large-table",
+        "target": "merge-large-table"
+      },
+      {
+        "id": "edge-large-table-11",
+        "source": "agent-anomaly-large-table",
+        "target": "merge-large-table"
+      },
+      {
+        "id": "edge-large-table-12",
+        "source": "agent-validation-large-table",
+        "target": "merge-large-table"
+      },
+      {
+        "id": "edge-large-table-13",
+        "source": "tool-ingest-large-table",
+        "target": "tool-profile-large-table"
+      },
+      {
+        "id": "edge-large-table-14",
+        "source": "tool-profile-large-table",
+        "target": "tool-query-large-table"
+      },
+      {
+        "id": "edge-large-table-15",
+        "source": "tool-query-large-table",
+        "target": "tool-export-large-table"
+      },
+      {
+        "id": "edge-large-table-16",
+        "source": "merge-large-table",
+        "target": "merge-context-large-table"
+      },
+      {
+        "id": "edge-large-table-17",
+        "source": "tool-export-large-table",
+        "target": "merge-context-large-table"
+      },
+      {
+        "id": "edge-large-table-18",
+        "source": "merge-context-large-table",
+        "target": "agent-report-large-table"
+      },
+      {
+        "id": "edge-large-table-19",
+        "source": "agent-report-large-table",
+        "target": "end-large-table"
+      },
+      {
+        "id": "edge-large-table-20",
+        "source": "tool-export-large-table",
+        "target": "end-large-table"
+      }
+    ]
+  }
+}

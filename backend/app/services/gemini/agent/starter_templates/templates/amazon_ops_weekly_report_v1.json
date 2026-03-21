@@ -1,0 +1,271 @@
+{
+  "starter_key": "amazon_ops_weekly_report_v1",
+  "starter_version": 1,
+  "name": "亚马逊运营周报复盘",
+  "description": "一周数据输入 → 广告/Listing/客户反馈并行复盘 → 风险校验 → 下周动作清单。",
+  "category": "亚马逊运营",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "weekly-report",
+    "ops",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-ops-weekly",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 260
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "接收周报分析任务",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-file-ops-weekly",
+        "type": "input_file",
+        "position": {
+          "x": 300,
+          "y": 260
+        },
+        "data": {
+          "type": "input_file",
+          "label": "周报数据输入",
+          "description": "上传本周广告/销售/搜索词报表",
+          "icon": "📎",
+          "iconColor": "bg-cyan-500",
+          "startFileUrl": ""
+        }
+      },
+      {
+        "id": "input-text-ops-weekly",
+        "type": "input_text",
+        "position": {
+          "x": 520,
+          "y": 260
+        },
+        "data": {
+          "type": "input_text",
+          "label": "复盘目标输入",
+          "description": "例如：控制 ACoS、提升转化、降低退货",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-ops-weekly-intake",
+        "type": "agent",
+        "position": {
+          "x": 740,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "数据质检",
+          "description": "识别字段口径与异常，统一复盘口径",
+          "icon": "🧪",
+          "iconColor": "bg-sky-500",
+          "agentName": "数据报表分析师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-ops-weekly.output.fileUrl}}",
+          "inputMapping": "文件：{{input-file-ops-weekly.output.fileUrl}}\n目标：{{input-text-ops-weekly.output.text}}",
+          "instructions": "输出字段映射、异常值、缺失值、可用性结论（pass/fail）。"
+        }
+      },
+      {
+        "id": "parallel-ops-weekly",
+        "type": "parallel",
+        "position": {
+          "x": 980,
+          "y": 260
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行复盘",
+          "description": "广告、Listing、客户反馈三路复盘",
+          "icon": "⚡",
+          "iconColor": "bg-violet-500",
+          "joinMode": "wait_all",
+          "timeoutSeconds": 120
+        }
+      },
+      {
+        "id": "agent-ops-weekly-ads",
+        "type": "agent",
+        "position": {
+          "x": 1220,
+          "y": 120
+        },
+        "data": {
+          "type": "agent",
+          "label": "广告复盘",
+          "description": "输出高低效词、否定词与扩量词",
+          "icon": "📊",
+          "iconColor": "bg-blue-500",
+          "agentName": "亚马逊广告分析师",
+          "agentTaskType": "data-analysis",
+          "agentFileUrl": "{{input-file-ops-weekly.output.fileUrl}}",
+          "inputMapping": "质检结果：{{agent-ops-weekly-intake.output.text}}\n目标：{{input-text-ops-weekly.output.text}}",
+          "instructions": "输出 P0/P1 广告动作，含阈值、风险、预计影响。"
+        }
+      },
+      {
+        "id": "agent-ops-weekly-listing",
+        "type": "agent",
+        "position": {
+          "x": 1220,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "Listing 复盘",
+          "description": "输出标题/五点/主图改进建议",
+          "icon": "✍️",
+          "iconColor": "bg-emerald-500",
+          "agentName": "Listing优化专家",
+          "inputMapping": "质检结果：{{agent-ops-weekly-intake.output.text}}\n目标：{{input-text-ops-weekly.output.text}}",
+          "instructions": "输出可直接执行的优化项：修改内容、优先级、验收指标。"
+        }
+      },
+      {
+        "id": "agent-ops-weekly-voc",
+        "type": "agent",
+        "position": {
+          "x": 1220,
+          "y": 400
+        },
+        "data": {
+          "type": "agent",
+          "label": "客户反馈复盘",
+          "description": "提炼差评原因与服务改进策略",
+          "icon": "💬",
+          "iconColor": "bg-amber-500",
+          "agentName": "客户沟通专家",
+          "inputMapping": "质检结果：{{agent-ops-weekly-intake.output.text}}\n目标：{{input-text-ops-weekly.output.text}}",
+          "instructions": "输出高频问题、标准回复模板、售后改进动作。"
+        }
+      },
+      {
+        "id": "merge-ops-weekly",
+        "type": "merge",
+        "position": {
+          "x": 1460,
+          "y": 260
+        },
+        "data": {
+          "type": "merge",
+          "label": "复盘合并",
+          "description": "汇总三路复盘结论",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-ops-weekly-risk",
+        "type": "agent",
+        "position": {
+          "x": 1700,
+          "y": 260
+        },
+        "data": {
+          "type": "agent",
+          "label": "风险与优先级校验",
+          "description": "识别冲突建议并统一优先级",
+          "icon": "🛡️",
+          "iconColor": "bg-indigo-500",
+          "agentName": "运营策略顾问",
+          "inputMapping": "并行复盘：{{merge-ops-weekly.output.text}}",
+          "instructions": "输出冲突点、修正意见、P0/P1/P2 排序与负责人建议。"
+        }
+      },
+      {
+        "id": "end-ops-weekly",
+        "type": "end",
+        "position": {
+          "x": 1940,
+          "y": 260
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "输出周报复盘结论与下周计划",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-ow-1",
+        "source": "start-ops-weekly",
+        "target": "input-file-ops-weekly"
+      },
+      {
+        "id": "e-ow-2",
+        "source": "input-file-ops-weekly",
+        "target": "input-text-ops-weekly"
+      },
+      {
+        "id": "e-ow-3",
+        "source": "input-text-ops-weekly",
+        "target": "agent-ops-weekly-intake"
+      },
+      {
+        "id": "e-ow-4",
+        "source": "agent-ops-weekly-intake",
+        "target": "parallel-ops-weekly"
+      },
+      {
+        "id": "e-ow-5",
+        "source": "parallel-ops-weekly",
+        "target": "agent-ops-weekly-ads"
+      },
+      {
+        "id": "e-ow-6",
+        "source": "parallel-ops-weekly",
+        "target": "agent-ops-weekly-listing"
+      },
+      {
+        "id": "e-ow-7",
+        "source": "parallel-ops-weekly",
+        "target": "agent-ops-weekly-voc"
+      },
+      {
+        "id": "e-ow-8",
+        "source": "agent-ops-weekly-ads",
+        "target": "merge-ops-weekly"
+      },
+      {
+        "id": "e-ow-9",
+        "source": "agent-ops-weekly-listing",
+        "target": "merge-ops-weekly"
+      },
+      {
+        "id": "e-ow-10",
+        "source": "agent-ops-weekly-voc",
+        "target": "merge-ops-weekly"
+      },
+      {
+        "id": "e-ow-11",
+        "source": "merge-ops-weekly",
+        "target": "agent-ops-weekly-risk"
+      },
+      {
+        "id": "e-ow-12",
+        "source": "agent-ops-weekly-risk",
+        "target": "end-ops-weekly"
+      }
+    ]
+  }
+}

@@ -1,0 +1,348 @@
+{
+  "starter_key": "sheet_stage_analysis_v1",
+  "starter_version": 1,
+  "name": "工作流 · Sheet Stage 全量分析",
+  "description": "面向 CSV/XLSX 的分阶段分析模板。先走 sheet-stage ingest/profile/query/export 保留全量扫描与可回放工件，再输出结构化结论、风险清单和详细报告。",
+  "category": "数据分析",
+  "workflow_type": "graph",
+  "tags": [
+    "table",
+    "analysis",
+    "data-analysis",
+    "provider-neutral",
+    "starter",
+    "sheet-stage",
+    "full-scan"
+  ],
+  "sample_input": {
+    "task": "请对这份表格做全量分析，给出字段结构、质量风险、关键结论和后续建议。",
+    "fileUrl": "https://raw.githubusercontent.com/plotly/datasets/master/2014_apple_stock.csv"
+  },
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-sheet-stage-analysis",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 300
+        },
+        "data": {
+          "type": "start",
+          "label": "开始",
+          "description": "接收 sheet-stage 分析请求",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-file-sheet-stage-analysis",
+        "type": "input_file",
+        "position": {
+          "x": 300,
+          "y": 300
+        },
+        "data": {
+          "type": "input_file",
+          "label": "数据文件",
+          "description": "上传 CSV / XLSX / TSV 文件",
+          "icon": "📎",
+          "iconColor": "bg-cyan-500",
+          "startFileUrl": ""
+        }
+      },
+      {
+        "id": "input-text-sheet-stage-analysis",
+        "type": "input_text",
+        "position": {
+          "x": 520,
+          "y": 300
+        },
+        "data": {
+          "type": "input_text",
+          "label": "分析目标",
+          "description": "补充业务问题、口径和重点关注指标",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "tool-ingest-sheet-stage-analysis",
+        "type": "tool",
+        "position": {
+          "x": 760,
+          "y": 300
+        },
+        "data": {
+          "type": "tool",
+          "label": "Sheet Stage Ingest",
+          "description": "全量扫描原始文件并固化 ingest artifact，作为后续 profile/query/export 的统一入口",
+          "icon": "🧱",
+          "iconColor": "bg-cyan-500",
+          "toolName": "sheet_stage_ingest",
+          "toolArgsTemplate": "{\"file_url\":\"{{input-file-sheet-stage-analysis.output.fileUrl}}\",\"sample_rows\":16}"
+        }
+      },
+      {
+        "id": "tool-profile-sheet-stage-analysis",
+        "type": "tool",
+        "position": {
+          "x": 1000,
+          "y": 300
+        },
+        "data": {
+          "type": "tool",
+          "label": "Sheet Stage Profile",
+          "description": "把 ingest 结果整理成结构化 profile，保留字段、质量、时间和相关性摘要",
+          "icon": "📐",
+          "iconColor": "bg-indigo-500",
+          "toolName": "sheet_stage_profile",
+          "toolArgsTemplate": "{\"session_id\":\"{{tool-ingest-sheet-stage-analysis.output.result.session_id}}\",\"artifact\":\"{{tool-ingest-sheet-stage-analysis.output.result.artifact}}\"}"
+        }
+      },
+      {
+        "id": "parallel-sheet-stage-analysis",
+        "type": "parallel",
+        "position": {
+          "x": 1240,
+          "y": 300
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行分析",
+          "description": "同时生成结构摘要、风险判断和问题查询结果",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-dataset-sheet-stage-analysis",
+        "type": "agent",
+        "position": {
+          "x": 1480,
+          "y": 40
+        },
+        "data": {
+          "type": "agent",
+          "label": "数据集结构摘要",
+          "description": "整理字段结构、核心指标和可直接复用的字段字典",
+          "icon": "🗂️",
+          "iconColor": "bg-cyan-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "分析目标：{{input-text-sheet-stage-analysis.output.text}}\n\nProfile 结构化数据：{{tool-profile-sheet-stage-analysis.output.result.data.payload}}\n\n字段列表：{{tool-profile-sheet-stage-analysis.output.result.data.payload.analysis.columns}}\n\n数值摘要：{{tool-profile-sheet-stage-analysis.output.result.data.payload.analysis.numeric_summary}}",
+          "instructions": "请输出详细字段字典、关键指标层次、可能的主键/时间字段、需要额外澄清的业务口径。"
+        }
+      },
+      {
+        "id": "agent-risk-sheet-stage-analysis",
+        "type": "agent",
+        "position": {
+          "x": 1480,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "质量与风险诊断",
+          "description": "聚焦缺失、异常、离群和可信度问题",
+          "icon": "🧪",
+          "iconColor": "bg-rose-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "分析目标：{{input-text-sheet-stage-analysis.output.text}}\n\nProfile 结构化数据：{{tool-profile-sheet-stage-analysis.output.result.data.payload}}\n\n质量旗标：{{tool-profile-sheet-stage-analysis.output.result.data.payload.analysis.quality_flags}}\n\n异常摘要：{{tool-profile-sheet-stage-analysis.output.result.data.payload.analysis.outlier_summary}}\n\n相关性：{{tool-profile-sheet-stage-analysis.output.result.data.payload.analysis.correlation_summary}}",
+          "instructions": "请输出风险清单：高风险字段、异常模式、需要优先修复的数据问题、对后续分析结论的影响。"
+        }
+      },
+      {
+        "id": "tool-query-sheet-stage-analysis",
+        "type": "tool",
+        "position": {
+          "x": 1480,
+          "y": 520
+        },
+        "data": {
+          "type": "tool",
+          "label": "Sheet Stage Query",
+          "description": "围绕当前业务问题生成结构化 query 结果，保留可回放阶段状态",
+          "icon": "🔎",
+          "iconColor": "bg-violet-500",
+          "toolName": "sheet_stage_query",
+          "toolArgsTemplate": "{\"session_id\":\"{{tool-profile-sheet-stage-analysis.output.result.session_id}}\",\"artifact\":\"{{tool-profile-sheet-stage-analysis.output.result.artifact}}\",\"query\":\"{{input-text-sheet-stage-analysis.output.text}}\"}"
+        }
+      },
+      {
+        "id": "merge-insight-sheet-stage-analysis",
+        "type": "merge",
+        "position": {
+          "x": 1720,
+          "y": 240
+        },
+        "data": {
+          "type": "merge",
+          "label": "合并分析上下文",
+          "description": "汇总结构摘要、风险判断与 query 结论",
+          "icon": "🔗",
+          "iconColor": "bg-slate-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "tool-export-sheet-stage-analysis",
+        "type": "tool",
+        "position": {
+          "x": 1720,
+          "y": 520
+        },
+        "data": {
+          "type": "tool",
+          "label": "Sheet Stage Export",
+          "description": "输出 markdown 导出视图，同时保留 export artifact 供回放和结果展示",
+          "icon": "📤",
+          "iconColor": "bg-emerald-500",
+          "toolName": "sheet_stage_export",
+          "toolArgsTemplate": "{\"session_id\":\"{{tool-query-sheet-stage-analysis.output.result.session_id}}\",\"artifact\":\"{{tool-query-sheet-stage-analysis.output.result.artifact}}\",\"export_format\":\"markdown\"}"
+        }
+      },
+      {
+        "id": "merge-context-sheet-stage-analysis",
+        "type": "merge",
+        "position": {
+          "x": 1960,
+          "y": 360
+        },
+        "data": {
+          "type": "merge",
+          "label": "执行上下文汇总",
+          "description": "等待分析摘要和 export 结果都完成，再统一交给最终报告节点",
+          "icon": "🧩",
+          "iconColor": "bg-slate-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-report-sheet-stage-analysis",
+        "type": "agent",
+        "position": {
+          "x": 2200,
+          "y": 360
+        },
+        "data": {
+          "type": "agent",
+          "label": "最终全量报告",
+          "description": "基于 sheet-stage 协议输出详细分析报告和行动建议",
+          "icon": "📘",
+          "iconColor": "bg-emerald-500",
+          "inlineUseActiveProfile": true,
+          "agentTaskType": "data-analysis",
+          "inputMapping": "分析目标：{{input-text-sheet-stage-analysis.output.text}}\n\nIngest 摘要：{{tool-ingest-sheet-stage-analysis.output.text}}\n\nProfile 结构化数据：{{tool-profile-sheet-stage-analysis.output.result.data.payload}}\n\nQuery 回答：{{tool-query-sheet-stage-analysis.output.result.data.payload.answer}}\n\nExport 结果：{{tool-export-sheet-stage-analysis.output.result.data.payload.rendered}}\n\n合并上下文：{{merge-context-sheet-stage-analysis.output.text}}",
+          "instructions": "请输出详细 Markdown 报告：执行摘要、字段字典、关键指标、质量问题、异常清单、强相关关系、结论、建议动作和下一步追问。必须详细，不要只给概览。"
+        }
+      },
+      {
+        "id": "end-sheet-stage-analysis",
+        "type": "end",
+        "position": {
+          "x": 2440,
+          "y": 360
+        },
+        "data": {
+          "type": "end",
+          "label": "结束",
+          "description": "同时保留报告文本和 sheet-stage export 结果，便于前端展示与回放",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-sheet-stage-analysis-1",
+        "source": "start-sheet-stage-analysis",
+        "target": "input-file-sheet-stage-analysis"
+      },
+      {
+        "id": "edge-sheet-stage-analysis-2",
+        "source": "input-file-sheet-stage-analysis",
+        "target": "input-text-sheet-stage-analysis"
+      },
+      {
+        "id": "edge-sheet-stage-analysis-3",
+        "source": "input-text-sheet-stage-analysis",
+        "target": "tool-ingest-sheet-stage-analysis"
+      },
+      {
+        "id": "edge-sheet-stage-analysis-4",
+        "source": "tool-ingest-sheet-stage-analysis",
+        "target": "tool-profile-sheet-stage-analysis"
+      },
+      {
+        "id": "edge-sheet-stage-analysis-5",
+        "source": "tool-profile-sheet-stage-analysis",
+        "target": "parallel-sheet-stage-analysis"
+      },
+      {
+        "id": "edge-sheet-stage-analysis-6",
+        "source": "parallel-sheet-stage-analysis",
+        "target": "agent-dataset-sheet-stage-analysis"
+      },
+      {
+        "id": "edge-sheet-stage-analysis-7",
+        "source": "parallel-sheet-stage-analysis",
+        "target": "agent-risk-sheet-stage-analysis"
+      },
+      {
+        "id": "edge-sheet-stage-analysis-8",
+        "source": "parallel-sheet-stage-analysis",
+        "target": "tool-query-sheet-stage-analysis"
+      },
+      {
+        "id": "edge-sheet-stage-analysis-9",
+        "source": "agent-dataset-sheet-stage-analysis",
+        "target": "merge-insight-sheet-stage-analysis"
+      },
+      {
+        "id": "edge-sheet-stage-analysis-10",
+        "source": "agent-risk-sheet-stage-analysis",
+        "target": "merge-insight-sheet-stage-analysis"
+      },
+      {
+        "id": "edge-sheet-stage-analysis-11",
+        "source": "tool-query-sheet-stage-analysis",
+        "target": "merge-insight-sheet-stage-analysis"
+      },
+      {
+        "id": "edge-sheet-stage-analysis-12",
+        "source": "tool-query-sheet-stage-analysis",
+        "target": "tool-export-sheet-stage-analysis"
+      },
+      {
+        "id": "edge-sheet-stage-analysis-13",
+        "source": "merge-insight-sheet-stage-analysis",
+        "target": "merge-context-sheet-stage-analysis"
+      },
+      {
+        "id": "edge-sheet-stage-analysis-14",
+        "source": "tool-export-sheet-stage-analysis",
+        "target": "merge-context-sheet-stage-analysis"
+      },
+      {
+        "id": "edge-sheet-stage-analysis-15",
+        "source": "merge-context-sheet-stage-analysis",
+        "target": "agent-report-sheet-stage-analysis"
+      },
+      {
+        "id": "edge-sheet-stage-analysis-16",
+        "source": "agent-report-sheet-stage-analysis",
+        "target": "end-sheet-stage-analysis"
+      },
+      {
+        "id": "edge-sheet-stage-analysis-17",
+        "source": "tool-export-sheet-stage-analysis",
+        "target": "end-sheet-stage-analysis"
+      }
+    ]
+  }
+}

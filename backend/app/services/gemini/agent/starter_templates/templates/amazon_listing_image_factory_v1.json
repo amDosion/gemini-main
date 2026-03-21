@@ -1,0 +1,286 @@
+{
+  "starter_key": "amazon_listing_image_factory_v1",
+  "starter_version": 2,
+  "name": "Amazon Listing 卖点图工厂",
+  "description": "卖点提炼 + 并行文生图（主图/场景/细节/对比）+ 交付审阅。",
+  "category": "图像工作流",
+  "workflow_type": "graph",
+  "tags": [
+    "amazon",
+    "listing",
+    "image",
+    "image-gen",
+    "parallel",
+    "multi-agent"
+  ],
+  "config": {
+    "schemaVersion": 2,
+    "nodes": [
+      {
+        "id": "start-listing-image-factory",
+        "type": "start",
+        "position": {
+          "x": 80,
+          "y": 240
+        },
+        "data": {
+          "type": "start",
+          "label": "Listing 图片目标",
+          "description": "输入产品信息、目标人群、卖点方向",
+          "icon": "🚀",
+          "iconColor": "bg-blue-500"
+        }
+      },
+      {
+        "id": "input-text-listing-image-factory",
+        "type": "input_text",
+        "position": {
+          "x": 320,
+          "y": 240
+        },
+        "data": {
+          "type": "input_text",
+          "label": "产品与卖点输入",
+          "description": "例如：核心卖点、禁用元素、品牌风格",
+          "icon": "📝",
+          "iconColor": "bg-emerald-500",
+          "startTask": ""
+        }
+      },
+      {
+        "id": "agent-copy-brief-listing-image",
+        "type": "agent",
+        "position": {
+          "x": 560,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "卖点与画面规划",
+          "description": "输出四类图片的提示词方案",
+          "icon": "💡",
+          "iconColor": "bg-amber-500",
+          "agentName": "电商文案创作师",
+          "inputMapping": "产品与卖点输入：{{input-text-listing-image-factory.output.text}}",
+          "instructions": "请输出四类图片提示词：\n1. 主图（白底合规）\n2. 场景图（使用场景）\n3. 细节图（材质工艺）\n4. 对比图（差异化卖点）。"
+        }
+      },
+      {
+        "id": "parallel-listing-image-factory",
+        "type": "parallel",
+        "position": {
+          "x": 800,
+          "y": 240
+        },
+        "data": {
+          "type": "parallel",
+          "label": "并行生成",
+          "description": "并行生成四类 Listing 素材",
+          "icon": "⚡",
+          "iconColor": "bg-yellow-500",
+          "joinMode": "wait_all"
+        }
+      },
+      {
+        "id": "agent-main-listing-image",
+        "type": "agent",
+        "position": {
+          "x": 1040,
+          "y": 60
+        },
+        "data": {
+          "type": "agent",
+          "label": "主图生成",
+          "description": "生成 Amazon 白底主图",
+          "icon": "🖼️",
+          "iconColor": "bg-pink-500",
+          "agentName": "产品图片设计师",
+          "agentTaskType": "image-gen",
+          "agentAspectRatio": "1:1",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-copy-brief-listing-image.output.text}}\\n\\n请执行主图生成：白底、无文字、无水印、主体完整。",
+          "instructions": "先优化提示词再生成图片，确保主图合规。"
+        }
+      },
+      {
+        "id": "agent-scene-listing-image",
+        "type": "agent",
+        "position": {
+          "x": 1040,
+          "y": 180
+        },
+        "data": {
+          "type": "agent",
+          "label": "场景图生成",
+          "description": "生成真实使用场景图",
+          "icon": "🏞️",
+          "iconColor": "bg-indigo-500",
+          "agentName": "产品图片设计师",
+          "agentTaskType": "image-gen",
+          "agentAspectRatio": "3:4",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-copy-brief-listing-image.output.text}}\\n\\n请执行场景图生成：场景真实，卖点明确。",
+          "instructions": "保持产品主体一致，强化使用场景。"
+        }
+      },
+      {
+        "id": "agent-detail-listing-image",
+        "type": "agent",
+        "position": {
+          "x": 1040,
+          "y": 300
+        },
+        "data": {
+          "type": "agent",
+          "label": "细节图生成",
+          "description": "生成材质与工艺细节图",
+          "icon": "🔍",
+          "iconColor": "bg-violet-500",
+          "agentName": "产品图片设计师",
+          "agentTaskType": "image-gen",
+          "agentAspectRatio": "1:1",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-copy-brief-listing-image.output.text}}\\n\\n请执行细节图生成：突出材质、结构、做工。",
+          "instructions": "聚焦卖点细节，画面干净。"
+        }
+      },
+      {
+        "id": "agent-compare-listing-image",
+        "type": "agent",
+        "position": {
+          "x": 1040,
+          "y": 420
+        },
+        "data": {
+          "type": "agent",
+          "label": "对比图生成",
+          "description": "生成差异化对比卖点图",
+          "icon": "📌",
+          "iconColor": "bg-teal-500",
+          "agentName": "产品图片设计师",
+          "agentTaskType": "image-gen",
+          "agentAspectRatio": "4:3",
+          "agentNumberOfImages": 1,
+          "inputMapping": "{{agent-copy-brief-listing-image.output.text}}\\n\\n请执行对比图生成：体现核心差异化优势，突出购买理由。",
+          "instructions": "对比要清晰，不要加入违规元素。"
+        }
+      },
+      {
+        "id": "merge-listing-image-factory",
+        "type": "merge",
+        "position": {
+          "x": 1280,
+          "y": 240
+        },
+        "data": {
+          "type": "merge",
+          "label": "素材汇总",
+          "description": "汇总四类素材输出",
+          "icon": "🔗",
+          "iconColor": "bg-gray-500",
+          "mergeStrategy": "append"
+        }
+      },
+      {
+        "id": "agent-qa-listing-image",
+        "type": "agent",
+        "position": {
+          "x": 1520,
+          "y": 240
+        },
+        "data": {
+          "type": "agent",
+          "label": "交付审阅",
+          "description": "输出最终交付清单与迭代建议",
+          "icon": "✅",
+          "iconColor": "bg-emerald-500",
+          "agentName": "图片编辑优化师",
+          "inputMapping": "四类素材摘要：{{merge-listing-image-factory.output.text}}",
+          "instructions": "请做交付审阅（不要再索要输入）：\n1. 每类推荐图\n2. 合规风险标注\n3. 二次迭代提示词\n4. 最终交付清单。"
+        }
+      },
+      {
+        "id": "end-listing-image-factory",
+        "type": "end",
+        "position": {
+          "x": 1760,
+          "y": 240
+        },
+        "data": {
+          "type": "end",
+          "label": "Listing 图片交付",
+          "description": "输出可落地的图片素材方案",
+          "icon": "🏁",
+          "iconColor": "bg-green-500"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-lif-1",
+        "source": "start-listing-image-factory",
+        "target": "input-text-listing-image-factory"
+      },
+      {
+        "id": "e-lif-2",
+        "source": "input-text-listing-image-factory",
+        "target": "agent-copy-brief-listing-image"
+      },
+      {
+        "id": "e-lif-3",
+        "source": "agent-copy-brief-listing-image",
+        "target": "parallel-listing-image-factory"
+      },
+      {
+        "id": "e-lif-4",
+        "source": "parallel-listing-image-factory",
+        "target": "agent-main-listing-image"
+      },
+      {
+        "id": "e-lif-5",
+        "source": "parallel-listing-image-factory",
+        "target": "agent-scene-listing-image"
+      },
+      {
+        "id": "e-lif-6",
+        "source": "parallel-listing-image-factory",
+        "target": "agent-detail-listing-image"
+      },
+      {
+        "id": "e-lif-7",
+        "source": "parallel-listing-image-factory",
+        "target": "agent-compare-listing-image"
+      },
+      {
+        "id": "e-lif-8",
+        "source": "agent-main-listing-image",
+        "target": "merge-listing-image-factory"
+      },
+      {
+        "id": "e-lif-9",
+        "source": "agent-scene-listing-image",
+        "target": "merge-listing-image-factory"
+      },
+      {
+        "id": "e-lif-10",
+        "source": "agent-detail-listing-image",
+        "target": "merge-listing-image-factory"
+      },
+      {
+        "id": "e-lif-11",
+        "source": "agent-compare-listing-image",
+        "target": "merge-listing-image-factory"
+      },
+      {
+        "id": "e-lif-12",
+        "source": "merge-listing-image-factory",
+        "target": "agent-qa-listing-image"
+      },
+      {
+        "id": "e-lif-13",
+        "source": "agent-qa-listing-image",
+        "target": "end-listing-image-factory"
+      }
+    ]
+  }
+}
