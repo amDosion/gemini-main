@@ -34,7 +34,9 @@ export const useModels = (
   appMode: AppMode,
   profileCacheKey: string = 'no-profile',
   initialSavedModels: ModelConfig[] = [],
-  initialModeCatalog: ModeCatalogItem[] = []
+  initialModeCatalog: ModeCatalogItem[] = [],
+  initialChatModels: ModelConfig[] = [],
+  initialDefaultModelId: string | null = null
 ) => {
   const [availableModels, setAvailableModels] = useState<ModelConfig[]>([]);
   const [modeModels, setModeModels] = useState<ModelConfig[]>([]);
@@ -51,16 +53,22 @@ export const useModels = (
     () => normalizeModeCatalog(initialModeCatalog),
     [initialModeCatalog]
   );
+  const normalizedInitialChatModels = useMemo(
+    () => normalizeModels(initialChatModels),
+    [initialChatModels]
+  );
   const savedModelsFingerprint = useMemo(
     () => normalizedSavedModels.map(model => model.id).join('|'),
     [normalizedSavedModels]
   );
   const savedModelsRef = useRef<ModelConfig[]>(normalizedSavedModels);
 
-  const prevProviderIdRef = useRef<string>(providerId);
-  const prevProfileCacheKeyRef = useRef<string>(profileCacheKey);
-  const prevModeProviderIdRef = useRef<string>(providerId);
-  const prevModeProfileCacheKeyRef = useRef<string>(profileCacheKey);
+  // ✅ 使用 null 作为初始值，表示"尚未从 configReady=true 状态获取过"
+  // 这样可以区分"首次从 false→true"和"true→true 期间的实际变更"
+  const prevProviderIdRef = useRef<string | null>(null);
+  const prevProfileCacheKeyRef = useRef<string | null>(null);
+  const prevModeProviderIdRef = useRef<string | null>(null);
+  const prevModeProfileCacheKeyRef = useRef<string | null>(null);
   const prevSavedModelsFingerprintRef = useRef<string>(savedModelsFingerprint);
   const modeRequestSeqRef = useRef(0);
   const allRequestSeqRef = useRef(0);
@@ -121,24 +129,39 @@ export const useModels = (
       setAvailableModels([]);
       setModeCatalog([]);
       setCurrentModelId('');
-      prevProviderIdRef.current = providerId;
-      prevProfileCacheKeyRef.current = profileCacheKey;
+      // ✅ configReady=false 时不更新 prev ref（保持 null），
+      // 这样首次 configReady=true 时不会误判为"变更"
       return;
     }
 
-    const providerChanged = prevProviderIdRef.current !== providerId;
-    const profileChanged = prevProfileCacheKeyRef.current !== profileCacheKey;
+    // ✅ 首次 configReady=true：prev ref 为 null，这是"初始化"而非"变更"
+    const isFirstActivation = prevProviderIdRef.current === null;
+    const providerChanged = !isFirstActivation && prevProviderIdRef.current !== providerId;
+    const profileChanged = !isFirstActivation && prevProfileCacheKeyRef.current !== profileCacheKey;
+
+    // 更新 prev ref
+    prevProviderIdRef.current = providerId;
+    prevProfileCacheKeyRef.current = profileCacheKey;
+
     if (providerChanged) {
-      prevProviderIdRef.current = providerId;
       userSelectedModelRef.current = false;
       setModeCatalog([]);
       setCurrentModelId('');
     }
-    if (profileChanged) {
-      prevProfileCacheKeyRef.current = profileCacheKey;
-    }
     if (providerChanged || profileChanged) {
       llmService.clearModelCache();
+    }
+
+    // ✅ 首次激活：如果 init 数据已提供完整模型列表和 modeCatalog，跳过 API 请求
+    if (isFirstActivation) {
+      const hasInitAllModels = normalizedSavedModels.length > 0;
+      const hasInitModeCatalog = normalizedInitialModeCatalog.length > 0;
+      if (hasInitAllModels && hasInitModeCatalog) {
+        console.log(`[useModels] ✅ 跳过首次 /api/models 全量请求（init 数据: ${normalizedSavedModels.length} 模型 + ${normalizedInitialModeCatalog.length} mode catalog）`);
+        return;
+      }
+      // init 数据不完整，回退到正常请求
+      console.log('[useModels] ⚠️ init 数据不完整，发起 /api/models 全量请求');
     }
 
     let cancelled = false;
@@ -174,15 +197,26 @@ export const useModels = (
       setModeModels([]);
       setModeDefaultModelId(null);
       setIsLoadingModels(false);
-      prevModeProviderIdRef.current = providerId;
-      prevModeProfileCacheKeyRef.current = profileCacheKey;
+      // ✅ 同样不更新 prev ref
       return;
     }
 
-    const modeProviderChanged = prevModeProviderIdRef.current !== providerId;
-    const modeProfileChanged = prevModeProfileCacheKeyRef.current !== profileCacheKey;
+    // ✅ 首次 configReady=true：prev ref 为 null
+    const isFirstModeActivation = prevModeProviderIdRef.current === null;
+    const modeProviderChanged = !isFirstModeActivation && prevModeProviderIdRef.current !== providerId;
+    const modeProfileChanged = !isFirstModeActivation && prevModeProfileCacheKeyRef.current !== profileCacheKey;
+
     prevModeProviderIdRef.current = providerId;
     prevModeProfileCacheKeyRef.current = profileCacheKey;
+
+    // ✅ 首次激活 + chat 模式：如果 init 数据已提供 chatModels，直接使用
+    if (isFirstModeActivation && appMode === 'chat' && normalizedInitialChatModels.length > 0) {
+      console.log(`[useModels] ✅ 跳过首次 /api/models?mode=chat 请求（init 数据: ${normalizedInitialChatModels.length} chat 模型, default=${initialDefaultModelId}）`);
+      setModeModels(normalizedInitialChatModels);
+      setModeDefaultModelId(initialDefaultModelId);
+      setIsLoadingModels(false);
+      return;
+    }
 
     let cancelled = false;
     const requestId = ++modeRequestSeqRef.current;
@@ -298,3 +332,4 @@ export const useModels = (
     refreshModels
   };
 };
+

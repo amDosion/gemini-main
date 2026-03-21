@@ -381,6 +381,8 @@ export interface InitData {
   // Optional: cached model list
   cachedModels?: ModelConfig[] | null;
   cachedModeCatalog?: ModeCatalogItem[] | null;
+  cachedChatModels?: ModelConfig[] | null;
+  cachedDefaultModelId?: string | null;
   
   // Metadata
   _metadata?: {

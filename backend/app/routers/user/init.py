@@ -14,6 +14,8 @@ from ..models.models import (
     _get_vertex_ai_config,
     _build_preferred_model_ids,
     _resolve_mode_view,
+    _ensure_model_traits,
+    filter_models_by_mode,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,20 +35,23 @@ async def get_critical_init_data(
     - profiles: 提供商配置列表（Header 需要显示提供商选择器）
     - activeProfileId: 当前激活的提供商ID
     - activeProfile: 当前激活的提供商配置（包含 providerId, apiKey 等）
-    - cachedModels: 缓存的模型列表（从 activeProfile.savedModels 获取，Header 需要显示模型选择器）
+    - cachedModels: 过滤 hidden 后的全部模型列表（Header 需要显示模型选择器）
+    - cachedModeCatalog: 各 mode 的模型可用性目录
+    - cachedChatModels: chat 模式的预过滤模型列表（默认首屏）
+    - cachedDefaultModelId: chat 模式的默认模型 ID
     - dashscopeKey: 通义千问的 API Key（如果使用通义千问）
     
-    注意：这些数据是 chat 模式正常工作的前提，必须在首次渲染前加载
+    优化：返回预过滤的模型数据，前端初始化时无需额外请求 /api/models
     """
     from ...services.common.init_service import _query_profiles
     
     try:
         profiles_result = await _query_profiles(user_id, db)
 
-        # ✅ 从 active_profile 中提取 cachedModels（saved_models）
-        # 注意：此时数据还是 snake_case，还没有经过 Middleware 转换
         cached_models = None
         cached_mode_catalog = []
+        cached_chat_models = None
+        cached_default_model_id = None
         active_profile = profiles_result.get("active_profile")
         provider_id = str((active_profile or {}).get("provider_id") or "").strip().lower()
 
@@ -69,12 +74,35 @@ async def get_critical_init_data(
                     source=f"init-vertex:{vertex_config.id}"
                 )
 
+            # 统一计算 traits（与 /api/models/{provider} 保持一致）
+            models = [_ensure_model_traits(provider_id, model) for model in models]
+
+            # 过滤 hidden models（与 /api/models/{provider} 保持一致）
+            if effective_profile and hasattr(effective_profile, 'hidden_models') and effective_profile.hidden_models:
+                raw_hidden = effective_profile.hidden_models
+                if isinstance(raw_hidden, list):
+                    hidden_ids = set(raw_hidden)
+                    if hidden_ids:
+                        models = [m for m in models if m.id not in hidden_ids]
+                        logger.info(f"[Init] Filtered {len(hidden_ids)} hidden models, {len(models)} remaining")
+
             preferred_model_ids = _build_preferred_model_ids(provider_id, effective_profile, vertex_config)
 
+            # 完整模型列表（过滤 hidden 后）
             cached_models = [model.model_dump() for model in models]
-            cached_mode_catalog, _, _ = _resolve_mode_view(
+
+            # 计算 modeCatalog + chat 模式的预过滤模型
+            cached_mode_catalog, chat_filtered, cached_default_model_id = _resolve_mode_view(
                 models=models,
                 preferred_model_ids=preferred_model_ids,
+                mode="chat",
+            )
+            cached_chat_models = [model.model_dump() for model in chat_filtered]
+
+            logger.info(
+                f"[Init] Critical data: {len(cached_models)} all models, "
+                f"{len(cached_chat_models)} chat models, "
+                f"default={cached_default_model_id}"
             )
 
         return {
@@ -83,6 +111,8 @@ async def get_critical_init_data(
             "active_profile": profiles_result.get("active_profile"),
             "cached_models": cached_models,
             "cached_mode_catalog": cached_mode_catalog,
+            "cached_chat_models": cached_chat_models,
+            "cached_default_model_id": cached_default_model_id,
             "dashscope_key": profiles_result.get("dashscope_key", "")
         }
     except Exception as e:
@@ -144,7 +174,7 @@ async def get_non_critical_init_data(
     - imagenConfig: Imagen 配置
     """
     from ...services.common.init_service import (
-        _query_sessions_with_first_messages,  # ✅ 返回会话列表 + 第一个会话的完整消息
+        _query_sessions_with_first_messages,
         _query_personas, 
         _query_storage_configs,
         _query_vertex_ai_config
@@ -154,7 +184,7 @@ async def get_non_critical_init_data(
     try:
         # 并行查询非关键数据
         sessions_result, personas_result, storage_result, vertex_ai_result = await asyncio.gather(
-            _query_sessions_with_first_messages(user_id, db, limit=20),  # ✅ 第一个会话包含完整消息
+            _query_sessions_with_first_messages(user_id, db, limit=20),
             _query_personas(user_id, db),
             _query_storage_configs(user_id, db),
             _query_vertex_ai_config(user_id, db),

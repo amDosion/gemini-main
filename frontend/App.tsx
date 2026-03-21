@@ -171,6 +171,13 @@ const AppContent: React.FC = () => {
   const initialModeCatalog = useMemo(() => {
     return Array.isArray(initData?.cachedModeCatalog) ? initData.cachedModeCatalog : [];
   }, [initData?.cachedModeCatalog]);
+  const initialChatModels = useMemo(() => {
+    const models = Array.isArray(initData?.cachedChatModels) ? initData.cachedChatModels : [];
+    return models.filter(model => model && typeof model.id === 'string');
+  }, [initData?.cachedChatModels]);
+  const initialDefaultModelId = useMemo(() => {
+    return initData?.cachedDefaultModelId || null;
+  }, [initData?.cachedDefaultModelId]);
 
   // --- LLM Service 初始化 ---
   useLLMService(initData, activeProfile);
@@ -199,8 +206,9 @@ const AppContent: React.FC = () => {
     appMode,  // ✅ 传递 appMode，后端会根据模式过滤模型
     profileCacheKey,
     initialSavedModels,
-    initialModeCatalog
-    // apiKey 已移除 - 后端从数据库获取 API Key
+    initialModeCatalog,
+    initialChatModels,       // ✅ init/critical 预过滤的 chat 模型
+    initialDefaultModelId    // ✅ init/critical 的默认模型 ID
   );
 
   const {
