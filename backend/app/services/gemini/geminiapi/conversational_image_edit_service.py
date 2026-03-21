@@ -670,7 +670,7 @@ class ConversationalImageEditService:
                 model=chat_session.model_name,
                 config=chat_config
             )
-            logger.info(f"[ConversationalImageEdit] Created fresh chat object (no history) for chat_id={chat_id}")
+            logger.debug(f"[ConversationalImageEdit] Created fresh chat object (no history) for chat_id={chat_id}")
             
             # 缓存 Chat 对象
             if chat:
@@ -1405,7 +1405,7 @@ class ConversationalImageEditService:
                     # 传递 attachment_id（用于日志和调试）
                     if 'attachment_id' in img_item:
                         processed_img['attachment_id'] = img_item['attachment_id']
-                        logger.info(f"[ConversationalImageEdit] 处理附件: attachment_id={img_item['attachment_id']}")
+                        logger.debug(f"[ConversationalImageEdit] 处理附件: attachment_id={img_item['attachment_id']}")
 
                     if processed_img:
                         return processed_img
@@ -1419,7 +1419,7 @@ class ConversationalImageEditService:
 
             # ✅ 支持多图：raw_img 可能是列表
             if isinstance(raw_img, list):
-                logger.info(f"[ConversationalImageEdit] 处理多张参考图片，数量: {len(raw_img)}")
+                logger.debug(f"[ConversationalImageEdit] 处理多张参考图片，数量: {len(raw_img)}")
                 for idx, img_item in enumerate(raw_img):
                     processed = process_single_image(img_item)
                     if processed:
@@ -1431,7 +1431,7 @@ class ConversationalImageEditService:
                 if processed:
                     reference_images_list.append(processed)
 
-        logger.info(f"[ConversationalImageEdit] 转换完成，共 {len(reference_images_list)} 张参考图片")
+        logger.debug(f"[ConversationalImageEdit] 转换完成，共 {len(reference_images_list)} 张参考图片")
         return reference_images_list
     
     async def edit_image(
@@ -1496,7 +1496,7 @@ class ConversationalImageEditService:
                 existing_sessions = None
             else:
                 chat_id = active_session.chat_id
-                logger.info(f"[ConversationalImageEdit] Using existing chat session: {chat_id}")
+                logger.debug(f"[ConversationalImageEdit] Using existing chat session: {chat_id}")
         if not existing_sessions:
             # 创建新的 Chat 会话（包括模型切换后的重建）
             session_info = await self.create_chat_session(

@@ -848,7 +848,7 @@ async def get_available_models(
                 hidden_ids = set(raw_hidden)
             if hidden_ids:
                 models = [m for m in models if m.id not in hidden_ids]
-                logger.info(f"[Models] Filtered {len(hidden_ids)} hidden models, {len(models)} remaining")
+                logger.debug(f"[Models] Filtered {len(hidden_ids)} hidden models, {len(models)} remaining")
 
         all_provider_models = models
 
@@ -858,20 +858,20 @@ async def get_available_models(
             mode=mode,
         )
         if mode:
-            logger.info(f"[Models] Applying mode filter: {mode}")
-            logger.info(f"[Models] Filtered {len(all_provider_models)} -> {len(filtered_models)} models for mode={mode}")
+            logger.debug(f"[Models] Applying mode filter: {mode}")
+            logger.debug(f"[Models] Filtered {len(all_provider_models)} -> {len(filtered_models)} models for mode={mode}")
 
         # Convert to dict for JSON response
         models_dict = [model.model_dump() for model in filtered_models]
 
         elapsed = time.time() - start_time
-        logger.info(f"[Models] ========== 请求完成 ==========")
+        logger.debug(f"[Models] ========== 请求完成 ==========")
         logger.info(f"[Models] 提供商: {provider}")
-        logger.info(f"[Models] 最终返回模型数: {len(filtered_models)} 个")
-        logger.info(f"[Models] 是否使用缓存: {was_cached}")
-        logger.info(f"[Models] 是否应用模式过滤: {mode if mode else '否'}")
-        logger.info(f"[Models] 总耗时: {elapsed:.2f}s")
-        logger.info(f"[Models] =================================")
+        logger.debug(f"[Models] 最终返回模型数: {len(filtered_models)} 个")
+        logger.debug(f"[Models] 是否使用缓存: {was_cached}")
+        logger.debug(f"[Models] 是否应用模式过滤: {mode if mode else '否'}")
+        logger.debug(f"[Models] 总耗时: {elapsed:.2f}s")
+        logger.debug(f"[Models] =================================")
 
         return {
             "models": models_dict,

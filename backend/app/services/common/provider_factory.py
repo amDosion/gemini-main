@@ -219,8 +219,8 @@ class ProviderFactory:
             elapsed = (time.time() - start_time) * 1000
             service_type = type(service).__name__
             logger.info(f"[ProviderFactory] ✅ 服务创建完成 (耗时: {elapsed:.2f}ms)")
-            logger.info(f"[ProviderFactory]     - service类型: {service_type}")
-            logger.info(f"[ProviderFactory]     - 已缓存: {'是' if should_use_cache else '否'}")
+            logger.debug(f"[ProviderFactory]     - service类型: {service_type}")
+            logger.debug(f"[ProviderFactory]     - 已缓存: {'是' if should_use_cache else '否'}")
             return service
             
         except Exception as e:

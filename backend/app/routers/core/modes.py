@@ -1011,15 +1011,15 @@ async def handle_mode(
             token_source = "无 token"
         
         logger.info(f"[Modes] 📥 请求信息:")
-        logger.info(f"[Modes]     - provider: {provider}")
-        logger.info(f"[Modes]     - mode: {mode}")
-        logger.info(f"[Modes]     - user_id: {user_id}")  # ✅ 不截断 ID，显示完整 ID
-        logger.info(f"[Modes]     - token来源: {token_source}")
-        logger.info(f"[Modes]     - 有Authorization header: {'是' if auth_header else '否'}")
-        logger.info(f"[Modes]     - 有Cookie token: {'是' if cookie_token else '否'}")
-        logger.info(f"[Modes]     - model_id: {request_body.model_id}")
-        logger.info(f"[Modes]     - prompt长度: {len(request_body.prompt)}")
-        logger.info(f"[Modes]     - attachments数量: {len(request_body.attachments) if request_body.attachments else 0}")
+        logger.debug(f"[Modes]     - provider: {provider}")
+        logger.debug(f"[Modes]     - mode: {mode}")
+        logger.debug(f"[Modes]     - user_id: {user_id}")  # ✅ 不截断 ID，显示完整 ID
+        logger.debug(f"[Modes]     - token来源: {token_source}")
+        logger.debug(f"[Modes]     - 有Authorization header: {'是' if auth_header else '否'}")
+        logger.debug(f"[Modes]     - 有Cookie token: {'是' if cookie_token else '否'}")
+        logger.debug(f"[Modes]     - model_id: {request_body.model_id}")
+        logger.debug(f"[Modes]     - prompt长度: {len(request_body.prompt)}")
+        logger.debug(f"[Modes]     - attachments数量: {len(request_body.attachments) if request_body.attachments else 0}")
 
         option_keys = set(request_body.options.model_dump(exclude_none=True).keys()) if request_body.options else set()
         extra_keys = set(request_body.extra.keys()) if request_body.extra else set()
@@ -1050,9 +1050,9 @@ async def handle_mode(
             )
             total_time = (time.time() - request_start_time) * 1000
             logger.info(f"[Modes] ========== 模式请求处理完成 (总耗时: {total_time:.2f}ms) ==========")
-            logger.info(f"[Modes]     - provider: {provider}")
-            logger.info(f"[Modes]     - mode: {mode}")
-            logger.info(f"[Modes]     - 成功: True")
+            logger.debug(f"[Modes]     - provider: {provider}")
+            logger.debug(f"[Modes]     - mode: {mode}")
+            logger.debug(f"[Modes]     - 成功: True")
             return ModeResponse(
                 success=True,
                 data=result,
@@ -1072,8 +1072,8 @@ async def handle_mode(
         )
         credential_time = (time.time() - credential_start) * 1000
         logger.info(f"[Modes] ✅ [步骤2] 凭证获取完成 (耗时: {credential_time:.2f}ms)")
-        logger.info(f"[Modes]     - api_key: {'已设置' if api_key else 'None'}")
-        logger.info(f"[Modes]     - api_url: {api_url[:80] + '...' if api_url and len(api_url) > 80 else api_url or 'None'}")
+        logger.debug(f"[Modes]     - api_key: {'已设置' if api_key else 'None'}")
+        logger.debug(f"[Modes]     - api_url: {api_url[:80] + '...' if api_url and len(api_url) > 80 else api_url or 'None'}")
 
         # ✅ 3. 创建提供商服务（如 GoogleService）
         logger.info(f"[Modes] 🔄 [步骤3] 创建提供商服务...")
@@ -1088,7 +1088,7 @@ async def handle_mode(
         service_time = (time.time() - service_start) * 1000
         service_type = type(service).__name__
         logger.info(f"[Modes] ✅ [步骤3] 服务创建完成 (耗时: {service_time:.2f}ms)")
-        logger.info(f"[Modes]     - service类型: {service_type}")
+        logger.debug(f"[Modes]     - service类型: {service_type}")
 
         # ✅ 4. 检查服务是否支持该方法
         logger.info(f"[Modes] 🔄 [步骤4] 检查服务是否支持方法...")
@@ -1107,7 +1107,7 @@ async def handle_mode(
             "model": request_body.model_id,
             "prompt": request_body.prompt,
         }
-        logger.info(f"[Modes]     - 基础参数已设置: model={params['model']}, prompt长度={len(params['prompt'])}")
+        logger.debug(f"[Modes]     - 基础参数已设置: model={params['model']}, prompt长度={len(params['prompt'])}")
         
         # **特殊处理**：根据方法类型调整参数
         # - generate_speech 需要 text 和 voice 参数
@@ -1126,12 +1126,12 @@ async def handle_mode(
             if method_name == "generate_speech" and "voice" in options_dict:
                 options_dict.pop("voice", None)
             params.update(options_dict)
-            logger.info(f"[Modes]     - 已添加 options 参数: {len(options_dict)} 个")
+            logger.debug(f"[Modes]     - 已添加 options 参数: {len(options_dict)} 个")
         
         # 添加 extra 参数
         if request_body.extra:
             params.update(request_body.extra)
-            logger.info(f"[Modes]     - 已添加 extra 参数: {len(request_body.extra)} 个")
+            logger.debug(f"[Modes]     - 已添加 extra 参数: {len(request_body.extra)} 个")
         
         # **重要**：对于 edit_image 方法，需要传递 mode 参数
         # GoogleService.edit_image() 会根据 mode 参数智能分发到不同的子服务
@@ -1144,7 +1144,7 @@ async def handle_mode(
         if method_name == "layered_design":
             # 将 URL 路径中的 mode 参数传递给 layered_design 方法
             params["mode"] = mode
-            logger.info(f"[Modes]     - layered_design mode: {mode}")
+            logger.debug(f"[Modes]     - layered_design mode: {mode}")
 
         # **重要**：对于 expand_image 方法，需要将 outpaint_mode 映射为 mode
         # ExpandService.expand_image() 期望的参数名是 "mode" 而非 "outpaint_mode"
@@ -1153,7 +1153,7 @@ async def handle_mode(
             # outpaint_mode → mode (语义映射，中间件已将 outpaintMode 转换为 outpaint_mode)
             if "outpaint_mode" in params:
                 params["mode"] = params.pop("outpaint_mode")
-                logger.info(f"[Modes]     - expand_image mode: {params['mode']}")
+                logger.debug(f"[Modes]     - expand_image mode: {params['mode']}")
 
         # **新增**：处理 Edit 模式的 CONTINUITY LOGIC
         # 如果提供了 active_image_url，使用 AttachmentService 解析
@@ -1163,10 +1163,10 @@ async def handle_mode(
 
             logger.info(f"[Modes] ========== 开始处理Edit模式的CONTINUITY LOGIC ==========")
             logger.info(f"[Modes] 📥 CONTINUITY参数:")
-            logger.info(f"[Modes]     - method_name: {method_name}")
+            logger.debug(f"[Modes]     - method_name: {method_name}")
             url_type = 'Blob' if request_body.options.active_image_url.startswith('blob:') else 'Base64' if request_body.options.active_image_url.startswith('data:') else 'HTTP' if request_body.options.active_image_url.startswith('http') else '未知'
-            logger.info(f"[Modes]     - active_image_url类型: {url_type}")
-            logger.info(f"[Modes]     - active_image_url长度: {len(request_body.options.active_image_url)}")
+            logger.debug(f"[Modes]     - active_image_url类型: {url_type}")
+            logger.debug(f"[Modes]     - active_image_url长度: {len(request_body.options.active_image_url)}")
 
             attachment_service = AttachmentService(db)
 
@@ -1174,20 +1174,20 @@ async def handle_mode(
             session_id = request_body.options.frontend_session_id or request_body.options.session_id
             if session_id:
                 logger.info(f"[Modes] 🔍 获取会话ID和消息列表...")
-                logger.info(f"[Modes]     - session_id: {session_id}")  # ✅ 不截断 ID，显示完整 ID
+                logger.debug(f"[Modes]     - session_id: {session_id}")  # ✅ 不截断 ID，显示完整 ID
                 
                 # 从 extra 中获取 messages，如果为空则从数据库查询
                 messages = []
                 if request_body.extra and "messages" in request_body.extra:
                     messages = request_body.extra["messages"]
-                    logger.info(f"[Modes]     - 从 extra 中获取 messages: {len(messages)} 条")
+                    logger.debug(f"[Modes]     - 从 extra 中获取 messages: {len(messages)} 条")
                 elif session_id:
                     # 从数据库查询会话的所有消息（用于CONTINUITY LOGIC查找附件）
-                    logger.info(f"[Modes]     - 从数据库查询会话消息...")
+                    logger.debug(f"[Modes]     - 从数据库查询会话消息...")
                     from ...models.db_models import Message
                     db_messages = db.query(Message).filter_by(session_id=session_id).order_by(Message.timestamp.asc()).all()
                     messages = [msg.to_dict() for msg in db_messages if hasattr(msg, 'to_dict')]
-                    logger.info(f"[Modes]     - 从数据库查询到 {len(messages)} 条消息")
+                    logger.debug(f"[Modes]     - 从数据库查询到 {len(messages)} 条消息")
                 
                 # 解析 CONTINUITY 附件
                 logger.info(f"[Modes] 🔄 调用 AttachmentService.resolve_continuity_attachment()...")
@@ -1208,9 +1208,9 @@ async def handle_mode(
                     
                     has_cloud_url = resolved["status"] == "completed" and resolved["url"] and resolved["url"].startswith("http")
                     logger.info(f"[Modes] ✅ CONTINUITY附件解析成功 (耗时: {continuity_elapsed:.2f}ms):")
-                    logger.info(f"[Modes]     - attachment_id: {resolved['attachment_id']}")  # ✅ 不截断 ID，显示完整 ID
-                    logger.info(f"[Modes]     - status: {resolved['status']}")
-                    logger.info(f"[Modes]     - hasCloudUrl: {has_cloud_url}")
+                    logger.debug(f"[Modes]     - attachment_id: {resolved['attachment_id']}")  # ✅ 不截断 ID，显示完整 ID
+                    logger.debug(f"[Modes]     - status: {resolved['status']}")
+                    logger.debug(f"[Modes]     - hasCloudUrl: {has_cloud_url}")
                     # ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
                     if resolved.get('url'):
                         if resolved['url'].startswith('data:'):
@@ -1219,10 +1219,10 @@ async def handle_mode(
                             url_display = resolved['url'][:80] + '...' if len(resolved['url']) > 80 else resolved['url']
                     else:
                         url_display = 'None'
-                    logger.info(f"[Modes]     - url: {url_display}")
+                    logger.debug(f"[Modes]     - url: {url_display}")
                     task_id_display = resolved.get('task_id') or 'None'  # ✅ 不截断 task_id，显示完整 ID
-                    logger.info(f"[Modes]     - taskId: {task_id_display}")
-                    logger.info(f"[Modes]     - 已添加到 reference_images.raw")
+                    logger.debug(f"[Modes]     - taskId: {task_id_display}")
+                    logger.debug(f"[Modes]     - 已添加到 reference_images.raw")
                     logger.info(f"[Modes] ========== CONTINUITY LOGIC处理完成 ==========")
                 else:
                     logger.warning(f"[Modes] ⚠️ CONTINUITY附件解析失败 (耗时: {continuity_elapsed:.2f}ms): 未找到匹配的附件")
@@ -1232,7 +1232,7 @@ async def handle_mode(
         # **特殊处理**：对于需要文件数据的方法（pdf-extract, virtual-try-on, segment-clothing 等）
         # 从 attachments 中提取数据
         if request_body.attachments:
-            logger.info(f"[Modes]     - 处理 attachments: {len(request_body.attachments)} 个")
+            logger.debug(f"[Modes]     - 处理 attachments: {len(request_body.attachments)} 个")
             if method_name in {"generate_video", "understand_video", "delete_video"}:
                 params, video_params = merge_video_mode_attachment_params(
                     method_name=method_name,
@@ -1269,26 +1269,26 @@ async def handle_mode(
 
                         if db_attachment:
                             logger.info(f"[Modes] ✅ 找到数据库中的附件: attachment_id={attachment_id}")  # ✅ 不截断 ID，显示完整 ID
-                            logger.info(f"[Modes]     - upload_status: {db_attachment.upload_status}")
-                            logger.info(f"[Modes]     - has_url: {bool(db_attachment.url)}")
-                            logger.info(f"[Modes]     - has_temp_url: {bool(db_attachment.temp_url)}")
+                            logger.debug(f"[Modes]     - upload_status: {db_attachment.upload_status}")
+                            logger.debug(f"[Modes]     - has_url: {bool(db_attachment.url)}")
+                            logger.debug(f"[Modes]     - has_temp_url: {bool(db_attachment.temp_url)}")
 
                             # ✅ 如果已上传完成，优先使用 url（云端永久 URL）
                             if db_attachment.upload_status == 'completed' and db_attachment.url:
                                 raw_data['url'] = db_attachment.url
                                 # ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
                                 if db_attachment.url.startswith('data:'):
-                                    logger.info(f"[Modes]     - 使用云存储 URL: Base64 Data URL (长度: {len(db_attachment.url)} 字符)")
+                                    logger.debug(f"[Modes]     - 使用云存储 URL: Base64 Data URL (长度: {len(db_attachment.url)} 字符)")
                                 else:
-                                    logger.info(f"[Modes]     - 使用云存储 URL: {db_attachment.url[:80] + '...' if len(db_attachment.url) > 80 else db_attachment.url}")
+                                    logger.debug(f"[Modes]     - 使用云存储 URL: {db_attachment.url[:80] + '...' if len(db_attachment.url) > 80 else db_attachment.url}")
                             # ✅ 如果未上传完成，使用 temp_url（Base64）
                             elif db_attachment.temp_url:
                                 raw_data['url'] = db_attachment.temp_url
                                 # ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
                                 if db_attachment.temp_url.startswith('data:'):
-                                    logger.info(f"[Modes]     - 使用临时 URL: Base64 Data URL (长度: {len(db_attachment.temp_url)} 字符)")
+                                    logger.debug(f"[Modes]     - 使用临时 URL: Base64 Data URL (长度: {len(db_attachment.temp_url)} 字符)")
                                 else:
-                                    logger.info(f"[Modes]     - 使用临时 URL: {db_attachment.temp_url[:80] + '...' if len(db_attachment.temp_url) > 80 else db_attachment.temp_url}")
+                                    logger.debug(f"[Modes]     - 使用临时 URL: {db_attachment.temp_url[:80] + '...' if len(db_attachment.temp_url) > 80 else db_attachment.temp_url}")
 
                             # 更新 reference_images
                             reference_images['raw'] = raw_data
@@ -1297,7 +1297,7 @@ async def handle_mode(
 
                 if reference_images:
                     params["reference_images"] = reference_images
-                    logger.info(f"[Modes]     - 已转换 reference_images: {len(reference_images)} 个")
+                    logger.debug(f"[Modes]     - 已转换 reference_images: {len(reference_images)} 个")
 
             # 对于 segment-clothing，需要从 attachments 中提取图像数据
             if method_name == "segment_clothing":
@@ -1374,24 +1374,24 @@ async def handle_mode(
 
         param_time = (time.time() - param_start) * 1000
         logger.info(f"[Modes] ✅ [步骤5] 参数准备完成 (耗时: {param_time:.2f}ms)")
-        logger.info(f"[Modes]     - 最终参数数量: {len(params)}")
-        logger.info(f"[Modes]     - 参数键: {list(params.keys())}")
+        logger.debug(f"[Modes]     - 最终参数数量: {len(params)}")
+        logger.debug(f"[Modes]     - 参数键: {list(params.keys())}")
 
         # ✅ 6. 调用服务方法（服务内部会分发到子服务）
         logger.info(f"[Modes] 🔄 [步骤6] 调用服务方法: {service_type}.{method_name}()...")
-        logger.info(f"[Modes]     - 参数数量: {len(params)}")
-        logger.info(f"[Modes]     - 关键参数:")
-        logger.info(f"[Modes]         - model: {params.get('model', 'None')}")
-        logger.info(f"[Modes]         - prompt: {params.get('prompt', 'None')[:100] + '...' if params.get('prompt') and len(params.get('prompt', '')) > 100 else params.get('prompt', 'None')}")
+        logger.debug(f"[Modes]     - 参数数量: {len(params)}")
+        logger.debug(f"[Modes]     - 关键参数:")
+        logger.debug(f"[Modes]         - model: {params.get('model', 'None')}")
+        logger.debug(f"[Modes]         - prompt: {params.get('prompt', 'None')[:100] + '...' if params.get('prompt') and len(params.get('prompt', '')) > 100 else params.get('prompt', 'None')}")
         if 'number_of_images' in params:
-            logger.info(f"[Modes]         - number_of_images: {params.get('number_of_images')}")
+            logger.debug(f"[Modes]         - number_of_images: {params.get('number_of_images')}")
         if 'aspect_ratio' in params:
-            logger.info(f"[Modes]         - aspect_ratio: {params.get('aspect_ratio')}")
+            logger.debug(f"[Modes]         - aspect_ratio: {params.get('aspect_ratio')}")
         if 'image_size' in params:
-            logger.info(f"[Modes]         - image_size: {params.get('image_size')}")
+            logger.debug(f"[Modes]         - image_size: {params.get('image_size')}")
         if 'reference_images' in params:
             ref_images = params.get('reference_images', {})
-            logger.info(f"[Modes]         - reference_images: {len(ref_images)} 个引用图片")
+            logger.debug(f"[Modes]         - reference_images: {len(ref_images)} 个引用图片")
         
         method_start = time.time()
         try:
@@ -1496,13 +1496,13 @@ async def handle_mode(
         
         logger.info(f"[Modes] ✅ [步骤6] 服务方法调用完成 (耗时: {method_time:.2f}ms)")
         if isinstance(result, list):
-            logger.info(f"[Modes]     - 返回结果: {len(result)} 个图片")
+            logger.debug(f"[Modes]     - 返回结果: {len(result)} 个图片")
         elif isinstance(result, dict):
-            logger.info(f"[Modes]     - 返回结果: 字典格式")
+            logger.debug(f"[Modes]     - 返回结果: 字典格式")
             if 'images' in result:
-                logger.info(f"[Modes]     - 图片数量: {len(result.get('images', []))}")
+                logger.debug(f"[Modes]     - 图片数量: {len(result.get('images', []))}")
         else:
-            logger.info(f"[Modes]     - 返回结果类型: {type(result).__name__}")
+            logger.debug(f"[Modes]     - 返回结果类型: {type(result).__name__}")
 
         # ✅ 7. **新增**：处理图片生成和编辑的结果（使用 AttachmentService）
         # 对于 image-gen, image-edit, image-outpainting 模式，处理返回的图片
@@ -1517,8 +1517,8 @@ async def handle_mode(
                 session_id = request_body.options.frontend_session_id or request_body.options.session_id
                 message_id = request_body.options.message_id
             
-            logger.info(f"[Modes]     - session_id: {session_id or 'None'}")  # ✅ 不截断 ID，显示完整 ID
-            logger.info(f"[Modes]     - message_id: {message_id or 'None'}")  # ✅ 不截断 ID，显示完整 ID
+            logger.debug(f"[Modes]     - session_id: {session_id or 'None'}")  # ✅ 不截断 ID，显示完整 ID
+            logger.debug(f"[Modes]     - message_id: {message_id or 'None'}")  # ✅ 不截断 ID，显示完整 ID
             
             # ✅ 如果缺少 messageId，记录警告但继续处理（不阻塞）
             if not message_id:
@@ -1530,7 +1530,7 @@ async def handle_mode(
                 # 处理返回的图片列表
                 # 结果格式可能是 List[Dict] 或 List[ImageGenerationResult]
                 images = result if isinstance(result, list) else result.get("images", []) if isinstance(result, dict) else []
-                logger.info(f"[Modes]     - 需要处理的图片数量: {len(images)}")
+                logger.debug(f"[Modes]     - 需要处理的图片数量: {len(images)}")
                 
                 for idx, img in enumerate(images):
                     logger.info(f"[Modes] 🔄 [步骤7] 处理第 {idx+1}/{len(images)} 张图片...")
@@ -1558,8 +1558,8 @@ async def handle_mode(
                         continue
                     
                     url_type = "Base64" if ai_url.startswith('data:') else "HTTP" if ai_url.startswith('http') else "其他"
-                    logger.info(f"[Modes]     - 图片URL类型: {url_type}")
-                    logger.info(f"[Modes]     - mime_type: {mime_type}")
+                    logger.debug(f"[Modes]     - 图片URL类型: {url_type}")
+                    logger.debug(f"[Modes]     - mime_type: {mime_type}")
                     
                     # 使用 AttachmentService 处理AI返回的图片
                     # 根据方法名确定前缀：generated（生成）, edited（编辑）, expanded（扩图）
@@ -1569,7 +1569,7 @@ async def handle_mode(
                         prefix = "expanded"
                     else:
                         prefix = "edited"
-                    logger.info(f"[Modes]     - 调用 AttachmentService.process_ai_result()...")
+                    logger.debug(f"[Modes]     - 调用 AttachmentService.process_ai_result()...")
                     processed = await attachment_service.process_ai_result(
                         ai_url=ai_url,
                         mime_type=mime_type,
@@ -1581,9 +1581,9 @@ async def handle_mode(
                     )
                     
                     logger.info(f"[Modes] ✅ [步骤7] 第 {idx+1} 张图片处理完成:")
-                    logger.info(f"[Modes]     - attachment_id: {processed['attachment_id']}")  # ✅ 不截断 ID，显示完整 ID
-                    logger.info(f"[Modes]     - status: {processed['status']}")
-                    logger.info(f"[Modes]     - task_id: {processed.get('task_id') or 'None'}")  # ✅ 不截断 task_id，显示完整 ID
+                    logger.debug(f"[Modes]     - attachment_id: {processed['attachment_id']}")  # ✅ 不截断 ID，显示完整 ID
+                    logger.debug(f"[Modes]     - status: {processed['status']}")
+                    logger.debug(f"[Modes]     - task_id: {processed.get('task_id') or 'None'}")  # ✅ 不截断 task_id，显示完整 ID
                     
                     # 构建响应格式（使用 snake_case，中间件会自动转换为 camelCase）
                     image_result = {
@@ -1603,15 +1603,15 @@ async def handle_mode(
                     # 添加增强后的提示词（如果有）
                     if enhanced_prompt:
                         image_result["enhanced_prompt"] = enhanced_prompt
-                        logger.info(f"[Modes]     - enhanced_prompt: {enhanced_prompt}")
+                        logger.debug(f"[Modes]     - enhanced_prompt: {enhanced_prompt}")
                     
                     # ✅ 修复断点1：保留 thinking 数据（如果存在）
                     if thoughts:
                         image_result["thoughts"] = thoughts
-                        logger.info(f"[Modes]     - thoughts: {len(thoughts) if isinstance(thoughts, list) else 'N/A'} items")
+                        logger.debug(f"[Modes]     - thoughts: {len(thoughts) if isinstance(thoughts, list) else 'N/A'} items")
                     if text:
                         image_result["text"] = text
-                        logger.info(f"[Modes]     - text: {text[:100]}..." if len(text) > 100 else f"[Modes]     - text: {text}")
+                        logger.debug(f"[Modes]     - text: {text[:100]}..." if len(text) > 100 else f"[Modes]     - text: {text}")
                     
                     processed_images.append(image_result)
                 
@@ -1634,8 +1634,8 @@ async def handle_mode(
                 session_id = request_body.options.frontend_session_id or request_body.options.session_id
                 message_id = request_body.options.message_id
 
-            logger.info(f"[Modes]     - session_id: {session_id or 'None'}")
-            logger.info(f"[Modes]     - message_id: {message_id or 'None'}")
+            logger.debug(f"[Modes]     - session_id: {session_id or 'None'}")
+            logger.debug(f"[Modes]     - message_id: {message_id or 'None'}")
 
             video_payload = result if isinstance(result, dict) else {}
             ai_url = video_payload.get("url")
@@ -1738,9 +1738,9 @@ async def handle_mode(
         # ✅ 8. 返回响应
         total_time = (time.time() - request_start_time) * 1000
         logger.info(f"[Modes] ========== 模式请求处理完成 (总耗时: {total_time:.2f}ms) ==========")
-        logger.info(f"[Modes]     - provider: {provider}")
-        logger.info(f"[Modes]     - mode: {mode}")
-        logger.info(f"[Modes]     - 成功: True")
+        logger.debug(f"[Modes]     - provider: {provider}")
+        logger.debug(f"[Modes]     - mode: {mode}")
+        logger.debug(f"[Modes]     - 成功: True")
         return ModeResponse(
             success=True,
             data=result,

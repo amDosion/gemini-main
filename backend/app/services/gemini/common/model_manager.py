@@ -118,7 +118,7 @@ class ModelManager:
             model_configs = []
             total_models = len(data['models'])
 
-            logger.info(f"[Model Manager] Processing {total_models} models from API")
+            logger.debug(f"[Model Manager] Processing {total_models} models from API")
 
             for model in data['models']:
                 try:
