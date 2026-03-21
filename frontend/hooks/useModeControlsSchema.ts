@@ -98,8 +98,8 @@ export interface ModeControlsSchema {
   mode: string;
   requestedMode?: string;
   modelId?: string;
-  defaults?: Record<string, any>;
-  constraints?: Record<string, any>;
+  defaults?: Record<string, unknown>;
+  constraints?: Record<string, unknown>;
   aspectRatios?: AspectRatioOption[];
   resolutionTiers?: ResolutionTierOption[];
   resolutionMap?: ResolutionMap;
@@ -113,7 +113,7 @@ type ControlsApiResponse = {
   provider: string;
   mode: string;
   modelId?: string;
-  schema?: Record<string, any>;
+  schema?: Record<string, unknown>;
 };
 
 const schemaCache = new Map<string, ModeControlsSchema>();
@@ -140,7 +140,7 @@ const isAbortRequestError = (error: unknown): boolean => {
   return error.name === 'AbortError' || error.message === ABORT_MESSAGE;
 };
 
-function normalizeAspectRatios(raw: any): AspectRatioOption[] | undefined {
+function normalizeAspectRatios(raw: unknown): AspectRatioOption[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const options: AspectRatioOption[] = [];
   for (const item of raw) {
@@ -158,7 +158,7 @@ function normalizeAspectRatios(raw: any): AspectRatioOption[] | undefined {
   return options;
 }
 
-function normalizeResolutionTiers(raw: any): ResolutionTierOption[] | undefined {
+function normalizeResolutionTiers(raw: unknown): ResolutionTierOption[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const options: ResolutionTierOption[] = [];
   for (const item of raw) {
@@ -177,7 +177,7 @@ function normalizeResolutionTiers(raw: any): ResolutionTierOption[] | undefined 
   return options;
 }
 
-function normalizeResolutionMap(raw: any): ResolutionMap | undefined {
+function normalizeResolutionMap(raw: unknown): ResolutionMap | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const result: ResolutionMap = {};
   for (const [tier, mapping] of Object.entries(raw)) {
@@ -191,7 +191,7 @@ function normalizeResolutionMap(raw: any): ResolutionMap | undefined {
   return result;
 }
 
-function normalizeParamOptions(raw: any): ParamOptionsMap | undefined {
+function normalizeParamOptions(raw: unknown): ParamOptionsMap | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const result: ParamOptionsMap = {};
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
@@ -202,13 +202,13 @@ function normalizeParamOptions(raw: any): ParamOptionsMap | undefined {
         item &&
         typeof item === 'object' &&
         'value' in item &&
-        (typeof (item as any).value === 'string' ||
-          typeof (item as any).value === 'number' ||
-          typeof (item as any).value === 'boolean')
+        (typeof (item as Record<string, unknown>).value === 'string' ||
+          typeof (item as Record<string, unknown>).value === 'number' ||
+          typeof (item as Record<string, unknown>).value === 'boolean')
       ) {
-        const v = (item as any).value as OptionValue;
+        const v = (item as Record<string, unknown>).value as OptionValue;
         options.push({
-          label: typeof (item as any).label === 'string' ? (item as any).label : String(v),
+          label: typeof (item as Record<string, unknown>).label === 'string' ? (item as Record<string, unknown>).label as string : String(v),
           value: v,
         });
       } else if (typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean') {
@@ -220,14 +220,14 @@ function normalizeParamOptions(raw: any): ParamOptionsMap | undefined {
   return result;
 }
 
-function normalizeNumericRanges(raw: any): NumericRangesMap | undefined {
+function normalizeNumericRanges(raw: unknown): NumericRangesMap | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const result: NumericRangesMap = {};
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
     if (!value || typeof value !== 'object') continue;
-    const min = (value as any).min;
-    const max = (value as any).max;
-    const step = (value as any).step;
+    const min = (value as Record<string, unknown>).min;
+    const max = (value as Record<string, unknown>).max;
+    const step = (value as Record<string, unknown>).step;
     result[key] = {
       min: typeof min === 'number' ? min : undefined,
       max: typeof max === 'number' ? max : undefined,
@@ -237,7 +237,7 @@ function normalizeNumericRanges(raw: any): NumericRangesMap | undefined {
   return result;
 }
 
-function normalizeStringArray(raw: any): string[] | undefined {
+function normalizeStringArray(raw: unknown): string[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const result = raw
     .map((item) => (typeof item === 'string' ? item : null))
@@ -245,7 +245,7 @@ function normalizeStringArray(raw: any): string[] | undefined {
   return result.length > 0 ? result : undefined;
 }
 
-function normalizeVideoContractAttachmentSlots(raw: any): VideoContractAttachmentSlot[] | undefined {
+function normalizeVideoContractAttachmentSlots(raw: unknown): VideoContractAttachmentSlot[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const result: VideoContractAttachmentSlot[] = [];
   for (const item of raw) {
@@ -269,7 +269,7 @@ function normalizeVideoContractAttachmentSlots(raw: any): VideoContractAttachmen
   return result.length > 0 ? result : undefined;
 }
 
-function normalizeVideoContractInputStrategies(raw: any): VideoContractInputStrategy[] | undefined {
+function normalizeVideoContractInputStrategies(raw: unknown): VideoContractInputStrategy[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const result: VideoContractInputStrategy[] = [];
   for (const item of raw) {
@@ -285,7 +285,7 @@ function normalizeVideoContractInputStrategies(raw: any): VideoContractInputStra
 }
 
 function normalizeVideoContractExtensionMatrix(
-  raw: any
+  raw: unknown
 ): VideoContractExtensionMatrixEntry[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const result: VideoContractExtensionMatrixEntry[] = [];
@@ -330,10 +330,11 @@ function normalizeVideoContractExtensionMatrix(
   return result.length > 0 ? result : undefined;
 }
 
-function normalizeVideoContract(raw: any): VideoContract | undefined {
+function normalizeVideoContract(raw: unknown): VideoContract | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
+  const obj = raw as Record<string, unknown>;
 
-  const supportsRaw = raw.supports;
+  const supportsRaw = obj.supports as Record<string, unknown> | undefined;
   const supports: VideoContractSupports | undefined =
     supportsRaw && typeof supportsRaw === 'object'
       ? (Object.fromEntries(
@@ -341,144 +342,149 @@ function normalizeVideoContract(raw: any): VideoContract | undefined {
         ) as VideoContractSupports)
       : undefined;
 
-  const fieldPoliciesRaw = raw.fieldPolicies ?? raw.field_policies;
+  const fieldPoliciesRaw = (obj.fieldPolicies ?? obj.field_policies) as Record<string, unknown> | undefined;
+  const _fpEnhance = (fieldPoliciesRaw?.enhancePrompt ?? fieldPoliciesRaw?.enhance_prompt) as Record<string, unknown> | undefined;
+  const _fpAudio = (fieldPoliciesRaw?.generateAudio ?? fieldPoliciesRaw?.generate_audio) as Record<string, unknown> | undefined;
+  const _fpPerson = (fieldPoliciesRaw?.personGeneration ?? fieldPoliciesRaw?.person_generation) as Record<string, unknown> | undefined;
+  const _fpSubtitle = (fieldPoliciesRaw?.subtitleMode ?? fieldPoliciesRaw?.subtitle_mode) as Record<string, unknown> | undefined;
+  const _fpStoryboard = (fieldPoliciesRaw?.storyboardPrompt ?? fieldPoliciesRaw?.storyboard_prompt) as Record<string, unknown> | undefined;
   const fieldPolicies: VideoContractFieldPolicies | undefined =
     fieldPoliciesRaw && typeof fieldPoliciesRaw === 'object'
       ? {
           enhancePrompt:
-            fieldPoliciesRaw.enhancePrompt ?? fieldPoliciesRaw.enhance_prompt
+            _fpEnhance
               ? {
                   mandatory:
-                    typeof (fieldPoliciesRaw.enhancePrompt ?? fieldPoliciesRaw.enhance_prompt)
+                    typeof _fpEnhance
                       ?.mandatory === 'boolean'
                       ? Boolean(
-                          (fieldPoliciesRaw.enhancePrompt ?? fieldPoliciesRaw.enhance_prompt).mandatory
+                          _fpEnhance.mandatory
                         )
                       : undefined,
                   lockedWhenMandatory:
-                    typeof (fieldPoliciesRaw.enhancePrompt ?? fieldPoliciesRaw.enhance_prompt)
+                    typeof _fpEnhance
                       ?.lockedWhenMandatory === 'boolean'
                       ? Boolean(
-                          (fieldPoliciesRaw.enhancePrompt ?? fieldPoliciesRaw.enhance_prompt)
+                          _fpEnhance
                             .lockedWhenMandatory
                         )
-                      : typeof (fieldPoliciesRaw.enhancePrompt ?? fieldPoliciesRaw.enhance_prompt)
+                      : typeof _fpEnhance
                             ?.locked_when_mandatory === 'boolean'
                         ? Boolean(
-                            (fieldPoliciesRaw.enhancePrompt ?? fieldPoliciesRaw.enhance_prompt)
+                            _fpEnhance
                               .locked_when_mandatory
                           )
                         : undefined,
                   effectiveDefault:
-                    typeof (fieldPoliciesRaw.enhancePrompt ?? fieldPoliciesRaw.enhance_prompt)
+                    typeof _fpEnhance
                       ?.effectiveDefault === 'boolean'
                       ? Boolean(
-                          (fieldPoliciesRaw.enhancePrompt ?? fieldPoliciesRaw.enhance_prompt)
+                          _fpEnhance
                             .effectiveDefault
                         )
-                      : typeof (fieldPoliciesRaw.enhancePrompt ?? fieldPoliciesRaw.enhance_prompt)
+                      : typeof _fpEnhance
                             ?.effective_default === 'boolean'
                         ? Boolean(
-                            (fieldPoliciesRaw.enhancePrompt ?? fieldPoliciesRaw.enhance_prompt)
+                            _fpEnhance
                               .effective_default
                           )
                         : undefined,
                 }
               : undefined,
           generateAudio:
-            fieldPoliciesRaw.generateAudio ?? fieldPoliciesRaw.generate_audio
+            _fpAudio
               ? {
                   available:
-                    typeof (fieldPoliciesRaw.generateAudio ?? fieldPoliciesRaw.generate_audio)
+                    typeof _fpAudio
                       ?.available === 'boolean'
                       ? Boolean(
-                          (fieldPoliciesRaw.generateAudio ?? fieldPoliciesRaw.generate_audio).available
+                          _fpAudio.available
                         )
                       : undefined,
                   forcedValue:
-                    'forcedValue' in (fieldPoliciesRaw.generateAudio ?? fieldPoliciesRaw.generate_audio)
-                      ? (fieldPoliciesRaw.generateAudio ?? fieldPoliciesRaw.generate_audio)
-                          .forcedValue ?? null
-                      : 'forced_value' in (fieldPoliciesRaw.generateAudio ?? fieldPoliciesRaw.generate_audio)
-                        ? (fieldPoliciesRaw.generateAudio ?? fieldPoliciesRaw.generate_audio)
-                            .forced_value ?? null
+                    'forcedValue' in _fpAudio
+                      ? _fpAudio
+                          .forcedValue as OptionValue ?? null
+                      : 'forced_value' in _fpAudio
+                        ? _fpAudio
+                            .forced_value as OptionValue ?? null
                         : undefined,
                 }
               : undefined,
           personGeneration:
-            fieldPoliciesRaw.personGeneration ?? fieldPoliciesRaw.person_generation
+            _fpPerson
               ? {
                   available:
-                    typeof (fieldPoliciesRaw.personGeneration ?? fieldPoliciesRaw.person_generation)
+                    typeof _fpPerson
                       ?.available === 'boolean'
                       ? Boolean(
-                          (fieldPoliciesRaw.personGeneration ?? fieldPoliciesRaw.person_generation).available
+                          _fpPerson.available
                         )
                       : undefined,
                   forcedValue:
-                    'forcedValue' in (fieldPoliciesRaw.personGeneration ?? fieldPoliciesRaw.person_generation)
-                      ? (fieldPoliciesRaw.personGeneration ?? fieldPoliciesRaw.person_generation)
-                          .forcedValue ?? null
-                      : 'forced_value' in (fieldPoliciesRaw.personGeneration ?? fieldPoliciesRaw.person_generation)
-                        ? (fieldPoliciesRaw.personGeneration ?? fieldPoliciesRaw.person_generation)
-                            .forced_value ?? null
+                    'forcedValue' in _fpPerson
+                      ? _fpPerson
+                          .forcedValue as OptionValue ?? null
+                      : 'forced_value' in _fpPerson
+                        ? _fpPerson
+                            .forced_value as OptionValue ?? null
                         : undefined,
                 }
               : undefined,
           subtitleMode:
-            fieldPoliciesRaw.subtitleMode ?? fieldPoliciesRaw.subtitle_mode
+            _fpSubtitle
               ? {
                   available:
-                    typeof (fieldPoliciesRaw.subtitleMode ?? fieldPoliciesRaw.subtitle_mode)
+                    typeof _fpSubtitle
                       ?.available === 'boolean'
                       ? Boolean(
-                          (fieldPoliciesRaw.subtitleMode ?? fieldPoliciesRaw.subtitle_mode).available
+                          _fpSubtitle.available
                         )
                       : undefined,
                   singleSidecarFormat:
-                    typeof (fieldPoliciesRaw.subtitleMode ?? fieldPoliciesRaw.subtitle_mode)
+                    typeof _fpSubtitle
                       ?.singleSidecarFormat === 'boolean'
                       ? Boolean(
-                          (fieldPoliciesRaw.subtitleMode ?? fieldPoliciesRaw.subtitle_mode)
+                          _fpSubtitle
                             .singleSidecarFormat
                         )
-                      : typeof (fieldPoliciesRaw.subtitleMode ?? fieldPoliciesRaw.subtitle_mode)
+                      : typeof _fpSubtitle
                             ?.single_sidecar_format === 'boolean'
                         ? Boolean(
-                            (fieldPoliciesRaw.subtitleMode ?? fieldPoliciesRaw.subtitle_mode)
+                            _fpSubtitle
                               .single_sidecar_format
                           )
                         : undefined,
                   defaultEnabledMode:
-                    typeof (fieldPoliciesRaw.subtitleMode ?? fieldPoliciesRaw.subtitle_mode)
+                    typeof _fpSubtitle
                       ?.defaultEnabledMode === 'string'
-                      ? (fieldPoliciesRaw.subtitleMode ?? fieldPoliciesRaw.subtitle_mode)
+                      ? _fpSubtitle
                           .defaultEnabledMode
-                      : typeof (fieldPoliciesRaw.subtitleMode ?? fieldPoliciesRaw.subtitle_mode)
+                      : typeof _fpSubtitle
                             ?.default_enabled_mode === 'string'
-                        ? (fieldPoliciesRaw.subtitleMode ?? fieldPoliciesRaw.subtitle_mode)
+                        ? _fpSubtitle
                             .default_enabled_mode
                         : undefined,
                   supportedValues: normalizeStringArray(
-                    (fieldPoliciesRaw.subtitleMode ?? fieldPoliciesRaw.subtitle_mode)?.supportedValues ??
-                      (fieldPoliciesRaw.subtitleMode ?? fieldPoliciesRaw.subtitle_mode)?.supported_values
+                    _fpSubtitle?.supportedValues ??
+                      _fpSubtitle?.supported_values
                   ),
                 }
               : undefined,
           storyboardPrompt:
-            fieldPoliciesRaw.storyboardPrompt ?? fieldPoliciesRaw.storyboard_prompt
+            _fpStoryboard
               ? {
                   preferred:
-                    typeof (fieldPoliciesRaw.storyboardPrompt ?? fieldPoliciesRaw.storyboard_prompt)
+                    typeof _fpStoryboard
                       ?.preferred === 'boolean'
                       ? Boolean(
-                          (fieldPoliciesRaw.storyboardPrompt ?? fieldPoliciesRaw.storyboard_prompt).preferred
+                          _fpStoryboard.preferred
                         )
                       : undefined,
                   deprecatedCompanionFields: normalizeStringArray(
-                    (fieldPoliciesRaw.storyboardPrompt ?? fieldPoliciesRaw.storyboard_prompt)
+                    _fpStoryboard
                       ?.deprecatedCompanionFields ??
-                      (fieldPoliciesRaw.storyboardPrompt ?? fieldPoliciesRaw.storyboard_prompt)
+                      _fpStoryboard
                         ?.deprecated_companion_fields
                   ),
                 }
@@ -486,7 +492,7 @@ function normalizeVideoContract(raw: any): VideoContract | undefined {
         }
       : undefined;
 
-  const extensionConstraintsRaw = raw.extensionConstraints ?? raw.extension_constraints;
+  const extensionConstraintsRaw = (obj.extensionConstraints ?? obj.extension_constraints) as Record<string, unknown> | undefined;
   const extensionConstraints: VideoContractExtensionConstraints | undefined =
     extensionConstraintsRaw && typeof extensionConstraintsRaw === 'object'
       ? {
@@ -524,26 +530,26 @@ function normalizeVideoContract(raw: any): VideoContract | undefined {
       : undefined;
 
   return {
-    version: typeof raw.version === 'string' ? raw.version : undefined,
+    version: typeof obj.version === 'string' ? obj.version : undefined,
     runtimeApiMode:
-      typeof raw.runtimeApiMode === 'string'
-        ? raw.runtimeApiMode
-        : typeof raw.runtime_api_mode === 'string'
-          ? raw.runtime_api_mode
+      typeof obj.runtimeApiMode === 'string'
+        ? obj.runtimeApiMode
+        : typeof obj.runtime_api_mode === 'string'
+          ? obj.runtime_api_mode
           : undefined,
     supports,
-    attachmentSlots: normalizeVideoContractAttachmentSlots(raw.attachmentSlots ?? raw.attachment_slots),
-    inputStrategies: normalizeVideoContractInputStrategies(raw.inputStrategies ?? raw.input_strategies),
+    attachmentSlots: normalizeVideoContractAttachmentSlots(obj.attachmentSlots ?? obj.attachment_slots),
+    inputStrategies: normalizeVideoContractInputStrategies(obj.inputStrategies ?? obj.input_strategies),
     fieldPolicies,
-    normalizationRules: normalizeStringArray(raw.normalizationRules ?? raw.normalization_rules),
+    normalizationRules: normalizeStringArray(obj.normalizationRules ?? obj.normalization_rules),
     extensionDurationMatrix: normalizeVideoContractExtensionMatrix(
-      raw.extensionDurationMatrix ?? raw.extension_duration_matrix
+      obj.extensionDurationMatrix ?? obj.extension_duration_matrix
     ),
     extensionConstraints,
   };
 }
 
-function normalizeSchema(raw: Record<string, any> | undefined): ModeControlsSchema | null {
+function normalizeSchema(raw: Record<string, unknown> | undefined): ModeControlsSchema | null {
   if (!raw || typeof raw !== 'object') return null;
   const provider = typeof raw.provider === 'string' ? raw.provider : '';
   const mode = typeof raw.mode === 'string' ? raw.mode : '';
@@ -570,8 +576,8 @@ function normalizeSchema(raw: Record<string, any> | undefined): ModeControlsSche
         : typeof raw.model_id === 'string'
           ? raw.model_id
           : undefined,
-    defaults: raw.defaults && typeof raw.defaults === 'object' ? raw.defaults : undefined,
-    constraints: raw.constraints && typeof raw.constraints === 'object' ? raw.constraints : undefined,
+    defaults: raw.defaults && typeof raw.defaults === 'object' ? raw.defaults as Record<string, unknown> : undefined,
+    constraints: raw.constraints && typeof raw.constraints === 'object' ? raw.constraints as Record<string, unknown> : undefined,
     aspectRatios: normalizeAspectRatios(raw.aspectRatios ?? raw.aspect_ratios),
     resolutionTiers: normalizeResolutionTiers(raw.resolutionTiers ?? raw.resolution_tiers),
     resolutionMap: normalizeResolutionMap(raw.resolutionMap ?? raw.resolution_map),

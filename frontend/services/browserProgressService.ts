@@ -1,3 +1,4 @@
+import { safeJsonParse } from '../utils/safeOps';
 /**
  * Browser Progress Service
  * 
@@ -43,30 +44,26 @@ export class BrowserProgressService {
     );
 
     eventSource.onmessage = (event) => {
-      try {
-        const update: BrowseProgressUpdate = JSON.parse(event.data);
-        
-        // Call progress callback
-        onProgress(update);
+      const update = safeJsonParse<BrowseProgressUpdate | null>(event.data, null);
+      if (!update) return;
 
-        // Handle completion
-        if (update.status === 'completed') {
-          onComplete?.();
-          this.unsubscribe(operationId);
-        }
+      // Call progress callback
+      onProgress(update);
 
-        // Handle errors
-        if (update.status === 'error') {
-          onError?.(update.details || 'Unknown error');
-          this.unsubscribe(operationId);
-        }
-      } catch (error) {
-        console.error('Error parsing SSE message:', error);
+      // Handle completion
+      if (update.status === 'completed') {
+        onComplete?.();
+        this.unsubscribe(operationId);
+      }
+
+      // Handle errors
+      if (update.status === 'error') {
+        onError?.(update.details || 'Unknown error');
+        this.unsubscribe(operationId);
       }
     };
 
     eventSource.onerror = (error) => {
-      console.error('SSE connection error:', error);
       onError?.('Connection error');
       this.unsubscribe(operationId);
     };

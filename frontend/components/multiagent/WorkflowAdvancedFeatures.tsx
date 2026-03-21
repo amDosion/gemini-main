@@ -54,7 +54,6 @@ export const WorkflowAdvancedFeatures: React.FC<WorkflowAdvancedFeaturesProps> =
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (error) {
-      console.error('Export failed:', error);
       showError('导出失败：' + (error as Error).message);
     }
   }, [nodes, edges]);
@@ -88,7 +87,6 @@ export const WorkflowAdvancedFeatures: React.FC<WorkflowAdvancedFeaturesProps> =
         onEdgesChange(importedEdges);
         showSuccess('工作流导入成功！');
       } catch (error) {
-        console.error('Import failed:', error);
         showError('导入失败：' + (error as Error).message);
       }
     };

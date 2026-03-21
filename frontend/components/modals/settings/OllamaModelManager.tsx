@@ -12,12 +12,12 @@ import {
     Info,
     X,
     AlertCircle,
-    CheckCircle2,
     Loader2,
     ChevronDown,
     ChevronUp
 } from 'lucide-react';
 import type { OllamaModel, OllamaModelInfo, PullProgress } from '../../../types/ollama';
+import { ConfirmDialog } from '../../common/ConfirmDialog';
 import {
     getModels,
     getModelInfo,
@@ -57,7 +57,7 @@ export const OllamaModelManager: React.FC<OllamaModelManagerProps> = ({
     const [isLoadingInfo, setIsLoadingInfo] = useState(false);
     
     // 删除确认
-    const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+    const [deleteTargetModel, setDeleteTargetModel] = useState<string | null>(null);
     
     // 展开/折叠
     const [isExpanded, setIsExpanded] = useState(true);
@@ -109,7 +109,7 @@ export const OllamaModelManager: React.FC<OllamaModelManagerProps> = ({
         try {
             await deleteModel(modelName, baseUrl, apiKey);
             setModels(prev => prev.filter(m => m.name !== modelName));
-            setDeleteConfirm(null);
+            setDeleteTargetModel(null);
             if (selectedModel?.name === modelName) {
                 setSelectedModel(null);
                 setModelInfo(null);
@@ -170,6 +170,7 @@ export const OllamaModelManager: React.FC<OllamaModelManagerProps> = ({
         : null;
 
     return (
+        <>
         <div className="bg-slate-900/30 rounded-xl border border-slate-800/50 overflow-hidden">
             {/* 标题栏 */}
             <button
@@ -320,32 +321,13 @@ export const OllamaModelManager: React.FC<OllamaModelManagerProps> = ({
                                                 >
                                                     <Info size={12} />
                                                 </button>
-                                                {deleteConfirm === model.name ? (
-                                                    <div className="flex items-center gap-1">
-                                                        <button
-                                                            onClick={() => handleDelete(model.name)}
-                                                            className="p-1.5 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 transition-colors"
-                                                            title="Confirm delete"
-                                                        >
-                                                            <CheckCircle2 size={12} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setDeleteConfirm(null)}
-                                                            className="p-1.5 rounded hover:bg-slate-800 text-slate-400 transition-colors"
-                                                            title="Cancel"
-                                                        >
-                                                            <X size={12} />
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <button
-                                                        onClick={() => setDeleteConfirm(model.name)}
-                                                        className="p-1.5 rounded hover:bg-red-600/20 text-slate-400 hover:text-red-400 transition-colors"
-                                                        title="Delete model"
-                                                    >
-                                                        <Trash2 size={12} />
-                                                    </button>
-                                                )}
+                                                <button
+                                                    onClick={() => setDeleteTargetModel(model.name)}
+                                                    className="p-1.5 rounded hover:bg-red-600/20 text-slate-400 hover:text-red-400 transition-colors"
+                                                    title="Delete model"
+                                                >
+                                                    <Trash2 size={12} />
+                                                </button>
                                             </div>
                                         </div>
                                         
@@ -405,6 +387,20 @@ export const OllamaModelManager: React.FC<OllamaModelManagerProps> = ({
                 </div>
             )}
         </div>
+      <ConfirmDialog
+          isOpen={!!deleteTargetModel}
+          title="Delete Model"
+          message={`Are you sure you want to delete model "${deleteTargetModel}"?`}
+          confirmLabel="Delete"
+          cancelLabel="Cancel"
+          onConfirm={() => {
+              if (deleteTargetModel) {
+                  handleDelete(deleteTargetModel);
+              }
+          }}
+          onCancel={() => setDeleteTargetModel(null)}
+      />
+        </>
     );
 };
 

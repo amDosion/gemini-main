@@ -1,13 +1,13 @@
 import type { WorkflowNodeData } from './types';
 import { resolveNodePortLayout } from './workflowPorts';
 
-const toFiniteNumber = (value: any): number | null => {
+const toFiniteNumber = (value: unknown): number | null => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return null;
   return parsed;
 };
 
-const isBlank = (value: any): boolean => {
+const isBlank = (value: unknown): boolean => {
   if (value === undefined || value === null) return true;
   if (typeof value === 'string') return value.trim().length === 0;
   return false;
@@ -23,7 +23,7 @@ const withDefault = <K extends keyof WorkflowNodeData>(
   }
 };
 
-const normalizeAgentTaskType = (value: any): 'chat' | 'image-gen' | 'image-edit' | 'video-gen' | 'audio-gen' | 'vision-understand' | 'data-analysis' => {
+const normalizeAgentTaskType = (value: unknown): 'chat' | 'image-gen' | 'image-edit' | 'video-gen' | 'audio-gen' | 'vision-understand' | 'data-analysis' => {
   const normalized = String(value || '').trim().toLowerCase().replace(/_/g, '-');
   const aliases: Record<string, 'video-gen' | 'audio-gen' | 'vision-understand' | 'data-analysis'> = {
     video: 'video-gen',
@@ -57,7 +57,7 @@ const normalizeAgentTaskType = (value: any): 'chat' | 'image-gen' | 'image-edit'
   return 'chat';
 };
 
-const normalizeToolName = (value: any): string => String(value || '').trim().toLowerCase().replace(/-/g, '_');
+const normalizeToolName = (value: unknown): string => String(value || '').trim().toLowerCase().replace(/-/g, '_');
 
 const IMAGE_GEN_TOOL_NAMES = new Set([
   'image_generate',
@@ -94,7 +94,7 @@ const TABLE_ANALYZE_TOOL_NAMES = new Set([
   'sheet_profile',
 ]);
 
-const parseToolArgsObject = (rawValue: any): Record<string, any> | null => {
+const parseToolArgsObject = (rawValue: Record<string, unknown>): Record<string, unknown> | null => {
   if (rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)) {
     return { ...rawValue };
   }
@@ -108,7 +108,7 @@ const parseToolArgsObject = (rawValue: any): Record<string, any> | null => {
   try {
     const parsed = JSON.parse(trimmed);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, any>;
+      return parsed as Record<string, unknown>;
     }
   } catch {
     return null;
@@ -223,7 +223,7 @@ export const buildEffectiveNodeData = (data: Partial<WorkflowNodeData>): Partial
   return next;
 };
 
-const shorten = (value: any, max = 28): string => {
+const shorten = (value: unknown, max = 28): string => {
   const text = String(value || '').trim();
   if (!text) return '';
   if (text.length <= max) return text;
@@ -432,7 +432,7 @@ const EXCLUDED_KEYS = new Set([
   'portLayout',
 ]);
 
-const isConfiguredValue = (value: any): boolean => {
+const isConfiguredValue = (value: unknown): boolean => {
   if (value === undefined || value === null) return false;
   if (typeof value === 'string') return value.trim().length > 0;
   if (typeof value === 'number') return Number.isFinite(value);
@@ -442,7 +442,7 @@ const isConfiguredValue = (value: any): boolean => {
   return true;
 };
 
-const formatValue = (key: string, value: any): string => {
+const formatValue = (key: string, value: unknown): string => {
   if (typeof value === 'boolean') {
     return value ? '是' : '否';
   }
@@ -482,7 +482,7 @@ export interface NodeParamChipItem {
   text: string;
 }
 
-const buildToolArgsChipItems = (rawValue: any): NodeParamChipItem[] => {
+const buildToolArgsChipItems = (rawValue: Record<string, unknown>): NodeParamChipItem[] => {
   if (!isConfiguredValue(rawValue)) return [];
   const parsed = (() => {
     if (typeof rawValue === 'string') {
@@ -544,7 +544,7 @@ export const buildNodeParamChipItems = (data: Partial<WorkflowNodeData>): NodePa
   };
 
   orderedKeys.forEach((key) => {
-    const value = (safeData as any)[key];
+    const value = (safeData as Record<string, unknown>)[key];
     if (!isConfiguredValue(value)) return;
 
     if (key === 'toolArgsTemplate') {

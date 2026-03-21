@@ -141,7 +141,7 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
       return;
     }
 
-    let config: any = {};
+    let config: Record<string, unknown> = {};
 
     if (provider === 'lsky') {
       if (!lskyDomain.trim() || !lskyToken.trim()) {

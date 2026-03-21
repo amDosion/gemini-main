@@ -160,7 +160,6 @@ export async function pullModel(
                     }
                 } catch (e) {
                     if (e instanceof SyntaxError) {
-                        console.warn('Failed to parse progress line:', line);
                     } else {
                         throw e;
                     }

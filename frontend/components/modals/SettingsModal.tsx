@@ -108,7 +108,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setActiveTab('storage');
   };
 
-  const TabButton = ({ id, icon: Icon, label }: { id: SettingsTab, icon: any, label: string }) => (
+  const TabButton = ({ id, icon: Icon, label }: { id: SettingsTab, icon: React.ComponentType<{ size?: number; className?: string }>, label: string }) => (
     <button
       type="button"
       onClick={() => setActiveTab(id)}

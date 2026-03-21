@@ -127,7 +127,10 @@ export const useSessionSync = ({
                   // ✅ 更新 sessionsRef 中的会话数据
                   const sessionIndex = sessionsRef.current.findIndex(s => s.id === currentSessionId);
                   if (sessionIndex !== -1) {
-                    sessionsRef.current[sessionIndex] = fullSession;
+                    // Immutable update instead of direct mutation
+        const updatedSessions = [...sessionsRef.current];
+        updatedSessions[sessionIndex] = fullSession;
+        sessionsRef.current = updatedSessions;
                   }
                   
                   // ✅ 设置消息和模式
@@ -166,7 +169,6 @@ export const useSessionSync = ({
                     return;
                   }
 
-                  console.error('[useSessionSync] 加载会话消息失败:', err);
                   setMessages([]);
                 })
                 .finally(() => {

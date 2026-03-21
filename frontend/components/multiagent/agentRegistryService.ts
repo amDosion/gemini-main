@@ -60,13 +60,13 @@ const parseAgentTaskFilterKey = (value: unknown): AgentTaskFilter | null => {
     : null;
 };
 
-const inferLegacyRuntimeSupport = (agent: any): boolean => {
+const inferLegacyRuntimeSupport = (agent: Record<string, unknown>): boolean => {
   const normalizedAgentType = toSafeString(agent?.agentType || agent?.agent_type).toLowerCase();
   const normalizedProviderId = toSafeString(agent?.providerId || agent?.provider_id).toLowerCase();
   return ['adk', 'google-adk'].includes(normalizedAgentType) && normalizedProviderId.startsWith('google');
 };
 
-const normalizeAgentRuntime = (agent: any): AgentDef['runtime'] => {
+const normalizeAgentRuntime = (agent: Record<string, unknown>): AgentDef['runtime'] => {
   const runtime = agent?.runtime;
   if (!runtime || typeof runtime !== 'object') {
     const fallbackSupportsSessions = inferLegacyRuntimeSupport(agent);
@@ -94,7 +94,7 @@ const normalizeAgentRuntime = (agent: any): AgentDef['runtime'] => {
   };
 };
 
-const normalizeAgentSource = (agent: any, runtime: AgentDef['runtime']): AgentDef['source'] => {
+const normalizeAgentSource = (agent: unknown, runtime: AgentDef['runtime']): AgentDef['source'] => {
   const source = agent?.source;
   if (source && typeof source === 'object') {
     return {
@@ -145,7 +145,7 @@ export const createEmptyAgentTaskCounts = (): Record<AgentTaskFilter, number> =>
   'data-analysis': 0,
 });
 
-const normalizeAgentTaskCounts = (payload: any): Record<AgentTaskFilter, number> => {
+const normalizeAgentTaskCounts = (payload: Record<string, unknown>): Record<AgentTaskFilter, number> => {
   const base = createEmptyAgentTaskCounts();
   const rawCounts = payload?.taskCounts ?? payload?.task_counts;
   if (!rawCounts || typeof rawCounts !== 'object') {
@@ -203,7 +203,7 @@ export const createDefaultAgentCard = () => ({
   },
 });
 
-const normalizeAgentItem = (agent: any): AgentDef | null => {
+const normalizeAgentItem = (agent: Record<string, unknown>): AgentDef | null => {
   const id = toSafeString(agent?.id);
   if (!id) return null;
   const runtime = normalizeAgentRuntime(agent);
@@ -241,13 +241,13 @@ const normalizeAgentItem = (agent: any): AgentDef | null => {
   };
 };
 
-const extractAgentArray = (payload: any): any[] => {
+const extractAgentArray = (payload: Record<string, unknown>): unknown[] => {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.agents)) return payload.agents;
   return [];
 };
 
-export const normalizeAgentListPayload = (payload: any): AgentDef[] => {
+export const normalizeAgentListPayload = (payload: Record<string, unknown>): AgentDef[] => {
   return extractAgentArray(payload)
     .map(normalizeAgentItem)
     .filter((agent): agent is AgentDef => Boolean(agent));
@@ -262,7 +262,7 @@ export const fetchAgentList = async (options: AgentListFetchOptions = {}): Promi
   const query = params.toString();
   const url = query ? `/api/agents?${query}` : '/api/agents';
 
-  const payload = await requestJson<any>(url, {
+  const payload = await requestJson<Record<string, unknown>>(url, {
     withAuth: true,
     credentials: 'include',
     signal: options.signal,

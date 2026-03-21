@@ -196,7 +196,6 @@ export const MultiAgentView: React.FC<MultiAgentViewProps> = React.memo(({
                                     onExecute={handleWorkflowExecute}
                                     onSave={async (workflow) => {
                                         // 工作流保存功能（可以保存为模板）
-                                        console.log('[MultiAgentView] Saving workflow:', workflow);
                                     }}
                                     executionStatus={executionStatus}
                                     loadedWorkflow={workflowLoadRequest}

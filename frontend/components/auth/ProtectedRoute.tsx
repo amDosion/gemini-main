@@ -34,14 +34,15 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
         );
     }
 
-    // 未认证时触发回调或显示 fallback
-    if (!isAuthenticated) {
-        if (onUnauthenticated) {
-            // 使用 useEffect 避免在渲染期间调用
-            React.useEffect(() => {
-                onUnauthenticated();
-            }, []);
+    // 未认证时触发回调
+    React.useEffect(() => {
+        if (!isLoading && !isAuthenticated && onUnauthenticated) {
+            onUnauthenticated();
         }
+    }, [isLoading, isAuthenticated, onUnauthenticated]);
+
+    // 未认证时显示 fallback
+    if (!isAuthenticated) {
         return fallback || null;
     }
 

@@ -1,9 +1,10 @@
 
 import React from 'react';
+import { UrlContextMetadata } from '../../types/types';
 import { Link2, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
 
 interface UrlContextStatusProps {
-  metadata: any;
+  metadata: UrlContextMetadata | null | undefined;
 }
 
 export const UrlContextStatus: React.FC<UrlContextStatusProps> = ({ metadata }) => {
@@ -16,7 +17,7 @@ export const UrlContextStatus: React.FC<UrlContextStatusProps> = ({ metadata }) 
             URL Context Status
         </div>
         <div className="space-y-2">
-            {metadata.urlMetadata.map((item: any, idx: number) => {
+            {metadata.urlMetadata.map((item: { retrievedUrl: string; urlRetrievalStatus: string }, idx: number) => {
                 const isSuccess = item.urlRetrievalStatus === 'URL_RETRIEVAL_STATUS_SUCCESS' || item.urlRetrievalStatus === 'SUCCESS';
                 const isUnsafe = item.urlRetrievalStatus?.includes('UNSAFE');
                 

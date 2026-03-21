@@ -1,3 +1,4 @@
+import { reportError } from '../../utils/globalErrorHandler';
 import { BaseHandler } from './BaseHandler';
 import { ExecutionContext, HandlerResult } from './types';
 import { getAuthHeaders } from '../../services/apiClient';
@@ -307,7 +308,7 @@ const extractStatusText = (eventPayload: Record<string, any>): string | undefine
   return undefined;
 };
 
-const extractInteractionOutputs = (eventPayload: Record<string, any>): any[] => {
+const extractInteractionOutputs = (eventPayload: Record<string, unknown>): unknown[] => {
   const interaction = eventPayload.interaction;
   if (!isRecord(interaction)) return [];
 
@@ -345,7 +346,7 @@ const collectTextsFromOutputValue = (value: unknown, texts: string[], depth = 0)
   }
 };
 
-const extractTextFromOutputs = (outputs: any[]): string => {
+const extractTextFromOutputs = (outputs: unknown[]): string => {
   if (!Array.isArray(outputs) || outputs.length === 0) return '';
   const texts: string[] = [];
   collectTextsFromOutputValue(outputs, texts, 0);
@@ -502,7 +503,7 @@ export class DeepResearchHandler extends BaseHandler {
       let lastActivityAt = Date.now();
       let watchdogTimer: ReturnType<typeof setInterval> | null = null;
       let currentEventSource: EventSource | null = null;
-      let lastGroundingMetadata: any = undefined;
+      let lastGroundingMetadata: unknown = undefined;
       let lastRequiredAction: ResearchRequiredAction | undefined = undefined;
 
       const touchActivity = () => {
@@ -563,7 +564,7 @@ export class DeepResearchHandler extends BaseHandler {
         });
       };
 
-      const hydrateToolsFromOutputs = (outputs: any[]) => {
+      const hydrateToolsFromOutputs = (outputs: unknown[]) => {
         if (!Array.isArray(outputs) || outputs.length === 0) return;
 
         for (const output of outputs) {
@@ -591,7 +592,7 @@ export class DeepResearchHandler extends BaseHandler {
         }
       };
 
-      const hydrateTextFromOutputs = (outputs: any[]) => {
+      const hydrateTextFromOutputs = (outputs: unknown[]) => {
         const extracted = extractTextFromOutputs(outputs);
         if (!extracted) return;
         if (!accumulatedText) {
@@ -796,15 +797,11 @@ export class DeepResearchHandler extends BaseHandler {
 
       const finalizeByCancel = async () => {
         if (isComplete) return;
-        try {
-          await fetch(`/api/research/stream/cancel/${currentInteractionId}`, {
-            method: 'POST',
-            headers,
-            credentials: 'include',
-          });
-        } catch (error) {
-          console.warn('[DeepResearchHandler] 取消 Deep Research 请求失败:', error);
-        }
+        await fetch(`/api/research/stream/cancel/${currentInteractionId}`, {
+          method: 'POST',
+          headers,
+          credentials: 'include',
+        });
         finalizeCancelled('Deep Research 已停止');
       };
 
@@ -897,18 +894,15 @@ export class DeepResearchHandler extends BaseHandler {
         if (isComplete) return;
         const query = latestEventId ? `?last_event_id=${encodeURIComponent(latestEventId)}` : '';
         const sseUrl = `/api/research/stream/${currentInteractionId}${query}`;
-        console.log('[DeepResearchHandler] 连接SSE:', sseUrl);
 
         const eventSource = new EventSource(sseUrl);
         currentEventSource = eventSource;
         touchActivity();
 
-        console.log('[DeepResearchHandler] EventSource readyState:', eventSource.readyState);
 
         eventSource.onopen = () => {
           touchActivity();
           recoveryAttempts = 0;
-          console.log('[DeepResearchHandler] ✅ SSE连接已建立');
           onStreamUpdate?.({
             responseKind: 'deep-research',
             researchStatus: buildStatus('in_progress', '已连接研究流，正在执行...'),
@@ -921,7 +915,6 @@ export class DeepResearchHandler extends BaseHandler {
           try {
             const data = JSON.parse(event.data);
             const eventType = data.eventType;
-            console.log('[DeepResearchHandler] 收到事件:', eventType);
 
             const receivedEventId =
               (typeof event.lastEventId === 'string' && event.lastEventId) ||
@@ -962,7 +955,6 @@ export class DeepResearchHandler extends BaseHandler {
                 );
                 upsertToolCall(call);
                 lastRequiredAction = undefined;
-                console.log(`[DeepResearchHandler] 🔧 工具调用: ${call.name}`, call.arguments);
                 emitProgress('in_progress', `正在调用工具: ${call.name}`);
                 return;
               }
@@ -977,7 +969,6 @@ export class DeepResearchHandler extends BaseHandler {
                 );
                 upsertToolResult(result);
                 lastRequiredAction = undefined;
-                console.log(`[DeepResearchHandler] ✅ 工具结果: ${result.name}`);
                 emitProgress('in_progress', `工具返回结果: ${result.name}`);
                 return;
               }
@@ -1018,7 +1009,6 @@ export class DeepResearchHandler extends BaseHandler {
               );
               upsertToolCall(call);
               lastRequiredAction = undefined;
-              console.log(`[DeepResearchHandler] 🔧 工具调用: ${call.name}`, call.arguments);
               emitProgress('in_progress', `正在调用工具: ${call.name}`);
               return;
             }
@@ -1034,17 +1024,14 @@ export class DeepResearchHandler extends BaseHandler {
               );
               upsertToolResult(result);
               lastRequiredAction = undefined;
-              console.log(`[DeepResearchHandler] ✅ 工具结果: ${result.name}`);
               emitProgress('in_progress', `工具返回结果: ${result.name}`);
               return;
             }
 
             if (eventType === 'interaction.complete') {
-              console.log('[DeepResearchHandler] ✅ 研究完成');
 
               if (data.groundingMetadata) {
                 lastGroundingMetadata = data.groundingMetadata;
-                console.log('[DeepResearchHandler] 找到 grounding metadata:', lastGroundingMetadata);
               }
 
               const outputs = extractInteractionOutputs(data);
@@ -1055,22 +1042,18 @@ export class DeepResearchHandler extends BaseHandler {
             }
 
             if (eventType === 'error') {
-              console.error('[DeepResearchHandler] ❌ 服务端错误:', data.error);
               const errorMessage =
                 typeof data.error === 'string'
                   ? data.error
                   : (data.error?.message || JSON.stringify(data.error));
               finalizeFailed(`研究过程中出现错误: ${errorMessage}`, `研究失败: ${errorMessage}`);
             }
-          } catch (e) {
-            console.error('[DeepResearchHandler] 解析 SSE 事件失败:', e, 'Raw data:', event.data);
+          } catch (err) {
+            reportError('研究数据解析错误', err);
           }
         };
 
         eventSource.onerror = (error) => {
-          console.error('[DeepResearchHandler] ❌ SSE 连接错误:', error);
-          console.error('[DeepResearchHandler] EventSource readyState:', eventSource.readyState);
-          console.error('[DeepResearchHandler] EventSource url:', eventSource.url);
 
           if (isComplete) {
             return;

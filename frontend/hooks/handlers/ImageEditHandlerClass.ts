@@ -33,22 +33,10 @@ export class ImageEditHandler extends BaseHandler {
       // ✅ image-mask-edit 模式：第一个附件是 raw，第二个是 mask
       if (context.mode === 'image-mask-edit') {
         const rawAttachment = context.attachments[0];
-        console.log('[ImageEditHandler] ✅ image-mask-edit 模式 - raw 附件:', {
-          id: rawAttachment.id || 'N/A',
-          urlType: rawAttachment.url?.startsWith('blob:') ? 'Blob' :
-                   rawAttachment.url?.startsWith('data:') ? 'Base64' :
-                   rawAttachment.url?.startsWith('http') ? 'HTTP' : 'Other',
-          url: formatUrlForLog(rawAttachment.url),
-          hasFile: !!rawAttachment.file,
-          uploadStatus: rawAttachment.uploadStatus
-        });
         referenceImages.raw = rawAttachment;
 
         if (context.attachments.length > 1) {
           referenceImages.mask = context.attachments[1];
-          console.log('[ImageEditHandler] ✅ image-mask-edit 模式 - mask 附件:', {
-            id: context.attachments[1].id || 'N/A'
-          });
         }
       }
       // ✅ image-chat-edit 模式：支持多图编辑
@@ -56,29 +44,10 @@ export class ImageEditHandler extends BaseHandler {
         if (context.attachments.length === 1) {
           // 单图：保持向后兼容，raw 是单个附件
           const rawAttachment = context.attachments[0];
-          console.log('[ImageEditHandler] ✅ image-chat-edit 单图模式:', {
-            id: rawAttachment.id || 'N/A',
-            urlType: rawAttachment.url?.startsWith('blob:') ? 'Blob' :
-                     rawAttachment.url?.startsWith('data:') ? 'Base64' :
-                     rawAttachment.url?.startsWith('http') ? 'HTTP' : 'Other',
-            url: formatUrlForLog(rawAttachment.url),
-            hasFile: !!rawAttachment.file,
-            uploadStatus: rawAttachment.uploadStatus
-          });
           referenceImages.raw = rawAttachment;
         } else {
           // ✅ 多图：raw 是附件数组
-          console.log(`[ImageEditHandler] ✅ image-chat-edit 多图模式，附件数量: ${context.attachments.length}`);
           context.attachments.forEach((att, idx) => {
-            console.log(`[ImageEditHandler] 附件[${idx}]:`, {
-              id: att.id || 'N/A',
-              urlType: att.url?.startsWith('blob:') ? 'Blob' :
-                       att.url?.startsWith('data:') ? 'Base64' :
-                       att.url?.startsWith('http') ? 'HTTP' : 'Other',
-              url: formatUrlForLog(att.url),
-              hasFile: !!att.file,
-              uploadStatus: att.uploadStatus
-            });
           });
           referenceImages.raw = context.attachments;  // ✅ 传递附件数组
         }
@@ -86,19 +55,6 @@ export class ImageEditHandler extends BaseHandler {
       // ✅ 其他模式：只使用第一个附件
       else {
         const rawAttachment = context.attachments[0];
-        console.log('[ImageEditHandler] ✅ 传递附件元数据给后端处理:', {
-          mode: context.mode,
-          id: rawAttachment.id || 'N/A',
-          urlType: rawAttachment.url?.startsWith('blob:') ? 'Blob' :
-                   rawAttachment.url?.startsWith('data:') ? 'Base64' :
-                   rawAttachment.url?.startsWith('http') ? 'HTTP' : 'Other',
-          url: formatUrlForLog(rawAttachment.url),
-          urlLength: rawAttachment.url ? rawAttachment.url.length : 0,
-          hasFile: !!rawAttachment.file,
-          uploadStatus: rawAttachment.uploadStatus,
-          mimeType: rawAttachment.mimeType,
-          name: rawAttachment.name
-        });
         referenceImages.raw = rawAttachment;
       }
     }
@@ -131,19 +87,6 @@ export class ImageEditHandler extends BaseHandler {
     // 直接使用后端返回的结果，不需要再次处理
     const displayAttachments: Attachment[] = results.map((res: ImageGenerationResult) => {
       // ✅ 记录后端返回的完整元数据
-      console.log('[ImageEditHandler] 📥 后端返回的图片元数据:', {
-        attachmentId: res.attachmentId || 'N/A',
-        messageId: res.messageId || 'N/A',
-        sessionId: res.sessionId || 'N/A',
-        filename: res.filename || 'N/A',
-        mimeType: res.mimeType || 'N/A',
-        size: res.size || 'N/A',
-        uploadStatus: res.uploadStatus || 'N/A',
-        uploadTaskId: res.taskId || 'N/A',
-        cloudUrl: res.cloudUrl || 'N/A',
-        urlType: res.url?.startsWith('data:') ? 'Base64' : res.url?.startsWith('http') ? 'HTTP' : 'Other',
-        urlLength: res.url?.length || 0
-      });
 
       return {
         id: res.attachmentId || uuidv4(),  // 使用后端返回的 attachmentId
@@ -192,10 +135,6 @@ export class ImageEditHandler extends BaseHandler {
                 storageId: context.storageId,
               });
               
-              console.log('[ImageEditHandler] ✅ 用户附件已提交到后端统一处理:', {
-                attachmentId: result.attachmentId || att.id,
-                taskId: result.taskId
-              });
               
               // ✅ 修复：保留原始 Blob URL 到 tempUrl，用于当前会话显示
               // 注意：这个返回的附件会保存到数据库（cleanAttachmentsForDb 会清空 Blob URL）
@@ -214,7 +153,6 @@ export class ImageEditHandler extends BaseHandler {
                 uploadTaskId: result.taskId || undefined,
               } as Attachment;
             } catch (error) {
-              console.error('[ImageEditHandler] 用户附件上传失败:', error);
               return { ...att, uploadStatus: 'failed' as const };
             }
           }

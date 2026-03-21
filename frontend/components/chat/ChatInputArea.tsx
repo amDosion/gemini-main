@@ -212,15 +212,16 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
   };
 
   // Cleanup Blob URLs when component unmounts
+  // Revoke blob URLs only on unmount, not on every attachment change
   useEffect(() => {
     return () => {
-      attachments.forEach(att => {
+      attachmentsRef.current.forEach(att => {
         if (att.tempUrl) {
           URL.revokeObjectURL(att.tempUrl);
         }
       });
     };
-  }, [attachments]);
+  }, []);
 
   const handleSend = async () => {
     if (isLoading && !onStop) return;
@@ -234,7 +235,6 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
             const base64Url = await fileToBase64(att.file);
             return { ...att, url: base64Url, tempUrl: base64Url };
           } catch (e) {
-            console.warn('[ChatInputArea] File 转 Base64 失败:', e);
             return att;
           }
         }

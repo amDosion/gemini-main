@@ -12,7 +12,7 @@ interface WorkflowTemplateCategoryListResponse {
   count: number;
 }
 
-const normalizeCategoryItem = (item: any): WorkflowTemplateCategoryItem => {
+const normalizeCategoryItem = (item: Record<string, unknown>): WorkflowTemplateCategoryItem => {
   return {
     id: typeof item?.id === 'string' ? item.id : null,
     name: String(item?.name || '').trim(),
@@ -53,7 +53,7 @@ export const listWorkflowTemplateCategories = async (
 export const createWorkflowTemplateCategory = async (
   name: string,
 ): Promise<WorkflowTemplateCategoryItem> => {
-  const response = await apiClient.post<any>(
+  const response = await apiClient.post<Record<string, unknown>>(
     '/api/workflows/template-categories',
     { name },
   );

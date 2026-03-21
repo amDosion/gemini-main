@@ -20,6 +20,7 @@ import {
   isSkybridgeHostAvailable,
 } from '../../../services/skybridgeToolService';
 import { useEscapeClose } from '../../../hooks/useEscapeClose';
+import { ConfirmDialog } from '../../common/ConfirmDialog';
 
 type JsonObject = Record<string, any>;
 type TransportType = 'stdio' | 'sse' | 'http' | 'streamable-http' | 'unknown';
@@ -223,7 +224,7 @@ export const McpTab: React.FC = () => {
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [deleteTargetKey, setDeleteTargetKey] = useState<string | null>(null);
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
@@ -271,8 +272,8 @@ export const McpTab: React.FC = () => {
       setRootConfig(parsed);
       setSourceType(extracted.source);
       setUpdatedAt(data.updatedAt || null);
-    } catch (e: any) {
-      setError(e?.message || 'Failed to load MCP configuration');
+    } catch (e: unknown) {
+      setError((e instanceof Error ? e.message : undefined) || 'Failed to load MCP configuration');
       setRootConfig(DEFAULT_CONFIG_TEMPLATE);
       setSourceType('none');
     } finally {
@@ -352,14 +353,14 @@ export const McpTab: React.FC = () => {
           error: undefined,
         },
       }));
-    } catch (e: any) {
+    } catch (e: unknown) {
       setServerToolsMap((prev) => ({
         ...prev,
         [serverKey]: {
           loading: false,
           loaded: true,
           tools: prev[serverKey]?.tools || [],
-          error: e?.message || 'Failed to load tools',
+          error: (e instanceof Error ? e.message : undefined) || 'Failed to load tools',
         },
       }));
     }
@@ -432,8 +433,8 @@ export const McpTab: React.FC = () => {
       setSourceType(extracted.source);
       setUpdatedAt(result.updatedAt || null);
       setSuccessMessage('MCP configuration saved');
-    } catch (e: any) {
-      setError(e?.message || 'Failed to save MCP configuration');
+    } catch (e: unknown) {
+      setError((e instanceof Error ? e.message : undefined) || 'Failed to save MCP configuration');
       throw e;
     } finally {
       setIsSaving(false);
@@ -502,24 +503,24 @@ export const McpTab: React.FC = () => {
     let parsedDialog: JsonObject;
     try {
       parsedDialog = parseRootObject(dialogJsonText);
-    } catch (e: any) {
-      setDialogError(e?.message || 'Invalid JSON');
+    } catch (e: unknown) {
+      setDialogError((e instanceof Error ? e.message : undefined) || 'Invalid JSON');
       return;
     }
 
     let incomingServers: Record<string, JsonObject>;
     try {
       incomingServers = extractServersFromDialogJson(parsedDialog);
-    } catch (e: any) {
-      setDialogError(e?.message || 'Invalid MCP server JSON');
+    } catch (e: unknown) {
+      setDialogError((e instanceof Error ? e.message : undefined) || 'Invalid MCP server JSON');
       return;
     }
 
     let normalizedIntroUrl = '';
     try {
       normalizedIntroUrl = normalizeIntroUrl(dialogIntroUrl);
-    } catch (e: any) {
-      setDialogIntroUrlError(e?.message || 'Invalid URL');
+    } catch (e: unknown) {
+      setDialogIntroUrlError((e instanceof Error ? e.message : undefined) || 'Invalid URL');
       return;
     }
 
@@ -561,12 +562,14 @@ export const McpTab: React.FC = () => {
     }
   };
 
-  const handleDelete = async (key: string) => {
-    if (deletingKey !== key) {
-      setDeletingKey(key);
-      window.setTimeout(() => setDeletingKey((prev) => (prev === key ? null : prev)), 3000);
-      return;
-    }
+  const handleDeleteClick = (key: string) => {
+    setDeleteTargetKey(key);
+    setOpenMenuKey(null);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTargetKey) return;
+    const key = deleteTargetKey;
 
     const nextServers = { ...serverMap };
     delete nextServers[key];
@@ -583,12 +586,16 @@ export const McpTab: React.FC = () => {
       delete next[key];
       return next;
     });
-    setDeletingKey(null);
+    setDeleteTargetKey(null);
     try {
       await persistServerMap(nextServers);
     } catch {
       // Error already handled in persistServerMap
     }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteTargetKey(null);
   };
 
   const openToolInvoke = async (serverKey: string, availableTools: Array<{ name: string; description?: string }>) => {
@@ -675,8 +682,8 @@ export const McpTab: React.FC = () => {
           updateInvokeState(serverKey, { error: 'Tool arguments must be a JSON object' });
           return;
         }
-      } catch (error: any) {
-        updateInvokeState(serverKey, { error: `Invalid JSON arguments: ${error?.message || 'parse error'}` });
+      } catch (error: unknown) {
+        updateInvokeState(serverKey, { error: `Invalid JSON arguments: ${error instanceof Error ? error.message : 'parse error'}` });
         return;
       }
     }
@@ -715,15 +722,15 @@ export const McpTab: React.FC = () => {
           notice: `Executed via skybridge host (${getSkybridgeHostType() || 'unknown'})`,
         });
         return;
-      } catch (skybridgeError: any) {
-        const reason = skybridgeError?.message || 'Skybridge call failed';
+      } catch (skybridgeError: unknown) {
+        const reason = skybridgeError instanceof Error ? skybridgeError.message : 'Skybridge call failed';
         try {
           await invokeWithBackend(`Skybridge failed (${reason}); fell back to backend bridge.`);
           return;
-        } catch (backendFallbackError: any) {
+        } catch (backendFallbackError: unknown) {
           updateInvokeState(serverKey, {
             running: false,
-            error: backendFallbackError?.message || 'Failed to invoke MCP tool',
+            error: (backendFallbackError instanceof Error ? backendFallbackError.message : undefined) || 'Failed to invoke MCP tool',
             mode: 'backend',
             notice: `Skybridge failed (${reason}); backend fallback failed too.`,
           });
@@ -734,10 +741,10 @@ export const McpTab: React.FC = () => {
 
     try {
       await invokeWithBackend('Executed via backend MCP bridge.');
-    } catch (error: any) {
+    } catch (error: unknown) {
       updateInvokeState(serverKey, {
         running: false,
-        error: error?.message || 'Failed to invoke MCP tool',
+        error: (error instanceof Error ? error.message : undefined) || 'Failed to invoke MCP tool',
         mode: 'backend',
       });
     }
@@ -805,7 +812,6 @@ export const McpTab: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {cards.map((card) => {
-              const isDeleting = deletingKey === card.key;
               const isMenuOpen = openMenuKey === card.key;
               const toolsState = serverToolsMap[card.key];
               const tools = toolsState?.tools || [];
@@ -903,16 +909,11 @@ export const McpTab: React.FC = () => {
 
                             <button
                               type="button"
-                              onClick={() => {
-                                void handleDelete(card.key);
-                                if (isDeleting) {
-                                  setOpenMenuKey(null);
-                                }
-                              }}
+                              onClick={() => handleDeleteClick(card.key)}
                               className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-red-300 hover:bg-red-900/30 rounded"
                             >
                               <Trash2 size={13} />
-                              <span>{isDeleting ? 'Confirm Delete' : 'Delete'}</span>
+                              <span>Delete</span>
                             </button>
                           </div>
                         )}
@@ -1153,6 +1154,15 @@ export const McpTab: React.FC = () => {
           </div>
         </div>
       )}
+      <ConfirmDialog
+        isOpen={!!deleteTargetKey}
+        title="Delete MCP Server"
+        message="Are you sure you want to delete this MCP server configuration?"
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+      />
     </div>
   );
 };

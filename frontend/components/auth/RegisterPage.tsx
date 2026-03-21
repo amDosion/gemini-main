@@ -24,15 +24,16 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
         }
     }, [allowRegistration, onNavigateToLogin]);
 
-    // ✅ 如果注册被禁用，不渲染注册表单
-    if (!allowRegistration) {
-        return null;
-    }
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [name, setName] = useState('');
     const [localError, setLocalError] = useState<string | null>(null);
+
+    // 如果注册被禁用，不渲染注册表单
+    if (!allowRegistration) {
+        return null;
+    }
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

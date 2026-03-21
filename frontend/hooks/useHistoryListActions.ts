@@ -55,9 +55,7 @@ export function useHistoryListActions<T extends HistoryListItem>({
         });
         setFavoriteIds(next);
       })
-      .catch((error) => {
-        console.warn('[useHistoryListActions] 获取收藏状态失败:', error);
-      });
+      ;
 
     return () => {
       disposed = true;
@@ -79,9 +77,7 @@ export function useHistoryListActions<T extends HistoryListItem>({
         if (disposed) return;
         setShowFavoritesOnlyState(!!preference?.showFavoritesOnly);
       })
-      .catch((error) => {
-        console.warn('[useHistoryListActions] 获取历史偏好失败:', error);
-      });
+      ;
 
     return () => {
       disposed = true;
@@ -143,7 +139,6 @@ export function useHistoryListActions<T extends HistoryListItem>({
         }
         return next;
       });
-      console.warn('[useHistoryListActions] 更新收藏状态失败:', error);
     } finally {
       setPendingFavoriteIds((prev) => {
         const next = new Set(prev);
@@ -169,9 +164,7 @@ export function useHistoryListActions<T extends HistoryListItem>({
     if (!sessionId) return;
 
     db.updateSessionHistoryPreference(sessionId, { showFavoritesOnly: value })
-      .catch((error) => {
-        console.warn('[useHistoryListActions] 更新历史偏好失败:', error);
-      });
+      ;
   }, [sessionId]);
 
   const filteredItems = useMemo(() => {

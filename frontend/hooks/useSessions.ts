@@ -128,8 +128,6 @@ export const useSessions = (
       ));
       // ✅ 使用 ref 调用 updateStatus，避免依赖 cacheStatus
       cacheStatusRef.current?.updateStatus(result.fromCache, result.isStale, result.timestamp);
-    } catch (error) {
-      console.error('Failed to refresh sessions:', error);
     } finally {
       setIsLoading(false);
     }
@@ -143,10 +141,12 @@ export const useSessions = (
   }, [initialData?.sessionsHasMore]);
 
   // ✅ 滚动加载更多会话
+  const isLoadingMoreRef = useRef(false);
   const loadMoreSessions = useCallback(async () => {
-    if (isLoadingMore || !hasMoreSessions) return;
+    if (isLoadingMoreRef.current || isLoadingMore || !hasMoreSessions) return;
     
     try {
+      isLoadingMoreRef.current = true;
       setIsLoadingMore(true);
       const offset = sessions.length;
       const result = await apiClient.get<{
@@ -169,9 +169,9 @@ export const useSessions = (
         setHasMoreSessions(false);
       }
     } catch (error) {
-      console.error('[useSessions] 加载更多会话失败:', error);
       setHasMoreSessions(false);
     } finally {
+      isLoadingMoreRef.current = false;
       setIsLoadingMore(false);
     }
   }, [sessions.length, hasMoreSessions, isLoadingMore, prepareSessions]);
@@ -245,18 +245,13 @@ export const useSessions = (
         // React Strict Mode 双重渲染或组件卸载导致，忽略
         return;
       }
-      console.warn('Failed to save session to database (using memory-only mode):', error);
     }
   }, [prepareSessionForDb]);
 
   // Delete session from database
   // 使用 cachedDb 实现删除并失效缓存
   const deleteSessionFromDb = useCallback(async (sessionId: string) => {
-    try {
-      await cachedDb.deleteSession(sessionId);
-    } catch (error) {
-      console.warn('Failed to delete session from database:', error);
-    }
+    await cachedDb.deleteSession(sessionId);
   }, []);
 
   const createNewSession = useCallback((personaId?: string) => {

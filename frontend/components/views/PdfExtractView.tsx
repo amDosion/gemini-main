@@ -1,3 +1,4 @@
+import { safeJsonParse } from '../../utils/safeOps';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Message,
@@ -107,12 +108,10 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
 
   const extractedData = useMemo((): PdfExtractionResultType | null => {
     if (!activeBatchMessage?.content) return null;
-    try {
-      const parsed = JSON.parse(activeBatchMessage.content);
-      if (parsed.success !== undefined && (parsed.data || parsed.error)) {
-        return parsed;
-      }
-    } catch {}
+    const parsed = safeJsonParse<any>(activeBatchMessage.content, null);
+    if (parsed && parsed.success !== undefined && (parsed.data || parsed.error)) {
+      return parsed;
+    }
     return null;
   }, [activeBatchMessage]);
 
@@ -179,12 +178,10 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
           {historyBatches.map((msg) => {
             const isSelected = activeBatchMessage?.id === msg.id;
             let result: PdfExtractionResultType | null = null;
-            try {
-              if (msg.content) {
-                const parsed = JSON.parse(msg.content);
-                if (parsed.success !== undefined) result = parsed;
-              }
-            } catch {}
+            if (msg.content) {
+              const parsed = safeJsonParse<any>(msg.content, null);
+              if (parsed && parsed.success !== undefined) result = parsed;
+            }
 
             return (
               <div

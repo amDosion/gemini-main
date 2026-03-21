@@ -16,24 +16,24 @@ export interface WorkflowNodePortHandle {
 export const DEFAULT_HANDLE_KEY = '__default__';
 const MAX_PORTS_PER_SIDE = 12;
 
-const toNodeType = (value: any): string => String(value || '').trim().toLowerCase().replace(/-/g, '_');
+const toNodeType = (value: unknown): string => String(value || '').trim().toLowerCase().replace(/-/g, '_');
 
-const clampPortCount = (value: any, fallback: number): number => {
+const clampPortCount = (value: unknown, fallback: number): number => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(0, Math.min(MAX_PORTS_PER_SIDE, Math.floor(parsed)));
 };
 
-const isPortLayoutObject = (value: any): value is Partial<WorkflowNodePortLayout> => (
+const isPortLayoutObject = (value: unknown): value is Partial<WorkflowNodePortLayout> => (
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 );
 
-export const isFixedPortLayoutNodeType = (nodeType: any): boolean => {
+export const isFixedPortLayoutNodeType = (nodeType: unknown): boolean => {
   const normalized = toNodeType(nodeType);
   return normalized === 'start' || normalized === 'end';
 };
 
-export const getDefaultNodePortLayout = (nodeType: any): WorkflowNodePortLayout => {
+export const getDefaultNodePortLayout = (nodeType: unknown): WorkflowNodePortLayout => {
   const normalized = toNodeType(nodeType);
   if (normalized === 'start') {
     return { left: 0, right: 1, top: 0, bottom: 0 };
@@ -45,7 +45,7 @@ export const getDefaultNodePortLayout = (nodeType: any): WorkflowNodePortLayout 
 };
 
 export const resolveNodePortLayout = (
-  nodeType: any,
+  nodeType: unknown,
   rawPortLayout?: Partial<WorkflowNodePortLayout> | null,
 ): WorkflowNodePortLayout => {
   const defaults = getDefaultNodePortLayout(nodeType);
@@ -103,7 +103,7 @@ export const toHandleKey = (handleId?: string | null): string => {
 };
 
 export const buildHandlesForSide = (
-  nodeType: any,
+  nodeType: unknown,
   side: WorkflowNodePortSide,
   rawPortLayout?: Partial<WorkflowNodePortLayout> | null,
 ): WorkflowNodePortHandle[] => {
@@ -126,7 +126,7 @@ export const buildHandlesForSide = (
 };
 
 export const getValidHandleKeysForDirection = (
-  nodeType: any,
+  nodeType: unknown,
   rawPortLayout: Partial<WorkflowNodePortLayout> | null | undefined,
   direction: WorkflowNodeHandleDirection,
 ): Set<string> => {
@@ -141,14 +141,14 @@ export const getValidHandleKeysForDirection = (
 };
 
 const getEdgeHandleValue = (edge: Edge, field: 'sourceHandle' | 'targetHandle'): string | undefined => {
-  const value = (edge as any)?.[field];
+  const value = (edge as Record<string, unknown>)?.[field];
   if (value === undefined || value === null) return undefined;
   return String(value);
 };
 
 const inferLayoutFromEdges = (
   nodeId: string,
-  nodeType: any,
+  nodeType: unknown,
   edges: Edge[],
 ): WorkflowNodePortLayout => {
   const layout = getDefaultNodePortLayout(nodeType);

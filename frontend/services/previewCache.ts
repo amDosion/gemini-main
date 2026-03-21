@@ -136,13 +136,21 @@ export const getCachedPreviewBlob = async (url: string): Promise<Blob | null> =>
   }
 };
 
+let _lastPruneTime = 0;
+const PRUNE_INTERVAL_MS = 30000;
+
 export const getCachedPreviewObjectUrlSync = (url: string): string | null => {
   const normalizedUrl = String(url || '').trim();
   if (!canUseObjectUrlMemoryCache() || !normalizedUrl) {
     return null;
   }
 
-  prunePreviewObjectUrlMemory();
+  // Throttle prune to every 30s instead of every read
+  const now = Date.now();
+  if (now - _lastPruneTime > PRUNE_INTERVAL_MS) {
+    _lastPruneTime = now;
+    prunePreviewObjectUrlMemory();
+  }
   const entry = previewObjectUrlMemory.get(normalizedUrl);
   if (!entry) {
     return null;

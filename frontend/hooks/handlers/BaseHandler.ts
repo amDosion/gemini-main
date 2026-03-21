@@ -194,9 +194,10 @@ export abstract class BaseHandler implements ModeHandler {
           },
           onSuccess: async (_taskId, result) => {
             if (result && result.url) {
-              console.log('[BaseHandler] 上传完成:', {
+              context.onProgressUpdate?.({
                 attachmentId: attachment.id,
-                cloudUrl: result.url.substring(0, 60) + '...'
+                status: 'completed',
+                url: result.url,
               });
             }
           },
@@ -210,7 +211,6 @@ export abstract class BaseHandler implements ModeHandler {
           }
         }).catch((error) => {
           // 捕获 Promise rejection，记录错误但不影响主流程（修复问题7）
-          console.error(`[PollingManager] Failed to start polling for ${attachment.uploadTaskId}:`, error);
         });
       }
     });
@@ -219,7 +219,7 @@ export abstract class BaseHandler implements ModeHandler {
   /**
    * 标准化错误处理
    */
-  protected handleError(error: any): never {
+  protected handleError(error: unknown): never {
     // 如果已经是 HandlerError，直接抛出
     if (error instanceof HandlerErrorImpl) {
       throw error;
@@ -227,7 +227,7 @@ export abstract class BaseHandler implements ModeHandler {
     
     // 否则转换为 HandlerError（不传递 context，因为此处没有完整的上下文信息）
     throw new HandlerErrorImpl(
-      error.message || 'Unknown error',
+      error instanceof Error ? error.message : 'Unknown error',
       'INTERNAL_ERROR',
       'INTERNAL'
     );

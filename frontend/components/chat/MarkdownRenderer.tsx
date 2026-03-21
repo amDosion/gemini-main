@@ -1,7 +1,9 @@
 
+import { safeCopyToClipboard } from '../../utils/safeOps';
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash';
@@ -67,17 +69,15 @@ interface MarkdownRendererProps {
   content: string;
 }
 
-const CodeBlock = ({ language, children, ...props }: any) => {
+const CodeBlock = ({ language, children, ...props }: { language?: string; children?: React.ReactNode; [key: string]: unknown }) => {
   const [isCopied, setIsCopied] = useState(false);
 
   const handleCopy = async () => {
     if (!children) return;
-    try {
-        await navigator.clipboard.writeText(String(children));
+    const ok = await safeCopyToClipboard(String(children));
+    if (ok) {
         setIsCopied(true);
         setTimeout(() => setIsCopied(false), 2000);
-    } catch (err) {
-        console.error("Failed to copy code", err);
     }
   };
 
@@ -109,12 +109,25 @@ const CodeBlock = ({ language, children, ...props }: any) => {
   );
 };
 
+
+// Sanitize schema: allow common HTML but block script execution
+const sanitizeSchema = {
+  ...defaultSchema,
+  tagNames: [...(defaultSchema.tagNames || []), 'think', 'details', 'summary', 'mark'],
+  attributes: {
+    ...defaultSchema.attributes,
+    '*': [...(defaultSchema.attributes?.['*'] || []), 'className', 'style'],
+    img: [...(defaultSchema.attributes?.['img'] || []), 'src', 'alt', 'width', 'height', 'loading'],
+    a: [...(defaultSchema.attributes?.['a'] || []), 'href', 'target', 'rel'],
+  },
+};
+
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
   // 自定义组件映射，包含标准 HTML 元素和自定义标签（如 AI 模型的 <think>）
-  const customComponents: any = {
+  const customComponents: Record<string, unknown> = {
     // 处理 AI 模型的 <think> 标签（DeepSeek、Claude 等模型的思考过程）
     think: ({ children }: { children?: React.ReactNode }) => <ThinkBlock>{children}</ThinkBlock>,
-    code({ node, inline, className, children, ...props }: any) {
+    code({ node, inline, className, children, ...props }: { node?: unknown; inline?: boolean; className?: string; children?: React.ReactNode; [key: string]: unknown }) {
       const match = /language-(\w+)/.exec(className || '');
       return !inline && match ? (
         <CodeBlock language={match[1]} children={children} {...props} />
@@ -124,12 +137,12 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
         </code>
       );
     },
-    a: ({ node, ...props }: any) => (
+    a: ({ node, ...props }: { node?: unknown; [key: string]: unknown }) => (
       <a target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline" {...props} />
     ),
-    ul: ({ node, ...props }: any) => <ul className="list-disc pl-5 my-2 space-y-1" {...props} />,
-    ol: ({ node, ...props }: any) => <ol className="list-decimal pl-5 my-2 space-y-1" {...props} />,
-    blockquote: ({ node, ...props }: any) => (
+    ul: ({ node, ...props }: { node?: unknown; [key: string]: unknown }) => <ul className="list-disc pl-5 my-2 space-y-1" {...props} />,
+    ol: ({ node, ...props }: { node?: unknown; [key: string]: unknown }) => <ol className="list-decimal pl-5 my-2 space-y-1" {...props} />,
+    blockquote: ({ node, ...props }: { node?: unknown; [key: string]: unknown }) => (
       <blockquote className="border-l-4 border-slate-600 pl-4 italic text-slate-400 my-2" {...props} />
     ),
   };
@@ -137,7 +150,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
   return (
     <div className="prose prose-invert prose-sm sm:prose-base max-w-none break-words">
       <ReactMarkdown
-        rehypePlugins={[rehypeRaw]}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
         components={customComponents}
       >
         {content}

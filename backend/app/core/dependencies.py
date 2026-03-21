@@ -72,21 +72,35 @@ def get_current_user_optional(request: Request) -> Optional[str]:
     return get_current_user_id(request)
 
 
-# ==================== 其他依赖 ====================
+# ==================== 其他依赖（单例） ====================
+
+_rate_limiter_instance: RateLimiter | None = None
+_research_cache_instance: ResearchCache | None = None
+_validator_instance: PromptSecurityValidator | None = None
+
 
 def get_rate_limiter() -> RateLimiter:
-    """获取 RateLimiter 实例"""
-    return RateLimiter()
+    """获取 RateLimiter 单例"""
+    global _rate_limiter_instance
+    if _rate_limiter_instance is None:
+        _rate_limiter_instance = RateLimiter()
+    return _rate_limiter_instance
 
 
 def get_research_cache() -> ResearchCache:
-    """获取 ResearchCache 实例"""
-    return ResearchCache()
+    """获取 ResearchCache 单例"""
+    global _research_cache_instance
+    if _research_cache_instance is None:
+        _research_cache_instance = ResearchCache()
+    return _research_cache_instance
 
 
 def get_validator() -> PromptSecurityValidator:
-    """获取 PromptSecurityValidator 实例"""
-    return PromptSecurityValidator()
+    """获取 PromptSecurityValidator 单例"""
+    global _validator_instance
+    if _validator_instance is None:
+        _validator_instance = PromptSecurityValidator()
+    return _validator_instance
 
 
 # ==================== 缓存服务依赖 ====================

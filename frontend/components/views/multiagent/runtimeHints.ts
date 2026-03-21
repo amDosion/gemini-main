@@ -5,7 +5,7 @@ const RUNTIME_PRIORITY: Record<string, number> = {
   adapter: 100,
 };
 
-export const normalizeRuntimeHint = (value: any): string | undefined => {
+export const normalizeRuntimeHint = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
   const normalized = value.trim().toLowerCase().replace(/_/g, '-');
   if (!normalized) return undefined;
@@ -45,7 +45,7 @@ export const pickPrimaryRuntime = (hints: string[] = []): string | undefined => 
   })[0];
 };
 
-export const extractRuntimeHints = (payload: any, depth = 0, allowScalar = false): string[] => {
+export const extractRuntimeHints = (payload: unknown, depth = 0, allowScalar = false): string[] => {
   if (depth > 24 || payload === null || payload === undefined) return [];
   if (typeof payload === 'string') {
     const normalized = allowScalar ? normalizeRuntimeHint(payload) : undefined;

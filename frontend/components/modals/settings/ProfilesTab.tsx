@@ -6,6 +6,7 @@ import { ModelConfig, ApiProtocol } from '../../../types/types';
 import { LLMFactory } from '../../../services/LLMFactory';
 import { getAuthHeaders } from '../../../services/apiClient';
 import { v4 as uuidv4 } from 'uuid';
+import { ConfirmDialog } from '../../common/ConfirmDialog';
 
 interface ProfilesTabProps {
     profiles: ConfigProfile[];
@@ -33,21 +34,23 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
     const [previewError, setPreviewError] = useState<string | null>(null);
 
     // --- Local State for Deletion ---
-    const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
+    const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
-    const handleDeleteRequest = (id: string) => {
-        if (deleteConfirmationId === id) {
-            void onDeleteProfile(id);
-            setDeleteConfirmationId(null);
-            setOpenMenuId(null);
-            return;
+    const handleDeleteClick = (id: string) => {
+        setDeleteTargetId(id);
+        setOpenMenuId(null);
+    };
+
+    const handleDeleteConfirm = () => {
+        if (deleteTargetId) {
+            void onDeleteProfile(deleteTargetId);
         }
-        setDeleteConfirmationId(id);
-        setOpenMenuId(id);
-        window.setTimeout(() => {
-            setDeleteConfirmationId((prev) => (prev === id ? null : prev));
-        }, 3000);
+        setDeleteTargetId(null);
+    };
+
+    const handleDeleteCancel = () => {
+        setDeleteTargetId(null);
     };
 
     useEffect(() => {
@@ -69,21 +72,8 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
     useEffect(() => {
         // 始终输出日志以便调试
         const profileCount = profiles?.length || 0;
-        console.log('[ProfilesTab] Profiles data:', {
-            count: profileCount,
-            activeProfileId,
-            isArray: Array.isArray(profiles),
-            profiles: profiles?.map(p => ({
-                id: p.id?.substring(0, 8) + '...' || 'no-id',
-                name: p.name || 'no-name',
-                providerId: p.providerId || 'no-provider',
-                isActive: p.id === activeProfileId
-            })) || [],
-            timestamp: new Date().toISOString()
-        });
         
         if (profileCount === 0 && profiles) {
-            console.warn('[ProfilesTab] Profiles array is empty but exists');
         }
     }, [profiles, activeProfileId]);
 
@@ -138,8 +128,8 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
             } else {
                 setPreviewError("No models found. Check API Key or connectivity.");
             }
-        } catch (e: any) {
-            setPreviewError(e.message || "Failed to fetch models.");
+        } catch (e) {
+            setPreviewError((e instanceof Error ? e.message : String(e)) || "Failed to fetch models.");
         } finally {
             setIsPreviewLoading(false);
         }
@@ -249,7 +239,6 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                         {safeProfiles.map((p) => {
                             const isActive = p.id === activeProfileId;
-                            const isDeleting = deleteConfirmationId === p.id;
                             const isMenuOpen = openMenuId === p.id;
 
                             let activeBorder = 'border-indigo-500/50';
@@ -340,11 +329,11 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
 
                                                         <button
                                                             type="button"
-                                                            onClick={() => handleDeleteRequest(p.id)}
+                                                            onClick={() => handleDeleteClick(p.id)}
                                                             className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-red-300 hover:bg-red-900/30 rounded"
                                                         >
                                                             <Trash2 size={13} />
-                                                            <span>{isDeleting ? 'Confirm Delete' : 'Delete'}</span>
+                                                            <span>Delete</span>
                                                         </button>
                                                     </div>
                                                 )}
@@ -380,6 +369,16 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
                     </div>
                 )}
             </div>
+
+            <ConfirmDialog
+                isOpen={!!deleteTargetId}
+                title="Delete Profile"
+                message="Are you sure you want to delete this profile? This action cannot be undone."
+                confirmLabel="Delete"
+                cancelLabel="Cancel"
+                onConfirm={handleDeleteConfirm}
+                onCancel={handleDeleteCancel}
+            />
         </div>
     );
 };

@@ -83,7 +83,7 @@ export const normalizeSupportedTasks = (raw: unknown): AgentTaskType[] => {
   return normalized;
 };
 
-const normalizeModelEntry = (rawModel: any): ModelOption | null => {
+const normalizeModelEntry = (rawModel: Record<string, unknown>): ModelOption | null => {
   const id = String(rawModel?.id || '').trim();
   if (!id) return null;
   const name = String(rawModel?.name || id).trim() || id;
@@ -95,7 +95,7 @@ const normalizeModelEntry = (rawModel: any): ModelOption | null => {
   };
 };
 
-const readProviderArray = (provider: any, ...keys: string[]): any[] => {
+const readProviderArray = (provider: Record<string, unknown>, ...keys: string[]): unknown[] => {
   for (const key of keys) {
     if (Array.isArray(provider?.[key])) {
       return provider[key];
@@ -104,7 +104,7 @@ const readProviderArray = (provider: any, ...keys: string[]): any[] => {
   return [];
 };
 
-const readProviderString = (provider: any, ...keys: string[]): string => {
+const readProviderString = (provider: Record<string, unknown>, ...keys: string[]): string => {
   for (const key of keys) {
     const value = String(provider?.[key] || '').trim();
     if (value) {
@@ -158,13 +158,13 @@ const normalizeDefaultModelsByTask = (rawValue: unknown): Partial<Record<AgentTa
 };
 
 export const normalizeProviderModels = (payload: unknown): ProviderModels[] => {
-  const providers = Array.isArray((payload as any)?.providers)
-    ? (payload as any).providers
+  const providers: unknown[] = Array.isArray((payload as Record<string, unknown>)?.providers)
+    ? (payload as Record<string, unknown>).providers as unknown[]
     : Array.isArray(payload)
       ? payload
       : [];
   return providers
-    .map((provider: any) => {
+    .map((provider: Record<string, unknown>) => {
       const providerId = readProviderString(provider, 'providerId', 'provider_id');
       if (!providerId) return null;
 

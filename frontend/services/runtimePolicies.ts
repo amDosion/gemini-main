@@ -38,7 +38,7 @@ const clampInteger = (
   return Math.max(minimum, Math.min(maximum, Math.round(parsed)));
 };
 
-const normalizeDeepResearchPolicy = (payload: any): DeepResearchStreamPolicy => ({
+const normalizeDeepResearchPolicy = (payload: Record<string, unknown>): DeepResearchStreamPolicy => ({
   idleTimeoutMs: clampInteger(
     payload?.idleTimeoutMs ?? payload?.idle_timeout_ms,
     DEFAULT_DEEP_RESEARCH_STREAM_POLICY.idleTimeoutMs,
@@ -59,7 +59,7 @@ const normalizeDeepResearchPolicy = (payload: any): DeepResearchStreamPolicy => 
   ),
 });
 
-const normalizeWorkflowExecutionPolicy = (payload: any): WorkflowExecutionPolicy => ({
+const normalizeWorkflowExecutionPolicy = (payload: Record<string, unknown>): WorkflowExecutionPolicy => ({
   sseIdleThresholdMs: clampInteger(
     payload?.sseIdleThresholdMs ?? payload?.sse_idle_threshold_ms,
     DEFAULT_WORKFLOW_EXECUTION_POLICY.sseIdleThresholdMs,
@@ -85,7 +85,7 @@ export const fetchDeepResearchStreamPolicy = async (): Promise<DeepResearchStrea
     return deepResearchPolicyCache;
   }
   try {
-    const payload = await requestJson<any>('/api/research/stream/policy', {
+    const payload = await requestJson<Record<string, unknown>>('/api/research/stream/policy', {
       withAuth: true,
       credentials: 'include',
       errorMessage: '加载 Deep Research 策略失败',
@@ -102,7 +102,7 @@ export const fetchWorkflowExecutionPolicy = async (): Promise<WorkflowExecutionP
     return workflowExecutionPolicyCache;
   }
   try {
-    const payload = await requestJson<any>('/api/workflows/execution-policy', {
+    const payload = await requestJson<Record<string, unknown>>('/api/workflows/execution-policy', {
       withAuth: true,
       credentials: 'include',
       errorMessage: '加载工作流执行策略失败',

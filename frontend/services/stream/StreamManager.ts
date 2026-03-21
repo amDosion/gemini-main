@@ -30,7 +30,6 @@ export class StreamManager {
         if (controller) {
             controller.abort(reason);
             this.controllers.delete(taskId);
-            console.log(`[StreamManager] Task ${taskId} cancelled: ${reason}`);
         }
     }
 

@@ -65,7 +65,6 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                 current.updatedAt > latest.updatedAt ? current : latest
             );
         } catch (error) {
-            console.error('[EditorTab] Error finding provider config:', error);
             return null;
         }
     };
@@ -80,14 +79,10 @@ export const EditorTab: React.FC<EditorTabProps> = ({
             return profile;
         }
 
-        try {
-            const decryptedProfiles = await db.getProfiles(true);
-            const decrypted = decryptedProfiles.find(p => p.id === profile.id);
-            if (decrypted) {
-                return decrypted;
-            }
-        } catch (error) {
-            console.warn('[EditorTab] Failed to resolve decrypted profile during provider switch:', error);
+        const decryptedProfiles = await db.getProfiles(true);
+        const decrypted = decryptedProfiles.find(p => p.id === profile.id);
+        if (decrypted) {
+            return decrypted;
         }
 
         return profile;
@@ -97,26 +92,13 @@ export const EditorTab: React.FC<EditorTabProps> = ({
     useEffect(() => {
         const loadTemplates = async () => {
             try {
-                console.log('[EditorTab] Loading provider templates...');
                 setIsLoadingTemplates(true);
                 const templates = await getProviderTemplates();
                 setProviderTemplates(templates);
                 setTemplatesError(null);
                 
-                console.log('[EditorTab] Provider templates loaded:', {
-                    count: templates.length,
-                    templates: templates.map(t => ({
-                        id: t.id,
-                        name: t.name,
-                        baseUrl: t.baseUrl,
-                        protocol: t.protocol,
-                        isCustom: t.isCustom
-                    })),
-                    timestamp: new Date().toISOString()
-                });
-            } catch (error: any) {
-                console.error('[EditorTab] Failed to load provider templates:', error);
-                setTemplatesError(error.message || 'Failed to load provider templates');
+            } catch (error) {
+                setTemplatesError((error instanceof Error ? error.message : String(error)) || 'Failed to load provider templates');
                 // 不使用降级配置，显示错误状态
                 setProviderTemplates([]);
             } finally {
@@ -143,21 +125,12 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                         setFormData({ ...decryptedProfile });
                         setVerifiedModels(decryptedProfile.savedModels || []);
                         
-                        console.log('[EditorTab] Loaded decrypted profile for editing:', {
-                            id: decryptedProfile.id.substring(0, 8) + '...',
-                            name: decryptedProfile.name,
-                            hasDecryptedApiKey: !!decryptedProfile.apiKey && !decryptedProfile.apiKey.startsWith('gAAAAA'),
-                            savedModelsCount: decryptedProfile.savedModels?.length || 0,
-                            timestamp: new Date().toISOString()
-                        });
                     } else {
                         // 如果找不到，使用原始数据（可能是新创建的配置）
                         setFormData({ ...initialData });
                         setVerifiedModels(initialData.savedModels || []);
-                        console.warn('[EditorTab] Profile not found in decrypted list, using initialData');
                     }
                 } catch (error) {
-                    console.error('[EditorTab] Failed to load decrypted profile:', error);
                     // 降级：使用原始数据
                     setFormData({ ...initialData });
                     setVerifiedModels(initialData.savedModels || []);
@@ -171,12 +144,6 @@ export const EditorTab: React.FC<EditorTabProps> = ({
             const firstTemplate = providerTemplates[0];
             const googleTemplate = providerTemplates.find(p => p.id === 'google') || firstTemplate;
             
-            console.log('[EditorTab] Initializing new profile with template:', {
-                templateId: googleTemplate.id,
-                templateName: googleTemplate.name,
-                baseUrl: googleTemplate?.baseUrl,
-                timestamp: new Date().toISOString()
-            });
             
             setFormData({
                 id: uuidv4(),
@@ -205,19 +172,11 @@ export const EditorTab: React.FC<EditorTabProps> = ({
         // 如果仍然是加密的（以 gAAAAA 开头），验证会失败
         const apiKeyToVerify = formData.apiKey;
         if (apiKeyToVerify && apiKeyToVerify.startsWith('gAAAAA')) {
-            console.error('[EditorTab] ⚠️ API Key is still encrypted! Cannot verify connection.');
             setVerifyError('API Key is encrypted. Please reload the configuration.');
             setIsVerifying(false);
             return;
         }
         
-        console.log('[EditorTab] Starting verification:', {
-            providerId: formData.providerId,
-            protocol: formData.protocol,
-            hasApiKey: !!formData.apiKey,
-            isEncrypted: formData.apiKey?.startsWith('gAAAAA'),
-            baseUrl: formData.baseUrl
-        });
         
         setIsVerifying(true);
         setVerifiedModels([]);
@@ -227,7 +186,6 @@ export const EditorTab: React.FC<EditorTabProps> = ({
             // ✅ 统一通过后端 API 验证
             // 前端只负责传递 URL 和 Key（明文），后端负责调用 Provider API
             const providerInstance = LLMFactory.getProvider(formData.protocol as ApiProtocol, formData.providerId);
-            console.log('[EditorTab] Provider instance created:', providerInstance.id);
             
             // ✅ 验证连接时强制不使用缓存，确保获取最新数据
             const models = await providerInstance.getAvailableModels(
@@ -236,10 +194,6 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                 false  // useCache = false，强制刷新
             );
             
-            console.log('[EditorTab] Models received:', {
-                count: models.length,
-                models: models.map(m => ({ id: m.id, name: m.name }))
-            });
 
             if (models.length > 0) {
                 setVerifiedModels(models);
@@ -269,12 +223,10 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                     };
                 });
             } else {
-                console.warn('[EditorTab] No models returned from provider');
                 setVerifyError("Connection established, but no models were returned.");
             }
-        } catch (e: any) {
-            console.error('[EditorTab] Verification failed:', e);
-            setVerifyError(e.message || "Connection failed.");
+        } catch (e) {
+            setVerifyError((e instanceof Error ? e.message : String(e)) || "Connection failed.");
         } finally {
             setIsVerifying(false);
         }
@@ -388,15 +340,6 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                                                     setFormData({ ...configToUse });
                                                     setVerifiedModels(configToUse.savedModels || []);
                                                     
-                                                    console.log('[EditorTab] Switched to existing config:', {
-                                                        providerId: p.id,
-                                                        providerName: p.name,
-                                                        configId: configToUse.id.substring(0, 8) + '...',
-                                                        configName: configToUse.name,
-                                                        hasDecryptedApiKey: !!configToUse.apiKey && !configToUse.apiKey.startsWith('gAAAAA'),
-                                                        savedModelsCount: configToUse.savedModels?.length || 0,
-                                                        timestamp: new Date().toISOString()
-                                                    });
                                                 } else {
                                                     // 未找到配置：应用模板默认值并清空用户数据
                                                     setFormData(prev => {
@@ -416,11 +359,6 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                                                     });
                                                     setVerifiedModels([]);
                                                     
-                                                    console.log('[EditorTab] No existing config found, applied template defaults:', {
-                                                        providerId: p.id,
-                                                        providerName: p.name,
-                                                        timestamp: new Date().toISOString()
-                                                    });
                                                 }
                                             } else {
                                                 // ========== 创建模式：应用模板默认值 ==========
@@ -439,11 +377,6 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                                                 });
                                                 setVerifiedModels([]);
                                                 
-                                                console.log('[EditorTab] Create mode: applied template defaults:', {
-                                                    providerId: p.id,
-                                                    providerName: p.name,
-                                                    timestamp: new Date().toISOString()
-                                                });
                                             }
                                         }}
                                         className={`flex items-center gap-2 p-3 md:p-2 rounded-lg border text-left transition-all ${formData.providerId === p.id
@@ -620,7 +553,6 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                                 apiKey={formData.apiKey}
                                 onModelSelect={(modelId) => {
                                     // 可选：选择模型时的回调
-                                    console.log('Selected model:', modelId);
                                 }}
                                 onModelsChanged={() => {
                                     // 模型下载/删除后刷新验证列表

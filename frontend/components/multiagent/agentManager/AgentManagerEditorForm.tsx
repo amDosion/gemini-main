@@ -259,7 +259,7 @@ export const AgentManagerEditorForm: React.FC<AgentManagerEditorFormProps> = ({
               value={defaultTaskType}
               onChange={(event) => {
                 const nextTaskType = event.target.value as AgentTaskType;
-                const nextDefaults: any = {
+                const nextDefaults: Record<string, unknown> = {
                   ...defaults,
                   defaultTaskType: nextTaskType,
                 };

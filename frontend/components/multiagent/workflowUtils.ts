@@ -394,7 +394,6 @@ export const importWorkflow = (jsonString: string): {
       },
     };
   } catch (error) {
-    console.error('Failed to import workflow:', error);
     return null;
   }
 };
@@ -541,7 +540,7 @@ const DEFAULT_NODE_MIN_WIDTH = 135;
 const DEFAULT_NODE_MAX_WIDTH = 195;
 const DEFAULT_MANUAL_NODE_MAX_WIDTH = 360;
 const DEFAULT_MANUAL_NODE_MAX_HEIGHT = 960;
-const DAGRE_GRAPH = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
+// Dagre graph created per-call to avoid shared mutable state
 const AUTO_LAYOUT_RESET_WIDTH = DEFAULT_MANUAL_NODE_MAX_WIDTH;
 
 const estimateNodeHeight = (node: Node<CustomNodeData>): number => {
@@ -693,7 +692,8 @@ const getLayoutedElements = (
   const isHorizontal = direction === 'LR';
   const normalizedNodes = nodes.map((node) => normalizeNodeForAutoLayout(node));
 
-  DAGRE_GRAPH.setGraph({
+  const dagreGraph = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
+  dagreGraph.setGraph({
     rankdir: direction,
     align: 'UL',
     ranksep: Math.max(120, columnGap),
@@ -705,7 +705,7 @@ const getLayoutedElements = (
 
   normalizedNodes.forEach((node) => {
     const { width, height } = estimateWorkflowNodeSize(node);
-    DAGRE_GRAPH.setNode(String(node.id), { width, height });
+    dagreGraph.setNode(String(node.id), { width, height });
   });
 
   edges.forEach((edge) => {
@@ -714,14 +714,14 @@ const getLayoutedElements = (
     if (!sourceId || !targetId || sourceId === targetId) {
       return;
     }
-    DAGRE_GRAPH.setEdge(sourceId, targetId);
+    dagreGraph.setEdge(sourceId, targetId);
   });
 
-  dagre.layout(DAGRE_GRAPH);
+  dagre.layout(dagreGraph);
 
   const layoutedNodes = normalizedNodes.map((node) => {
     const nodeId = String(node.id);
-    const nodeWithPosition = DAGRE_GRAPH.node(nodeId);
+    const nodeWithPosition = dagreGraph.node(nodeId);
     if (!nodeWithPosition || !Number.isFinite(nodeWithPosition.x) || !Number.isFinite(nodeWithPosition.y)) {
       return node;
     }

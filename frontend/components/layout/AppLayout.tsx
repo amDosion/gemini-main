@@ -34,7 +34,7 @@ interface AppLayoutProps {
     visibleModels: ModelConfig[];
     currentModelId: string;
     onModelSelect: (id: string) => void;
-    onOpenSettings: (tab?: any) => void;
+    onOpenSettings: (tab?: string) => void;
     onOpenCloudStorage: () => void;
     onLogout?: () => void;
     appMode: AppMode;

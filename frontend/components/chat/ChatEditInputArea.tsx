@@ -257,9 +257,7 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
       };
       
       // ✅ 调试日志：确认发送前的附件数量
-      console.log(`[ChatEditInputArea] handleGenerate 开始，activeAttachments 数量: ${activeAttachments.length}, activeImageUrl: ${activeImageUrl ? '有' : '无'}`);
       activeAttachments.forEach((att, idx) => {
-        console.log(`[ChatEditInputArea] 附件[${idx}]: id=${att.id}, name=${att.name}, mimeType=${att.mimeType}`);
       });
       
       // ✅ 新增：记录画布图片的完整元数据（如果有）
@@ -269,29 +267,7 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
           if (url.startsWith('data:')) return `Base64 (${url.length} 字符)`;
           return url.length > 80 ? url.substring(0, 80) + '...' : url;
         };
-        console.log('[ChatEditInputArea] ========== 画布图片完整元数据 ==========');
-        console.log('[ChatEditInputArea] 基本信息:', {
-          id: activeCanvasAttachment.id || 'N/A',
-          name: activeCanvasAttachment.name || 'N/A',
-          mimeType: activeCanvasAttachment.mimeType || 'N/A',
-          uploadStatus: activeCanvasAttachment.uploadStatus || 'N/A',
-          uploadTaskId: activeCanvasAttachment.uploadTaskId || 'N/A'
-        });
-        console.log('[ChatEditInputArea] URL 信息:', {
-          url: formatUrlForLog(activeCanvasAttachment.url),
-          tempUrl: formatUrlForLog(activeCanvasAttachment.tempUrl),
-          cloudUrl: formatUrlForLog(activeCanvasAttachment.cloudUrl)
-        });
-        console.log('[ChatEditInputArea] 关联信息:', {
-          messageId: activeCanvasAttachment.messageId || 'N/A',
-          sessionId: activeCanvasAttachment.sessionId || 'N/A',
-          userId: activeCanvasAttachment.userId || 'N/A',
-          size: activeCanvasAttachment.size ? `${activeCanvasAttachment.size} bytes` : 'N/A',
-          createdAt: activeCanvasAttachment.createdAt ? new Date(activeCanvasAttachment.createdAt).toISOString() : 'N/A'
-        });
-        console.log('[ChatEditInputArea] ==========================================');
       } else {
-        console.log('[ChatEditInputArea] 画布图片元数据: 无 (activeCanvasAttachment 为 null)');
       }
 
       // ✅ 互斥逻辑：有附件用附件，没附件用画布图片
@@ -303,7 +279,6 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
         getFilePrefix(mode)
       );
 
-      console.log(`[ChatEditInputArea] processUserAttachments 返回 ${finalAttachments.length} 个附件`);
 
       // 构建 ChatOptions
       const options: ChatOptions = {
@@ -370,14 +345,6 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
           (options as any).upscaleFactor = controls.upscaleFactor;
         }
 
-        console.log('[ChatEditInputArea] ✅ Outpainting 参数:', {
-          outpaintMode: controls.outpaintMode,
-          xScale: controls.xScale,
-          yScale: controls.yScale,
-          offsetPixels: controls.offsetPixels,
-          upscaleFactor: controls.upscaleFactor,
-          aspectRatio: controls.aspectRatio,
-        });
       }
 
       onSend(prompt, options, finalAttachments, mode);
@@ -388,7 +355,6 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
         onAttachmentsChange([]);
       }
     } catch (error) {
-      console.error('[ChatEditInputArea] handleGenerate 处理附件失败:', error);
       showError('处理附件失败，请重试');
     }
   }, [

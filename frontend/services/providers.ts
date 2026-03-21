@@ -75,7 +75,6 @@ export async function fetchProviderTemplates(): Promise<AIProviderConfig[]> {
     const templates = await response.json();
     return templates;
   } catch (error) {
-    console.error('[Provider Templates] Failed to fetch:', error);
     throw error;
   }
 }

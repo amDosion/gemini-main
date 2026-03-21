@@ -3,7 +3,7 @@ import { Message, ChatOptions, Attachment, Role, ModelConfig } from "../../types
 import { contextManager } from "../ai_tools/ContextManager";
 
 export interface PreparedPayload {
-    messages: any[];
+    messages: Array<{ role: string; content: string }>;
     contextWindow: number;
 }
 
@@ -27,7 +27,7 @@ export class MessagePreparer {
         modelConfig: ModelConfig
     ): Promise<PreparedPayload> {
         
-        let pipelineMessages: any[] = [];
+        let pipelineMessages: Array<{ role: string; content: string }> = [];
 
         // 1. Persona / system prompt is resolved by backend single source.
         // Do not inject any fallback system prompt on the frontend.

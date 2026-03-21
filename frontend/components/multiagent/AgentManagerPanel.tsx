@@ -79,18 +79,12 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
   }, []);
 
   const fetchProviders = useCallback(async () => {
-    try {
-      const res = await fetch('/api/agents/available-models', {
-        headers: getHeaders(),
-        credentials: 'include',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setProviders(normalizeProviderModels(data));
-      }
-    } catch (error) {
-      console.error('Failed to fetch providers:', error);
-    }
+    await fetch('/api/agents/available-models', {
+      headers: getHeaders(),
+      credentials: 'include',
+    }).then(res => {
+      if (res.ok) return res.json().then(data => setProviders(normalizeProviderModels(data)));
+    });
   }, [getHeaders]);
 
   const fetchAgents = useCallback(async () => {
@@ -118,7 +112,6 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
       if (controller.signal.aborted || requestId !== latestFetchRequestIdRef.current) {
         return;
       }
-      console.error('Failed to fetch agents:', error);
     } finally {
       if (requestId === latestFetchRequestIdRef.current) {
         fetchAbortControllerRef.current = null;
@@ -259,7 +252,6 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
         setNotice({ type: 'error', text: await getErrorMessage(res, '保存 Agent 失败') });
       }
     } catch (error) {
-      console.error('Failed to save agent:', error);
       setNotice({ type: 'error', text: '保存 Agent 失败，请稍后重试' });
     } finally {
       setSaving(false);
@@ -287,7 +279,6 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
         setNotice({ type: 'success', text: 'Agent 已永久删除' });
       }
     } catch (error) {
-      console.error('Failed to delete agent:', error);
       setNotice({ type: 'error', text: hardDelete ? '永久删除失败，请稍后重试' : '停用失败，请稍后重试' });
     } finally {
       setDeletingAction(false);
@@ -311,7 +302,6 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
       emitAgentRegistryUpdated();
       setPendingRestoreAction(null);
     } catch (error) {
-      console.error('Failed to restore agent:', error);
       setNotice({ type: 'error', text: '恢复 Agent 失败，请稍后重试' });
     } finally {
       setRestoringAction(false);

@@ -3,11 +3,11 @@
  */
 
 // 创建广播频道
-const authChannel = new BroadcastChannel('auth');
+const authChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('auth') : null;
 const tokenRefreshListeners = new Set<(accessToken: string, refreshToken: string) => void>();
 const logoutListeners = new Set<() => void>();
 
-authChannel.addEventListener('message', (event) => {
+authChannel?.addEventListener('message', (event) => {
   const payload = event.data || {};
 
   if (payload.type === 'token_refreshed') {
@@ -28,7 +28,7 @@ authChannel.addEventListener('message', (event) => {
  * 广播 token 刷新事件
  */
 export function broadcastTokenRefresh(accessToken: string, refreshToken: string) {
-  authChannel.postMessage({
+  authChannel?.postMessage({
     type: 'token_refreshed',
     accessToken,
     refreshToken,
@@ -51,7 +51,7 @@ export function listenTokenRefresh(callback: (accessToken: string, refreshToken:
  * 广播登出事件
  */
 export function broadcastLogout() {
-  authChannel.postMessage({
+  authChannel?.postMessage({
     type: 'logout',
     timestamp: Date.now()
   });

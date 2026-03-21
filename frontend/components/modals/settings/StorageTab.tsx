@@ -6,6 +6,7 @@
 import React, { useEffect, useState } from 'react';
 import { Cloud, Plus, Trash2, Check, Edit2, MoreHorizontal } from 'lucide-react';
 import { StorageConfig, StorageProvider } from '../../../types/storage';
+import { ConfirmDialog } from '../../common/ConfirmDialog';
 
 interface StorageTabProps {
   storageConfigs: StorageConfig[];
@@ -26,19 +27,23 @@ export const StorageTab: React.FC<StorageTabProps> = ({
   onCreateNew,
   onEditStorage
 }) => {
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
-  const handleDelete = async (id: string) => {
-    if (deletingId === id) {
-      await onDeleteStorage(id);
-      setDeletingId(null);
-      setOpenMenuId(null);
-    } else {
-      setDeletingId(id);
-      setOpenMenuId(id);
-      setTimeout(() => setDeletingId((prev) => (prev === id ? null : prev)), 3000);
+  const handleDeleteClick = (id: string) => {
+    setDeleteTargetId(id);
+    setOpenMenuId(null);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (deleteTargetId) {
+      await onDeleteStorage(deleteTargetId);
     }
+    setDeleteTargetId(null);
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteTargetId(null);
   };
 
   const getProviderLabel = (provider: StorageProvider): string => {
@@ -113,7 +118,6 @@ export const StorageTab: React.FC<StorageTabProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {storageConfigs.map((config) => {
               const isActive = config.id === activeStorageId;
-              const isDeleting = deletingId === config.id;
               const isMenuOpen = openMenuId === config.id;
 
               const endpointSummary =
@@ -173,13 +177,11 @@ export const StorageTab: React.FC<StorageTabProps> = ({
 
                             <button
                               type="button"
-                              onClick={() => {
-                                void handleDelete(config.id);
-                              }}
+                              onClick={() => handleDeleteClick(config.id)}
                               className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-red-300 hover:bg-red-900/30 rounded"
                             >
                               <Trash2 size={13} />
-                              <span>{isDeleting ? 'Confirm Delete' : 'Delete'}</span>
+                              <span>Delete</span>
                             </button>
                           </div>
                         )}
@@ -215,6 +217,15 @@ export const StorageTab: React.FC<StorageTabProps> = ({
           </div>
         )}
       </div>
+      <ConfirmDialog
+        isOpen={!!deleteTargetId}
+        title="Delete Storage"
+        message="Are you sure you want to delete this storage configuration?"
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+      />
     </div>
   );
 };

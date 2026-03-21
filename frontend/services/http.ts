@@ -1,4 +1,4 @@
-import { withAuthorization } from './authTokenStore';
+import { withAuthorization, ensureTokenSync } from './authTokenStore';
 
 export const DEFAULT_REQUEST_TIMEOUT_MS = 10000;
 
@@ -48,7 +48,7 @@ function resolveTimeoutMessage(
   return `Request timeout after ${timeoutMs}ms`;
 }
 
-function extractErrorMessageFromPayload(payload: any): string | null {
+function extractErrorMessageFromPayload(payload: Record<string, unknown>): string | null {
   if (!payload || typeof payload !== 'object') {
     return null;
   }
@@ -59,7 +59,7 @@ function extractErrorMessageFromPayload(payload: any): string | null {
 
   if (Array.isArray(payload.detail)) {
     const normalized = payload.detail
-      .map((item: any) => {
+      .map((item: Record<string, unknown>) => {
         if (item && typeof item === 'object' && typeof item.msg === 'string') {
           const location = Array.isArray(item.loc) ? item.loc.join('.') : 'unknown';
           return `${location}: ${item.msg}`;
@@ -148,12 +148,12 @@ export async function fetchWithTimeout(
   let timedOut = false;
 
   const onExternalAbort = () => {
-    controller.abort((externalSignal as any)?.reason);
+    controller.abort((externalSignal as AbortSignal & { reason?: unknown }).reason);
   };
 
   if (externalSignal) {
     if (externalSignal.aborted) {
-      controller.abort((externalSignal as any)?.reason);
+      controller.abort((externalSignal as AbortSignal & { reason?: unknown }).reason);
     } else {
       externalSignal.addEventListener('abort', onExternalAbort, { once: true });
     }
@@ -166,6 +166,9 @@ export async function fetchWithTimeout(
         controller.abort();
       }, timeoutMs)
     : null;
+
+  // 确保 cookie 与 localStorage 中的 token 一致
+  if (withAuth) ensureTokenSync();
 
   try {
     return await fetch(input, {

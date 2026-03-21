@@ -43,7 +43,6 @@ export class LLMFactory {
       this.providerTemplates = await getProviderTemplates();
       this.initialized = true;
     } catch (error) {
-      console.warn('[LLMFactory] Failed to load provider templates, will use fallback logic:', error);
       // 即使加载失败，也标记为已初始化，避免重复尝试
       this.initialized = true;
     }

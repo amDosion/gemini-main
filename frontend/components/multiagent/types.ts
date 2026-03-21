@@ -143,7 +143,7 @@ export interface WorkflowNodeData {
   // Execution state
   status?: NodeStatus;
   progress?: number;
-  result?: any;
+  result?: unknown;
   error?: string;
   runtime?: string;
   startTime?: number;
@@ -160,12 +160,12 @@ export type WorkflowEdge = Edge;
 export interface ExecutionStatus {
   nodeStatuses: Record<string, NodeStatus>;
   nodeProgress: Record<string, number>;
-  nodeResults: Record<string, any>;
+  nodeResults: Record<string, unknown>;
   nodeErrors: Record<string, string>;
   nodeRuntimes?: Record<string, string>;
   executionId?: string;
   finalStatus?: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'workflow_paused';
-  finalResult?: any;
+  finalResult?: unknown;
   finalRuntime?: string;
   runtimeHints?: string[];
   resultPreviewImageUrls?: string[];

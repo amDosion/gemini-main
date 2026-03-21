@@ -51,7 +51,7 @@ const isTempAttachmentUrl = (value: string) => {
   return /^(https?:\/\/[^/]+)?\/api\/temp-images\/[^/?#]+/i.test(normalized);
 };
 
-const inferMediaMimeType = (payload: any): string => {
+const inferMediaMimeType = (payload: Record<string, unknown>): string => {
   if (!isPlainObject(payload)) return '';
   const mimeType = payload.mimeType ?? payload.mime_type ?? payload.contentType ?? payload.content_type;
   return typeof mimeType === 'string' ? mimeType.trim().toLowerCase() : '';
@@ -67,7 +67,7 @@ export const isPlaceholderImageInput = (value: string) => {
   return false;
 };
 
-export const hasUsableImageInput = (value: any) => {
+export const hasUsableImageInput = (value: unknown) => {
   if (typeof value !== 'string') return false;
   const normalized = value.trim();
   if (!normalized) return false;
@@ -75,11 +75,11 @@ export const hasUsableImageInput = (value: any) => {
   return isLikelyImageUrl(normalized) || /^https?:\/\//.test(normalized);
 };
 
-export const isPlainObject = (value: any): value is Record<string, any> => {
+export const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 };
 
-export const normalizeImageValue = (value: any) => {
+export const normalizeImageValue = (value: unknown) => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -98,7 +98,7 @@ export const isLocalFilesystemPath = (value: string) => {
   return /^\/(?:Users|home|var|private|opt|tmp|mnt|Volumes)\//.test(normalized);
 };
 
-export const isDirectlyRenderableImageUrl = (value: any) => {
+export const isDirectlyRenderableImageUrl = (value: unknown) => {
   if (typeof value !== 'string') return false;
   const normalized = value.trim();
   if (!normalized) return false;
@@ -114,7 +114,7 @@ const isRenderableInlineMediaUrl = (normalized: string, prefix: 'data:audio/' | 
   return normalized.startsWith(prefix) && normalized.length <= INLINE_MEDIA_DATA_URL_MAX_CHARS;
 };
 
-const isDirectlyRenderableMediaUrl = (value: any, prefix: 'data:audio/' | 'data:video/') => {
+const isDirectlyRenderableMediaUrl = (value: unknown, prefix: 'data:audio/' | 'data:video/') => {
   if (typeof value !== 'string') return false;
   const normalized = value.trim();
   if (!normalized) return false;
@@ -126,17 +126,17 @@ const isDirectlyRenderableMediaUrl = (value: any, prefix: 'data:audio/' | 'data:
   return false;
 };
 
-export const isDirectlyRenderableAudioUrl = (value: any) =>
+export const isDirectlyRenderableAudioUrl = (value: unknown) =>
   isDirectlyRenderableMediaUrl(value, 'data:audio/');
 
-export const isDirectlyRenderableVideoUrl = (value: any) =>
+export const isDirectlyRenderableVideoUrl = (value: unknown) =>
   isDirectlyRenderableMediaUrl(value, 'data:video/');
 
-export const extractImageUrls = (value: any): string[] => {
+export const extractImageUrls = (value: unknown): string[] => {
   const result: string[] = [];
   const seen = new Set<string>();
 
-  const push = (candidate: any) => {
+  const push = (candidate: Record<string, unknown>) => {
     const normalized = normalizeImageValue(candidate);
     if (normalized && !seen.has(normalized)) {
       seen.add(normalized);
@@ -144,7 +144,7 @@ export const extractImageUrls = (value: any): string[] => {
     }
   };
 
-  const walk = (payload: any) => {
+  const walk = (payload: Record<string, unknown>) => {
     push(payload);
     if (Array.isArray(payload)) {
       payload.forEach((item) => walk(item));
@@ -160,7 +160,7 @@ export const extractImageUrls = (value: any): string[] => {
 };
 
 const extractMediaUrls = (
-  value: any,
+  value: unknown,
   isLikelyMediaUrl: (candidate: string) => boolean,
   mediaKind: 'audio' | 'video'
 ): string[] => {
@@ -214,7 +214,7 @@ const extractMediaUrls = (
     'inputs',
   ]);
 
-  const push = (candidate: any, keyHint = '', mimeType = '') => {
+  const push = (candidate: unknown, keyHint = '', mimeType = '') => {
     if (typeof candidate !== 'string') return;
     const normalized = candidate.trim();
     if (!normalized || seen.has(normalized)) {
@@ -238,7 +238,7 @@ const extractMediaUrls = (
     result.push(normalized);
   };
 
-  const walk = (payload: any, keyHint = '', parentMimeType = '') => {
+  const walk = (payload: unknown, keyHint = '', parentMimeType = '') => {
     push(payload, keyHint, parentMimeType);
     if (Array.isArray(payload)) {
       payload.forEach((item) => walk(item, keyHint, parentMimeType));
@@ -260,11 +260,11 @@ const extractMediaUrls = (
   return result;
 };
 
-export const extractAudioUrls = (value: any): string[] => extractMediaUrls(value, isLikelyAudioUrl, 'audio');
+export const extractAudioUrls = (value: unknown): string[] => extractMediaUrls(value, isLikelyAudioUrl, 'audio');
 
-export const extractVideoUrls = (value: any): string[] => extractMediaUrls(value, isLikelyVideoUrl, 'video');
+export const extractVideoUrls = (value: unknown): string[] => extractMediaUrls(value, isLikelyVideoUrl, 'video');
 
-const normalizeDisplayUrlValue = (value: any): string | null => {
+const normalizeDisplayUrlValue = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -279,11 +279,11 @@ const normalizeDisplayUrlValue = (value: any): string | null => {
   return null;
 };
 
-export const extractUrlContent = (value: any): string[] => {
+export const extractUrlContent = (value: unknown): string[] => {
   const result: string[] = [];
   const seen = new Set<string>();
 
-  const push = (candidate: any) => {
+  const push = (candidate: Record<string, unknown>) => {
     const normalized = normalizeDisplayUrlValue(candidate);
     if (!normalized || seen.has(normalized)) {
       return;
@@ -292,7 +292,7 @@ export const extractUrlContent = (value: any): string[] => {
     result.push(normalized);
   };
 
-  const walk = (payload: any, depth = 0) => {
+  const walk = (payload: unknown, depth = 0) => {
     if (depth > 12) return;
     push(payload);
     if (Array.isArray(payload)) {
@@ -308,7 +308,7 @@ export const extractUrlContent = (value: any): string[] => {
   return result;
 };
 
-const normalizeThoughtEntryText = (value: any): string => {
+const normalizeThoughtEntryText = (value: unknown): string => {
   if (value == null) return '';
   if (typeof value === 'string') {
     return stripMarkdownCodeFence(value).trim();
@@ -339,7 +339,7 @@ const normalizeThoughtEntryText = (value: any): string => {
   return String(value);
 };
 
-export const extractThoughtContent = (value: any): string[] => {
+export const extractThoughtContent = (value: unknown): string[] => {
   const result: string[] = [];
   const seen = new Set<string>();
   const thoughtKeys = new Set([
@@ -352,7 +352,7 @@ export const extractThoughtContent = (value: any): string[] => {
     'text_response',
   ]);
 
-  const push = (candidate: any) => {
+  const push = (candidate: Record<string, unknown>) => {
     const normalized = normalizeThoughtEntryText(candidate);
     if (!normalized) return;
     const compact = normalized.replace(/\s+/g, ' ').trim();
@@ -363,7 +363,7 @@ export const extractThoughtContent = (value: any): string[] => {
     result.push(normalized.length > 1200 ? `${normalized.slice(0, 1200)}\n...(内容已截断)` : normalized);
   };
 
-  const walk = (payload: any, depth = 0) => {
+  const walk = (payload: unknown, depth = 0) => {
     if (depth > 12 || payload == null) return;
     if (Array.isArray(payload)) {
       payload.forEach((item) => walk(item, depth + 1));
@@ -390,7 +390,7 @@ export const extractThoughtContent = (value: any): string[] => {
   return result;
 };
 
-export const extractTextContent = (value: any): string => {
+export const extractTextContent = (value: unknown): string => {
   if (typeof value === 'string') {
     const normalized = stripMarkdownCodeFence(value);
     if (!normalized) return '';
@@ -497,7 +497,7 @@ const mergeUniqueNormalizedUrls = (base: string[], extra: string[], limit: numbe
   return merged.slice(0, limit);
 };
 
-export const mergePreviewImagesIntoResult = (payload: any, previewImages: string[]) => {
+export const mergePreviewImagesIntoResult = (payload: unknown, previewImages: string[]) => {
   const normalizedPreviewImages = Array.isArray(previewImages)
     ? previewImages.map((item) => String(item || '').trim()).filter(Boolean).slice(0, PREVIEW_IMAGE_MAX_ENTRIES)
     : [];
@@ -512,7 +512,7 @@ export const mergePreviewImagesIntoResult = (payload: any, previewImages: string
 
   if (isPlainObject(payload)) {
     const currentImageUrls = Array.isArray(payload.imageUrls)
-      ? payload.imageUrls.map((item: any) => String(item || '').trim()).filter(Boolean)
+      ? payload.imageUrls.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
       : [];
     const mergedObjectImageUrls = mergeUniqueNormalizedUrls(currentImageUrls, mergedImageUrls, PREVIEW_IMAGE_MAX_ENTRIES);
     const payloadImageUrl = typeof payload.imageUrl === 'string' ? payload.imageUrl.trim() : '';
@@ -533,7 +533,7 @@ export const mergePreviewImagesIntoResult = (payload: any, previewImages: string
 type PreviewMediaKind = 'audio' | 'video';
 
 export const mergePreviewMediaIntoResult = (
-  payload: any,
+  payload: unknown,
   mediaKind: PreviewMediaKind,
   previewUrls: string[],
 ) => {
@@ -555,7 +555,7 @@ export const mergePreviewMediaIntoResult = (
 
   if (isPlainObject(payload)) {
     const currentMediaUrls = Array.isArray(payload[urlsKey])
-      ? payload[urlsKey].map((item: any) => String(item || '').trim()).filter(Boolean)
+      ? payload[urlsKey].map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
       : [];
     const mergedObjectMediaUrls = mergeUniqueNormalizedUrls(currentMediaUrls, mergedMediaUrls, PREVIEW_IMAGE_MAX_ENTRIES);
     const payloadMediaUrl = typeof payload[urlKey] === 'string' ? payload[urlKey].trim() : '';

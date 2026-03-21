@@ -44,7 +44,6 @@ export const ErrorView: React.FC<ErrorViewProps> = ({
 }) => {
   // 记录错误到控制台
   React.useEffect(() => {
-    console.error('[ErrorView]', title, error);
   }, [error, title]);
 
   return (

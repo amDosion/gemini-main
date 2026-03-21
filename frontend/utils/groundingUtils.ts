@@ -1,9 +1,23 @@
 
+interface GroundingSupport {
+    segment?: { endIndex?: number };
+    groundingChunkIndices?: number[];
+}
+
+interface GroundingChunkRef {
+    web?: { uri: string; title?: string };
+}
+
+interface GroundingMetadataWithSupports {
+    groundingSupports?: GroundingSupport[];
+    groundingChunks?: GroundingChunkRef[];
+}
+
 /**
  * Processes text to inject citations based on Grounding Metadata.
  * Primarily used for Google Search Grounding results.
  */
-export function addCitations(text: string, groundingMetadata: any): string {
+export function addCitations(text: string, groundingMetadata: GroundingMetadataWithSupports | null | undefined): string {
     if (!groundingMetadata || !groundingMetadata.groundingSupports || !groundingMetadata.groundingChunks) {
         return text;
     }
@@ -12,7 +26,7 @@ export function addCitations(text: string, groundingMetadata: any): string {
     
     // Sort supports by descending index to avoid offset issues when inserting
     const sortedSupports = [...supports].sort(
-        (a: any, b: any) => (b.segment?.endIndex ?? 0) - (a.segment?.endIndex ?? 0),
+        (a: GroundingSupport, b: GroundingSupport) => (b.segment?.endIndex ?? 0) - (a.segment?.endIndex ?? 0),
     );
 
     let newText = text;

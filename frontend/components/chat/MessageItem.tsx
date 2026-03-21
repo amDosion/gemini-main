@@ -1,4 +1,6 @@
 
+import { reportError } from '../../utils/globalErrorHandler';
+import { safeCopyToClipboard } from '../../utils/safeOps';
 import React, { useMemo, useState } from 'react';
 import { Message, Role, ToolCall, ToolResult } from '../../types/types';
 import MarkdownRenderer from './MarkdownRenderer';
@@ -60,12 +62,14 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
     (!message.attachments || message.attachments.length === 0) &&
     (!message.toolCalls || message.toolCalls.length === 0);
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     // Only copy the main display content (excluding thinking blocks)
     if (!displayContent) return;
-    navigator.clipboard.writeText(displayContent);
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2000);
+    const ok = await safeCopyToClipboard(displayContent);
+    if (ok) {
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    }
   };
 
   const handleDownload = () => {
@@ -90,8 +94,8 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
 
       setIsDownloaded(true);
       setTimeout(() => setIsDownloaded(false), 2000);
-    } catch (error) {
-      console.error('Download failed:', error);
+    } catch (err) {
+      reportError('下载消息失败', err);
     }
   };
 

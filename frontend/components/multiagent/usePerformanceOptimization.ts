@@ -82,7 +82,6 @@ export const usePerformanceOptimization = (
       fn();
       const end = performance.now();
       
-      console.log(`[Performance] ${label}: ${(end - start).toFixed(2)}ms`);
     },
     [enableMetrics]
   );
@@ -123,15 +122,9 @@ export const usePerformanceOptimization = (
     if (!enableMetrics) return;
 
     if (nodes.length > 100) {
-      console.warn(
-        `[Performance] Large workflow detected: ${nodes.length} nodes. Consider enabling virtualization.`
-      );
     }
 
     if (metrics.fps < 30) {
-      console.warn(
-        `[Performance] Low FPS detected: ${metrics.fps}. Performance may be degraded.`
-      );
     }
   }, [nodes.length, metrics.fps, enableMetrics]);
 
@@ -146,9 +139,9 @@ export const usePerformanceOptimization = (
 // Memoization helper for expensive computations
 export const useMemoizedComputation = <T,>(
   computation: () => T,
-  dependencies: any[]
+  dependencies: unknown[]
 ): T => {
-  const cache = useRef<{ deps: any[]; result: T } | null>(null);
+  const cache = useRef<{ deps: unknown[]; result: T } | null>(null);
 
   if (
     !cache.current ||
@@ -164,7 +157,7 @@ export const useMemoizedComputation = <T,>(
 };
 
 // Throttle helper
-export const useThrottle = <T extends (...args: any[]) => any>(
+export const useThrottle = <T extends (...args: unknown[]) => unknown>(
   callback: T,
   delay: number
 ): T => {

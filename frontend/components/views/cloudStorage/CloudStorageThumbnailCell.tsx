@@ -1,3 +1,4 @@
+import { reportError } from '../../../utils/globalErrorHandler';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import { Folder, Play } from 'lucide-react';
@@ -139,11 +140,8 @@ export const CloudStorageThumbnailCell: React.FC<CloudStorageThumbnailCellProps>
           return;
         }
       }
-    } catch (error) {
-      console.warn('[CloudStorageThumbnailCell] Unable to request video frame', {
-        path: item.path,
-        error
-      });
+    } catch (err) {
+      reportError('视频帧加载失败', err);
     }
 
     setVideoFrameReady(true);

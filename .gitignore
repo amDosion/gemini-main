@@ -86,4 +86,5 @@ build/
 *.zip
 
 # Frontend build output
-frontend/dist/
+frontend/dist/.npm/
+node_modules/

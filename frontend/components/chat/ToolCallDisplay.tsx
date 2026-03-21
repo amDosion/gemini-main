@@ -4,14 +4,14 @@ import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/solid';
 interface ToolCall {
   type: string;
   name: string;
-  arguments: any;
+  arguments: Record<string, unknown>;
   id: string;
 }
 
 interface ToolResult {
   name: string;
   callId: string;
-  result: any;
+  result: unknown;
   error?: string;
   screenshot?: string;
   screenshotUrl?: string;
@@ -43,7 +43,7 @@ const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({ toolCall, toolResult,
     }
   };
 
-  const safeStringify = (obj: any): string => {
+  const safeStringify = (obj: unknown): string => {
     try {
       return JSON.stringify(obj, null, 2);
     } catch (error) {

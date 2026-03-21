@@ -31,7 +31,11 @@ export const useExecutionLogs = () => {
       level,
       message
     };
-    setLogs(prev => [...prev, newLog]);
+    setLogs(prev => {
+      const updated = [...prev, newLog];
+      // Cap at 2000 entries to prevent memory leak
+      return updated.length > 2000 ? updated.slice(-1500) : updated;
+    });
   }, []);
 
   const clearLogs = useCallback(() => {

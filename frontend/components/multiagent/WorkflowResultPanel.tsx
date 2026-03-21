@@ -25,7 +25,7 @@ interface WorkflowResultPanelProps {
   finalRuntime: string;
   finalRuntimeHints: string[];
   finalError: string | null;
-  finalResult: any;
+  finalResult: unknown;
   renderedResultItems: RenderedWorkflowResultItem[];
   finalOutputImageUrls: string[];
   finalOutputAudioUrls: string[];

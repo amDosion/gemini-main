@@ -16,14 +16,14 @@ export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data }) => {
   };
 
   // 渲染单个值
-  const renderValue = (value: any): React.ReactNode => {
+  const renderValue = (value: unknown): React.ReactNode => {
     if (value === null || value === undefined) return <span className="text-slate-500">-</span>;
     if (typeof value === 'boolean') return <span className={value ? 'text-green-400' : 'text-red-400'}>{value ? '是' : '否'}</span>;
     return <span className="text-slate-100">{String(value)}</span>;
   };
 
   // 渲染数组为表格
-  const renderArrayTable = (items: any[], title: string) => {
+  const renderArrayTable = (items: Record<string, unknown>[], title: string) => {
     if (items.length === 0) return <p className="text-slate-500 italic text-sm">无数据</p>;
     
     const firstItem = items[0];

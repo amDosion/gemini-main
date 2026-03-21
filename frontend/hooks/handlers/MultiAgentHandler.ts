@@ -20,7 +20,7 @@ export class MultiAgentHandler extends BaseHandler {
       const normalizedPrompt = text || '执行多智能体任务';
       const workflowPayload = this.buildWorkflowPayload(workflowConfig, normalizedPrompt);
       let displayText = '';
-      const modeResponse = await requestJson<any>(
+      const modeResponse = await requestJson<Record<string, unknown>>(
         `/api/modes/${encodeURIComponent(providerId)}/multi-agent`,
         {
           method: 'POST',
@@ -65,14 +65,14 @@ export class MultiAgentHandler extends BaseHandler {
     }
   }
 
-  private buildWorkflowPayload(workflowConfig: any, prompt: string): Record<string, any> | null {
+  private buildWorkflowPayload(workflowConfig: unknown, prompt: string): Record<string, unknown> | null {
     if (!workflowConfig || !Array.isArray(workflowConfig.nodes) || workflowConfig.nodes.length === 0) {
       return null;
     }
 
     const normalizedNodes = workflowConfig.nodes
-      .filter((node: any) => node && typeof node === 'object' && String(node.id || '').trim())
-      .map((node: any) => {
+      .filter((node: Record<string, unknown>) => node && typeof node === 'object' && String(node.id || '').trim())
+      .map((node: Record<string, unknown>) => {
         const normalizedType = String(node?.data?.type || node?.type || '').trim();
         return {
           ...node,
@@ -91,8 +91,8 @@ export class MultiAgentHandler extends BaseHandler {
 
     const normalizedEdges = Array.isArray(workflowConfig.edges)
       ? workflowConfig.edges
-          .filter((edge: any) => edge && typeof edge === 'object')
-          .map((edge: any) => ({
+          .filter((edge: Record<string, unknown>) => edge && typeof edge === 'object')
+          .map((edge: Record<string, unknown>) => ({
             id: edge.id,
             source: edge.source,
             target: edge.target,
@@ -110,7 +110,7 @@ export class MultiAgentHandler extends BaseHandler {
     };
   }
 
-  private formatWorkflowResult(result: any): string {
+  private formatWorkflowResult(result: unknown): string {
     if (!result) {
       return '工作流执行完成，但无返回结果。';
     }
@@ -119,7 +119,7 @@ export class MultiAgentHandler extends BaseHandler {
     const chunks: string[] = [];
 
     for (const output of Object.values(outputs)) {
-      const out = output as any;
+      const out = output as Record<string, unknown>;
       const agentName = out?.agentName;
       if (out?.text && agentName) {
         chunks.push(`### ${agentName}\n${out.text}`);

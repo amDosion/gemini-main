@@ -53,9 +53,7 @@ export class StorageUploadService {
 
       if (this.useBackend !== available) {
         if (available) {
-          console.log('✅ [StorageUpload] 后端 API 可用 - 使用后端上传');
         } else {
-          console.warn('⚠️ [StorageUpload] 后端 API 不可用 - 降级到前端直连');
         }
         this.useBackend = available;
       }
@@ -67,8 +65,6 @@ export class StorageUploadService {
     } catch (error) {
       // 检测超时或失败时，不永久标记后端不可用
       // 而是保持 null 状态，下次上传时重新检测
-      console.warn('⚠️ [StorageUpload] 后端 API 检测失败，将重试');
-      console.warn('错误详情:', error);
       // 不设置 this.useBackend = false，保持 null 状态
       return false;
     }
@@ -111,7 +107,6 @@ export class StorageUploadService {
         provider: result.provider,
       };
     } catch (error) {
-      console.error('[StorageUpload] 后端上传失败:', error);
       throw error;
     }
   }
@@ -124,7 +119,6 @@ export class StorageUploadService {
     config: LskyConfig
   ): Promise<StorageUploadResult> {
     try {
-      console.log('[StorageUpload] 直接上传到兰空图床...');
 
       const formData = new FormData();
       formData.append('file', file, file.name);
@@ -151,7 +145,6 @@ export class StorageUploadService {
 
       if (result.status && result.data?.links?.url) {
         const imageUrl = result.data.links.url;
-        console.log('[StorageUpload] 兰空图床上传成功:', imageUrl);
 
         return {
           success: true,
@@ -163,7 +156,6 @@ export class StorageUploadService {
         throw new Error(`兰空图床上传失败: ${errorMsg}`);
       }
     } catch (error) {
-      console.error('[StorageUpload] 兰空图床上传失败:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : '兰空图床上传失败',
@@ -180,15 +172,12 @@ export class StorageUploadService {
     config: AliyunOSSConfig
   ): Promise<StorageUploadResult> {
     try {
-      console.log('[StorageUpload] 阿里云 OSS 前端直连暂不支持');
-      console.log('[StorageUpload] 建议使用后端 API 或配置 STS 临时凭证');
       
       return {
         success: false,
         error: '阿里云 OSS 前端直连需要配置 STS 临时凭证，请使用后端 API',
       };
     } catch (error) {
-      console.error('[StorageUpload] 阿里云 OSS 上传失败:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : '阿里云 OSS 上传失败',
@@ -203,7 +192,6 @@ export class StorageUploadService {
     file: File,
     config: StorageConfig
   ): Promise<StorageUploadResult> {
-    console.log(`[StorageUpload] 使用前端直连上传 (${config.provider})`);
 
     if (config.provider === 'lsky') {
       return this.uploadToLskyDirect(file, config.config as LskyConfig);
@@ -241,14 +229,12 @@ export class StorageUploadService {
 
       // 3. 后端不可用，返回错误提示
       // 不再降级到前端直连，因为前端直连兰空图床会遇到 CORS 问题
-      console.warn('[StorageUpload] 后端 API 不可用，无法上传');
       return {
         success: false,
         error: '后端服务不可用，请确保后端服务正在运行',
       };
 
     } catch (error) {
-      console.error('[StorageUpload] 上传失败:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : '上传失败',
@@ -293,7 +279,6 @@ export class StorageUploadService {
       
       return this.uploadBlob(blob, filename, storageId);
     } catch (error) {
-      console.error('[StorageUpload] Base64 转换失败:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Base64 转换失败',
@@ -329,7 +314,6 @@ export class StorageUploadService {
       const blob = await response.blob();
       return this.uploadBlob(blob, filename, storageId);
     } catch (error) {
-      console.error('[StorageUpload] 从 URL 上传失败:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : '从 URL 上传失败',
@@ -431,9 +415,7 @@ export class StorageUploadService {
         timeoutMs: 120000,
         errorMessage: '创建上传任务失败',
       });
-      console.log('[StorageUpload] 异步上传任务已创建:', result.taskId);
       if (result.enqueued === false) {
-        console.warn('[StorageUpload] 任务创建成功但 Redis 入队失败，将依赖后端启动补偿/手动补偿:', result.enqueueError);
       }
       
       return {
@@ -446,7 +428,6 @@ export class StorageUploadService {
         queuePosition: result.queuePosition
       };
     } catch (error) {
-      console.error('[StorageUpload] 创建异步上传任务失败:', error);
       throw error;
     }
   }
@@ -494,9 +475,7 @@ export class StorageUploadService {
           attachmentId: options?.attachmentId
         })
       });
-      console.log('[StorageUpload] 上传任务已创建:', result.taskId);
       if (result.enqueued === false) {
-        console.warn('[StorageUpload] 任务创建成功但 Redis 入队失败，将依赖后端启动补偿/手动补偿:', result.enqueueError);
       }
 
       return {
@@ -508,7 +487,6 @@ export class StorageUploadService {
         queuePosition: result.queuePosition
       };
     } catch (error) {
-      console.error('[StorageUpload] 创建上传任务失败:', error);
       throw error;
     }
   }
@@ -543,7 +521,6 @@ export class StorageUploadService {
         completedAt: result.completedAt
       };
     } catch (error) {
-      console.error('[StorageUpload] 查询上传状态失败:', error);
       throw error;
     }
   }
@@ -562,7 +539,6 @@ export class StorageUploadService {
     if (response.status === 404) {
       // 后端未更新/路由未注册：避免在轮询里刷屏
       this.uploadLogsSupported = false;
-      console.warn('[StorageUpload] /storage/upload-logs 返回 404：后端可能仍是旧版本，已停止拉取任务日志');
       return [];
     }
     if (!response.ok) {
@@ -594,16 +570,13 @@ export class StorageUploadService {
         const status = await this.getUploadTaskStatus(taskId);
 
         if (status.status === 'completed' && status.targetUrl) {
-          console.log('[StorageUpload] 上传完成:', status.targetUrl);
           return status.targetUrl;
         } else if (status.status === 'failed') {
           throw new Error(status.errorMessage || '上传失败');
         }
 
         // 继续轮询
-        console.log(`[StorageUpload] 上传中... (${i + 1}/${maxRetries})`);
       } catch (error) {
-        console.error('[StorageUpload] 轮询出错:', error);
         throw error;
       }
     }

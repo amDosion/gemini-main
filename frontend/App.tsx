@@ -2,8 +2,9 @@
 import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 
-import { AppMode, Attachment, Role } from './types/types';
+import { AppMode, Attachment, Role, ChatOptions } from './types/types';
 import { llmService } from './services/llmService';
+import { initGlobalErrorHandlers, registerGlobalErrorNotifier } from './utils/globalErrorHandler';
 import { ConfigProfile } from './services/db';  // ✅ 新增：ConfigProfile 类型
 
 // Cleaner Imports via Barrel Files
@@ -346,7 +347,7 @@ const AppContent: React.FC = () => {
 
   const onSend = useCallback((
     text: string,
-    options: any,
+    options: ChatOptions,
     attachments: Attachment[],
     mode: AppMode,
     forcedModelId?: string,

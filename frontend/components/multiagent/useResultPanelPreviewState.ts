@@ -32,8 +32,8 @@ interface ResultPanelPreviewMediaState {
 
 interface UseResultPanelPreviewStateParams {
   executionStatus?: ExecutionStatus;
-  finalResult: any;
-  setFinalResult: Dispatch<SetStateAction<any>>;
+  finalResult: unknown;
+  setFinalResult: Dispatch<SetStateAction<unknown>>;
   setNodes: Dispatch<SetStateAction<Node<WorkflowNodeData>[]>>;
   addLog: (
     nodeId: string,
@@ -421,7 +421,7 @@ export const useResultPanelPreviewState = ({
       return;
     }
 
-    const mergeIfMissing = (payload: any) => {
+    const mergeIfMissing = (payload: unknown) => {
       const existingUrls = extractImageUrls(payload)
         .map((item) => String(item || '').trim())
         .filter(Boolean);
@@ -432,7 +432,7 @@ export const useResultPanelPreviewState = ({
       return mergePreviewImagesIntoResult(payload, resultPanelPreviewImageUrls);
     };
 
-    setFinalResult((prev: any) => {
+    setFinalResult((prev: unknown) => {
       const merged = mergeIfMissing(prev);
       return merged === prev ? prev : merged;
     });
@@ -462,7 +462,7 @@ export const useResultPanelPreviewState = ({
       return;
     }
 
-    const mergeIfMissing = (payload: any) => {
+    const mergeIfMissing = (payload: unknown) => {
       let merged = payload;
       if (resultPanelPreviewMedia.audioUrls.length > 0) {
         const existingAudioUrls = extractAudioUrls(merged)
@@ -485,7 +485,7 @@ export const useResultPanelPreviewState = ({
       return merged;
     };
 
-    setFinalResult((prev: any) => {
+    setFinalResult((prev: unknown) => {
       const merged = mergeIfMissing(prev);
       return merged === prev ? prev : merged;
     });

@@ -17,7 +17,7 @@ function Probe() {
     <div>
       <div data-testid="loading">{String(loading)}</div>
       <div data-testid="error">{error || ''}</div>
-      <div data-testid="resolution">{schema?.defaults?.resolution || ''}</div>
+      <div data-testid="resolution">{String(schema?.defaults?.resolution || '')}</div>
       <div data-testid="enhance-mandatory">{String(schema?.videoContract?.fieldPolicies?.enhancePrompt?.mandatory ?? false)}</div>
       <div data-testid="extension-base-8-counts">
         {schema?.videoContract?.extensionDurationMatrix?.find((entry) => entry.baseSeconds === '8')?.options.length ?? 0}

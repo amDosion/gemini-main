@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Copy, Check, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface PdfTableViewProps {
-  data: Record<string, any>;
+  data: Record<string, unknown>;
 }
 
 // 长文本阈值
@@ -29,8 +29,8 @@ export const PdfTableView: React.FC<PdfTableViewProps> = ({ data }) => {
   // 将数据转换为表格结构
   const tableData = useMemo(() => {
     // 分离简单字段和数组字段
-    const simpleFields: Record<string, any> = {};
-    const arrayFields: { key: string; items: any[] }[] = [];
+    const simpleFields: Record<string, unknown> = {};
+    const arrayFields: { key: string; items: Record<string, unknown>[] }[] = [];
 
     Object.entries(data).forEach(([key, value]) => {
       if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
@@ -44,7 +44,7 @@ export const PdfTableView: React.FC<PdfTableViewProps> = ({ data }) => {
   }, [data]);
 
   // 渲染单元格值
-  const renderCellValue = (value: any, cellId: string): React.ReactNode => {
+  const renderCellValue = (value: unknown, cellId: string): React.ReactNode => {
     if (value === null || value === undefined) {
       return <span className="text-slate-500">-</span>;
     }
@@ -86,7 +86,7 @@ export const PdfTableView: React.FC<PdfTableViewProps> = ({ data }) => {
   };
 
   // 渲染数组表格（Excel 风格）
-  const renderArrayTable = (items: any[], tableKey: string) => {
+  const renderArrayTable = (items: Record<string, unknown>[], tableKey: string) => {
     if (items.length === 0) return <p className="text-slate-500 text-sm italic">无数据</p>;
 
     const columns = Object.keys(items[0]);

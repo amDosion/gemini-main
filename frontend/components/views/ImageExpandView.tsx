@@ -1,4 +1,5 @@
 
+import { safeCopyToClipboard } from '../../utils/safeOps';
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
@@ -444,42 +445,13 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
     const handleCopyOptimizedPrompt = useCallback(async () => {
         if (!hoverPreview?.optimizedPrompt) return;
         const textToCopy = hoverPreview.optimizedPrompt;
-        const fallbackCopy = () => {
-            const textarea = document.createElement('textarea');
-            textarea.value = textToCopy;
-            textarea.style.position = 'fixed';
-            textarea.style.left = '-9999px';
-            document.body.appendChild(textarea);
-            textarea.focus();
-            textarea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textarea);
-        };
-        try {
-            if (navigator.clipboard?.writeText) {
-                await navigator.clipboard.writeText(textToCopy);
-            } else {
-                fallbackCopy();
-            }
-            setCopiedPreviewMessageId(hoverPreview.messageId);
-            clearCopiedResetTimer();
-            copiedResetTimerRef.current = window.setTimeout(() => {
-                setCopiedPreviewMessageId(null);
-                copiedResetTimerRef.current = null;
-            }, 1500);
-        } catch {
-            try {
-                fallbackCopy();
-                setCopiedPreviewMessageId(hoverPreview.messageId);
-                clearCopiedResetTimer();
-                copiedResetTimerRef.current = window.setTimeout(() => {
-                    setCopiedPreviewMessageId(null);
-                    copiedResetTimerRef.current = null;
-                }, 1500);
-            } catch (error) {
-                console.error('[ImageExpandView] 复制优化提示词失败:', error);
-            }
-        }
+        await safeCopyToClipboard(textToCopy);
+        setCopiedPreviewMessageId(hoverPreview.messageId);
+        clearCopiedResetTimer();
+        copiedResetTimerRef.current = window.setTimeout(() => {
+            setCopiedPreviewMessageId(null);
+            copiedResetTimerRef.current = null;
+        }, 1500);
     }, [hoverPreview, clearCopiedResetTimer]);
 
     useEffect(() => {

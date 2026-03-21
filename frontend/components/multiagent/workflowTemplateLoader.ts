@@ -31,7 +31,7 @@ interface ActiveTemplateMeta {
 }
 
 interface LoadTemplateIntoEditorOptions {
-  template: any;
+  template: Record<string, unknown>;
   setWorkflowPrompt: Dispatch<SetStateAction<string>>;
   setWorkflowInputImageUrl: Dispatch<SetStateAction<string>>;
   setWorkflowInputFileUrl: Dispatch<SetStateAction<string>>;
@@ -39,7 +39,7 @@ interface LoadTemplateIntoEditorOptions {
   setEdges: Dispatch<SetStateAction<Edge[]>>;
   setActiveTemplateMeta: Dispatch<SetStateAction<ActiveTemplateMeta | null>>;
   setActiveTemplateFingerprint: Dispatch<SetStateAction<string | null>>;
-  setFinalResult: Dispatch<SetStateAction<any>>;
+  setFinalResult: Dispatch<SetStateAction<unknown>>;
   setFinalError: Dispatch<SetStateAction<string | null>>;
   setFinalCompletedAt: Dispatch<SetStateAction<number | null>>;
   setFinalRuntime: Dispatch<SetStateAction<string>>;
@@ -86,17 +86,17 @@ export const loadTemplateIntoEditor = async ({
   );
   const templateSamplePreviewImageUrls = Array.isArray(templateSampleSummary?.imageUrls)
     ? templateSampleSummary.imageUrls
-      .map((item: any) => String(item || '').trim())
+      .map((item: Record<string, unknown>) => String(item || '').trim())
       .filter((item: string) => item.length > 0)
     : [];
   const templateSamplePreviewAudioUrls = Array.isArray(templateSampleSummary?.audioUrls)
     ? templateSampleSummary.audioUrls
-      .map((item: any) => String(item || '').trim())
+      .map((item: Record<string, unknown>) => String(item || '').trim())
       .filter((item: string) => item.length > 0)
     : [];
   const templateSamplePreviewVideoUrls = Array.isArray(templateSampleSummary?.videoUrls)
     ? templateSampleSummary.videoUrls
-      .map((item: any) => String(item || '').trim())
+      .map((item: Record<string, unknown>) => String(item || '').trim())
       .filter((item: string) => item.length > 0)
     : [];
   const templateSampleExecutionId = String(template?.sampleExecutionId || '').trim();
@@ -105,16 +105,16 @@ export const loadTemplateIntoEditor = async ({
   const requiresImageTemplate = Boolean(template?.requiresImage);
   let templateHasUsableImage = false;
   const templateNodes = Array.isArray(template?.config?.nodes)
-    ? template.config.nodes.map((node: any, index: number) => normalizeLoadedNode(node, index))
+    ? template.config.nodes.map((node: unknown, index: number) => normalizeLoadedNode(node, index))
     : [];
-  const templateNodeIdSet = new Set(templateNodes.map((node: any) => node.id));
+  const templateNodeIdSet = new Set(templateNodes.map((node: Record<string, unknown>) => node.id));
   const templateEdges = Array.isArray(template?.config?.edges)
     ? template.config.edges
-      .map((edge: any, index: number) => ({
+      .map((edge: Record<string, unknown>, index: number) => ({
         ...edge,
         id: String(edge?.id || `edge-template-${index}-${Date.now()}`),
       }))
-      .filter((edge: any) => templateNodeIdSet.has(String(edge?.source || '')) && templateNodeIdSet.has(String(edge?.target || '')))
+      .filter((edge: Record<string, unknown>) => templateNodeIdSet.has(String(edge?.source || '')) && templateNodeIdSet.has(String(edge?.target || '')))
     : [];
   const templateNodesWithPortLayout = hydrateNodePortLayoutsFromEdges(templateNodes as Node<WorkflowNodeData>[], templateEdges as Edge[]);
 
@@ -146,7 +146,7 @@ export const loadTemplateIntoEditor = async ({
         }
         if (Array.isArray(parsed.imageUrls)) {
           parsedImageUrls = parsed.imageUrls
-            .map((item: any) => String(item || '').trim())
+            .map((item: Record<string, unknown>) => String(item || '').trim())
             .filter(Boolean);
           if (!parsedImageUrl && parsedImageUrls.length > 0) {
             parsedImageUrl = parsedImageUrls[0];
@@ -157,19 +157,19 @@ export const loadTemplateIntoEditor = async ({
         if (typeof parsed.videoUrl === 'string') {
           parsedVideoUrl = parsed.videoUrl.trim();
         }
-        if (typeof (parsed as any).video_url === 'string' && !parsedVideoUrl) {
-          parsedVideoUrl = String((parsed as any).video_url || '').trim();
+        if (typeof (parsed as Record<string, unknown>).video_url === 'string' && !parsedVideoUrl) {
+          parsedVideoUrl = String((parsed as Record<string, unknown>).video_url || '').trim();
         }
         if (Array.isArray(parsed.videoUrls)) {
           parsedVideoUrls = parsed.videoUrls
-            .map((item: any) => String(item || '').trim())
+            .map((item: Record<string, unknown>) => String(item || '').trim())
             .filter(Boolean);
         }
-        if (Array.isArray((parsed as any).video_urls)) {
+        if (Array.isArray((parsed as Record<string, unknown>).video_urls)) {
           parsedVideoUrls = Array.from(new Set([
             ...parsedVideoUrls,
-            ...(parsed as any).video_urls
-              .map((item: any) => String(item || '').trim())
+            ...(parsed as Record<string, unknown>).video_urls
+              .map((item: Record<string, unknown>) => String(item || '').trim())
               .filter(Boolean),
           ]));
         }
@@ -179,19 +179,19 @@ export const loadTemplateIntoEditor = async ({
         if (typeof parsed.audioUrl === 'string') {
           parsedAudioUrl = parsed.audioUrl.trim();
         }
-        if (typeof (parsed as any).audio_url === 'string' && !parsedAudioUrl) {
-          parsedAudioUrl = String((parsed as any).audio_url || '').trim();
+        if (typeof (parsed as Record<string, unknown>).audio_url === 'string' && !parsedAudioUrl) {
+          parsedAudioUrl = String((parsed as Record<string, unknown>).audio_url || '').trim();
         }
         if (Array.isArray(parsed.audioUrls)) {
           parsedAudioUrls = parsed.audioUrls
-            .map((item: any) => String(item || '').trim())
+            .map((item: Record<string, unknown>) => String(item || '').trim())
             .filter(Boolean);
         }
-        if (Array.isArray((parsed as any).audio_urls)) {
+        if (Array.isArray((parsed as Record<string, unknown>).audio_urls)) {
           parsedAudioUrls = Array.from(new Set([
             ...parsedAudioUrls,
-            ...(parsed as any).audio_urls
-              .map((item: any) => String(item || '').trim())
+            ...(parsed as Record<string, unknown>).audio_urls
+              .map((item: Record<string, unknown>) => String(item || '').trim())
               .filter(Boolean),
           ]));
         }
@@ -200,7 +200,7 @@ export const loadTemplateIntoEditor = async ({
         }
         if (Array.isArray(parsed.prompts)) {
           parsedPrompts = parsed.prompts
-            .map((item: any) => String(item || '').trim())
+            .map((item: Record<string, unknown>) => String(item || '').trim())
             .filter(Boolean);
         }
         if (typeof parsed.fileUrl === 'string') {
@@ -208,14 +208,14 @@ export const loadTemplateIntoEditor = async ({
         }
         if (Array.isArray(parsed.fileUrls)) {
           parsedFileUrls = parsed.fileUrls
-            .map((item: any) => String(item || '').trim())
+            .map((item: Record<string, unknown>) => String(item || '').trim())
             .filter(Boolean);
         }
-        if (Array.isArray((parsed as any).file_urls)) {
+        if (Array.isArray((parsed as Record<string, unknown>).file_urls)) {
           parsedFileUrls = Array.from(new Set([
             ...parsedFileUrls,
-            ...(parsed as any).file_urls
-              .map((item: any) => String(item || '').trim())
+            ...(parsed as Record<string, unknown>).file_urls
+              .map((item: Record<string, unknown>) => String(item || '').trim())
               .filter(Boolean),
           ]));
         }
@@ -280,7 +280,7 @@ export const loadTemplateIntoEditor = async ({
   const hydratedTemplateNodes = templateNodesWithPortLayout.map((node) => {
     const nodeType = (node?.data?.type || node?.type || '').toLowerCase();
     if (nodeType === 'end') {
-      const nextData: Record<string, any> = { ...node.data };
+      const nextData: Record<string, unknown> = { ...node.data };
       if (templateSampleHasResult) {
         nextData.result = templateSampleResult;
         nextData.status = 'completed';
@@ -304,7 +304,7 @@ export const loadTemplateIntoEditor = async ({
     if (!['start', 'input_text', 'input_image', 'input_video', 'input_audio', 'input_file'].includes(nodeType)) {
       return node;
     }
-    const nextData: Record<string, any> = { ...node.data };
+    const nextData: Record<string, unknown> = { ...node.data };
     const buildSampleInputContext = (overrides: Partial<typeof templateSampleInput> = {}) => ({
       ...templateSampleInput,
       task: parsedTask || templateSampleInput.task || loadedPrompt || '',
@@ -341,12 +341,12 @@ export const loadTemplateIntoEditor = async ({
       );
       const rawNodeImageUrls = Array.isArray(node.data?.startImageUrls) ? node.data.startImageUrls : [];
       const resolvedNodeImageUrls = rawNodeImageUrls
-        .map((item: any, index: number) => resolveTemplateInputPlaceholder(
+        .map((item: unknown, index: number) => resolveTemplateInputPlaceholder(
           item,
           buildSampleInputContext({ imageUrls: imagePool }),
           imagePool[index] || imageFallback,
         ))
-        .map((item: any) => String(item || '').trim())
+        .map((item: Record<string, unknown>) => String(item || '').trim())
         .filter(Boolean);
       const normalizedImage = String(resolvedImage || imageFallback || '').trim();
       const nextImageUrls = Array.from(new Set([
@@ -371,12 +371,12 @@ export const loadTemplateIntoEditor = async ({
       );
       const rawNodeVideoUrls = Array.isArray(node.data?.startVideoUrls) ? node.data.startVideoUrls : [];
       const resolvedNodeVideoUrls = rawNodeVideoUrls
-        .map((item: any, index: number) => resolveTemplateInputPlaceholder(
+        .map((item: unknown, index: number) => resolveTemplateInputPlaceholder(
           item,
           buildSampleInputContext({ videoUrls: videoPool }),
           videoPool[index] || videoFallback,
         ))
-        .map((item: any) => String(item || '').trim())
+        .map((item: Record<string, unknown>) => String(item || '').trim())
         .filter(Boolean);
       const normalizedVideo = String(resolvedVideo || videoFallback || '').trim();
       const nextVideoUrls = Array.from(new Set([
@@ -400,12 +400,12 @@ export const loadTemplateIntoEditor = async ({
       );
       const rawNodeAudioUrls = Array.isArray(node.data?.startAudioUrls) ? node.data.startAudioUrls : [];
       const resolvedNodeAudioUrls = rawNodeAudioUrls
-        .map((item: any, index: number) => resolveTemplateInputPlaceholder(
+        .map((item: unknown, index: number) => resolveTemplateInputPlaceholder(
           item,
           buildSampleInputContext({ audioUrls: audioPool }),
           audioPool[index] || audioFallback,
         ))
-        .map((item: any) => String(item || '').trim())
+        .map((item: Record<string, unknown>) => String(item || '').trim())
         .filter(Boolean);
       const normalizedAudio = String(resolvedAudio || audioFallback || '').trim();
       const nextAudioUrls = Array.from(new Set([
@@ -429,12 +429,12 @@ export const loadTemplateIntoEditor = async ({
       );
       const rawNodeFileUrls = Array.isArray(node.data?.startFileUrls) ? node.data.startFileUrls : [];
       const resolvedNodeFileUrls = rawNodeFileUrls
-        .map((item: any, index: number) => resolveTemplateInputPlaceholder(
+        .map((item: unknown, index: number) => resolveTemplateInputPlaceholder(
           item,
           buildSampleInputContext({ fileUrls: filePool }),
           filePool[index] || fileFallback,
         ))
-        .map((item: any) => String(item || '').trim())
+        .map((item: Record<string, unknown>) => String(item || '').trim())
         .filter(Boolean);
       const normalizedFile = String(resolvedFile || fileFallback || '').trim();
       const nextFileUrls = Array.from(new Set([
@@ -543,7 +543,7 @@ export const loadTemplateIntoEditor = async ({
     name: String(template?.name || '').trim(),
     description: String(template?.description || '').trim(),
     category: String(template?.category || '').trim(),
-    tags: Array.isArray(template?.tags) ? template.tags.filter((item: any) => typeof item === 'string') : [],
+    tags: Array.isArray(template?.tags) ? template.tags.filter((item: Record<string, unknown>) => typeof item === 'string') : [],
     isEditable: template?.isEditable !== false && !(template?.origin?.isLocked),
     isLocked: Boolean(template?.origin?.isLocked || template?.isStarter || template?.starterKey),
   } : null);

@@ -30,7 +30,7 @@ export const GroundingSources: React.FC<GroundingSourcesProps> = ({ chunks }) =>
                     </div>
                     <div className="min-w-0 flex-1">
                         <div className="text-xs text-blue-300 truncate font-medium group-hover/link:text-blue-200">{chunk.web.title}</div>
-                        <div className="text-[10px] text-slate-500 truncate">{new URL(chunk.web.uri).hostname}</div>
+                        <div className="text-[10px] text-slate-500 truncate">{(() => { try { return new URL(chunk.web.uri); } catch { return null; } })().hostname}</div>
                     </div>
                 </a>
             ) : null)}

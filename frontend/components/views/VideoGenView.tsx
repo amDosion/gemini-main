@@ -1,3 +1,4 @@
+import { safeCopyToClipboard } from '../../utils/safeOps';
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
@@ -731,43 +732,13 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
 
         const textToCopy = hoverPreview.optimizedPrompt;
 
-        const fallbackCopy = () => {
-            const textarea = document.createElement('textarea');
-            textarea.value = textToCopy;
-            textarea.style.position = 'fixed';
-            textarea.style.left = '-9999px';
-            document.body.appendChild(textarea);
-            textarea.focus();
-            textarea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textarea);
-        };
-
-        try {
-            if (navigator.clipboard?.writeText) {
-                await navigator.clipboard.writeText(textToCopy);
-            } else {
-                fallbackCopy();
-            }
-            setCopiedPreviewMessageId(hoverPreview.messageId);
-            clearCopiedResetTimer();
-            copiedResetTimerRef.current = window.setTimeout(() => {
-                setCopiedPreviewMessageId(null);
-                copiedResetTimerRef.current = null;
-            }, 1500);
-        } catch {
-            try {
-                fallbackCopy();
-                setCopiedPreviewMessageId(hoverPreview.messageId);
-                clearCopiedResetTimer();
-                copiedResetTimerRef.current = window.setTimeout(() => {
-                    setCopiedPreviewMessageId(null);
-                    copiedResetTimerRef.current = null;
-                }, 1500);
-            } catch (error) {
-                console.error('[VideoGenView] 复制优化提示词失败:', error);
-            }
-        }
+        await safeCopyToClipboard(textToCopy);
+        setCopiedPreviewMessageId(hoverPreview.messageId);
+        clearCopiedResetTimer();
+        copiedResetTimerRef.current = window.setTimeout(() => {
+            setCopiedPreviewMessageId(null);
+            copiedResetTimerRef.current = null;
+        }, 1500);
     }, [clearCopiedResetTimer, hoverPreview]);
 
     const handleDownload = useCallback((url: string) => {
@@ -811,14 +782,10 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
             return;
         }
 
-        try {
-            if (video.paused) {
-                await video.play();
-            } else {
-                video.pause();
-            }
-        } catch (error) {
-            console.error('[VideoGenView] 切换视频播放状态失败:', error);
+        if (video.paused) {
+            await video.play();
+        } else {
+            video.pause();
         }
     }, []);
 
@@ -829,18 +796,14 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
         }
 
         const currentFullscreenElement = document.fullscreenElement;
-        try {
-            if (currentFullscreenElement === target) {
-                if (typeof document.exitFullscreen === 'function') {
-                    await document.exitFullscreen();
-                }
-                return;
+        if (currentFullscreenElement === target) {
+            if (typeof document.exitFullscreen === 'function') {
+                await document.exitFullscreen();
             }
-            if (typeof target.requestFullscreen === 'function') {
-                await target.requestFullscreen();
-            }
-        } catch (error) {
-            console.error('[VideoGenView] 切换全屏失败:', error);
+            return;
+        }
+        if (typeof target.requestFullscreen === 'function') {
+            await target.requestFullscreen();
         }
     }, []);
 

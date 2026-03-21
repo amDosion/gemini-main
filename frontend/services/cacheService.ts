@@ -61,7 +61,7 @@ const DEFAULT_TTL = 12 * 60 * 60 * 1000;
  * CacheService 提供了具有回退机制和后台刷新的多层缓存策略。
  */
 class CacheService {
-  private memoryCache: Map<string, CacheEntry<any>> = new Map();
+  private memoryCache: Map<string, CacheEntry<unknown>> = new Map();
   private config: CacheConfig;
   private stats: CacheStats = {
     hits: 0,
@@ -199,9 +199,9 @@ class CacheService {
     if (this.config.enablePersistence && this.idbAdapter.isAvailable()) {
       try {
         await this.idbAdapter.set(entry);
-      } catch (error: any) {
+      } catch (error: unknown) {
         // 处理存储配额超限
-        if (error?.name === 'QuotaExceededError') {
+        if (error instanceof Error && error.name === 'QuotaExceededError') {
           await this.cleanup();
           // 重试写入
           try {

@@ -2,6 +2,7 @@
  * Properties Panel Component (Dark Theme)
  */
 
+import { reportError } from '../../utils/globalErrorHandler';
 import React from 'react';
 import { Node } from 'reactflow';
 import { X, RefreshCw, CheckCircle2, XCircle, Clock, Loader2, Info, Trash2, Upload, Image as ImageIcon, FileSpreadsheet, Video, Mic } from 'lucide-react';
@@ -167,7 +168,6 @@ function fileToDataUrl(file: File): Promise<string> {
 }
 
 function reportInlineUploadError(fallbackMessage: string, error: unknown): void {
-  console.error(fallbackMessage, error);
   const message = error instanceof Error && error.message
     ? error.message
     : fallbackMessage;
@@ -294,7 +294,6 @@ function useProviderModels(selectedNode: Node<CustomNodeData> | null, nodeType: 
         setProviders(normalizeProviderModels(data));
       } catch (error) {
         if (!cancelled) {
-          console.error('Failed to fetch providers:', error);
         }
       } finally {
         if (!cancelled) {
@@ -691,7 +690,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       const isVideoInputNode = nodeType === 'input_video';
       const isAudioInputNode = nodeType === 'input_audio';
       const isFileInputNode = nodeType === 'input_file';
-      const normalizeUrlList = (value: any): string[] => {
+      const normalizeUrlList = (value: unknown): string[] => {
         if (!Array.isArray(value)) return [];
         return value
           .map((item) => String(item || '').trim())
@@ -2456,8 +2455,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   <input type="file" accept=".csv,.xlsx,.xls,.json,.tsv,.txt" className="hidden"
                     onChange={async (e) => {
                       const f = e.target.files?.[0]; if (!f) return;
-                      try { updateNodeData({ agentFileUrl: await fileToDataUrl(f) }); }
-                      catch (err) { console.error('文件读取失败:', err); }
+                      try { updateNodeData({ agentFileUrl: await fileToDataUrl(f) }); } catch { /* ignore */ }
                       e.target.value = '';
                     }} />
                 </label>
@@ -3504,8 +3502,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                       if (!file) return;
                       try {
                         updateNodeData({ toolReferenceImageUrl: await fileToDataUrl(file) });
-                      } catch (error) {
-                        console.error('图片读取失败:', error);
+                      } catch (err) {
+                        reportError('文件转换失败', err);
                       }
                       e.target.value = '';
                     }}

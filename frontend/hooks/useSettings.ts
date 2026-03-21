@@ -75,7 +75,7 @@ const createSyncChannel = () => {
  * @param delay The number of milliseconds to delay.
  * @returns A new debounced function.
  */
-const debounce = <F extends (...args: any[]) => void>(func: F, delay: number) => {
+const debounce = <F extends (...args: unknown[]) => void>(func: F, delay: number) => {
   let timeoutId: NodeJS.Timeout | null = null;
   return (...args: Parameters<F>) => {
     if (timeoutId) {
@@ -203,11 +203,7 @@ export const useSettings = (
 
     await Promise.all(
       targets.map(async providerId => {
-        try {
-          await configService.clearProviderModelCache(providerId);
-        } catch (error) {
-          console.warn(`[useSettings] Failed to clear backend model cache for provider=${providerId}:`, error);
-        }
+        await configService.clearProviderModelCache(providerId);
       })
     );
   };
@@ -257,15 +253,14 @@ export const useSettings = (
         protocol as ApiProtocol,
         providerId
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       // ✅ 静默处理 401 错误（用户未登录或 token 过期）
-      const errorMessage = error?.message || String(error || '');
+      const errorMessage = error instanceof Error ? error.message : String(error || '');
       if (errorMessage.includes('401') || errorMessage.includes('Unauthorized') || errorMessage.includes('Authentication required')) {
         // 用户未登录，静默失败，不打印错误
         return;
       }
       // 其他错误正常打印
-      console.error('Failed to load settings:', error);
       // Keep the previous state unchanged if loading fails
     }
   }, []);
@@ -406,7 +401,6 @@ export const useSettings = (
 
   const activateProfile = async (id: string) => {
     if (!fullSettings) {
-      console.error("[useSettings] Settings not initialized, cannot activate a profile.");
       return;
     }
 
@@ -415,7 +409,6 @@ export const useSettings = (
     const newActiveProfile = fullSettings.profiles.find(p => p.id === id);
 
     if (!newActiveProfile) {
-      console.error(`[useSettings] Profile with id "${id}" not found.`);
       return;
     }
 
@@ -465,7 +458,6 @@ export const useSettings = (
       notifyOtherTabs();
 
     } catch (error) {
-      console.error('[useSettings] ❌ 后端更新失败，回滚状态:', error);
 
       // Rollback optimistic UI update
       setFullSettings(prev => {

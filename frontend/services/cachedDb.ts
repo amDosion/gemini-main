@@ -51,7 +51,6 @@ class CachedDB {
     cacheService.setTTL(CACHE_KEYS.STORAGE_CONFIGS, TTL_CONFIG.storage_configs);
 
     this.initialized = true;
-    console.log('[CachedDB] 缓存数据库初始化完成');
   }
 
 

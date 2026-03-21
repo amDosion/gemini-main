@@ -59,8 +59,8 @@ export const ActionDialog: React.FC<ActionDialogProps> = ({
         aria-modal="true"
         aria-label={title}
       >
-        <div className="p-5 border-b border-slate-800">
-          <div className="flex items-start gap-3">
+        <div className="p-4 border-b border-slate-800">
+          <div className="flex items-start gap-2.5">
             {icon ? (
               <div className="p-2 rounded-lg bg-slate-800/80 border border-slate-700/80 text-slate-300 shrink-0">
                 {icon}

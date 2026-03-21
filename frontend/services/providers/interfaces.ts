@@ -1,17 +1,17 @@
 
-import { ModelConfig, Message, Attachment, ChatOptions } from '../../types/types';
+import { ModelConfig, Message, Attachment, ChatOptions, GroundingMetadata, UrlContextMetadata } from '../../types/types';
 
 export interface ToolCall {
   id: string;
   type: string;
   name: string;
-  arguments: Record<string, any>;
+  arguments: Record<string, unknown>;
 }
 
 export interface ToolResult {
   name: string;
   callId: string;
-  result: any;
+  result: unknown;
   error?: string;
   screenshot?: string; // Base64 encoded PNG screenshot (fallback)
   screenshotUrl?: string; // URL of uploaded screenshot (preferred)
@@ -21,8 +21,8 @@ export interface StreamUpdate {
   text: string;
   chunkType?: string;
   attachments?: Attachment[];
-  groundingMetadata?: any;
-  urlContextMetadata?: any; // Added URL Context Metadata
+  groundingMetadata?: GroundingMetadata;
+  urlContextMetadata?: UrlContextMetadata; // Added URL Context Metadata
   browserOperationId?: string; // Added: Browser tool operation ID
   toolCall?: ToolCall; // Browser tool call (function calling)
   toolResult?: ToolResult; // Browser tool result
@@ -145,7 +145,7 @@ export interface ILLMProvider {
   editImage(
     modelId: string,
     prompt: string,
-    referenceImages: Record<string, any>, // Dictionary of reference images (raw, mask, control, style, subject, content)
+    referenceImages: Record<string, unknown>, // Dictionary of reference images (raw, mask, control, style, subject, content)
     options: ChatOptions,
     baseUrl: string
   ): Promise<ImageGenerationResult[]>;

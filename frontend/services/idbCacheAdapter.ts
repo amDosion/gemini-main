@@ -64,7 +64,6 @@ class IDBCacheAdapterImpl implements IDBCacheAdapter {
   public init(): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!('indexedDB' in window)) {
-        console.warn('[IDBCacheAdapter] IndexedDB 不支持，缓存将被禁用');
         this.available = false;
         return resolve();
       }
@@ -83,12 +82,10 @@ class IDBCacheAdapterImpl implements IDBCacheAdapter {
       request.onsuccess = (event) => {
         this.db = (event.target as IDBOpenDBRequest).result;
         this.available = true;
-        console.log('[IDBCacheAdapter] IndexedDB 缓存初始化成功');
         resolve();
       };
 
       request.onerror = (event) => {
-        console.error('[IDBCacheAdapter] IndexedDB 初始化失败:', (event.target as IDBOpenDBRequest).error);
         this.available = false;
         reject((event.target as IDBOpenDBRequest).error);
       };
@@ -118,9 +115,7 @@ class IDBCacheAdapterImpl implements IDBCacheAdapter {
 
     if (entry) {
       // 异步更新访问时间和计数，不阻塞读取操作
-      this.updateAccessStats(key, entry.accessCount).catch(err => {
-        console.error(`[IDBCacheAdapter] 更新访问统计失败 "${key}":`, err);
-      });
+      this.updateAccessStats(key, entry.accessCount);
     }
 
     return entry ?? null;
@@ -229,7 +224,6 @@ class IDBCacheAdapterImpl implements IDBCacheAdapter {
         quota: estimation.quota ?? 0,
       };
     }
-    console.warn('[IDBCacheAdapter] StorageManager API 不可用，无法估算存储使用量');
     return { used: 0, quota: 0 };
   }
 

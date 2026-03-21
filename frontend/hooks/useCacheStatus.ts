@@ -80,7 +80,6 @@ export function useCacheStatus(
    */
   const refresh = useCallback(async () => {
     if (!refreshFn) {
-      console.warn(`[useCacheStatus] 未提供刷新函数，无法刷新 "${key}"`);
       return;
     }
 
@@ -96,7 +95,6 @@ export function useCacheStatus(
       setLastUpdated(status.timestamp ?? Date.now());
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
-      console.error(`[useCacheStatus] 刷新 "${key}" 失败:`, err);
     } finally {
       setIsRefreshing(false);
     }

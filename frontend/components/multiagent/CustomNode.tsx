@@ -36,7 +36,7 @@ const statusConfig: Record<NodeStatus, {
   failed: { icon: XCircle, color: 'text-red-400', border: 'border-red-500/50' },
 };
 
-const toFiniteNumber = (value: any): number | null => {
+const toFiniteNumber = (value: unknown): number | null => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return null;
   return parsed;
@@ -58,14 +58,14 @@ const getHandleClassName = (nodeType: string, side: WorkflowNodePortSide, index:
   return '!w-2.5 !h-2.5 !bg-teal-500 !border-2 !border-slate-800';
 };
 
-const toStringList = (value: any): string[] => {
+const toStringList = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
   return value
     .map((item) => String(item || '').trim())
     .filter(Boolean);
 };
 
-const mergeUniqueValues = (...sources: Array<any>): string[] => {
+const mergeUniqueValues = (...sources: Array<unknown>): string[] => {
   const deduped = new Set<string>();
   const result: string[] = [];
   sources.forEach((source) => {

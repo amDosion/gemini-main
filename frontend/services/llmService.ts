@@ -90,7 +90,6 @@ export class LLMService {
 
   private debugLog(...args: unknown[]): void {
       if (this.isVerboseLoggingEnabled()) {
-          console.log(...args);
       }
   }
 
@@ -100,24 +99,20 @@ export class LLMService {
   ): Promise<ModelsApiResponse> {
       // ✅ 如果未配置 Provider，返回空数组而不是发送请求
       if (!this.providerId) {
-        console.warn('[LLMService] Provider not configured, returning empty payload');
         return { models: [], defaultModelId: null, modeCatalog: [] };
       }
       // ✅ 从后端 API 获取模型列表（后端会从数据库读取 API Key）
       // 缓存策略：仅缓存 provider 级完整模型列表；mode 请求始终单独获取。
-      const cacheKey = `${this.providerId}`;
+      const cacheKey = mode ? `${this.providerId}:${mode}` : `${this.providerId}`;
       const now = Date.now();
       const cachedData = this.modelCache.get(cacheKey);
 
-      // ✅ 如果传递了 mode，不使用缓存（因为缓存的是完整列表）
-      // 如果未传递 mode，可以使用缓存
-      if (useCache && !mode && cachedData && (now - cachedData.timestamp < CACHE_TTL)) {
-          console.log(`[LLMService] Returning fresh cached payload for ${this.providerId}`);
+      // 使用缓存（mode 和非 mode 请求各自独立缓存）
+      if (useCache && cachedData && (now - cachedData.timestamp < CACHE_TTL)) {
           return cachedData.payload;
       }
 
       try {
-          console.log(`[LLMService] Fetching models from backend API for ${this.providerId}${mode ? ` (mode: ${mode})` : ''}`);
 
           // ✅ 调用后端 API：/api/models/{provider}?mode={mode}
           // 后端会：
@@ -158,20 +153,15 @@ export class LLMService {
               provider: typeof data.provider === 'string' ? data.provider : this.providerId,
           };
 
-          // ✅ 只有未传递 mode 时才缓存（缓存完整列表）
-          // 如果传递了 mode，不缓存（因为不同 mode 需要不同的过滤结果）
-          if (!mode) {
-              this.modelCache.set(cacheKey, {
-                  payload,
-                  timestamp: now,
-                  providerId: this.providerId,
-              });
-          }
+          // 缓存所有请求结果（mode 和非 mode 各自独立缓存）
+          this.modelCache.set(cacheKey, {
+              payload,
+              timestamp: now,
+              providerId: this.providerId,
+          });
 
-          console.log(`[LLMService] Successfully fetched ${payload.models.length} models from backend${payload.filteredByMode ? ` (filtered by mode: ${payload.filteredByMode})` : ''}`);
           return payload;
       } catch (error) {
-          console.error(`[LLMService] Failed to fetch models for ${this.providerId}.`, error);
           throw error;
       }
   }
@@ -183,7 +173,6 @@ export class LLMService {
 
   public clearModelCache() {
       this.modelCache.clear();
-      console.log("[LLMService] Model cache cleared.");
   }
 
   public startNewChat(history: Message[], modelConfig: ModelConfig, options?: ChatOptions) {
@@ -245,14 +234,10 @@ export class LLMService {
       streamManager.cancelTask('active_chat_stream', 'User stopped generation');
 
       // Also stop browser session if Browse was enabled
-      this.stopBrowserSession().catch((e) => {
-          console.warn('[LLMService] Failed to stop browser session:', e);
-      });
+      this.stopBrowserSession();
 
       // Also stop MCP session if MCP was enabled for current chat
-      this.stopMcpSession().catch((e) => {
-          console.warn('[LLMService] Failed to stop MCP session:', e);
-      });
+      this.stopMcpSession();
   }
 
   /**
@@ -271,14 +256,11 @@ export class LLMService {
           });
 
           if (response.ok) {
-              console.log('[LLMService] Browser session stopped');
           } else {
               const error = await response.text();
-              console.warn('[LLMService] Browser stop response:', error);
           }
       } catch (e) {
           // Silently ignore network errors (browser may not have been active)
-          console.debug('[LLMService] Browser stop request failed (may be expected):', e);
       }
   }
 
@@ -290,15 +272,7 @@ export class LLMService {
       const mcpServerKey = this._cachedOptions?.mcpServerKey;
       if (!mcpServerKey) return;
 
-      try {
-          const result = await mcpConfigService.stopSessions(mcpServerKey);
-          console.log('[LLMService] MCP sessions stopped:', {
-              mcpServerKey,
-              closedCount: result.closedCount
-          });
-      } catch (e) {
-          console.debug('[LLMService] MCP stop request failed (may be expected):', e);
-      }
+      await mcpConfigService.stopSessions(mcpServerKey);
   }
 
   // --- Media Operations (通过 UnifiedProviderClient 处理) ---
@@ -349,7 +323,7 @@ export class LLMService {
       };
       
       return this.currentProvider.generateImage(
-          this._cachedModelConfig!.id,
+          this._cachedModelConfig?.id || "",
           prompt,
           referenceImages,
           mergedOptions,  // ✅ 使用合并后的 options

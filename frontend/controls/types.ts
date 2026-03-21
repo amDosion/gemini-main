@@ -270,7 +270,7 @@ export interface ModeControlsCoordinatorProps {
   mode: AppMode;
   providerId: string;
   currentModel?: ModelConfig;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // ============================================

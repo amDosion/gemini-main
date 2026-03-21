@@ -34,7 +34,6 @@ let telemetryStarted = false;
 let activeLogger: TelemetryLogger = {
   log: (event) => {
     if (import.meta.env.DEV) {
-      console.info('[frontend-telemetry]', event);
     }
   },
 };

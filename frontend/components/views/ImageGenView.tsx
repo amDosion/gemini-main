@@ -1,4 +1,5 @@
 
+import { safeCopyToClipboard } from '../../utils/safeOps';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
@@ -300,7 +301,6 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
     // ✅ 详细日志：记录显示图片时使用的URL类型
     useEffect(() => {
         if (displayImages.length > 0) {
-            console.log('[ImageGenView] ========== 显示图片URL类型分析 ==========');
             displayImages.forEach((att, idx) => {
                 const urlType = getUrlType(att.url, att.uploadStatus);
                 
@@ -316,22 +316,7 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
                     return url.length > 80 ? url.substring(0, 80) + '...' : url;
                 };
 
-                console.log(`[ImageGenView] 图片 ${idx + 1}/${displayImages.length}:`, {
-                    attachmentId: att.id || 'N/A',
-                    displayUrlType: urlType,
-                    displayUrl: formatUrlForLog(att.url),
-                    uploadStatus: att.uploadStatus,
-                    hasCloudUrl: hasCloudUrl,
-                    cloudUrl: hasCloudUrl ? formatUrlForLog(att.url!) : 'N/A',
-                    tempUrl: formatUrlForLog(att.tempUrl),
-                    source: hasCloudUrl ? '云存储URL (处理后的永久URL)' : 
-                           urlType.includes('Base64') ? 'AI返回的原始Base64地址' :
-                           urlType.includes('Blob') ? '处理后的Blob URL (从HTTP临时URL转换)' :
-                           urlType.includes('HTTP临时URL') ? 'AI返回的HTTP临时地址' : '未知来源',
-                    note: '前端<img>标签将使用此URL进行显示'
-                });
             });
-            console.log('[ImageGenView] ============================================');
         }
     }, [displayImages]);
     const isBatchError = activeBatchMessage?.isError;
@@ -620,43 +605,13 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
 
         const textToCopy = hoverPreview.optimizedPrompt;
 
-        const fallbackCopy = () => {
-            const textarea = document.createElement('textarea');
-            textarea.value = textToCopy;
-            textarea.style.position = 'fixed';
-            textarea.style.left = '-9999px';
-            document.body.appendChild(textarea);
-            textarea.focus();
-            textarea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textarea);
-        };
-
-        try {
-            if (navigator.clipboard?.writeText) {
-                await navigator.clipboard.writeText(textToCopy);
-            } else {
-                fallbackCopy();
-            }
-            setCopiedPreviewMessageId(hoverPreview.messageId);
-            clearCopiedResetTimer();
-            copiedResetTimerRef.current = window.setTimeout(() => {
-                setCopiedPreviewMessageId(null);
-                copiedResetTimerRef.current = null;
-            }, 1500);
-        } catch {
-            try {
-                fallbackCopy();
-                setCopiedPreviewMessageId(hoverPreview.messageId);
-                clearCopiedResetTimer();
-                copiedResetTimerRef.current = window.setTimeout(() => {
-                    setCopiedPreviewMessageId(null);
-                    copiedResetTimerRef.current = null;
-                }, 1500);
-            } catch (error) {
-                console.error('[ImageGenView] 复制优化提示词失败:', error);
-            }
-        }
+        await safeCopyToClipboard(textToCopy);
+        setCopiedPreviewMessageId(hoverPreview.messageId);
+        clearCopiedResetTimer();
+        copiedResetTimerRef.current = window.setTimeout(() => {
+            setCopiedPreviewMessageId(null);
+            copiedResetTimerRef.current = null;
+        }, 1500);
     }, [hoverPreview, clearCopiedResetTimer]);
 
     useEffect(() => {

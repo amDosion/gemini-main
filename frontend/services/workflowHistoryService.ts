@@ -85,8 +85,8 @@ const toNonNegativeInteger = (value: unknown, fallback: number): number => {
 const extractPreviewImageUrls = (payload: WorkflowPreviewPayload | null | undefined): string[] => {
   const previewItems = Array.isArray(payload?.images) ? payload.images : [];
   return previewItems
-    .map((item: any) => item?.dataUrl)
-    .filter((url: any): url is string => typeof url === 'string' && url.trim().length > 0);
+    .map((item: { dataUrl?: string }) => item?.dataUrl)
+    .filter((url: unknown): url is string => typeof url === 'string' && url.trim().length > 0);
 };
 
 const isSafeWorkflowMediaPreviewUrl = (value: unknown): value is string => {
@@ -117,7 +117,7 @@ const extractPreviewMediaItems = (
 ): WorkflowHistoryMediaPreviewItem[] => {
   const previewItems = Array.isArray(payload?.items) ? payload.items : [];
   return previewItems
-    .map((item: any, index: number) => {
+    .map((item, index) => {
       const previewUrl = isSafeWorkflowMediaPreviewUrl(item?.previewUrl) ? item.previewUrl.trim() : '';
       if (!previewUrl) {
         return null;

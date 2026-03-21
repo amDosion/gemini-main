@@ -4,12 +4,12 @@ import {
 
 export interface AdkSessionItem {
   id: string;
-  raw: any;
+  raw: Record<string, unknown>;
 }
 
 export interface AdkSessionSnapshot {
   id: string;
-  raw: any;
+  raw: Record<string, unknown>;
 }
 
 export interface ConfirmToolRequest {
@@ -58,7 +58,7 @@ export interface AdkExportPrecheckIssue {
   tenantId: string;
   expectedTenantId: string;
   sourcePath: string;
-  raw: unknown;
+  raw: Record<string, unknown>;
 }
 
 export type AdkRuntimeErrorCode =
@@ -1094,7 +1094,7 @@ const collectRuntimeStrategyValues = (sessionSnapshot: unknown): string[] => {
   const collector = new Set<string>();
   const visited = new WeakSet<object>();
 
-  const addStrategy = (rawValue: unknown): void => {
+  const addStrategy = (rawValue: Record<string, unknown>): void => {
     if (Array.isArray(rawValue)) {
       rawValue.forEach((item) => addStrategy(item));
       return;
@@ -1485,7 +1485,7 @@ const remapRequestFailedError = (error: unknown, fallbackMessage: string): Error
   return new Error(fallbackMessage);
 };
 
-const normalizeSessionId = (payload: any): string => toSafeString(payload?.sessionId || payload?.session_id || payload?.id);
+const normalizeSessionId = (payload: Record<string, unknown>): string => toSafeString(payload?.sessionId || payload?.session_id || payload?.id);
 const buildAgentRuntimeRoute = (agentId: string, suffix: string): string => (
   `/api/multi-agent/agents/${encodeURIComponent(agentId)}/runtime${suffix}`
 );
@@ -1497,9 +1497,9 @@ export const listAdkAgentSessions = async (
   const normalizedAgentId = toSafeString(agentId);
   if (!normalizedAgentId) return [];
 
-  let payload: any;
+  let payload: unknown;
   try {
-    payload = await requestJson<any>(
+    payload = await requestJson<unknown>(
       buildAgentRuntimeRoute(normalizedAgentId, '/sessions'),
       {
         signal,
@@ -1514,7 +1514,7 @@ export const listAdkAgentSessions = async (
   const sessions = Array.isArray(payload?.sessions) ? payload.sessions : [];
 
   return sessions
-    .map((session: any) => ({
+    .map((session: Record<string, unknown>) => ({
       id: normalizeSessionId(session),
       raw: session,
     }))
@@ -1532,9 +1532,9 @@ export const getAdkAgentSession = async (
     throw new Error('agentId/sessionId 不能为空');
   }
 
-  let payload: any;
+  let payload: unknown;
   try {
-    payload = await requestJson<any>(
+    payload = await requestJson<unknown>(
       buildAgentRuntimeRoute(
         normalizedAgentId,
         `/sessions/${encodeURIComponent(normalizedSessionId)}`
@@ -1563,7 +1563,7 @@ export const confirmAdkToolCall = async (
   sessionId: string,
   request: ConfirmToolRequest,
   signal?: AbortSignal
-): Promise<any> => {
+): Promise<unknown> => {
   const normalizedAgentId = toSafeString(agentId);
   const normalizedSessionId = toSafeString(sessionId);
   if (!normalizedAgentId || !normalizedSessionId) {
@@ -1605,7 +1605,7 @@ export const confirmAdkToolCall = async (
   });
 
   try {
-    return await requestJson<any>(
+    return await requestJson<unknown>(
       buildAgentRuntimeRoute(
         normalizedAgentId,
         `/sessions/${encodeURIComponent(normalizedSessionId)}/confirm-tool`
@@ -1648,7 +1648,7 @@ export const rewindAdkSession = async (
   sessionId: string,
   rewindBeforeInvocationId: string,
   signal?: AbortSignal
-): Promise<any> => {
+): Promise<unknown> => {
   const normalizedAgentId = toSafeString(agentId);
   const normalizedSessionId = toSafeString(sessionId);
   const normalizedInvocation = toSafeString(rewindBeforeInvocationId);
@@ -1660,7 +1660,7 @@ export const rewindAdkSession = async (
   }
 
   try {
-    return await requestJson<any>(
+    return await requestJson<unknown>(
       buildAgentRuntimeRoute(
         normalizedAgentId,
         `/sessions/${encodeURIComponent(normalizedSessionId)}/rewind`

@@ -1,15 +1,17 @@
+import type { ConfigProfile } from "../services/db";
+import type { StorageConfig } from "./storage";
 
 export interface ToolCall {
   type: string;
   name: string;
-  arguments: any;
+  arguments: Record<string, unknown>;
   id: string;
 }
 
 export interface ToolResult {
   name: string;
   callId: string;
-  result: any;
+  result: unknown;
   error?: string;
   screenshot?: string;
   screenshotUrl?: string;
@@ -92,10 +94,10 @@ export interface ResearchStatus {
 export interface ResearchRequiredAction {
   act?: {
     name?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
-  inputs?: any[];
-  [key: string]: any;
+  inputs?: unknown[];
+  [key: string]: unknown;
 }
 
 export interface Attachment {
@@ -353,13 +355,13 @@ export interface VectorStoreStats {
 // Unified Init API Types
 export interface InitData {
   // Configuration related
-  profiles: any[];  // ConfigProfile[] - imported from db.ts
+  profiles: ConfigProfile[];
   activeProfileId: string | null;
-  activeProfile: any | null;  // ConfigProfile | null
+  activeProfile: ConfigProfile | null;
   dashscopeKey: string;
   
   // Cloud storage related
-  storageConfigs: any[];  // StorageConfig[] - imported from storage.ts
+  storageConfigs: StorageConfig[];
   activeStorageId: string | null;
   
   // Session related

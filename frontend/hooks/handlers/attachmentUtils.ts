@@ -12,6 +12,7 @@
  * - Blob URL: 浏览器本地 URL（blob:xxx，页面关闭后失效）
  * - 远程临时 URL: API 返回的临时 URL（会过期）
  */
+import { reportError } from '../../utils/globalErrorHandler';
 import { v4 as uuidv4 } from 'uuid';
 import { Attachment, Message } from '../../types/types';
 import { storageUpload } from '../../services/storage/storageUpload';
@@ -91,7 +92,6 @@ export const isCloudStorageUrl = (url: string | undefined): boolean => {
 export const cleanAttachmentsForDb = (atts: Attachment[], verbose: boolean = false): Attachment[] => {
   // 1. Input Validation: Add early return for undefined, null, or non-array inputs.
   if (!atts || !Array.isArray(atts)) {
-    if (verbose) console.log('[cleanAttachmentsForDb] Input atts is invalid, returning empty array.');
     return [];
   }
 
@@ -101,13 +101,11 @@ export const cleanAttachmentsForDb = (atts: Attachment[], verbose: boolean = fal
 
     // Blob URL：临时 URL，不能持久化
     if (isBlobUrl(url)) {
-      if (verbose) console.log('[cleanAttachmentsForDb] 清空 Blob URL');
       cleaned.url = '';
       cleaned.uploadStatus = 'pending';
     } 
     // Base64 URL：数据太大，不能保存到数据库
     else if (isBase64Url(url)) {
-      if (verbose) console.log('[cleanAttachmentsForDb] 清空 Base64 URL');
       cleaned.url = '';
       cleaned.uploadStatus = 'pending';
     } 
@@ -115,22 +113,18 @@ export const cleanAttachmentsForDb = (atts: Attachment[], verbose: boolean = fal
     else if (isHttpUrl(url)) {
       // 已上传完成：保留云存储 URL
       if (cleaned.uploadStatus === 'completed') {
-        if (verbose) console.log('[cleanAttachmentsForDb] 保留已完成的云存储 URL');
       }
       // 有上传任务：保留 URL，状态设为 pending
       else if ((cleaned as any).uploadTaskId) {
-        if (verbose) console.log('[cleanAttachmentsForDb] 保留 URL（有上传任务）');
         cleaned.uploadStatus = 'pending';
       }
       // 临时 URL：清空
       else if (url.includes('/temp/') || url.includes('expires=')) {
-        if (verbose) console.log('[cleanAttachmentsForDb] 清空临时 HTTP URL');
         cleaned.url = '';
         cleaned.uploadStatus = 'pending';
       }
       // 其他 HTTP URL：保留但标记为 pending
       else {
-        if (verbose) console.log('[cleanAttachmentsForDb] 标记未知 HTTP URL 为 pending');
         cleaned.uploadStatus = 'pending';
       }
     }
@@ -147,7 +141,6 @@ export const cleanAttachmentsForDb = (atts: Attachment[], verbose: boolean = fal
                          cleaned.tempUrl.includes('expires=');
       
       if (isTemporary && !(cleaned as any).uploadTaskId) {
-        if (verbose) console.log('[cleanAttachmentsForDb] 清空临时 tempUrl');
         delete cleaned.tempUrl;
       }
     }
@@ -186,28 +179,20 @@ export const uploadToCloudStorageSync = async (
                     isBlobUrl(sourceUrl) ? 'Blob URL' :
                     isHttpUrl(sourceUrl) ? 'HTTP URL' : 'Unknown';
     
-    console.log('[uploadToCloudStorageSync] 开始处理:', {
-      type: urlType,
-      filename: isFile ? (imageSource as File).name : finalFilename
-    });
 
     // 使用统一函数转换为 File
     const file = await sourceToFile(imageSource, finalFilename);
-    console.log('[uploadToCloudStorageSync] 已转换为 File:', file.name, file.size);
 
     // 上传到云存储
     const result = await storageUpload.uploadFile(file);
     
     if (result.success && result.url) {
-      console.log('[uploadToCloudStorageSync] 上传成功:', result.url);
       return result.url;
     } else {
-      console.error('[uploadToCloudStorageSync] 上传失败:', result.error);
       return '';
     }
 
   } catch (error) {
-    console.error('[uploadToCloudStorageSync] 上传失败:', error);
     return '';
   }
 };
@@ -228,16 +213,9 @@ export const uploadToCloudStorage = async (
     const isFile = imageSource instanceof File;
     const sourceUrl = typeof imageSource === 'string' ? imageSource : '';
     
-    console.log('[uploadToCloudStorage] 提交异步上传任务:', {
-      type: isFile ? 'File' : isBase64Url(sourceUrl) ? 'Base64' : isBlobUrl(sourceUrl) ? 'Blob URL' : 'Unknown',
-      messageId,
-      attachmentId,
-      sessionId
-    });
 
     // 使用统一函数转换为 File
     const file = await sourceToFile(imageSource, finalFilename);
-    console.log('[uploadToCloudStorage] 已转换为 File:', file.name, file.type, file.size);
 
     // 提交到后端异步上传队列（不等待完成）
     const result = await storageUpload.uploadFileAsync(file, {
@@ -246,10 +224,9 @@ export const uploadToCloudStorage = async (
       attachmentId
     });
     
-    console.log('[uploadToCloudStorage] 异步上传任务已提交:', result.taskId);
 
-  } catch (error) {
-    console.error('[uploadToCloudStorage] 提交上传任务失败:', error);
+  } catch (err) {
+    reportError('附件上传失败', err);
   }
 };
 
@@ -331,10 +308,8 @@ export const sourceToFile = async (
   for (let i = 0; i < strategies.length; i++) {
     try {
       const file = await strategies[i].execute();
-      console.log(`[sourceToFile] 策略 ${i + 1}（${strategies[i].name}）成功`);
       return file;
     } catch (error) {
-      console.warn(`[sourceToFile] 策略 ${i + 1}（${strategies[i].name}）失败:`, error);
       // 最后一个策略失败时，抛出错误
       if (i === strategies.length - 1) {
         throw new Error(`[sourceToFile] 所有下载策略都失败，URL: ${url.substring(0, 100)}...`);
@@ -435,7 +410,6 @@ export const urlToBase64 = async (url: string): Promise<string> => {
 
   // 验证 MIME 类型（仅支持图片）
   if (!blob.type) {
-    console.warn(`[urlToBase64] Blob type is empty for URL: ${url}`);
   } else if (!blob.type.startsWith('image/')) {
     throw new Error(`[urlToBase64] Unsupported MIME type: ${blob.type}. Only image types are supported.`);
   }
@@ -508,7 +482,6 @@ export const urlToFile = async (
 
   const blob = await response.blob();
   if (!blob.type) {
-    console.warn(`[urlToFile] Blob type is empty, using provided mimeType or fallback`);
   }
 
   return new File([blob], filename, { type: mimeType || blob.type || 'image/png' });
@@ -547,19 +520,12 @@ export const findAttachmentByUrl = (
                   isBlobUrl(targetUrl) ? 'Blob' :
                   isHttpUrl(targetUrl) ? 'HTTP' : '未知';
   
-  console.log('[findAttachmentByUrl] 开始查找, URL 类型:', urlType);
   
   // 策略 1: 精确匹配 url 或 tempUrl
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
     for (const att of msg.attachments || []) {
       if (att.url === targetUrl || att.tempUrl === targetUrl) {
-        console.log('[findAttachmentByUrl] 精确匹配成功:', {
-          id: att.id,
-          messageId: msg.id,
-          matchedField: att.url === targetUrl ? 'url' : 'tempUrl',
-          uploadStatus: att.uploadStatus
-        });
         return { attachment: att, messageId: msg.id };
       }
     }
@@ -567,7 +533,6 @@ export const findAttachmentByUrl = (
   
   // 策略 2: Blob URL 兜底策略 - 查找最近的有效云端图片附件
   if (isBlobUrl(targetUrl)) {
-    console.log('[findAttachmentByUrl] Blob URL 未精确匹配，尝试查找最近的有效云端图片附件');
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
       for (const att of msg.attachments || []) {
@@ -578,14 +543,12 @@ export const findAttachmentByUrl = (
           att.uploadStatus === 'completed' &&
           isHttpUrl(att.url)
         ) {
-          console.log('[findAttachmentByUrl] 找到最近的有效云端图片附件（兜底策略）');
           return { attachment: att, messageId: msg.id };
         }
       }
     }
   }
   
-  console.log('[findAttachmentByUrl] 未找到匹配的附件');
   return null;
 };
 
@@ -617,13 +580,11 @@ export const fetchAttachmentStatus = async (
     });
     
     if (!response.ok) {
-      console.warn(`[fetchAttachmentStatus] 查询失败: HTTP ${response.status}`);
       return null;
     }
     
     return await response.json();
   } catch (error) {
-    console.error('[fetchAttachmentStatus] 查询异常:', error);
     return null;
   }
 };
@@ -673,48 +634,20 @@ export const prepareAttachmentForApi = async (
     base64MimeType = mimeMatch ? mimeMatch[1] : 'unknown';
   }
   
-  console.log('[prepareAttachmentForApi] ========== 开始准备附件 ==========');
-  console.log('[prepareAttachmentForApi] 参数详情:', {
-    imageUrlType: urlType,
-    imageUrlLength: urlLength,
-    base64MimeType: urlType === 'Base64' ? base64MimeType : 'N/A',
-    imageUrlPreview: urlType === 'Base64' ? `${imageUrl.substring(0, 80)}...` : (urlLength > 100 ? imageUrl.substring(0, 100) + '...' : imageUrl),
-    sessionId: sessionId || 'null',
-    filePrefix,
-    skipBase64,
-    messagesCount: messages?.length || 0
-  });
   
   // 打印消息历史中的附件信息
   if (messages && messages.length > 0) {
     const messagesWithAttachments = messages.filter(m => m.attachments && m.attachments.length > 0);
-    console.log('[prepareAttachmentForApi] 消息历史附件统计:', {
-      totalMessages: messages.length,
-      messagesWithAttachments: messagesWithAttachments.length,
-      totalAttachments: messagesWithAttachments.reduce((sum, m) => sum + (m.attachments?.length || 0), 0)
-    });
     
     // 打印最近3条有附件的消息
     const recentWithAttachments = messagesWithAttachments.slice(-3);
     recentWithAttachments.forEach((msg, idx) => {
-      console.log(`[prepareAttachmentForApi] 最近附件消息[${idx}]:`, {
-        messageId: msg.id,
-        role: msg.role,
-        attachmentsCount: msg.attachments?.length || 0,
-        attachments: msg.attachments?.map(att => ({
-          id: att.id,
-          uploadStatus: att.uploadStatus,
-          urlType: att.url ? (att.url.startsWith('data:') ? 'Base64' : att.url.startsWith('blob:') ? 'Blob' : 'HTTP') : 'null',
-          urlLength: att.url?.length || 0
-        }))
-      });
     });
   }
 
   try {
     // 步骤 1: 优先使用后端 CONTINUITY API
     if (sessionId) {
-      console.log('[prepareAttachmentForApi] ========== 步骤1: 调用后端 CONTINUITY API ==========');
       
       try {
         const headers: HeadersInit = {
@@ -725,10 +658,6 @@ export const prepareAttachmentForApi = async (
           headers['Authorization'] = `Bearer ${token}`;
         }
         
-        console.log('[prepareAttachmentForApi] 请求头:', {
-          hasAuthToken: !!token,
-          contentType: 'application/json'
-        });
 
         // 构建请求体 - 只发送必要的消息信息，不发送完整的 Base64 数据
         const simplifiedMessages = messages?.map(m => ({
@@ -749,16 +678,6 @@ export const prepareAttachmentForApi = async (
           messages: simplifiedMessages
         };
         
-        console.log('[prepareAttachmentForApi] 请求体详情:', {
-          endpoint: '/api/attachments/resolve-continuity',
-          activeImageUrlType: urlType,
-          activeImageUrlLength: urlLength,
-          activeImageUrlMimeType: urlType === 'Base64' ? base64MimeType : 'N/A',
-          sessionId,
-          messagesCount: simplifiedMessages.length,
-          messagesWithAttachments: simplifiedMessages.filter(m => m.attachments && m.attachments.length > 0).length,
-          requestBodySize: JSON.stringify(requestBody).length
-        });
 
         const response = await fetch('/api/attachments/resolve-continuity', {
           method: 'POST',
@@ -767,34 +686,11 @@ export const prepareAttachmentForApi = async (
           body: JSON.stringify(requestBody)
         });
 
-        console.log('[prepareAttachmentForApi] 后端响应状态:', {
-          status: response.status,
-          statusText: response.statusText,
-          ok: response.ok
-        });
 
         if (response.ok) {
           const resolved = await response.json();
           const hasCloudUrl = resolved.status === 'completed' && resolved.url && isHttpUrl(resolved.url);
           
-          console.log('[prepareAttachmentForApi] ✅ 后端 CONTINUITY API 解析成功');
-          console.log('[prepareAttachmentForApi] 返回结果详情:', {
-            attachmentId: resolved.attachmentId,
-            status: resolved.status,
-            hasCloudUrl,
-            urlType: resolved.url ? (resolved.url.startsWith('data:') ? 'Base64' : resolved.url.startsWith('http') ? 'HTTP' : 'Other') : 'null',
-            urlLength: resolved.url?.length || 0,
-            taskId: resolved.taskId || 'null',
-            // ✅ 新增：显示完整的元数据
-            messageId: resolved.messageId || 'N/A',
-            sessionId: resolved.sessionId || 'N/A',
-            userId: resolved.userId || 'N/A',
-            filename: resolved.filename || 'N/A',
-            mimeType: resolved.mimeType || 'N/A',
-            size: resolved.size ? `${resolved.size} bytes` : 'N/A',
-            cloudUrl: resolved.cloudUrl || 'N/A',
-            createdAt: resolved.createdAt ? new Date(resolved.createdAt).toISOString() : 'N/A'
-          });
 
           const attachment: Attachment = {
             id: resolved.attachmentId,
@@ -821,42 +717,23 @@ export const prepareAttachmentForApi = async (
           } catch (e) {
             errorBody = '无法读取错误响应体';
           }
-          console.warn('[prepareAttachmentForApi] ❌ 后端 CONTINUITY API 返回错误:', {
-            status: response.status,
-            statusText: response.statusText,
-            errorBody: errorBody.substring(0, 500)
-          });
         }
-      } catch (apiError) {
-        console.warn('[prepareAttachmentForApi] ❌ 后端 CONTINUITY API 调用异常，降级到前端查找:', apiError);
+      } catch (err) {
+        reportError('图片重新加载失败', err);
       }
     }
 
     // 步骤 2: 降级方案 - 前端查找历史附件
-    console.log('[prepareAttachmentForApi] ========== 步骤2: 前端查找历史附件 ==========');
     const found = findAttachmentByUrl(imageUrl, messages);
 
     if (found) {
-      console.log('[prepareAttachmentForApi] ✅ 前端查找找到历史附件');
       const { attachment: existingAttachment, messageId } = found;
       
-      console.log('[prepareAttachmentForApi] 找到的附件详情:', {
-        attachmentId: existingAttachment.id,
-        messageId: messageId,
-        mimeType: existingAttachment.mimeType,
-        name: existingAttachment.name,
-        uploadStatus: existingAttachment.uploadStatus,
-        urlType: existingAttachment.url ? (existingAttachment.url.startsWith('data:') ? 'Base64' : existingAttachment.url.startsWith('blob:') ? 'Blob' : 'HTTP') : 'null',
-        urlLength: existingAttachment.url?.length || 0,
-        tempUrlType: existingAttachment.tempUrl ? (existingAttachment.tempUrl.startsWith('data:') ? 'Base64' : existingAttachment.tempUrl.startsWith('blob:') ? 'Blob' : 'HTTP') : 'null',
-        tempUrlLength: existingAttachment.tempUrl?.length || 0
-      });
       
       let finalUrl = existingAttachment.url;
       let finalUploadStatus = existingAttachment.uploadStatus || 'pending';
 
       // 查询后端获取最新的云存储 URL
-      console.log('[prepareAttachmentForApi] 尝试从后端获取云存储 URL...');
       const cloudResult = await tryFetchCloudUrl(
         sessionId,
         existingAttachment.id,
@@ -865,14 +742,9 @@ export const prepareAttachmentForApi = async (
       );
       
       if (cloudResult) {
-        console.log('[prepareAttachmentForApi] ✅ 获取到云存储 URL:', {
-          cloudUrl: cloudResult.url.substring(0, 100),
-          uploadStatus: cloudResult.uploadStatus
-        });
         finalUrl = cloudResult.url;
         finalUploadStatus = 'completed';
       } else {
-        console.log('[prepareAttachmentForApi] ℹ️ 未获取到云存储 URL，使用本地 URL');
       }
 
       const attachment: Attachment = {
@@ -890,14 +762,6 @@ export const prepareAttachmentForApi = async (
         createdAt: existingAttachment.createdAt,
       };
       
-      console.log('[prepareAttachmentForApi] 创建的附件对象:', {
-        id: attachment.id,
-        mimeType: attachment.mimeType,
-        name: attachment.name,
-        uploadStatus: attachment.uploadStatus,
-        urlType: attachment.url ? (attachment.url.startsWith('data:') ? 'Base64' : attachment.url.startsWith('blob:') ? 'Blob' : 'HTTP') : 'null',
-        urlLength: attachment.url?.length || 0
-      });
 
       // 对于非 HTTP URL，可选转换为 Base64（如果 skipBase64 为 false）
       if (!skipBase64 && finalUrl && !isHttpUrl(finalUrl)) {
@@ -905,8 +769,8 @@ export const prepareAttachmentForApi = async (
           const base64Data = await urlToBase64(finalUrl);
           (attachment as any).base64Data = base64Data;
           attachment.tempUrl = base64Data;
-        } catch (base64Error) {
-          console.warn('[prepareAttachmentForApi] 获取 base64Data 失败:', base64Error);
+        } catch (err) {
+          reportError('图片转换失败', err);
         }
       }
       
@@ -914,7 +778,6 @@ export const prepareAttachmentForApi = async (
     }
 
     // 步骤 3: 未在历史中找到，根据 URL 类型创建新附件
-    console.log('[prepareAttachmentForApi] 未在历史中找到匹配附件，创建新附件');
 
     const attachmentId = uuidv4();
     const attachmentName = `${filePrefix}-${Date.now()}.png`;
@@ -945,11 +808,9 @@ export const prepareAttachmentForApi = async (
       };
     }
 
-    console.log('[prepareAttachmentForApi] 无法处理的 URL 类型');
     return null;
 
   } catch (e) {
-    console.error('[prepareAttachmentForApi] 准备附件失败:', e);
     return null;
   }
 };
@@ -1004,20 +865,6 @@ export const processUserAttachments = async (
       activeMimeType = mimeMatch ? mimeMatch[1] : 'unknown';
     }
     
-    console.log('[processUserAttachments] ========== 触发 CONTINUITY LOGIC ==========');
-    console.log('[processUserAttachments] 触发原因: 无新上传附件 (attachments.length === 0)，使用画布图片');
-    console.log('[processUserAttachments] 画布图片详情:', {
-      activeImageUrlType: activeUrlType,
-      activeImageUrlLength: activeImageUrl.length,
-      activeImageUrlMimeType: activeUrlType === 'Base64' ? activeMimeType : 'N/A',
-      activeImageUrlPreview: activeUrlType === 'Base64' ? `${activeImageUrl.substring(0, 80)}...` : (activeImageUrl.length > 100 ? activeImageUrl.substring(0, 100) + '...' : activeImageUrl)
-    });
-    console.log('[processUserAttachments] 会话信息:', {
-      sessionId: sessionId || 'null',
-      messagesCount: messages?.length || 0,
-      messagesWithAttachments: messages?.filter(m => m.attachments && m.attachments.length > 0).length || 0,
-      filePrefix
-    });
     
     const prepared = await prepareAttachmentForApi(
       activeImageUrl,
@@ -1028,38 +875,14 @@ export const processUserAttachments = async (
     );
     
     if (prepared) {
-      console.log('[processUserAttachments] ✅ CONTINUITY LOGIC 成功，返回附件完整元数据:');
-      console.log('[processUserAttachments] 附件基本信息:', {
-        id: prepared.id,
-        name: prepared.name,
-        mimeType: prepared.mimeType,
-        uploadStatus: prepared.uploadStatus,
-        uploadTaskId: prepared.uploadTaskId || 'N/A'
-      });
-      console.log('[processUserAttachments] 附件 URL 信息:', {
-        urlType: prepared.url ? (prepared.url.startsWith('data:') ? 'Base64' : prepared.url.startsWith('blob:') ? 'Blob' : 'HTTP') : 'null',
-        urlLength: prepared.url?.length || 0,
-        urlPreview: prepared.url ? (prepared.url.startsWith('data:') ? `Base64 (${prepared.url.length} 字符)` : prepared.url.substring(0, 80) + '...') : 'N/A',
-        tempUrl: prepared.tempUrl ? (prepared.tempUrl.startsWith('data:') ? `Base64 (${prepared.tempUrl.length} 字符)` : prepared.tempUrl.substring(0, 80) + '...') : 'N/A',
-        cloudUrl: prepared.cloudUrl || 'N/A'
-      });
-      console.log('[processUserAttachments] 附件关联信息:', {
-        messageId: prepared.messageId || 'N/A',
-        sessionId: prepared.sessionId || 'N/A',
-        userId: prepared.userId || 'N/A',
-        size: prepared.size ? `${prepared.size} bytes` : 'N/A',
-        createdAt: prepared.createdAt ? new Date(prepared.createdAt).toISOString() : 'N/A'
-      });
       result.push(prepared);
     } else {
-      console.warn('[processUserAttachments] ❌ CONTINUITY LOGIC 失败，prepareAttachmentForApi 返回 null');
     }
     return result;
   }
 
   // ✅ 2. 如果有新上传的附件，处理附件
   if (attachments.length > 0) {
-    console.log(`[processUserAttachments] 处理用户上传的附件, 数量: ${attachments.length}`);
     
     // 格式化 URL 用于日志（Base64 URL 只显示类型和长度）
     const formatUrlForLog = (url: string | undefined): string => {
@@ -1079,22 +902,13 @@ export const processUserAttachments = async (
                      att.url?.startsWith('data:') ? 'Base64' : 
                      att.url?.startsWith('http') ? 'HTTP' : 'Other';
       
-      console.log(`[processUserAttachments] 附件[${index}]:`, {
-        id: att.id || 'N/A',
-        urlType,
-        url: urlInfo,
-        uploadStatus: att.uploadStatus,
-        hasFile: !!att.file
-      });
 
       // 验证 URL 字段
       if (!att.url && !att.tempUrl) {
-        console.warn(`[processUserAttachments] 附件[${index}] 缺少 URL 字段`);
       }
 
       // ✅ 如果有 File 对象且 URL 是 Blob URL，转换为 Base64（与 ChatInputArea 一致）
       if (att.file && isBlobUrl(att.url)) {
-        console.log(`[processUserAttachments] 附件[${index}] 将 Blob URL 转换为 Base64（用于后端访问）`);
         try {
           const base64Url = await fileToBase64(att.file);
           return { 
@@ -1104,7 +918,6 @@ export const processUserAttachments = async (
             // 保留 File 对象用于上传任务（uploadTask 中会使用）
           };
         } catch (e) {
-          console.warn(`[processUserAttachments] 附件[${index}] File 转 Base64 失败:`, e);
           return att;
         }
       }
@@ -1141,7 +954,6 @@ export const processUserAttachments = async (
       );
 
       if (!isCanvasImageInAttachments) {
-        console.log('[processUserAttachments] 添加画布图片到附件列表（组合模式）');
         const canvasAttachment = await prepareAttachmentForApi(
           activeImageUrl,
           messages,
@@ -1217,7 +1029,6 @@ export const processMediaResult = async (
 
   // HTTP URL 需要转换为 Blob URL 用于显示（避免临时 URL 过期）
   if (isHttpUrl(res.url)) {
-    console.log('[processMediaResult] HTTP URL 检测到，转换为 Blob URL 用于显示');
     const response = await fetch(res.url);
     const blob = await response.blob();
     displayUrl = URL.createObjectURL(blob);
@@ -1333,7 +1144,6 @@ export const submitUploadTaskToBackend = async (
     return result.taskId || '';
 
   } catch (error) {
-    console.error('[submitUploadTaskToBackend] 提交上传任务失败:', error);
     return '';
   }
 };

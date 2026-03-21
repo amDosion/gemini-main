@@ -253,11 +253,6 @@ export const useXhrImagePreview = (
         } catch (error) {
           const httpStatus = parsePreviewErrorHttpStatus(error);
           const message = error instanceof Error ? error.message : String(error || 'Unknown preview error');
-          console.warn('[CloudStorageView] Preview candidate failed', {
-            candidate,
-            httpStatus,
-            message
-          });
           failedPreviewUrlsRef.current.add(candidate);
           setLastFailure({
             url: candidate,

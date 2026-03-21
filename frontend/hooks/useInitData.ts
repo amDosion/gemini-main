@@ -71,7 +71,7 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
 
         try {
           // ✅ 步骤 1：先加载关键数据（阻塞渲染）
-          const critical = await apiClient.get<Partial<InitData>>('/api/init/critical');
+          const critical = await apiClient.get<Partial<InitData>>('/api/init/critical', { signal: abortControllerRef.current?.signal });
           
           // Check if component is still mounted before updating state
           if (!isMountedRef.current) {
@@ -94,14 +94,11 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
               }
             })
             .catch(err => {
-              console.warn('[useInitData] 非关键数据加载失败:', err);
               // 非关键数据失败不影响主流程
             });
           
           // ✅ 步骤 4：后台异步初始化 LLMFactory（不阻塞渲染）
-          LLMFactory.initialize().catch(err => {
-            console.warn('[useInitData] LLMFactory 初始化失败:', err);
-          });
+          LLMFactory.initialize();
           
           // Data successfully fetched, exit the retry loop.
           return; 
@@ -115,7 +112,6 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
 
           // Don't retry on authentication errors (401)
           if (error.message === 'Unauthorized') {
-            console.error('Authentication failed. Please log in again.');
             setError(error);
             setIsConfigReady(true);  // ✅ 错误情况下也设置为 true，让 UI 显示错误
             return; // Exit without retry
@@ -124,10 +120,8 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
           // Retry on other errors
           if (attempt < MAX_RETRIES) {
             const delay = BASE_RETRY_DELAY * Math.pow(2, attempt);
-            console.warn(`Attempt ${attempt + 1} failed. Retrying in ${delay}ms...`);
             await new Promise(resolve => setTimeout(resolve, delay));
           } else {
-            console.error('Failed to fetch init data after multiple retries.', e);
             setError(error);
             setIsConfigReady(true);  // ✅ 重试耗尽后设置为 true，让 UI 显示错误
           }

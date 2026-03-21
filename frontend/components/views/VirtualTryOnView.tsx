@@ -141,7 +141,6 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
       const lastMsg = messages[messages.length - 1];
       if (lastMsg.id !== lastProcessedMsgId) {
         if (lastMsg.role === Role.MODEL && lastMsg.attachments && lastMsg.attachments.length > 0) {
-          console.log('[VirtualTryOnView] 新结果生成完成:', lastMsg.id, '图片数量:', lastMsg.attachments.length);
           setSelectedMsgId(null);
           setLastProcessedMsgId(lastMsg.id);
         } else if (lastMsg.isError) {
@@ -195,7 +194,6 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
       const url = await toDataUrl(file);
       setPersonImageUrl(url);
     } catch (err) {
-      console.error('[VirtualTryOnView] person upload error:', err);
       showError('人物图上传失败');
     }
     e.target.value = '';
@@ -209,7 +207,6 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
       const url = await toDataUrl(file);
       setGarmentImageUrl(url);
     } catch (err) {
-      console.error('[VirtualTryOnView] garment upload error:', err);
       showError('服装图上传失败');
     }
     e.target.value = '';
@@ -237,9 +234,6 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
         'canvas'
       );
 
-      console.log('[VirtualTryOnView] handleTryOn:', {
-        attachmentCount: finalAttachments.length,
-      });
 
       // 使用实际的参数
       const options: ChatOptions = {
@@ -258,7 +252,6 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
       setPersonImageUrl(null);
       setGarmentImageUrl(null);
     } catch (error) {
-      console.error('[VirtualTryOnView] handleTryOn error:', error);
       showError('处理附件失败，请重试');
     }
   }, [personImageUrl, garmentImageUrl, messages, sessionId, onSend, showError, baseSteps, numberOfImages]);

@@ -107,8 +107,7 @@ export const VertexAIConfiguration: React.FC<VertexAIConfigurationProps> = ({
                     // Restore selected models (only saved models are selected, hidden models are not)
                     setSelectedModels(new Set(data.savedModels.map((sm: ModelConfig) => sm.id)));
                 }
-            } catch (error: any) {
-                console.error('[VertexAIConfiguration] Failed to load Imagen configuration:', error);
+            } catch (error) {
                 setImagenConfig({
                     apiMode: 'vertex_ai',
                     geminiApiKey: '',
@@ -183,23 +182,19 @@ export const VertexAIConfiguration: React.FC<VertexAIConfigurationProps> = ({
                 // ✅ Verify Connection 时，不使用数据库中的旧模型列表
                 // 只恢复已保存的模型选择状态（哪些模型被选中），但使用最新获取的模型数据
                 // 这样可以确保显示的是最新的模型列表，而不是数据库中的旧数据
-                try {
-                    // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
-                    const configData = await db.request<ImagenConfigResponse>('/vertex-ai/config?editMode=true');
-                    if (configData.savedModels && configData.savedModels.length > 0) {
-                        // 只恢复选中状态，使用最新获取的模型数据
-                        const savedModelIds = configData.savedModels.map((sm: ModelConfig) => sm.id);
-                        const validSavedModels = savedModelIds.filter(id => 
-                            uniqueModels.some(m => m.id === id)
-                        );
-                        
-                        if (validSavedModels.length > 0) {
-                            setSelectedModels(new Set(validSavedModels));
-                            return; // Exit early if we restored selection from saved models
-                        }
+                // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
+                const configData = await db.request<ImagenConfigResponse>('/vertex-ai/config?editMode=true');
+                if (configData.savedModels && configData.savedModels.length > 0) {
+                    // 只恢复选中状态，使用最新获取的模型数据
+                    const savedModelIds = configData.savedModels.map((sm: ModelConfig) => sm.id);
+                    const validSavedModels = savedModelIds.filter(id => 
+                        uniqueModels.some(m => m.id === id)
+                    );
+                    
+                    if (validSavedModels.length > 0) {
+                        setSelectedModels(new Set(validSavedModels));
+                        return; // Exit early if we restored selection from saved models
                     }
-                } catch (e) {
-                    console.warn('[VertexAIConfiguration] Failed to load saved config during verification:', e);
                 }
                 
                 // Fallback: use current selection or auto-select image-related models
@@ -223,9 +218,8 @@ export const VertexAIConfiguration: React.FC<VertexAIConfigurationProps> = ({
             } else {
                 setVerifyError(response.message || "Connection established, but no models were returned.");
             }
-        } catch (e: any) {
-            console.error('[VertexAIConfiguration] Verification failed:', e);
-            setVerifyError(e.message || "Connection failed.");
+        } catch (e) {
+            setVerifyError((e instanceof Error ? e.message : String(e)) || "Connection failed.");
         } finally {
             setIsVerifying(false);
         }
@@ -286,9 +280,8 @@ export const VertexAIConfiguration: React.FC<VertexAIConfigurationProps> = ({
 
             showSuccess('Vertex AI configuration saved successfully!');
             onClose();
-        } catch (error: any) {
-            console.error('[VertexAIConfiguration] Failed to save Vertex AI configuration:', error);
-            showError(`Failed to save Vertex AI configuration: ${error.message}`);
+        } catch (error) {
+            showError(`Failed to save Vertex AI configuration: ${error instanceof Error ? error.message : String(error)}`);
         } finally {
             setIsSaving(false);
         }

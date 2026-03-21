@@ -25,8 +25,8 @@ interface WorkflowEditorCanvasPaneProps {
   reactFlowWrapperRef: React.RefObject<HTMLDivElement | null>;
   nodes: Node<WorkflowNodeData>[];
   edges: Edge[];
-  onNodesChange: any;
-  onEdgesChange: any;
+  onNodesChange: (changes: import("reactflow").NodeChange[]) => void;
+  onEdgesChange: (changes: import("reactflow").EdgeChange[]) => void;
   onConnect: (params: Connection) => void;
   onNodeClick: (_event: React.MouseEvent, node: Node) => void;
   onEdgeClick: (_event: React.MouseEvent, edge: Edge) => void;

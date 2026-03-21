@@ -11,6 +11,7 @@
  * - 移除不可序列化的 File 对象
  */
 
+import { reportError } from '../../utils/globalErrorHandler';
 import { Preprocessor, ExecutionContext, HandlerErrorImpl } from './types';
 import { Attachment } from '../../types/types';
 import { fileToBase64 } from './attachmentUtils';
@@ -104,11 +105,6 @@ export class GoogleFileUploadPreprocessor implements Preprocessor {
         const attachment = attachments[index];
         const error = (result as PromiseRejectedResult).reason;
         
-        console.warn(`[GoogleFileUploadPreprocessor] 文件上传失败，将使用 Base64 方式:`, {
-          fileName: attachment.name || 'unknown',
-          fileType: attachment.mimeType || 'unknown',
-          error: error.message || 'Unknown error'
-        });
         
         // 返回原始附件，让后续流程使用 Base64
         return attachment;
@@ -140,12 +136,8 @@ export class GoogleFileUploadPreprocessor implements Preprocessor {
         const base64Url = await fileToBase64(processed.file);
         processed.url = base64Url;
         processed.tempUrl = base64Url;
-        console.log('[GoogleFileUploadPreprocessor] Blob URL 已转换为 Base64 Data URL:', {
-          fileName: processed.name,
-          base64Length: base64Url.length
-        });
-      } catch (e) {
-        console.warn('[GoogleFileUploadPreprocessor] Blob → Base64 转换失败:', e);
+      } catch (err) {
+        reportError('文件预处理失败', err);
       }
     }
 

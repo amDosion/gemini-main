@@ -33,36 +33,24 @@ export const useStorageConfigs = (initData?: InitData): UseStorageConfigsReturn 
   }, [initData]);
 
   const handleSaveStorage = useCallback(async (config: StorageConfig) => {
-    try {
-      await db.saveStorageConfig(config);
-      const configs = await db.getStorageConfigs();
-      setStorageConfigs(configs);
-    } catch (e) {
-      console.error("保存云存储配置失败", e);
-    }
+    await db.saveStorageConfig(config);
+    const configs = await db.getStorageConfigs();
+    setStorageConfigs(configs);
   }, []);
 
   const handleDeleteStorage = useCallback(async (id: string) => {
-    try {
-      await db.deleteStorageConfig(id);
-      const configs = await db.getStorageConfigs();
-      setStorageConfigs(configs);
-      if (activeStorageId === id) {
-        setActiveStorageId(null);
-        await db.setActiveStorageId('');
-      }
-    } catch (e) {
-      console.error("删除云存储配置失败", e);
+    await db.deleteStorageConfig(id);
+    const configs = await db.getStorageConfigs();
+    setStorageConfigs(configs);
+    if (activeStorageId === id) {
+      setActiveStorageId(null);
+      await db.setActiveStorageId('');
     }
   }, [activeStorageId]);
 
   const handleActivateStorage = useCallback(async (id: string) => {
-    try {
-      await db.setActiveStorageId(id);
-      setActiveStorageId(id);
-    } catch (e) {
-      console.error("激活云存储配置失败", e);
-    }
+    await db.setActiveStorageId(id);
+    setActiveStorageId(id);
   }, []);
 
   return {

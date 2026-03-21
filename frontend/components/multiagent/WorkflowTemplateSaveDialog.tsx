@@ -46,7 +46,7 @@ const getAuthHeadersWithJson = (): HeadersInit => ({
   ...getAuthHeaders(),
 });
 
-const normalizeTemplateResponse = (template: any): WorkflowTemplate => {
+const normalizeTemplateResponse = (template: Record<string, unknown>): WorkflowTemplate => {
   const rawConfig = template?.config || {};
   return {
     id: template?.id,

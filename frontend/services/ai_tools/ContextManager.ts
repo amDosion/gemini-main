@@ -1,5 +1,9 @@
 
-import { Message, Role } from "../../types/types";
+interface MessageLike {
+  role: string;
+  content: string;
+  [key: string]: unknown;
+}
 
 export class ContextManager {
   // Conservative estimate: 1 token ~= 4 characters for English, ~1-2 chars for CJK
@@ -8,7 +12,7 @@ export class ContextManager {
   /**
    * Estimates the token count for a list of messages.
    */
-  public estimateTokens(messages: any[]): number {
+  public estimateTokens(messages: MessageLike[]): number {
     let total = 0;
     for (const msg of messages) {
       const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
@@ -28,10 +32,10 @@ export class ContextManager {
    * 3. Remove messages from the middle (oldest context) until it fits.
    */
   public optimizeContext(
-    messages: any[], 
+    messages: MessageLike[], 
     maxContextTokens: number = 128000, 
     preserveRecentCount: number = 10
-  ): any[] {
+  ): MessageLike[] {
     const estimatedTotal = this.estimateTokens(messages);
     
     // If we are within limits (with 10% buffer), return original
@@ -39,7 +43,6 @@ export class ContextManager {
       return messages;
     }
 
-    console.log(`[ContextManager] Context limit exceeded (${estimatedTotal} > ${maxContextTokens}). Truncating...`);
 
     // Separate System Prompt
     let systemMessage = null;
@@ -66,7 +69,7 @@ export class ContextManager {
     let availableTokens = (maxContextTokens * 0.9) - systemTokens - recentTokens;
 
     // Add older messages back as long as they fit
-    const keptOlderMessages: any[] = [];
+    const keptOlderMessages: MessageLike[] = [];
     
     // We iterate from the END of older messages (newest of the old) to keep context closer to now
     for (let i = olderMessages.length - 1; i >= 0; i--) {
@@ -88,7 +91,6 @@ export class ContextManager {
     result.push(...keptOlderMessages);
     result.push(...recentMessages);
 
-    console.log(`[ContextManager] Optimized from ${messages.length} to ${result.length} messages.`);
     return result;
   }
 }

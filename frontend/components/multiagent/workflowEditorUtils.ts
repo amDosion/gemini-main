@@ -355,7 +355,7 @@ export const isKeyboardEventWithinEditableContext = (
   return event.composedPath().some((target) => isEventTargetWithinEditableContext(target));
 };
 
-const hasValidPosition = (position: any): position is { x: number; y: number } => {
+const hasValidPosition = (position: Record<string, unknown>): position is { x: number; y: number } => {
   return Boolean(
     position &&
     typeof position.x === 'number' &&
@@ -374,7 +374,7 @@ const getFallbackNodePosition = (index: number) => {
   };
 };
 
-export const normalizeLoadedNode = (node: any, index: number): Node<WorkflowNodeData> => {
+export const normalizeLoadedNode = (node: unknown, index: number): Node<WorkflowNodeData> => {
   const safeType = node?.data?.type || node?.type || 'agent';
   const safePosition = hasValidPosition(node?.position)
     ? node.position
@@ -407,7 +407,7 @@ export const normalizeLoadedNode = (node: any, index: number): Node<WorkflowNode
   };
 };
 
-export const buildPresetPromptValue = (preset: any): string => {
+export const buildPresetPromptValue = (preset: Record<string, unknown>): string => {
   if (!preset) return '';
 
   const promptExample = preset?.promptExample;
@@ -439,48 +439,48 @@ export interface TemplateSampleInput {
   fileUrls: string[];
 }
 
-export const normalizeTemplateSampleInput = (value: any): TemplateSampleInput => {
+export const normalizeTemplateSampleInput = (value: unknown): TemplateSampleInput => {
   const safeValue = isPlainObject(value) ? value : {};
   const imageUrls = Array.from(new Set([
     ...(Array.isArray(safeValue.imageUrls)
-      ? safeValue.imageUrls.map((item: any) => String(item || '').trim()).filter(Boolean)
+      ? safeValue.imageUrls.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
       : []),
     ...(Array.isArray(safeValue.image_urls)
-      ? safeValue.image_urls.map((item: any) => String(item || '').trim()).filter(Boolean)
+      ? safeValue.image_urls.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
       : []),
   ]));
   const prompts = Array.isArray(safeValue.prompts)
-    ? safeValue.prompts.map((item: any) => String(item || '').trim()).filter(Boolean)
+    ? safeValue.prompts.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
     : [];
   const task = String(safeValue.task || safeValue.prompt || safeValue.text || '').trim();
   const imageUrlRaw = String(safeValue.imageUrl || safeValue.image_url || '').trim();
   const imageUrl = imageUrlRaw || imageUrls[0] || '';
   const videoUrls = Array.from(new Set([
     ...(Array.isArray(safeValue.videoUrls)
-      ? safeValue.videoUrls.map((item: any) => String(item || '').trim()).filter(Boolean)
+      ? safeValue.videoUrls.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
       : []),
     ...(Array.isArray(safeValue.video_urls)
-      ? safeValue.video_urls.map((item: any) => String(item || '').trim()).filter(Boolean)
+      ? safeValue.video_urls.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
       : []),
   ]));
   const videoUrlRaw = String(safeValue.videoUrl || safeValue.video_url || '').trim();
   const videoUrl = videoUrlRaw || videoUrls[0] || '';
   const audioUrls = Array.from(new Set([
     ...(Array.isArray(safeValue.audioUrls)
-      ? safeValue.audioUrls.map((item: any) => String(item || '').trim()).filter(Boolean)
+      ? safeValue.audioUrls.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
       : []),
     ...(Array.isArray(safeValue.audio_urls)
-      ? safeValue.audio_urls.map((item: any) => String(item || '').trim()).filter(Boolean)
+      ? safeValue.audio_urls.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
       : []),
   ]));
   const audioUrlRaw = String(safeValue.audioUrl || safeValue.audio_url || '').trim();
   const audioUrl = audioUrlRaw || audioUrls[0] || '';
   const fileUrls = Array.from(new Set([
     ...(Array.isArray(safeValue.fileUrls)
-      ? safeValue.fileUrls.map((item: any) => String(item || '').trim()).filter(Boolean)
+      ? safeValue.fileUrls.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
       : []),
     ...(Array.isArray(safeValue.file_urls)
-      ? safeValue.file_urls.map((item: any) => String(item || '').trim()).filter(Boolean)
+      ? safeValue.file_urls.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
       : []),
   ]));
   const fileUrlRaw = String(safeValue.fileUrl || safeValue.file_url || '').trim();
@@ -572,7 +572,7 @@ const WORKFLOW_ALLOWED_OUTPUT_FORMATS = new Set([
   'markdown',
 ]);
 
-const normalizeWorkflowStringList = (value: any, maxItems = 12): string[] => {
+const normalizeWorkflowStringList = (value: unknown, maxItems = 12): string[] => {
   if (!Array.isArray(value)) return [];
   const deduped = new Set<string>();
   const normalized: string[] = [];
@@ -586,7 +586,7 @@ const normalizeWorkflowStringList = (value: any, maxItems = 12): string[] => {
   return normalized;
 };
 
-const clampOptionalInt = (value: any, minimum: number, maximum: number): number | null => {
+const clampOptionalInt = (value: unknown, minimum: number, maximum: number): number | null => {
   if (value === undefined || value === null || value === '') return null;
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return null;
@@ -594,26 +594,26 @@ const clampOptionalInt = (value: any, minimum: number, maximum: number): number 
   return Math.max(minimum, Math.min(maximum, integer));
 };
 
-const clampOptionalFloat = (value: any, minimum: number, maximum: number): number | null => {
+const clampOptionalFloat = (value: unknown, minimum: number, maximum: number): number | null => {
   if (value === undefined || value === null || value === '') return null;
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return null;
   return Math.max(minimum, Math.min(maximum, parsed));
 };
 
-const normalizeOptionalChoice = (value: any, allowed: Set<string>): string | null => {
+const normalizeOptionalChoice = (value: unknown, allowed: Set<string>): string | null => {
   const text = String(value || '').trim().toLowerCase();
   if (!text) return null;
   return allowed.has(text) ? text : null;
 };
 
-const normalizeOptionalString = (value: any, maxLength = 128): string | null => {
+const normalizeOptionalString = (value: unknown, maxLength = 128): string | null => {
   const text = String(value || '').trim();
   if (!text) return null;
   return text.length > maxLength ? text.slice(0, maxLength) : text;
 };
 
-const normalizeVideoResolutionForExecute = (value: any): string | null => {
+const normalizeVideoResolutionForExecute = (value: unknown): string | null => {
   const raw = String(value || '').trim();
   if (!raw) return null;
 
@@ -644,7 +644,7 @@ const normalizeVideoResolutionForExecute = (value: any): string | null => {
   return null;
 };
 
-const normalizeAgentTaskTypeForExecute = (value: any): string => {
+const normalizeAgentTaskTypeForExecute = (value: unknown): string => {
   const raw = String(value || '').trim().toLowerCase().replace(/_/g, '-');
   const aliases: Record<string, string> = {
     'vision-analyze': 'vision-understand',
@@ -667,7 +667,7 @@ const normalizeAgentTaskTypeForExecute = (value: any): string => {
   return WORKFLOW_ALLOWED_AGENT_TASK_TYPES.has(normalized) ? normalized : 'chat';
 };
 
-const normalizeAnalysisTypeForExecute = (value: any): string => {
+const normalizeAnalysisTypeForExecute = (value: unknown): string => {
   const raw = String(value || '').trim().toLowerCase();
   const aliases: Record<string, string> = {
     summary: 'statistics',
@@ -682,22 +682,22 @@ const normalizeAnalysisTypeForExecute = (value: any): string => {
   return WORKFLOW_ALLOWED_ANALYSIS_TYPES.has(normalized) ? normalized : 'comprehensive';
 };
 
-const normalizeImageEditModeForExecute = (value: any): string | null => {
+const normalizeImageEditModeForExecute = (value: unknown): string | null => {
   const normalized = String(value || '').trim().toLowerCase().replace(/_/g, '-');
   if (!normalized) return null;
   return WORKFLOW_ALLOWED_IMAGE_EDIT_MODES.has(normalized) ? normalized : null;
 };
 
-const normalizeNodeSizeForExecute = (value: any, minimum: number, maximum: number): number | undefined => {
+const normalizeNodeSizeForExecute = (value: unknown, minimum: number, maximum: number): number | undefined => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return undefined;
   return Math.max(minimum, Math.min(maximum, Math.round(parsed)));
 };
 
 export const normalizeWorkflowInputForExecute = (
-  rawInput: any,
+  rawInput: unknown,
   fallbackTask: string,
-): Record<string, any> => {
+): Record<string, unknown> => {
   const payload = isPlainObject(rawInput) ? { ...rawInput } : {};
   const task = String(
     payload.task
@@ -787,9 +787,9 @@ export const normalizeWorkflowInputForExecute = (
 };
 
 export const normalizeWorkflowNodeDataForExecute = (
-  rawData: Partial<WorkflowNodeData> & Record<string, any>,
-): Record<string, any> => {
-  const data: Record<string, any> = isPlainObject(rawData) ? { ...rawData } : {};
+  rawData: Partial<WorkflowNodeData> & Record<string, unknown>,
+): Record<string, unknown> => {
+  const data: Record<string, unknown> = isPlainObject(rawData) ? { ...rawData } : {};
 
   const taskType = data.agentTaskType ?? data.agent_task_type;
   let normalizedTaskType = '';
@@ -1247,7 +1247,7 @@ export const normalizeWorkflowNodeDataForExecute = (
 };
 
 export const resolveTemplateInputPlaceholder = (
-  rawValue: any,
+  rawValue: unknown,
   sampleInput: TemplateSampleInput,
   fallbackValue = '',
 ) => {

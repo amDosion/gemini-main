@@ -105,7 +105,7 @@ export const LiveAPIView: React.FC<LiveAPIViewProps> = ({
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyPress={handleKeyPress}
+              onKeyDown={handleKeyPress}
               placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
               className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500 resize-none"
               rows={1}

@@ -43,7 +43,6 @@ export const usePersonas = (
     try {
       await db.savePersonas(newPersonas);
     } catch (error) {
-      console.error('Failed to save personas to backend:', error);
       throw error;
     }
   }, []);
@@ -110,7 +109,6 @@ export const usePersonas = (
         }
       }
     } catch (error) {
-      console.error('Failed to refresh personas:', error);
       throw error;
     }
   }, [activePersonaId]);

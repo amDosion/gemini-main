@@ -65,14 +65,12 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({
         });
       };
 
-      try {
-        const [before, after] = await Promise.all([
-          loadImage(beforeImage),
-          loadImage(afterImage),
-        ]);
+      const [before, after] = await Promise.all([
+        loadImage(beforeImage),
+        loadImage(afterImage),
+      ]).catch(() => [null, null] as const);
+      if (before && after) {
         setImageDimensions({ before, after });
-      } catch (e) {
-        console.warn('[ImageCompare] 加载图片尺寸失败:', e);
       }
     };
 
@@ -174,7 +172,7 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({
           alt={beforeLabel}
           className="absolute inset-0 h-full object-cover"
           style={{ 
-            width: `${100 / (sliderPosition / 100)}%`, 
+            width: `${sliderPosition > 0 ? 100 / (sliderPosition / 100) : 10000}%`, 
             maxWidth: 'none',
             objectPosition: 'left center'
           }}

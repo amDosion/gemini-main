@@ -88,11 +88,11 @@ export interface WorkflowTemplate {
   modeId?: string;
   isPublic?: boolean;
   promptHint?: string;
-  promptExample?: any;
+  promptExample?: Record<string, unknown>;
   requiresImage?: boolean;
   estimatedNodeCount?: number;
   estimatedEdgeCount?: number;
-  sampleResult?: any;
+  sampleResult?: Record<string, unknown>;
   sampleResultSummary?: WorkflowTemplateResultSummary;
   sampleResultUpdatedAt?: number;
   sampleExecutionId?: string;
@@ -121,14 +121,14 @@ export interface WorkflowTemplate {
   updatedAt: number;
 }
 
-const normalizeTemplateSourceKind = (value: any): Exclude<WorkflowTemplateSourceKind, 'all'> => {
+const normalizeTemplateSourceKind = (value: unknown): Exclude<WorkflowTemplateSourceKind, 'all'> => {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'starter') return 'starter';
   if (normalized === 'public') return 'public';
   return 'user';
 };
 
-const normalizeTemplateRuntimeScope = (value: any): string | undefined => {
+const normalizeTemplateRuntimeScope = (value: unknown): string | undefined => {
   const normalized = String(value || '').trim();
   return normalized || undefined;
 };
@@ -281,15 +281,17 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
     }
   }, [selectedTemplate?.id]);
 
-  const migrateTemplate = (template: any): WorkflowTemplate => {
-    const rawConfig = template?.config || {};
+  const migrateTemplate = (template: Record<string, unknown>): WorkflowTemplate => {
+    const rawConfig = (template?.config || {}) as Record<string, unknown>;
+    const rawOrigin = (template?.origin || {}) as Record<string, unknown>;
+    const rawTemplateMeta = (rawConfig?._templateMeta || {}) as Record<string, unknown>;
     const rawNodes = Array.isArray(rawConfig.nodes) ? rawConfig.nodes : [];
     const rawEdges = Array.isArray(rawConfig.edges) ? rawConfig.edges : [];
-    const migratedNodes = rawNodes.map((node: any) => ({
-      ...node,
+    const migratedNodes = rawNodes.map((node: Record<string, unknown>) => ({
+      ...(node as Record<string, unknown>),
       data: {
-        ...(node?.data || {}),
-        type: node?.data?.type || node?.type || 'agent',
+        ...((node?.data || {}) as Record<string, unknown>),
+        type: (node?.data as Record<string, unknown>)?.type || node?.type || 'agent',
       },
     }));
     const migratedEdges = rawEdges;
@@ -300,28 +302,28 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
     const estimatedEdgeCount = Number(
       template?.estimatedEdgeCount ?? rawEdges.length ?? 0
     ) || 0;
-    const rawSampleSummary = template?.sampleResultSummary;
+    const rawSampleSummary = template?.sampleResultSummary as Record<string, unknown> | undefined;
     const sampleSummary = rawSampleSummary && typeof rawSampleSummary === 'object' && !Array.isArray(rawSampleSummary)
       ? {
         hasResult: Boolean(rawSampleSummary.hasResult),
         textPreview: String(rawSampleSummary.textPreview || '').trim(),
         imageCount: Number((rawSampleSummary.imageCount ?? rawSampleSummary.image_count) || 0) || 0,
         imageUrls: Array.isArray(rawSampleSummary.imageUrls)
-          ? rawSampleSummary.imageUrls.filter((value: any) => typeof value === 'string')
+          ? rawSampleSummary.imageUrls.filter((value: unknown) => typeof value === 'string')
           : Array.isArray(rawSampleSummary.image_urls)
-            ? rawSampleSummary.image_urls.filter((value: any) => typeof value === 'string')
+            ? rawSampleSummary.image_urls.filter((value: unknown) => typeof value === 'string')
             : [],
         audioCount: Number((rawSampleSummary.audioCount ?? rawSampleSummary.audio_count) || 0) || 0,
         audioUrls: Array.isArray(rawSampleSummary.audioUrls)
-          ? rawSampleSummary.audioUrls.filter((value: any) => typeof value === 'string')
+          ? rawSampleSummary.audioUrls.filter((value: unknown) => typeof value === 'string')
           : Array.isArray(rawSampleSummary.audio_urls)
-            ? rawSampleSummary.audio_urls.filter((value: any) => typeof value === 'string')
+            ? rawSampleSummary.audio_urls.filter((value: unknown) => typeof value === 'string')
             : [],
         videoCount: Number((rawSampleSummary.videoCount ?? rawSampleSummary.video_count) || 0) || 0,
         videoUrls: Array.isArray(rawSampleSummary.videoUrls)
-          ? rawSampleSummary.videoUrls.filter((value: any) => typeof value === 'string')
+          ? rawSampleSummary.videoUrls.filter((value: unknown) => typeof value === 'string')
           : Array.isArray(rawSampleSummary.video_urls)
-            ? rawSampleSummary.video_urls.filter((value: any) => typeof value === 'string')
+            ? rawSampleSummary.video_urls.filter((value: unknown) => typeof value === 'string')
             : [],
         runtimeHints: mergeRuntimeHints(
           [],
@@ -351,7 +353,7 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
         ) || 0,
       }
       : undefined;
-    const rawSampleInput = template?.sampleInput;
+    const rawSampleInput = template?.sampleInput as Record<string, unknown> | undefined;
     const sampleInput = rawSampleInput && typeof rawSampleInput === 'object' && !Array.isArray(rawSampleInput)
       ? {
         task: typeof rawSampleInput.task === 'string' ? rawSampleInput.task : undefined,
@@ -359,7 +361,7 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
         text: typeof rawSampleInput.text === 'string' ? rawSampleInput.text : undefined,
         imageUrl: typeof rawSampleInput.imageUrl === 'string' ? rawSampleInput.imageUrl : undefined,
         imageUrls: Array.isArray(rawSampleInput.imageUrls)
-          ? rawSampleInput.imageUrls.filter((value: any) => typeof value === 'string')
+          ? rawSampleInput.imageUrls.filter((value: unknown) => typeof value === 'string')
           : undefined,
         videoUrl: typeof rawSampleInput.videoUrl === 'string'
           ? rawSampleInput.videoUrl
@@ -367,9 +369,9 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
             ? rawSampleInput.video_url
             : undefined,
         videoUrls: Array.isArray(rawSampleInput.videoUrls)
-          ? rawSampleInput.videoUrls.filter((value: any) => typeof value === 'string')
+          ? rawSampleInput.videoUrls.filter((value: unknown) => typeof value === 'string')
           : Array.isArray(rawSampleInput.video_urls)
-            ? rawSampleInput.video_urls.filter((value: any) => typeof value === 'string')
+            ? rawSampleInput.video_urls.filter((value: unknown) => typeof value === 'string')
             : undefined,
         audioUrl: typeof rawSampleInput.audioUrl === 'string'
           ? rawSampleInput.audioUrl
@@ -377,18 +379,18 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
             ? rawSampleInput.audio_url
             : undefined,
         audioUrls: Array.isArray(rawSampleInput.audioUrls)
-          ? rawSampleInput.audioUrls.filter((value: any) => typeof value === 'string')
+          ? rawSampleInput.audioUrls.filter((value: unknown) => typeof value === 'string')
           : Array.isArray(rawSampleInput.audio_urls)
-            ? rawSampleInput.audio_urls.filter((value: any) => typeof value === 'string')
+            ? rawSampleInput.audio_urls.filter((value: unknown) => typeof value === 'string')
             : undefined,
         prompts: Array.isArray(rawSampleInput.prompts)
-          ? rawSampleInput.prompts.filter((value: any) => typeof value === 'string')
+          ? rawSampleInput.prompts.filter((value: unknown) => typeof value === 'string')
           : undefined,
         fileUrl: typeof rawSampleInput.fileUrl === 'string' ? rawSampleInput.fileUrl : undefined,
         fileUrls: Array.isArray(rawSampleInput.fileUrls)
-          ? rawSampleInput.fileUrls.filter((value: any) => typeof value === 'string')
+          ? rawSampleInput.fileUrls.filter((value: unknown) => typeof value === 'string')
           : Array.isArray(rawSampleInput.file_urls)
-            ? rawSampleInput.file_urls.filter((value: any) => typeof value === 'string')
+            ? rawSampleInput.file_urls.filter((value: unknown) => typeof value === 'string')
             : undefined,
       }
       : undefined;
@@ -404,31 +406,31 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
     const runtimeScope = normalizeTemplateRuntimeScope(
       template?.runtimeScope
       ?? template?.runtime_scope
-      ?? template?.origin?.runtimeScope
-      ?? template?.origin?.runtime_scope
+      ?? rawOrigin?.runtimeScope
+      ?? rawOrigin?.runtime_scope
     );
     const runtimeLabel = String(
       template?.runtimeLabel
       ?? template?.runtime_label
-      ?? template?.origin?.runtimeLabel
-      ?? template?.origin?.runtime_label
+      ?? rawOrigin?.runtimeLabel
+      ?? rawOrigin?.runtime_label
       ?? ''
     ).trim() || undefined;
     const originKind = normalizeTemplateSourceKind(
-      template?.origin?.kind
+      rawOrigin?.kind
       ?? template?.originKind
       ?? template?.origin_kind
       ?? (isStarter ? 'starter' : (template?.isPublic ? 'public' : 'user'))
     );
     const originLabel = String(
-      template?.origin?.label
+      rawOrigin?.label
       ?? template?.originLabel
       ?? template?.origin_label
       ?? (originKind === 'starter' ? '官方 Starter' : originKind === 'public' ? '公开模板' : '我的模板')
     ).trim() || (originKind === 'starter' ? '官方 Starter' : originKind === 'public' ? '公开模板' : '我的模板');
     const originIsLocked = Boolean(
-      template?.origin?.isLocked
-      ?? template?.origin?.is_locked
+      rawOrigin?.isLocked
+      ?? rawOrigin?.is_locked
       ?? template?.isLocked
       ?? template?.is_locked
       ?? isStarter
@@ -436,68 +438,68 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
     const rawTaskTypes =
       template?.taskTypes
       ?? template?.task_types
-      ?? rawConfig?._templateMeta?.taskTypes
-      ?? rawConfig?._templateMeta?.task_types;
+      ?? rawTemplateMeta?.taskTypes
+      ?? rawTemplateMeta?.task_types;
     const taskTypes = Array.isArray(rawTaskTypes)
-      ? rawTaskTypes.filter((value: any) => typeof value === 'string')
+      ? rawTaskTypes.filter((value: unknown) => typeof value === 'string')
       : [];
     const primaryTaskType = String(
       template?.primaryTaskType
       ?? template?.primary_task_type
-      ?? rawConfig?._templateMeta?.primaryTaskType
-      ?? rawConfig?._templateMeta?.primary_task_type
+      ?? rawTemplateMeta?.primaryTaskType
+      ?? rawTemplateMeta?.primary_task_type
       ?? ''
     ).trim() || undefined;
     const bindingStrategy = String(
       template?.bindingStrategy
       ?? template?.binding_strategy
-      ?? rawConfig?._templateMeta?.bindingStrategy
-      ?? rawConfig?._templateMeta?.binding_strategy
+      ?? rawTemplateMeta?.bindingStrategy
+      ?? rawTemplateMeta?.binding_strategy
       ?? ''
     ).trim() || undefined;
     const isLegacyStarterCopy = Boolean(
       template?.isLegacyStarterCopy
       ?? template?.is_legacy_starter_copy
-      ?? rawConfig?._templateMeta?.isLegacyStarterCopy
-      ?? rawConfig?._templateMeta?.is_legacy_starter_copy
+      ?? rawTemplateMeta?.isLegacyStarterCopy
+      ?? rawTemplateMeta?.is_legacy_starter_copy
     );
     const legacyFlags = Array.isArray(
       template?.legacyFlags
       ?? template?.legacy_flags
-      ?? rawConfig?._templateMeta?.legacyFlags
-      ?? rawConfig?._templateMeta?.legacy_flags
+      ?? rawTemplateMeta?.legacyFlags
+      ?? rawTemplateMeta?.legacy_flags
     )
-      ? (template?.legacyFlags
+      ? ((template?.legacyFlags
         ?? template?.legacy_flags
-        ?? rawConfig?._templateMeta?.legacyFlags
-        ?? rawConfig?._templateMeta?.legacy_flags).filter((value: any) => typeof value === 'string')
+        ?? rawTemplateMeta?.legacyFlags
+        ?? rawTemplateMeta?.legacy_flags) as unknown[]).filter((value: unknown) => typeof value === 'string')
       : [];
     const legacyReason = String(
       template?.legacyReason
       ?? template?.legacy_reason
-      ?? rawConfig?._templateMeta?.legacyReason
-      ?? rawConfig?._templateMeta?.legacy_reason
+      ?? rawTemplateMeta?.legacyReason
+      ?? rawTemplateMeta?.legacy_reason
       ?? ''
     ).trim() || undefined;
 
     return {
-      id: template?.id,
+      id: String(template?.id || ""),
       userId: typeof template?.userId === 'string' ? template.userId : undefined,
-      name: template?.name || '未命名模板',
-      description: template?.description || '',
-      category: template?.category || '通用',
+      name: String(template?.name || '未命名模板'),
+      description: String(template?.description || ''),
+      category: String(template?.category || '通用'),
       tags: rawTags,
-      thumbnail: template?.thumbnail,
-      workflowType: template?.workflowType || 'graph',
-      version: template?.version,
+      thumbnail: typeof template?.thumbnail === 'string' ? template.thumbnail : undefined,
+      workflowType: String(template?.workflowType || 'graph'),
+      version: typeof template?.version === 'number' ? template.version : undefined,
       isPublic: Boolean(template?.isPublic),
-      modeId: template?.modeId || '',
-      promptHint: template?.promptHint ?? '',
-      promptExample: template?.promptExample,
+      modeId: String(template?.modeId || ''),
+      promptHint: String(template?.promptHint ?? ''),
+      promptExample: template?.promptExample as Record<string, unknown> | undefined,
       requiresImage: Boolean(template?.requiresImage),
       estimatedNodeCount,
       estimatedEdgeCount,
-      sampleResult: template?.sampleResult,
+      sampleResult: template?.sampleResult as Record<string, unknown> | undefined,
       sampleResultSummary: sampleSummary,
       sampleResultUpdatedAt,
       sampleExecutionId: String(template?.sampleExecutionId || '').trim() || undefined,
@@ -524,12 +526,12 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
         runtimeLabel,
       },
       config: {
-        schemaVersion: rawConfig?.schemaVersion || 2,
-        nodes: migratedNodes,
-        edges: migratedEdges,
+        schemaVersion: Number(rawConfig?.schemaVersion || 2),
+        nodes: migratedNodes as unknown as Node<CustomNodeData>[],
+        edges: migratedEdges as Edge[],
       },
-      createdAt: template?.createdAt || Date.now(),
-      updatedAt: template?.updatedAt || Date.now(),
+      createdAt: Number(template?.createdAt || Date.now()),
+      updatedAt: Number(template?.updatedAt || Date.now()),
     };
   };
 
@@ -574,7 +576,7 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
       }
 
       const templatePayload = await templateResponse.json();
-      const userTemplates = (templatePayload.templates || []).map((template: any) => ({
+      const userTemplates = (templatePayload.templates || []).map((template: Record<string, unknown>) => ({
         ...migrateTemplate(template),
         sourceType: 'template' as const,
       }));

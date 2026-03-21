@@ -109,19 +109,19 @@ export const buildFailedExecutionStatus = (
   };
 };
 
-export const normalizeSnapshotForApply = (snapshot: any) => {
+export const normalizeSnapshotForApply = (snapshot: Record<string, unknown>) => {
   const payload =
     snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
       ? snapshot
       : {};
   const nodeStatuses: Record<string, NodeStatus> = {};
   const nodeProgress: Record<string, number> = {};
-  const nodeResults: Record<string, any> = {};
+  const nodeResults: Record<string, unknown> = {};
   const nodeErrors: Record<string, string> = {};
   const nodeRuntimes: Record<string, string> = {};
   const nodeExecutions = Array.isArray(payload?.nodeExecutions) ? payload.nodeExecutions : [];
 
-  nodeExecutions.forEach((nodeExecution: any) => {
+  nodeExecutions.forEach((nodeExecution: Record<string, unknown>) => {
     const nodeId = String(nodeExecution?.nodeId || '').trim();
     if (!nodeId) return;
     const normalizedStatus = normalizeNodeStatus(nodeExecution?.status);
@@ -230,7 +230,7 @@ export const normalizeSnapshotForApply = (snapshot: any) => {
 };
 
 export const buildExecutionStatusFromHistoryDetail = (
-  detail: any,
+  detail: unknown,
   previewState: HistoryDetailPreviewState = {}
 ): ExecutionStatus => {
   const normalizedDetail = normalizeSnapshotForApply(detail);

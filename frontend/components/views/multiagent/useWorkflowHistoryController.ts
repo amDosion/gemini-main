@@ -132,10 +132,10 @@ export const useWorkflowHistoryController = ({
     }
   }, [releaseRequestController]);
 
-  const mapHistoryItem = useCallback((item: any): WorkflowHistoryItem => {
-    const workflowSummary = item?.workflowSummary || {};
-    const resultSummary = item?.resultSummary || {};
-    const title = item?.title || item?.task || '未命名工作流';
+  const mapHistoryItem = useCallback((item: Record<string, unknown>): WorkflowHistoryItem => {
+    const workflowSummary = (item?.workflowSummary || {}) as Record<string, unknown>;
+    const resultSummary = (item?.resultSummary || {}) as Record<string, unknown>;
+    const title = String(item?.title || item?.task || '未命名工作流');
     const resultPreviewRaw = resultSummary?.textPreview || '';
     const resultPreview = typeof resultPreviewRaw === 'string' ? resultPreviewRaw : '';
     const resultImageCount = Number(resultSummary?.imageCount || 0) || 0;
@@ -172,18 +172,18 @@ export const useWorkflowHistoryController = ({
     const resultAudioUrls = Array.isArray(resultSummary?.audioUrls) ? resultSummary.audioUrls : [];
     const resultVideoUrls = Array.isArray(resultSummary?.videoUrls) ? resultSummary.videoUrls : [];
     return {
-      id: item?.id,
-      status: item?.status || 'unknown',
+      id: String(item?.id || ''),
+      status: String(item?.status || 'unknown'),
       title,
-      source: item?.source || '',
-      task: item?.task || '',
+      source: String(item?.source || ''),
+      task: String(item?.task || ''),
       resultPreview,
       resultImageCount,
-      resultImageUrls: resultImageUrls.filter((url: any) => typeof url === 'string'),
+      resultImageUrls: resultImageUrls.filter((url: unknown) => typeof url === 'string'),
       resultAudioCount,
-      resultAudioUrls: resultAudioUrls.filter((url: any) => typeof url === 'string'),
+      resultAudioUrls: resultAudioUrls.filter((url: unknown) => typeof url === 'string'),
       resultVideoCount,
-      resultVideoUrls: resultVideoUrls.filter((url: any) => typeof url === 'string'),
+      resultVideoUrls: resultVideoUrls.filter((url: unknown) => typeof url === 'string'),
       continuationStrategy: continuationStrategy || undefined,
       videoExtensionCount: videoExtensionCount > 0 ? videoExtensionCount : undefined,
       videoExtensionApplied: videoExtensionApplied > 0 ? videoExtensionApplied : undefined,
@@ -193,12 +193,12 @@ export const useWorkflowHistoryController = ({
       subtitleFileCount: subtitleFileCount > 0 ? subtitleFileCount : undefined,
       primaryRuntime,
       runtimeHints,
-      startedAt: item?.startedAt || Date.now(),
-      completedAt: item?.completedAt,
-      durationMs: item?.durationMs,
-      error: item?.error,
-      nodeCount: workflowSummary?.nodeCount || 0,
-      edgeCount: workflowSummary?.edgeCount || 0,
+      startedAt: Number(item?.startedAt || Date.now()),
+      completedAt: typeof item?.completedAt === 'number' ? item.completedAt : undefined,
+      durationMs: typeof item?.durationMs === 'number' ? item.durationMs : undefined,
+      error: typeof item?.error === 'string' ? item.error : undefined,
+      nodeCount: Number(workflowSummary?.nodeCount || 0),
+      edgeCount: Number(workflowSummary?.edgeCount || 0),
     };
   }, []);
 

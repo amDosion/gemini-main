@@ -54,18 +54,19 @@ export class ImageGenHandler extends BaseHandler {
         attachments: displayAttachments,
         uploadTask: uploadTask()
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : '';
       // Handle 401 authentication errors specifically
-      if (error.message && error.message.includes('401')) {
+      if (message.includes('401')) {
         throw new Error('Authentication failed. Please log in again to generate images.');
       }
       
       // Handle other authentication-related errors
-      if (error.message && (
-        error.message.includes('Authentication failed') ||
-        error.message.includes('API Key not found') ||
-        error.message.includes('Unauthorized')
-      )) {
+      if (
+        message.includes('Authentication failed') ||
+        message.includes('API Key not found') ||
+        message.includes('Unauthorized')
+      ) {
         throw new Error('Unable to authenticate. Please check your provider settings or log in again.');
       }
       

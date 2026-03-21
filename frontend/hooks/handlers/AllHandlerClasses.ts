@@ -127,10 +127,6 @@ export class VirtualTryOnHandler extends BaseHandler {
                 storageId: context.storageId,
               });
               
-              console.log('[VirtualTryOnHandler] ✅ 用户附件已提交到后端统一处理:', {
-                attachmentId: result.attachmentId || att.id,
-                taskId: result.taskId
-              });
               
               return {
                 ...att,
@@ -139,7 +135,6 @@ export class VirtualTryOnHandler extends BaseHandler {
                 uploadTaskId: result.taskId || undefined,
               } as Attachment;
             } catch (error) {
-              console.error('[VirtualTryOnHandler] 用户附件上传失败:', error);
               return { ...att, uploadStatus: 'failed' as const };
             }
           }
@@ -161,10 +156,6 @@ export class VirtualTryOnHandler extends BaseHandler {
                 storageId: context.storageId,
               });
               
-              console.log('[VirtualTryOnHandler] ✅ Base64/Blob 附件已上传:', {
-                attachmentId: result.attachmentId || att.id,
-                taskId: result.taskId
-              });
               
               return {
                 ...att,
@@ -173,7 +164,6 @@ export class VirtualTryOnHandler extends BaseHandler {
                 uploadTaskId: result.taskId || undefined,
               } as Attachment;
             } catch (error) {
-              console.error('[VirtualTryOnHandler] Base64/Blob 附件上传失败:', error);
               return { ...att, uploadStatus: 'failed' as const };
             }
           }

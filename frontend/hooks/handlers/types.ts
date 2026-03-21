@@ -61,7 +61,7 @@ export interface UploadStatus {
   status: 'pending' | 'uploading' | 'completed' | 'failed';
   progress?: number;
   error?: string;
-  result?: any;
+  result?: unknown;
   targetUrl?: string;
   errorMessage?: string;
 }
@@ -93,7 +93,7 @@ export interface PollingConfig {
   /**
    * 成功回调
    */
-  onSuccess?: (taskId: string, result: any) => void;
+  onSuccess?: (taskId: string, result: unknown) => void;
   
   /**
    * 失败回调
@@ -256,7 +256,7 @@ export interface HandlerError extends Error {
   context?: {
     mode: HandlerMode;
     sessionId: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
@@ -270,7 +270,7 @@ export class HandlerErrorImpl extends Error implements HandlerError {
   context?: {
     mode: HandlerMode;
     sessionId: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
   
   constructor(
@@ -280,7 +280,7 @@ export class HandlerErrorImpl extends Error implements HandlerError {
     context?: {
       mode: HandlerMode;
       sessionId: string;
-      [key: string]: any;
+      [key: string]: unknown;
     }
   ) {
     super(message);

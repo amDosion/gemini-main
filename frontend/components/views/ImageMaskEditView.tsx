@@ -1095,7 +1095,6 @@ export const ImageMaskEditView = memo(({
 
     const handleMaskModeChange = useCallback(async (mode: MaskMode) => {
         controls.setMaskMode(mode);
-        console.log('[ImageMaskEditView] Mask mode changed to:', mode);
 
         // 当切换到自动模式时，清除手动绘制的选区并获取自动 mask 预览
         if (mode !== 'MASK_MODE_USER_PROVIDED') {
@@ -1140,21 +1139,16 @@ export const ImageMaskEditView = memo(({
                     });
 
                     // 响应格式: { success: true, data: { success: true, masks: [...] }, provider: ..., mode: ... }
-                    console.log('[ImageMaskEditView] API response:', result);
                     const maskData = result.data || result;
                     if (maskData?.success && maskData?.masks?.length > 0) {
                         // 显示第一个 mask 预览
                         const maskUrl = maskData.masks[0].url;
-                        console.log('[ImageMaskEditView] Auto mask preview loaded, url length:', maskUrl?.length);
                         setMaskPreviewUrl(maskUrl);
                     } else {
                         const errorMsg = maskData?.error || result?.error || 'Unknown error';
-                        console.warn('[ImageMaskEditView] Auto mask preview failed:', errorMsg);
-                        console.warn('[ImageMaskEditView] Full response:', JSON.stringify(result, null, 2));
                         setMaskPreviewUrl(null);
                     }
                 } catch (error) {
-                    console.error('[ImageMaskEditView] Failed to get auto mask preview:', error);
                     setMaskPreviewUrl(null);
                 } finally {
                     setIsPreviewingMask(false);
@@ -1169,12 +1163,10 @@ export const ImageMaskEditView = memo(({
     }, [controls, activeImageUrl, providerId]);
 
     const handleImportMask = useCallback(() => {
-        console.log('[ImageMaskEditView] Import mask clicked');
         // TODO: 实现蒙版导入功能
     }, []);
 
     const handleClearMask = useCallback(() => {
-        console.log('[ImageMaskEditView] Clear mask clicked');
         setSelectionRects([]);
         setCurrentSelectionRect(null);
         setMaskPreviewUrl(null);
@@ -1313,13 +1305,6 @@ export const ImageMaskEditView = memo(({
             }
         }, 'image/png');
 
-        console.log('[ImageMaskEditView] Mask 生成完成:', {
-            imageSize: { imgWidth, imgHeight },
-            displaySize: { displayWidth, displayHeight },
-            rectCount: rects.length,
-            hasBrushMask,
-            inverted
-        });
     }, []); // 移除 maskPreviewUrl 依赖，使用 ref 避免循环
 
     // ✅ 选区开始（考虑缩放比例）

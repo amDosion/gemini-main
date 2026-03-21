@@ -1,6 +1,6 @@
 import { BaseHandler } from './BaseHandler';
 import { ExecutionContext, HandlerResult } from './types';
-import { Attachment, ToolCall, ToolResult } from '../../types/types';
+import { Attachment, ToolCall, ToolResult, GroundingMetadata, UrlContextMetadata } from '../../types/types';
 import { llmService } from '../../services/llmService';
 import { addCitations } from '../../utils/groundingUtils';
 import { storageUpload } from '../../services/storage/storageUpload';
@@ -28,8 +28,8 @@ export class ChatHandler extends BaseHandler {
     const accumulatedAttachments: Attachment[] = [];
     const accumulatedToolCalls: ToolCall[] = [];
     const accumulatedToolResults: ToolResult[] = [];
-    let lastGroundingMetadata: any = undefined;
-    let lastUrlContextMetadata: any = undefined;
+    let lastGroundingMetadata: GroundingMetadata | undefined = undefined;
+    let lastUrlContextMetadata: UrlContextMetadata | undefined = undefined;
     let lastBrowserOperationId: string | undefined = undefined;
 
     // 辅助函数：发送流更新
@@ -166,10 +166,6 @@ export class ChatHandler extends BaseHandler {
                   storageId: context.storageId,
                 });
 
-                console.log('[ChatHandler] 用户附件已提交云存储上传:', {
-                  attachmentId: result.attachmentId || att.id,
-                  taskId: result.taskId
-                });
 
                 return {
                   ...att,
@@ -179,7 +175,6 @@ export class ChatHandler extends BaseHandler {
                   uploadTaskId: result.taskId || undefined,
                 } as Attachment;
               } catch (error) {
-                console.error('[ChatHandler] 用户附件上传失败:', error);
                 return { ...att, file: undefined, uploadStatus: 'failed' as const } as Attachment;
               }
             }

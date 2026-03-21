@@ -15,7 +15,7 @@ interface JsonRpcErrorPayload {
   data?: unknown;
 }
 
-interface JsonRpcSuccessResponse<T = any> {
+interface JsonRpcSuccessResponse<T = unknown> {
   jsonrpc?: string;
   id?: number;
   result?: T;
@@ -80,7 +80,7 @@ const callMcpAppTool = async (
     };
 
     const listener = (event: MessageEvent) => {
-      const data = event.data as JsonRpcSuccessResponse<any> | JsonRpcErrorResponse | null;
+      const data = event.data as JsonRpcSuccessResponse<unknown> | JsonRpcErrorResponse | null;
       if (!data || data.jsonrpc !== '2.0' || data.id !== requestId) {
         return;
       }
@@ -95,8 +95,8 @@ const callMcpAppTool = async (
       const payload = ('result' in data ? data.result : null) || {};
       const content = Array.isArray(payload.content) ? payload.content : [];
       const resultText = content
-        .filter((item: any) => item && item.type === 'text' && typeof item.text === 'string')
-        .map((item: any) => item.text as string)
+        .filter((item: Record<string, unknown>) => item && item.type === 'text' && typeof item.text === 'string')
+        .map((item: Record<string, unknown>) => item.text as string)
         .join('\n');
 
       resolve({
@@ -121,7 +121,7 @@ const callMcpAppTool = async (
         method: 'tools/call',
         params,
       },
-      '*'
+      window.location.origin
     );
   });
 };

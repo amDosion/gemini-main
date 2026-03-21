@@ -83,10 +83,7 @@ export const useImageHandlers = ({
             if (cloudResult) {
               // 可选：如果查询成功，可以更新 URL（但不影响初始显示）
               // 查询目的是获取永久云存储 URL，用于后续 API 调用
-              console.log('[handleEditImage] 永久云 URL 查询成功，可用于后续 API 调用');
             }
-          }).catch(err => {
-            console.warn('[handleEditImage] 云 URL 查询失败，使用原始 URL:', err);
           });
         }
       } else {
@@ -184,10 +181,7 @@ export const useImageHandlers = ({
             if (cloudResult) {
               // 可选：如果查询成功，可以更新 URL（但不影响初始显示）
               // 查询目的是获取永久云存储 URL，用于后续 API 调用
-              console.log('[handleExpandImage] 永久云 URL 查询成功，可用于后续 API 调用');
             }
-          }).catch(err => {
-            console.warn('[handleExpandImage] 云 URL 查询失败，使用原始 URL:', err);
           });
         }
       } else {

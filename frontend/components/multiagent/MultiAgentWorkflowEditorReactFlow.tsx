@@ -27,7 +27,7 @@ import { toPng, toSvg } from 'html-to-image';
 import { nodeTypeConfigs, NodeType } from './nodeTypeConfigs';
 import { ExecutionLogPanel } from './ExecutionLogPanel';
 import { WorkflowResultPanel } from './WorkflowResultPanel';
-import { WorkflowTemplateSelector } from './WorkflowTemplateSelector';
+import { WorkflowTemplateSelector, type WorkflowTemplate } from './WorkflowTemplateSelector';
 import {
   WorkflowTemplateSaveDialog,
   type WorkflowTemplateSaveTarget,
@@ -161,7 +161,7 @@ const isNonResultWorkflowOutputNode = (nodeId: string, nodeType: string): boolea
   );
 };
 
-const normalizeStringList = (value: any): string[] => {
+const normalizeStringList = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
   return value
     .map((item) => String(item || '').trim())
@@ -330,32 +330,20 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     const currentFullscreenElement = document.fullscreenElement;
     if (!currentFullscreenElement) {
       if (typeof target.requestFullscreen === 'function') {
-        try {
-          await target.requestFullscreen();
-        } catch (error) {
-          console.error('Failed to enter fullscreen:', error);
-        }
+        await target.requestFullscreen();
       }
       return;
     }
 
     if (currentFullscreenElement === target) {
       if (typeof document.exitFullscreen === 'function') {
-        try {
-          await document.exitFullscreen();
-        } catch (error) {
-          console.error('Failed to exit fullscreen:', error);
-        }
+        await document.exitFullscreen();
       }
       return;
     }
 
     if (typeof target.requestFullscreen === 'function') {
-      try {
-        await target.requestFullscreen();
-      } catch (error) {
-        console.error('Failed to switch fullscreen target:', error);
-      }
+      await target.requestFullscreen();
     }
   }, []);
 
@@ -716,9 +704,12 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     setNodes((nds) => nds.map((node) => mergeNodeData(node as Node<WorkflowNodeData>)));
 
     if (includesPortLayoutUpdate) {
-      const updatedNodes = nodes.map((node) => mergeNodeData(node as Node<WorkflowNodeData>));
       setEdges((eds) => {
-        const filteredEdges = filterEdgesByNodePortLayouts(updatedNodes as Node<WorkflowNodeData>[], eds);
+        // Read latest nodes from setNodes updater to avoid stale closure
+        let currentNodes: Node<WorkflowNodeData>[] = [];
+        setNodes((nds) => { currentNodes = nds.map((n) => mergeNodeData(n as Node<WorkflowNodeData>)); return nds; });
+        const updatedNodes = currentNodes.length > 0 ? currentNodes : nodes.map((node) => mergeNodeData(node as Node<WorkflowNodeData>));
+        const filteredEdges = filterEdgesByNodePortLayouts(updatedNodes, eds);
         const removedCount = eds.length - filteredEdges.length;
         if (removedCount > 0) {
           addLog('system', '系统', 'warn', `端口配置变更后，已移除 ${removedCount} 条不匹配连接`);
@@ -743,7 +734,7 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
       ? executionStatus.resultPreviewVideoUrls
       : [];
     const finalResult = executionStatus.finalResult;
-    const mergeNodeResult = (rawResult: any, nodeType: string, existingResult: any) => {
+    const mergeNodeResult = (rawResult: unknown, nodeType: string, existingResult: unknown) => {
       const normalizedNodeType = String(nodeType || '').toLowerCase();
       if (normalizedNodeType !== 'end') {
         return rawResult;
@@ -891,12 +882,12 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     const normalizedNodes = (loadedWorkflow.nodes || []).map((node, index) => normalizeLoadedNode(node, index));
     const nodeIdSet = new Set(normalizedNodes.map((node) => node.id));
     const normalizedEdges = (loadedWorkflow.edges || [])
-      .map((edge: any, index: number) => ({
+      .map((edge: Record<string, unknown>, index: number) => ({
         ...edge,
         id: String(edge?.id || `edge-loaded-${index}-${Date.now()}`),
         type: String(edge?.type || DEFAULT_WORKFLOW_EDGE_TYPE),
       }))
-      .filter((edge: any) => nodeIdSet.has(String(edge?.source || '')) && nodeIdSet.has(String(edge?.target || '')));
+      .filter((edge: Record<string, unknown>) => nodeIdSet.has(String(edge?.source || '')) && nodeIdSet.has(String(edge?.target || '')));
     const normalizedNodesWithPortLayout = hydrateNodePortLayoutsFromEdges(
       normalizedNodes as Node<WorkflowNodeData>[],
       normalizedEdges as Edge[],
@@ -1417,7 +1408,7 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
       ])
     );
 
-    const pushItem = (key: string, title: string, payload: any, prefer = false) => {
+    const pushItem = (key: string, title: string, payload: unknown, prefer = false) => {
       const rawText = extractTextContent(payload);
       const text = rawText.length > 2000 ? `${rawText.slice(0, 2000)}\n...(内容已截断)` : rawText;
       const imageUrls = extractImageUrls(payload);
@@ -1639,9 +1630,9 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     triggerWorkflowMediaDownload('video', `已开始下载 ${finalOutputVideoUrls.length} 条结果视频`);
   }, [addLog, finalOutputVideoUrls.length, triggerWorkflowMediaDownload]);
 
-  const handleLoadTemplate = useCallback((template: any) => {
+  const handleLoadTemplate = useCallback((template: WorkflowTemplate) => {
     void loadTemplateIntoEditor({
-      template,
+      template: template as unknown as Record<string, unknown>,
       setWorkflowPrompt,
       setWorkflowInputImageUrl,
       setWorkflowInputFileUrl,
@@ -1679,7 +1670,7 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     setWorkflowPrompt,
   ]);
 
-  const handleTemplateSaved = useCallback((template: any, meta?: { mode: 'create' | 'update' }) => {
+  const handleTemplateSaved = useCallback((template: WorkflowTemplate, meta?: { mode: 'create' | 'update' }) => {
     const normalizedTemplateId = String(template?.id || '').trim();
     if (normalizedTemplateId) {
       setActiveTemplateMeta({
@@ -1689,7 +1680,7 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
         name: String(template?.name || '').trim(),
         description: String(template?.description || '').trim(),
         category: String(template?.category || '').trim(),
-        tags: Array.isArray(template?.tags) ? template.tags.filter((item: any) => typeof item === 'string') : [],
+        tags: Array.isArray(template?.tags) ? template.tags.filter((item: unknown) => typeof item === 'string') : [],
         isEditable: template?.isEditable !== false,
         isLocked: false,
       });
@@ -1774,7 +1765,7 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     const type = event.dataTransfer.getData('application/reactflow') as NodeType;
     if (!type || !reactFlowInstance) return;
     const rawNodePayload = event.dataTransfer.getData('application/reactflow-node-payload');
-    let parsedNodePayload: any = null;
+    let parsedNodePayload: Record<string, unknown> | null = null;
     if (rawNodePayload) {
       try {
         parsedNodePayload = JSON.parse(rawNodePayload);

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { ModelConfig, AppMode, ModeCatalogItem } from '../types/types';
 import { llmService } from '../services/llmService';
 
-const isValidModelConfig = (m: any): m is ModelConfig => {
+const isValidModelConfig = (m: Record<string, unknown>): m is ModelConfig => {
   return m &&
     typeof m === 'object' &&
     typeof m.id === 'string' &&
@@ -18,7 +18,7 @@ const normalizeModels = (models: unknown): ModelConfig[] => {
 
 const normalizeModeCatalog = (catalog: unknown): ModeCatalogItem[] => {
   if (!Array.isArray(catalog)) return [];
-  return catalog.filter((item: any): item is ModeCatalogItem => {
+  return catalog.filter((item: Record<string, unknown>): item is ModeCatalogItem => {
     return item &&
       typeof item === 'object' &&
       typeof item.id === 'string' &&
@@ -157,11 +157,9 @@ export const useModels = (
       const hasInitAllModels = normalizedSavedModels.length > 0;
       const hasInitModeCatalog = normalizedInitialModeCatalog.length > 0;
       if (hasInitAllModels && hasInitModeCatalog) {
-        console.log(`[useModels] ✅ 跳过首次 /api/models 全量请求（init 数据: ${normalizedSavedModels.length} 模型 + ${normalizedInitialModeCatalog.length} mode catalog）`);
         return;
       }
       // init 数据不完整，回退到正常请求
-      console.log('[useModels] ⚠️ init 数据不完整，发起 /api/models 全量请求');
     }
 
     let cancelled = false;
@@ -176,7 +174,6 @@ export const useModels = (
         setAvailableModels(models);
         setModeCatalog(normalizeModeCatalog(payload.modeCatalog));
       } catch (error) {
-        console.error('[useModels] Failed to load all models:', error);
         if (!cancelled && requestId === allRequestSeqRef.current) {
           setAvailableModels([]);
           setModeCatalog([]);
@@ -211,7 +208,6 @@ export const useModels = (
 
     // ✅ 首次激活 + chat 模式：如果 init 数据已提供 chatModels，直接使用
     if (isFirstModeActivation && appMode === 'chat' && normalizedInitialChatModels.length > 0) {
-      console.log(`[useModels] ✅ 跳过首次 /api/models?mode=chat 请求（init 数据: ${normalizedInitialChatModels.length} chat 模型, default=${initialDefaultModelId}）`);
       setModeModels(normalizedInitialChatModels);
       setModeDefaultModelId(initialDefaultModelId);
       setIsLoadingModels(false);
@@ -236,7 +232,6 @@ export const useModels = (
         setModeModels(models);
         setModeDefaultModelId(payload.defaultModelId || null);
       } catch (error) {
-        console.error(`[useModels] Failed to load models for mode=${appMode}:`, error);
         if (!cancelled && requestId === modeRequestSeqRef.current) {
           setModeModels([]);
           setModeDefaultModelId(null);
@@ -307,7 +302,6 @@ export const useModels = (
       setModeModels(normalizeModels(filteredPayload.models));
       setModeDefaultModelId(filteredPayload.defaultModelId || null);
     } catch (error) {
-      console.error('[useModels] Failed to refresh models:', error);
       setAvailableModels([]);
       setModeCatalog([]);
       setModeModels([]);

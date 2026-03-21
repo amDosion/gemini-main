@@ -431,7 +431,6 @@ export const Header: React.FC<HeaderProps> = ({
                                                     await onActivateProfile(p.id);
                                                     setIsProfileMenuOpen(false);
                                                 } catch (error) {
-                                                    console.error('Failed to activate profile:', error);
                                                     showError('切换提供商失败，请重试');
                                                 } finally {
                                                     setIsActivating(false);
