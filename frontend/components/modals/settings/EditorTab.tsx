@@ -109,9 +109,12 @@ export const EditorTab: React.FC<EditorTabProps> = ({
         loadTemplates();
     }, []);
 
-    // Initialize Form
+    // Initialize Form (only once on mount, not on subsequent renders)
+    const formInitializedRef = useRef(false);
     useEffect(() => {
+        if (formInitializedRef.current) return;
         if (initialData) {
+            formInitializedRef.current = true;
             // ✅ 编辑现有配置：需要获取解密后的 API Key 以便验证连接
             // 如果 initialData 中的 apiKey 是加密的（以 gAAAAA 开头），需要重新获取解密版本
             const loadDecryptedProfile = async () => {
@@ -139,6 +142,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
             
             loadDecryptedProfile();
         } else if (!initialData && providerTemplates.length > 0) {
+            formInitializedRef.current = true;
             // 创建新配置：初始化空白表单
             // ✅ 使用第一个 Provider Template 作为默认配置
             const firstTemplate = providerTemplates[0];
