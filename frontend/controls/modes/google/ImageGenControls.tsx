@@ -375,7 +375,7 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
             </div>
 
             {/* 增强提示词模型选择（仅开启时显示） */}
-            {enhancePrompt && enhancePromptModels.length > 0 && (
+            {enhancePrompt && (
               <div className="space-y-2">
                 <span className="text-xs text-slate-300">增强提示词模型</span>
                 <select
