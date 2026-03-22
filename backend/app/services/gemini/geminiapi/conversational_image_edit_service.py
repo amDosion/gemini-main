@@ -152,7 +152,24 @@ class ConversationalImageEditService:
             ))
 
         raw_url = first_image.get("url")
-        if not isinstance(raw_url, str) or not raw_url.startswith("data:"):
+        if not isinstance(raw_url, str):
+            return None
+
+        # 本地存储 URL：读取文件转为 bytes
+        if raw_url.startswith('/api/storage/local-files/'):
+            from ...services.storage.local_provider import resolve_local_public_file_path
+            local_file_path = resolve_local_public_file_path(raw_url)
+            if local_file_path and local_file_path.exists():
+                with open(local_file_path, 'rb') as lf:
+                    image_bytes = lf.read()
+                mime_type = first_image.get('mime_type', 'image/png')
+                try:
+                    return genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+                except AttributeError:
+                    return genai_types.Part(inline_data=genai_types.Blob(data=image_bytes, mime_type=mime_type))
+            return None
+
+        if not raw_url.startswith("data:"):
             return None
 
         match = re.match(r"^data:(.*?);base64,(.*)$", raw_url)
@@ -766,6 +783,26 @@ class ConversationalImageEditService:
                                         'data': base64_str  # 仅用于 API 调用，不会记录到日志
                                     }
                                 })
+                    elif url.startswith('/api/storage/local-files/'):
+                        # 本地存储 URL：直接从本地文件系统读取
+                        from ...services.storage.local_provider import resolve_local_public_file_path
+                        local_file_path = resolve_local_public_file_path(url)
+                        if local_file_path and local_file_path.exists():
+                            with open(local_file_path, 'rb') as lf:
+                                image_bytes = lf.read()
+                            mime_type = ref_img.get('mime_type', 'image/png')
+                            logger.info(f"[ConversationalImageEdit] ✅ 本地文件读取成功: {url}, 大小: {len(image_bytes)} bytes")
+                            if genai_types:
+                                try:
+                                    message_parts.append(genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type))
+                                except AttributeError:
+                                    message_parts.append(genai_types.Part(inline_data=genai_types.Blob(data=image_bytes, mime_type=mime_type)))
+                            else:
+                                base64_str = base64.b64encode(image_bytes).decode('utf-8')
+                                message_parts.append({'inline_data': {'mime_type': mime_type, 'data': base64_str}})
+                        else:
+                            logger.error(f"[ConversationalImageEdit] ❌ 本地文件不存在: {url}")
+                            raise ValueError(f"Local file not found: {url}")
                     elif url.startswith('http://') or url.startswith('https://'):
                         # HTTP URL：需要下载图片
                         logger.info(f"[ConversationalImageEdit] 下载 HTTP URL 图片: {url[:60]}...")
