@@ -27,6 +27,35 @@ from ..base.imagen_common import (
 
 logger = logging.getLogger(__name__)
 
+# Models that use generate_content() API instead of generate_images()
+# These are native Gemini models that support image output via response_modalities
+GENERATE_CONTENT_MODELS = {
+    # Gemini image models
+    'gemini-2.5-flash-image',
+    'gemini-2.5-flash-image-preview',
+    'gemini-2.5-pro-image',
+    'gemini-2.5-pro-image-preview',
+    'gemini-3-pro-image',
+    'gemini-3-pro-image-preview',
+    'gemini-3.0-pro-image',
+    'gemini-3.0-pro-image-preview',
+    'gemini-3.1-flash-image-preview',
+}
+
+def _is_generate_content_model(model: str) -> bool:
+    """Check if model should use generate_content instead of generate_images."""
+    short_name = model.split('/')[-1] if '/' in model else model
+    lower = short_name.lower()
+    # Exact match
+    if short_name in GENERATE_CONTENT_MODELS:
+        return True
+    # Pattern match: nano-banana series, gemini-*-image-*
+    if 'nano-banana' in lower:
+        return True
+    if 'gemini' in lower and 'image' in lower:
+        return True
+    return False
+
 # Import Google GenAI SDK
 try:
     from google.genai import types as genai_types
@@ -142,28 +171,32 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
             logger.info(f"[GeminiAPIImageGenerator] ✅ 应用样式: {image_style}")
         
         try:
-            logger.info(f"[GeminiAPIImageGenerator] 🔄 [步骤3] 调用 Gemini API generate_images()...")
-            logger.info(f"[GeminiAPIImageGenerator]     - model: {model}")
-            logger.info(f"[GeminiAPIImageGenerator]     - effective_prompt长度: {len(effective_prompt)}")
-            
-            api_start = time.time()
-            # Call Gemini API
-            response = self._client.models.generate_images(
-                model=model,
-                prompt=effective_prompt,
-                config=config
-            )
-            api_time = (time.time() - api_start) * 1000
-            logger.info(f"[GeminiAPIImageGenerator] ✅ [步骤3] API调用完成 (耗时: {api_time:.2f}ms)")
-            
-            if not response.generated_images:
-                logger.error(f"[GeminiAPIImageGenerator] ❌ API未返回图片")
-                raise APIError("No images generated", api_type="gemini_api")
-            
-            logger.info(f"[GeminiAPIImageGenerator]     - 返回图片数量: {len(response.generated_images)}")
-            
-            logger.info(f"[GeminiAPIImageGenerator] 🔄 [步骤4] 处理响应结果...")
-            results = self._process_response(response, **kwargs)
+            # Route: native Gemini models use generate_content, Imagen models use generate_images
+            if _is_generate_content_model(model):
+                logger.info(f"[GeminiAPIImageGenerator] 🔄 [步骤3] 使用 generate_content API (native Gemini model)...")
+                results = await self._generate_with_content(model, effective_prompt, **kwargs)
+            else:
+                logger.info(f"[GeminiAPIImageGenerator] 🔄 [步骤3] 使用 generate_images API (Imagen model)...")
+                logger.info(f"[GeminiAPIImageGenerator]     - model: {model}")
+                logger.info(f"[GeminiAPIImageGenerator]     - effective_prompt长度: {len(effective_prompt)}")
+                
+                api_start = time.time()
+                response = self._client.models.generate_images(
+                    model=model,
+                    prompt=effective_prompt,
+                    config=config
+                )
+                api_time = (time.time() - api_start) * 1000
+                logger.info(f"[GeminiAPIImageGenerator] ✅ [步骤3] API调用完成 (耗时: {api_time:.2f}ms)")
+                
+                if not response.generated_images:
+                    logger.error(f"[GeminiAPIImageGenerator] ❌ API未返回图片")
+                    raise APIError("No images generated", api_type="gemini_api")
+                
+                logger.info(f"[GeminiAPIImageGenerator]     - 返回图片数量: {len(response.generated_images)}")
+                
+                logger.info(f"[GeminiAPIImageGenerator] 🔄 [步骤4] 处理响应结果...")
+                results = self._process_response(response, **kwargs)
             process_time = (time.time() - start_time) * 1000
             logger.info(f"[GeminiAPIImageGenerator] ✅ [步骤4] 响应处理完成 (耗时: {process_time:.2f}ms)")
             logger.info(f"[GeminiAPIImageGenerator]     - 最终返回图片数量: {len(results)}")
@@ -182,6 +215,71 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
                 original_error=e
             )
     
+    async def _generate_with_content(self, model: str, prompt: str, **kwargs) -> List[Dict[str, Any]]:
+        """Generate images using Gemini generate_content API (for native Gemini image models)."""
+        import time
+        start_time = time.time()
+
+        aspect_ratio = kwargs.get('aspect_ratio', '1:1')
+        output_mime_type = kwargs.get('output_mime_type', 'image/png')
+        number_of_images = min(max(kwargs.get('number_of_images', 1), 1), 8)
+
+        image_style = kwargs.get('image_style')
+        effective_prompt = prompt
+        if image_style and image_style.lower() != "none":
+            effective_prompt = f"{prompt}, style: {image_style}"
+
+        text_part = genai_types.Part.from_text(text=effective_prompt)
+        contents = [genai_types.Content(role="user", parts=[text_part])]
+
+        generate_config = genai_types.GenerateContentConfig(
+            temperature=1.0,
+            top_p=0.95,
+            max_output_tokens=32768,
+            response_modalities=["TEXT", "IMAGE"],
+            safety_settings=[
+                genai_types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="OFF"),
+                genai_types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="OFF"),
+                genai_types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="OFF"),
+                genai_types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="OFF"),
+            ],
+        )
+
+        logger.info(f"[GeminiAPIImageGenerator] 🔄 [Gemini] model={model}, images={number_of_images}")
+
+        results = []
+        for i in range(number_of_images):
+            api_start = time.time()
+            response = self._client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=generate_config,
+            )
+            api_time = (time.time() - api_start) * 1000
+            logger.info(f"[GeminiAPIImageGenerator] ✅ [Gemini] Image {i+1}/{number_of_images} done ({api_time:.0f}ms)")
+
+            if response.candidates:
+                for candidate in response.candidates:
+                    if candidate.content and candidate.content.parts:
+                        for part in candidate.content.parts:
+                            if hasattr(part, 'inline_data') and part.inline_data and part.inline_data.data:
+                                image_bytes = part.inline_data.data
+                                b64_data = encode_image_to_base64(image_bytes)
+                                mime = getattr(part.inline_data, 'mime_type', None) or output_mime_type
+                                results.append({
+                                    "url": f"data:{mime};base64,{b64_data}",
+                                    "mime_type": mime,
+                                    "index": len(results),
+                                    "size": len(image_bytes),
+                                })
+
+        if not results:
+            raise APIError("No images generated from generate_content", api_type="gemini_api")
+
+        total_time = (time.time() - start_time) * 1000
+        logger.info(f"[GeminiAPIImageGenerator] ✅ [Gemini] Total: {len(results)} images ({total_time:.0f}ms)")
+        return results
+
     def _build_config(self, **kwargs) -> 'genai_types.GenerateImagesConfig':
         """Build Gemini API configuration from parameters."""
         number_of_images = kwargs.get('number_of_images', 1)
