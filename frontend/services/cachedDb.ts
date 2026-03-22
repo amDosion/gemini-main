@@ -180,7 +180,17 @@ class CachedDB {
    */
   async saveStorageConfig(config: StorageConfig): Promise<void> {
     await db.saveStorageConfig(config);
-    await cacheService.invalidate(CACHE_KEYS.STORAGE_CONFIGS);
+    // 增量更新缓存，不清除重建
+    const cached = await cacheService.get<StorageConfig[]>(
+      CACHE_KEYS.STORAGE_CONFIGS,
+      () => Promise.resolve([])
+    );
+    const configs = cached.data || [];
+    const idx = configs.findIndex(c => c.id === config.id);
+    const updated = idx >= 0
+      ? configs.map(c => c.id === config.id ? config : c)
+      : [...configs, config];
+    await cacheService.set(CACHE_KEYS.STORAGE_CONFIGS, updated);
   }
 
   /**
@@ -188,7 +198,13 @@ class CachedDB {
    */
   async deleteStorageConfig(id: string): Promise<void> {
     await db.deleteStorageConfig(id);
-    await cacheService.invalidate(CACHE_KEYS.STORAGE_CONFIGS);
+    // 增量更新缓存，不清除重建
+    const cached = await cacheService.get<StorageConfig[]>(
+      CACHE_KEYS.STORAGE_CONFIGS,
+      () => Promise.resolve([])
+    );
+    const configs = cached.data || [];
+    await cacheService.set(CACHE_KEYS.STORAGE_CONFIGS, configs.filter(c => c.id !== id));
   }
 
   /**

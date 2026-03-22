@@ -133,8 +133,16 @@ async def _bump_storage_revision(user_id: str) -> int:
 
     key = _storage_revision_key(user_id)
     try:
+        # 获取旧 revision 用于清理旧缓存
+        old_revision = await _get_storage_revision(user_id)
         next_revision = int(await redis_conn.incr(key))
         await redis_conn.expire(key, _STORAGE_REVISION_TTL_SECONDS)
+        # 主动清理旧 revision 的缓存，不等 TTL 过期
+        if old_revision and old_revision != next_revision:
+            normalized_user_id = str(user_id or "").strip() or "default"
+            old_pattern = f"cache:storage:*:{normalized_user_id}:*:{old_revision}:*"
+            async for matched_key in redis_conn.scan_iter(match=old_pattern):
+                await redis_conn.delete(matched_key)
         return next_revision
     except Exception:
         logger.debug("[StorageRevision] bump revision failed", exc_info=True)

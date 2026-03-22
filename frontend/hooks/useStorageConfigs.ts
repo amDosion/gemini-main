@@ -1,5 +1,4 @@
-
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { StorageConfig } from '../types/storage';
 import { db } from '../services/db';
 
@@ -16,32 +15,45 @@ interface InitData {
   activeStorageId?: string | null;
 }
 
-/**
- * 云存储配置管理 Hook
- * 管理云存储配置的增删改查和激活状态
- */
 export const useStorageConfigs = (initData?: InitData): UseStorageConfigsReturn => {
   const [storageConfigs, setStorageConfigs] = useState<StorageConfig[]>([]);
   const [activeStorageId, setActiveStorageId] = useState<string | null>(null);
+  const initializedRef = useRef(false);
 
-  // 从 initData 初始化云存储配置
+  // initData 仅用于首次初始化，之后所有变更由本地操作驱动
   useEffect(() => {
-    if (initData) {
-      setStorageConfigs(initData.storageConfigs || []);
-      setActiveStorageId(initData.activeStorageId || null);
+    if (!initData) return;
+    // 首次：直接写入
+    if (!initializedRef.current) {
+      const configs = initData.storageConfigs || [];
+      if (configs.length > 0 || initData.activeStorageId) {
+        initializedRef.current = true;
+        setStorageConfigs(configs);
+        setActiveStorageId(initData.activeStorageId || null);
+      }
+      return;
     }
+    // 已初始化后：不再从 initData 同步，由本地操作驱动
   }, [initData]);
 
   const handleSaveStorage = useCallback(async (config: StorageConfig) => {
     await db.saveStorageConfig(config);
-    const configs = await db.getStorageConfigs();
-    setStorageConfigs(configs);
+    // 增量更新：直接用操作数据更新 state，不重新获取
+    setStorageConfigs(prev => {
+      const idx = prev.findIndex(c => c.id === config.id);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = config;
+        return updated;
+      }
+      return [...prev, config];
+    });
   }, []);
 
   const handleDeleteStorage = useCallback(async (id: string) => {
     await db.deleteStorageConfig(id);
-    const configs = await db.getStorageConfigs();
-    setStorageConfigs(configs);
+    // 增量更新：直接移除，不重新获取
+    setStorageConfigs(prev => prev.filter(c => c.id !== id));
     if (activeStorageId === id) {
       setActiveStorageId(null);
       await db.setActiveStorageId('');
