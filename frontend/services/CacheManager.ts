@@ -78,6 +78,19 @@ class CacheManagerImpl {
     }
   }
 
+  /** 删除所有以指定前缀开头的缓存条目 */
+  clearDomain(prefix: string): void {
+    const keysToDelete: string[] = [];
+    for (const key of this.store.keys()) {
+      if (key.startsWith(prefix)) {
+        keysToDelete.push(key);
+      }
+    }
+    for (const key of keysToDelete) {
+      this.remove(key);
+    }
+  }
+
   // ==================== 订阅 ====================
 
   /** 订阅缓存变化，返回取消订阅函数 */
@@ -130,5 +143,7 @@ export const CACHE_DOMAINS = {
   MODELS: 'models',
   MODE_MODELS: 'modeModels',
   MODEL_CATALOG: 'modelCatalog',
+  ACTIVE_PERSONA_ID: 'activePersonaId',
   PROVIDER_TEMPLATES: 'providerTemplates',
+  CURRENT_SESSION_ID: 'currentSessionId',
 } as const;

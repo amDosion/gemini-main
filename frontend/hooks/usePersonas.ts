@@ -1,42 +1,59 @@
-
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { Persona } from '../types/types';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../services/db';
+import { cacheManager, CACHE_DOMAINS } from '../services/CacheManager';
+import { useCacheSubscription, useCacheUpdater } from './useCacheSubscription';
 
 export const usePersonas = (
   initialData?: {
     personas: Persona[];
   }
 ) => {
-  // ✅ 使用 initialData 初始化状态（如果提供），否则使用空数组（等待后端初始化）
-  const [personas, setPersonas] = useState<Persona[]>(
-    initialData?.personas || []
-  );
-  // ✅ 初始化时，如果有 personas 数据，使用第一个的 id；否则为空字符串
-  const [activePersonaId, setActivePersonaId] = useState<string>(
-    initialData?.personas && initialData.personas.length > 0 
-      ? initialData.personas[0].id 
-      : ''
-  );
+  const initializedRef = useRef(false);
 
-  // ✅ 当 initialData 更新时，同步更新 personas
+  // ✅ 订阅 CacheManager 中的数据
+  const personas = useCacheSubscription<Persona[]>(CACHE_DOMAINS.PERSONAS, []);
+  const activePersonaId = useCacheSubscription<string>(CACHE_DOMAINS.ACTIVE_PERSONA_ID, '');
+  const personasUpdater = useCacheUpdater<Persona[]>(CACHE_DOMAINS.PERSONAS, []);
+  const activeIdUpdater = useCacheUpdater<string>(CACHE_DOMAINS.ACTIVE_PERSONA_ID, '');
+
+  // ✅ initData 仅用于首次初始化
   useEffect(() => {
-    if (initialData?.personas) {
-      setPersonas(initialData.personas);
+    if (!initialData?.personas || initializedRef.current) return;
+    const personas = initialData.personas;
+    if (personas.length > 0) {
+      initializedRef.current = true;
+      personasUpdater.set(personas);
+      // 设置第一个为 active（如果还没设过）
+      const currentActive = cacheManager.get<string>(CACHE_DOMAINS.ACTIVE_PERSONA_ID);
+      if (!currentActive) {
+        activeIdUpdater.set(personas[0].id);
+      }
+    }
+  }, [initialData, personasUpdater, activeIdUpdater]);
+
+  // ✅ 当 initialData 更新时，同步更新 personas（后续更新）
+  useEffect(() => {
+    if (!initialData?.personas || !initializedRef.current) return;
+    // initializedRef 已为 true，说明不是首次——检查 personas 是否变化
+    const currentPersonas = cacheManager.get<Persona[]>(CACHE_DOMAINS.PERSONAS) ?? [];
+    // 仅当 initialData 和当前缓存不同引用时才更新
+    if (initialData.personas !== currentPersonas) {
+      personasUpdater.set(initialData.personas);
       // ✅ 如果当前 activePersonaId 不在新的 personas 中，重置为第一个
       if (initialData.personas.length > 0) {
-        const currentPersonaExists = initialData.personas.find(p => p.id === activePersonaId);
+        const currentActiveId = cacheManager.get<string>(CACHE_DOMAINS.ACTIVE_PERSONA_ID) ?? '';
+        const currentPersonaExists = initialData.personas.find(p => p.id === currentActiveId);
         if (!currentPersonaExists) {
-          // 直接使用第一个 Persona
-          setActivePersonaId(initialData.personas[0].id);
+          activeIdUpdater.set(initialData.personas[0].id);
         }
       } else {
         // 如果没有 Personas，清空 activePersonaId
-        setActivePersonaId('');
+        activeIdUpdater.set('');
       }
     }
-  }, [initialData?.personas, activePersonaId]);
+  }, [initialData?.personas, personasUpdater, activeIdUpdater]);
 
   // ✅ 保存到后端（后端会自动处理时间戳）
   const saveToBackend = useCallback(async (newPersonas: Persona[]) => {
@@ -49,69 +66,76 @@ export const usePersonas = (
 
   const createPersona = useCallback(async (persona: Omit<Persona, 'id'>) => {
     const newPersona = { ...persona, id: uuidv4() };
-    const updated = [...personas, newPersona];
-    setPersonas(updated);
+    const currentPersonas = cacheManager.get<Persona[]>(CACHE_DOMAINS.PERSONAS) ?? [];
+    const updated = [...currentPersonas, newPersona];
+    personasUpdater.set(updated);
     try {
       await saveToBackend(updated);
     } catch (error) {
       // 回滚状态
-      setPersonas(personas);
+      personasUpdater.set(currentPersonas);
       throw error;
     }
     return newPersona;
-  }, [personas, saveToBackend]);
+  }, [personasUpdater, saveToBackend]);
 
   const updatePersona = useCallback(async (id: string, updates: Partial<Persona>) => {
-    const previousPersonas = personas;
-    const updated = personas.map(p => p.id === id ? { ...p, ...updates } : p);
-    setPersonas(updated);
+    const currentPersonas = cacheManager.get<Persona[]>(CACHE_DOMAINS.PERSONAS) ?? [];
+    const updated = currentPersonas.map(p => p.id === id ? { ...p, ...updates } : p);
+    personasUpdater.set(updated);
     try {
       await saveToBackend(updated);
     } catch (error) {
       // 回滚状态
-      setPersonas(previousPersonas);
+      personasUpdater.set(currentPersonas);
       throw error;
     }
-  }, [personas, saveToBackend]);
+  }, [personasUpdater, saveToBackend]);
 
   const deletePersona = useCallback(async (id: string) => {
+    const currentPersonas = cacheManager.get<Persona[]>(CACHE_DOMAINS.PERSONAS) ?? [];
     // Prevent deleting the last one
-    if (personas.length <= 1) return;
+    if (currentPersonas.length <= 1) return;
     
-    const previousPersonas = personas;
-    const updated = personas.filter(p => p.id !== id);
-    setPersonas(updated);
+    const updated = currentPersonas.filter(p => p.id !== id);
+    personasUpdater.set(updated);
     
     try {
       await saveToBackend(updated);
       
-      if (activePersonaId === id) {
-        setActivePersonaId(updated[0].id);
+      const currentActiveId = cacheManager.get<string>(CACHE_DOMAINS.ACTIVE_PERSONA_ID) ?? '';
+      if (currentActiveId === id) {
+        activeIdUpdater.set(updated[0].id);
       }
     } catch (error) {
       // 回滚状态
-      setPersonas(previousPersonas);
+      personasUpdater.set(currentPersonas);
       throw error;
     }
-  }, [personas, activePersonaId, saveToBackend]);
+  }, [personasUpdater, activeIdUpdater, saveToBackend]);
+
+  const setActivePersonaId = useCallback((id: string) => {
+    activeIdUpdater.set(id);
+  }, [activeIdUpdater]);
 
   const refreshPersonas = useCallback(async () => {
     try {
       // 刷新功能：重新从后端获取最新的 Personas 数据（不删除、不重置）
       const refreshedPersonas = await db.getPersonas();
-      // 更新本地状态
-      setPersonas(refreshedPersonas);
+      // 更新缓存
+      personasUpdater.set(refreshedPersonas);
       // 如果当前激活的 Persona 不在新列表中，选择第一个
       if (refreshedPersonas.length > 0) {
-        const currentPersonaExists = refreshedPersonas.find(p => p.id === activePersonaId);
+        const currentActiveId = cacheManager.get<string>(CACHE_DOMAINS.ACTIVE_PERSONA_ID) ?? '';
+        const currentPersonaExists = refreshedPersonas.find(p => p.id === currentActiveId);
         if (!currentPersonaExists) {
-          setActivePersonaId(refreshedPersonas[0].id);
+          activeIdUpdater.set(refreshedPersonas[0].id);
         }
       }
     } catch (error) {
       throw error;
     }
-  }, [activePersonaId]);
+  }, [personasUpdater, activeIdUpdater]);
 
   const activePersona = personas.find(p => p.id === activePersonaId) || personas[0];
 

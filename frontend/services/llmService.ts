@@ -8,6 +8,7 @@ import { streamManager } from "./stream/StreamManager";
 import { UnifiedProviderClient } from "./providers/UnifiedProviderClient";
 import mcpConfigService from "./mcpConfigService";
 import { fetchWithTimeout, parseHttpError, readJsonResponse } from "./http";
+import { cacheManager } from "./CacheManager";
 
 export interface ModelsApiResponse {
   models: ModelConfig[];
@@ -24,7 +25,7 @@ interface ModelCache {
   providerId: string;
 }
 
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// Model cache TTL is managed by CacheManager (default: 5 minutes)
 
 export class LLMService {
   private apiKey: string = '';
@@ -32,7 +33,7 @@ export class LLMService {
   private protocol: ApiProtocol | null = null;  // ✅ 移除默认值，由后端配置决定
   private providerId: string = '';  // ✅ 移除默认值，由后端配置决定
 
-  private modelCache = new Map<string, ModelCache>();
+  // Model cache migrated to unified CacheManager (domain: "models:" prefix)
 
   private _cachedHistory: Message[] = [];
   private _cachedModelConfig: ModelConfig | null = null;
@@ -105,10 +106,10 @@ export class LLMService {
       // 缓存策略：仅缓存 provider 级完整模型列表；mode 请求始终单独获取。
       const cacheKey = mode ? `${this.providerId}:${mode}` : `${this.providerId}`;
       const now = Date.now();
-      const cachedData = this.modelCache.get(cacheKey);
+      const cachedData = cacheManager.get<ModelCache>('models:' + cacheKey);
 
       // 使用缓存（mode 和非 mode 请求各自独立缓存）
-      if (useCache && cachedData && (now - cachedData.timestamp < CACHE_TTL)) {
+      if (useCache && cachedData) {
           return cachedData.payload;
       }
 
@@ -153,7 +154,7 @@ export class LLMService {
           };
 
           // 缓存所有请求结果（mode 和非 mode 各自独立缓存）
-          this.modelCache.set(cacheKey, {
+          cacheManager.set('models:' + cacheKey, {
               payload,
               timestamp: now,
               providerId: this.providerId,
@@ -171,7 +172,7 @@ export class LLMService {
   }
 
   public clearModelCache() {
-      this.modelCache.clear();
+      cacheManager.clearDomain('models:');
   }
 
   public startNewChat(history: Message[], modelConfig: ModelConfig, options?: ChatOptions) {

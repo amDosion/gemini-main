@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ChatSession, Message, Role } from '../types/types';
 import { v4 as uuidv4 } from 'uuid';
@@ -7,6 +6,8 @@ import { cachedDb } from '../services/cachedDb';
 import { cleanAttachmentsForDb } from './handlers/attachmentUtils';
 import { useCacheStatus, CacheStatusInfo } from './useCacheStatus';
 import { apiClient } from '../services/apiClient';
+import { cacheManager, CACHE_DOMAINS } from '../services/CacheManager';
+import { useCacheSubscription, useCacheUpdater } from './useCacheSubscription';
 
 type UpdateSessionMessagesStrategy = 'replace' | 'merge-by-id';
 
@@ -36,6 +37,10 @@ const mergeMessagesById = (existingMessages: Message[], incomingMessages: Messag
   return merged;
 };
 
+// Set long TTL for sessions - they are long-lived data
+cacheManager.setTTL(CACHE_DOMAINS.SESSIONS, 30 * 60 * 1000); // 30 minutes
+cacheManager.setTTL(CACHE_DOMAINS.CURRENT_SESSION_ID, 30 * 60 * 1000); // 30 minutes
+
 export const useSessions = (
   initialData?: {
     sessions: ChatSession[];
@@ -44,10 +49,15 @@ export const useSessions = (
 ) => {
   // ✅ 使用 initialData 初始化状态（如果提供）
   const initialSessions = initialData?.sessions;
-  const [sessions, setSessions] = useState<ChatSession[]>(
-    initialSessions || []
-  );
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+
+  // ✅ Sessions and currentSessionId now use CacheManager
+  const sessions = useCacheSubscription<ChatSession[]>(CACHE_DOMAINS.SESSIONS, []);
+  const { set: setSessions, update: updateSessions } = useCacheUpdater<ChatSession[]>(CACHE_DOMAINS.SESSIONS, []);
+
+  const currentSessionId = useCacheSubscription<string | null>(CACHE_DOMAINS.CURRENT_SESSION_ID, null);
+  const { set: setCurrentSessionId } = useCacheUpdater<string | null>(CACHE_DOMAINS.CURRENT_SESSION_ID, null);
+
+  // ✅ UI state remains as useState
   const [isLoading, setIsLoading] = useState(false);
   const [hasMoreSessions, setHasMoreSessions] = useState(false); // ✅ 是否还有更多会话
   const [isLoadingMore, setIsLoadingMore] = useState(false); // ✅ 是否正在加载更多
@@ -123,15 +133,21 @@ export const useSessions = (
       const result = await cachedDb.refreshSessions();
       const preparedSessions = prepareSessions(result.data);
       setSessions(preparedSessions);
-      setCurrentSessionId(prev => (
-        preparedSessions.length > 0 ? (prev ?? preparedSessions[0].id) : null
-      ));
+      // Use updater to read current value for conditional logic
+      const currentId = cacheManager.get<string | null>(CACHE_DOMAINS.CURRENT_SESSION_ID);
+      if (preparedSessions.length > 0) {
+        if (currentId === null) {
+          setCurrentSessionId(preparedSessions[0].id);
+        }
+      } else {
+        setCurrentSessionId(null);
+      }
       // ✅ 使用 ref 调用 updateStatus，避免依赖 cacheStatus
       cacheStatusRef.current?.updateStatus(result.fromCache, result.isStale, result.timestamp);
     } finally {
       setIsLoading(false);
     }
-  }, [prepareSessions]); // ✅ 移除 cacheStatus 依赖
+  }, [prepareSessions, setSessions, setCurrentSessionId]); // ✅ 移除 cacheStatus 依赖
 
   // ✅ 从 initialData 中获取 sessionsHasMore
   useEffect(() => {
@@ -163,7 +179,7 @@ export const useSessions = (
             messages: s.messages || []  // 确保 messages 存在
           }))
         );
-        setSessions(prev => [...prev, ...preparedSessions]);
+        updateSessions(prev => [...prev, ...preparedSessions]);
         setHasMoreSessions(result.hasMore);
       } else {
         setHasMoreSessions(false);
@@ -174,7 +190,7 @@ export const useSessions = (
       isLoadingMoreRef.current = false;
       setIsLoadingMore(false);
     }
-  }, [sessions.length, hasMoreSessions, isLoadingMore, prepareSessions]);
+  }, [sessions.length, hasMoreSessions, isLoadingMore, prepareSessions, updateSessions]);
 
   // ? 处理 initialData：恢复 Blob URL 和设置 currentSessionId
   // ?? 优先使用 initData.sessions，缺失时回退到 /sessions
@@ -195,7 +211,10 @@ export const useSessions = (
 
       // Restore the most recent session if available
       if (preparedSessions.length > 0) {
-        setCurrentSessionId(prev => prev ?? preparedSessions[0].id);
+        const currentId = cacheManager.get<string | null>(CACHE_DOMAINS.CURRENT_SESSION_ID);
+        if (currentId === null) {
+          setCurrentSessionId(preparedSessions[0].id);
+        }
       } else {
         setCurrentSessionId(null);
       }
@@ -264,14 +283,14 @@ export const useSessions = (
       personaId: personaId // 保存当前激活的 persona
     };
     
-    setSessions(prev => [newSession, ...prev]);
+    updateSessions(prev => [newSession, ...prev]);
     setCurrentSessionId(newSession.id);
     
     // Save to database (async, non-blocking)
     saveSessionToDb(newSession);
     
     return newSession;
-  }, [saveSessionToDb]);
+  }, [saveSessionToDb, updateSessions, setCurrentSessionId]);
 
   const updateSessionMessages = useCallback((
     sessionId: string,
@@ -280,7 +299,7 @@ export const useSessions = (
   ) => {
     const strategy = options?.strategy || 'replace';
 
-    setSessions(prev => {
+    updateSessions(prev => {
       const updated = prev.map(s => {
         if (s.id === sessionId) {
           const nextMessages = strategy === 'merge-by-id'
@@ -333,12 +352,12 @@ export const useSessions = (
       
       return updated;
     });
-  }, [saveSessionToDb]);
+  }, [saveSessionToDb, updateSessions]);
 
   const deleteSession = useCallback(async (sessionId: string) => {
     // Remove from memory and get remaining sessions
     let remainingSessions: ChatSession[] = [];
-    setSessions(prev => {
+    updateSessions(prev => {
       remainingSessions = prev.filter(s => s.id !== sessionId);
       return remainingSessions;
     });
@@ -350,10 +369,10 @@ export const useSessions = (
     
     // Delete from database
     await deleteSessionFromDb(sessionId);
-  }, [currentSessionId, deleteSessionFromDb]);
+  }, [currentSessionId, deleteSessionFromDb, updateSessions, setCurrentSessionId]);
 
   const updateSessionPersona = useCallback((sessionId: string, personaId: string) => {
-    setSessions(prev => {
+    updateSessions(prev => {
       const updated = prev.map(s => {
         if (s.id === sessionId) {
           const updatedSession = { ...s, personaId };
@@ -368,10 +387,10 @@ export const useSessions = (
       
       return updated;
     });
-  }, [saveSessionToDb]);
+  }, [saveSessionToDb, updateSessions]);
 
   const updateSessionTitle = useCallback((sessionId: string, newTitle: string) => {
-    setSessions(prev => {
+    updateSessions(prev => {
       const updated = prev.map(s => {
         if (s.id === sessionId) {
           const updatedSession = { ...s, title: newTitle };
@@ -386,7 +405,7 @@ export const useSessions = (
       
       return updated;
     });
-  }, [saveSessionToDb]);
+  }, [saveSessionToDb, updateSessions]);
 
   const getSession = useCallback((id: string) => {
     return sessions.find(s => s.id === id);
