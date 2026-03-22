@@ -840,9 +840,9 @@ async def get_available_models(
         effective_profile = _get_effective_profile(provider, db, user_id)
         vertex_config = _get_vertex_ai_config(db, user_id) if provider == "google" else None
         preferred_model_ids = _build_preferred_model_ids(provider, effective_profile, vertex_config)
-        # 过滤用户隐藏的模型
+        # 过滤用户隐藏的模型（Verify 请求跳过，显示全部模型供选择）
         hidden_ids = set()
-        if effective_profile and hasattr(effective_profile, 'hidden_models') and effective_profile.hidden_models:
+        if not is_verify_request and effective_profile and hasattr(effective_profile, 'hidden_models') and effective_profile.hidden_models:
             raw_hidden = effective_profile.hidden_models
             if isinstance(raw_hidden, list):
                 hidden_ids = set(raw_hidden)
