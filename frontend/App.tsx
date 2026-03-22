@@ -585,6 +585,7 @@ const AppContent: React.FC = () => {
       return (
         <StudioView
           {...commonProps}
+          messages={messages}
           mode={appMode}
           visibleModels={visibleModels}
           allVisibleModels={allVisibleModels}  // ✅ 传递完整模型列表
