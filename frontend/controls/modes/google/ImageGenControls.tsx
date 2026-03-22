@@ -373,6 +373,25 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
                 />
               </div>
             </div>
+
+            {/* 增强提示词模型选择（仅开启时显示） */}
+            {enhancePrompt && enhancePromptModels.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-xs text-slate-300">增强提示词模型</span>
+                <select
+                  value={enhancePromptModel}
+                  onChange={(e) => setEnhancePromptModel?.(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-pink-500/50"
+                >
+                  <option value="">自动选择</option>
+                  {enhancePromptModels.map(model => (
+                    <option key={model.id} value={model.id}>
+                      {model.name || model.id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         )}
       </div>
