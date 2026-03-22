@@ -334,7 +334,7 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
         
         const options: ChatOptions = {
             enableSearch: false,
-            enableThinking: false,
+            enableThinking: controls.enableThinking,
             enableCodeExecution: false,
             // 基础参数
             imageAspectRatio: controls.aspectRatio,

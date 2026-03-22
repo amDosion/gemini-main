@@ -390,6 +390,24 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
                 </select>
               </div>
             )}
+
+            {/* 思考过程 - Switch 开关 */}
+            <div className="flex items-center justify-between py-1">
+              <div className="flex items-center gap-2">
+                <Sparkles size={12} className="text-cyan-400" />
+                <span className="text-xs text-slate-300">显示思考过程</span>
+              </div>
+              <div
+                onClick={() => controls.setEnableThinking(!controls.enableThinking)}
+                className={`w-10 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-200 ${
+                  controls.enableThinking ? 'bg-cyan-600' : 'bg-slate-600'
+                }`}
+              >
+                <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
+                  controls.enableThinking ? 'translate-x-4' : 'translate-x-0'
+                }`} />
+              </div>
+            </div>
           </div>
         )}
       </div>

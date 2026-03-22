@@ -112,9 +112,7 @@ def _build_local_file_response(file_url: str, fallback_mime_type: Optional[str] 
         media_type=(fallback_mime_type or "application/octet-stream").split(";")[0],
         filename=file_path.name,
         headers={
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0'
+            'Cache-Control': 'public, max-age=3600',
         }
     )
 

@@ -282,10 +282,10 @@ class AttachmentService:
             logger.info(f"[AttachmentService] ✅ [步骤4] 本地存储已直写完成，跳过 Worker Pool")
             logger.info(f"[AttachmentService] ========== AI图片处理完成 (总耗时: {total_time:.2f}ms) ==========")
             logger.info(f"[AttachmentService]     - attachment_id: {attachment_id}")
-            logger.info(f"[AttachmentService]     - display_url: {display_url}")
+            logger.info(f"[AttachmentService]     - display_url: {local_storage_url} (direct local storage)")
             return {
                 'attachment_id': attachment_id,
-                'display_url': display_url,
+                'display_url': local_storage_url,
                 'cloud_url': local_storage_url,
                 'status': 'completed',
                 'task_id': None,
