@@ -1622,7 +1622,7 @@ export const ImageEditView = memo(({
                         mode={editMode}
                         providerId={providerId || 'google'}
                         controls={controls}
-                        availableModels={visibleModels}
+                        availableModels={allVisibleModels}
                     />
                 </div>
 

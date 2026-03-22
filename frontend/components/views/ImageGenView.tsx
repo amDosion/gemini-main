@@ -1146,7 +1146,7 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
                         providerId={providerId || 'google'}
                         currentModel={activeModelConfig}
                         controls={controls}
-                        availableModels={visibleModels}
+                        availableModels={allVisibleModels}
                         maxImageCount={maxImageCount}
                     />
                 </div>
