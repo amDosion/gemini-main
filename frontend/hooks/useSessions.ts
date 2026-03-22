@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { ChatSession, Message, Role } from '../types/types';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../services/db';
-import { cachedDb } from '../services/cachedDb';
 import { cleanAttachmentsForDb } from './handlers/attachmentUtils';
 import { useCacheStatus, CacheStatusInfo } from './useCacheStatus';
 import { apiClient } from '../services/apiClient';
@@ -130,8 +129,8 @@ export const useSessions = (
   const refreshSessions = useCallback(async () => {
     try {
       setIsLoading(true);
-      const result = await cachedDb.refreshSessions();
-      const preparedSessions = prepareSessions(result.data);
+      const result = await db.getSessions();
+      const preparedSessions = prepareSessions(result);
       setSessions(preparedSessions);
       // Use updater to read current value for conditional logic
       const currentId = cacheManager.get<string | null>(CACHE_DOMAINS.CURRENT_SESSION_ID);
@@ -256,7 +255,7 @@ export const useSessions = (
   // 使用 cachedDb 实现写穿透
   const saveSessionToDb = useCallback(async (session: ChatSession) => {
     try {
-      await cachedDb.saveSession(prepareSessionForDb(session));
+      await db.saveSession(prepareSessionForDb(session));
     } catch (error) {
       // Silently fail - 可能是后端不可用或组件卸载导致请求取消
       // Sessions 仍然会在内存中工作，只是不会持久化
@@ -270,7 +269,7 @@ export const useSessions = (
   // Delete session from database
   // 使用 cachedDb 实现删除并失效缓存
   const deleteSessionFromDb = useCallback(async (sessionId: string) => {
-    await cachedDb.deleteSession(sessionId);
+    await db.deleteSession(sessionId);
   }, []);
 
   const createNewSession = useCallback((personaId?: string) => {

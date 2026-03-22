@@ -4,7 +4,7 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import { cacheService } from '../services/cacheService';
+import { cacheManager } from '../services/CacheManager';
 
 /**
  * 缓存状态信息接口
@@ -57,7 +57,7 @@ export function useCacheStatus(
 
   // 初始化时从 cacheService 获取状态
   useEffect(() => {
-    const status = cacheService.getCacheStatus(key);
+    const status = cacheManager.getCacheStatus(key);
     if (status.isCached) {
       setIsFromCache(true);
       setIsStale(status.isStale);
@@ -89,7 +89,7 @@ export function useCacheStatus(
     try {
       await refreshFn();
       // 刷新后更新状态
-      const status = cacheService.getCacheStatus(key);
+      const status = cacheManager.getCacheStatus(key);
       setIsFromCache(false); // 刚刷新的数据不是来自缓存
       setIsStale(false);
       setLastUpdated(status.timestamp ?? Date.now());

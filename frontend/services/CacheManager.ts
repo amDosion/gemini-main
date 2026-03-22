@@ -161,6 +161,22 @@ class CacheManagerImpl {
     return count;
   }
 
+  // ==================== 状态查询 ====================
+
+  /** 获取某个 domain 的缓存状态 */
+  getCacheStatus(domain: string): { isCached: boolean; isStale: boolean; timestamp: number | null } {
+    const entry = this.store.get(domain);
+    if (!entry) {
+      return { isCached: false, isStale: false, timestamp: null };
+    }
+    const age = Date.now() - entry.timestamp;
+    return {
+      isCached: true,
+      isStale: age > entry.ttl,
+      timestamp: entry.timestamp,
+    };
+  }
+
   // ==================== 调试 ====================
 
   /** 获取缓存状态（调试用） */
