@@ -227,13 +227,20 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
         }, 180);
     }, [clearHidePreviewTimer, isResizingPreview]);
 
-    // Auto-switch to latest generation when new one starts
+    // Auto-switch to latest generation when new one starts / finishes
+    const prevLoadingStateRef = useRef(loadingState);
     useEffect(() => {
+        const prevState = prevLoadingStateRef.current;
+        prevLoadingStateRef.current = loadingState;
+
         if (loadingState === 'loading') {
             setSelectedMsgId(null);
-            // Close mobile history if a new generation starts
             setIsMobileHistoryOpen(false);
             closeHoverPreview();
+        }
+        // When loading just finished, force select the latest result
+        if (prevState !== 'idle' && loadingState === 'idle') {
+            setSelectedMsgId(null); // null = show filteredHistoryBatches[0] (latest)
         }
     }, [loadingState, closeHoverPreview]);
 
