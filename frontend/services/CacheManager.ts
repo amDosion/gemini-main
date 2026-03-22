@@ -47,7 +47,7 @@ class CacheManagerImpl {
 
   /** 设置缓存数据（全量覆盖） */
   set<T>(domain: string, data: T): void {
-    const ttl = this.ttlConfig.get(domain) || DEFAULT_TTL;
+    const ttl = this.resolveTTL(domain);
     this.store.set(domain, { data, timestamp: Date.now(), ttl });
     this.notify(domain, data);
   }
@@ -110,12 +110,55 @@ class CacheManagerImpl {
 
   // ==================== 内部 ====================
 
+  private resolveTTL(domain: string): number {
+    // Exact match first
+    const exact = this.ttlConfig.get(domain);
+    if (exact !== undefined) return exact;
+    // Prefix match (e.g. 'preview:' matches 'preview:https://...')
+    for (const [prefix, ttl] of this.ttlConfig.entries()) {
+      if (prefix.endsWith(':') && domain.startsWith(prefix)) {
+        return ttl;
+      }
+    }
+    return DEFAULT_TTL;
+  }
+
   private notify(domain: string, data: unknown): void {
     const listeners = this.listeners.get(domain);
     if (!listeners) return;
     for (const listener of listeners) {
       listener(data);
     }
+  }
+
+  // ==================== 前缀查询 ====================
+
+  /** 获取所有以指定前缀开头的缓存条目（含 TTL 过期检查） */
+  getEntriesByPrefix<T>(prefix: string): Array<[string, T]> {
+    const result: Array<[string, T]> = [];
+    for (const [key, entry] of this.store.entries()) {
+      if (!key.startsWith(prefix)) continue;
+      if (Date.now() - entry.timestamp > entry.ttl) {
+        this.store.delete(key);
+        continue;
+      }
+      result.push([key, entry.data as T]);
+    }
+    return result;
+  }
+
+  /** 返回以指定前缀开头的有效缓存条目数量 */
+  countByPrefix(prefix: string): number {
+    let count = 0;
+    for (const [key, entry] of this.store.entries()) {
+      if (!key.startsWith(prefix)) continue;
+      if (Date.now() - entry.timestamp > entry.ttl) {
+        this.store.delete(key);
+        continue;
+      }
+      count++;
+    }
+    return count;
   }
 
   // ==================== 调试 ====================
@@ -146,4 +189,6 @@ export const CACHE_DOMAINS = {
   ACTIVE_PERSONA_ID: 'activePersonaId',
   PROVIDER_TEMPLATES: 'providerTemplates',
   CURRENT_SESSION_ID: 'currentSessionId',
+  LLM_INSTANCES: 'llmInstances:',
+  PREVIEW_OBJECT_URL: 'preview:',
 } as const;

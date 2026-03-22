@@ -1,4 +1,5 @@
 import { isStoragePreviewProxyUrl } from './storagePreviewService';
+import { cacheManager, CACHE_DOMAINS } from './CacheManager';
 
 const PREVIEW_CACHE_NAME = 'cloud-storage-preview-v1';
 const PREVIEW_META_KEY = 'cloud-storage-preview-meta-v1';
@@ -11,7 +12,10 @@ type PreviewMemoryEntry = {
   updatedAt: number;
 };
 
-const previewObjectUrlMemory = new Map<string, PreviewMemoryEntry>();
+const PREVIEW_PREFIX = CACHE_DOMAINS.PREVIEW_OBJECT_URL;
+
+// Set TTL for all preview entries to match PREVIEW_MAX_AGE_MS
+cacheManager.setTTL(PREVIEW_PREFIX, PREVIEW_MAX_AGE_MS);
 
 const canUsePersistentCache = (): boolean => {
   return typeof window !== 'undefined' && typeof window.caches !== 'undefined';
@@ -21,10 +25,13 @@ const canUseObjectUrlMemoryCache = (): boolean => {
   return typeof window !== 'undefined' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function';
 };
 
+const previewKey = (url: string): string => PREVIEW_PREFIX + url;
+
 const deletePreviewObjectUrlMemory = (url: string) => {
-  const entry = previewObjectUrlMemory.get(url);
+  const key = previewKey(url);
+  const entry = cacheManager.get<PreviewMemoryEntry>(key);
   if (!entry) return;
-  previewObjectUrlMemory.delete(url);
+  cacheManager.remove(key);
   try {
     URL.revokeObjectURL(entry.objectUrl);
   } catch {
@@ -36,21 +43,29 @@ const prunePreviewObjectUrlMemory = () => {
   if (!canUseObjectUrlMemoryCache()) return;
 
   const now = Date.now();
-  for (const [url, entry] of previewObjectUrlMemory.entries()) {
+  const entries = cacheManager.getEntriesByPrefix<PreviewMemoryEntry>(PREVIEW_PREFIX);
+
+  // Remove entries with invalid updatedAt (CacheManager TTL handles expiry,
+  // but we also check updatedAt for entries that were touched/refreshed)
+  for (const [key, entry] of entries) {
     if (!Number.isFinite(entry.updatedAt) || now - entry.updatedAt > PREVIEW_MAX_AGE_MS) {
+      const url = key.slice(PREVIEW_PREFIX.length);
       deletePreviewObjectUrlMemory(url);
     }
   }
 
-  if (previewObjectUrlMemory.size <= PREVIEW_MAX_ENTRIES) {
+  const currentCount = cacheManager.countByPrefix(PREVIEW_PREFIX);
+  if (currentCount <= PREVIEW_MAX_ENTRIES) {
     return;
   }
 
-  const staleByCapacity = [...previewObjectUrlMemory.entries()]
+  const remaining = cacheManager.getEntriesByPrefix<PreviewMemoryEntry>(PREVIEW_PREFIX);
+  const staleByCapacity = remaining
     .sort((left, right) => left[1].updatedAt - right[1].updatedAt)
-    .slice(0, previewObjectUrlMemory.size - PREVIEW_MAX_ENTRIES);
+    .slice(0, remaining.length - PREVIEW_MAX_ENTRIES);
 
-  staleByCapacity.forEach(([url]) => {
+  staleByCapacity.forEach(([key]) => {
+    const url = key.slice(PREVIEW_PREFIX.length);
     deletePreviewObjectUrlMemory(url);
   });
 };
@@ -151,13 +166,13 @@ export const getCachedPreviewObjectUrlSync = (url: string): string | null => {
     _lastPruneTime = now;
     prunePreviewObjectUrlMemory();
   }
-  const entry = previewObjectUrlMemory.get(normalizedUrl);
+  const entry = cacheManager.get<PreviewMemoryEntry>(previewKey(normalizedUrl));
   if (!entry) {
     return null;
   }
 
   entry.updatedAt = Date.now();
-  previewObjectUrlMemory.set(normalizedUrl, entry);
+  cacheManager.set(previewKey(normalizedUrl), entry);
   return entry.objectUrl;
 };
 
@@ -173,10 +188,10 @@ export const cachePreviewBlobObjectUrl = (url: string, blob: Blob): string | nul
   }
 
   const objectUrl = URL.createObjectURL(blob);
-  previewObjectUrlMemory.set(normalizedUrl, {
+  cacheManager.set(previewKey(normalizedUrl), {
     objectUrl,
     updatedAt: Date.now()
-  });
+  } as PreviewMemoryEntry);
   prunePreviewObjectUrlMemory();
   return objectUrl;
 };

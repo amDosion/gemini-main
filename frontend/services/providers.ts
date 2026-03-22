@@ -11,6 +11,7 @@
  */
 
 import { ApiProtocol } from '../types/types';
+import { cacheManager, CACHE_DOMAINS } from './CacheManager';
 
 /**
  * Provider capabilities configuration
@@ -80,27 +81,26 @@ export async function fetchProviderTemplates(): Promise<AIProviderConfig[]> {
 }
 
 /**
- * Provider Templates 缓存
- */
-let cachedTemplates: AIProviderConfig[] | null = null;
-
-/**
  * 获取 Provider Templates（带缓存）
  */
 export async function getProviderTemplates(forceRefresh = false): Promise<AIProviderConfig[]> {
-  if (!forceRefresh && cachedTemplates) {
-    return cachedTemplates;
+  if (!forceRefresh) {
+    const cached = cacheManager.get<AIProviderConfig[]>(CACHE_DOMAINS.PROVIDER_TEMPLATES);
+    if (cached) {
+      return cached;
+    }
   }
   
-  cachedTemplates = await fetchProviderTemplates();
-  return cachedTemplates;
+  const templates = await fetchProviderTemplates();
+  cacheManager.set(CACHE_DOMAINS.PROVIDER_TEMPLATES, templates);
+  return templates;
 }
 
 /**
  * 清除缓存
  */
 export function clearProviderTemplatesCache(): void {
-  cachedTemplates = null;
+  cacheManager.remove(CACHE_DOMAINS.PROVIDER_TEMPLATES);
 }
 
 /**

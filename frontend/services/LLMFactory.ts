@@ -21,26 +21,25 @@ import { ApiProtocol } from '../types/types';
 import { ILLMProvider } from './providers/interfaces';
 import { UnifiedProviderClient } from './providers/UnifiedProviderClient';
 import { getProviderTemplates, AIProviderConfig } from './providers';
+import { cacheManager, CACHE_DOMAINS } from './CacheManager';
 
 export class LLMFactory {
-  // Cache by providerId (e.g., 'google', 'openai', 'deepseek', 'tongyi')
-  private static instances: Map<string, ILLMProvider> = new Map();
-  // Cache provider templates from backend
-  private static providerTemplates: AIProviderConfig[] | null = null;
-  private static templatesLoading: Promise<AIProviderConfig[]> | null = null;
   private static initialized: boolean = false;
+
+  /** Cache key prefix for LLM provider instances */
+  private static readonly INSTANCE_PREFIX = 'llmInstances:';
 
   /**
    * 初始化：从后端预加载 Provider 配置
    * 建议在应用启动时调用
    */
   static async initialize(): Promise<void> {
-    if (this.initialized && this.providerTemplates) {
+    if (this.initialized && cacheManager.get<AIProviderConfig[]>(CACHE_DOMAINS.PROVIDER_TEMPLATES)) {
       return;
     }
 
     try {
-      this.providerTemplates = await getProviderTemplates();
+      await getProviderTemplates();
       this.initialized = true;
     } catch (error) {
       // 即使加载失败，也标记为已初始化，避免重复尝试
@@ -52,10 +51,11 @@ export class LLMFactory {
    * 根据 providerId 查找后端配置（同步，使用缓存）
    */
   private static findProviderConfig(providerId: string): AIProviderConfig | undefined {
-    if (!this.providerTemplates) {
+    const templates = cacheManager.get<AIProviderConfig[]>(CACHE_DOMAINS.PROVIDER_TEMPLATES);
+    if (!templates) {
       return undefined;
     }
-    return this.providerTemplates.find(t => t.id === providerId);
+    return templates.find(t => t.id === providerId);
   }
 
   /**
@@ -68,16 +68,17 @@ export class LLMFactory {
    * @param providerId The specific provider ID (e.g., 'deepseek', 'tongyi')
    */
   static getProvider(protocol: ApiProtocol, providerId: string): ILLMProvider {
-    const cacheKey = `${providerId}_${protocol}`;
+    const cacheKey = `${this.INSTANCE_PREFIX}${providerId}_${protocol}`;
 
-    if (this.instances.has(cacheKey)) {
-      return this.instances.get(cacheKey)!;
+    const cached = cacheManager.get<ILLMProvider>(cacheKey);
+    if (cached) {
+      return cached;
     }
 
     // ✅ 所有 Provider 统一使用 UnifiedProviderClient（通过后端统一处理）
     const provider: ILLMProvider = new UnifiedProviderClient(providerId);
 
-    this.instances.set(cacheKey, provider);
+    cacheManager.set(cacheKey, provider);
     return provider;
   }
 
@@ -85,9 +86,8 @@ export class LLMFactory {
    * 清除缓存（用于重新加载配置）
    */
   static clearCache(): void {
-    this.instances.clear();
-    this.providerTemplates = null;
-    this.templatesLoading = null;
+    cacheManager.clearDomain(this.INSTANCE_PREFIX);
+    cacheManager.remove(CACHE_DOMAINS.PROVIDER_TEMPLATES);
     this.initialized = false;
   }
 }
