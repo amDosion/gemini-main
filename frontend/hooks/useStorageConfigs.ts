@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { StorageConfig } from '../types/storage';
 import { db } from '../services/db';
+import { cacheManager, CACHE_DOMAINS } from '../services/CacheManager';
+import { useCacheSubscription, useCacheUpdater } from './useCacheSubscription';
 
 interface UseStorageConfigsReturn {
   storageConfigs: StorageConfig[];
@@ -16,54 +18,55 @@ interface InitData {
 }
 
 export const useStorageConfigs = (initData?: InitData): UseStorageConfigsReturn => {
-  const [storageConfigs, setStorageConfigs] = useState<StorageConfig[]>([]);
-  const [activeStorageId, setActiveStorageId] = useState<string | null>(null);
   const initializedRef = useRef(false);
 
-  // initData 仅用于首次初始化，之后所有变更由本地操作驱动
+  // 订阅 CacheManager 中的数据
+  const storageConfigs = useCacheSubscription<StorageConfig[]>(CACHE_DOMAINS.STORAGE_CONFIGS, []);
+  const activeStorageId = useCacheSubscription<string | null>(CACHE_DOMAINS.ACTIVE_STORAGE_ID, null);
+  const configsUpdater = useCacheUpdater<StorageConfig[]>(CACHE_DOMAINS.STORAGE_CONFIGS, []);
+  const activeIdUpdater = useCacheUpdater<string | null>(CACHE_DOMAINS.ACTIVE_STORAGE_ID, null);
+
+  // initData 仅用于首次初始化
   useEffect(() => {
-    if (!initData) return;
-    // 首次：直接写入
-    if (!initializedRef.current) {
-      const configs = initData.storageConfigs || [];
-      if (configs.length > 0 || initData.activeStorageId) {
-        initializedRef.current = true;
-        setStorageConfigs(configs);
-        setActiveStorageId(initData.activeStorageId || null);
-      }
-      return;
+    if (!initData || initializedRef.current) return;
+    const configs = initData.storageConfigs || [];
+    if (configs.length > 0 || initData.activeStorageId) {
+      initializedRef.current = true;
+      configsUpdater.set(configs);
+      activeIdUpdater.set(initData.activeStorageId || null);
     }
-    // 已初始化后：不再从 initData 同步，由本地操作驱动
-  }, [initData]);
+  }, [initData, configsUpdater, activeIdUpdater]);
 
   const handleSaveStorage = useCallback(async (config: StorageConfig) => {
+    // 先写 DB
     await db.saveStorageConfig(config);
-    // 增量更新：直接用操作数据更新 state，不重新获取
-    setStorageConfigs(prev => {
+    // 增量更新缓存
+    configsUpdater.update(prev => {
       const idx = prev.findIndex(c => c.id === config.id);
       if (idx >= 0) {
-        const updated = [...prev];
-        updated[idx] = config;
-        return updated;
+        return prev.map(c => c.id === config.id ? config : c);
       }
       return [...prev, config];
     });
-  }, []);
+  }, [configsUpdater]);
 
   const handleDeleteStorage = useCallback(async (id: string) => {
+    // 先写 DB
     await db.deleteStorageConfig(id);
-    // 增量更新：直接移除，不重新获取
-    setStorageConfigs(prev => prev.filter(c => c.id !== id));
+    // 增量更新缓存
+    configsUpdater.update(prev => prev.filter(c => c.id !== id));
     if (activeStorageId === id) {
-      setActiveStorageId(null);
+      activeIdUpdater.set(null);
       await db.setActiveStorageId('');
     }
-  }, [activeStorageId]);
+  }, [activeStorageId, configsUpdater, activeIdUpdater]);
 
   const handleActivateStorage = useCallback(async (id: string) => {
+    // 先写 DB
     await db.setActiveStorageId(id);
-    setActiveStorageId(id);
-  }, []);
+    // 更新缓存
+    activeIdUpdater.set(id);
+  }, [activeIdUpdater]);
 
   return {
     storageConfigs,

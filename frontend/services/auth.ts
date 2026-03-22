@@ -12,6 +12,7 @@ import {
   withAuthorization,
 } from './authTokenStore';
 import { fetchWithTimeout, parseHttpError, readJsonResponse } from './http';
+import { cacheManager } from './CacheManager';
 
 export { getAccessToken } from './authTokenStore';
 
