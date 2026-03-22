@@ -10,7 +10,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { Palette, Layers, Ratio, FileImage, Sparkles, ChevronUp, ChevronDown, Dices } from 'lucide-react';
 import { ImageGenControlsProps } from '../../types';
-import { getEnhancePromptModelCandidates } from '../../../utils/modelSuitability';
+import { useEnhancePromptModels } from '../../../hooks/useEnhancePromptModels';
 import { getPixelResolutionFromSchema, useModeControlsSchema } from '../../../hooks/useModeControlsSchema';
 
 export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
@@ -101,9 +101,7 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
     controls?.outputCompressionQuality ?? propOutputCompressionQuality ?? defaultCompressionQuality;
   const setOutputCompressionQuality = controls?.setOutputCompressionQuality ?? propSetOutputCompressionQuality ?? (() => {});
   const enhancePrompt = controls?.enhancePrompt ?? propEnhancePrompt ?? defaultEnhancePrompt;
-  const enhancePromptModels = useMemo(() => {
-    return getEnhancePromptModelCandidates(availableModels);
-  }, [availableModels]);
+  const enhancePromptModels = useEnhancePromptModels();
   const enhancePromptModel = controls?.enhancePromptModel ?? '';
   const setEnhancePromptModel = controls?.setEnhancePromptModel;
   const setEnhancePrompt = controls?.setEnhancePrompt ?? propSetEnhancePrompt ?? (() => {});

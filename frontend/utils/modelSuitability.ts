@@ -28,16 +28,8 @@ export const isMultimodalUnderstandingModel = (model: ModelConfig): boolean => {
   return isLegacyMultimodalUnderstandingFallback(model);
 };
 
-// Fallback models for enhance prompt when no candidates from visible models
-const ENHANCE_PROMPT_FALLBACK_MODELS: ModelConfig[] = [
-  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', capabilities: { vision: true } },
-  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', capabilities: { vision: true } },
-  { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', capabilities: { vision: true } },
-] as ModelConfig[];
-
 export const getEnhancePromptModelCandidates = (models: ModelConfig[]): ModelConfig[] => {
-  const candidates = models.filter(isMultimodalUnderstandingModel);
-  return candidates.length > 0 ? candidates : ENHANCE_PROMPT_FALLBACK_MODELS;
+  return models.filter(isMultimodalUnderstandingModel);
 };
 
 export const isThinkingCapableModel = (model: ModelConfig): boolean => {

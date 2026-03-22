@@ -6,7 +6,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { Ratio, Layers, ChevronUp, ChevronDown, FileImage, Dices, Sparkles } from 'lucide-react';
 import { ImageEditControlsProps } from '../../types';
-import { getEnhancePromptModelCandidates } from '../../../utils/modelSuitability';
+import { useEnhancePromptModels } from '../../../hooks/useEnhancePromptModels';
 import { getPixelResolutionFromSchema, useModeControlsSchema } from '../../../hooks/useModeControlsSchema';
 
 export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
@@ -61,9 +61,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   const availableResolutionTiers = useMemo(() => {
     return schema?.resolutionTiers ?? [];
   }, [schema]);
-  const enhancePromptModels = useMemo(() => {
-    return getEnhancePromptModelCandidates(availableModels);
-  }, [availableModels]);
+  const enhancePromptModels = useEnhancePromptModels();
   const enhancePromptModel = controls?.enhancePromptModel ?? '';
   const setEnhancePromptModel = controls?.setEnhancePromptModel;
   
