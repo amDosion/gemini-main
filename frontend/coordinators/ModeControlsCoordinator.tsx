@@ -70,6 +70,7 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
           providerId={providerId} 
           currentModel={currentModel} 
           controls={controls}
+          availableModels={availableModels}
           maxImageCount={maxImageCount}
           {...(controlProps as ImageGenControlsProps)} 
         />

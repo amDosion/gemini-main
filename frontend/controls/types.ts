@@ -88,6 +88,8 @@ export interface ImageGenControlsProps {
   currentModel?: ModelConfig;
   /** 传递 controls 状态对象 */
   controls?: ControlsState;
+  /** 可用模型列表（用于增强提示词模型选择） */
+  availableModels?: ModelConfig[];
   /** 最大图片生成数量 */
   maxImageCount?: number;
   // 单独 props（向后兼容）
