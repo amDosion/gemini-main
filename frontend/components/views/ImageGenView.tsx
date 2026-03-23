@@ -12,6 +12,7 @@ import { ImageCanvasControls } from '../common/ImageCanvasControls';
 import { ImageCarouselArrows, ImageCarouselThumbnails, type CarouselMediaItem } from '../common/ImageCarouselControls';
 import { getUrlType } from '../../hooks/handlers/attachmentUtils';
 import { useControlsState } from '../../hooks/useControlsState';
+import { useModeControlsSchema } from '../../hooks/useModeControlsSchema';
 import { useImageCanvas } from '../../hooks/useImageCanvas';
 import { useImageCarousel } from '../../hooks/useImageCarousel';
 import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
@@ -153,8 +154,10 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
     // ✅ 检测提供商类型
     const isOpenAI = providerId === 'openai';
 
-    // ✅ 最大图片数量（OpenAI 只支持 1 张）
-    const maxImageCount = isOpenAI ? 1 : 4;
+    // ✅ 从 schema 获取最大图片数量（按模型动态调整）
+    const { schema: genSchema } = useModeControlsSchema(providerId, 'image-gen', activeModelConfig?.id);
+    const schemaMaxCount = (genSchema?.constraints as Record<string, unknown>)?.max_image_count;
+    const maxImageCount = isOpenAI ? 1 : (typeof schemaMaxCount === 'number' ? schemaMaxCount : 4);
 
     // ✅ OpenAI 只支持 1 张图片
     useEffect(() => {

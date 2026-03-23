@@ -294,7 +294,10 @@
                   "value": "4K",
                   "baseResolution": "4096×4096"
                 }
-              ]
+              ],
+              "constraints": {
+                "max_image_count": 8
+              }
             },
             {
               "match": {
@@ -316,7 +319,10 @@
                   "value": "4K",
                   "baseResolution": "4096×4096"
                 }
-              ]
+              ],
+              "constraints": {
+                "max_image_count": 8
+              }
             },
             {
               "match": {
@@ -338,7 +344,10 @@
                   "value": "4K",
                   "baseResolution": "4096×4096"
                 }
-              ]
+              ],
+              "constraints": {
+                "max_image_count": 8
+              }
             },
             {
               "match": {
@@ -350,7 +359,10 @@
                   "value": "1K",
                   "baseResolution": "1024×1024"
                 }
-              ]
+              ],
+              "constraints": {
+                "max_image_count": 8
+              }
             },
             {
               "match": {
@@ -362,7 +374,10 @@
                   "value": "1K",
                   "baseResolution": "1024×1024"
                 }
-              ]
+              ],
+              "constraints": {
+                "max_image_count": 8
+              }
             },
             {
               "match": {

@@ -242,24 +242,25 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
       {/* 生成数量 */}
       {maxImageCount > 1 && (
         <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Layers size={12} className="text-blue-400" />
-            <span className="text-xs text-slate-300">生成数量</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Layers size={12} className="text-blue-400" />
+              <span className="text-xs text-slate-300">生成数量</span>
+            </div>
+            <span className="text-xs text-blue-400 font-mono font-bold">{numberOfImages}</span>
           </div>
-        <div className="flex gap-2">
-            {imageCountOptions.filter((n) => n <= maxImageCount).map((num) => (
-              <button
-                key={num}
-                onClick={() => setNumberOfImages(num)}
-                className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                  numberOfImages === num
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
-                }`}
-              >
-                {num}
-              </button>
-            ))}
+          <input
+            type="range"
+            min={1}
+            max={maxImageCount}
+            step={1}
+            value={numberOfImages}
+            onChange={(e) => setNumberOfImages(parseInt(e.target.value))}
+            className="w-full h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer accent-blue-500"
+          />
+          <div className="flex justify-between text-[10px] text-slate-500 px-0.5">
+            <span>1</span>
+            <span>{maxImageCount}</span>
           </div>
         </div>
       )}
