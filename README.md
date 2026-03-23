@@ -306,16 +306,7 @@ The Vite dev server proxies `/api/*` requests to the FastAPI backend automatical
 
 ## 📝 License
 
-This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
-
-- ✅ Free to use, modify, and distribute
-- ✅ Commercial use allowed
-- ⚠️ **Derivative works must retain the same license (AGPL-3.0)**
-- ⚠️ **Must prominently attribute the original project:**
-  > Based on Gemini Flux Chat by amDosion (https://github.com/amDosion/gemini-main)
-- ⚠️ **If deployed as a network service, source code must be made available to users**
-
-See [LICENSE](LICENSE) for full terms.
+[AGPL-3.0](LICENSE)
 
 ---
 
