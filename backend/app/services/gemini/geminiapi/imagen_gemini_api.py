@@ -2,8 +2,7 @@
 Gemini API implementation for Imagen image generation.
 
 This module provides image generation using the Gemini API with simple API key authentication.
-Note: person_generation parameter has been removed. The API uses its default value
-(allow_adult), which allows normal adult and children images without NSFW content.
+Gemini API implementation for image generation.
 """
 
 import logging
@@ -72,7 +71,6 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
     Features:
     - Simple authentication with API key only
     - Supports most Imagen parameters
-    - person_generation parameter removed (API uses default: allow_adult)
     """
     
     def __init__(self, api_key: str):
@@ -124,13 +122,9 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
         - image_size ('1K', '2K')
         - output_mime_type ('image/png', 'image/jpeg')
         - output_compression_quality (1-100)
-        - include_rai_reason (bool)
         - image_style (str)
         
-        Note: person_generation parameter has been removed. The API will use
-        its default value (allow_adult), which allows normal adult and children
-        images without NSFW content.
-        
+
         Args:
             prompt: Text description of the image
             model: Model to use
@@ -467,8 +461,7 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
                         result["safety_attributes"] = safety_attrs
                 
                 # Add RAI reason if available
-                if hasattr(generated_image, 'rai_reason') and generated_image.rai_reason:
-                    result["rai_reason"] = generated_image.rai_reason
+
                 
                 # ✅ 提取增强后的提示词（如果启用了 enhance_prompt）
                 if hasattr(generated_image, 'enhanced_prompt') and generated_image.enhanced_prompt:
@@ -512,8 +505,6 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
         image_size = kwargs.get('image_size')
         validate_image_size(image_size)
         
-        # Note: person_generation parameter has been removed.
-        # The API will use its default value (allow_adult).
         
         # Validate number of images
         number_of_images = kwargs.get('number_of_images', 1)
@@ -529,7 +520,7 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
             'max_images': 4,
             'aspect_ratios': VALID_ASPECT_RATIOS,
             'image_sizes': VALID_IMAGE_SIZES,
-            'person_generation': None,  # Parameter removed, API uses default
+
             'supports_allow_all': False
         }
     
