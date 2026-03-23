@@ -390,7 +390,18 @@
                   "value": "16:9"
                 }
               ],
-              "resolution_tiers": []
+              "resolution_tiers": [
+                {
+                  "label": "1K Standard",
+                  "value": "1K",
+                  "baseResolution": "1024×1024"
+                },
+                {
+                  "label": "2K High",
+                  "value": "2K",
+                  "baseResolution": "2048×2048"
+                }
+              ]
             }
           ]
         },
