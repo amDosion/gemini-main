@@ -73,6 +73,22 @@
             }
           ],
           "resolution_map": {
+            "512": {
+              "1:1": "512*512",
+              "1:4": "256*1024",
+              "1:8": "192*1536",
+              "2:3": "424*632",
+              "3:2": "632*424",
+              "3:4": "448*600",
+              "4:1": "1024*256",
+              "4:3": "600*448",
+              "4:5": "464*576",
+              "5:4": "576*464",
+              "8:1": "1536*192",
+              "9:16": "384*688",
+              "16:9": "688*384",
+              "21:9": "792*336"
+            },
             "1K": {
               "1:1": "1024*1024",
               "1:4": "512*2048",
@@ -193,7 +209,190 @@
               "max": 100,
               "step": 1
             }
-          }
+          },
+          "model_variants": [
+            {
+              "match": {
+                "contains": "gemini-3.1-flash-image"
+              },
+              "aspect_ratios": [
+                {
+                  "label": "1:1 Square",
+                  "value": "1:1"
+                },
+                {
+                  "label": "1:4",
+                  "value": "1:4"
+                },
+                {
+                  "label": "1:8",
+                  "value": "1:8"
+                },
+                {
+                  "label": "2:3 Portrait",
+                  "value": "2:3"
+                },
+                {
+                  "label": "3:2 Landscape",
+                  "value": "3:2"
+                },
+                {
+                  "label": "3:4 Portrait",
+                  "value": "3:4"
+                },
+                {
+                  "label": "4:1",
+                  "value": "4:1"
+                },
+                {
+                  "label": "4:3 Landscape",
+                  "value": "4:3"
+                },
+                {
+                  "label": "4:5 Portrait",
+                  "value": "4:5"
+                },
+                {
+                  "label": "5:4 Landscape",
+                  "value": "5:4"
+                },
+                {
+                  "label": "8:1",
+                  "value": "8:1"
+                },
+                {
+                  "label": "9:16 Portrait",
+                  "value": "9:16"
+                },
+                {
+                  "label": "16:9 Landscape",
+                  "value": "16:9"
+                },
+                {
+                  "label": "21:9 Ultrawide",
+                  "value": "21:9"
+                }
+              ],
+              "resolution_tiers": [
+                {
+                  "label": "512 Low (512×512 base)",
+                  "value": "512",
+                  "baseResolution": "512×512"
+                },
+                {
+                  "label": "1K Standard (1024×1024 base)",
+                  "value": "1K",
+                  "baseResolution": "1024×1024"
+                },
+                {
+                  "label": "2K High (2048×2048 base)",
+                  "value": "2K",
+                  "baseResolution": "2048×2048"
+                },
+                {
+                  "label": "4K Ultra (4096×4096 base)",
+                  "value": "4K",
+                  "baseResolution": "4096×4096"
+                }
+              ]
+            },
+            {
+              "match": {
+                "contains": "gemini-3-pro-image"
+              },
+              "resolution_tiers": [
+                {
+                  "label": "1K Standard (1024×1024 base)",
+                  "value": "1K",
+                  "baseResolution": "1024×1024"
+                },
+                {
+                  "label": "2K High (2048×2048 base)",
+                  "value": "2K",
+                  "baseResolution": "2048×2048"
+                },
+                {
+                  "label": "4K Ultra (4096×4096 base)",
+                  "value": "4K",
+                  "baseResolution": "4096×4096"
+                }
+              ]
+            },
+            {
+              "match": {
+                "contains": "gemini-3.0-pro-image"
+              },
+              "resolution_tiers": [
+                {
+                  "label": "1K Standard (1024×1024 base)",
+                  "value": "1K",
+                  "baseResolution": "1024×1024"
+                },
+                {
+                  "label": "2K High (2048×2048 base)",
+                  "value": "2K",
+                  "baseResolution": "2048×2048"
+                },
+                {
+                  "label": "4K Ultra (4096×4096 base)",
+                  "value": "4K",
+                  "baseResolution": "4096×4096"
+                }
+              ]
+            },
+            {
+              "match": {
+                "contains": "gemini-2.5-flash-image"
+              },
+              "resolution_tiers": [
+                {
+                  "label": "1K Standard (1024×1024 base)",
+                  "value": "1K",
+                  "baseResolution": "1024×1024"
+                }
+              ]
+            },
+            {
+              "match": {
+                "contains": "gemini-2.5-pro-image"
+              },
+              "resolution_tiers": [
+                {
+                  "label": "1K Standard (1024×1024 base)",
+                  "value": "1K",
+                  "baseResolution": "1024×1024"
+                }
+              ]
+            },
+            {
+              "match": {
+                "contains": "imagen-4"
+              },
+              "aspect_ratios": [
+                {
+                  "label": "1:1 Square",
+                  "value": "1:1"
+                },
+                {
+                  "label": "3:4 Portrait",
+                  "value": "3:4"
+                },
+                {
+                  "label": "4:3 Landscape",
+                  "value": "4:3"
+                },
+                {
+                  "label": "9:16 Portrait",
+                  "value": "9:16"
+                },
+                {
+                  "label": "16:9 Landscape",
+                  "value": "16:9"
+                }
+              ],
+              "resolution_tiers": []
+            }
+          ]
         },
         "image-edit": {
           "defaults": {
