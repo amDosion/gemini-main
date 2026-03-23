@@ -1,7 +1,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Check, Loader2, Settings, Globe, Brain, Image as ImageIcon, Zap, BrainCircuit, Video, Mic, Server, Cpu, Sparkles, PlusCircle, LogOut, Search, X, User, KeyRound, Shield, Activity, HardDrive, Network, RefreshCw } from 'lucide-react';
+import { ChevronDown, Check, Loader2, Settings, Globe, Brain, Image as ImageIcon, Zap, BrainCircuit, Video, Mic, Server, Cpu, Sparkles, PlusCircle, LogOut, Search, X, User, KeyRound, Shield, Activity, HardDrive, Network, RefreshCw, Trash2 } from 'lucide-react';
 import { ModelConfig, AppMode } from '../../types/types';
 import { ConfigProfile } from '../../services/db';
 import type { User as AuthUser, ChangePasswordData } from '../../services/auth';
@@ -10,6 +10,7 @@ import { isMultimodalUnderstandingModel } from '../../utils/modelSuitability';
 import type { SystemConfigPayload, SystemStatusPayload } from '../../services/systemAdmin';
 import { systemAdminService } from '../../services/systemAdmin';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 
 interface HeaderProps {
     isSidebarOpen: boolean;
@@ -131,6 +132,8 @@ export const Header: React.FC<HeaderProps> = ({
     const [isLoadingSystemStatus, setIsLoadingSystemStatus] = useState(false);
     const [systemStatusError, setSystemStatusError] = useState('');
     const isSystemStatusRequestInFlight = useRef(false);
+    const [isCleanupConfirmOpen, setIsCleanupConfirmOpen] = useState(false);
+    const [isCleaningUp, setIsCleaningUp] = useState(false);
     const { showError, showSuccess } = useToastContext();
 
     // Get Current Profile
@@ -374,6 +377,25 @@ export const Header: React.FC<HeaderProps> = ({
     };
 
     const configFields = systemConfig?.fields || [];
+
+    const handleCleanup = async () => {
+        setIsCleanupConfirmOpen(false);
+        setIsCleaningUp(true);
+        try {
+            const result = await systemAdminService.cleanup();
+            const entries = Object.entries(result.cleaned)
+                .map(([k, v]) => `${k}: ${v < 0 ? '失败' : v}`)
+                .join(', ');
+            const freedMB = ((result.freedBytes || 0) / 1024 / 1024).toFixed(2);
+            showSuccess(`清理完成 (释放 ${freedMB} MB): ${entries}`);
+            loadSystemStatus();
+        } catch (error) {
+            const message = error instanceof Error ? error.message : '系统清理失败';
+            showError(message);
+        } finally {
+            setIsCleaningUp(false);
+        }
+    };
 
     return (
         <header className="h-14 flex items-center justify-between px-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md z-50 shrink-0 sticky top-0">
@@ -917,6 +939,15 @@ export const Header: React.FC<HeaderProps> = ({
                                             <RefreshCw size={13} />
                                             刷新
                                         </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsCleanupConfirmOpen(true)}
+                                            disabled={isCleaningUp}
+                                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-red-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            {isCleaningUp ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                                            {isCleaningUp ? '清理中...' : '清理垃圾'}
+                                        </button>
                                     </div>
 
                                     {isLoadingSystemStatus ? (
@@ -1019,6 +1050,15 @@ export const Header: React.FC<HeaderProps> = ({
                 </>,
                 document.body
             )}
+            <ConfirmDialog
+                isOpen={isCleanupConfirmOpen}
+                title="清理系统垃圾"
+                message="将清理 __pycache__、临时上传文件、存储下载缓存、测试临时文件、过期上传任务、过期刷新令牌和 Redis 过期键。不会删除用户数据。确认继续？"
+                confirmLabel="确认清理"
+                cancelLabel="取消"
+                onConfirm={handleCleanup}
+                onCancel={() => setIsCleanupConfirmOpen(false)}
+            />
         </header>
     );
 };

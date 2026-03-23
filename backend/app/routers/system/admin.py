@@ -389,3 +389,180 @@ async def get_admin_health_details(_: str = Depends(require_admin_user)):
     from . import health as health_module
 
     return await health_module.build_health_payload(include_internal_errors=True)
+
+
+@router.post("/cleanup")
+async def cleanup_system(
+    _: str = Depends(require_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Clean system garbage: pycache, temp files, expired DB records, stale Redis keys."""
+
+    from pathlib import Path
+
+    results: Dict[str, int] = {}
+    freed_bytes = 0
+
+    # 1. __pycache__ directories
+    try:
+        pycache_count = 0
+        backend_root = Path(__file__).resolve().parents[3]  # backend/
+        for d in backend_root.rglob("__pycache__"):
+            if d.is_dir():
+                try:
+                    dir_size = sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
+                    freed_bytes += dir_size
+                    shutil.rmtree(d, ignore_errors=True)
+                    pycache_count += 1
+                except Exception:
+                    pass
+        results["pycache_dirs"] = pycache_count
+    except Exception as exc:
+        logger.warning("[Cleanup] Failed to clean __pycache__: %s", exc)
+        results["pycache_dirs"] = -1
+
+    # 2. Upload temp files (older than 1 hour)
+    try:
+        temp_dir = Path(__file__).resolve().parents[2] / "temp"
+        upload_temp_count = 0
+        one_hour_ago = time.time() - 3600
+        if temp_dir.is_dir():
+            for f in temp_dir.iterdir():
+                if f.is_file() and f.name.startswith("upload_"):
+                    try:
+                        if f.stat().st_mtime < one_hour_ago:
+                            file_size = f.stat().st_size
+                            f.unlink()
+                            upload_temp_count += 1
+                            freed_bytes += file_size
+                    except Exception:
+                        pass
+        results["temp_upload_files"] = upload_temp_count
+    except Exception as exc:
+        logger.warning("[Cleanup] Failed to clean upload temp files: %s", exc)
+        results["temp_upload_files"] = -1
+
+    # 3. Storage downloads cache (clear all)
+    try:
+        storage_downloads_dir = Path(__file__).resolve().parents[2] / "temp" / "storage_downloads"
+        storage_count = 0
+        if storage_downloads_dir.is_dir():
+            for item in storage_downloads_dir.iterdir():
+                try:
+                    if item.is_file():
+                        freed_bytes += item.stat().st_size
+                        item.unlink()
+                        storage_count += 1
+                    elif item.is_dir():
+                        dir_size = sum(f.stat().st_size for f in item.rglob("*") if f.is_file())
+                        freed_bytes += dir_size
+                        shutil.rmtree(item, ignore_errors=True)
+                        storage_count += 1
+                except Exception:
+                    pass
+        results["storage_downloads"] = storage_count
+    except Exception as exc:
+        logger.warning("[Cleanup] Failed to clean storage downloads: %s", exc)
+        results["storage_downloads"] = -1
+
+    # 4. Test temp files (clear all)
+    try:
+        test_dir = Path(__file__).resolve().parents[2] / "temp" / "local_storage_script_test"
+        test_count = 0
+        if test_dir.is_dir():
+            for item in test_dir.iterdir():
+                try:
+                    if item.is_file():
+                        freed_bytes += item.stat().st_size
+                        item.unlink()
+                        test_count += 1
+                    elif item.is_dir():
+                        dir_size = sum(f.stat().st_size for f in item.rglob("*") if f.is_file())
+                        freed_bytes += dir_size
+                        shutil.rmtree(item, ignore_errors=True)
+                        test_count += 1
+                except Exception:
+                    pass
+        results["test_temp_files"] = test_count
+    except Exception as exc:
+        logger.warning("[Cleanup] Failed to clean test temp files: %s", exc)
+        results["test_temp_files"] = -1
+
+    # 5. Expired upload tasks (completed > 7 days ago)
+    try:
+        from ...models.db_models import UploadTask
+        import time as _time
+
+        seven_days_ago_ms = int((_time.time() - 7 * 86400) * 1000)
+        expired_tasks = (
+            db.query(UploadTask)
+            .filter(
+                UploadTask.status == "completed",
+                UploadTask.completed_at.isnot(None),
+                UploadTask.completed_at < seven_days_ago_ms,
+            )
+            .all()
+        )
+        expired_task_count = len(expired_tasks)
+        for task in expired_tasks:
+            db.delete(task)
+        if expired_task_count > 0:
+            db.commit()
+        results["expired_upload_tasks"] = expired_task_count
+    except Exception as exc:
+        logger.warning("[Cleanup] Failed to clean expired upload tasks: %s", exc)
+        db.rollback()
+        results["expired_upload_tasks"] = -1
+
+    # 6. Expired refresh tokens
+    try:
+        from ...models.db_models import RefreshToken
+
+        now_utc = datetime.now(timezone.utc)
+        expired_tokens = (
+            db.query(RefreshToken)
+            .filter(RefreshToken.expires_at < now_utc)
+            .all()
+        )
+        expired_token_count = len(expired_tokens)
+        for token in expired_tokens:
+            db.delete(token)
+        if expired_token_count > 0:
+            db.commit()
+        results["expired_refresh_tokens"] = expired_token_count
+    except Exception as exc:
+        logger.warning("[Cleanup] Failed to clean expired refresh tokens: %s", exc)
+        db.rollback()
+        results["expired_refresh_tokens"] = -1
+
+    # 7. Redis stale keys (cleanup expired keys via SCAN)
+    try:
+        from ...services.common.redis_queue_service import redis_queue
+
+        if redis_queue._redis:
+            stale_count = 0
+            cursor = 0
+            while True:
+                cursor, keys = await redis_queue._redis.scan(cursor=cursor, count=100)
+                for key in keys:
+                    ttl = await redis_queue._redis.ttl(key)
+                    if ttl is not None and ttl == -2:
+                        # Key already expired / doesn't exist
+                        stale_count += 1
+                if cursor == 0:
+                    break
+            # Force memory reclaim
+            try:
+                await redis_queue._redis.execute_command("MEMORY", "PURGE")
+            except Exception:
+                pass
+            results["redis_stale_keys"] = stale_count
+        else:
+            results["redis_stale_keys"] = 0
+    except Exception as exc:
+        logger.warning("[Cleanup] Failed to clean Redis stale keys: %s", exc)
+        results["redis_stale_keys"] = -1
+
+    logger.info("[Cleanup] System cleanup completed: %s, freed %d bytes", results, freed_bytes)
+
+    return {"cleaned": results, "freed_bytes": freed_bytes}

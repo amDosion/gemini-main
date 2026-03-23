@@ -65,6 +65,12 @@ export interface SystemStatusPayload {
 
 export type UpdateSystemConfigPayload = Record<string, string | number | boolean>;
 
+export interface CleanupResult {
+  cleaned: Record<string, number>;
+  freedBytes: number;
+}
+
+
 class SystemAdminService {
   private readonly baseUrl = '/api/system/admin';
 
@@ -87,6 +93,11 @@ class SystemAdminService {
 
   async getStatus(): Promise<SystemStatusPayload> {
     return apiClient.get<SystemStatusPayload>(`${this.baseUrl}/status`);
+  }
+
+
+  async cleanup(): Promise<CleanupResult> {
+    return apiClient.post<CleanupResult>(`${this.baseUrl}/cleanup`);
   }
 }
 
