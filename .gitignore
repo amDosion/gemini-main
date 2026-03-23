@@ -92,3 +92,33 @@ node_modules/
 .next/
 frontend/.next/
 queue/
+
+# AI tool configs
+.claude/
+.codex/
+.cursorrules
+.aider*
+CLAUDE.md
+GEMINI.md
+AGENTS.md
+
+# Test files
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+**/tests/
+**/test_*/
+**/*_test.*
+**/test_templates/
+
+# CI/CD scripts
+.github/
+scripts/ci/
+scripts/e2e/
+scripts/observability/
+scripts/perf/
+scripts/test_*
+
+# Build docs
+docs/*.svg
