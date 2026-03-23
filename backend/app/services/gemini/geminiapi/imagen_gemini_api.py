@@ -155,9 +155,13 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
         self._ensure_initialized()
         logger.info(f"[GeminiAPIImageGenerator] ✅ 客户端已初始化")
         
-        logger.info(f"[GeminiAPIImageGenerator] 🔄 [步骤1] 验证参数...")
-        self.validate_parameters(**kwargs)
-        logger.info(f"[GeminiAPIImageGenerator] ✅ [步骤1] 参数验证通过")
+        # Route: native Gemini models skip Imagen validation (different limits)
+        if _is_generate_content_model(model):
+            logger.info(f"[GeminiAPIImageGenerator] 🔄 [步骤1] Gemini native model, skipping Imagen validation")
+        else:
+            logger.info(f"[GeminiAPIImageGenerator] 🔄 [步骤1] 验证参数...")
+            self.validate_parameters(**kwargs)
+            logger.info(f"[GeminiAPIImageGenerator] ✅ [步骤1] 参数验证通过")
         
         logger.info(f"[GeminiAPIImageGenerator] 🔄 [步骤2] 构建配置...")
         config = self._build_config(model=model, **kwargs)
