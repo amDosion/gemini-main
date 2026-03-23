@@ -25,13 +25,18 @@ export class ImageGenHandler extends BaseHandler {
       // ✅ 后端已处理图片（返回 attachmentId, uploadStatus, taskId）
       // 直接使用后端返回的结果，不需要再次处理
       const displayAttachments: Attachment[] = results.map((res: ImageGenerationResult) => ({
-        id: res.attachmentId || uuidv4(),  // 使用后端返回的 attachmentId
+        id: res.attachmentId || uuidv4(),
         mimeType: res.mimeType || 'image/png',
         name: res.filename || `generated-${Date.now()}.png`,
-        url: res.url,  // 显示URL（Base64 Data URL 或 HTTP URL，临时代理 URL 不再返回）
+        url: res.url,
         uploadStatus: res.uploadStatus || 'pending',
         uploadTaskId: res.taskId,
-        enhancedPrompt: res.enhancedPrompt  // ✅ 传递增强后的提示词
+        cloudUrl: res.cloudUrl,
+        sessionId: res.sessionId,
+        messageId: res.messageId,
+        userId: res.userId,
+        size: res.size,
+        enhancedPrompt: res.enhancedPrompt,
       } as Attachment));
 
       // ✅ 后端已处理上传任务，不需要前端再次上传
