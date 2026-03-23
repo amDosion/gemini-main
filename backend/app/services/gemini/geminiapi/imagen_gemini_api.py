@@ -269,19 +269,23 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
 
         logger.info(f"[GeminiAPIImageGenerator] 🔄 [Gemini] model={model}, images={number_of_images}")
 
-        results = []
-        failures = 0
-        for i in range(number_of_images):
+        import asyncio
+
+        async def _generate_single(index: int):
+            """Generate a single image as an independent request."""
             try:
                 api_start = time.time()
-                response = self._client.models.generate_content(
+                # Each request is independent (like Batch API inline_requests)
+                response = await asyncio.to_thread(
+                    self._client.models.generate_content,
                     model=model,
                     contents=contents,
                     config=generate_config,
                 )
                 api_time = (time.time() - api_start) * 1000
-                logger.info(f"[GeminiAPIImageGenerator] ✅ [Gemini] Image {i+1}/{number_of_images} done ({api_time:.0f}ms)")
+                logger.info(f"[GeminiAPIImageGenerator] ✅ [Gemini] Image {index+1}/{number_of_images} done ({api_time:.0f}ms)")
 
+                images = []
                 if response.candidates:
                     for candidate in response.candidates:
                         if candidate.content and candidate.content.parts:
@@ -290,21 +294,32 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
                                     image_bytes = part.inline_data.data
                                     b64_data = encode_image_to_base64(image_bytes)
                                     mime = getattr(part.inline_data, 'mime_type', None) or output_mime_type
-                                    results.append({
+                                    images.append({
                                         "url": f"data:{mime};base64,{b64_data}",
                                         "mime_type": mime,
-                                        "index": len(results),
                                         "size": len(image_bytes),
                                     })
+                return images
             except Exception as e:
-                failures += 1
-                logger.warning(f"[GeminiAPIImageGenerator] ⚠️ [Gemini] Image {i+1}/{number_of_images} failed: {e}")
-                # Continue generating remaining images
+                logger.warning(f"[GeminiAPIImageGenerator] ⚠️ [Gemini] Image {index+1}/{number_of_images} failed: {e}")
+                return []
 
+        # Concurrent generation: all requests fire in parallel
+        logger.info(f"[GeminiAPIImageGenerator] 🔄 [Gemini] Launching {number_of_images} parallel requests...")
+        tasks = [_generate_single(i) for i in range(number_of_images)]
+        all_results = await asyncio.gather(*tasks)
+
+        results = []
+        for batch in all_results:
+            for img in batch:
+                img["index"] = len(results)
+                results.append(img)
+
+        failures = sum(1 for r in all_results if not r)
         if not results:
             raise APIError(f"All {number_of_images} image generations failed", api_type="gemini_api")
         if failures > 0:
-            logger.info(f"[GeminiAPIImageGenerator] Partial success: {len(results)}/{number_of_images} images generated ({failures} failed)")
+            logger.info(f"[GeminiAPIImageGenerator] Partial success: {len(results)}/{number_of_images} images ({failures} failed)")
 
         total_time = (time.time() - start_time) * 1000
         logger.info(f"[GeminiAPIImageGenerator] ✅ [Gemini] Total: {len(results)} images ({total_time:.0f}ms)")
