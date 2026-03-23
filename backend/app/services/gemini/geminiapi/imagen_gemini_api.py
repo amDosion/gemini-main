@@ -238,11 +238,13 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
             effective_prompt = f"{prompt}, style: {image_style}"
 
         # Two-stage prompt enhancement (same as conversational_image_edit_service)
+        enhanced_prompt_text = None
         if enhance_prompt:
             try:
                 enhanced = await self._enhance_prompt(effective_prompt, enhance_prompt_model)
                 if enhanced:
                     logger.info(f"[GeminiAPIImageGenerator] ✅ Enhanced prompt (len={len(enhanced)})")
+                    enhanced_prompt_text = enhanced
                     effective_prompt = enhanced
             except Exception as e:
                 logger.warning(f"[GeminiAPIImageGenerator] Prompt enhancement failed, using original: {e}")
@@ -282,6 +284,9 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
                 results = self._extract_images_from_response(response, output_mime_type)
                 if not results:
                     raise APIError("No image generated", api_type="gemini_api")
+                if enhanced_prompt_text:
+                    for r in results:
+                        r["enhanced_prompt"] = enhanced_prompt_text
             except APIError:
                 raise
             except Exception as e:
@@ -316,6 +321,9 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
             failures = sum(1 for r in all_results if not r)
             if not results:
                 raise APIError(f"All {number_of_images} generations failed", api_type="gemini_api")
+            if enhanced_prompt_text:
+                for r in results:
+                    r["enhanced_prompt"] = enhanced_prompt_text
             if failures > 0:
                 logger.info(f"[GeminiAPIImageGenerator] Partial: {len(results)}/{number_of_images} ({failures} failed)")
 
