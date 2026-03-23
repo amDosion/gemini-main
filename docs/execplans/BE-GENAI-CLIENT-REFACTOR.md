@@ -561,3 +561,309 @@ class OpenAIClientPool(ClientPool): ...  # 内部可能只是 pass-through
 第 8 节的最终架构已经是最优解——统一池仅在 Google 内部使用，其他 provider 各自在 Service 内管理轻量 client。**不需要也不应该建立跨 provider 的统一连接池。**
 
 > **核心洞察**：连接池的价值在于避免重复的高成本创建。当创建成本本身就很低时（OpenAI 系），池化是负优化——增加了间接层却没有性能收益。
+
+---
+
+## 10. 深度分析：统一 Provider 连接池协调器方案
+
+> 背景：当前系统中存在多个**孤立的缓存/池**，各自管理生命周期，缺乏统一协调。
+> 本节分析"建立一个协调层统一管理所有 Provider 连接池"的可行性。
+
+### 10.1 当前的"池"散落在哪里？
+
+系统中实际存在 **5 个独立的客户端/连接缓存**，互不知晓：
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                   应用进程                                │
+│                                                          │
+│  ① ProviderFactory._client_cache (Dict)                 │
+│     └─ 缓存 Service 实例（GoogleService, OpenAIService…）  │
+│     └─ 无 close() / 无 shutdown hook                     │
+│                                                          │
+│  ② GeminiClientPool (单例)                               │
+│     └─ 缓存 google.genai.Client / VertexAIClient         │
+│     └─ 有 close_all()，但 shutdown 未调用它                │
+│                                                          │
+│  ③ MCPSessionPool (实例级)                               │
+│     └─ 缓存 MCPClient 会话                               │
+│     └─ 有 close_all()                                    │
+│                                                          │
+│  ④ GlobalRedisConnectionPool (单例)                      │
+│     └─ Redis 连接                                        │
+│     └─ shutdown 中正确关闭 ✓                              │
+│                                                          │
+│  ⑤ 各 OpenAI 系 Service 内的 AsyncOpenAI 实例              │
+│     └─ 分散在每个 Service.__init__ 中                     │
+│     └─ 无显式 close()，依赖 GC                            │
+│                                                          │
+│  【问题】它们之间没有任何协调关系                             │
+│  【问题】shutdown_tasks.py 只清理了 Redis，遗漏了 ①②③⑤    │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 10.2 你的思路：统一协调器
+
+你提出的不是"一个池管所有 client"，而是：
+
+```
+┌──────────────────────────────────────────────┐
+│          ClientPoolCoordinator（单例）          │
+│                                               │
+│  register(name, pool)  ← 启动时注册各 provider  │
+│  get_pool(name) → Pool ← 按需获取特定 provider  │
+│  health_check_all()    ← 统一健康检查           │
+│  stats_all()           ← 统一监控面板           │
+│  close_all()           ← shutdown 一次搞定      │
+│                                               │
+│  已注册的池：                                   │
+│  ├─ "google"  → GeminiClientPool              │
+│  ├─ "openai"  → OpenAIClientPool (新增)        │
+│  ├─ "mcp"     → MCPSessionPool                │
+│  ├─ "redis"   → GlobalRedisConnectionPool     │
+│  └─ "tongyi"  → TongyiClientPool (新增)        │
+└──────────────────────────────────────────────┘
+```
+
+**核心区别**：每个 provider 仍然有自己的池实现（可以是 pass-through），但协调器提供：
+1. **统一生命周期** — shutdown 只需调 `coordinator.close_all()`
+2. **统一监控** — 一个接口看到所有 provider 的连接状态
+3. **统一维护入口** — 新增 provider 只需 `register()`
+4. **统一健康检查** — 定期验证连接有效性
+
+### 10.3 可行性分析
+
+#### 支持这个方案的理由
+
+**① 当前 shutdown 存在资源泄漏**
+
+`shutdown_tasks.py` 只关闭了 Redis 和 Browser，完全遗漏了：
+- `GeminiClientPool` 中缓存的 `google.genai.Client`（持有 HTTP transport）
+- `ProviderFactory._client_cache` 中缓存的所有 Service 实例
+- `MCPSessionPool` 中的 MCP 会话
+- 各 `AsyncOpenAI` 实例的底层 `httpx.AsyncClient`
+
+有了协调器，shutdown 只需：
+```python
+async def run_all_shutdown_tasks(...):
+    await coordinator.close_all()  # 一行搞定所有 client 清理
+```
+
+**② `ProviderFactory._client_cache` 和 `GeminiClientPool` 职责重叠**
+
+当前的层次关系：
+```
+ProviderFactory._client_cache
+  └─ 缓存 GoogleService 实例
+       └─ GoogleService.__init__ 内部调用
+            └─ GeminiClientPool.get_client()
+                 └─ 缓存 google.genai.Client 实例
+```
+
+**两层缓存**做了类似的事：按 key 缓存、按 key 失效、按 key 统计。
+协调器可以将这两层逻辑统一，让 `ProviderFactory` 只做"类选择 + 实例化"，缓存完全由协调器管理。
+
+**③ 监控和诊断价值**
+
+当前要诊断"某个 provider 的连接状态"，需要分别查看：
+- `ProviderFactory.get_cache_stats()` → 只能看到 Service 级别
+- `get_client_pool().get_stats()` → 只能看到 Google client 级别
+- MCP / Redis 需要各自查看
+
+协调器提供单一诊断入口：
+```python
+coordinator.stats_all()
+# {
+#   "google": {"active_clients": 3, "cache_hits": 42, ...},
+#   "openai": {"active_clients": 1, ...},
+#   "mcp":    {"active_sessions": 2, ...},
+#   "redis":  {"connected": true, "pool_size": 10, ...}
+# }
+```
+
+#### 反对这个方案的理由
+
+**① 各 provider 的"池"语义差异极大**
+
+| 池 | 缓存对象 | 生命周期 | 并发模型 | close 语义 |
+|----|----------|----------|----------|-----------|
+| GeminiClientPool | `genai.Client` | 应用级 | 线程安全（Lock） | 关闭 HTTP transport |
+| OpenAI (当前无池) | `AsyncOpenAI` | Service 级 | 异步 | `aclose()` httpx client |
+| MCPSessionPool | `MCPClient` | 会话级 | 异步 | 断开 stdio/SSE 连接 |
+| Redis | `aioredis` 连接 | 应用级 | 异步 | 关闭连接池 |
+
+要统一接口，必须定义：
+```python
+class ManagedPool(ABC):
+    async def close_all(self) -> int: ...
+    def stats(self) -> dict: ...
+    def health_check(self) -> bool: ...
+```
+
+但 `GeminiClientPool.close_all()` 是**同步**的，`MCPSessionPool.close_all()` 是**异步**的。
+`genai.Client` 的 close 是同步的，`AsyncOpenAI` 的 close 是异步的。
+
+协调器必须处理同步/异步混合，增加实现复杂度。
+
+**② 低成本 provider 被强制实现池接口**
+
+OpenAI 系 provider 不需要池化（§9.4 已论证）。为了接入协调器，需要创建一个"空池"包装：
+
+```python
+class OpenAIClientPool(ManagedPool):
+    """实际上什么都不缓存，只是为了满足接口"""
+    async def close_all(self):
+        return 0  # nothing to close
+    def stats(self):
+        return {"active_clients": "N/A - managed by httpx internally"}
+```
+
+这是为统一性付出的"税"——每个 provider 多一个文件，但没有真正的缓存逻辑。
+
+**③ 与 `ProviderFactory` 的关系需要理清**
+
+`ProviderFactory` 当前已经承担了部分"协调"职责：
+- 按 provider 名路由到 Service 类
+- 缓存 Service 实例
+- 提供 `clear_cache()` / `get_cache_stats()`
+
+新增协调器后，职责边界是什么？
+
+| 职责 | ProviderFactory | ClientPoolCoordinator |
+|------|----------------|----------------------|
+| Service 类注册 | ✓ | ✗ |
+| Service 实例缓存 | ✓ → 去掉？ | ✓ 接管？ |
+| Client 实例缓存 | ✗ | ✓（通过各 provider 的 pool） |
+| Shutdown 清理 | ✗ | ✓ |
+| 健康检查 | ✗ | ✓ |
+| 监控统计 | 部分 | ✓ 统一 |
+
+需要决定：`ProviderFactory._client_cache` 是否迁移到协调器？
+如果迁移，`ProviderFactory` 退化为纯工厂（无状态），协调器接管所有有状态逻辑。
+如果不迁移，两者之间仍然存在缓存职责重叠。
+
+### 10.4 架构方案对比
+
+#### 方案 A：轻量协调器（仅管理生命周期 + 监控）
+
+```
+ProviderFactory（保持现状，继续缓存 Service）
+    │
+    └─ create() 时将底层 pool 注册到协调器
+         │
+         ▼
+ClientPoolCoordinator（新增，仅协调）
+    ├─ register("google", gemini_pool)
+    ├─ register("mcp", mcp_pool)
+    ├─ register("redis", redis_pool)
+    ├─ close_all()       ← shutdown 时调用
+    └─ stats_all()       ← 监控时调用
+```
+
+- **改动量**：小（新增 1 个协调器文件 + 修改 shutdown_tasks.py）
+- **价值**：解决 shutdown 资源泄漏，统一监控
+- **不改变**：各 provider 的缓存逻辑不变
+
+#### 方案 B：完整协调器（接管所有缓存）
+
+```
+ProviderFactory（退化为纯工厂，无缓存）
+    │
+    └─ create() 委托给协调器
+         │
+         ▼
+ClientPoolCoordinator（核心单例）
+    ├─ get_or_create("google", config) → GoogleService
+    │   └─ 内部: GeminiClientPool.get_client()
+    ├─ get_or_create("openai", config) → OpenAIService
+    │   └─ 内部: 直接 new AsyncOpenAI()（无需池）
+    ├─ close_all()
+    ├─ stats_all()
+    └─ health_check_all()
+```
+
+- **改动量**：大（重构 ProviderFactory 缓存逻辑，新增协调器，各 provider 适配）
+- **价值**：彻底消除双层缓存，单一维护入口
+- **风险**：ProviderFactory 的缓存逻辑与业务代码耦合较深，拆分工作量大
+
+#### 方案 C：基于现有 ProviderFactory 扩展（最小改动）
+
+不新增协调器，而是让 `ProviderFactory` 自身承担协调职责：
+
+```
+ProviderFactory（扩展）
+    ├─ create()              ← 已有
+    ├─ clear_cache()         ← 已有
+    ├─ get_cache_stats()     ← 已有
+    ├─ register_pool()       ← 新增：注册底层 pool
+    ├─ close_all_pools()     ← 新增：关闭所有底层 pool
+    └─ health_check_all()    ← 新增：健康检查
+```
+
+- **改动量**：最小（ProviderFactory 加 3 个方法 + 修改 shutdown_tasks.py）
+- **价值**：不引入新概念，利用已有的 Factory 单例
+- **缺点**：Factory 职责进一步膨胀（既是工厂又是协调器）
+
+### 10.5 结论与建议
+
+| 维度 | 方案 A（轻量协调器） | 方案 B（完整协调器） | 方案 C（扩展 Factory） |
+|------|---------------------|---------------------|----------------------|
+| 改动量 | 小 | 大 | 最小 |
+| 职责清晰度 | 高（Factory 管创建，Coordinator 管生命周期） | 最高 | 低（Factory 职责膨胀） |
+| 解决 shutdown 泄漏 | ✓ | ✓ | ✓ |
+| 消除双层缓存 | ✗ | ✓ | ✗ |
+| 统一监控 | ✓ | ✓ | ✓ |
+| 引入新概念 | 1 个新类 | 1 个新类 + 池接口 | 0 |
+| 后续扩展性 | 好 | 最好 | 中 |
+
+**推荐方案 A**，理由：
+
+1. **解决最紧迫的问题**（shutdown 资源泄漏）且改动量可控
+2. **不需要为低成本 provider 强制创建空池** — 只有真正有池的 provider 才注册
+3. **与第 8 节的重构方案兼容** — 先完成 §3-§8 的 GenAI 层清理，再叠加协调器
+4. **为方案 B 留好升级路径** — 如果后续需要，协调器可以逐步接管 Factory 的缓存职责
+
+### 10.6 方案 A 预期代码结构
+
+```
+backend/app/services/common/client_pool_coordinator.py   ← 新增
+    │
+    │  class ManagedPool(Protocol):           ← 鸭子类型协议
+    │      def close_all(self) -> int: ...
+    │      def stats(self) -> dict: ...
+    │
+    │  class ClientPoolCoordinator:           ← 单例
+    │      _pools: Dict[str, ManagedPool]
+    │      register(name, pool)
+    │      unregister(name)
+    │      close_all() → Dict[str, int]       ← 返回每个池关闭的数量
+    │      stats_all() → Dict[str, dict]
+    │      health_check(name) → bool
+    │
+backend/app/core/shutdown_tasks.py            ← 修改
+    │  + from ..services.common.client_pool_coordinator import get_coordinator
+    │  + await get_coordinator().close_all()
+    │
+backend/app/core/startup_tasks.py             ← 修改
+    │  + 注册已有的池
+    │  + coordinator.register("google", get_client_pool())
+    │  + coordinator.register("redis", GlobalRedisConnectionPool.get_instance())
+```
+
+### 10.7 与本文档其他阶段的关系
+
+```
+阶段 1-3（GenAI 层清理）
+    │
+    ▼  完成后 GeminiClientPool 已是唯一的 Google client 管理点
+    │
+阶段 5（新增，本节提出）
+    │  引入 ClientPoolCoordinator
+    │  将 GeminiClientPool + MCPSessionPool + Redis 注册进去
+    │  修改 shutdown_tasks.py 统一清理
+    │
+    ▼  后续可选
+阶段 6（可选）
+    │  将 ProviderFactory._client_cache 迁移至 Coordinator
+    │  Factory 退化为无状态工厂
+```
