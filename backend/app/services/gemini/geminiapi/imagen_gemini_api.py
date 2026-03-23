@@ -270,33 +270,41 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
         logger.info(f"[GeminiAPIImageGenerator] 🔄 [Gemini] model={model}, images={number_of_images}")
 
         results = []
+        failures = 0
         for i in range(number_of_images):
-            api_start = time.time()
-            response = self._client.models.generate_content(
-                model=model,
-                contents=contents,
-                config=generate_config,
-            )
-            api_time = (time.time() - api_start) * 1000
-            logger.info(f"[GeminiAPIImageGenerator] ✅ [Gemini] Image {i+1}/{number_of_images} done ({api_time:.0f}ms)")
+            try:
+                api_start = time.time()
+                response = self._client.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=generate_config,
+                )
+                api_time = (time.time() - api_start) * 1000
+                logger.info(f"[GeminiAPIImageGenerator] ✅ [Gemini] Image {i+1}/{number_of_images} done ({api_time:.0f}ms)")
 
-            if response.candidates:
-                for candidate in response.candidates:
-                    if candidate.content and candidate.content.parts:
-                        for part in candidate.content.parts:
-                            if hasattr(part, 'inline_data') and part.inline_data and part.inline_data.data:
-                                image_bytes = part.inline_data.data
-                                b64_data = encode_image_to_base64(image_bytes)
-                                mime = getattr(part.inline_data, 'mime_type', None) or output_mime_type
-                                results.append({
-                                    "url": f"data:{mime};base64,{b64_data}",
-                                    "mime_type": mime,
-                                    "index": len(results),
-                                    "size": len(image_bytes),
-                                })
+                if response.candidates:
+                    for candidate in response.candidates:
+                        if candidate.content and candidate.content.parts:
+                            for part in candidate.content.parts:
+                                if hasattr(part, 'inline_data') and part.inline_data and part.inline_data.data:
+                                    image_bytes = part.inline_data.data
+                                    b64_data = encode_image_to_base64(image_bytes)
+                                    mime = getattr(part.inline_data, 'mime_type', None) or output_mime_type
+                                    results.append({
+                                        "url": f"data:{mime};base64,{b64_data}",
+                                        "mime_type": mime,
+                                        "index": len(results),
+                                        "size": len(image_bytes),
+                                    })
+            except Exception as e:
+                failures += 1
+                logger.warning(f"[GeminiAPIImageGenerator] ⚠️ [Gemini] Image {i+1}/{number_of_images} failed: {e}")
+                # Continue generating remaining images
 
         if not results:
-            raise APIError("No images generated from generate_content", api_type="gemini_api")
+            raise APIError(f"All {number_of_images} image generations failed", api_type="gemini_api")
+        if failures > 0:
+            logger.info(f"[GeminiAPIImageGenerator] Partial success: {len(results)}/{number_of_images} images generated ({failures} failed)")
 
         total_time = (time.time() - start_time) * 1000
         logger.info(f"[GeminiAPIImageGenerator] ✅ [Gemini] Total: {len(results)} images ({total_time:.0f}ms)")
