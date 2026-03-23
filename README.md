@@ -9,30 +9,65 @@ Built with **React 19 + TypeScript + Tailwind CSS** on the frontend and **FastAP
 ## ✨ Features
 
 ### 🎨 Image Generation
-- **Imagen 4** — Google's latest text-to-image model via Vertex AI
-- **Gemini Native Image Gen** — Gemini 2.5 / 3 / 3.1 Flash with native image output (Nano Banana)
-- Batch & concurrent generation with configurable image count (1–8)
-- Enhanced prompt feedback from the model
+- **Imagen 4 / 4 Ultra / 4 Fast** — Google's latest text-to-image models (up to 4 images per batch)
+- **Nano Banana 2** (`gemini-3.1-flash-image-preview`) — 14 aspect ratios, 512/1K/2K/4K resolution, up to 8 concurrent images
+- **Nano Banana Pro** (`gemini-3-pro-image-preview`) — Professional asset production with Thinking mode
+- **Nano Banana** (`gemini-2.5-flash-image`) — High-speed, low-latency generation
+- **Tongyi Wanx** — Alibaba's image generation models
+- Concurrent multi-image generation with `asyncio.gather` (parallel, not serial)
+- AI prompt enhancement (two-stage: separate text model rewrites your prompt)
+- Model-specific parameter panels (aspect ratios, resolutions auto-adapt per model)
+- Partial success support — failed images don't break the batch
+- Multi-API-Key rotation for rate limit avoidance
 
-### ✏️ Conversational Image Editing
-- Multi-turn chat-based editing — describe what you want changed in natural language
-- **Mask Edit** — draw masks for targeted inpainting
-- **Background Edit** — replace or modify backgrounds
-- **Outpainting** — extend images beyond their borders
-- **Virtual Try-On** — powered by Google Vertex AI
+### ✏️ Image Editing (7 Modes)
+- **Chat Edit** — Multi-turn conversational editing with Gemini native models (describe changes in natural language)
+- **Mask Edit** — Draw masks for targeted inpainting via Vertex AI Imagen
+- **Inpainting** — AI-powered content-aware fill
+- **Background Edit** — Replace or modify backgrounds
+- **Outpainting** — Extend images beyond borders (ratio/scale/offset/upscale modes)
+- **Recontext** — Place products in new environments
+- **Virtual Try-On** — Clothing try-on powered by Vertex AI
+- Cross-mode image transfer (Gen → Edit with one click)
 - Before/after image comparison slider
+- Canvas zoom, pan, and fullscreen support
 
-### 🎬 Video & Audio Generation
-- **Veo** text-to-video generation
-- **Text-to-Speech** audio generation
+### 🎬 Video Generation
+- **Veo 3.1** — Google's latest video generation model
+- **Veo 3.1 Fast** — Optimized for speed
+- Video extension (续写/延长) — extend existing videos
+- Storyboard mode — multi-shot video with per-shot prompts
+- Audio track generation with video
+- Subtitle generation (多语言字幕)
+- Multiple aspect ratios (16:9, 9:16, 1:1) and resolutions
+- Video download and cloud storage upload
 
-### 💬 Multi-Provider AI Chat
-- **Google Gemini** (2.5 Flash, 2.5 Pro, etc.)
-- **OpenAI** (GPT-4o, o1, etc.)
-- **Tongyi Qianwen** (通义千问) via DashScope
-- **Ollama** — local model support with model manager UI
-- Streaming responses with Markdown rendering and syntax highlighting
-- Persona / system prompt presets with categories
+### 🔊 Audio Generation
+- **Text-to-Speech** with multiple voice options (Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Zephyr)
+- Voice preview and selection
+- Audio file download
+
+### 🌐 Multi-Provider Support
+- **Google Gemini** — Gemini 2.5 Flash/Pro, Gemini 3 Pro, Gemini 3.1 Flash
+- **Google Imagen** — Imagen 3, Imagen 4, Imagen 4 Ultra
+- **Google Nano Banana** — Nano Banana (2.5 Flash Image), Nano Banana Pro (3 Pro Image), Nano Banana 2 (3.1 Flash Image)
+- **Google Veo** — Veo 3.1, Veo 3.1 Fast
+- **OpenAI** — GPT-4o, GPT-4.1, o1, o3, DALL-E
+- **Tongyi Qianwen** (通义千问) — Qwen series, Wanx image generation
+- **Ollama** — Local model deployment with built-in model manager
+- **OpenRouter** — Access 100+ models through unified API
+- **Custom Providers** — Any OpenAI-compatible API endpoint
+
+### 💬 AI Chat
+- Streaming responses with Markdown rendering and code syntax highlighting
+- Thinking mode (显示思考过程) for supported models
+- Google Search grounding — real-time data in responses
+- URL context — analyze web pages in conversation
+- Code execution — run Python code in sandbox
+- Browser integration — AI-controlled web browsing
+- Persona / system prompt presets with 17+ categories
+- Session management with history search and favorites
+- Message editing and deletion
 
 ### 🔍 Deep Research
 - AI-powered multi-step research with real-time SSE streaming
