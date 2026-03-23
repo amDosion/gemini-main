@@ -138,10 +138,12 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
   }, [style, styleOptions, setStyle]);
 
   useEffect(() => {
-    if (imageCountOptions.length > 0 && !imageCountOptions.includes(numberOfImages)) {
-      setNumberOfImages(imageCountOptions[0]);
+    if (numberOfImages > maxImageCount) {
+      setNumberOfImages(maxImageCount);
+    } else if (numberOfImages < 1) {
+      setNumberOfImages(1);
     }
-  }, [numberOfImages, imageCountOptions, setNumberOfImages]);
+  }, [numberOfImages, maxImageCount, setNumberOfImages]);
 
   useEffect(() => {
     const validMimeTypes = outputMimeOptions
