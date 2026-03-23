@@ -430,3 +430,134 @@ print(hasattr(client, 'interactions'))
 - 包装层数：4 层 → 1 层（池）
 - 对 SDK 私有 API 的依赖：`client.request()` + `_genai_client` → 零
 - 删除代码量：~1500 行
+
+---
+
+## 9. 扩展分析：是否应该建立跨 Provider 统一连接池？
+
+### 9.1 当前各 Provider 的 Client 管理方式
+
+| Provider | client_type | SDK | 创建方式 | 是否有池 | 生命周期 |
+|----------|-------------|-----|----------|----------|----------|
+| **Google** | `google` | `google-genai` | `GeminiClientPool`（单例） | **有**（显式池） | 跨请求复用 |
+| **OpenAI** | `openai` | `openai` (AsyncOpenAI) | `OpenAIService.__init__` 中直接 `new` | **无** | 跟随 Service 实例 |
+| **DeepSeek** | `openai` | `openai` (AsyncOpenAI) | 同上（复用 OpenAIService） | **无** | 同上 |
+| **Moonshot** | `openai` | `openai` (AsyncOpenAI) | 同上 | **无** | 同上 |
+| **ZhiPu** | `openai` | `openai` (AsyncOpenAI) | 同上 | **无** | 同上 |
+| **Doubao** | `openai` | `openai` (AsyncOpenAI) | 同上 | **无** | 同上 |
+| **Hunyuan** | `openai` | `openai` (AsyncOpenAI) | 同上 | **无** | 同上 |
+| **NVIDIA** | `openai` | `openai` (AsyncOpenAI) | 同上 | **无** | 同上 |
+| **OpenRouter** | `openai` | `openai` (AsyncOpenAI) | 同上 | **无** | 同上 |
+| **SiliconFlow** | `openai` | `openai` (AsyncOpenAI) | 同上 | **无** | 同上 |
+| **Tongyi/Qwen** | `dashscope` | DashScope + `openai` | 双客户端，Service 内直接创建 | **无** | 同上 |
+| **Ollama** | `ollama` | `openai` + httpx | 双客户端，Handler 内直接创建 | **无** | 同上 |
+| **Custom** | `openai` | `openai` (AsyncOpenAI) | 同上 | **无** | 同上 |
+| **MCP** | — | 自定义 MCPClient | `MCPSessionPool`（实例级） | **有**（会话池） | 会话级复用 |
+
+### 9.2 为什么当前只有 Google 有池？
+
+**历史原因**：
+- `google.genai.Client` 创建成本高：需要 Vertex AI credential 解析、`vertexai.init()` 全局初始化、HTTP transport 配置
+- Google 服务有 10+ 个子服务（edit、video、tryon、segmentation 等），同一个请求内可能多次需要 client
+- 因此有显著的复用收益
+
+**而 OpenAI 系的 client 创建成本低**：
+- `AsyncOpenAI(api_key=..., base_url=...)` 只是一个轻量配置对象
+- 底层 HTTP 连接由 `httpx.AsyncClient` 的内置连接池管理
+- 不需要额外的应用层连接池
+
+### 9.3 统一池方案分析
+
+#### 方案 A：全 Provider 统一池（`UnifiedClientPool`）
+
+```
+所有 Provider
+    │
+    └─ UnifiedClientPool.get_client(provider="google", api_key=..., ...)
+            │
+            ├─ provider="google"    → google.genai.Client
+            ├─ provider="openai"    → AsyncOpenAI
+            ├─ provider="tongyi"    → (DashScope, AsyncOpenAI)
+            ├─ provider="ollama"    → (AsyncOpenAI, httpx.AsyncClient)
+            └─ provider="custom"    → AsyncOpenAI
+```
+
+**优点**：
+- 统一入口，新开发者只需知道一个 API
+- 集中的缓存/监控/统计
+- 统一的生命周期管理（应用关闭时一次 `close_all()`）
+
+**缺点（致命）**：
+
+1. **类型安全丧失**
+   ```python
+   client = pool.get_client(provider="google", ...)  # 返回 Any
+   client = pool.get_client(provider="openai", ...)   # 也返回 Any
+   # 调用者必须自己 cast，IDE 无法提供补全
+   ```
+
+2. **SDK 差异无法抽象**
+   - `google.genai.Client` 是同步的，`AsyncOpenAI` 是异步的
+   - Google 用 `client.models.generate_content(model=..., contents=...)`
+   - OpenAI 用 `client.chat.completions.create(model=..., messages=...)`
+   - 参数签名、响应结构、错误类型完全不同
+   - 池能做的只是**缓存和复用**，无法统一调用接口
+
+3. **不同 SDK 的连接池语义冲突**
+   - `httpx.AsyncClient`（OpenAI 底层）自带连接池，连接数/超时/keep-alive 在 httpx 层管理
+   - `google.genai.Client` 也有自己的 HTTP transport 管理
+   - 在应用层再加一层池，会与 SDK 内部池产生**双层池**问题（配置冲突、资源泄漏）
+
+4. **不同 Provider 的创建成本差异极大**
+   - Google Vertex AI：高成本（credential 解析 + SDK 初始化），**值得池化**
+   - OpenAI 系：极低成本（轻量配置对象），**不需要池化**
+   - 统一池对低成本 provider 是过度设计
+
+5. **Dual-client provider 增加复杂度**
+   - Tongyi 有 DashScope + OpenAI 两个客户端
+   - Ollama 有 OpenAI-compatible + Native 两个客户端
+   - 统一池需要支持 `get_primary_client()` / `get_secondary_client()`，使接口膨胀
+
+#### 方案 B：仅统一"高成本 Provider"的池（推荐保持现状 + 微调）
+
+保持 `GeminiClientPool` 专注于 Google 系 client 管理，理由：
+
+1. **Google 是唯一需要显式池化的 provider** — 其他 provider 的 SDK 内部已处理连接复用
+2. **类型安全** — `GeminiClientPool.get_client()` 返回的是明确的 `google.genai.Client`
+3. **关注点分离** — 每个 provider 的 Service 类自己管理自己的 client，符合 SRP
+
+**微调建议**：
+- 将 `GeminiClientPool` 重命名为 `GoogleClientPool`（语义更准确，Gemini 是模型名不是 SDK 名）
+- 在 `BaseProviderService` 中添加可选的 `close()` 方法，让 `ProviderFactory` 在应用关闭时统一调用
+- 如果将来引入其他高成本 provider（如 Azure OpenAI with AAD token），再考虑扩展
+
+#### 方案 C：抽象池接口 + Provider 各自实现（过度设计）
+
+```python
+class ClientPool(ABC):
+    @abstractmethod
+    def get_client(self, **kwargs) -> Any: ...
+    @abstractmethod
+    def close_all(self) -> int: ...
+
+class GoogleClientPool(ClientPool): ...
+class OpenAIClientPool(ClientPool): ...  # 内部可能只是 pass-through
+```
+
+**结论**：过度设计。OpenAI 系 provider 不需要池，强制实现空池接口只增加代码量。
+
+### 9.4 结论
+
+| 维度 | 方案 A（统一池） | 方案 B（保持现状 + 微调） | 方案 C（抽象接口） |
+|------|-----------------|--------------------------|-------------------|
+| 开发成本 | 高 | 低 | 中 |
+| 类型安全 | 差（返回 Any） | 好 | 中 |
+| SDK 兼容性 | 差（双层池冲突） | 好 | 中 |
+| 统一性 | 高 | 中 | 高 |
+| 实际收益 | 低 | 高 | 低 |
+
+**推荐方案 B**：保持 `GeminiClientPool` 仅管理 Google 系 client。
+
+第 8 节的最终架构已经是最优解——统一池仅在 Google 内部使用，其他 provider 各自在 Service 内管理轻量 client。**不需要也不应该建立跨 provider 的统一连接池。**
+
+> **核心洞察**：连接池的价值在于避免重复的高成本创建。当创建成本本身就很低时（OpenAI 系），池化是负优化——增加了间接层却没有性能收益。
