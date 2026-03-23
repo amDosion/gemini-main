@@ -257,12 +257,7 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
             top_p=0.95,
             max_output_tokens=32768,
             response_modalities=["TEXT", "IMAGE"],
-            safety_settings=[
-                genai_types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="OFF"),
-                genai_types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="OFF"),
-                genai_types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="OFF"),
-                genai_types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="OFF"),
-            ],
+
             image_config=genai_types.ImageConfig(
                 aspect_ratio=aspect_ratio,
                 image_size=image_size,
@@ -375,7 +370,6 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
         number_of_images = min(max(number_of_images, 1), 4)
         
         aspect_ratio = kwargs.get('image_aspect_ratio') or kwargs.get('aspect_ratio', '1:1')
-        include_rai_reason = kwargs.get('include_rai_reason', True)
         # Default to PNG format for best quality (no compression)
         output_mime_type = kwargs.get('output_mime_type', 'image/png')
         
@@ -383,7 +377,6 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
             "number_of_images": number_of_images,
             "aspect_ratio": aspect_ratio,
             "output_mime_type": output_mime_type,
-            "include_rai_reason": include_rai_reason,
         }
         
         # Add optional parameters
