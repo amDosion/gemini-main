@@ -1177,6 +1177,10 @@ export const getUrlType = (url: string | undefined, uploadStatus?: string): stri
     return '临时代理URL (后端创建)';
   }
   
+  if (url.startsWith('/api/storage/local-files/')) {
+    return '本地存储URL (已完成)';
+  }
+  
   if (url.startsWith('http://') || url.startsWith('https://')) {
     return uploadStatus === 'completed' 
       ? '云存储URL (已上传完成)' 

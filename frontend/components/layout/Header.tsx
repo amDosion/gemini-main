@@ -1050,15 +1050,18 @@ export const Header: React.FC<HeaderProps> = ({
                 </>,
                 document.body
             )}
-            <ConfirmDialog
-                isOpen={isCleanupConfirmOpen}
-                title="清理系统垃圾"
-                message="将清理 __pycache__、临时上传文件、存储下载缓存、测试临时文件、过期上传任务、过期刷新令牌和 Redis 过期键。不会删除用户数据。确认继续？"
-                confirmLabel="确认清理"
-                cancelLabel="取消"
-                onConfirm={handleCleanup}
-                onCancel={() => setIsCleanupConfirmOpen(false)}
-            />
+            {isCleanupConfirmOpen && typeof document !== 'undefined' && createPortal(
+                <ConfirmDialog
+                    isOpen={isCleanupConfirmOpen}
+                    title="清理系统垃圾"
+                    message="将清理 __pycache__、临时上传文件、存储下载缓存、测试临时文件、过期上传任务、过期刷新令牌和 Redis 过期键。不会删除用户数据。确认继续？"
+                    confirmLabel="确认清理"
+                    cancelLabel="取消"
+                    onConfirm={handleCleanup}
+                    onCancel={() => setIsCleanupConfirmOpen(false)}
+                />,
+                document.body
+            )}
         </header>
     );
 };

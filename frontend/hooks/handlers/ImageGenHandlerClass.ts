@@ -48,6 +48,11 @@ export class ImageGenHandler extends BaseHandler {
       // ✅ 提取增强后的提示词（如果有）- 同一批次所有图片共享相同的 enhancedPrompt
       const enhancedPrompt = results.find((res: ImageGenerationResult) => res.enhancedPrompt)?.enhancedPrompt;
 
+      // ✅ 提取 thoughts 和 text（从第一个结果中，因为所有图片共享相同的 thoughts）
+      const firstResult = results[0];
+      const thoughts = firstResult?.thoughts || [];
+      const textResponse = firstResult?.text;
+
       // ✅ 构建显示内容：同时显示原始提示词和增强后的提示词（如果有）
       let displayContent = context.text;
       if (enhancedPrompt) {
@@ -57,7 +62,10 @@ export class ImageGenHandler extends BaseHandler {
       return {
         content: displayContent,
         attachments: displayAttachments,
-        uploadTask: uploadTask()
+        uploadTask: uploadTask(),
+        thoughts: thoughts.length > 0 ? thoughts : undefined,
+        textResponse: textResponse,
+        enhancedPrompt: enhancedPrompt,
       };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : '';
