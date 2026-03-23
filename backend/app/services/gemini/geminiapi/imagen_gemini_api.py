@@ -243,6 +243,10 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
                 genai_types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="OFF"),
                 genai_types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="OFF"),
             ],
+            image_config=genai_types.ImageConfig(
+                aspect_ratio=aspect_ratio,
+                output_mime_type=output_mime_type,
+            ),
         )
 
         logger.info(f"[GeminiAPIImageGenerator] 🔄 [Gemini] model={model}, images={number_of_images}")
