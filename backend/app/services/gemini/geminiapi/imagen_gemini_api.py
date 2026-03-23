@@ -245,7 +245,9 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
             ],
             image_config=genai_types.ImageConfig(
                 aspect_ratio=aspect_ratio,
-                output_mime_type=output_mime_type,
+                # Note: output_mime_type and output_compression_quality are NOT supported
+                # in Gemini API (only in Vertex AI). Gemini API controls output format
+                # via image_output_options field instead.
             ),
         )
 
