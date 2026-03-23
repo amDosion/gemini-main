@@ -220,16 +220,28 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
         import time
         start_time = time.time()
 
-        aspect_ratio = kwargs.get('aspect_ratio', '1:1')
-        image_size = kwargs.get('image_size')
+        aspect_ratio = kwargs.get('image_aspect_ratio') or kwargs.get('aspect_ratio', '1:1')
+        image_size = kwargs.get('image_resolution') or kwargs.get('image_size')
         output_mime_type = kwargs.get('output_mime_type', 'image/png')
         output_compression_quality = kwargs.get('output_compression_quality')
         number_of_images = min(max(kwargs.get('number_of_images', 1), 1), 8)
+        enhance_prompt = kwargs.get('enhance_prompt', False)
+        enhance_prompt_model = kwargs.get('enhance_prompt_model')
 
         image_style = kwargs.get('image_style')
         effective_prompt = prompt
         if image_style and image_style.lower() != "none":
             effective_prompt = f"{prompt}, style: {image_style}"
+
+        # Two-stage prompt enhancement (same as conversational_image_edit_service)
+        if enhance_prompt:
+            try:
+                enhanced = await self._enhance_prompt(effective_prompt, enhance_prompt_model)
+                if enhanced:
+                    logger.info(f"[GeminiAPIImageGenerator] ✅ Enhanced prompt (len={len(enhanced)})")
+                    effective_prompt = enhanced
+            except Exception as e:
+                logger.warning(f"[GeminiAPIImageGenerator] Prompt enhancement failed, using original: {e}")
 
         text_part = genai_types.Part.from_text(text=effective_prompt)
         contents = [genai_types.Content(role="user", parts=[text_part])]
@@ -291,12 +303,32 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
         logger.info(f"[GeminiAPIImageGenerator] ✅ [Gemini] Total: {len(results)} images ({total_time:.0f}ms)")
         return results
 
+    async def _enhance_prompt(self, prompt: str, model_hint: str = None) -> str:
+        """Two-stage prompt enhancement using a text model."""
+        enhance_model = model_hint or 'gemini-2.5-flash'
+        self._ensure_initialized()
+        try:
+            response = self._client.models.generate_content(
+                model=enhance_model,
+                contents=[
+                    f"You are a professional image generation prompt enhancer. "
+                    f"Rewrite the following prompt to be more direct, specific, and visually actionable. "
+                    f"Return ONLY the enhanced prompt text, no explanations.\n\n"
+                    f"Original prompt: {prompt}"
+                ],
+            )
+            if response.text:
+                return response.text.strip()
+        except Exception as e:
+            logger.warning(f"[GeminiAPIImageGenerator] _enhance_prompt error: {e}")
+        return prompt
+
     def _build_config(self, **kwargs) -> 'genai_types.GenerateImagesConfig':
         """Build Gemini API configuration from parameters."""
         number_of_images = kwargs.get('number_of_images', 1)
         number_of_images = min(max(number_of_images, 1), 4)
         
-        aspect_ratio = kwargs.get('aspect_ratio', '1:1')
+        aspect_ratio = kwargs.get('image_aspect_ratio') or kwargs.get('aspect_ratio', '1:1')
         include_rai_reason = kwargs.get('include_rai_reason', True)
         # Default to PNG format for best quality (no compression)
         output_mime_type = kwargs.get('output_mime_type', 'image/png')

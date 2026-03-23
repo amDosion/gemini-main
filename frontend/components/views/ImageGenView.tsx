@@ -348,6 +348,7 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
             // PNG 是无损格式，不需要压缩质量参数，仅 JPEG 时传递
             ...(controls.outputMimeType === 'image/jpeg' ? { outputCompressionQuality: controls.outputCompressionQuality } : {}),
             enhancePrompt: controls.enhancePrompt,
+            enhancePromptModel: controls.enhancePromptModel || undefined,
             // TongYi 专用参数
             promptExtend: controls.promptExtend,
             addMagicSuffix: controls.addMagicSuffix,
