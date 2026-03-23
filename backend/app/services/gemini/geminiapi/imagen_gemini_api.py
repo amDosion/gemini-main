@@ -269,23 +269,20 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
 
         logger.info(f"[GeminiAPIImageGenerator] 🔄 [Gemini] model={model}, images={number_of_images}")
 
-        import asyncio
-
-        async def _generate_single(index: int):
-            """Generate a single image as an independent request."""
+        # Use Batch API for multiple images (each image = independent inline request)
+        if number_of_images == 1:
+            # Single image: direct generate_content call (faster than batch)
             try:
                 api_start = time.time()
-                # Each request is independent (like Batch API inline_requests)
-                response = await asyncio.to_thread(
-                    self._client.models.generate_content,
+                response = self._client.models.generate_content(
                     model=model,
                     contents=contents,
                     config=generate_config,
                 )
                 api_time = (time.time() - api_start) * 1000
-                logger.info(f"[GeminiAPIImageGenerator] ✅ [Gemini] Image {index+1}/{number_of_images} done ({api_time:.0f}ms)")
+                logger.info(f"[GeminiAPIImageGenerator] ✅ [Gemini] Single image done ({api_time:.0f}ms)")
 
-                images = []
+                results = []
                 if response.candidates:
                     for candidate in response.candidates:
                         if candidate.content and candidate.content.parts:
@@ -294,32 +291,108 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
                                     image_bytes = part.inline_data.data
                                     b64_data = encode_image_to_base64(image_bytes)
                                     mime = getattr(part.inline_data, 'mime_type', None) or output_mime_type
-                                    images.append({
+                                    results.append({
                                         "url": f"data:{mime};base64,{b64_data}",
                                         "mime_type": mime,
+                                        "index": 0,
                                         "size": len(image_bytes),
                                     })
-                return images
+                if not results:
+                    raise APIError("No image generated", api_type="gemini_api")
+            except APIError:
+                raise
             except Exception as e:
-                logger.warning(f"[GeminiAPIImageGenerator] ⚠️ [Gemini] Image {index+1}/{number_of_images} failed: {e}")
-                return []
+                raise APIError(f"Image generation failed: {e}", api_type="gemini_api", original_error=e)
+        else:
+            # Multiple images: use Batch API with inline requests
+            import asyncio
 
-        # Concurrent generation: all requests fire in parallel
-        logger.info(f"[GeminiAPIImageGenerator] 🔄 [Gemini] Launching {number_of_images} parallel requests...")
-        tasks = [_generate_single(i) for i in range(number_of_images)]
-        all_results = await asyncio.gather(*tasks)
+            logger.info(f"[GeminiAPIImageGenerator] 🔄 [Gemini] Creating batch job with {number_of_images} inline requests...")
 
-        results = []
-        for batch in all_results:
-            for img in batch:
-                img["index"] = len(results)
-                results.append(img)
+            # Build inline requests (same prompt, same config, N times)
+            inline_requests = []
+            for i in range(number_of_images):
+                req = {
+                    'contents': [{'parts': [{'text': effective_prompt}]}],
+                    'config': {
+                        'response_modalities': ['TEXT', 'IMAGE'],
+                    }
+                }
+                # Add image_config if we have aspect_ratio or image_size
+                if aspect_ratio or image_size:
+                    image_config_dict = {}
+                    if aspect_ratio:
+                        image_config_dict['aspect_ratio'] = aspect_ratio
+                    if image_size:
+                        image_config_dict['image_size'] = image_size
+                    req['config']['image_config'] = image_config_dict
+                inline_requests.append(req)
 
-        failures = sum(1 for r in all_results if not r)
-        if not results:
-            raise APIError(f"All {number_of_images} image generations failed", api_type="gemini_api")
-        if failures > 0:
-            logger.info(f"[GeminiAPIImageGenerator] Partial success: {len(results)}/{number_of_images} images ({failures} failed)")
+            # Submit batch job
+            try:
+                batch_job = self._client.batches.create(
+                    model=model,
+                    src=inline_requests,
+                    config={'display_name': f'gen-{number_of_images}-images'},
+                )
+                job_name = batch_job.name
+                logger.info(f"[GeminiAPIImageGenerator] ✅ Batch job created: {job_name}")
+
+                # Poll for completion
+                completed_states = {'JOB_STATE_SUCCEEDED', 'JOB_STATE_FAILED', 'JOB_STATE_CANCELLED', 'JOB_STATE_EXPIRED'}
+                poll_interval = 5  # seconds
+                max_wait = 300  # 5 minutes max
+
+                async def _poll_batch():
+                    elapsed = 0
+                    while elapsed < max_wait:
+                        await asyncio.sleep(poll_interval)
+                        elapsed += poll_interval
+                        job = self._client.batches.get(name=job_name)
+                        state = job.state.name if hasattr(job.state, 'name') else str(job.state)
+                        logger.info(f"[GeminiAPIImageGenerator] 📊 Batch status: {state} ({elapsed}s)")
+                        if state in completed_states:
+                            return job
+                    return self._client.batches.get(name=job_name)
+
+                batch_result = await _poll_batch()
+                state = batch_result.state.name if hasattr(batch_result.state, 'name') else str(batch_result.state)
+
+                if state != 'JOB_STATE_SUCCEEDED':
+                    error_msg = getattr(batch_result, 'error', 'Unknown error')
+                    raise APIError(f"Batch job failed: {state} - {error_msg}", api_type="gemini_api")
+
+                # Extract results from inline responses
+                results = []
+                if hasattr(batch_result, 'dest') and hasattr(batch_result.dest, 'inlined_responses'):
+                    for i, inline_resp in enumerate(batch_result.dest.inlined_responses):
+                        if inline_resp.response and inline_resp.response.candidates:
+                            for candidate in inline_resp.response.candidates:
+                                if candidate.content and candidate.content.parts:
+                                    for part in candidate.content.parts:
+                                        if hasattr(part, 'inline_data') and part.inline_data and part.inline_data.data:
+                                            image_bytes = part.inline_data.data
+                                            b64_data = encode_image_to_base64(image_bytes)
+                                            mime = getattr(part.inline_data, 'mime_type', None) or output_mime_type
+                                            results.append({
+                                                "url": f"data:{mime};base64,{b64_data}",
+                                                "mime_type": mime,
+                                                "index": len(results),
+                                                "size": len(image_bytes),
+                                            })
+                        elif inline_resp.error:
+                            logger.warning(f"[GeminiAPIImageGenerator] ⚠️ Batch request {i+1} error: {inline_resp.error}")
+
+                logger.info(f"[GeminiAPIImageGenerator] ✅ Batch complete: {len(results)}/{number_of_images} images")
+
+                if not results:
+                    raise APIError(f"Batch job returned no images", api_type="gemini_api")
+
+            except APIError:
+                raise
+            except Exception as e:
+                logger.error(f"[GeminiAPIImageGenerator] ❌ Batch API error: {e}")
+                raise APIError(f"Batch image generation failed: {e}", api_type="gemini_api", original_error=e)
 
         total_time = (time.time() - start_time) * 1000
         logger.info(f"[GeminiAPIImageGenerator] ✅ [Gemini] Total: {len(results)} images ({total_time:.0f}ms)")
