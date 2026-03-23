@@ -1,7 +1,0 @@
-{
-  "timestamp": "2026-03-17T15:43:00+08:00",
-  "phase": "complete",
-  "activeDomainProfileId": "backend-first-video-mode-convergence",
-  "summary": "RV-910 passed. The standalone video convergence batch is currently closed with no new blocking review findings.",
-  "currentQueue": "video-domain-2026-03-17-r1"
-}

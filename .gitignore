@@ -88,3 +88,7 @@ build/
 # Frontend build output
 frontend/dist/.npm/
 node_modules/
+.npm/
+.next/
+frontend/.next/
+queue/
