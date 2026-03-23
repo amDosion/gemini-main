@@ -11,7 +11,7 @@ from typing import Optional, List
 
 # ==================== Constants ====================
 
-VALID_ASPECT_RATIOS = ["1:1", "3:4", "4:3", "9:16", "16:9"]
+VALID_ASPECT_RATIOS = ["1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5", "5:4", "8:1", "9:16", "16:9", "21:9"]
 VALID_IMAGE_SIZES = ["1K", "2K"]
 
 

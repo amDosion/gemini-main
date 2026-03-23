@@ -221,7 +221,9 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
         start_time = time.time()
 
         aspect_ratio = kwargs.get('aspect_ratio', '1:1')
+        image_size = kwargs.get('image_size')
         output_mime_type = kwargs.get('output_mime_type', 'image/png')
+        output_compression_quality = kwargs.get('output_compression_quality')
         number_of_images = min(max(kwargs.get('number_of_images', 1), 1), 8)
 
         image_style = kwargs.get('image_style')
@@ -245,9 +247,12 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
             ],
             image_config=genai_types.ImageConfig(
                 aspect_ratio=aspect_ratio,
-                # Note: output_mime_type and output_compression_quality are NOT supported
-                # in Gemini API (only in Vertex AI). Gemini API controls output format
-                # via image_output_options field instead.
+                image_size=image_size,
+                # Gemini API uses image_output_options (not output_mime_type)
+                image_output_options=genai_types.ImageConfigImageOutputOptions(
+                    mime_type=output_mime_type,
+                    compression_quality=output_compression_quality,
+                ) if output_mime_type else None,
             ),
         )
 
