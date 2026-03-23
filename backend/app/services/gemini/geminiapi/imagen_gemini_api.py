@@ -260,11 +260,6 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
             image_config=genai_types.ImageConfig(
                 aspect_ratio=aspect_ratio,
                 image_size=image_size,
-                # Gemini API uses image_output_options (not output_mime_type)
-                image_output_options=genai_types.ImageConfigImageOutputOptions(
-                    mime_type=output_mime_type,
-                    compression_quality=output_compression_quality,
-                ) if output_mime_type else None,
             ),
         )
 
