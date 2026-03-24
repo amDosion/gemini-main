@@ -75,7 +75,7 @@ class TongyiService(BaseProviderService):
         self._image_expand_service = None
         self._model_manager = None
         
-        logger.info(f"[TongyiService] 协调者初始化完成: api_key={api_key[:10]}...")
+        logger.info("[TongyiService] 协调者初始化完成: api_key=***")
     
     def _resolve_connection_mode(self, kwargs: Dict[str, Any]) -> str:
         requested = str(kwargs.get("connection_mode") or self.connection_mode or "official").strip().lower()
