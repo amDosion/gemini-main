@@ -418,7 +418,7 @@ print(hasattr(client, 'interactions'))
                                 └─ .interactions.create()          ← 官方 API
 ```
 
-**消除的文件**（约 900+ 行）：
+**消除的文件**（约 1805 行）：
 - `agent/client.py`（~409 行）→ 删除，逻辑内联到 pool
 - `agent/models.py`（~500 行）→ 删除，使用官方 SDK
 - `agent/interactions.py`（~300 行）→ 删除或大幅简化
@@ -434,7 +434,7 @@ print(hasattr(client, 'interactions'))
 - Client 获取路径：4 条 → 1 条
 - 包装层数：4 层 → 1 层（池）
 - 对 SDK 私有 API 的依赖：`client.request()` + `_genai_client` → 零
-- 删除代码量：~1500 行
+- 删除代码量：~1805 行
 
 ---
 

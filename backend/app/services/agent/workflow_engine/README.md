@@ -100,7 +100,7 @@
   - `backend/tests/test_workflow_template_coverage_report.py`
   - `backend/tests/test_workflow_available_models_media_classification.py`
 
-> **注意**：以上测试文件待创建（测试文件待创建）。
+> **注意**：以上测试文件待创建。
 
 ## 当前结构目标
 
