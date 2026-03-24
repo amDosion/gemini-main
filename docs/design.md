@@ -83,6 +83,6 @@
 
 ## Research-Driven Boundary Decisions
 
-- `_extract_video_mode_attachment_params()` 当前在 router 内承担了视频附件语义解释，这属于业务归一化，应在后续实现中下沉到后端服务层。
+- `extract_video_mode_attachment_params()` 已从 router 下沉到 `backend/app/services/common/video_mode_contract.py`，负责视频附件语义解释与业务归一化。
 - `video_extension_count` 的可选项和“延长后总时长”不应由前端本地推导，后端 contract 应直接给出合法组合。
 - `person_generation`、`subtitle_mode`、`storyboard_prompt`、tracking 语义等字段应继续收敛在 coordinator + storyboard helper，不应由前端页面层定义策略。

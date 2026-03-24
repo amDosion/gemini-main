@@ -55,5 +55,4 @@ Label: latest
 ## Guidance
 
 - Read this file before expanding into the full doc set.
-- Use queue/checkpoints/latest.json for machine-readable state.
 - Prefer resumable Codex sessions over starting fresh when a valid handle exists.

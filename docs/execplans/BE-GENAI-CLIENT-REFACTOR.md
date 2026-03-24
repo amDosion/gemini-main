@@ -45,13 +45,13 @@
 
 | 文件 | 类/函数 | 职责 | 行数 |
 |------|---------|------|------|
-| `agent/client.py` | `Client` | 包装 `genai.Client`，加 vertexai.init()、credential 解析、HttpOptions 转换 | ~180 |
+| `agent/client.py` | `Client` | 包装 `genai.Client`，加 vertexai.init()、credential 解析、HttpOptions 转换 | ~408 |
 | `agent/client.py` | `AsyncClient` | 异步包装 | ~40 |
-| `agent/models.py` | `Models` / `AsyncModels` | **重新实现** generate_content，调用 `client.request()` 私有 API | ~350 |
-| `agent/interactions.py` | `InteractionsResource` / `AsyncInteractionsResource` | 包装 interactions API | ~200 |
+| `agent/models.py` | `Models` / `AsyncModels` | **重新实现** generate_content，调用 `client.request()` 私有 API | ~604 |
+| `agent/interactions.py` | `InteractionsResource` / `AsyncInteractionsResource` | 包装 interactions API | ~376 |
 | `agent/types.py` | 各种 dataclass | 重新定义 SDK 类型（Content, Part, GenerateContentConfig 等） | 大量 |
-| `client_pool.py` | `GeminiClientPool` | 单例连接池，线程安全缓存 | ~200 |
-| `common/official_sdk_adapter.py` | `OfficialSDKAdapter` | 消息格式转换 + 从池获取 client | ~170 |
+| `client_pool.py` | `GeminiClientPool` | 单例连接池，线程安全缓存 | ~504 |
+| `common/official_sdk_adapter.py` | `OfficialSDKAdapter` | 消息格式转换 + 从池获取 client | ~411 |
 | `common/sdk_initializer.py` | `SDKInitializer` | 懒加载 + 从池获取 client | ~120 |
 | `genai_agent/client.py` | `get_genai_client()` | 薄代理，转发到 pool | ~60 |
 
@@ -166,7 +166,7 @@ response = self._api_client.request('post', path, request_dict, http_options)
 
 2. **内联并删除 `common/sdk_initializer.py`**
    - `SDKInitializer` 的懒加载语义由调用者自行管理（池本身已是懒创建）
-   - 将 `ChatHandler` 等使用者改为直接调 pool
+   - `SDKInitializer` is imported in 7 files: `chat_handler.py`, `file_handler.py`, `function_handler.py`, `pdf_extractor.py`, `schema_handler.py`, `token_handler.py`, `__init__.py` — all need to be updated to call pool directly
    - `ensure_initialized()` 的参数校验逻辑移入调用者或池内
 
 3. **内联 `OfficialSDKAdapter` 到 `google_service.py`**
@@ -218,7 +218,7 @@ response = self._api_client.request('post', path, request_dict, http_options)
 **需验证**：
 - 官方 `genai.Client` 是否已有 `.interactions` 属性
 - 如果有，确认 `interactions_manager.py` 能否直接使用官方接口
-- 当前 `interactions.py:697` 的注释提到"Gemini API 模式: 原生 google.genai.Client，直接使用 client.interactions"——说明官方 SDK 已支持
+- `interactions.py` 中有注释提到"Gemini API 模式: 原生 google.genai.Client，直接使用 client.interactions"——说明官方 SDK 已支持（注：该文件实际只有 ~376 行，原引用 `interactions.py:697` 有误）
 
 **预期结果**：
 - 如果官方 SDK 已完全覆盖 → 删除 `agent/interactions.py`，改用 `client.interactions`
@@ -280,14 +280,14 @@ response = self._api_client.request('post', path, request_dict, http_options)
 | `gemini/vertexai/video_generation_service.py` | 修改：去掉 getattr hack |
 | `gemini/vertexai/video_understanding_service.py` | 修改：去掉 getattr hack |
 | `gemini/vertexai/imagen_vertex_ai.py` | 修改：去掉 getattr hack |
-| `gemini/vertexai/tryon_service.py` | 修改：去掉 getattr hack（2 处） |
+| `gemini/vertexai/tryon_service.py` | 修改：去掉 getattr hack（1 处，仅 line 90） |
 | `gemini/vertexai/expand_service.py` | 修改：去掉 getattr hack |
 | `gemini/vertexai/segmentation_service.py` | 修改：去掉 getattr hack |
 | `gemini/geminiapi/video_generation_service.py` | 修改：去掉 getattr hack |
 | `gemini/geminiapi/video_understanding_service.py` | 修改：去掉 getattr hack |
 | `gemini/coordinators/video_generation_coordinator.py` | 修改：去掉 getattr hack |
 
-### 阶段 2 涉及文件（~8 个）
+### 阶段 2 涉及文件（~13 个）
 
 | 文件 | 操作 |
 |------|------|
@@ -295,9 +295,14 @@ response = self._api_client.request('post', path, request_dict, http_options)
 | `gemini/genai_agent/service.py` | 修改：改为直接调 pool |
 | `gemini/common/sdk_initializer.py` | 删除 |
 | `gemini/common/chat_handler.py` | 修改：去掉 SDKInitializer 依赖 |
+| `gemini/common/file_handler.py` | 修改：去掉 SDKInitializer 依赖 |
+| `gemini/common/function_handler.py` | 修改：去掉 SDKInitializer 依赖 |
+| `gemini/common/pdf_extractor.py` | 修改：去掉 SDKInitializer 依赖 |
+| `gemini/common/schema_handler.py` | 修改：去掉 SDKInitializer 依赖 |
+| `gemini/common/token_handler.py` | 修改：去掉 SDKInitializer 依赖 |
 | `gemini/common/official_sdk_adapter.py` | 删除 |
 | `gemini/google_service.py` | 修改：内联 adapter 逻辑 |
-| `gemini/__init__.py` | 修改：更新导出 |
+| `gemini/__init__.py` | 修改：更新导出（also imports SDKInitializer） |
 | `common/interactions_manager.py` | 审查：确认不受影响 |
 
 ### 阶段 3 涉及文件（待评估后确定）
@@ -417,7 +422,7 @@ print(hasattr(client, 'interactions'))
 - `agent/client.py`（~409 行）→ 删除，逻辑内联到 pool
 - `agent/models.py`（~500 行）→ 删除，使用官方 SDK
 - `agent/interactions.py`（~300 行）→ 删除或大幅简化
-- `common/official_sdk_adapter.py`（~170 行）→ 内联到 GoogleService
+- `common/official_sdk_adapter.py`（~411 行）→ 内联到 GoogleService
 - `common/sdk_initializer.py`（~124 行）→ 删除
 - `genai_agent/client.py`（~61 行）→ 删除
 

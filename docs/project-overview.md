@@ -30,12 +30,12 @@
 
 | Module | Responsibility | Key Dependencies | Risk Notes |
 | --- | --- | --- | --- |
-| `/Users/xuelihong/gemini-main/gemini-main/frontend/components/views/VideoGenView.tsx` | 视频模式页面、历史列表、结果播放器 | `useControlsState`, `useModeControlsSchema`, `ChatEditInputArea` | 当前承载的业务语义偏多，容易越界 |
-| `/Users/xuelihong/gemini-main/gemini-main/frontend/controls/modes/google/VideoGenControls.tsx` | Google 视频参数面板 | backend controls schema | 若前端自行推导能力，会与后端漂移 |
-| `/Users/xuelihong/gemini-main/gemini-main/backend/app/config/mode_controls_catalog.json` | 视频 controls 单一源 | `resolve_mode_controls` | 是 contract 核心，改动需谨慎 |
-| `/Users/xuelihong/gemini-main/gemini-main/backend/app/routers/core/modes.py` | mode request 校验、附件注入、结果桥接 | provider service, attachment service | 责任大，容易堆逻辑 |
-| `/Users/xuelihong/gemini-main/gemini-main/backend/app/services/gemini/coordinators/video_generation_coordinator.py` | prompt/storyboard/延长/fallback 核心协调 | Gemini API / Vertex video services | 是视频域真正业务核心 |
-| `/Users/xuelihong/gemini-main/gemini-main/backend/app/services/gemini/base/video_storyboard.py` | storyboard 与字幕 sidecar 辅助 | coordinator | 直接影响 prompt 质量与元数据语义 |
+| `frontend/components/views/VideoGenView.tsx` | 视频模式页面、历史列表、结果播放器 | `useControlsState`, `useModeControlsSchema`, `ChatEditInputArea` | 当前承载的业务语义偏多，容易越界 |
+| `frontend/controls/modes/google/VideoGenControls.tsx` | Google 视频参数面板 | backend controls schema | 若前端自行推导能力，会与后端漂移 |
+| `backend/app/config/mode_controls_catalog.json` | 视频 controls 单一源 | `resolve_mode_controls` | 是 contract 核心，改动需谨慎 |
+| `backend/app/routers/core/modes.py` | mode request 校验、附件注入、结果桥接 | provider service, attachment service | 责任大，容易堆逻辑 |
+| `backend/app/services/gemini/coordinators/video_generation_coordinator.py` | prompt/storyboard/延长/fallback 核心协调 | Gemini API / Vertex video services | 是视频域真正业务核心 |
+| `backend/app/services/gemini/base/video_storyboard.py` | storyboard 与字幕 sidecar 辅助 | coordinator | 直接影响 prompt 质量与元数据语义 |
 
 ## Current Capability Baseline
 
