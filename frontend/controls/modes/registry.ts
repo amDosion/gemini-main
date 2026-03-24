@@ -13,6 +13,8 @@ import { ImageGenControls as OpenAIImageGenControls } from './openai/ImageGenCon
 import { VideoGenControls as OpenAIVideoGenControls } from './openai/VideoGenControls';
 import { ImageEditControls as TongYiImageEditControls } from './tongyi/ImageEditControls';
 import { ImageGenControls as TongYiImageGenControls } from './tongyi/ImageGenControls';
+import { ImageGenControls as GrokImageGenControls } from './grok/ImageGenControls';
+import { VideoGenControls as GrokVideoGenControls } from './grok/VideoGenControls';
 
 export type ProviderModeControls = {
   ChatControls: React.ComponentType<any>;
@@ -48,6 +50,10 @@ const providerOverrides: Record<string, Partial<ProviderModeControls>> = {
   tongyi: {
     ImageGenControls: TongYiImageGenControls,
     ImageEditControls: TongYiImageEditControls,
+  },
+  grok: {
+    ImageGenControls: GrokImageGenControls,
+    VideoGenControls: GrokVideoGenControls,
   },
 };
 

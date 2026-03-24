@@ -1,7 +1,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Check, Loader2, Settings, Globe, Brain, Image as ImageIcon, Zap, BrainCircuit, Video, Mic, Server, Cpu, Sparkles, PlusCircle, LogOut, Search, X, User, KeyRound, Shield, Activity, HardDrive, Network, RefreshCw, Trash2 } from 'lucide-react';
+import { ChevronDown, Check, Loader2, Settings, Globe, Brain, Image as ImageIcon, Zap, BrainCircuit, Video, Mic, Server, Cpu, Sparkles, PlusCircle, LogOut, Search, X, User, KeyRound, Shield, Activity, HardDrive, Network, RefreshCw, Trash2, Flame } from 'lucide-react';
 import { ModelConfig, AppMode } from '../../types/types';
 import { ConfigProfile } from '../../services/db';
 import type { User as AuthUser, ChangePasswordData } from '../../services/auth';
@@ -62,6 +62,7 @@ const getProviderIcon = (pid: string) => {
     if (pid.includes('deepseek')) return <Cpu size={14} />;
     if (pid.includes('tongyi')) return <Globe size={14} />;
     if (pid.includes('openai')) return <Sparkles size={14} />;
+    if (pid.includes('grok')) return <Flame size={14} className="text-orange-400" />;
     return <Server size={14} />;
 };
 

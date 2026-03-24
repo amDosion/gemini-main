@@ -119,11 +119,13 @@ def filter_models_by_mode(models: List[ModelConfig], mode: str) -> List[ModelCon
                     is_specialized = any(keyword in model_id for keyword in [
                         'dall', 'wanx', 'flux', 'midjourney', '-t2i', 'z-image'
                     ]) or ('imagen' in model_id and 'generate' in model_id)
+                    # ✅ 支持 Grok Imagine 模型 (排除 edit 和 video)
+                    is_grok_imagine = 'imagine' in model_id and 'edit' not in model_id and 'video' not in model_id
                     # ✅ 支持 Gemini Image 模型
                     is_gemini_image = 'gemini' in model_id and 'image' in model_id
                     # ✅ 支持 Nano-Banana 系列
                     is_nano_banana = 'nano-banana' in model_id
-                    should_include = is_specialized or is_gemini_image or is_nano_banana
+                    should_include = is_specialized or is_gemini_image or is_nano_banana or is_grok_imagine
 
         elif mode == 'image-upscale':
             # 图像放大模式：只包含放大模型

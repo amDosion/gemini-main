@@ -312,6 +312,15 @@ class ProviderFactory:
                     else:
                         logger.debug(f"[Provider Factory] No service class for {provider_id} (DashScope, optional dependency)")
             
+            elif client_type == "grok":
+                try:
+                    from ..grok import GrokService
+                    cls._providers[provider_id] = GrokService
+                    logger.info(f"[Provider Factory] Registered {provider_id} (Grok)")
+                except ImportError:
+                    GrokService = None
+                    logger.debug(f"[Provider Factory] GrokService not available")
+            
             else:
                 # 对于可选依赖（ollama, tongyi），使用 debug 级别
                 if client_type in ["ollama", "dashscope"]:
