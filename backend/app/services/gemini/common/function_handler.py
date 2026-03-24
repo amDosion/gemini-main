@@ -11,28 +11,27 @@ import asyncio
 from typing import Optional, List, Dict, Any, Callable, Union
 from enum import Enum
 
-from .sdk_initializer import SDKInitializer
 from app.utils.safe_expression_eval import safe_eval_expression
 
 
 class FunctionCallingMode(Enum):
     """函数调用模式"""
     AUTO = "AUTO"
-    ANY = "ANY" 
+    ANY = "ANY"
     NONE = "NONE"
 
 
 class FunctionHandler:
     """Gemini Function Calling 处理器"""
-    
-    def __init__(self, sdk_initializer: SDKInitializer):
+
+    def __init__(self, client_factory: Callable):
         """
         初始化函数处理器
-        
+
         Args:
-            sdk_initializer: SDK 初始化器实例
+            client_factory: A callable that returns a configured Gemini client
         """
-        self.sdk_initializer = sdk_initializer
+        self._client_factory = client_factory
         self.registered_functions: Dict[str, Callable] = {}
     
     def register_function(self, func: Callable, name: Optional[str] = None) -> str:

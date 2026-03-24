@@ -21,7 +21,6 @@ import os
 from typing import Dict, Optional, Any, Union
 from datetime import datetime
 
-from .agent.client import Client as VertexAIClient
 from .agent.types import HttpOptions, HttpOptionsDict, HttpRetryOptions
 
 logger = logging.getLogger(__name__)
@@ -65,7 +64,7 @@ class GeminiClientPool:
         if hasattr(self, '_initialized') and self._initialized:
             return
 
-        self._clients: Dict[str, Any] = {}  # 可以是 VertexAIClient 或 google.genai.Client
+        self._clients: Dict[str, Any] = {}  # google.genai.Client instances
         self._client_metadata: Dict[str, Dict[str, Any]] = {}
         self._stats = {
             'total_clients': 0,
@@ -95,7 +94,7 @@ class GeminiClientPool:
         
         架构分离：
         - Gemini API 模式 (vertexai=False): 使用官方 google.genai.Client
-        - Vertex AI 模式 (vertexai=True): 使用 agent/client.py 的 Client 类
+        - Vertex AI 模式 (vertexai=True): 使用官方 google.genai.Client (vertexai=True)
 
         Args:
             api_key: Google API key (optional if credentials provided)
@@ -108,7 +107,7 @@ class GeminiClientPool:
         Returns:
             Client 实例（可能从缓存返回）
             - Gemini API 模式: google.genai.Client
-            - Vertex AI 模式: VertexAIClient (包装器)
+            - Vertex AI 模式: google.genai.Client (vertexai=True)
 
         Thread-safe: 是
         """
@@ -135,16 +134,52 @@ class GeminiClientPool:
             # 创建新客户端（根据 vertexai 标志选择不同的实现）
             try:
                 if vertexai:
-                    # ✅ Vertex AI 模式：使用 agent/client.py 的 Client 类
+                    # ✅ Vertex AI 模式：直接创建 google.genai.Client (raw SDK client)
                     logger.debug(f"[GeminiClientPool] Creating Vertex AI client (vertexai=True)")
-                    client = VertexAIClient(
-                        api_key=api_key,
-                        vertexai=True,
-                        project=project,
-                        location=location,
-                        credentials=credentials,
-                        http_options=effective_http_options
-                    )
+                    if not GOOGLE_GENAI_AVAILABLE:
+                        raise RuntimeError(
+                            "google-genai SDK is not available. "
+                            "Please install: pip install google-genai>=1.55.0"
+                        )
+
+                    resolved_project = project or os.environ.get('GOOGLE_CLOUD_PROJECT')
+                    resolved_location = location or os.environ.get('GOOGLE_CLOUD_LOCATION', 'us-central1')
+
+                    if not (resolved_project and resolved_location):
+                        raise ValueError(
+                            'Missing project or location! To use Vertex AI, '
+                            'provide project and location arguments or set environment variables.'
+                        )
+
+                    # Initialize the vertexai SDK (mirrors agent/client.py behaviour)
+                    try:
+                        import vertexai as vertexai_module
+                        vertexai_module.init(project=resolved_project, location=resolved_location)
+                        logger.info(
+                            "[GeminiClientPool] Initialized vertexai SDK: project=%s, location=%s",
+                            resolved_project, resolved_location,
+                        )
+                    except ImportError:
+                        logger.debug("[GeminiClientPool] vertexai module not available, skipping vertexai.init()")
+                    except Exception as e:
+                        logger.warning("[GeminiClientPool] Failed to initialize vertexai SDK: %s", e)
+
+                    client_kwargs = {
+                        "vertexai": True,
+                        "project": resolved_project,
+                        "location": resolved_location,
+                    }
+                    if credentials:
+                        client_kwargs["credentials"] = credentials
+                        logger.info("[GeminiClientPool] Using Vertex AI with service account credentials")
+                    else:
+                        logger.info("[GeminiClientPool] Using Vertex AI ADC mode (project/location)")
+
+                    genai_http_options = self._to_genai_http_options(effective_http_options)
+                    if genai_http_options is not None:
+                        client_kwargs["http_options"] = genai_http_options
+
+                    client = google_genai.Client(**client_kwargs)
                 else:
                     # ✅ Gemini API 模式：统一在主池内创建官方 google.genai.Client
                     logger.debug(f"[GeminiClientPool] Creating Gemini API client (vertexai=False)")

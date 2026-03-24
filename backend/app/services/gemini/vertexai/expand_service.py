@@ -15,11 +15,11 @@ import os
 import io
 import json
 import tempfile
-from typing import Dict, Any, List, Optional, Tuple, Union
+from typing import Callable, Dict, Any, List, Optional, Tuple, Union
 
 import aiohttp
 
-from ..common.sdk_initializer import SDKInitializer
+from ..client_pool import get_client_pool
 from ..common.parameter_validation import ImageServiceValidator
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ class ExpandService:
 
     def __init__(
         self,
-        sdk_initializer: Optional[SDKInitializer] = None,
+        client_factory: Optional[Callable] = None,
         user_id: Optional[str] = None,
         db = None
     ):
@@ -61,15 +61,15 @@ class ExpandService:
         Initialize expand service.
 
         支持两种初始化模式：
-        1. 传递 sdk_initializer（向后兼容，但可能不支持 outpainting）
+        1. 传递 client_factory（可选，返回配置好的客户端实例）
         2. 传递 user_id 和 db（推荐，支持从数据库加载 Vertex AI 配置）
 
         Args:
-            sdk_initializer: SDK initializer instance (可选，向后兼容)
+            client_factory: Optional callable that returns a configured client instance
             user_id: 用户 ID（用于从数据库获取 Vertex AI 配置）
             db: 数据库会话（SQLAlchemy Session）
         """
-        self.sdk_initializer = sdk_initializer
+        self._client_factory = client_factory
         self._user_id = user_id
         self._db = db
         self._config: Optional[Dict[str, Any]] = None
@@ -211,14 +211,8 @@ class ExpandService:
             credentials=credentials
         )
 
-        # 获取底层的 google.genai.Client（支持 edit_image）
-        if hasattr(wrapper_client, '_genai_client'):
-            self._vertex_client = wrapper_client._genai_client
-            logger.info(f"[Expand Service] Got underlying Vertex AI genai client from pool")
-        else:
-            # 如果包装器没有 _genai_client，可能是直接的 genai.Client
-            self._vertex_client = wrapper_client
-            logger.info(f"[Expand Service] Using Vertex AI client directly from pool")
+        self._vertex_client = wrapper_client
+        logger.info(f"[Expand Service] Got Vertex AI client from pool")
 
         return self._vertex_client
 

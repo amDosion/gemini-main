@@ -6,24 +6,21 @@ Gemini JSON Schema Response Handler
 """
 
 import json
-from typing import Optional, Dict, Any, Type, Union, get_type_hints
+from typing import Callable, Optional, Dict, Any, Type, Union, get_type_hints
 from enum import Enum
 from pydantic import BaseModel
 
-from .sdk_initializer import SDKInitializer
-
-
 class SchemaHandler:
     """Gemini JSON Schema 响应处理器"""
-    
-    def __init__(self, sdk_initializer: SDKInitializer):
+
+    def __init__(self, client_factory: Callable):
         """
         初始化 Schema 处理器
-        
+
         Args:
-            sdk_initializer: SDK 初始化器实例
+            client_factory: A callable that returns a configured Gemini client
         """
-        self.sdk_initializer = sdk_initializer
+        self._client_factory = client_factory
     
     def create_json_schema_config(
         self,

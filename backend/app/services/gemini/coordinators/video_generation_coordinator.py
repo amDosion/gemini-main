@@ -175,7 +175,7 @@ class VideoGenerationCoordinator:
                 vertexai=False,
                 http_options=self._http_options,
             )
-            client = getattr(pooled_client, "_genai_client", pooled_client)
+            client = pooled_client
             response = client.models.generate_content(
                 model=text_model,
                 contents=f"{system_prompt}\n\n{user_prompt}",

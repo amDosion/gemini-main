@@ -8,12 +8,9 @@ Gemini Token Counting Handler
 import hashlib
 import asyncio
 import time
-from typing import Optional, List, Dict, Any, Union
+from typing import Callable, Optional, List, Dict, Any, Union
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-
-from .sdk_initializer import SDKInitializer
-
 
 @dataclass
 class TokenCount:
@@ -46,14 +43,14 @@ class ModelLimits:
 class TokenHandler:
     """Gemini Token 计数处理器"""
     
-    def __init__(self, sdk_initializer: SDKInitializer):
+    def __init__(self, client_factory: Callable):
         """
         初始化 Token 处理器
-        
+
         Args:
-            sdk_initializer: SDK 初始化器实例
+            client_factory: A callable that returns a configured Gemini client
         """
-        self.sdk_initializer = sdk_initializer
+        self._client_factory = client_factory
         self._token_cache: Dict[str, tuple[TokenCount, float]] = {}  # (result, timestamp)
         self._model_info_cache: Dict[str, tuple[Any, float]] = {}
         self._cache_ttl = 3600  # 缓存1小时
@@ -135,9 +132,8 @@ class TokenHandler:
             return cached_result
         
         try:
-            await self.sdk_initializer.ensure_initialized()
-            client = self.sdk_initializer.client
-            
+            client = self._client_factory()
+
             # 准备内容
             if isinstance(content, str):
                 # 简单文本
@@ -189,9 +185,8 @@ class TokenHandler:
             Token 计数结果
         """
         try:
-            await self.sdk_initializer.ensure_initialized()
-            client = self.sdk_initializer.client
-            
+            client = self._client_factory()
+
             # 构建完整的请求配置
             request_config = {
                 'model': model,

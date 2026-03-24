@@ -8,23 +8,20 @@ Gemini Files API Handler
 import os
 import asyncio
 import mimetypes
-from typing import Optional, List, Dict, Any, Union
+from typing import Callable, Optional, List, Dict, Any, Union
 from pathlib import Path
-
-from .sdk_initializer import SDKInitializer
-
 
 class FileHandler:
     """Gemini Files API 处理器"""
-    
-    def __init__(self, sdk_initializer: SDKInitializer):
+
+    def __init__(self, client_factory: Callable):
         """
         初始化文件处理器
-        
+
         Args:
-            sdk_initializer: SDK 初始化器实例
+            client_factory: A callable that returns a configured Gemini client
         """
-        self.sdk_initializer = sdk_initializer
+        self._client_factory = client_factory
     
     async def upload_file(
         self, 
@@ -65,8 +62,7 @@ class FileHandler:
         
         try:
             # 确保 SDK 已初始化
-            await self.sdk_initializer.ensure_initialized()
-            client = self.sdk_initializer.client
+            client = self._client_factory()
             
             # 上传文件
             file_obj = await client.aio.files.upload(
@@ -104,8 +100,7 @@ class FileHandler:
             文件信息字典
         """
         try:
-            await self.sdk_initializer.ensure_initialized()
-            client = self.sdk_initializer.client
+            client = self._client_factory()
             
             file_obj = await client.aio.files.get(name=file_name)
             
@@ -137,8 +132,7 @@ class FileHandler:
             文件字节数据
         """
         try:
-            await self.sdk_initializer.ensure_initialized()
-            client = self.sdk_initializer.client
+            client = self._client_factory()
             
             # 下载文件数据
             file_data = await client.aio.files.download(file=file_name)
@@ -167,8 +161,7 @@ class FileHandler:
             删除是否成功
         """
         try:
-            await self.sdk_initializer.ensure_initialized()
-            client = self.sdk_initializer.client
+            client = self._client_factory()
             
             await client.aio.files.delete(name=file_name)
             return True
@@ -187,8 +180,7 @@ class FileHandler:
             文件列表
         """
         try:
-            await self.sdk_initializer.ensure_initialized()
-            client = self.sdk_initializer.client
+            client = self._client_factory()
             
             files = []
             async for file_obj in await client.aio.files.list(

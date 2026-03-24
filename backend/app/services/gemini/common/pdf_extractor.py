@@ -5,15 +5,13 @@ This service provides functionality to extract structured data from PDF document
 using Gemini's function calling capabilities.
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Callable, Dict, Any, List, Optional
 import json
 import time
 import logging
 import pypdf
 from google import genai
 from google.genai import types
-
-from .sdk_initializer import SDKInitializer
 
 logger = logging.getLogger(__name__)
 
@@ -205,14 +203,14 @@ class PDFExtractorService:
     Extracts structured data from PDF documents using Gemini function calling.
     """
 
-    def __init__(self, sdk_initializer: SDKInitializer):
+    def __init__(self, client_factory: Callable):
         """
         Initialize PDF extractor service.
 
         Args:
-            sdk_initializer: SDK initializer for Gemini API
+            client_factory: A callable that returns a configured Gemini client
         """
-        self.sdk_initializer = sdk_initializer
+        self._client_factory = client_factory
         logger.info("[PDF Extractor Service] Initialized")
 
     async def extract_structured_data(
@@ -292,8 +290,8 @@ class PDFExtractorService:
         # Structured templates continue with function-calling
         func_decl = template_config['tool']
 
-        # Use SDK initializer's client
-        client = self.sdk_initializer.client
+        # Get client from unified pool
+        client = self._client_factory()
         logger.info(f"[PDF Extractor Service] Using model: {cleaned_model_id}")
 
         # Create prompt
@@ -430,10 +428,9 @@ async def extract_structured_data_from_pdf(
 
     This function maintains the old interface while using the new service architecture.
     """
-    from .sdk_initializer import SDKInitializer
-
-    sdk_initializer = SDKInitializer(api_key)
-    service = PDFExtractorService(sdk_initializer)
+    from ..client_pool import get_client_pool
+    pool = get_client_pool()
+    service = PDFExtractorService(client_factory=lambda: pool.get_client(api_key=api_key))
     return await service.extract_structured_data(
         pdf_bytes=pdf_bytes,
         template_type=template_type,
