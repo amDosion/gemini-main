@@ -7,7 +7,7 @@
 
 ## 1. 概述
 
-本项目深度集成了 Google 全家桶（GenAI SDK、Vertex AI、ADK），同时支持 OpenAI、Ollama、通义千问等多 Provider。当前各 Provider **独立管理各自的客户端实例**，缺乏统一的生命周期协调。其中 Google Provider 问题最突出——4 层包装链路过深、自建类型系统与官方 SDK 重复、`agent/client.py` 中直接调用私有 API。
+本项目深度集成了 Google 全家桶（GenAI SDK、Vertex AI、ADK），同时支持 OpenAI、Ollama、通义千问等多 Provider。当前客户端管理分为 **两套独立的缓存系统**（`ProviderFactory._client_cache` + `GeminiClientPool._clients`），缺乏统一的生命周期协调。其中 Google Provider 问题最突出——双调用路径并存、自建类型系统（22 个类）与官方 SDK 重复、`agent/client.py` 包装层增加间接性。
 
 **核心目标**：
 
@@ -22,9 +22,9 @@
 
 | SDK / 框架 | 集成度 | 文件数 | 说明 |
 |---|---|---|---|
-| **Google GenAI SDK** (`google-genai`) | ⭐⭐⭐⭐⭐ 极深 | 45+ | 覆盖几乎所有 API |
+| **Google GenAI SDK** (`google-genai`) | ⭐⭐⭐⭐⭐ 极深 | 31 | 覆盖几乎所有 API |
 | **Vertex AI SDK** (`google-cloud-aiplatform`) | ⭐⭐⭐⭐⭐ 极深 | 13+ 专属服务 | 图像/视频/Agent Engine 全覆盖 |
-| **Google ADK** (`google-adk`) | ⭐⭐⭐⭐☆ 深度 | 8 后端 + 4 前端 | 完整 Agent 生命周期 |
+| **Google ADK** (`google-adk`) | ⭐⭐⭐⭐☆ 深度 | 7 后端 + 4 模板 + 1 前端 | 完整 Agent 生命周期 |
 | **Google AI Cookbook** | ⭐☆☆☆☆ | 0 | 无直接引用 |
 
 ### 2.2 Google GenAI SDK 已集成功能
@@ -74,57 +74,73 @@ from google.adk.memory import InMemoryMemoryService, VertexAiMemoryBankService
 
 ## 3. 当前客户端管理现状与问题
 
-### 3.1 全局视角：5 个孤立的客户端缓存
+### 3.1 全局视角：2 套缓存系统，缺乏统一协调
 
-| Provider | 缓存位置 | 缓存方式 | 生命周期 | 线程安全 |
+当前客户端管理分为 **2 套独立的缓存系统**：
+
+| 缓存系统 | 位置 | 管理对象 | 线程安全 | Provider 覆盖 |
 |---|---|---|---|---|
-| **Google** | `GeminiClientPool._clients` | 单例 + dict | 进程级 | ✅ threading.Lock |
-| **OpenAI** | `ProviderFactory._client_cache` | dict | 进程级 | ⚠️ GIL |
-| **Ollama** | `ProviderFactory._client_cache` | dict | 进程级 | ⚠️ GIL |
-| **通义千问** | `ProviderFactory._client_cache` | dict | 进程级 | ⚠️ GIL |
-| **ProviderFactory** | `_client_cache` | dict（服务实例） | 进程级 | ⚠️ GIL |
+| **ProviderFactory._client_cache** | `provider_factory.py:54` | Service 实例（含内部 client） | ⚠️ GIL | 全部 Provider 共享 |
+| **GeminiClientPool._clients** | `client_pool.py:68` | 底层 `google.genai.Client` 实例 | ✅ threading.Lock | 仅 Google |
+
+各 Provider 的 client 持有方式：
+
+| Provider | client 持有位置 | 特点 |
+|---|---|---|
+| **Google** | `GeminiClientPool._clients`（进程级单例池） | 独立于 ProviderFactory 的二级缓存 |
+| **OpenAI** | `OpenAIService.client`（每个 Service 实例一个 `AsyncOpenAI`） | 通过 ProviderFactory 间接缓存 |
+| **Ollama** | `OllamaService` 内部两个 sub-handler 各持有 client | 通过 ProviderFactory 间接缓存 |
+| **通义千问** | `TongyiService._chat_provider` + `_secondary_chat_provider` | 双 client，通过 ProviderFactory 间接缓存 |
 
 **问题**：
-- ProviderFactory 缓存的是 **Service 实例**，而 Google 在 Service 内部又有一个独立的 **Client 实例池**（`GeminiClientPool`）
-- 缓存分散，无法统一监控、无法全局 warm-up/drain、无法协调总连接数
+- ProviderFactory 缓存的是 **Service 实例**，而 Google 在 Service 内部又有一个独立的 **Client 实例池**（`GeminiClientPool`），形成两层缓存
+- 两套缓存系统独立运作，无法统一监控、无法全局 warm-up/drain、无法协调总连接数
 - 非 Google Provider 依赖 CPython GIL 保证线程安全，在异步场景下有隐患
 
-### 3.2 Google 特有问题：4 层包装链路
+### 3.2 Google 特有问题：双路径并存 + 多层包装
 
-一次 `generate_content` 调用的实际路径：
+`generate_content` 存在**两条独立调用路径**，由 `use_official_sdk` 标志控制：
 
 ```
-GoogleService                              # 第 1 层：协调器
-  └→ ChatHandler                           # 第 2 层：功能 handler
-      └→ OfficialSDKAdapter._get_client()  # 第 3 层：适配器
-          └→ GeminiClientPool.get_client()  # 第 4 层：客户端池
-              └→ agent/client.py Client     # 第 5 层：自建包装类
-                  └→ google.genai.Client    # 最终：官方 SDK
+路径 A（默认/Legacy）：ChatHandler 走 SDKInitializer
+GoogleService.chat()
+  └→ ChatHandler.chat()                        # 功能 handler
+      └→ SDKInitializer.ensure_initialized()   # 懒加载 client
+          └→ GeminiClientPool.get_client()     # 客户端池
+              └→ agent/client.py Client        # 自建包装类（仅 Vertex AI 模式）
+                  └→ google.genai.Client       # 官方 SDK
+
+路径 B（use_official_sdk=True）：OfficialSDKAdapter
+GoogleService.chat()
+  └→ OfficialSDKAdapter.generate_content()     # 适配器
+      └→ OfficialSDKAdapter._get_client()
+          └→ GeminiClientPool.get_client()     # 同一个池
+              └→ google.genai.Client           # 官方 SDK
 ```
 
-**具体问题**：
+**问题**：两条路径做的是同一件事（调用 `models.generate_content()`），但分别实现了消息格式转换、配置构建、响应解析，造成逻辑分裂。
 
 #### 3.2.1 自建 `agent/client.py` 包装层
 
 `agent/client.py` 中的 `Client` 类（约 400 行）包装了 `google.genai.Client`，主要做：
 - 重新实现 `Models`、`AsyncModels`、`InteractionsResource` 等子模块
-- 将官方 SDK 的参数和返回值在自建类型（`agent/types.py` 120+ 类型）与官方类型之间转换
+- 将官方 SDK 的参数和返回值在自建类型（`agent/types.py` 22 个类定义）与官方类型之间转换
 
 这一层在项目早期（官方 SDK 不稳定时）有价值，但现在 `google-genai>=1.55.0` 已经稳定，这层包装：
 - 增加维护成本（SDK 升级时需要同步修改）
 - 引入间接性（调试困难）
 - 自建类型与官方类型不完全兼容
 
-#### 3.2.2 `OfficialSDKAdapter` 冗余
+#### 3.2.2 `OfficialSDKAdapter` 与 `ChatHandler` 功能分裂
 
-`OfficialSDKAdapter` 的职责是"从池获取 client → 调用 client.models.generate_content()"，但 `ChatHandler` 本身也可以直接通过 `SDKInitializer` 获取 client。两者功能重叠。
+两者都实现了"获取 client → 调用 generate_content → 解析响应"的完整流程，但各自独立维护格式转换和配置构建逻辑。应合并为单一路径。
 
-#### 3.2.3 `SDKInitializer` 与 `GeminiClientPool` 职责重叠
+#### 3.2.3 `SDKInitializer` —— 有用但职责边界模糊
 
-- `SDKInitializer`：懒加载获取 client，内部调用 `GeminiClientPool`
-- `GeminiClientPool`：管理 client 实例池
+- `SDKInitializer`：懒加载语义 + 缓存 client 引用（per-Service 实例）
+- `GeminiClientPool`：进程级连接池 + 缓存命中统计
 
-两者都是"获取 client"的入口，调用方不确定该用哪个。
+两者是**互补关系**（SDKInitializer 提供懒加载，GeminiClientPool 提供池化），但调用方不确定该用哪个入口，且 SDKInitializer 的存在使得 client 引用分散在两个地方。
 
 ---
 
@@ -171,20 +187,21 @@ class ProviderFactory:
 
 ### 4.2 Google 层：收敛包装链路
 
-目标：从 5 层收敛为 3 层。
+目标：合并双路径为单一路径，消除包装层。
 
 ```
 GoogleService                        # 协调器（不变）
-  └→ ChatHandler / ImageGenerator ... # 功能 handler（不变）
+  └→ ChatHandler / ImageGenerator ... # 功能 handler（不变，吸收 adapter 逻辑）
       └→ GeminiClientPool.get_client() # 直接从池获取官方 client
           └→ google.genai.Client       # 官方 SDK（直接使用）
 ```
 
 **消除**：
 - `agent/client.py` 的 `Client` 包装类 → 直接使用 `google.genai.Client`
-- `agent/types.py` 120+ 自建类型 → 直接使用 `google.genai.types`
-- `OfficialSDKAdapter` → 合并到 `ChatHandler`
-- `SDKInitializer` → 合并到 `GeminiClientPool`
+- `agent/types.py` 22 个自建类型 → 直接使用 `google.genai.types`
+- `OfficialSDKAdapter` → 合并到 `ChatHandler`（消除双路径）
+- `SDKInitializer` → 合并到 `GeminiClientPool`（统一 client 获取入口）
+- 保留 `agent/interactions.py` → Interactions API 兼容层仍有转换价值
 
 ### 4.3 预期最终架构
 
@@ -220,7 +237,7 @@ GoogleService                        # 协调器（不变）
 | 任务 | 文件 | 变更 |
 |---|---|---|
 | 定义 `ProviderPoolAdapter` Protocol | `backend/app/services/common/pool_adapter.py`（新建） | ~30 行 |
-| `GeminiClientPool` 实现 adapter 接口 | `client_pool.py` | 添加 `get_stats()` / `drain()` 等（大部分已有） |
+| `GeminiClientPool` 实现 adapter 接口 | `client_pool.py` | 已有 `get_stats()` / `close_all()` / `close_client()`，补充 `health_check()` / `warm_up()` |
 | `ProviderFactory` 新增 `_pools` + 注册/查询方法 | `provider_factory.py` | ~40 行 |
 | Google 注册时自动注册 pool | `provider_factory.py::_auto_register()` | ~5 行 |
 
@@ -232,15 +249,16 @@ GoogleService                        # 协调器（不变）
 
 | 任务 | 涉及文件 | 说明 |
 |---|---|---|
-| 将 `from ..agent.client import Client` 替换为 `from google import genai` | `client_pool.py`, `official_sdk_adapter.py` | Client 创建改为直接 `genai.Client(...)` |
-| 将 `from ..agent.types import ...` 替换为 `from google.genai import types` | 45+ 文件 | 自建类型 → 官方类型 |
+| 将 `from ..agent.client import Client` 替换为 `from google import genai` | `client_pool.py`（1处）, `interactions_manager.py`（1处） | Client 创建改为直接 `genai.Client(...)` |
+| 将 `from ..agent.types import ...` 替换为 `from google.genai import types` | 6 个文件：`client_pool.py`, `official_sdk_adapter.py`, `sdk_initializer.py`, `google_service.py`, `interactions_manager.py`, `adapters.py` | 22 个自建类型 → 官方类型 |
 | 将 `from ..agent.models import Models` 调用替换为 `client.models` 直接访问 | `official_sdk_adapter.py`, `chat_handler.py` | 消除 Models 包装 |
-| 保留 `agent/interactions.py` | — | Interactions API 可能仍需兼容层 |
+| 保留 `agent/interactions.py` | — | Interactions API 有自定义 `from_official()` 转换逻辑 |
 | 标记 `agent/client.py`, `agent/types.py`, `agent/models.py` 为 deprecated | — | 保留一个版本周期 |
 
 **风险**：
-- `agent/types.py` 中可能有项目特有的扩展字段，需逐个比对官方类型
-- `Models` 包装类可能有参数转换逻辑，需确认官方 SDK 已支持
+- `agent/types.py` 中的 22 个类型定义需逐个比对 `google.genai.types` 官方类型，确认字段兼容
+- `Models` 包装类有参数格式转换逻辑（`_GenerateContentParameters_to_mldev`），需确认官方 SDK 已原生支持
+- `get_vertex_ai_credentials_from_db()` 函数定义在 `agent/client.py` 中，被 `interactions_manager.py` 多处动态导入，需迁移到独立模块
 
 ### 阶段 3：合并 OfficialSDKAdapter + SDKInitializer
 
