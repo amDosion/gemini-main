@@ -15,7 +15,7 @@ import os
 import io
 import json
 import tempfile
-from typing import Callable, Dict, Any, List, Optional, Tuple, Union
+from typing import Dict, Any, List, Optional, Tuple, Union
 
 import aiohttp
 
@@ -53,23 +53,16 @@ class ExpandService:
 
     def __init__(
         self,
-        client_factory: Optional[Callable] = None,
         user_id: Optional[str] = None,
         db = None
     ):
         """
         Initialize expand service.
 
-        支持两种初始化模式：
-        1. 传递 client_factory（可选，返回配置好的客户端实例）
-        2. 传递 user_id 和 db（推荐，支持从数据库加载 Vertex AI 配置）
-
         Args:
-            client_factory: Optional callable that returns a configured client instance
             user_id: 用户 ID（用于从数据库获取 Vertex AI 配置）
             db: 数据库会话（SQLAlchemy Session）
         """
-        self._client_factory = client_factory
         self._user_id = user_id
         self._db = db
         self._config: Optional[Dict[str, Any]] = None

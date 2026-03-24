@@ -13,6 +13,8 @@ import pypdf
 from google import genai
 from google.genai import types
 
+from ..client_pool import get_client_pool
+
 logger = logging.getLogger(__name__)
 
 
@@ -438,9 +440,7 @@ async def extract_structured_data_from_pdf(
 
     This function maintains the old interface while using the new service architecture.
     """
-    from ..client_pool import get_client_pool
-    pool = get_client_pool()
-    service = PDFExtractorService(client_factory=lambda: pool.get_client(api_key=api_key))
+    service = PDFExtractorService(api_key=api_key)
     return await service.extract_structured_data(
         pdf_bytes=pdf_bytes,
         template_type=template_type,
