@@ -89,18 +89,29 @@
 
 ## 推荐检查清单
 
-- 改 `orchestration.py` / `agent_execution.py` 后：
-  - `backend/tests/test_workflow_final_status_contract.py`
-  - `backend/tests/test_workflow_preview_budget_contract.py`
-- 改媒体执行后：
-  - `backend/tests/test_workflow_engine_media_execution.py`
-  - `backend/tests/test_workflow_engine_media_helpers.py`
-  - `backend/tests/test_workflow_engine_media_output_sanitization.py`
-- 改模板/能力分类后：
-  - `backend/tests/test_workflow_template_coverage_report.py`
-  - `backend/tests/test_workflow_available_models_media_classification.py`
+修改代码后应运行对应的测试。以下按变更范围列出关联测试文件及当前状态。
 
-> **注意**：以上测试文件待创建。
+### orchestration / agent_execution 变更
+
+| 测试文件 | 状态 |
+|---------|------|
+| `backend/tests/test_workflow_final_status_contract.py` | Pending |
+| `backend/tests/test_workflow_preview_budget_contract.py` | Pending |
+
+### 媒体执行变更
+
+| 测试文件 | 状态 |
+|---------|------|
+| `backend/tests/test_workflow_engine_media_execution.py` | Pending |
+| `backend/tests/test_workflow_engine_media_helpers.py` | Pending |
+| `backend/tests/test_workflow_engine_media_output_sanitization.py` | Pending |
+
+### 模板 / 能力分类变更
+
+| 测试文件 | 状态 |
+|---------|------|
+| `backend/tests/test_workflow_template_coverage_report.py` | Pending |
+| `backend/tests/test_workflow_available_models_media_classification.py` | Pending |
 
 ## 当前结构目标
 

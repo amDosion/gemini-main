@@ -541,31 +541,40 @@ orchestrator = Orchestrator(
 - 如果工具执行失败，会在结果中标记错误，但代理可以继续执行
 - 如果 MCP 工具加载失败，会记录警告但继续使用其他工具
 
-## 测试
+## 测试计划
 
-运行单元测试：
-```bash
-# Phase 1: 智能任务分解
-pytest backend/tests/test_task_decomposer.py
-pytest backend/tests/test_agent_matcher.py
-pytest backend/tests/test_orchestrator_integration.py
+以下测试按功能分阶段组织，状态标注为当前进度。
 
-# Phase 2: 执行图（DAG）管理
-pytest backend/tests/test_execution_graph.py
-pytest backend/tests/test_orchestrator_execution_graph.py
+### Phase 1: 智能任务分解
 
-# Phase 3: 工具生态系统
-pytest backend/tests/test_tool_registry.py
-pytest backend/tests/test_agent_with_tools.py
-pytest backend/tests/test_orchestrator_tools_integration.py
+| 测试文件 | 覆盖范围 | 状态 |
+|---------|---------|------|
+| `backend/tests/test_task_decomposer.py` | SmartTaskDecomposer 单元测试 | Pending |
+| `backend/tests/test_agent_matcher.py` | AgentMatcher 匹配逻辑 | Pending |
+| `backend/tests/test_orchestrator_integration.py` | Orchestrator 集成测试 | Pending |
 
-# Phase 5: ADK 三种模式支持
-pytest backend/tests/test_coordinator_agent.py
-pytest backend/tests/test_sequential_agent.py
-pytest backend/tests/test_parallel_agent.py
-```
+### Phase 2: 执行图（DAG）管理
 
-> **注意**：以上测试文件待创建。
+| 测试文件 | 覆盖范围 | 状态 |
+|---------|---------|------|
+| `backend/tests/test_execution_graph.py` | ExecutionGraph 拓扑排序与循环检测 | Pending |
+| `backend/tests/test_orchestrator_execution_graph.py` | Orchestrator + ExecutionGraph 集成 | Pending |
+
+### Phase 3: 工具生态系统
+
+| 测试文件 | 覆盖范围 | 状态 |
+|---------|---------|------|
+| `backend/tests/test_tool_registry.py` | ToolRegistry 注册与执行 | Pending |
+| `backend/tests/test_agent_with_tools.py` | AgentWithTools 工具调用循环 | Pending |
+| `backend/tests/test_orchestrator_tools_integration.py` | Orchestrator + 工具集成 | Pending |
+
+### Phase 5: ADK 三种模式支持
+
+| 测试文件 | 覆盖范围 | 状态 |
+|---------|---------|------|
+| `backend/tests/test_coordinator_agent.py` | CoordinatorAgent 协调逻辑 | Pending |
+| `backend/tests/test_sequential_agent.py` | SequentialAgent 顺序管道 | Pending |
+| `backend/tests/test_parallel_agent.py` | ParallelAgent 并行执行 | Pending |
 
 ## 相关文档
 
