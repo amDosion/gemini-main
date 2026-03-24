@@ -1,15 +1,22 @@
 # OS files
 .DS_Store
+Thumbs.db
 
 # IDEs and editors
 .idea/
 .vscode/
+.cursor/
 
 # Python
 __pycache__/
 *.pyc
+*.pyo
 .venv/
 backend/.venv/
+.pytest_cache/
+.hypothesis/
+backend/.hypothesis/
+*.egg-info/
 
 # Environment variables
 .env
@@ -20,105 +27,93 @@ backend/.env
 !.env.example
 !backend/.env.example
 
-# JWT Secret Key files (安全文件，存储在 backend/credentials 目录，不应提交到版本控制)
+# JWT & Encryption Keys
 .jwt_secret
 .jwt_secret.enc
 backend/.jwt_secret
 backend/.jwt_secret.enc
 backend/credentials/.jwt_secret
 backend/credentials/.jwt_secret.enc
-
-# ENCRYPTION_KEY files (主密钥文件，存储在 backend/credentials 目录，不应提交到版本控制)
 backend/credentials/.encryption_key
 
-# Google Cloud 服务账号密钥（保留示例文件）
+# Google Cloud credentials
 backend/credentials/*.json
 !backend/credentials/*.example.json
 backend/credentials/.gitkeep
 
 # Databases
-backend/test.db
 *.db
-!backend/credentials/.gitkeep
 
-# Node modules
+# Node modules & package locks
 node_modules/
+pnpm-lock.yaml
+package-lock.json
+.npm/
+.next/
+frontend/.next/
 
-# IDE specific
-.idx/
-nul
-
-# Hypothesis testing cache (属性测试缓存)
-.hypothesis/
-backend/.hypothesis/
-
-# Kiro specs directory (排除 .kiro/specs 目录)
-.kiro/specs/
-
-# Temporary Claude working directory files (临时工作目录文件，不应提交)
-**/tmpclaude-*
-backend/app/tmpclaude-*
-backend/tmpclaude-*
-
-# Claude settings with sensitive data
-.claude/settings.local.json
-
-# Cursor debug log files (调试日志文件，不应提交)
-.cursor/erron/
-.cursor/erron/**
-*.log.md
-
-# 官方SDK参考文档 (体积大，不应提交到版本控制)
-官方SDK/
-原始/
-
-# Temp files and binary exports
-backend/app/temp/
-tmp/
-*.jpg
-*.jpeg
-*.png
-*.xlsx
-
-# Build artifacts and archives
+# Build artifacts
 dist/
 build/
 *.zip
 
-# Frontend build output
-frontend/dist/.npm/
-node_modules/
-.npm/
-.next/
-frontend/.next/
+# Temp files
+backend/app/temp/
+tmp/
+output/
 queue/
+**/tmpclaude-*
+
+# Binary and media files
+*.jpg
+*.jpeg
+*.png
+*.xlsx
+*.svg
 
 # AI tool configs
 .claude/
 .codex/
 .cursorrules
 .aider*
+.kiro/
 CLAUDE.md
 GEMINI.md
 AGENTS.md
 
-# Test files
-*.test.ts
-*.test.tsx
-*.spec.ts
-*.spec.tsx
-**/tests/
-**/test_*/
-**/*_test.*
-**/test_templates/
+# Swarm / agent temporary docs (keep only docs/BE-*.md and docs/ANALYSIS-*.md)
+docs/advanced-features.md
+docs/benchmarks.md
+docs/context-compact.md
+docs/design.md
+docs/documentation.md
+docs/domain-profile.json
+docs/domain-profile.md
+docs/execplan-template.md
+docs/execplans/
+docs/implement.md
+docs/iteration-log.md
+docs/plans.md
+docs/project-overview.md
+docs/prompt.md
+docs/quality-gates.md
+docs/repo-structure-map.md
+docs/requirements.md
+docs/self-research.md
+docs/stop-conditions.md
+docs/tasks.md
 
-# CI/CD scripts
-.github/
-scripts/ci/
-scripts/e2e/
-scripts/observability/
-scripts/perf/
-scripts/test_*
+# Root level doc duplicates
+/ANALYSIS_GENAI_SDK_INTEGRATION.md
 
-# Build docs
-docs/*.svg
+# Misc
+star.txt
+nul
+*.log.md
+
+# Test files (keep test_template_fixture_service.py as it's a service, not a test)
+package.json.test.ts
+
+# Scripts (startup scripts, not needed in repo)
+scripts/start_all.*
+scripts/run_asin_full_research.py
