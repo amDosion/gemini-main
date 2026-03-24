@@ -18,19 +18,12 @@ frontend/
 │   │   ├── tongyi/                    # TongYi 专有实现
 │   │   │   ├── ImageGenControls.tsx   # 文生图控件
 │   │   │   ├── ImageEditControls.tsx  # 图像编辑控件
-│   │   │   ├── ImageOutpaintControls.tsx
-│   │   │   ├── VideoGenControls.tsx
+│   │   │   └── index.ts              # 模块导出
+│   │   ├── google/                    # Google 主实现
+│   │   │   ├── ImageOutpaintControls.tsx  # 图像外扩控件
+│   │   │   ├── VideoGenControls.tsx       # 视频生成控件
 │   │   │   └── ...
 │   │   └── openai/                    # OpenAI 实现
-│   ├── constants/                     # 常量定义
-│   │   ├── types.ts                   # 类型定义
-│   │   ├── aspectRatios.ts            # 比例选项
-│   │   ├── resolutions.ts             # 分辨率映射
-│   │   ├── styles.ts                  # 风格选项
-│   │   ├── defaults.ts                # 默认值
-│   │   └── utils.ts                   # 工具函数
-│   ├── types.ts                       # 控件类型定义
-│   └── index.ts                       # 统一导出
 │
 ├── coordinators/                      # 协调者模块
 │   └── ModeControlsCoordinator.tsx    # 模式控件协调者
@@ -178,7 +171,9 @@ request = ImageGenerationRequest(
 
 ## 四、常量定义
 
-### 4.1 默认值 (`constants/defaults.ts`)
+### 4.1 默认值
+
+> 注意：文档原引用的 `controls/constants/` 子目录不存在。以下常量定义内联在各控件组件中。
 
 ```typescript
 export const DEFAULT_CONTROLS = {
@@ -194,7 +189,7 @@ export const DEFAULT_CONTROLS = {
 };
 ```
 
-### 4.2 通义专用比例 (`constants/aspectRatios.ts`)
+### 4.2 通义专用比例
 
 ```typescript
 // 文生图比例
@@ -211,7 +206,7 @@ export const TONGYI_GEN_ASPECT_RATIOS = [
 export const TONGYI_EDIT_ASPECT_RATIOS = [...];
 ```
 
-### 4.3 分辨率档位 (`constants/resolutions.ts`)
+### 4.3 分辨率档位
 
 ```typescript
 export const TONGYI_GEN_RESOLUTION_TIERS = [

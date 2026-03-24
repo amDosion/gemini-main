@@ -565,6 +565,8 @@ pytest backend/tests/test_sequential_agent.py
 pytest backend/tests/test_parallel_agent.py
 ```
 
+> **注意**：以上测试文件待创建（测试文件待创建）。
+
 ## 相关文档
 
 - [设计文档](../../../../.kiro/specs/multi-agent-adk-integration/design.md)

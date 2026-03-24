@@ -63,7 +63,7 @@ tongyi/
 ├── # === Model Management ===
 ├── model_manager.py            # 模型管理器
 ├── fetch_bailian_models_live.py # 百炼模型实时获取
-└── aliyun_bailian_models.json  # 百炼模型缓存数据
+└── aliyun_bailian_models.json  # 百炼模型缓存数据（计划中，尚未创建）
 ```
 
 ## 核心组件
