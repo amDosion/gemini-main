@@ -5,7 +5,7 @@ This service provides functionality to extract structured data from PDF document
 using Gemini's function calling capabilities.
 """
 
-from typing import Callable, Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional
 import json
 import time
 import logging
@@ -203,14 +203,18 @@ class PDFExtractorService:
     Extracts structured data from PDF documents using Gemini function calling.
     """
 
-    def __init__(self, client_factory: Callable):
+    def __init__(self, *, api_key=None, use_vertex=False, project=None, location=None, http_options=None):
         """
         Initialize PDF extractor service.
 
         Args:
             client_factory: A callable that returns a configured Gemini client
         """
-        self._client_factory = client_factory
+        self._api_key = api_key
+        self._use_vertex = use_vertex
+        self._project = project
+        self._location = location
+        self._http_options = http_options
         logger.info("[PDF Extractor Service] Initialized")
 
     async def extract_structured_data(
@@ -291,7 +295,13 @@ class PDFExtractorService:
         func_decl = template_config['tool']
 
         # Get client from unified pool
-        client = self._client_factory()
+        client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
         logger.info(f"[PDF Extractor Service] Using model: {cleaned_model_id}")
 
         # Create prompt

@@ -17,7 +17,6 @@
 - mode_initialization: 模式初始化
 - mode_registry: 模式注册
 - model_manager: 模型管理
-- official_sdk_adapter: 官方 SDK 适配器
 - platform_routing: 平台路由
 - pdf_extractor: PDF 提取
 - browser: 浏览器服务

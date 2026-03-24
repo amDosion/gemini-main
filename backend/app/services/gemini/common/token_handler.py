@@ -8,9 +8,12 @@ Gemini Token Counting Handler
 import hashlib
 import asyncio
 import time
-from typing import Callable, Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+
+from ..client_pool import get_client_pool
+
 
 @dataclass
 class TokenCount:
@@ -43,14 +46,18 @@ class ModelLimits:
 class TokenHandler:
     """Gemini Token 计数处理器"""
     
-    def __init__(self, client_factory: Callable):
+    def __init__(self, *, api_key=None, use_vertex=False, project=None, location=None, http_options=None):
         """
         初始化 Token 处理器
 
         Args:
             client_factory: A callable that returns a configured Gemini client
         """
-        self._client_factory = client_factory
+        self._api_key = api_key
+        self._use_vertex = use_vertex
+        self._project = project
+        self._location = location
+        self._http_options = http_options
         self._token_cache: Dict[str, tuple[TokenCount, float]] = {}  # (result, timestamp)
         self._model_info_cache: Dict[str, tuple[Any, float]] = {}
         self._cache_ttl = 3600  # 缓存1小时
@@ -132,7 +139,13 @@ class TokenHandler:
             return cached_result
         
         try:
-            client = self._client_factory()
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
 
             # 准备内容
             if isinstance(content, str):
@@ -185,7 +198,13 @@ class TokenHandler:
             Token 计数结果
         """
         try:
-            client = self._client_factory()
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
 
             # 构建完整的请求配置
             request_config = {

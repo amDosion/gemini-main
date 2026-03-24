@@ -175,8 +175,6 @@ def get_vertex_ai_credentials_from_db(
         )
         return None, None, None
 from .models import Models, AsyncModels
-from .interactions import InteractionsResource, AsyncInteractionsResource
-
 logger = logging.getLogger('google_genai.client')
 
 
@@ -185,21 +183,21 @@ class AsyncClient:
 
     def __init__(self, client):
         """Initialize async client wrapper.
-        
+
         Args:
             client: The underlying google.genai.Client instance
         """
         self._client = client
         self._models = AsyncModels(client)
-        self._interactions = AsyncInteractionsResource(client)
 
     @property
     def models(self) -> AsyncModels:
         return self._models
 
     @property
-    def interactions(self) -> AsyncInteractionsResource:
-        return self._interactions
+    def interactions(self):
+        """Access to interactions API (native SDK)."""
+        return self._client.aio.interactions
 
     async def aclose(self) -> None:
         """Closes the async client explicitly."""
@@ -366,10 +364,9 @@ class Client:
         # 注意：Vertex AI 模式使用 ADC 或 credentials，不需要覆盖 prepare_options
         # 官方 SDK 会自动处理认证（使用 ADC 或传递的 credentials）
         
-        # Initialize modules (wrappers around official client)
+        # Initialize modules (native SDK interactions, legacy model wrappers)
         self._aio = AsyncClient(self._genai_client)
         self._models = Models(self._genai_client)
-        self._interactions = InteractionsResource(self._genai_client)
 
     @property
     def vertexai(self) -> bool:
@@ -387,9 +384,9 @@ class Client:
         return self._models
 
     @property
-    def interactions(self) -> InteractionsResource:
-        """Access to interactions API."""
-        return self._interactions
+    def interactions(self):
+        """Access to interactions API (native SDK)."""
+        return self._genai_client.interactions
 
     def close(self) -> None:
         """Closes the synchronous client explicitly."""

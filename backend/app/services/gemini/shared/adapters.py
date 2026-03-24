@@ -8,14 +8,7 @@ code can continue to work while new code can use the official SDK interfaces.
 
 from typing import Any, Dict, List, Optional, Union, AsyncGenerator
 import logging
-from ..agent.types import (
-    GenerateContentConfig,
-    GenerateContentResponse,
-    File,
-    UploadFileConfig,
-    Content,
-    Part
-)
+from google.genai import types as genai_types
 
 logger = logging.getLogger(__name__)
 
@@ -54,33 +47,33 @@ class LegacyToOfficialAdapter:
         Returns:
             Dictionary with official SDK parameters
         """
-        # Convert legacy messages to official Content format
+        # Convert legacy messages to official genai_types.Content format
         contents = []
         for msg in messages:
             role = msg.get('role', 'user')
             content = msg.get('content', '')
             
             if isinstance(content, str):
-                parts = [Part(text=content)]
+                parts = [genai_types.Part(text=content)]
             elif isinstance(content, list):
                 parts = []
                 for item in content:
                     if isinstance(item, str):
-                        parts.append(Part(text=item))
+                        parts.append(genai_types.Part(text=item))
                     elif isinstance(item, dict):
                         if 'text' in item:
-                            parts.append(Part(text=item['text']))
+                            parts.append(genai_types.Part(text=item['text']))
                         elif 'image_url' in item:
                             # Handle image content
                             # TODO: Convert image URL to FileData
                             pass
             else:
-                parts = [Part(text=str(content))]
+                parts = [genai_types.Part(text=str(content))]
             
-            contents.append(Content(role=role, parts=parts))
+            contents.append(genai_types.Content(role=role, parts=parts))
         
         # Build configuration
-        config = GenerateContentConfig()
+        config = genai_types.GenerateContentConfig()
         
         # Map legacy parameters to official config
         if 'temperature' in kwargs:
@@ -102,7 +95,7 @@ class LegacyToOfficialAdapter:
     
     def adapt_chat_response(
         self,
-        official_response: GenerateContentResponse
+        official_response: genai_types.GenerateContentResponse
     ) -> Dict[str, Any]:
         """
         Adapt official response to legacy format.
@@ -155,7 +148,7 @@ class LegacyToOfficialAdapter:
         Returns:
             Dictionary with official SDK parameters
         """
-        config = UploadFileConfig()
+        config = genai_types.UploadFileConfig()
         if display_name:
             config.display_name = display_name
         if mime_type:
@@ -168,13 +161,13 @@ class LegacyToOfficialAdapter:
     
     def adapt_file_upload_response(
         self,
-        official_file: File
+        official_file: genai_types.File
     ) -> Dict[str, Any]:
         """
         Adapt official file response to legacy format.
         
         Args:
-            official_file: Official SDK File object
+            official_file: Official SDK genai_types.File object
             
         Returns:
             Dictionary in legacy format
@@ -212,19 +205,19 @@ class OfficialToLegacyAdapter:
     async def generate_content(
         self,
         model: str,
-        contents: Union[str, List[Content]],
-        config: Optional[GenerateContentConfig] = None
-    ) -> GenerateContentResponse:
+        contents: Union[str, List[genai_types.Content]],
+        config: Optional[genai_types.GenerateContentConfig] = None
+    ) -> genai_types.GenerateContentResponse:
         """
         Generate content using legacy service but return official format.
         
         Args:
             model: Model name
-            contents: Content to generate from
+            contents: genai_types.Content to generate from
             config: Generation configuration
             
         Returns:
-            GenerateContentResponse in official format
+            genai_types.GenerateContentResponse in official format
         """
         # Convert official format to legacy format
         messages = []
@@ -268,19 +261,18 @@ class OfficialToLegacyAdapter:
                 message = choice.get('message', {})
                 content_text = message.get('content', '')
                 
-                candidate_content = Content(
+                candidate_content = genai_types.Content(
                     role='model',
-                    parts=[Part(text=content_text)]
+                    parts=[genai_types.Part(text=content_text)]
                 )
                 
-                from ..agent.types import Candidate
-                candidate = Candidate(
+                candidate = genai_types.Candidate(
                     content=candidate_content,
                     finish_reason=choice.get('finish_reason')
                 )
                 candidates.append(candidate)
         
-        return GenerateContentResponse(
+        return genai_types.GenerateContentResponse(
             candidates=candidates,
             usage_metadata=legacy_response.get('usage', {})
         )
@@ -288,17 +280,17 @@ class OfficialToLegacyAdapter:
     async def upload_file(
         self,
         file: Union[str, bytes],
-        config: Optional[UploadFileConfig] = None
-    ) -> File:
+        config: Optional[genai_types.UploadFileConfig] = None
+    ) -> genai_types.File:
         """
         Upload file using legacy service but return official format.
         
         Args:
-            file: File path or bytes
+            file: genai_types.File path or bytes
             config: Upload configuration
             
         Returns:
-            File in official format
+            genai_types.File in official format
         """
         # Convert to legacy parameters
         display_name = config.display_name if config else None
@@ -312,7 +304,7 @@ class OfficialToLegacyAdapter:
         )
         
         # Convert to official format
-        return File(
+        return genai_types.File(
             name=legacy_response.get('name', ''),
             display_name=legacy_response.get('display_name'),
             mime_type=legacy_response.get('mime_type', ''),

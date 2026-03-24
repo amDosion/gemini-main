@@ -18,7 +18,6 @@ import os
 import time
 from sqlalchemy.orm import Session
 
-from ..gemini.agent import Client, AsyncClient
 from ..gemini.agent.types import HttpOptions, HttpOptionsDict
 from ..mcp.mcp_manager import MCPManager, get_mcp_manager
 from ..gemini.client_pool import get_client_pool
@@ -127,7 +126,7 @@ class InteractionsManager:
         location: Optional[str] = None,
         credentials = None,  # Service account credentials (for Vertex AI)
         http_options: Optional[Union[HttpOptions, HttpOptionsDict]] = None
-    ) -> Client:
+    ):
         """
         获取同步客户端（从统一池）
 
@@ -140,7 +139,7 @@ class InteractionsManager:
             http_options: HTTP 选项
 
         Returns:
-            Client 实例
+            google.genai.Client 实例（原生 SDK 客户端）
         """
         pool = get_client_pool()
         return pool.get_client(
@@ -160,7 +159,7 @@ class InteractionsManager:
         location: Optional[str] = None,
         credentials = None,  # Service account credentials (for Vertex AI)
         http_options: Optional[Union[HttpOptions, HttpOptionsDict]] = None
-    ) -> AsyncClient:
+    ):
         """
         获取异步客户端（从统一池）
 
@@ -173,7 +172,7 @@ class InteractionsManager:
             http_options: HTTP 选项
 
         Returns:
-            AsyncClient 实例
+            原生 SDK 异步客户端（google.genai.Client.aio）
         """
         # 从统一池获取同步客户端，然后获取其异步版本
         pool = get_client_pool()
@@ -681,9 +680,7 @@ class InteractionsManager:
             if db_credentials:
                 vertex_credentials = db_credentials
         
-        # ✅ 获取客户端（根据模式选择不同的实现）
-        # - Gemini API 模式: 使用 genai_agent/client.py，返回原生 google.genai.Client
-        # - Vertex AI 模式: 使用 agent/client.py，返回包装的 Client 类
+        # ✅ 获取客户端（统一池返回原生 google.genai.Client）
         client = self.get_client(
             api_key=api_key if not use_vertexai else None,  # ✅ Gemini API 模式使用 API Key，Vertex AI 模式不使用
             vertexai=use_vertexai,
@@ -693,15 +690,14 @@ class InteractionsManager:
             http_options=http_options
         )
         
-        # ✅ 根据客户端类型选择 interactions 访问方式
-        # Gemini API 模式: 原生 google.genai.Client，直接使用 client.interactions
-        # Vertex AI 模式: 包装的 Client，使用 client.aio.interactions
+        # ✅ 根据模式选择同步/异步 interactions 访问方式
+        # 两种模式都使用原生 google.genai.Client（由统一池返回）
         if use_vertexai:
-            # Vertex AI 模式：使用包装器的异步 interactions
+            # Vertex AI 模式：使用原生 SDK 的异步 interactions
             interactions = client.aio.interactions
         else:
-            # Gemini API 模式：直接使用原生 client.interactions（同步）
-            # 注意：原生 SDK 的 interactions.create(stream=True) 返回同步 Stream 对象
+            # Gemini API 模式：使用原生 SDK 的同步 interactions
+            # 注意：interactions.create(stream=True) 返回同步 Stream 对象
             interactions = client.interactions
 
         # 如果提供了 MCP 会话 ID，获取 MCP 工具
@@ -1193,13 +1189,9 @@ class InteractionsManager:
             location=location
         )
 
-        # 取消交互
-        official_interaction = await async_client.interactions.cancel(id=interaction_id)
-        logger.info(f"Cancelled interaction: {interaction_id}, status: {official_interaction.status}")
-
-        # 转换为字典格式
-        from ..gemini.agent.interactions import Interaction
-        interaction = Interaction.from_official(official_interaction)
+        # 取消交互（使用原生 SDK）
+        interaction = await async_client.interactions.cancel(id=interaction_id)
+        logger.info(f"Cancelled interaction: {interaction_id}, status: {interaction.status}")
 
         return {
             'id': interaction.id,

@@ -6,10 +6,11 @@ Handles chat-related operations (streaming and non-streaming).
 
 import logging
 import asyncio
-from typing import Callable, Dict, Any, List, AsyncGenerator, Set, Optional
+from typing import Dict, Any, List, AsyncGenerator, Set, Optional
 import json
 import hashlib
 
+from ..client_pool import get_client_pool
 from .message_converter import MessageConverter
 from .response_parser import ResponseParser
 from .config_builder import ConfigBuilder
@@ -42,14 +43,22 @@ class ChatHandler:
     - Streaming chat (stream_chat)
     """
     
-    def __init__(self, client_factory: Callable):
+    def __init__(self, *, api_key=None, use_vertex=False, project=None, location=None, http_options=None):
         """
         Initialize chat handler.
 
         Args:
-            client_factory: A callable that returns a configured Gemini client
+            api_key: Google API key
+            use_vertex: Whether to use Vertex AI
+            project: GCP project ID (for Vertex AI)
+            location: GCP location (for Vertex AI)
+            http_options: HTTP options for client
         """
-        self._client_factory = client_factory
+        self._api_key = api_key
+        self._use_vertex = use_vertex
+        self._project = project
+        self._location = location
+        self._http_options = http_options
 
     @staticmethod
     def _to_json_compatible(value: Any) -> Any:
@@ -211,7 +220,13 @@ class ChatHandler:
         """
         try:
             # 从统一池获取客户端
-            client = self._client_factory()
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
 
             logger.info(f"[Chat Handler] Chat request: model={model}, messages={len(messages)}")
 
@@ -338,7 +353,13 @@ class ChatHandler:
         """
         try:
             # 从统一池获取客户端
-            client = self._client_factory()
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
 
             logger.info(f"[Chat Handler] SSE Stream chat: model={model}, messages={len(messages)}")
 
@@ -520,7 +541,13 @@ class ChatHandler:
                 raise ValueError("model must be a non-empty string")
             
             # 从统一池获取客户端
-            client = self._client_factory()
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
             
             logger.info(
                 f"[Chat Handler] Stream chat (Async SDK): model={model}, "

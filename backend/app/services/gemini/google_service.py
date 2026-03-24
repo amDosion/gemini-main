@@ -4,7 +4,7 @@ Google (Gemini) Provider Service - Main Coordinator
 This module coordinates all Gemini-related operations by delegating to specialized handlers.
 """
 
-from typing import Dict, Any, List, Optional, AsyncGenerator, Union, Type, Tuple, Callable
+from typing import Callable, Dict, Any, List, Optional, AsyncGenerator, Union, Type, Tuple
 import logging
 from sqlalchemy.orm import Session
 
@@ -29,16 +29,8 @@ from .common.function_handler import FunctionHandler
 from .common.schema_handler import SchemaHandler
 from .common.token_handler import TokenHandler
 from .client_pool import get_client_pool
-from .agent.types import (
-    GenerateContentConfig,
-    Content,
-    Part,
-    Tool,
-    FunctionDeclaration,
-    SafetySetting,
-    HttpOptions,
-    HttpRetryOptions,
-)
+from google.genai import types as genai_types
+from .agent.types import HttpOptions, HttpRetryOptions
 from .vertexai.expand_service import ExpandService
 from .vertexai.segmentation_service import SegmentationService
 from .vertexai.tryon_service import TryOnService
@@ -175,7 +167,7 @@ class GoogleService(BaseProviderService):
             )
         else:
             self._interactions_manager = None
-            # Store pool params for handler initialization (replaces SDKInitializer)
+            # Store pool params for direct get_client_pool().get_client() calls
             self._pool_kwargs = dict(
                 api_key=api_key,
                 use_vertex=kwargs.get('use_vertex', False),
@@ -242,14 +234,13 @@ class GoogleService(BaseProviderService):
 
             logger.info("[Google Service] Using legacy SDK implementation")
 
-    def _ensure_client_factory_for_fallback(self) -> None:
-        """Ensure _client_factory is available when official SDK mode needs legacy fallbacks."""
-        if hasattr(self, "_client_factory") and self._client_factory:
+    def _ensure_pool_kwargs_for_fallback(self) -> None:
+        """Ensure _pool_kwargs is available when official SDK mode needs legacy fallbacks."""
+        if hasattr(self, "_pool_kwargs") and self._pool_kwargs:
             return
-        _pool = get_client_pool()
-        self._client_factory = lambda: _pool.get_client(
+        self._pool_kwargs = dict(
             api_key=self.api_key,
-            vertexai=self.use_vertex,
+            use_vertex=self.use_vertex,
             project=self.project,
             location=self.location or 'us-central1',
             http_options=self.http_options,
@@ -281,7 +272,7 @@ class GoogleService(BaseProviderService):
         if not hasattr(self, "tryon_service"):
             self.tryon_service = TryOnService()
         if not hasattr(self, "pdf_extractor"):
-            self._ensure_client_factory_for_fallback()
+            self._ensure_pool_kwargs_for_fallback()
             self.pdf_extractor = PDFExtractorService(**self._pool_kwargs)
 
     @staticmethod
@@ -326,13 +317,13 @@ class GoogleService(BaseProviderService):
             use_default_timeout=False,
         )
 
-    def _get_client_factory_for_mode(self, mode: Optional[str]) -> Callable:
+    def _get_pool_kwargs_for_mode(self, mode: Optional[str]) -> dict:
+        """Get pool kwargs, with special http_options for image-chat-edit mode."""
         if mode != "image-chat-edit":
-            return self._client_factory
-        _pool = get_client_pool()
-        return lambda: _pool.get_client(
+            return self._pool_kwargs
+        return dict(
             api_key=self.api_key,
-            vertexai=self.use_vertex,
+            use_vertex=self.use_vertex,
             project=self.project,
             location=self.location or 'us-central1',
             http_options=self._build_image_chat_http_options(),
@@ -398,36 +389,36 @@ class GoogleService(BaseProviderService):
             http_options=self.http_options,
         )
 
-    def _convert_messages_to_contents(self, messages: List[Dict[str, Any]]) -> List[Content]:
-        """Convert existing message format to official SDK Content format."""
+    def _convert_messages_to_contents(self, messages: List[Dict[str, Any]]) -> List[genai_types.Content]:
+        """Convert existing message format to official SDK genai_types.Content format."""
         contents = []
         for message in messages:
             role = message.get('role', 'user')
             content_text = message.get('content', '')
 
             if isinstance(content_text, str):
-                parts = [Part.from_text(content_text)]
+                parts = [genai_types.Part.from_text(content_text)]
             elif isinstance(content_text, list):
                 parts = []
                 for item in content_text:
                     if isinstance(item, dict):
                         if 'text' in item:
-                            parts.append(Part.from_text(item['text']))
+                            parts.append(genai_types.Part.from_text(item['text']))
                         elif 'image_url' in item:
-                            parts.append(Part.from_uri(
+                            parts.append(genai_types.Part.from_uri(
                                 file_uri=item['image_url']['url'],
                                 mime_type='image/jpeg'
                             ))
                     else:
-                        parts.append(Part.from_text(str(item)))
+                        parts.append(genai_types.Part.from_text(str(item)))
             else:
-                parts = [Part.from_text(str(content_text))]
+                parts = [genai_types.Part.from_text(str(content_text))]
 
-            contents.append(Content(role=role, parts=parts))
+            contents.append(genai_types.Content(role=role, parts=parts))
         return contents
 
-    def _build_generation_config(self, **kwargs) -> Optional[GenerateContentConfig]:
-        """Build GenerateContentConfig from kwargs."""
+    def _build_generation_config(self, **kwargs) -> Optional[genai_types.GenerateContentConfig]:
+        """Build genai_types.GenerateContentConfig from kwargs."""
         config_params = {}
 
         if 'temperature' in kwargs:
@@ -448,25 +439,25 @@ class GoogleService(BaseProviderService):
             for tool in kwargs['tools']:
                 if isinstance(tool, dict) and 'function' in tool:
                     func_def = tool['function']
-                    function_declaration = FunctionDeclaration(
+                    function_declaration = genai_types.FunctionDeclaration(
                         name=func_def['name'],
                         description=func_def.get('description', ''),
                         parameters=func_def.get('parameters', {})
                     )
-                    tools.append(Tool(function_declarations=[function_declaration]))
+                    tools.append(genai_types.Tool(function_declarations=[function_declaration]))
             if tools:
                 config_params['tools'] = tools
 
         if 'safety_settings' in kwargs:
             safety_settings = []
             for setting in kwargs['safety_settings']:
-                safety_settings.append(SafetySetting(
+                safety_settings.append(genai_types.SafetySetting(
                     category=setting['category'],
                     threshold=setting['threshold']
                 ))
             config_params['safety_settings'] = safety_settings
 
-        return GenerateContentConfig(**config_params) if config_params else None
+        return genai_types.GenerateContentConfig(**config_params) if config_params else None
 
     def _convert_response_to_dict(self, response) -> Dict[str, Any]:
         """Convert official SDK response to existing dictionary format."""
@@ -657,13 +648,13 @@ class GoogleService(BaseProviderService):
         # - 有 mask → MaskEditService (自动检测)
         # - 无 mask → MaskEditService (自动掩码)
         logger.info(f"[Google Service] Delegating image editing to ImageEditCoordinator: model={model}, mode={mode}")
-        client_factory = self._get_client_factory_for_mode(mode)
+        pool_kwargs = self._get_pool_kwargs_for_mode(mode)
         return await self.image_edit_coordinator.edit_image(
             prompt=prompt,
             model=model,
             reference_images=reference_images,
             mode=mode,
-            client_factory=client_factory,
+            pool_kwargs=pool_kwargs,
             chat_session_manager=self.chat_session_manager,
             file_handler=self.file_handler,
             user_id=self.user_id,
@@ -701,8 +692,14 @@ class GoogleService(BaseProviderService):
 
         # 获取 LLM client（用于布局建议等需要 LLM 的功能）
         llm_client = None
-        if hasattr(self, '_client_factory') and self._client_factory:
-            llm_client = self._client_factory()
+        if hasattr(self, '_pool_kwargs') and self._pool_kwargs:
+            llm_client = get_client_pool().get_client(
+                api_key=self._pool_kwargs.get('api_key'),
+                vertexai=self._pool_kwargs.get('use_vertex', False),
+                project=self._pool_kwargs.get('project'),
+                location=self._pool_kwargs.get('location'),
+                http_options=self._pool_kwargs.get('http_options'),
+            )
 
         # 创建 LayeredDesignService 实例
         service = LayeredDesignService(

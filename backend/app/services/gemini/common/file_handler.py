@@ -8,20 +8,27 @@ Gemini Files API Handler
 import os
 import asyncio
 import mimetypes
-from typing import Callable, Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
+
+from ..client_pool import get_client_pool
+
 
 class FileHandler:
     """Gemini Files API 处理器"""
 
-    def __init__(self, client_factory: Callable):
+    def __init__(self, *, api_key=None, use_vertex=False, project=None, location=None, http_options=None):
         """
         初始化文件处理器
 
         Args:
             client_factory: A callable that returns a configured Gemini client
         """
-        self._client_factory = client_factory
+        self._api_key = api_key
+        self._use_vertex = use_vertex
+        self._project = project
+        self._location = location
+        self._http_options = http_options
     
     async def upload_file(
         self, 
@@ -62,7 +69,13 @@ class FileHandler:
         
         try:
             # 确保 SDK 已初始化
-            client = self._client_factory()
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
             
             # 上传文件
             file_obj = await client.aio.files.upload(
@@ -100,7 +113,13 @@ class FileHandler:
             文件信息字典
         """
         try:
-            client = self._client_factory()
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
             
             file_obj = await client.aio.files.get(name=file_name)
             
@@ -132,7 +151,13 @@ class FileHandler:
             文件字节数据
         """
         try:
-            client = self._client_factory()
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
             
             # 下载文件数据
             file_data = await client.aio.files.download(file=file_name)
@@ -161,7 +186,13 @@ class FileHandler:
             删除是否成功
         """
         try:
-            client = self._client_factory()
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
             
             await client.aio.files.delete(name=file_name)
             return True
@@ -180,7 +211,13 @@ class FileHandler:
             文件列表
         """
         try:
-            client = self._client_factory()
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
             
             files = []
             async for file_obj in await client.aio.files.list(

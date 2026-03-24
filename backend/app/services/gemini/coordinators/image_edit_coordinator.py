@@ -12,7 +12,7 @@ Also handles mode routing to different edit services:
 
 import logging
 import os
-from typing import Callable, Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List
 from sqlalchemy.orm import Session
 
 from ..base.image_edit_base import BaseImageEditor
@@ -448,7 +448,7 @@ class ImageEditCoordinator:
         model: str,
         reference_images: Dict[str, Any],
         mode: Optional[str] = None,
-        client_factory: Optional[Callable] = None,
+        pool_kwargs: Optional[Dict[str, Any]] = None,
         chat_session_manager: Optional[Any] = None,
         file_handler: Optional[Any] = None,
         user_id: Optional[str] = None,
@@ -475,16 +475,16 @@ class ImageEditCoordinator:
         if mode == 'image-chat-edit':
             if not chat_session_manager:
                 raise ValueError("ChatSessionManager is required for image-chat-edit mode")
-            if not client_factory:
-                raise ValueError("client_factory is required for image-chat-edit mode")
+            if not pool_kwargs:
+                raise ValueError("pool_kwargs is required for image-chat-edit mode")
             if not file_handler:
                 raise ValueError("FileHandler is required for image-chat-edit mode")
 
             from ..geminiapi.conversational_image_edit_service import ConversationalImageEditService
             conversational_service = ConversationalImageEditService(
-                client_factory=client_factory,
                 chat_session_manager=chat_session_manager,
-                file_handler=file_handler
+                file_handler=file_handler,
+                **pool_kwargs,
             )
 
             return await conversational_service.edit_image(

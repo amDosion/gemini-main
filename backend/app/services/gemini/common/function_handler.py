@@ -24,15 +24,19 @@ class FunctionCallingMode(Enum):
 class FunctionHandler:
     """Gemini Function Calling 处理器"""
 
-    def __init__(self, client_factory: Callable):
+    def __init__(self, *, api_key=None, use_vertex=False, project=None, location=None, http_options=None):
         """
         初始化函数处理器
 
         Args:
             client_factory: A callable that returns a configured Gemini client
         """
-        self._client_factory = client_factory
-        self.registered_functions: Dict[str, Callable] = {}
+        self._api_key = api_key
+        self._use_vertex = use_vertex
+        self._project = project
+        self._location = location
+        self._http_options = http_options
+        self.registered_functions: Dict[str] = {}
     
     def register_function(self, func: Callable, name: Optional[str] = None) -> str:
         """

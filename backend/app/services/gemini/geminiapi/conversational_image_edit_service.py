@@ -13,7 +13,7 @@ import re
 import json
 import mimetypes
 from pathlib import Path
-from typing import Callable, Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 
 from ..client_pool import get_client_pool
@@ -65,7 +65,6 @@ class ConversationalImageEditService:
     
     def __init__(
         self,
-        client_factory: Callable = None,
         chat_session_manager: ChatSessionManager = None,
         file_handler: Optional[FileHandler] = None,
         *,
@@ -79,7 +78,6 @@ class ConversationalImageEditService:
         初始化对话式图片编辑服务
 
         Args:
-            client_factory: Callable that returns a configured client instance
             chat_session_manager: Chat 会话管理器
             file_handler: 文件处理器（可选，用于处理图片）
             api_key: Google API key
@@ -88,7 +86,6 @@ class ConversationalImageEditService:
             location: GCP location (for Vertex AI)
             http_options: HTTP options for client pool
         """
-        self._client_factory = client_factory
         self._api_key = api_key
         self._use_vertex = use_vertex
         self._project = project
@@ -98,11 +95,8 @@ class ConversationalImageEditService:
         self.file_handler = file_handler
 
     def _get_client(self):
-        """Get client from client_factory or the unified pool."""
-        if self._client_factory is not None:
-            return self._client_factory()
-        pool = get_client_pool()
-        return pool.get_client(
+        """Get client from the unified pool."""
+        return get_client_pool().get_client(
             api_key=self._api_key,
             vertexai=self._use_vertex,
             project=self._project,
