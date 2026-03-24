@@ -180,7 +180,7 @@ class ADKRunner:
     - 会话元数据写入 adk_sessions 便于审计与排障。
     """
 
-    _google_api_key_lock: Optional[asyncio.Lock] = None
+    _google_api_key_lock: asyncio.Lock = asyncio.Lock()
     _runtime_cache_lock = threading.Lock()
     _runtime_session_services: Dict[str, Any] = {}
     _runtime_memory_services: Dict[str, Any] = {}
@@ -265,8 +265,6 @@ class ADKRunner:
 
     @classmethod
     def _get_google_api_key_lock(cls) -> asyncio.Lock:
-        if cls._google_api_key_lock is None:
-            cls._google_api_key_lock = asyncio.Lock()
         return cls._google_api_key_lock
 
     @classmethod

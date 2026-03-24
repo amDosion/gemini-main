@@ -15,6 +15,7 @@ Tongyi Provider 协调者服务
 
 Updated: 2026-01-14 - 移除 TongyiImageService 中间层，直接委托给 ImageGenerationService
 """
+import asyncio
 from typing import Dict, Any, List, Optional, AsyncGenerator, Tuple
 from sqlalchemy.orm import Session
 import logging
@@ -509,7 +510,8 @@ class TongyiService(BaseProviderService):
         )
         
         # 调用扩展服务
-        result = self._image_expand_service.execute_with_fallback(
+        result = await asyncio.to_thread(
+            self._image_expand_service.execute_with_fallback,
             image_url=image_url,
             api_key=self.api_key,
             parameters=parameters

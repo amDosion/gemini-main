@@ -6,6 +6,11 @@ from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import Response, JSONResponse
 import httpx
 from typing import Optional
+import logging
+
+from ...utils.url_security import validate_outbound_http_url
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/dashscope", tags=["dashscope-proxy"])
 
@@ -45,7 +50,7 @@ async def upload_file_to_dashscope(request: Request):
             }
             model_name = model_map.get(purpose, 'wanx-v1')
         
-        print(f"[DashScope Proxy] 文件上传 - purpose: {purpose}, model: {model_name}")
+        logger.info(f"[DashScope Proxy] 文件上传 - purpose: {purpose}, model: {model_name}")
         
         # 步骤 1: 获取上传凭证
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -83,6 +88,9 @@ async def upload_file_to_dashscope(request: Request):
                 'file': (file_name, file_content, file.content_type)
             }
             
+            # Validate upload_host to prevent SSRF
+            validate_outbound_http_url(policy_data['upload_host'])
+
             oss_response = await client.post(
                 policy_data['upload_host'],
                 files=oss_files
@@ -160,9 +168,10 @@ async def proxy_dashscope(path: str, request: Request):
             correct_key = dashscope_header_map.get(key_lower, key)
             headers[correct_key] = value
     
-    # 调试日志：打印转发的头信息
-    print(f"[DashScope Proxy] 转发请求到: {target_url}")
-    print(f"[DashScope Proxy] 转发的头信息: {headers}")
+    # 调试日志
+    logger.info(f"[DashScope Proxy] 转发请求到: {target_url}")
+    redacted_headers = {k: ("***" if k.lower() == "authorization" else v) for k, v in headers.items()}
+    logger.debug(f"[DashScope Proxy] 转发的头信息: {redacted_headers}")
     
     # 获取查询参数
     query_params = dict(request.query_params)
@@ -173,7 +182,7 @@ async def proxy_dashscope(path: str, request: Request):
         
         if is_sse_request:
             # SSE 流式响应：使用流式传输
-            print(f"[DashScope Proxy] SSE 流式请求")
+            logger.info("[DashScope Proxy] SSE 流式请求")
             
             async def stream_response():
                 async with httpx.AsyncClient(timeout=300.0) as client:

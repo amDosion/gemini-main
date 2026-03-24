@@ -105,13 +105,18 @@ class DatabaseLoggingFilter(logging.Filter):
             bool: enable_logging 配置值
         """
         current_time = time.time()
-        
-        with self._lock:
-            # 检查缓存是否有效
-            if (self._cached_value is not None and 
+
+        # 快速路径：缓存有效时无需加锁
+        if (self._cached_value is not None and
                 current_time - self._cache_timestamp < self._cache_ttl):
+            return self._cached_value
+
+        with self._lock:
+            # 双重检查：其他线程可能已刷新缓存
+            if (self._cached_value is not None and
+                    current_time - self._cache_timestamp < self._cache_ttl):
                 return self._cached_value
-            
+
             # 缓存过期或不存在，重新查询数据库
             try:
                 self._cached_value = self._get_enable_logging_from_db()

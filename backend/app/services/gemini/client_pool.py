@@ -122,20 +122,14 @@ class GeminiClientPool:
             http_options=effective_http_options,
         )
 
-        # 快速路径：缓存命中（不需要锁）
-        if cache_key in self._clients:
-            self._stats['cache_hits'] += 1
-            logger.debug(
-                f"[GeminiClientPool] Cache hit for {cache_key}",
-                extra={'cache_key': cache_key, 'total_hits': self._stats['cache_hits']}
-            )
-            return self._clients[cache_key]
-
-        # 慢速路径：需要创建（使用锁）
+        # 快速路径：缓存命中（使用锁保护 stats 更新的原子性）
         with self._lock:
-            # 双重检查（其他线程可能已创建）
             if cache_key in self._clients:
                 self._stats['cache_hits'] += 1
+                logger.debug(
+                    f"[GeminiClientPool] Cache hit for {cache_key}",
+                    extra={'cache_key': cache_key, 'total_hits': self._stats['cache_hits']}
+                )
                 return self._clients[cache_key]
 
             # 创建新客户端（根据 vertexai 标志选择不同的实现）
