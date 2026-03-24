@@ -210,7 +210,11 @@ class PDFExtractorService:
         Initialize PDF extractor service.
 
         Args:
-            client_factory: A callable that returns a configured Gemini client
+            api_key: Google API key
+            use_vertex: Whether to use Vertex AI
+            project: GCP project ID (for Vertex AI)
+            location: GCP location (for Vertex AI)
+            http_options: HTTP options for client
         """
         self._api_key = api_key
         self._use_vertex = use_vertex
