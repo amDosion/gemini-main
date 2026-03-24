@@ -18,10 +18,7 @@ import logging
 try:
     from ...services.common.provider_config import ProviderConfig
 except ImportError:
-    try:
-        from app.services.common.provider_config import ProviderConfig
-    except ImportError:
-        from app.services.common.provider_config import ProviderConfig
+    from app.services.common.provider_config import ProviderConfig
 
 logger = logging.getLogger(__name__)
 

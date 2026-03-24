@@ -126,7 +126,7 @@ async def get_sessions(
                 ).all()
                 messages_by_table[table_name] = {msg.id: msg for msg in messages}
             except ValueError as e:
-                print(f"[Sessions] ⚠️ 未知表名: {table_name}, 错误: {e}")
+                logger.warning(f"[Sessions] 未知表名: {table_name}, 错误: {e}")
                 continue
         
         # 5. 批量查询所有附件
@@ -272,7 +272,7 @@ async def create_or_update_session(
                 table_class = get_message_table_class_by_name(table_name)
                 db.query(table_class).filter(table_class.id.in_(ids)).delete(synchronize_session=False)
             except ValueError:
-                print(f"[Sessions] ⚠️ 删除时未知表名: {table_name}")
+                logger.warning(f"[Sessions] 删除时未知表名: {table_name}")
         
         # 删除索引表
         db.query(MessageIndex).filter(MessageIndex.id.in_(list(deleted_ids)), MessageIndex.user_id == user_id).delete(synchronize_session=False)
@@ -285,7 +285,7 @@ async def create_or_update_session(
             MessageHistoryState.message_id.in_(list(deleted_ids))
         ).delete(synchronize_session=False)
 
-        print(f"[Sessions] 收敛删除: 删除了 {len(deleted_ids)} 条消息")
+        logger.info(f"[Sessions] 收敛删除: 删除了 {len(deleted_ids)} 条消息")
     
     # 3. 预查询：获取所有现有附件和已完成的上传任务（用于云 URL 保护）
     current_attachment_ids = []
@@ -631,7 +631,7 @@ async def delete_session(
                 table_class = get_message_table_class_by_name(table_name)
                 db.query(table_class).filter(table_class.id.in_(ids)).delete(synchronize_session=False)
             except ValueError:
-                print(f"[Sessions] ⚠️ 删除时未知表名: {table_name}")
+                logger.warning(f"[Sessions] 删除时未知表名: {table_name}")
         
         # 4. 删除索引表
         db.query(MessageIndex).filter(MessageIndex.session_id == session_id, MessageIndex.user_id == user_id).delete(synchronize_session=False)
@@ -890,13 +890,13 @@ async def get_attachment(
     if task:
         result["task_id"] = task.id
         result["task_status"] = task.status
-        print(f"[Sessions] 找到上传任务: task_id={task.id}, status={task.status}, target_url={task.target_url if task.target_url else 'None'}")
+        logger.debug(f"[Sessions] 找到上传任务: task_id={task.id}, status={task.status}, target_url={task.target_url if task.target_url else 'None'}")
         
         # 如果任务已完成且有目标 URL，优先使用任务的 URL
         if task.status == 'completed' and task.target_url:
             result["url"] = task.target_url
             result["upload_status"] = 'completed'
-            print(f"[Sessions] ✅ 使用任务的 target_url 作为最终 URL")
+            logger.debug("[Sessions] 使用任务的 target_url 作为最终 URL")
     
-    print(f"[Sessions] 查询附件: {attachment_id} -> url: {result.get('url') if result.get('url') else 'None'}, upload_status: {result.get('upload_status')}")
+    logger.debug(f"[Sessions] 查询附件: {attachment_id} -> url: {result.get('url') if result.get('url') else 'None'}, upload_status: {result.get('upload_status')}")
     return result
