@@ -299,6 +299,40 @@ def get_ollama_capabilities(model_id: str) -> Capabilities:
     return Capabilities(vision=vision, reasoning=reasoning, coding=coding)
 
 
+
+def get_grok_capabilities(model_id: str) -> Capabilities:
+    """
+    Get capabilities for Grok models.
+
+    Rules:
+    - grok-3*, grok-4*: vision=true (chat models with image understanding)
+    - *-thinking*, *-expert*, *-heavy*, *-mini*: reasoning=true
+    - grok-imagine-*: vision=true (image/video generation)
+    """
+    lower_id = model_id.lower()
+
+    vision = False
+    search = False
+    reasoning = False
+    coding = False
+
+    # Image and video generation models
+    if "imagine" in lower_id:
+        return Capabilities(vision=True)
+
+    # Thinking/reasoning models
+    if "thinking" in lower_id or "expert" in lower_id or "heavy" in lower_id or "mini" in lower_id:
+        reasoning = True
+        vision = True
+        return Capabilities(vision=vision, reasoning=reasoning)
+
+    # Standard chat models (grok-3, grok-4, etc.)
+    if lower_id.startswith(("grok-3", "grok-4")):
+        vision = True
+
+    return Capabilities(vision=vision, search=search, reasoning=reasoning, coding=coding)
+
+
 def get_generic_capabilities(model_id: str) -> Capabilities:
     """
     Generic capability inference for unknown providers.
@@ -347,6 +381,8 @@ def get_model_capabilities(provider: str, model_id: str) -> Capabilities:
         return get_openai_capabilities(model_id)
     elif provider_lower == "ollama":
         return get_ollama_capabilities(model_id)
+    elif provider_lower == "grok":
+        return get_grok_capabilities(model_id)
     else:
         # 对于未知 provider，尝试通用关键词匹配
         return get_generic_capabilities(model_id)

@@ -11,6 +11,7 @@ import { GenViewLayout } from '../common/GenViewLayout';
 import { ImageCanvasControls } from '../common/ImageCanvasControls';
 import { ImageCarouselArrows, ImageCarouselThumbnails, type CarouselMediaItem } from '../common/ImageCarouselControls';
 import { getUrlType } from '../../hooks/handlers/attachmentUtils';
+import { ThinkingBlock } from '../message/ThinkingBlock';
 import { useControlsState } from '../../hooks/useControlsState';
 import { useModeControlsSchema } from '../../hooks/useModeControlsSchema';
 import { useImageCanvas } from '../../hooks/useImageCanvas';
@@ -151,6 +152,10 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
     
     const isLoading = loadingState !== 'idle';
 
+    // ✅ 思考过程状态
+    const [isThinkingOpen, setIsThinkingOpen] = useState(true);
+    const [displayedThinkingContent, setDisplayedThinkingContent] = useState('');
+
     // ✅ 检测提供商类型
     const isOpenAI = providerId === 'openai';
 
@@ -231,6 +236,49 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
     }, [clearHidePreviewTimer, isResizingPreview]);
 
     // Auto-switch to latest generation when new one starts / finishes
+    // ✅ 流式输出思考过程（打字效果）
+    useEffect(() => {
+        const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
+        if (!lastMsg || lastMsg.role !== 'model') {
+            setDisplayedThinkingContent('');
+            return;
+        }
+        const thoughts = lastMsg.thoughts || [];
+        const textResponse = lastMsg.textResponse;
+        const thinkingParts: string[] = [];
+        thoughts.forEach((thought) => {
+            if (thought.type === 'text') {
+                thinkingParts.push(thought.content);
+            } else {
+                thinkingParts.push('[图片思考过程]');
+            }
+        });
+        if (textResponse) {
+            thinkingParts.push(`\n\n💬 AI 响应：\n${textResponse}`);
+        }
+        const fullContent = thinkingParts.join('\n\n');
+        if (!fullContent) {
+            setDisplayedThinkingContent('');
+            return;
+        }
+        if (loadingState === 'idle') {
+            setDisplayedThinkingContent(fullContent);
+            return;
+        }
+        const targetLength = fullContent.length;
+        const currentLength = displayedThinkingContent.length;
+        if (currentLength < targetLength) {
+            const chunkSize = 5;
+            const nextLength = Math.min(currentLength + chunkSize, targetLength);
+            const timer = setTimeout(() => {
+                setDisplayedThinkingContent(fullContent.substring(0, nextLength));
+            }, 30);
+            return () => clearTimeout(timer);
+        } else if (fullContent !== displayedThinkingContent) {
+            setDisplayedThinkingContent(fullContent);
+        }
+    }, [messages, loadingState]);
+
     const prevLoadingStateRef = useRef(loadingState);
     useEffect(() => {
         const prevState = prevLoadingStateRef.current;
@@ -1008,7 +1056,7 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
                 {/* 主图片显示区域 - 简化布局，居中显示 */}
                 {isLoading ? (
                     <div className="flex-1 flex items-center justify-center">
-                        <div className="flex flex-col items-center gap-6 p-8 rounded-3xl bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 shadow-2xl">
+                        <div className="flex flex-col items-center gap-6 p-8 rounded-3xl bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 shadow-2xl max-w-lg w-full">
                             <div className="relative">
                                 <div className="w-20 h-20 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin"></div>
                                 <div className="absolute inset-0 flex items-center justify-center text-xs font-mono text-emerald-400 font-bold">GEN</div>
@@ -1017,6 +1065,16 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
                                 <p className="text-slate-200 font-medium text-lg">生成中...</p>
                                 <p className="text-slate-500 text-sm">这可能需要几秒钟</p>
                             </div>
+                            {displayedThinkingContent && (
+                                <div className="w-full mt-2">
+                                    <ThinkingBlock
+                                        content={displayedThinkingContent}
+                                        isOpen={isThinkingOpen}
+                                        onToggle={() => setIsThinkingOpen(!isThinkingOpen)}
+                                        isComplete={false}
+                                    />
+                                </div>
+                            )}
                         </div>
                     </div>
                 ) : isBatchError ? (
@@ -1124,6 +1182,18 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
                         </div>
                     </div>
                 )}
+
+                {/* ✅ 思考过程展示（生成完成后） */}
+                {!isLoading && displayedThinkingContent && (
+                    <div className="absolute bottom-4 left-4 right-4 z-10 max-w-lg">
+                        <ThinkingBlock
+                            content={displayedThinkingContent}
+                            isOpen={isThinkingOpen}
+                            onToggle={() => setIsThinkingOpen(!isThinkingOpen)}
+                            isComplete={true}
+                        />
+                    </div>
+                )}
             </div>
 
             {/* ========== 中间：控制面板 ========== */}
@@ -1197,6 +1267,8 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
         isLoading,
         isBatchError,
         displayImages,
+        displayedThinkingContent,
+        isThinkingOpen,
         activeBatchMessage,
         onImageClick,
         onEditImage,

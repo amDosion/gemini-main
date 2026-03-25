@@ -2970,6 +2970,268 @@
           }
         }
       }
+    },
+    "grok": {
+      "modes": {
+        "image-gen": {
+          "defaults": {
+            "number_of_images": 1,
+            "size": "1024x1024"
+          },
+          "constraints": {
+            "max_image_count": 10
+          },
+          "param_options": {
+            "size": [
+              {
+                "label": "1024x1024 (Square)",
+                "value": "1024x1024"
+              },
+              {
+                "label": "1280x720 (Landscape)",
+                "value": "1280x720"
+              },
+              {
+                "label": "720x1280 (Portrait)",
+                "value": "720x1280"
+              },
+              {
+                "label": "1792x1024 (Wide)",
+                "value": "1792x1024"
+              },
+              {
+                "label": "1024x1792 (Tall)",
+                "value": "1024x1792"
+              }
+            ],
+            "number_of_images": [
+              {
+                "label": "1",
+                "value": 1
+              },
+              {
+                "label": "2",
+                "value": 2
+              },
+              {
+                "label": "3",
+                "value": 3
+              },
+              {
+                "label": "4",
+                "value": 4
+              },
+              {
+                "label": "5",
+                "value": 5
+              },
+              {
+                "label": "6",
+                "value": 6
+              },
+              {
+                "label": "7",
+                "value": 7
+              },
+              {
+                "label": "8",
+                "value": 8
+              },
+              {
+                "label": "9",
+                "value": 9
+              },
+              {
+                "label": "10",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "video-gen": {
+          "defaults": {
+            "seconds": 6,
+            "quality": "standard",
+            "size": "1792x1024"
+          },
+          "constraints": {
+            "min_seconds": 6,
+            "max_seconds": 30
+          },
+          "param_options": {
+            "quality": [
+              {
+                "label": "Standard (480p)",
+                "value": "standard"
+              },
+              {
+                "label": "High (720p)",
+                "value": "high"
+              }
+            ],
+            "size": [
+              {
+                "label": "1024x1024 (Square)",
+                "value": "1024x1024"
+              },
+              {
+                "label": "1280x720 (Landscape)",
+                "value": "1280x720"
+              },
+              {
+                "label": "720x1280 (Portrait)",
+                "value": "720x1280"
+              },
+              {
+                "label": "1792x1024 (Wide)",
+                "value": "1792x1024"
+              },
+              {
+                "label": "1024x1792 (Tall)",
+                "value": "1024x1792"
+              }
+            ],
+            "seconds": [
+              {
+                "label": "6s",
+                "value": 6
+              },
+              {
+                "label": "10s",
+                "value": 10
+              },
+              {
+                "label": "15s",
+                "value": 15
+              },
+              {
+                "label": "20s",
+                "value": 20
+              },
+              {
+                "label": "30s",
+                "value": 30
+              }
+            ]
+          },
+          "aspect_ratios": [
+            {
+              "label": "1:1 Square",
+              "value": "1:1"
+            },
+            {
+              "label": "16:9 Landscape",
+              "value": "16:9"
+            },
+            {
+              "label": "9:16 Portrait",
+              "value": "9:16"
+            },
+            {
+              "label": "3:2 Wide",
+              "value": "3:2"
+            },
+            {
+              "label": "2:3 Tall",
+              "value": "2:3"
+            }
+          ],
+          "resolution_tiers": [
+            {
+              "label": "Standard (480p)",
+              "value": "480p",
+              "baseResolution": "480p"
+            },
+            {
+              "label": "High (720p)",
+              "value": "720p",
+              "baseResolution": "720p"
+            }
+          ]
+        },
+        "image-edit": {
+          "defaults": {
+            "aspect_ratio": "1:1",
+            "number_of_images": 1
+          },
+          "constraints": {
+            "max_image_count": 10
+          },
+          "aspect_ratios": [
+            {
+              "label": "1:1 Square",
+              "value": "1:1"
+            },
+            {
+              "label": "16:9 Landscape",
+              "value": "16:9"
+            },
+            {
+              "label": "9:16 Portrait",
+              "value": "9:16"
+            },
+            {
+              "label": "3:2 Wide",
+              "value": "3:2"
+            },
+            {
+              "label": "2:3 Tall",
+              "value": "2:3"
+            }
+          ],
+          "resolution_tiers": [
+            {
+              "label": "1K Standard",
+              "value": "1K",
+              "baseResolution": "1024x1024"
+            }
+          ],
+          "param_options": {
+            "number_of_images": [
+              {
+                "label": "1",
+                "value": 1
+              },
+              {
+                "label": "2",
+                "value": 2
+              },
+              {
+                "label": "3",
+                "value": 3
+              },
+              {
+                "label": "4",
+                "value": 4
+              },
+              {
+                "label": "5",
+                "value": 5
+              },
+              {
+                "label": "6",
+                "value": 6
+              },
+              {
+                "label": "7",
+                "value": 7
+              },
+              {
+                "label": "8",
+                "value": 8
+              },
+              {
+                "label": "9",
+                "value": 9
+              },
+              {
+                "label": "10",
+                "value": 10
+              }
+            ]
+          }
+        }
+      }
     }
   }
 }

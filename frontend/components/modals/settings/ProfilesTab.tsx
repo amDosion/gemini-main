@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { PlusCircle, Database, Trash2, Edit3, Check, Layers, List, Copy, Zap, Cpu, Globe, Sparkles, Server, AlertTriangle, ChevronLeft, Loader2, Eye, Box, MoreHorizontal } from 'lucide-react';
+import { PlusCircle, Database, Trash2, Edit3, Check, Layers, List, Copy, Zap, Cpu, Globe, Sparkles, Server, AlertTriangle, ChevronLeft, Loader2, Eye, Box, MoreHorizontal, Flame } from 'lucide-react';
 import { ConfigProfile } from '../../../services/db';
 import { ModelConfig, ApiProtocol } from '../../../types/types';
 import { LLMFactory } from '../../../services/LLMFactory';
@@ -82,6 +82,7 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
         if (pid.includes('deepseek')) return <Cpu size={20} />;
         if (pid.includes('tongyi')) return <Globe size={20} />;
         if (pid.includes('openai')) return <Sparkles size={20} />;
+        if (pid.includes('grok')) return <Flame size={20} className="text-orange-400" />;
         return <Server size={20} />;
     };
 

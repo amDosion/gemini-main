@@ -8,6 +8,7 @@
 export * as GoogleControls from './google';
 export * as TongYiControls from './tongyi';
 export * as OpenAIControls from './openai';
+export * as GrokControls from './grok';
 export { getProviderControls, getProviderControlByMode, normalizeProviderId } from './registry';
 
 // 向后兼容：默认导出 Google 实现

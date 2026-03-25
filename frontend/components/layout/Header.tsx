@@ -1,7 +1,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Check, Loader2, Settings, Globe, Brain, Image as ImageIcon, Zap, BrainCircuit, Video, Mic, Server, Cpu, Sparkles, PlusCircle, LogOut, Search, X, User, KeyRound, Shield, Activity, HardDrive, Network, RefreshCw, Trash2 } from 'lucide-react';
+import { ChevronDown, Check, Loader2, Settings, Globe, Brain, Image as ImageIcon, Zap, BrainCircuit, Video, Mic, Server, Cpu, Sparkles, PlusCircle, LogOut, Search, X, User, KeyRound, Shield, Activity, HardDrive, Network, RefreshCw, Trash2, Flame } from 'lucide-react';
 import { ModelConfig, AppMode } from '../../types/types';
 import { ConfigProfile } from '../../services/db';
 import type { User as AuthUser, ChangePasswordData } from '../../services/auth';
@@ -62,6 +62,7 @@ const getProviderIcon = (pid: string) => {
     if (pid.includes('deepseek')) return <Cpu size={14} />;
     if (pid.includes('tongyi')) return <Globe size={14} />;
     if (pid.includes('openai')) return <Sparkles size={14} />;
+    if (pid.includes('grok')) return <Flame size={14} className="text-orange-400" />;
     return <Server size={14} />;
 };
 
@@ -1050,15 +1051,18 @@ export const Header: React.FC<HeaderProps> = ({
                 </>,
                 document.body
             )}
-            <ConfirmDialog
-                isOpen={isCleanupConfirmOpen}
-                title="清理系统垃圾"
-                message="将清理 __pycache__、临时上传文件、存储下载缓存、测试临时文件、过期上传任务、过期刷新令牌和 Redis 过期键。不会删除用户数据。确认继续？"
-                confirmLabel="确认清理"
-                cancelLabel="取消"
-                onConfirm={handleCleanup}
-                onCancel={() => setIsCleanupConfirmOpen(false)}
-            />
+            {isCleanupConfirmOpen && typeof document !== 'undefined' && createPortal(
+                <ConfirmDialog
+                    isOpen={isCleanupConfirmOpen}
+                    title="清理系统垃圾"
+                    message="将清理 __pycache__、临时上传文件、存储下载缓存、测试临时文件、过期上传任务、过期刷新令牌和 Redis 过期键。不会删除用户数据。确认继续？"
+                    confirmLabel="确认清理"
+                    cancelLabel="取消"
+                    onConfirm={handleCleanup}
+                    onCancel={() => setIsCleanupConfirmOpen(false)}
+                />,
+                document.body
+            )}
         </header>
     );
 };

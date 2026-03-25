@@ -241,6 +241,22 @@ class ProviderConfig:
             "secondary_client_type": "ollama",  # Native Ollama API client type
             "secondary_base_url": "http://localhost:11434",  # Native API endpoint
         },
+        "grok": {
+            "base_url": "http://localhost:8000/v1",
+            "default_model": "grok-4",
+            "client_type": "grok",
+            "supports_streaming": True,
+            "supports_function_call": True,
+            "supports_vision": True,
+            "supports_thinking": True,
+            "supports_web_search": False,
+            "supports_code_execution": False,
+            "name": "Grok",
+            "description": "Grok AI by xAI - Chat, Image & Video Generation",
+            "icon": "grok",
+            "is_custom": False,
+            "modes": ["chat", "image-gen", "image-chat-edit", "image-edit", "video-gen"],
+        },
         "custom": {
             "base_url": "",
             "default_model": "",
@@ -471,6 +487,7 @@ class ProviderConfig:
             "hunyuan": "混元 (Hunyuan)",
             "nvidia": "NVIDIA NIM",
             "openrouter": "OpenRouter",
+            "grok": "Grok (xAI)",
         }
         
         providers = []
@@ -515,7 +532,7 @@ class ProviderConfig:
             return False
         
         # 验证 client_type 有效性
-        valid_client_types = ["openai", "google", "ollama", "anthropic", "zhipuai", "dashscope", "nvidia"]
+        valid_client_types = ["openai", "google", "ollama", "anthropic", "zhipuai", "dashscope", "nvidia", "grok"]
         client_type = config.get("client_type")
         if client_type not in valid_client_types:
             logger.warning(
