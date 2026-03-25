@@ -68,7 +68,7 @@ class GeminiAPIVideoUnderstandingService:
             vertexai=False,
             http_options=self.http_options,
         )
-        self._client = getattr(pooled_client, "_genai_client", pooled_client)
+        self._client = pooled_client
 
     def _extract_source_video_uri(self, source_video: Any) -> Optional[str]:
         source_ref = extract_source_video_uri_ref(source_video)

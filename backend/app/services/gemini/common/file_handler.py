@@ -11,20 +11,28 @@ import mimetypes
 from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
 
-from .sdk_initializer import SDKInitializer
+from ..client_pool import get_client_pool
 
 
 class FileHandler:
     """Gemini Files API 处理器"""
-    
-    def __init__(self, sdk_initializer: SDKInitializer):
+
+    def __init__(self, *, api_key=None, use_vertex=False, project=None, location=None, http_options=None):
         """
         初始化文件处理器
-        
+
         Args:
-            sdk_initializer: SDK 初始化器实例
+            api_key: Google API key
+            use_vertex: Whether to use Vertex AI
+            project: GCP project ID (for Vertex AI)
+            location: GCP location (for Vertex AI)
+            http_options: HTTP options for client
         """
-        self.sdk_initializer = sdk_initializer
+        self._api_key = api_key
+        self._use_vertex = use_vertex
+        self._project = project
+        self._location = location
+        self._http_options = http_options
     
     async def upload_file(
         self, 
@@ -65,8 +73,13 @@ class FileHandler:
         
         try:
             # 确保 SDK 已初始化
-            await self.sdk_initializer.ensure_initialized()
-            client = self.sdk_initializer.client
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
             
             # 上传文件
             file_obj = await client.aio.files.upload(
@@ -104,8 +117,13 @@ class FileHandler:
             文件信息字典
         """
         try:
-            await self.sdk_initializer.ensure_initialized()
-            client = self.sdk_initializer.client
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
             
             file_obj = await client.aio.files.get(name=file_name)
             
@@ -137,8 +155,13 @@ class FileHandler:
             文件字节数据
         """
         try:
-            await self.sdk_initializer.ensure_initialized()
-            client = self.sdk_initializer.client
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
             
             # 下载文件数据
             file_data = await client.aio.files.download(file=file_name)
@@ -167,8 +190,13 @@ class FileHandler:
             删除是否成功
         """
         try:
-            await self.sdk_initializer.ensure_initialized()
-            client = self.sdk_initializer.client
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
             
             await client.aio.files.delete(name=file_name)
             return True
@@ -187,8 +215,13 @@ class FileHandler:
             文件列表
         """
         try:
-            await self.sdk_initializer.ensure_initialized()
-            client = self.sdk_initializer.client
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
             
             files = []
             async for file_obj in await client.aio.files.list(

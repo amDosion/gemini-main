@@ -6,7 +6,7 @@ GenAI Agent Service - 主服务类
 
 import logging
 from typing import Dict, Any, Optional, List, AsyncGenerator
-from .client import get_genai_client
+from ..client_pool import get_client_pool
 from .research_agent import ResearchAgent
 from .advanced_features import AdvancedResearchAgent
 from .types import ResearchConfig, ResearchResult
@@ -52,7 +52,7 @@ class GenAIAgentService:
             研究结果字典
         """
         try:
-            client = get_genai_client(api_key=self.api_key, model=self.model)
+            client = get_client_pool().get_client(api_key=self.api_key)
             
             # 解析配置
             config = ResearchConfig()
@@ -105,7 +105,7 @@ class GenAIAgentService:
             流式事件字典（兼容 _interactions API 格式）
         """
         try:
-            client = get_genai_client(api_key=self.api_key, model=self.model)
+            client = get_client_pool().get_client(api_key=self.api_key)
             
             # 解析配置
             config = ResearchConfig()

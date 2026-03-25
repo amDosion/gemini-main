@@ -3,6 +3,7 @@
 支持上传文件到兰空图床
 """
 
+import asyncio
 import requests
 from typing import Dict, Any, Optional
 from .base import BaseStorageProvider, UploadResult
@@ -66,7 +67,8 @@ class LskyProvider(BaseStorageProvider):
             data["strategy_id"] = strategy_id
         
         try:
-            response = requests.post(
+            response = await asyncio.to_thread(
+                requests.post,
                 upload_url,
                 files=files,
                 headers=headers,

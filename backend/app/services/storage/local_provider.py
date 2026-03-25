@@ -3,6 +3,7 @@
 支持将文件保存到本地文件系统
 """
 
+import asyncio
 import os
 import shutil
 from datetime import datetime
@@ -164,8 +165,10 @@ class LocalProvider(BaseStorageProvider):
             file_path = os.path.join(full_dir, unique_filename)
             
             # 写入文件
-            with open(file_path, 'wb') as f:
-                f.write(content)
+            def _write_file(path, data):
+                with open(path, 'wb') as f:
+                    f.write(data)
+            await asyncio.to_thread(_write_file, file_path, content)
             
             # 计算相对路径
             relative_path = os.path.join(date_path, unique_filename)

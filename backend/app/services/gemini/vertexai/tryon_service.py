@@ -80,14 +80,13 @@ class TryOnService:
             scopes=["https://www.googleapis.com/auth/cloud-platform"],
         )
         pool = get_client_pool()
-        pooled_client = pool.get_client(
+        client = pool.get_client(
             api_key=None,
             vertexai=True,
             project=project_id,
             location=location,
             credentials=credentials,
         )
-        client = getattr(pooled_client, "_genai_client", pooled_client)
         logger.debug(
             "[TryOnService] Retrieved Vertex client from unified pool: project=%s, location=%s",
             project_id,

@@ -119,15 +119,13 @@ class VertexAIImageGenerator(BaseImageGenerator):
             )
             
             pool = get_client_pool()
-            pooled_client = pool.get_client(
+            self._client = pool.get_client(
                 api_key=None,
                 vertexai=True,
                 project=self.project_id,
                 location=self.location,
                 credentials=credentials
             )
-            # Vertex image APIs need raw google.genai.Client methods.
-            self._client = getattr(pooled_client, "_genai_client", pooled_client)
             self._initialized = True
             logger.info("[VertexAIImageGenerator] Client initialized from unified pool")
         except Exception as e:

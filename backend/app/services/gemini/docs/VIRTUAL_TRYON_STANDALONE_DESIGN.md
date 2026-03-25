@@ -28,10 +28,7 @@
 
 - **核心 API**：`virtual_tryon(person_image_base64, clothing_image_base64, number_of_images=1, output_mime_type="image/jpeg", model="virtual-try-on-001")`
 - **能力**：调用 `client.models.recontext_image(...)`，Vertex AI only；仅支持 **1 张服装图**。
-- **兼容接口**：`legacy_virtual_tryon(prompt, reference_images)`  
-  - 若 `reference_images` 含 `raw` + `clothing` → 转发 `virtual_tryon(person, clothing)`；  
-  - 若 `raw` + `mask` → 回退 `mask_edit_service`。  
-- **结论**：以 `virtual_tryon(person, clothing)` 为唯一主路径；`legacy_*` 仅用于兼容旧版传参。
+- **结论**：以 `virtual_tryon(person, clothing)` 为唯一主路径（`legacy_virtual_tryon` 方法不存在）。
 
 ### 2.2 通用 Modes 流程（`routers/core/modes.py`）
 
@@ -39,13 +36,13 @@
 - **入参**：`ModeRequest`：`modelId`、`prompt`、`attachments`、`options`、`extra`。
 - **附件转换**：`convert_attachments_to_reference_images` → 非 mask 图依次填入 `raw`，第二张起变成 `raw: [img1, img2]`；**无** `person` / `clothing` 区分。
 - **服务调用**：`GoogleService.virtual_tryon(prompt, model, reference_images, **options)`。  
-  - 当前实现调用 `tryon_service.virtual_tryon(prompt=..., reference_images=...)`，与 `TryOnService.virtual_tryon(person, clothing)` 签名不符；应改为调用 `legacy_virtual_tryon`，且 `reference_images` 需提供 `raw` + `clothing`。
+  - 当前实现调用 `tryon_service.virtual_tryon(prompt=..., reference_images=...)`，与 `TryOnService.virtual_tryon(person, clothing)` 签名不符；应改为直接调用 `virtual_tryon`，且 `reference_images` 需提供 `raw` + `clothing`。
 
 ### 2.3 小结：后端需统一的部分
 
 1. **Virtual Try-On 专用契约**：明确 `raw` = 人物图，`clothing` = 服装图；`convert_attachments_to_reference_images` 在 `virtual-try-on` 模式下按 **顺序** 或 **role** 映射为 `raw` / `clothing`。
-2. **GoogleService**：`virtual_tryon` 应委托 `TryOnService.legacy_virtual_tryon`，并只使用 `raw` + `clothing` 路径（即 recontext）；若缺 `clothing`，直接报错，不走 mask 回退（或单独配置）。
-3. **可选**：新增 **专用路由** `POST /api/tryon/virtual`，请求体仅包含 `personImage`、`clothingImage`、`number_of_images` 等，直接调 `TryOnService.virtual_tryon`，与 modes 解耦，便于前端独立对接。
+2. **GoogleService**：`virtual_tryon` 应委托 `TryOnService.virtual_tryon`，并只使用 `raw` + `clothing` 路径（即 recontext）；若缺 `clothing`，直接报错，不走 mask 回退（或单独配置）。
+3. 虚拟试衣通过统一 modes 路由 `POST /api/modes/google/virtual-try-on` 调用，无独立 tryon 路由。
 
 ---
 
@@ -82,7 +79,7 @@ VirtualTryOnView (handleSend)
 
 ### 4.1 后端：虚拟试衣专用 API（推荐）
 
-**路由**：`POST /api/tryon/virtual`（或保留在 modes 下但契约独立，见 4.2）。
+**路由**：`POST /api/modes/google/virtual-try-on`（通过统一 modes 路由）。
 
 **请求体**（JSON）：
 
@@ -137,7 +134,7 @@ VirtualTryOnView (handleSend)
 - **Prompt**：**不参与** recontext 调用；可保留键名用于审计，但不传 `TryOnService`。
 - **GoogleService.virtual_tryon**：  
   - 从 `reference_images` 取 `raw`、`clothing`；  
-  - 调用 `TryOnService.legacy_virtual_tryon(prompt="", reference_images={raw, clothing})` 或直接 `virtual_tryon(person, clothing)`；  
+  - 调用 `TryOnService.virtual_tryon(person, clothing)`；
   - 缺 `clothing` 时直接 400。
 
 ### 4.3 前端：独立双槽位 UI
@@ -153,9 +150,7 @@ VirtualTryOnView (handleSend)
 1. 用户分别在两槽位上传 **人物图**、**服装图**。
 2. 二者齐备后「开始试衣」可点；否则禁用并提示。
 3. 点击后：
-   - 若使用 **专用 API**：  
-     `POST /api/tryon/virtual`，body 含 `personImage`、`clothingImage`（及可选参数）。
-   - 若使用 **Modes**：  
+   - 使用 **Modes**：
      `POST /api/modes/google/virtual-try-on`，`attachments`: `[personAttachment, garmentAttachment]`，顺序固定；可不传或传空 `prompt`。
 4. 成功后展示结果图；可保留历史列表、对比、下载等（与现有 View 能力兼容）。
 
@@ -175,13 +170,9 @@ VirtualTryOnView (handleSend)
 
 ### 5.1 后端
 
-1. **虚拟试衣专用路由（推荐）**  
-   - 新增 `POST /api/tryon/virtual`。  
-   - 解析 `personImage`、`clothingImage`（及可选字段），校验必填与格式。  
-   - 调 `TryOnService.virtual_tryon(...)`，返回统一 `{ success, data | error }`。
-2. **Modes 路径调整（若保留）**  
+1. **Modes 路径调整**
    - `convert_attachments_to_reference_images`：在 `mode === 'virtual-try-on'` 时，按顺序映射 `attachments[0]` → `raw`，`attachments[1]` → `clothing`。  
-   - `GoogleService.virtual_tryon`：仅使用 `raw` + `clothing`，调用 `TryOnService.legacy_virtual_tryon` 或 `virtual_tryon`，并统一返回格式。
+   - `GoogleService.virtual_tryon`：仅使用 `raw` + `clothing`，调用 `TryOnService.virtual_tryon`，并统一返回格式。
 3. **文档**：在 `docs` 或 API 说明中写明虚拟试衣的请求/响应契约及错误码。
 
 ### 5.2 前端
@@ -212,7 +203,7 @@ VirtualTryOnView (handleSend)
 | 项目       | 说明                                                                 |
 |------------|----------------------------------------------------------------------|
 | **后端核心** | `TryOnService.virtual_tryon(person_image_base64, clothing_image_base64, ...)` |
-| **专用 API** | `POST /api/tryon/virtual`，body: `personImage`, `clothingImage`，可选 `numberOfImages` 等 |
+| **Modes API** | `POST /api/modes/google/virtual-try-on`，`attachments[0]`=人物，`attachments[1]`=服装 |
 | **Modes 备选** | `POST /api/modes/google/virtual-try-on`，`attachments[0]`=人物，`attachments[1]`=服装 |
 | **前端 UI** | 双槽位（人物 / 服装），「开始试衣」→ 调用上述之一                   |
 | **移除**   | 试衣流程中的 prompt、掩码预览、tryOnTarget 作为 API 参数             |
@@ -230,8 +221,7 @@ VirtualTryOnView (handleSend)
 
 | 项目 | 状态 | 说明 |
 |------|------|------|
-| **后端** `POST /api/tryon/virtual` | ✅ 已实现 | `routers/tryon.py`，直接调 `TryOnService.virtual_tryon` |
-| **路由注册** | ✅ 已实现 | `registry.py` 中注册 `tryon_router` |
+| **后端** 虚拟试衣 API | ✅ 已实现 | 通过统一 modes 路由 `POST /api/modes/google/virtual-try-on` 调用 `TryOnService.virtual_tryon`（无独立 `routers/tryon.py`） |
 | **前端** `VirtualTryOnView` 重构 | ✅ 已实现 | 双槽位（人物 / 服装）、`开始试衣`、试衣历史、直接调 `/api/tryon/virtual` |
 | **掩码预览 / tryOnTarget** | 已移除 | 与 recontext API 无关，不再作为试衣流程的一部分 |
 | **Modes 路径** `virtual-try-on` | 未改动 | 仍可用；前端独立模式已切到专用 API |

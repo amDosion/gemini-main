@@ -2261,17 +2261,17 @@ async def update_session_attachment_url(
                 attachment.upload_status = 'completed'
                 attachment.temp_url = None
                 db.commit()
-                print(f"[UploadTask] ✅ 附件表已更新: {attachment_id}, URL: {url}")
+                logger.info(f"[UploadTask] 附件表已更新: {attachment_id}, URL: {url}")
                 return
             else:
                 if attempt < max_retries - 1:
-                    print(f"[UploadTask] ⏳ 附件不存在，等待重试 ({attempt + 1}/{max_retries}): {attachment_id}")
+                    logger.debug(f"[UploadTask] 附件不存在，等待重试 ({attempt + 1}/{max_retries}): {attachment_id}")
                     await asyncio.sleep(retry_delay)
                 else:
-                    print(f"[UploadTask] ❌ 重试 {max_retries} 次后仍未找到附件: {attachment_id}")
+                    logger.warning(f"[UploadTask] 重试 {max_retries} 次后仍未找到附件: {attachment_id}")
                 
         except Exception as e:
-            print(f"[UploadTask] ❌ 更新附件失败: {str(e)}")
+            logger.error(f"[UploadTask] 更新附件失败: {str(e)}")
             import traceback
             traceback.print_exc()
             if attempt < max_retries - 1:

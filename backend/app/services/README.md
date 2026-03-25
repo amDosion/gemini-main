@@ -25,12 +25,9 @@ services/
 │   ├── errors.py                 # 错误处理
 │   ├── model_capabilities.py     # 模型能力定义
 │   ├── client_selector.py        # 客户端选择器（双客户端支持）
-│   ├── api_key_service.py        # API 密钥管理
 │   ├── embedding_service.py      # 嵌入服务
 │   ├── interactions_manager.py   # 交互管理器（Deep Research）
 │   ├── progress_tracker.py       # 进度跟踪
-│   ├── state_manager.py          # 状态管理
-│   ├── tool_orchestrator.py      # 工具编排器
 │   ├── upload_worker_pool.py     # 上传工作池
 │   ├── init_service.py           # 初始化服务
 │   ├── auth_service.py           # 认证服务
@@ -282,7 +279,7 @@ service = ProviderFactory.create("tongyi", api_key="...")
 
 ## 相关文档
 
-- [Gemini 服务架构](./gemini/README.md)
+- [Gemini 服务架构](./gemini/docs/README.md)
 - [OpenAI 服务架构](./openai/README.md)
 - [Tongyi 服务架构](./tongyi/README.md)
 - [路由与逻辑分离架构设计](../../docs/路由与逻辑分离架构设计文档.md)

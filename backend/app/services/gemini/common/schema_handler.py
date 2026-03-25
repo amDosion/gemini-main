@@ -10,20 +10,25 @@ from typing import Optional, Dict, Any, Type, Union, get_type_hints
 from enum import Enum
 from pydantic import BaseModel
 
-from .sdk_initializer import SDKInitializer
-
-
 class SchemaHandler:
     """Gemini JSON Schema 响应处理器"""
-    
-    def __init__(self, sdk_initializer: SDKInitializer):
+
+    def __init__(self, *, api_key=None, use_vertex=False, project=None, location=None, http_options=None):
         """
         初始化 Schema 处理器
-        
+
         Args:
-            sdk_initializer: SDK 初始化器实例
+            api_key: Google API key
+            use_vertex: Whether to use Vertex AI
+            project: GCP project ID (for Vertex AI)
+            location: GCP location (for Vertex AI)
+            http_options: HTTP options for client
         """
-        self.sdk_initializer = sdk_initializer
+        self._api_key = api_key
+        self._use_vertex = use_vertex
+        self._project = project
+        self._location = location
+        self._http_options = http_options
     
     def create_json_schema_config(
         self,

@@ -115,7 +115,7 @@ class VertexAIVideoGenerationService:
             credentials=credentials,
             http_options=self.http_options,
         )
-        self._client = getattr(pooled_client, "_genai_client", pooled_client)
+        self._client = pooled_client
         self._credentials = credentials
 
     def _get_storage_client(self):

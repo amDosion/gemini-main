@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 
-from ..common.sdk_initializer import SDKInitializer
+from ..client_pool import get_client_pool
 from ..common.chat_session_manager import ChatSessionManager
 from ..common.file_handler import FileHandler
 from ...common.model_capabilities import get_google_capabilities
@@ -65,21 +65,44 @@ class ConversationalImageEditService:
     
     def __init__(
         self,
-        sdk_initializer: SDKInitializer,
-        chat_session_manager: ChatSessionManager,
-        file_handler: Optional[FileHandler] = None
+        chat_session_manager: ChatSessionManager = None,
+        file_handler: Optional[FileHandler] = None,
+        *,
+        api_key: str = None,
+        use_vertex: bool = False,
+        project: str = None,
+        location: str = None,
+        http_options=None,
     ):
         """
         初始化对话式图片编辑服务
-        
+
         Args:
-            sdk_initializer: SDK 初始化器
             chat_session_manager: Chat 会话管理器
             file_handler: 文件处理器（可选，用于处理图片）
+            api_key: Google API key
+            use_vertex: Whether to use Vertex AI
+            project: GCP project ID (for Vertex AI)
+            location: GCP location (for Vertex AI)
+            http_options: HTTP options for client pool
         """
-        self.sdk_initializer = sdk_initializer
+        self._api_key = api_key
+        self._use_vertex = use_vertex
+        self._project = project
+        self._location = location
+        self._http_options = http_options
         self.chat_session_manager = chat_session_manager
         self.file_handler = file_handler
+
+    def _get_client(self):
+        """Get client from the unified pool."""
+        return get_client_pool().get_client(
+            api_key=self._api_key,
+            vertexai=self._use_vertex,
+            project=self._project,
+            location=self._location,
+            http_options=self._http_options,
+        )
 
     def _supports_thinking(self, model_name: str) -> bool:
         """
@@ -207,8 +230,7 @@ class ConversationalImageEditService:
         Returns:
             增强后的提示词，失败时返回 None
         """
-        self.sdk_initializer.ensure_initialized()
-        client = self.sdk_initializer.client
+        client = self._get_client()
 
         # 选择增强模型（优先使用用户选择的多模态模型）
         text_model = self._resolve_enhance_prompt_model(model_hint)
@@ -290,8 +312,7 @@ class ConversationalImageEditService:
         Returns:
             包含 chat_id 的字典
         """
-        self.sdk_initializer.ensure_initialized()
-        client = self.sdk_initializer.client
+        client = self._get_client()
         
         # 生成 Chat ID
         chat_id = str(uuid.uuid4())
@@ -456,8 +477,7 @@ class ConversationalImageEditService:
         Returns:
             编辑后的图片列表（包含完整的附件元数据）
         """
-        self.sdk_initializer.ensure_initialized()
-        client = self.sdk_initializer.client
+        client = self._get_client()
         
         # ✅ 预先获取 chat_session 元数据（用于获取 model_name 等，构建 send_config 时需要）
         chat_session = self.chat_session_manager.get_chat_session(chat_id)

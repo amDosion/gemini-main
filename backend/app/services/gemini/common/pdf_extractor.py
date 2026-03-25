@@ -13,7 +13,7 @@ import pypdf
 from google import genai
 from google.genai import types
 
-from .sdk_initializer import SDKInitializer
+from ..client_pool import get_client_pool
 
 logger = logging.getLogger(__name__)
 
@@ -205,14 +205,22 @@ class PDFExtractorService:
     Extracts structured data from PDF documents using Gemini function calling.
     """
 
-    def __init__(self, sdk_initializer: SDKInitializer):
+    def __init__(self, *, api_key=None, use_vertex=False, project=None, location=None, http_options=None):
         """
         Initialize PDF extractor service.
 
         Args:
-            sdk_initializer: SDK initializer for Gemini API
+            api_key: Google API key
+            use_vertex: Whether to use Vertex AI
+            project: GCP project ID (for Vertex AI)
+            location: GCP location (for Vertex AI)
+            http_options: HTTP options for client
         """
-        self.sdk_initializer = sdk_initializer
+        self._api_key = api_key
+        self._use_vertex = use_vertex
+        self._project = project
+        self._location = location
+        self._http_options = http_options
         logger.info("[PDF Extractor Service] Initialized")
 
     async def extract_structured_data(
@@ -292,8 +300,14 @@ class PDFExtractorService:
         # Structured templates continue with function-calling
         func_decl = template_config['tool']
 
-        # Use SDK initializer's client
-        client = self.sdk_initializer.client
+        # Get client from unified pool
+        client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
         logger.info(f"[PDF Extractor Service] Using model: {cleaned_model_id}")
 
         # Create prompt
@@ -430,10 +444,7 @@ async def extract_structured_data_from_pdf(
 
     This function maintains the old interface while using the new service architecture.
     """
-    from .sdk_initializer import SDKInitializer
-
-    sdk_initializer = SDKInitializer(api_key)
-    service = PDFExtractorService(sdk_initializer)
+    service = PDFExtractorService(api_key=api_key)
     return await service.extract_structured_data(
         pdf_bytes=pdf_bytes,
         template_type=template_type,

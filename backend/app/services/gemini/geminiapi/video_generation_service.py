@@ -90,7 +90,7 @@ class GeminiAPIVideoGenerationService:
             vertexai=False,
             http_options=self.http_options,
         )
-        self._client = getattr(pooled_client, "_genai_client", pooled_client)
+        self._client = pooled_client
 
     async def generate_video(
         self,

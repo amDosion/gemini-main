@@ -215,14 +215,17 @@ async def get_interaction(
         )
         return _build_interaction_response(result)
         
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"Failed to get interaction {interaction_id}: {e}")
         raise HTTPException(
-            status_code=404,
+            status_code=500,
             detail=_build_error_detail(
-                "INTERACTION_NOT_FOUND",
-                "Interaction not found",
-                details={"interaction_id": interaction_id, "error": str(e)},
-                retryable=False,
+                "INTERACTION_GET_FAILED",
+                "Failed to retrieve interaction",
+                details={"interaction_id": interaction_id},
+                retryable=True,
             ),
         )
 

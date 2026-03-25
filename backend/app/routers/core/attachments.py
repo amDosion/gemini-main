@@ -42,7 +42,7 @@ async def _proxy_remote_image(
                 "User-Agent": "GeminiMain/TempImageProxy",
             },
         )
-    upstream.raise_for_status()
+        upstream.raise_for_status()
     content_type = (upstream.headers.get("content-type") or fallback_mime_type or "application/octet-stream").split(";")[0]
     return Response(
         content=upstream.content,

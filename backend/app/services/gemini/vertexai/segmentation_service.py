@@ -209,14 +209,8 @@ class SegmentationService:
             credentials=credentials
         )
 
-        # 获取底层的 google.genai.Client（支持 segment_image）
-        if hasattr(wrapper_client, '_genai_client'):
-            self._client = wrapper_client._genai_client
-            logger.info(f"[SegmentationService] Got underlying genai client from pool")
-        else:
-            # 如果包装器没有 _genai_client，可能是直接的 genai.Client
-            self._client = wrapper_client
-            logger.info(f"[SegmentationService] Using client directly from pool")
+        self._client = wrapper_client
+        logger.info(f"[SegmentationService] Got Vertex AI client from pool")
 
         return self._client
 
