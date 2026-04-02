@@ -11,28 +11,35 @@ import asyncio
 from typing import Optional, List, Dict, Any, Callable, Union
 from enum import Enum
 
-from .sdk_initializer import SDKInitializer
 from app.utils.safe_expression_eval import safe_eval_expression
 
 
 class FunctionCallingMode(Enum):
     """函数调用模式"""
     AUTO = "AUTO"
-    ANY = "ANY" 
+    ANY = "ANY"
     NONE = "NONE"
 
 
 class FunctionHandler:
     """Gemini Function Calling 处理器"""
-    
-    def __init__(self, sdk_initializer: SDKInitializer):
+
+    def __init__(self, *, api_key=None, use_vertex=False, project=None, location=None, http_options=None):
         """
         初始化函数处理器
-        
+
         Args:
-            sdk_initializer: SDK 初始化器实例
+            api_key: Google API key
+            use_vertex: Whether to use Vertex AI
+            project: GCP project ID (for Vertex AI)
+            location: GCP location (for Vertex AI)
+            http_options: HTTP options for client
         """
-        self.sdk_initializer = sdk_initializer
+        self._api_key = api_key
+        self._use_vertex = use_vertex
+        self._project = project
+        self._location = location
+        self._http_options = http_options
         self.registered_functions: Dict[str, Callable] = {}
     
     def register_function(self, func: Callable, name: Optional[str] = None) -> str:

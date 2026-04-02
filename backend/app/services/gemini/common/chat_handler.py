@@ -10,7 +10,7 @@ from typing import Dict, Any, List, AsyncGenerator, Set, Optional
 import json
 import hashlib
 
-from .sdk_initializer import SDKInitializer
+from ..client_pool import get_client_pool
 from .message_converter import MessageConverter
 from .response_parser import ResponseParser
 from .config_builder import ConfigBuilder
@@ -43,14 +43,22 @@ class ChatHandler:
     - Streaming chat (stream_chat)
     """
     
-    def __init__(self, sdk_initializer: SDKInitializer):
+    def __init__(self, *, api_key=None, use_vertex=False, project=None, location=None, http_options=None):
         """
         Initialize chat handler.
-        
+
         Args:
-            sdk_initializer: SDK initializer instance
+            api_key: Google API key
+            use_vertex: Whether to use Vertex AI
+            project: GCP project ID (for Vertex AI)
+            location: GCP location (for Vertex AI)
+            http_options: HTTP options for client
         """
-        self.sdk_initializer = sdk_initializer
+        self._api_key = api_key
+        self._use_vertex = use_vertex
+        self._project = project
+        self._location = location
+        self._http_options = http_options
 
     @staticmethod
     def _to_json_compatible(value: Any) -> Any:
@@ -211,20 +219,26 @@ class ChatHandler:
             Dict containing content, role, usage, model, finish_reason
         """
         try:
-            # 确保 SDK 已初始化
-            self.sdk_initializer.ensure_initialized()
-            
+            # 从统一池获取客户端
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
+
             logger.info(f"[Chat Handler] Chat request: model={model}, messages={len(messages)}")
-            
+
             # 转换消息格式
             contents = MessageConverter.build_contents(messages)
-            
+
             # 构建配置
             config = ConfigBuilder.build_generate_config(**kwargs)
-            
+
             # 调用新版 SDK（同步方法），放到线程池中避免阻塞事件循环。
             response = await asyncio.to_thread(
-                self.sdk_initializer.client.models.generate_content,
+                client.models.generate_content,
                 model=model,
                 contents=contents,
                 config=config if config else None,
@@ -338,20 +352,26 @@ class ChatHandler:
             {"chunk_type": "error", "error": str} - 错误块
         """
         try:
-            # 确保 SDK 已初始化
-            self.sdk_initializer.ensure_initialized()
-            
+            # 从统一池获取客户端
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
+
             logger.info(f"[Chat Handler] SSE Stream chat: model={model}, messages={len(messages)}")
-            
+
             # 转换消息格式为官方 SDK 格式
             contents = MessageConverter.build_contents(messages)
-            
+
             # 构建配置
             config = ConfigBuilder.build_generate_config(**kwargs)
-            
+
             # 使用官方 SDK 的流式生成方法
             # 这个方法使用 SSE (Server-Sent Events) 协议，URL 包含 ?alt=sse 参数
-            stream = self.sdk_initializer.client.models.generate_content_stream(
+            stream = client.models.generate_content_stream(
                 model=model,
                 contents=contents,
                 config=config if config else None
@@ -520,8 +540,14 @@ class ChatHandler:
             if not model or not isinstance(model, str):
                 raise ValueError("model must be a non-empty string")
             
-            # 确保 SDK 已初始化
-            self.sdk_initializer.ensure_initialized()
+            # 从统一池获取客户端
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
             
             logger.info(
                 f"[Chat Handler] Stream chat (Async SDK): model={model}, "
@@ -632,7 +658,7 @@ class ChatHandler:
                 )
             
             # 使用异步 API 创建聊天会话
-            async_chat = self.sdk_initializer.client.aio.chats.create(
+            async_chat = client.aio.chats.create(
                 model=model,
                 config=config,
                 history=history

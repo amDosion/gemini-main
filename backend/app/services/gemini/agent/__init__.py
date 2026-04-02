@@ -58,8 +58,6 @@ from .interactions_service import VertexAiInteractionsService
 from .client import Client, AsyncClient, get_vertex_ai_credentials_from_db
 from . import types
 from .models import Models, AsyncModels
-from .interactions import InteractionsResource, AsyncInteractionsResource
-
 __all__ = [
     "PROVIDER_NEUTRAL_MULTI_AGENT_ENTRYPOINT",
     "LEGACY_GOOGLE_RUNTIME_ROUTE",
@@ -111,6 +109,6 @@ __all__ = [
     "types",
     "Models",
     "AsyncModels",
-    "InteractionsResource",
-    "AsyncInteractionsResource",
+    # InteractionsResource / AsyncInteractionsResource removed – callers now
+    # use the native google.genai.Client.interactions API directly.
 ]

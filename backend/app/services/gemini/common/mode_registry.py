@@ -255,30 +255,21 @@ class GoogleModeRegistry:
 
 # ==================== Global Registry Instance ====================
 
-# Global registry instance (singleton pattern)
-_global_registry: Optional[GoogleModeRegistry] = None
+# Global registry instance (eager initialization to avoid race conditions)
+_global_registry: GoogleModeRegistry = GoogleModeRegistry()
 
 
 def get_global_registry() -> GoogleModeRegistry:
     """
     Get the global mode registry instance.
-    
-    This function implements the singleton pattern to ensure
-    only one registry instance exists.
-    
+
     Returns:
         Global GoogleModeRegistry instance
-    
+
     Example:
         >>> registry = get_global_registry()
         >>> handler = registry.get("image-outpainting")
     """
-    global _global_registry
-    
-    if _global_registry is None:
-        _global_registry = GoogleModeRegistry()
-        logger.info("[GoogleModeRegistry] Created global registry instance")
-    
     return _global_registry
 
 

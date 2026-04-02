@@ -12,7 +12,7 @@ from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from .sdk_initializer import SDKInitializer
+from ..client_pool import get_client_pool
 
 
 @dataclass
@@ -46,14 +46,22 @@ class ModelLimits:
 class TokenHandler:
     """Gemini Token 计数处理器"""
     
-    def __init__(self, sdk_initializer: SDKInitializer):
+    def __init__(self, *, api_key=None, use_vertex=False, project=None, location=None, http_options=None):
         """
         初始化 Token 处理器
-        
+
         Args:
-            sdk_initializer: SDK 初始化器实例
+            api_key: Google API key
+            use_vertex: Whether to use Vertex AI
+            project: GCP project ID (for Vertex AI)
+            location: GCP location (for Vertex AI)
+            http_options: HTTP options for client
         """
-        self.sdk_initializer = sdk_initializer
+        self._api_key = api_key
+        self._use_vertex = use_vertex
+        self._project = project
+        self._location = location
+        self._http_options = http_options
         self._token_cache: Dict[str, tuple[TokenCount, float]] = {}  # (result, timestamp)
         self._model_info_cache: Dict[str, tuple[Any, float]] = {}
         self._cache_ttl = 3600  # 缓存1小时
@@ -135,9 +143,14 @@ class TokenHandler:
             return cached_result
         
         try:
-            await self.sdk_initializer.ensure_initialized()
-            client = self.sdk_initializer.client
-            
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
+
             # 准备内容
             if isinstance(content, str):
                 # 简单文本
@@ -189,9 +202,14 @@ class TokenHandler:
             Token 计数结果
         """
         try:
-            await self.sdk_initializer.ensure_initialized()
-            client = self.sdk_initializer.client
-            
+            client = get_client_pool().get_client(
+                api_key=self._api_key,
+                vertexai=self._use_vertex,
+                project=self._project,
+                location=self._location,
+                http_options=self._http_options,
+            )
+
             # 构建完整的请求配置
             request_config = {
                 'model': model,

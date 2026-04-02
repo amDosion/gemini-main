@@ -6,8 +6,8 @@
 
 ```
 backend/app/services/
-├── mcp_manager.py          # 🎯 管理层（会话池、配置管理）
-└── mcp/                    # 🔧 服务层（MCP 核心实现）
+└── mcp/                    # 🔧 MCP 服务模块
+    ├── mcp_manager.py      # 🎯 管理层（会话池、配置管理）
     ├── __init__.py         # 模块导出
     ├── types.py            # 类型定义
     ├── schema_utils.py     # Schema 转换和过滤
@@ -39,7 +39,7 @@ pip install mcp
 ### 2. 基本用法
 
 ```python
-from app.services.mcp_manager import MCPManager
+from app.services.mcp.mcp_manager import MCPManager
 from app.services.mcp import MCPServerConfig, MCPServerType
 
 # 创建管理器
@@ -105,7 +105,7 @@ async with MCPClient(config) as client:
 高层 API，提供会话池和配置管理。
 
 ```python
-from app.services.mcp_manager import MCPManager, get_mcp_manager
+from app.services.mcp.mcp_manager import MCPManager, get_mcp_manager
 
 # 方式 1：创建新实例
 manager = MCPManager()
@@ -294,7 +294,7 @@ python -m app.services.mcp.examples
 ```python
 @dataclass
 class MCPServerConfig:
-    server_type: MCPServerType  # STDIO | SSE | HTTP
+    server_type: MCPServerType  # STDIO | SSE | HTTP | STREAMABLE_HTTP
     command: Optional[str]      # stdio: 命令
     args: Optional[List[str]]   # stdio: 参数
     env: Optional[Dict]         # stdio: 环境变量

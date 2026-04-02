@@ -36,11 +36,7 @@ tongyi/
 │   ├── __init__.py
 │   ├── language_detector.py       # 语言检测
 │   ├── generation_optimizer.py    # 文生图 Prompt 优化
-│   ├── edit_optimizer.py          # 图像编辑 Prompt 优化
-│   └── prompts/                   # Prompt 模板
-│       ├── generation_zh.txt
-│       ├── generation_en.txt
-│       └── edit_prompt.txt
+│   └── edit_optimizer.py          # 图像编辑 Prompt 优化
 ├── image_generation.py            # 增强: 集成 Prompt 优化
 ├── image_edit.py                  # 增强: 集成编辑优化 + 多图支持
 └── ...

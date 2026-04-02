@@ -6,8 +6,12 @@ from typing import Optional, Callable
 import asyncio
 import uuid
 import json
+import logging
 
 from ...core.dependencies import require_current_user
+
+logger = logging.getLogger(__name__)
+from ...utils.url_security import validate_outbound_http_url
 
 router = APIRouter(prefix="/api", tags=["browse"])
 
@@ -149,7 +153,7 @@ def extract_title_from_html(html_content: str) -> str:
         if title_tag and title_tag.string:
             return title_tag.string.strip()
     except Exception as e:
-        print(f"Error extracting title: {e}")
+        logger.debug(f"Error extracting title: {e}")
 
     return "Web Page"
 
@@ -168,7 +172,7 @@ def html_to_markdown(html_content: str) -> str:
         soup = BeautifulSoup(html_content, 'html.parser')
         return soup.get_text()
     except Exception as e:
-        print(f"Error converting to markdown: {e}")
+        logger.debug(f"Error converting to markdown: {e}")
         return html_content
 
 
@@ -238,7 +242,7 @@ def take_screenshot_selenium(url: str) -> Optional[str]:
             driver.quit()
 
     except Exception as e:
-        print(f"Error taking screenshot: {e}")
+        logger.info(f"Error taking screenshot: {e}")
         return None
 
 
@@ -247,7 +251,7 @@ def take_screenshot_selenium(url: str) -> Optional[str]:
 # ============================================================================
 
 @router.get("/browse/progress/{operation_id}")
-async def browse_progress_stream(operation_id: str, request: Request):
+async def browse_progress_stream(operation_id: str, request: Request, user_id: str = Depends(require_current_user)):
     """
     Server-Sent Events endpoint for real-time browse progress updates.
     
@@ -327,7 +331,10 @@ async def browse_webpage(
     """
     url = request.url
     operation_id = request.operation_id or str(uuid.uuid4())
-    
+
+    # Validate URL to prevent SSRF
+    validate_outbound_http_url(url)
+
     if _logger and _LOG_PREFIXES:
         _logger.info(f"{_LOG_PREFIXES['request']} Received browse request for URL: {url} (operation_id: {operation_id}, user: {user_id})")
 
@@ -368,7 +375,7 @@ async def browse_webpage(
                     )
                 
                 # ✅ 传递 user_id 以实现会话隔离
-                content = _selenium_browse(url, steps=[
+                content = await asyncio.to_thread(_selenium_browse, url, steps=[
                     {"action": "wait", "seconds": 2}
                 ], user_id=user_id)
 
@@ -385,7 +392,7 @@ async def browse_webpage(
                 import requests
                 from bs4 import BeautifulSoup
 
-                response = requests.get(url, timeout=10, headers={
+                response = await asyncio.to_thread(requests.get, url, timeout=10, headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 })
                 title = extract_title_from_html(response.text)
@@ -460,7 +467,7 @@ async def browse_webpage(
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
 
-        response = requests.get(url, timeout=10, headers=headers)
+        response = await asyncio.to_thread(requests.get, url, timeout=10, headers=headers)
         response.raise_for_status()
 
         # Extract title
@@ -536,7 +543,7 @@ async def browse_webpage(
 
 
 @router.post("/search")
-async def web_search_endpoint(query: str):
+async def web_search_endpoint(query: str, user_id: str = Depends(require_current_user)):
     """
     Web search endpoint
     

@@ -4,7 +4,7 @@ Google (Gemini) Provider Service - Main Coordinator
 This module coordinates all Gemini-related operations by delegating to specialized handlers.
 """
 
-from typing import Dict, Any, List, Optional, AsyncGenerator, Union, Type, Tuple
+from typing import Callable, Dict, Any, List, Optional, AsyncGenerator, Union, Type, Tuple
 import logging
 from sqlalchemy.orm import Session
 
@@ -18,8 +18,6 @@ from ..common.errors import (
     ExecutionTimer,
     RequestIDManager
 )
-
-from .common.sdk_initializer import SDKInitializer
 from .common.chat_handler import ChatHandler
 from .image_generator import ImageGenerator
 from .coordinators.image_edit_coordinator import ImageEditCoordinator
@@ -30,12 +28,13 @@ from .common.file_handler import FileHandler
 from .common.function_handler import FunctionHandler
 from .common.schema_handler import SchemaHandler
 from .common.token_handler import TokenHandler
-from .common.official_sdk_adapter import OfficialSDKAdapter
+from .client_pool import get_client_pool
+from google.genai import types as genai_types
+from .agent.types import HttpOptions, HttpRetryOptions
 from .vertexai.expand_service import ExpandService
 from .vertexai.segmentation_service import SegmentationService
 from .vertexai.tryon_service import TryOnService
 from .common.pdf_extractor import PDFExtractorService
-from .agent.types import HttpOptions, HttpRetryOptions
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +79,6 @@ class GoogleService(BaseProviderService):
     Google Gemini Provider Service - Main Coordinator.
 
     This service coordinates all Gemini operations by delegating to:
-    - SDKInitializer: SDK initialization
     - ChatHandler: Chat operations
     - ImageGenerator: Image generation
     - ModelManager: Model listing
@@ -155,83 +153,38 @@ class GoogleService(BaseProviderService):
             )
         
         if use_official_sdk:
-            # Initialize official SDK adapter (no caching - lightweight adapter)
-            # OfficialSDKAdapter is now lightweight (doesn't hold Client instance)
-            # Client instances are managed by unified GeminiClientPool
-            try:
-                with ExecutionTimer() as timer:
-                    self.official_adapter = OfficialSDKAdapter(
-                        api_key=api_key,
-                        use_vertex=kwargs.get('use_vertex', False),
-                        project=kwargs.get('project'),
-                        location=kwargs.get('location'),
-                        http_options=self.http_options,
-                    )
-                logger.info(
-                    "[Google Service] Created Official SDK adapter",
-                    extra={
-                        'request_id': self.request_id,
-                        'operation': 'initialization',
-                        'execution_time_ms': timer.elapsed_ms
-                    }
-                )
-            except Exception as e:
-                context = ErrorContext(
-                    provider_id="google",
-                    client_type="single",
-                    operation="client_creation",
-                    request_id=self.request_id,
-                    user_id=user_id,
-                    platform="official_sdk"
-                )
-                raise ClientCreationError(
-                    message="Failed to create Official SDK adapter",
-                    context=context,
-                    original_error=e
-                )
-            
             # 直接获取 interactions_manager（不通过 adapter）
             # 根据文档：google_service.py 应该直接协调各个管理器
             # Lazy import to avoid circular dependency
             from ..common.interactions_manager import get_interactions_manager
             self._interactions_manager = get_interactions_manager()
+            logger.info(
+                "[Google Service] Initialized official SDK mode (adapter inlined)",
+                extra={
+                    'request_id': self.request_id,
+                    'operation': 'initialization',
+                }
+            )
         else:
             self._interactions_manager = None
-            # SDKInitializer is now lightweight and always delegates client retrieval to GeminiClientPool.
-            try:
-                with ExecutionTimer() as timer:
-                    self.sdk_initializer = SDKInitializer(
-                        api_key=api_key,
-                        use_vertex_ai=kwargs.get('use_vertex', False),
-                        project_id=kwargs.get('project'),
-                        location=kwargs.get('location') or "us-central1",
-                        http_options=self.http_options,
-                    )
-                logger.info(
-                    "[Google Service] Created SDK initializer (unified pool mode)",
-                    extra={
-                        'request_id': self.request_id,
-                        'operation': 'initialization',
-                        'execution_time_ms': timer.elapsed_ms
-                    }
-                )
-            except Exception as e:
-                context = ErrorContext(
-                    provider_id="google",
-                    client_type="single",
-                    operation="client_creation",
-                    request_id=self.request_id,
-                    user_id=user_id,
-                    platform="legacy_sdk"
-                )
-                raise ClientCreationError(
-                    message="Failed to create SDK initializer",
-                    context=context,
-                    original_error=e
-                )
-            
+            # Store pool params for direct get_client_pool().get_client() calls
+            self._pool_kwargs = dict(
+                api_key=api_key,
+                use_vertex=kwargs.get('use_vertex', False),
+                project=kwargs.get('project'),
+                location=kwargs.get('location') or 'us-central1',
+                http_options=self.http_options,
+            )
+            logger.info(
+                "[Google Service] Configured client pool params",
+                extra={
+                    'request_id': self.request_id,
+                    'operation': 'initialization',
+                }
+            )
+
             # Initialize handlers (these are lightweight, no need to cache)
-            self.chat_handler = ChatHandler(self.sdk_initializer)
+            self.chat_handler = ChatHandler(**self._pool_kwargs)
             # 使用 Gemini API 进行图像生成
             self.image_generator = ImageGenerator(
                 api_key=api_key,
@@ -252,10 +205,10 @@ class GoogleService(BaseProviderService):
             self.model_manager = ModelManager(api_key, api_url)
             
             # Initialize new handlers (P0 features)
-            self.file_handler = FileHandler(self.sdk_initializer)
-            self.function_handler = FunctionHandler(self.sdk_initializer)
-            self.schema_handler = SchemaHandler(self.sdk_initializer)
-            self.token_handler = TokenHandler(self.sdk_initializer)
+            self.file_handler = FileHandler(**self._pool_kwargs)
+            self.function_handler = FunctionHandler(**self._pool_kwargs)
+            self.schema_handler = SchemaHandler(**self._pool_kwargs)
+            self.token_handler = TokenHandler(**self._pool_kwargs)
             self.video_generation_coordinator = VideoGenerationCoordinator(
                 user_id=user_id,
                 db=db,
@@ -274,22 +227,22 @@ class GoogleService(BaseProviderService):
             self.segmentation_service = SegmentationService(user_id=user_id, db=db)
 
             # Initialize PDF extraction service
-            self.pdf_extractor = PDFExtractorService(self.sdk_initializer)
+            self.pdf_extractor = PDFExtractorService(**self._pool_kwargs)
 
             # Initialize virtual try-on service
             self.tryon_service = TryOnService()
 
             logger.info("[Google Service] Using legacy SDK implementation")
 
-    def _ensure_sdk_initializer_for_fallback(self) -> None:
-        """Ensure sdk_initializer is available when official SDK mode needs legacy fallbacks."""
-        if hasattr(self, "sdk_initializer") and self.sdk_initializer:
+    def _ensure_pool_kwargs_for_fallback(self) -> None:
+        """Ensure _pool_kwargs is available when official SDK mode needs legacy fallbacks."""
+        if hasattr(self, "_pool_kwargs") and self._pool_kwargs:
             return
-        self.sdk_initializer = SDKInitializer(
+        self._pool_kwargs = dict(
             api_key=self.api_key,
-            use_vertex_ai=self.use_vertex,
-            project_id=self.project,
-            location=self.location or "us-central1",
+            use_vertex=self.use_vertex,
+            project=self.project,
+            location=self.location or 'us-central1',
             http_options=self.http_options,
         )
 
@@ -319,8 +272,8 @@ class GoogleService(BaseProviderService):
         if not hasattr(self, "tryon_service"):
             self.tryon_service = TryOnService()
         if not hasattr(self, "pdf_extractor"):
-            self._ensure_sdk_initializer_for_fallback()
-            self.pdf_extractor = PDFExtractorService(self.sdk_initializer)
+            self._ensure_pool_kwargs_for_fallback()
+            self.pdf_extractor = PDFExtractorService(**self._pool_kwargs)
 
     @staticmethod
     def _build_http_options_from_kwargs(kwargs: Dict[str, Any]) -> Optional[HttpOptions]:
@@ -364,15 +317,15 @@ class GoogleService(BaseProviderService):
             use_default_timeout=False,
         )
 
-    def _get_sdk_initializer_for_mode(self, mode: Optional[str]) -> SDKInitializer:
+    def _get_pool_kwargs_for_mode(self, mode: Optional[str]) -> dict:
+        """Get pool kwargs, with special http_options for image-chat-edit mode."""
         if mode != "image-chat-edit":
-            return self.sdk_initializer
-
-        return SDKInitializer(
+            return self._pool_kwargs
+        return dict(
             api_key=self.api_key,
-            use_vertex_ai=self.use_vertex,
-            project_id=self.project,
-            location=self.location or "us-central1",
+            use_vertex=self.use_vertex,
+            project=self.project,
+            location=self.location or 'us-central1',
             http_options=self._build_image_chat_http_options(),
         )
     
@@ -421,15 +374,174 @@ class GoogleService(BaseProviderService):
                 extra={'request_id': self.request_id, 'operation': 'credential_validation', 'platform': 'developer_api'}
             )
     
-    async def chat(
-        self, 
-        messages: List[Dict[str, Any]], 
-        model: str, 
+    # ------------------------------------------------------------------
+    # Official SDK helpers (inlined from OfficialSDKAdapter)
+    # ------------------------------------------------------------------
+
+    def _get_official_client(self):
+        """Get a client from the unified pool for official SDK operations."""
+        pool = get_client_pool()
+        return pool.get_client(
+            api_key=self.api_key,
+            vertexai=self.use_vertex,
+            project=self.project,
+            location=self.location or 'us-central1' if self.use_vertex else None,
+            http_options=self.http_options,
+        )
+
+    def _convert_messages_to_contents(self, messages: List[Dict[str, Any]]) -> List[genai_types.Content]:
+        """Convert existing message format to official SDK genai_types.Content format."""
+        contents = []
+        for message in messages:
+            role = message.get('role', 'user')
+            content_text = message.get('content', '')
+
+            if isinstance(content_text, str):
+                parts = [genai_types.Part.from_text(content_text)]
+            elif isinstance(content_text, list):
+                parts = []
+                for item in content_text:
+                    if isinstance(item, dict):
+                        if 'text' in item:
+                            parts.append(genai_types.Part.from_text(item['text']))
+                        elif 'image_url' in item:
+                            parts.append(genai_types.Part.from_uri(
+                                file_uri=item['image_url']['url'],
+                                mime_type='image/jpeg'
+                            ))
+                    else:
+                        parts.append(genai_types.Part.from_text(str(item)))
+            else:
+                parts = [genai_types.Part.from_text(str(content_text))]
+
+            contents.append(genai_types.Content(role=role, parts=parts))
+        return contents
+
+    def _build_generation_config(self, **kwargs) -> Optional[genai_types.GenerateContentConfig]:
+        """Build genai_types.GenerateContentConfig from kwargs."""
+        config_params = {}
+
+        if 'temperature' in kwargs:
+            config_params['temperature'] = kwargs['temperature']
+        if 'top_p' in kwargs:
+            config_params['top_p'] = kwargs['top_p']
+        if 'top_k' in kwargs:
+            config_params['top_k'] = kwargs['top_k']
+        if 'max_tokens' in kwargs:
+            config_params['max_output_tokens'] = kwargs['max_tokens']
+        if 'stop_sequences' in kwargs:
+            config_params['stop_sequences'] = kwargs['stop_sequences']
+        if 'system_instruction' in kwargs:
+            config_params['system_instruction'] = kwargs['system_instruction']
+
+        if 'tools' in kwargs:
+            tools = []
+            for tool in kwargs['tools']:
+                if isinstance(tool, dict) and 'function' in tool:
+                    func_def = tool['function']
+                    function_declaration = genai_types.FunctionDeclaration(
+                        name=func_def['name'],
+                        description=func_def.get('description', ''),
+                        parameters=func_def.get('parameters', {})
+                    )
+                    tools.append(genai_types.Tool(function_declarations=[function_declaration]))
+            if tools:
+                config_params['tools'] = tools
+
+        if 'safety_settings' in kwargs:
+            safety_settings = []
+            for setting in kwargs['safety_settings']:
+                safety_settings.append(genai_types.SafetySetting(
+                    category=setting['category'],
+                    threshold=setting['threshold']
+                ))
+            config_params['safety_settings'] = safety_settings
+
+        return genai_types.GenerateContentConfig(**config_params) if config_params else None
+
+    def _convert_response_to_dict(self, response) -> Dict[str, Any]:
+        """Convert official SDK response to existing dictionary format."""
+        result: Dict[str, Any] = {
+            'choices': [],
+            'usage': {}
+        }
+        for i, candidate in enumerate(response.candidates):
+            choice: Dict[str, Any] = {
+                'index': i,
+                'message': {
+                    'role': 'assistant',
+                    'content': ''
+                },
+                'finish_reason': candidate.finish_reason
+            }
+            if candidate.content and candidate.content.parts:
+                content_parts = []
+                for part in candidate.content.parts:
+                    if part.text:
+                        content_parts.append(part.text)
+                choice['message']['content'] = ''.join(content_parts)
+            result['choices'].append(choice)
+
+        if hasattr(response, 'usage_metadata') and response.usage_metadata:
+            result['usage'] = response.usage_metadata
+        return result
+
+    async def _official_generate_content(
+        self,
+        messages: List[Dict[str, Any]],
+        model: str,
         **kwargs
     ) -> Dict[str, Any]:
-        """Delegate to ChatHandler or Official SDK Adapter."""
+        """Generate content using the official SDK (inlined from adapter)."""
+        try:
+            client = self._get_official_client()
+            contents = self._convert_messages_to_contents(messages)
+            config = self._build_generation_config(**kwargs)
+            response = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config
+            )
+            return self._convert_response_to_dict(response)
+        except Exception as e:
+            logger.error(f"[Google Service] Error in official generate_content: {e}")
+            raise
+
+    async def _official_stream_generate_content(
+        self,
+        messages: List[Dict[str, Any]],
+        model: str,
+        **kwargs
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Stream generate content using the official SDK (inlined from adapter)."""
+        try:
+            client = self._get_official_client()
+            contents = self._convert_messages_to_contents(messages)
+            config = self._build_generation_config(**kwargs)
+            stream = client.models.generate_content_stream(
+                model=model,
+                contents=contents,
+                config=config
+            )
+            for chunk in stream:
+                yield self._convert_response_to_dict(chunk)
+        except Exception as e:
+            logger.error(f"[Google Service] Error in official stream_generate_content: {e}")
+            raise
+
+    # ------------------------------------------------------------------
+    # Public API methods
+    # ------------------------------------------------------------------
+
+    async def chat(
+        self,
+        messages: List[Dict[str, Any]],
+        model: str,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Delegate to ChatHandler or inline official SDK generation."""
         if self.use_official_sdk:
-            return await self.official_adapter.generate_content(messages, model, **kwargs)
+            return await self._official_generate_content(messages, model, **kwargs)
         else:
             return await self.chat_handler.chat(messages, model, **kwargs)
     
@@ -445,9 +557,9 @@ class GoogleService(BaseProviderService):
         user_id: str = None,
         **kwargs
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Delegate to ChatHandler or Official SDK Adapter."""
+        """Delegate to ChatHandler or inline official SDK streaming."""
         if self.use_official_sdk:
-            async for chunk in self.official_adapter.stream_generate_content(messages, model, **kwargs):
+            async for chunk in self._official_stream_generate_content(messages, model, **kwargs):
                 yield chunk
         else:
             async for chunk in self.chat_handler.stream_chat(
@@ -536,13 +648,13 @@ class GoogleService(BaseProviderService):
         # - 有 mask → MaskEditService (自动检测)
         # - 无 mask → MaskEditService (自动掩码)
         logger.info(f"[Google Service] Delegating image editing to ImageEditCoordinator: model={model}, mode={mode}")
-        sdk_initializer = self._get_sdk_initializer_for_mode(mode)
+        pool_kwargs = self._get_pool_kwargs_for_mode(mode)
         return await self.image_edit_coordinator.edit_image(
             prompt=prompt,
             model=model,
             reference_images=reference_images,
             mode=mode,
-            sdk_initializer=sdk_initializer,
+            pool_kwargs=pool_kwargs,
             chat_session_manager=self.chat_session_manager,
             file_handler=self.file_handler,
             user_id=self.user_id,
@@ -580,10 +692,14 @@ class GoogleService(BaseProviderService):
 
         # 获取 LLM client（用于布局建议等需要 LLM 的功能）
         llm_client = None
-        if hasattr(self, 'sdk_initializer') and self.sdk_initializer:
-            # 确保 SDK 已初始化（懒加载模式）
-            self.sdk_initializer.ensure_initialized()
-            llm_client = self.sdk_initializer.client
+        if hasattr(self, '_pool_kwargs') and self._pool_kwargs:
+            llm_client = get_client_pool().get_client(
+                api_key=self._pool_kwargs.get('api_key'),
+                vertexai=self._pool_kwargs.get('use_vertex', False),
+                project=self._pool_kwargs.get('project'),
+                location=self._pool_kwargs.get('location'),
+                http_options=self._pool_kwargs.get('http_options'),
+            )
 
         # 创建 LayeredDesignService 实例
         service = LayeredDesignService(

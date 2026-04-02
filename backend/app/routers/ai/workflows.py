@@ -1250,6 +1250,10 @@ async def _cleanup_execution_runtime(
         _execution_tasks.pop(execution_id, None)
     if clear_resume_lock:
         _execution_resume_locks.pop(execution_id, None)
+    # 清理幂等锁，防止内存泄漏
+    keys_to_remove = [k for k in _execution_idempotency_locks if k.endswith(f":{execution_id}") or execution_id in k]
+    for k in keys_to_remove:
+        _execution_idempotency_locks.pop(k, None)
 
 
 async def _publish_runtime_event(execution_id: str, event_type: str, data: Dict[str, Any]):

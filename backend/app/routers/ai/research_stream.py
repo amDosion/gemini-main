@@ -554,7 +554,7 @@ async def stream_research_events(
             db=db,
             user_id=user_id,
         )
-        logger.info(f"[SSE] 认证成功，API Key长度: {len(api_key)}")
+        logger.debug("[SSE] 认证成功")
     except HTTPException:
         raise
     except Exception as e:
