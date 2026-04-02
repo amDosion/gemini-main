@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check ADK strict runtime contract paths
+        run: ./scripts/ci/check_adk_runtime_contract.sh
+
+      - name: Check ADK usability and accuracy contract paths
+        run: ./scripts/ci/check_adk_usability_accuracy_contract.sh
+
+      - name: Check sheet stage protocol observability gate paths
+        run: ./scripts/ci/check_sheet_stage_protocol.sh
+
+      - name: Check advanced sheet_stage_replay observability gate paths
+        run: ./scripts/ci/check_sheet_stage_advanced.sh
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run targeted workflow contract stream test
+        run: npm run test -- frontend/services/providers/UnifiedProviderClient.stream.test.ts
+
+      - name: Run multi-agent frontend hardening test gate
+        run: ./scripts/ci/check_multiagent_frontend_hardening.sh
+
+      - name: Run targeted ADK export panel test gate
+        run: npm run test -- frontend/components/multiagent/AdkExportPanel.test.tsx
+
+      - name: Run targeted ADK session service strict runtime test gate
+        run: npm run test -- frontend/components/multiagent/adkSessionService.test.ts
+
+      - name: Run targeted sheet stage frontend protocol test gate
+        run: npm run test -- frontend/components/multiagent/sheetStageService.test.ts
+
+      - name: Run targeted FE-702 sheet stage replay UI test gates
+        run: npm run test -- frontend/components/multiagent/stageReplayReducer.test.ts frontend/components/multiagent/StageReplayPanel.test.tsx
+
+      - name: Run deterministic sheet_stage_replay load profile gate (stage_latency_ms/stage_error_cardinality)
+        run: node scripts/perf/sheet_stage_replay_load.mjs --mode ci --max-duration-ms 120000
+
+      - name: Verify sheet stage observability metrics contract (stage_latency_ms/stage_error_cardinality)
+        run: node scripts/observability/verify_sheet_stage_metrics.mjs --ci
+
+      - name: Run frontend tests
+        run: npm run test:ci
+
+      - name: Install backend dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r backend/requirements.txt pytest
+
+      - name: Run Cloud Storage preview contract gate
+        run: ./scripts/ci/check_cloud_storage_preview_contract.sh
+
+      - name: Run multi-agent preview budget contract and observability regression gate
+        run: ./scripts/ci/check_multiagent_preview_budget_gate.sh
+
+      - name: Run multi-agent media contract gate
+        run: ./scripts/ci/check_multiagent_media_contract.sh
+
+      - name: Compile backend workflow contract paths
+        run: python3 -m compileall backend/app/routers/ai/workflows.py backend/app/services/agent
+
+      - name: Run targeted BE-804 workflow history image service test gate
+        run: cd backend && PYTHONPATH=. python3 -m pytest tests/test_workflow_history_image_service.py -q
+
+      - name: Run targeted ADK backend test gates
+        run: cd backend && PYTHONPATH=. python3 -m pytest tests/test_adk_run_config_allowlist.py tests/test_adk_builtin_tools.py -q
+
+      - name: Run targeted ADK security closure backend test gates
+        run: cd backend && PYTHONPATH=. python3 -m pytest tests/test_adk_run_config_budget_guard.py tests/test_adk_confirm_tool_security.py tests/test_sheet_export_security.py tests/security/test_adk_security_eval_assets.py -q
+
+      - name: Run targeted ADK strict runtime and accuracy backend test gates
+        run: cd backend && PYTHONPATH=. python3 -m pytest tests/test_adk_runner_strict_runtime.py tests/test_adk_orchestrator_no_degrade.py tests/test_adk_result_accuracy_signals.py tests/security/test_adk_runtime_no_fallback.py -q
+
+      - name: Run targeted ADK usability and accuracy closure backend test gates
+        run: cd backend && PYTHONPATH=. python3 -m pytest tests/test_adk_confirm_tool_contract.py tests/test_adk_session_readonly_runtime_decoupling.py tests/test_adk_orchestrator_error_classification.py tests/test_adk_run_live_aggregation.py tests/test_adk_runtime_strategy_contract.py tests/security/test_adk_confirm_and_session_readonly_security.py tests/security/test_adk_runtime_strategy_enum_tamper.py -q
+
+      - name: Run targeted sheet stage protocol backend/security test gates
+        run: cd backend && PYTHONPATH=. python3 -m pytest tests/test_sheet_stage_protocol.py tests/security/test_sheet_stage_protocol_security.py -q
+
+      - name: Run targeted BE-702 stage persistence/backend lineage test gates
+        run: cd backend && PYTHONPATH=. python3 -m pytest tests/test_sheet_stage_persistence.py tests/test_sheet_session_resume.py tests/test_sheet_artifact_lineage_query.py -q
+
+      - name: Run targeted SE-702 row_level_policy security test gates
+        run: cd backend && PYTHONPATH=. python3 -m pytest tests/security/test_sheet_row_level_policy.py tests/security/test_sheet_export_constraints.py tests/security/test_sheet_policy_audit_chain.py -q
+
+      - name: Run targeted QA-702 sheet_stage_replay backend matrix test gates
+        run: cd backend && PYTHONPATH=. python3 -m pytest tests/test_sheet_stage_replay_matrix.py tests/test_sheet_stage_replay_run_config_matrix.py -q
+
+      - name: Run backend pytest
+        run: npm run test:backend
