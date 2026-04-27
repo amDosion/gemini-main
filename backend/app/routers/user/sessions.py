@@ -35,6 +35,7 @@ from ...utils.message_utils import (
 from ...core.dependencies import require_current_user, get_cache
 from ...core.user_scoped_query import UserScopedQuery
 from ...utils.message_assembly import assemble_messages_v3
+from ...utils.attachment_handler import is_base64_url, is_blob_url, is_http_url
 
 
 router = APIRouter(prefix="/api", tags=["sessions"])
@@ -314,21 +315,68 @@ async def create_or_update_session(
         completed_tasks = {task.attachment_id: task for task in tasks}
     
     # 4. 增量 upsert 消息（使用内存构建 parent_id）
-    mode_last_msg: Dict[str, str] = {}  # ✅ 内存追踪每个模式的最后一条消息 ID
-    
+    mode_last_msg: Dict[str, str] = {}  # 内存追踪每个模式的最后一条消息 ID
+
+    # ── 批量预加载（消除 N+1 查询）──
+    new_message_ids = {msg["id"] for msg in new_messages}
+
+    # 预加载 MessageIndex
+    _preloaded_indexes: Dict[str, MessageIndex] = {}
+    if new_message_ids:
+        _idx_rows = db.query(MessageIndex).filter(
+            MessageIndex.id.in_(list(new_message_ids)),
+            MessageIndex.user_id == user_id
+        ).all()
+        _preloaded_indexes = {idx.id: idx for idx in _idx_rows}
+
+    # 预加载模式表消息（按 table_name 分组）
+    _preloaded_mode_msgs: Dict[str, Dict[str, Any]] = {}
+    _table_msg_ids: Dict[str, set] = defaultdict(set)
+    for msg in new_messages:
+        _tn = get_table_name_for_mode(msg.get("mode", "chat"))
+        _table_msg_ids[_tn].add(msg["id"])
+    for _tn, _ids in _table_msg_ids.items():
+        try:
+            _tc = get_message_table_class_by_name(_tn)
+            _rows = db.query(_tc).filter(_tc.id.in_(list(_ids))).all()
+            _preloaded_mode_msgs[_tn] = {r.id: r for r in _rows}
+        except ValueError as e:
+            # 未知 mode 名 → 此 table 的预加载跳过；下游会回落到逐条 INSERT。
+            # 保留 warning 让运维感知不合规的 mode 值，避免重复数据沉默写入。
+            logger.warning(f"[sessions] skip preload for unknown mode table {_tn!r}: {e}")
+
+    # 预加载附件（按 (message_id, att_id) 索引）
+    _preloaded_atts: Dict[tuple, MessageAttachment] = {}
+    _all_att_pairs = []
+    for msg in new_messages:
+        for att in msg.get("attachments", []):
+            if att.get("id"):
+                _all_att_pairs.append((msg["id"], att["id"]))
+    if _all_att_pairs:
+        _att_ids_set = list({aid for _, aid in _all_att_pairs})
+        _msg_ids_set = list({mid for mid, _ in _all_att_pairs})
+        _att_rows = db.query(MessageAttachment).filter(
+            MessageAttachment.id.in_(_att_ids_set),
+            MessageAttachment.message_id.in_(_msg_ids_set),
+            MessageAttachment.user_id == user_id
+        ).all()
+        for _a in _att_rows:
+            _preloaded_atts[(_a.message_id, _a.id)] = _a
+    # ── 批量预加载结束 ──
+
     for seq, msg in enumerate(new_messages):
         msg_id = msg["id"]
         mode = msg.get("mode", "chat")
         timestamp = msg.get("timestamp", int(datetime.now().timestamp() * 1000))
-        
+
         # 确定 table_name
         table_name = get_table_name_for_mode(mode)
-        
-        # ✅ 从内存获取 parent_id（而非查询 DB）
+
+        # 从内存获取 parent_id（而非查询 DB）
         parent_id = mode_last_msg.get(mode)
-        
-        # upsert message_index
-        index = db.query(MessageIndex).filter(MessageIndex.id == msg_id, MessageIndex.user_id == user_id).first()
+
+        # upsert message_index（从预加载字典查找）
+        index = _preloaded_indexes.get(msg_id)
         if not index:
             index = MessageIndex(
                 id=msg_id,
@@ -346,10 +394,10 @@ async def create_or_update_session(
             index.parent_id = parent_id
             index.mode = mode
             index.table_name = table_name
-        
-        # upsert 模式表
+
+        # upsert 模式表（从预加载字典查找）
         table_class = get_message_table_class_by_name(table_name)
-        message = db.query(table_class).get(msg_id)
+        message = _preloaded_mode_msgs.get(table_name, {}).get(msg_id)
 
         # ✅ 调试：检查 thoughts/text_response/enhanced_prompt 是否存在于消息中
         extracted_meta = extract_metadata(msg)
@@ -405,25 +453,20 @@ async def create_or_update_session(
             # 优先级 2：数据库已有的云 URL
             if not authoritative_url:
                 existing_att = existing_attachments.get(att_id)
-                if existing_att and existing_att.url and existing_att.url.startswith('http'):
+                if existing_att and existing_att.url and is_http_url(existing_att.url):
                     authoritative_url = existing_att.url
             
             # 处理前端发送的 URL
             frontend_url = att.get("url", "")
-            if not frontend_url or frontend_url.startswith("blob:") or frontend_url.startswith("data:"):
+            if not frontend_url or is_blob_url(frontend_url) or is_base64_url(frontend_url):
                 # 前端 URL 是临时的，使用权威 URL
                 final_url = authoritative_url or frontend_url
             else:
                 # 前端发送的是永久 URL，直接使用
                 final_url = frontend_url
             
-            # upsert 附件表（复合主键：id + message_id）
-            # 先查询是否存在该附件（可能在其他消息中）
-            attachment = db.query(MessageAttachment).filter(
-                MessageAttachment.id == att_id,
-                MessageAttachment.message_id == msg_id,
-                MessageAttachment.user_id == user_id
-            ).first()
+            # upsert 附件表（从预加载字典查找）
+            attachment = _preloaded_atts.get((msg_id, att_id))
             if not attachment:
                 attachment = MessageAttachment(
                     id=att_id,
@@ -444,7 +487,7 @@ async def create_or_update_session(
                 db.add(attachment)
             else:
                 # 更新附件（保护云 URL）
-                if final_url and final_url.startswith('http'):
+                if final_url and is_http_url(final_url):
                     attachment.url = final_url
                     attachment.upload_status = 'completed'
                     attachment.temp_url = None
