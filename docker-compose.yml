@@ -1,0 +1,28 @@
+services:
+  gemini-main:
+    image: nikolaik/python-nodejs:python3.11-nodejs20
+    container_name: gemini-main
+    network_mode: host
+    working_dir: /app
+    volumes:
+      - /mnt/user/appdata/gemini-main:/app
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=development
+      - PYTHONUNBUFFERED=1
+    command:
+      - bash
+      - -c
+      - |
+        cd /app/backend
+        if ! .venv/bin/python -c 'import fastapi' 2>/dev/null; then
+          echo 'Rebuilding venv...'
+          rm -rf .venv
+          python3 -m venv .venv
+          .venv/bin/pip install --no-cache-dir -q -r requirements.txt
+        fi
+        echo 'Starting services...'
+        cd /app
+        npx concurrently --names 'backend,frontend' --prefix-colors 'blue,green' \
+          'cd backend && PYTHONUNBUFFERED=1 .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 21574 --log-level info' \
+          'npx vite --host 0.0.0.0 --port 21573'

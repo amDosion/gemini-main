@@ -117,3 +117,4 @@ package.json.test.ts
 # Scripts (startup scripts, not needed in repo)
 scripts/start_all.*
 scripts/run_asin_full_research.py
+backend/python/
