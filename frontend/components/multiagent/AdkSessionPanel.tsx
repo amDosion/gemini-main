@@ -80,13 +80,18 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
   const [confirmPayload, setConfirmPayload] = useState('');
   const [confirmInvocationId, setConfirmInvocationId] = useState('');
   const [confirmTicket, setConfirmTicket] = useState('');
-  const [confirmApprovalTicket, setConfirmApprovalTicket] = useState<AdkApprovalTicket | null>(null);
+  const [confirmApprovalTicket, setConfirmApprovalTicket] = useState<AdkApprovalTicket | null>(
+    null
+  );
   const [confirmNonce, setConfirmNonce] = useState('');
   const [confirmNonceExpiresAt, setConfirmNonceExpiresAt] = useState('');
   const [confirmTenantId, setConfirmTenantId] = useState('');
   const [selectedConfirmCandidateId, setSelectedConfirmCandidateId] = useState('');
   const [rewindInvocationId, setRewindInvocationId] = useState('');
-  const [runtimePolicyDraft, setRuntimePolicyDraft] = useState<{ strategy?: string; strictMode?: boolean }>({});
+  const [runtimePolicyDraft, setRuntimePolicyDraft] = useState<{
+    strategy?: string;
+    strictMode?: boolean;
+  }>({});
 
   const normalizedAgentId = String(agent?.id || '').trim();
 
@@ -155,10 +160,11 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
     [sessionSnapshot]
   );
   const runtimePolicy = useMemo(
-    () => extractAdkRuntimePolicyState(sessionSnapshot, {
-      selectedStrategy: runtimePolicyDraft.strategy,
-      selectedStrictMode: runtimePolicyDraft.strictMode,
-    }),
+    () =>
+      extractAdkRuntimePolicyState(sessionSnapshot, {
+        selectedStrategy: runtimePolicyDraft.strategy,
+        selectedStrictMode: runtimePolicyDraft.strictMode,
+      }),
     [sessionSnapshot, runtimePolicyDraft.strategy, runtimePolicyDraft.strictMode]
   );
   const effectiveSelectedConfirmCandidateId = useMemo(() => {
@@ -268,12 +274,13 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
         tenantId: confirmTenantId,
         candidateId: effectiveSelectedConfirmCandidateId,
       });
-      const invocation = String(response?.invocationId || response?.invocation_id || '').trim();
-      const responseConfirmed = (
-        typeof response?.confirmed === 'boolean'
-          ? response.confirmed
-          : effectiveConfirmed
-      );
+      const respObj = (response && typeof response === 'object' ? response : {}) as Record<
+        string,
+        unknown
+      >;
+      const invocation = String(respObj.invocationId || respObj.invocation_id || '').trim();
+      const responseConfirmed =
+        typeof respObj.confirmed === 'boolean' ? respObj.confirmed : effectiveConfirmed;
       const action = responseConfirmed ? '批准' : '拒绝';
       setNotice({
         type: 'success',
@@ -325,8 +332,16 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
     setSubmitting(true);
     setNotice(null);
     try {
-      const response = await rewindAdkSession(normalizedAgentId, selectedSessionId, rewindInvocationId);
-      const status = String(response?.status || '').trim() || 'rewound';
+      const response = await rewindAdkSession(
+        normalizedAgentId,
+        selectedSessionId,
+        rewindInvocationId
+      );
+      const respObj = (response && typeof response === 'object' ? response : {}) as Record<
+        string,
+        unknown
+      >;
+      const status = String(respObj.status || '').trim() || 'rewound';
       setNotice({ type: 'success', text: `会话回滚成功，status=${status}` });
       await loadSessionSnapshot();
       await loadSessions();
@@ -344,7 +359,9 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
           <div>
             <div className="text-sm font-semibold">运行时会话管理</div>
-            <div className="text-[11px] text-slate-400">{agent.name} · {agent.providerId}/{agent.modelId}</div>
+            <div className="text-[11px] text-slate-400">
+              {agent.name} · {agent.providerId}/{agent.modelId}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -353,7 +370,11 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
               disabled={loadingSessions}
               className="px-2.5 py-1.5 text-xs rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 transition-colors disabled:opacity-50 inline-flex items-center gap-1"
             >
-              {loadingSessions ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              {loadingSessions ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <RefreshCw size={12} />
+              )}
               刷新
             </button>
             <button
@@ -367,11 +388,13 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
         </div>
 
         {notice && (
-          <div className={`mx-4 mt-3 px-3 py-2 rounded border text-xs ${
-            notice.type === 'success'
-              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-              : 'bg-red-500/10 border-red-500/30 text-red-300'
-          }`}>
+          <div
+            className={`mx-4 mt-3 px-3 py-2 rounded border text-xs ${
+              notice.type === 'success'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                : 'bg-red-500/10 border-red-500/30 text-red-300'
+            }`}
+          >
             {notice.text}
           </div>
         )}
@@ -389,7 +412,11 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
               <div className="space-y-1.5">
                 {sessions.map((session) => {
                   const raw = session.raw || {};
-                  const updatedAt = raw?.updatedAt || raw?.updated_at || raw?.lastUpdateTime || raw?.last_update_time;
+                  const updatedAt =
+                    raw?.updatedAt ||
+                    raw?.updated_at ||
+                    raw?.lastUpdateTime ||
+                    raw?.last_update_time;
                   return (
                     <button
                       key={session.id}
@@ -402,7 +429,9 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
                       }`}
                     >
                       <div className="text-[11px] font-mono truncate">{session.id}</div>
-                      <div className="text-[10px] text-slate-500 mt-1">{formatTimestamp(updatedAt)}</div>
+                      <div className="text-[10px] text-slate-500 mt-1">
+                        {formatTimestamp(updatedAt)}
+                      </div>
                     </button>
                   );
                 })}
@@ -413,15 +442,19 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
           <div className="overflow-y-auto px-4 pb-4 space-y-4">
             <AdkRuntimePolicyPanel
               policy={runtimePolicy}
-              onChange={(next) => setRuntimePolicyDraft({
-                strategy: next.strategy,
-                strictMode: next.strictMode,
-              })}
+              onChange={(next) =>
+                setRuntimePolicyDraft({
+                  strategy: next.strategy,
+                  strictMode: next.strictMode,
+                })
+              }
             />
 
             <div className="grid grid-cols-2 gap-3 mt-1">
               <div className="p-3 rounded border border-slate-800 bg-slate-900/40">
-                <div className="text-xs text-slate-300 font-medium mb-2">工具确认（confirm-tool）</div>
+                <div className="text-xs text-slate-300 font-medium mb-2">
+                  工具确认（confirm-tool）
+                </div>
                 <div className="text-[11px] px-2 py-1.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-200 mb-2">
                   {supportsExplicitReject
                     ? '后端已声明支持显式拒绝；请按候选项与票据提交批准或拒绝。'
@@ -430,7 +463,9 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
                 <div className="space-y-2">
                   {confirmCandidates.length > 0 ? (
                     <div className="p-2 rounded border border-slate-700/80 bg-slate-800/40 space-y-2">
-                      <div className="text-[11px] text-slate-400">候选确认项 ({confirmCandidates.length})</div>
+                      <div className="text-[11px] text-slate-400">
+                        候选确认项 ({confirmCandidates.length})
+                      </div>
                       <select
                         aria-label="候选确认项列表"
                         value={effectiveSelectedConfirmCandidateId}
@@ -439,7 +474,8 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
                       >
                         {confirmCandidates.map((candidate) => (
                           <option key={candidate.id} value={candidate.id}>
-                            {candidate.id}{candidate.name ? ` · ${candidate.name}` : ''}
+                            {candidate.id}
+                            {candidate.name ? ` · ${candidate.name}` : ''}
                           </option>
                         ))}
                       </select>
@@ -458,12 +494,17 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
                           <div>ticket: {selectedConfirmCandidate.ticket || '-'}</div>
                           <div>nonce: {selectedConfirmCandidate.nonce || '-'}</div>
                           <div>
-                            nonce_expires_at: {formatNonceExpiry(selectedConfirmCandidate.nonceExpiresAt)}
-                            {isAdkNonceExpired(selectedConfirmCandidate.nonceExpiresAt) ? '（已过期）' : ''}
+                            nonce_expires_at:{' '}
+                            {formatNonceExpiry(selectedConfirmCandidate.nonceExpiresAt)}
+                            {isAdkNonceExpired(selectedConfirmCandidate.nonceExpiresAt)
+                              ? '（已过期）'
+                              : ''}
                           </div>
                           <div>tenant: {selectedConfirmCandidate.tenantId || '-'}</div>
                           {selectedConfirmCandidate.hint && (
-                            <div className="text-slate-300">hint: {selectedConfirmCandidate.hint}</div>
+                            <div className="text-slate-300">
+                              hint: {selectedConfirmCandidate.hint}
+                            </div>
                           )}
                           {selectedConfirmCandidate.payloadPreview && (
                             <pre className="p-1.5 rounded border border-slate-700 bg-slate-950/70 text-[10px] leading-relaxed text-slate-300 whitespace-pre-wrap break-all">
@@ -475,7 +516,8 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
                     </div>
                   ) : (
                     <div className="px-2 py-1.5 rounded border border-dashed border-slate-700 text-[11px] text-slate-500">
-                      未从会话快照提取到候选确认项；可手工填写 function_call_id / invocation_id / ticket / nonce 后直接提交。
+                      未从会话快照提取到候选确认项；可手工填写 function_call_id / invocation_id /
+                      ticket / nonce 后直接提交。
                     </div>
                   )}
                   <input
@@ -566,7 +608,11 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
                     disabled={submitting || !selectedSessionId || !functionCallId.trim()}
                     className="w-full px-2.5 py-1.5 text-xs rounded border border-indigo-500/40 bg-indigo-500/15 text-indigo-200 hover:bg-indigo-500/25 disabled:opacity-50 inline-flex items-center justify-center gap-1"
                   >
-                    {submitting ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                    {submitting ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <Check size={12} />
+                    )}
                     提交{effectiveConfirmed ? '批准' : '拒绝'}
                   </button>
                 </div>
@@ -587,7 +633,11 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
                     disabled={submitting || !selectedSessionId || !rewindInvocationId.trim()}
                     className="w-full px-2.5 py-1.5 text-xs rounded border border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25 disabled:opacity-50 inline-flex items-center justify-center gap-1"
                   >
-                    {submitting ? <Loader2 size={12} className="animate-spin" /> : <Undo2 size={12} />}
+                    {submitting ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <Undo2 size={12} />
+                    )}
                     执行回滚
                   </button>
                 </div>
@@ -611,7 +661,9 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
             <div className="p-3 rounded border border-slate-800 bg-slate-900/30">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs text-slate-300 font-medium">会话快照</div>
-                <div className="text-[10px] text-slate-500 font-mono">{activeSession?.id || '-'}</div>
+                <div className="text-[10px] text-slate-500 font-mono">
+                  {activeSession?.id || '-'}
+                </div>
               </div>
               {loadingSnapshot ? (
                 <div className="py-8 flex items-center justify-center text-slate-500">

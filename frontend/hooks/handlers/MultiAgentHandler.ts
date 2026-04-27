@@ -2,6 +2,47 @@ import { BaseHandler } from './BaseHandler';
 import { ExecutionContext, HandlerResult } from './types';
 import { requestJson } from '../../services/http';
 
+interface AgentOutput {
+  agentName?: string;
+  text?: string;
+  result?: { text?: string };
+}
+
+interface WorkflowResult {
+  status?: string;
+  error?: string;
+  outputs?: Record<string, AgentOutput>;
+  finalOutput?: { text?: string };
+}
+
+interface MultiAgentResponse {
+  status?: string;
+  error?: string;
+  result?: WorkflowResult;
+  data?: MultiAgentResponse;
+}
+
+interface WorkflowNode {
+  id?: string;
+  type?: string;
+  data?: { type?: string; [k: string]: unknown };
+  position?: { x: number; y: number };
+  [k: string]: unknown;
+}
+
+interface WorkflowEdge {
+  id?: string;
+  source?: string;
+  target?: string;
+  sourceHandle?: string;
+  targetHandle?: string;
+}
+
+interface WorkflowConfig {
+  nodes?: WorkflowNode[];
+  edges?: WorkflowEdge[];
+}
+
 export class MultiAgentHandler extends BaseHandler {
   protected async doExecute(context: ExecutionContext): Promise<HandlerResult> {
     const { text, attachments, currentModel, llmService, onStreamUpdate } = context;
@@ -20,7 +61,7 @@ export class MultiAgentHandler extends BaseHandler {
       const normalizedPrompt = text || '执行多智能体任务';
       const workflowPayload = this.buildWorkflowPayload(workflowConfig, normalizedPrompt);
       let displayText = '';
-      const modeResponse = await requestJson<Record<string, unknown>>(
+      const modeResponse = await requestJson<MultiAgentResponse>(
         `/api/modes/${encodeURIComponent(providerId)}/multi-agent`,
         {
           method: 'POST',
@@ -43,11 +84,14 @@ export class MultiAgentHandler extends BaseHandler {
           }),
         }
       );
-      const result = modeResponse?.data ?? modeResponse;
+      const result: MultiAgentResponse | WorkflowResult = (modeResponse?.data ??
+        modeResponse) as MultiAgentResponse;
       if (result?.status && result.status !== 'completed') {
         throw new Error(result?.error || `工作流状态异常: ${result.status}`);
       }
-      displayText = this.formatWorkflowResult(result?.result ?? result);
+      const workflow: WorkflowResult =
+        (result as MultiAgentResponse)?.result ?? (result as WorkflowResult);
+      displayText = this.formatWorkflowResult(workflow);
 
       onStreamUpdate?.({
         content: `✅ 工作流执行完成\n\n${displayText}`,
@@ -64,14 +108,23 @@ export class MultiAgentHandler extends BaseHandler {
     }
   }
 
-  private buildWorkflowPayload(workflowConfig: unknown, prompt: string): Record<string, unknown> | null {
-    if (!workflowConfig || !Array.isArray(workflowConfig.nodes) || workflowConfig.nodes.length === 0) {
+  private buildWorkflowPayload(
+    workflowConfig: unknown,
+    prompt: string
+  ): Record<string, unknown> | null {
+    const wf = (
+      workflowConfig && typeof workflowConfig === 'object' ? workflowConfig : null
+    ) as WorkflowConfig | null;
+    if (!wf || !Array.isArray(wf.nodes) || wf.nodes.length === 0) {
       return null;
     }
 
-    const normalizedNodes = workflowConfig.nodes
-      .filter((node: Record<string, unknown>) => node && typeof node === 'object' && String(node.id || '').trim())
-      .map((node: Record<string, unknown>) => {
+    const normalizedNodes = wf.nodes
+      .filter(
+        (node): node is WorkflowNode =>
+          !!node && typeof node === 'object' && !!String(node.id || '').trim()
+      )
+      .map((node) => {
         const normalizedType = String(node?.data?.type || node?.type || '').trim();
         return {
           ...node,
@@ -88,10 +141,10 @@ export class MultiAgentHandler extends BaseHandler {
       return null;
     }
 
-    const normalizedEdges = Array.isArray(workflowConfig.edges)
-      ? workflowConfig.edges
-          .filter((edge: Record<string, unknown>) => edge && typeof edge === 'object')
-          .map((edge: Record<string, unknown>) => ({
+    const normalizedEdges = Array.isArray(wf.edges)
+      ? wf.edges
+          .filter((edge): edge is WorkflowEdge => !!edge && typeof edge === 'object')
+          .map((edge) => ({
             id: edge.id,
             source: edge.source,
             target: edge.target,
@@ -109,27 +162,26 @@ export class MultiAgentHandler extends BaseHandler {
     };
   }
 
-  private formatWorkflowResult(result: unknown): string {
+  private formatWorkflowResult(result: WorkflowResult | undefined): string {
     if (!result) {
       return '工作流执行完成，但无返回结果。';
     }
 
-    const outputs = result?.outputs || {};
+    const outputs = result.outputs || {};
     const chunks: string[] = [];
 
     for (const output of Object.values(outputs)) {
-      const out = output as Record<string, unknown>;
-      const agentName = out?.agentName;
-      if (out?.text && agentName) {
-        chunks.push(`### ${agentName}\n${out.text}`);
+      const agentName = output?.agentName;
+      if (output?.text && agentName) {
+        chunks.push(`### ${agentName}\n${output.text}`);
         continue;
       }
-      if (out?.text) {
-        chunks.push(`${out.text}`);
+      if (output?.text) {
+        chunks.push(`${output.text}`);
         continue;
       }
-      if (out?.result?.text) {
-        chunks.push(`${out.result.text}`);
+      if (output?.result?.text) {
+        chunks.push(`${output.result.text}`);
       }
     }
 
@@ -137,7 +189,7 @@ export class MultiAgentHandler extends BaseHandler {
       return chunks.join('\n\n');
     }
 
-    const finalOutput = result?.finalOutput;
+    const finalOutput = result.finalOutput;
     if (finalOutput?.text) {
       return finalOutput.text;
     }

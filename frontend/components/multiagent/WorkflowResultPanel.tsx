@@ -64,9 +64,10 @@ export const WorkflowResultPanel: React.FC<WorkflowResultPanelProps> = ({
   const videoResultMetadata = React.useMemo(() => {
     const candidates: Record<string, any>[] = [];
     if (finalResult && typeof finalResult === 'object') {
-      candidates.push(finalResult);
-      if (finalResult.finalOutput && typeof finalResult.finalOutput === 'object') {
-        candidates.push(finalResult.finalOutput);
+      const fr = finalResult as Record<string, unknown>;
+      candidates.push(fr as Record<string, any>);
+      if (fr.finalOutput && typeof fr.finalOutput === 'object') {
+        candidates.push(fr.finalOutput as Record<string, any>);
       }
     }
 
@@ -88,17 +89,25 @@ export const WorkflowResultPanel: React.FC<WorkflowResultPanelProps> = ({
         summary.continuationStrategy = continuationStrategy;
       }
 
-      const extensionCount = Number(candidate.videoExtensionCount ?? candidate.video_extension_count ?? 0) || 0;
-      const extensionApplied = Number(candidate.videoExtensionApplied ?? candidate.video_extension_applied ?? 0) || 0;
-      const totalDurationSeconds = Number(candidate.totalDurationSeconds ?? candidate.total_duration_seconds ?? 0) || 0;
-      const subtitleMode = String(candidate.subtitleMode ?? candidate.subtitle_mode ?? '').trim().toLowerCase();
-      const subtitleFileCount = Number(candidate.subtitleFileCount ?? candidate.subtitle_file_count ?? 0) || 0;
+      const extensionCount =
+        Number(candidate.videoExtensionCount ?? candidate.video_extension_count ?? 0) || 0;
+      const extensionApplied =
+        Number(candidate.videoExtensionApplied ?? candidate.video_extension_applied ?? 0) || 0;
+      const totalDurationSeconds =
+        Number(candidate.totalDurationSeconds ?? candidate.total_duration_seconds ?? 0) || 0;
+      const subtitleMode = String(candidate.subtitleMode ?? candidate.subtitle_mode ?? '')
+        .trim()
+        .toLowerCase();
+      const subtitleFileCount =
+        Number(candidate.subtitleFileCount ?? candidate.subtitle_file_count ?? 0) || 0;
 
       summary.videoExtensionCount = Math.max(summary.videoExtensionCount, extensionCount);
       summary.videoExtensionApplied = Math.max(summary.videoExtensionApplied, extensionApplied);
       summary.totalDurationSeconds = Math.max(summary.totalDurationSeconds, totalDurationSeconds);
       summary.subtitleFileCount = Math.max(summary.subtitleFileCount, subtitleFileCount);
-      summary.continuedFromVideo = summary.continuedFromVideo || Boolean(candidate.continuedFromVideo ?? candidate.continued_from_video ?? false);
+      summary.continuedFromVideo =
+        summary.continuedFromVideo ||
+        Boolean(candidate.continuedFromVideo ?? candidate.continued_from_video ?? false);
       if (subtitleMode && (subtitleMode !== 'none' || summary.subtitleMode === 'none')) {
         summary.subtitleMode = subtitleMode;
       }
@@ -118,12 +127,14 @@ export const WorkflowResultPanel: React.FC<WorkflowResultPanelProps> = ({
     () => finalOutputVideoUrls.filter((videoUrl) => isDirectlyRenderableVideoUrl(videoUrl)),
     [finalOutputVideoUrls]
   );
-  const hasRenderableResultMedia = (
-    renderableFinalOutputImageUrls.length > 0
-    || renderableFinalOutputAudioUrls.length > 0
-    || renderableFinalOutputVideoUrls.length > 0
-  );
-  const [lightboxState, setLightboxState] = React.useState<{ images: string[]; index: number } | null>(null);
+  const hasRenderableResultMedia =
+    renderableFinalOutputImageUrls.length > 0 ||
+    renderableFinalOutputAudioUrls.length > 0 ||
+    renderableFinalOutputVideoUrls.length > 0;
+  const [lightboxState, setLightboxState] = React.useState<{
+    images: string[];
+    index: number;
+  } | null>(null);
   const openImageLightbox = React.useCallback((images: string[], index: number) => {
     const renderableImages = images.filter((imageUrl) => isDirectlyRenderableImageUrl(imageUrl));
     if (renderableImages.length === 0) {
@@ -139,7 +150,9 @@ export const WorkflowResultPanel: React.FC<WorkflowResultPanelProps> = ({
     setLightboxState(null);
   }, []);
   const activeLightboxImages = lightboxState?.images || [];
-  const activeLightboxIndex = lightboxState ? Math.max(0, Math.min(activeLightboxImages.length - 1, lightboxState.index)) : 0;
+  const activeLightboxIndex = lightboxState
+    ? Math.max(0, Math.min(activeLightboxImages.length - 1, lightboxState.index))
+    : 0;
   const activeLightboxImageUrl = activeLightboxImages[activeLightboxIndex] || '';
   const canNavigateLightbox = activeLightboxImages.length > 1;
   const showPrevLightboxImage = React.useCallback(() => {
@@ -195,7 +208,9 @@ export const WorkflowResultPanel: React.FC<WorkflowResultPanelProps> = ({
         <div>
           <h3 className="text-sm font-semibold text-slate-100">最终结果</h3>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            {finalCompletedAt ? `完成时间：${new Date(finalCompletedAt).toLocaleString()}` : '等待工作流执行完成'}
+            {finalCompletedAt
+              ? `完成时间：${new Date(finalCompletedAt).toLocaleString()}`
+              : '等待工作流执行完成'}
           </p>
           {finalRuntime && (
             <div className="mt-1 inline-flex items-center text-[10px] px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-200">
@@ -214,17 +229,21 @@ export const WorkflowResultPanel: React.FC<WorkflowResultPanelProps> = ({
               ))}
             </div>
           )}
-          {(videoResultMetadata.videoExtensionApplied > 0
-            || videoResultMetadata.videoExtensionCount > 0
-            || videoResultMetadata.totalDurationSeconds > 0
-            || videoResultMetadata.subtitleMode !== 'none'
-            || videoResultMetadata.subtitleFileCount > 0
-            || videoResultMetadata.continuedFromVideo
-            || Boolean(videoResultMetadata.continuationStrategy)) && (
+          {(videoResultMetadata.videoExtensionApplied > 0 ||
+            videoResultMetadata.videoExtensionCount > 0 ||
+            videoResultMetadata.totalDurationSeconds > 0 ||
+            videoResultMetadata.subtitleMode !== 'none' ||
+            videoResultMetadata.subtitleFileCount > 0 ||
+            videoResultMetadata.continuedFromVideo ||
+            Boolean(videoResultMetadata.continuationStrategy)) && (
             <div className="mt-1 flex flex-wrap gap-1">
-              {(videoResultMetadata.videoExtensionApplied > 0 || videoResultMetadata.videoExtensionCount > 0) && (
+              {(videoResultMetadata.videoExtensionApplied > 0 ||
+                videoResultMetadata.videoExtensionCount > 0) && (
                 <span className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded border border-orange-500/30 bg-orange-500/10 text-orange-200">
-                  延长 {videoResultMetadata.videoExtensionApplied || videoResultMetadata.videoExtensionCount} 次
+                  延长{' '}
+                  {videoResultMetadata.videoExtensionApplied ||
+                    videoResultMetadata.videoExtensionCount}{' '}
+                  次
                 </span>
               )}
               {videoResultMetadata.totalDurationSeconds > 0 && (
@@ -232,14 +251,21 @@ export const WorkflowResultPanel: React.FC<WorkflowResultPanelProps> = ({
                   总时长 {videoResultMetadata.totalDurationSeconds}s
                 </span>
               )}
-              {(videoResultMetadata.subtitleMode !== 'none' || videoResultMetadata.subtitleFileCount > 0) && (
+              {(videoResultMetadata.subtitleMode !== 'none' ||
+                videoResultMetadata.subtitleFileCount > 0) && (
                 <span className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-200">
-                  字幕{videoResultMetadata.subtitleFileCount > 0 ? ` · ${videoResultMetadata.subtitleFileCount}` : ''}
+                  字幕
+                  {videoResultMetadata.subtitleFileCount > 0
+                    ? ` · ${videoResultMetadata.subtitleFileCount}`
+                    : ''}
                 </span>
               )}
-              {(videoResultMetadata.continuedFromVideo || videoResultMetadata.continuationStrategy) && (
+              {(videoResultMetadata.continuedFromVideo ||
+                videoResultMetadata.continuationStrategy) && (
                 <span className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded border border-violet-500/30 bg-violet-500/10 text-violet-200">
-                  {videoResultMetadata.continuationStrategy === 'video_extension_chain' ? '官方续接' : '视频续接'}
+                  {videoResultMetadata.continuationStrategy === 'video_extension_chain'
+                    ? '官方续接'
+                    : '视频续接'}
                 </span>
               )}
             </div>
@@ -318,23 +344,25 @@ export const WorkflowResultPanel: React.FC<WorkflowResultPanelProps> = ({
                 <div className="text-[11px] text-slate-400 mb-1">生成结果</div>
                 {renderableFinalOutputImageUrls.length > 0 ? (
                   <div className="space-y-1.5">
-                    <div className="text-[11px] text-slate-400">全部输出（{renderableFinalOutputImageUrls.length}）</div>
+                    <div className="text-[11px] text-slate-400">
+                      全部输出（{renderableFinalOutputImageUrls.length}）
+                    </div>
                     <div className="grid grid-cols-4 gap-1.5 max-h-[180px] overflow-y-auto pr-0.5">
-                    {renderableFinalOutputImageUrls.map((imageUrl, index) => (
-                      <button
-                        type="button"
-                        key={`workflow-output-image-${index + 1}`}
-                        onClick={() => openImageLightbox(renderableFinalOutputImageUrls, index)}
-                        className="w-full h-16 rounded border border-slate-700 bg-slate-900 overflow-hidden hover:border-indigo-400 transition-colors"
-                      >
-                        <img
-                          src={imageUrl}
-                          alt="workflow-output-image"
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                        />
-                      </button>
-                    ))}
+                      {renderableFinalOutputImageUrls.map((imageUrl, index) => (
+                        <button
+                          type="button"
+                          key={`workflow-output-image-${index + 1}`}
+                          onClick={() => openImageLightbox(renderableFinalOutputImageUrls, index)}
+                          className="w-full h-16 rounded border border-slate-700 bg-slate-900 overflow-hidden hover:border-indigo-400 transition-colors"
+                        >
+                          <img
+                            src={imageUrl}
+                            alt="workflow-output-image"
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        </button>
+                      ))}
                     </div>
                   </div>
                 ) : (
@@ -344,18 +372,21 @@ export const WorkflowResultPanel: React.FC<WorkflowResultPanelProps> = ({
                 )}
               </div>
             </div>
-            {resultPanelPreviewLoadingExecutionId === executionId && renderableFinalOutputImageUrls.length === 0 && (
-              <div className="text-[11px] text-slate-400">正在加载结果媒体预览...</div>
-            )}
-            {resultPanelPreviewLoadingExecutionId !== executionId && renderableFinalOutputImageUrls.length === 0 && executionId && (
-              <button
-                type="button"
-                onClick={onRetryResultPreview}
-                className="text-[11px] text-indigo-200 hover:text-indigo-100 underline decoration-dotted underline-offset-2"
-              >
-                重试加载结果媒体
-              </button>
-            )}
+            {resultPanelPreviewLoadingExecutionId === executionId &&
+              renderableFinalOutputImageUrls.length === 0 && (
+                <div className="text-[11px] text-slate-400">正在加载结果媒体预览...</div>
+              )}
+            {resultPanelPreviewLoadingExecutionId !== executionId &&
+              renderableFinalOutputImageUrls.length === 0 &&
+              executionId && (
+                <button
+                  type="button"
+                  onClick={onRetryResultPreview}
+                  className="text-[11px] text-indigo-200 hover:text-indigo-100 underline decoration-dotted underline-offset-2"
+                >
+                  重试加载结果媒体
+                </button>
+              )}
             {renderableFinalOutputImageUrls.length > 1 && (
               <div className="text-[11px] text-slate-400">
                 点击图片可放大查看（支持键盘左右键切换）
@@ -363,17 +394,25 @@ export const WorkflowResultPanel: React.FC<WorkflowResultPanelProps> = ({
             )}
           </div>
         )}
-        {(renderableFinalOutputVideoUrls.length > 0 || renderableFinalOutputAudioUrls.length > 0) && (
+        {(renderableFinalOutputVideoUrls.length > 0 ||
+          renderableFinalOutputAudioUrls.length > 0) && (
           <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 space-y-3">
             <div className="text-xs font-semibold text-emerald-200">媒体结果</div>
             {renderableFinalOutputVideoUrls.length > 0 && (
               <div className="space-y-2">
-                <div className="text-[11px] text-slate-400">视频结果（{renderableFinalOutputVideoUrls.length}）</div>
+                <div className="text-[11px] text-slate-400">
+                  视频结果（{renderableFinalOutputVideoUrls.length}）
+                </div>
                 <div className="space-y-3">
                   {renderableFinalOutputVideoUrls.map((videoUrl, index) => (
-                    <div key={`final-video-${index}`} className="overflow-hidden rounded-xl border border-slate-700 bg-slate-950/80">
+                    <div
+                      key={`final-video-${index}`}
+                      className="overflow-hidden rounded-xl border border-slate-700 bg-slate-950/80"
+                    >
                       <div className="flex items-center justify-between gap-2 border-b border-slate-800 px-3 py-2">
-                        <div className="text-[11px] font-medium text-slate-200">视频 {index + 1}</div>
+                        <div className="text-[11px] font-medium text-slate-200">
+                          视频 {index + 1}
+                        </div>
                         <div className="text-[10px] text-slate-500">结果预览</div>
                       </div>
                       <video
@@ -389,10 +428,15 @@ export const WorkflowResultPanel: React.FC<WorkflowResultPanelProps> = ({
             )}
             {renderableFinalOutputAudioUrls.length > 0 && (
               <div className="space-y-2">
-                <div className="text-[11px] text-slate-400">音频结果（{renderableFinalOutputAudioUrls.length}）</div>
+                <div className="text-[11px] text-slate-400">
+                  音频结果（{renderableFinalOutputAudioUrls.length}）
+                </div>
                 <div className="space-y-2">
                   {renderableFinalOutputAudioUrls.map((audioUrl, index) => (
-                    <div key={`final-audio-${index}`} className="rounded border border-slate-700 bg-slate-950/80 p-2">
+                    <div
+                      key={`final-audio-${index}`}
+                      className="rounded border border-slate-700 bg-slate-950/80 p-2"
+                    >
                       <audio src={audioUrl} controls className="w-full" />
                     </div>
                   ))}
@@ -404,19 +448,19 @@ export const WorkflowResultPanel: React.FC<WorkflowResultPanelProps> = ({
             )}
           </div>
         )}
-        {resultPanelPreviewLoadingExecutionId !== executionId
-          && !hasRenderableResultMedia
-          && executionId
-          && finalResult !== null
-          && !(renderableSourceInputPreviewUrl || renderableFinalOutputImageUrls.length > 0) && (
-          <button
-            type="button"
-            onClick={onRetryResultPreview}
-            className="text-[11px] text-indigo-200 hover:text-indigo-100 underline decoration-dotted underline-offset-2"
-          >
-            重试加载结果媒体
-          </button>
-        )}
+        {resultPanelPreviewLoadingExecutionId !== executionId &&
+          !hasRenderableResultMedia &&
+          executionId &&
+          finalResult !== null &&
+          !(renderableSourceInputPreviewUrl || renderableFinalOutputImageUrls.length > 0) && (
+            <button
+              type="button"
+              onClick={onRetryResultPreview}
+              className="text-[11px] text-indigo-200 hover:text-indigo-100 underline decoration-dotted underline-offset-2"
+            >
+              重试加载结果媒体
+            </button>
+          )}
         {!finalError && finalResult === null && (
           <div className="h-full flex items-center justify-center text-xs text-slate-500">
             暂无结果，请先执行工作流
@@ -425,7 +469,10 @@ export const WorkflowResultPanel: React.FC<WorkflowResultPanelProps> = ({
         {finalResult !== null && renderedResultItems.length > 0 && (
           <div className="space-y-3">
             {renderedResultItems.map((item) => (
-              <div key={item.key} className="rounded-lg border border-slate-700 bg-slate-950/80 p-3 space-y-2">
+              <div
+                key={item.key}
+                className="rounded-lg border border-slate-700 bg-slate-950/80 p-3 space-y-2"
+              >
                 <div className="text-xs font-semibold text-slate-200">{item.title}</div>
                 {item.text && (
                   <div className="text-xs text-slate-300 whitespace-pre-wrap break-words leading-relaxed">
@@ -447,9 +494,13 @@ export const WorkflowResultPanel: React.FC<WorkflowResultPanelProps> = ({
                 )}
                 {item.urls.length > 0 && (
                   <div className="rounded border border-slate-700 bg-slate-900/50 p-2 space-y-1">
-                    <div className="text-[11px] font-medium text-slate-300">返回 URL ({item.urls.length})</div>
+                    <div className="text-[11px] font-medium text-slate-300">
+                      返回 URL ({item.urls.length})
+                    </div>
                     {item.urls.map((url, index) => {
-                      const isLink = /^(https?:\/\/)/i.test(url) || (url.startsWith('/') && !isLocalFilesystemPath(url));
+                      const isLink =
+                        /^(https?:\/\/)/i.test(url) ||
+                        (url.startsWith('/') && !isLocalFilesystemPath(url));
                       if (isLink) {
                         return (
                           <a
@@ -476,7 +527,14 @@ export const WorkflowResultPanel: React.FC<WorkflowResultPanelProps> = ({
                 )}
                 {item.imageUrls.length > 0 && (
                   <div className="space-y-2">
-                    <div className="text-[11px] text-slate-400">图片结果（{item.imageUrls.filter((imageUrl) => isDirectlyRenderableImageUrl(imageUrl)).length}）</div>
+                    <div className="text-[11px] text-slate-400">
+                      图片结果（
+                      {
+                        item.imageUrls.filter((imageUrl) => isDirectlyRenderableImageUrl(imageUrl))
+                          .length
+                      }
+                      ）
+                    </div>
                     <div className="grid grid-cols-4 gap-1.5">
                       {item.imageUrls
                         .filter((imageUrl) => isDirectlyRenderableImageUrl(imageUrl))
@@ -494,13 +552,20 @@ export const WorkflowResultPanel: React.FC<WorkflowResultPanelProps> = ({
                               loading="lazy"
                             />
                           </button>
-                      ))}
+                        ))}
                     </div>
                   </div>
                 )}
                 {item.videoUrls.length > 0 && (
                   <div className="space-y-2">
-                    <div className="text-[11px] text-slate-400">视频结果（{item.videoUrls.filter((videoUrl) => isDirectlyRenderableVideoUrl(videoUrl)).length}）</div>
+                    <div className="text-[11px] text-slate-400">
+                      视频结果（
+                      {
+                        item.videoUrls.filter((videoUrl) => isDirectlyRenderableVideoUrl(videoUrl))
+                          .length
+                      }
+                      ）
+                    </div>
                     <div className="space-y-3">
                       {item.videoUrls
                         .filter((videoUrl) => isDirectlyRenderableVideoUrl(videoUrl))
@@ -510,7 +575,9 @@ export const WorkflowResultPanel: React.FC<WorkflowResultPanelProps> = ({
                             className="overflow-hidden rounded-xl border border-slate-700 bg-slate-900/50"
                           >
                             <div className="flex items-center justify-between gap-2 border-b border-slate-800 px-3 py-2">
-                              <div className="text-[11px] font-medium text-slate-200">{item.title} · 视频 {index + 1}</div>
+                              <div className="text-[11px] font-medium text-slate-200">
+                                {item.title} · 视频 {index + 1}
+                              </div>
                               <div className="text-[10px] text-slate-500">节点结果</div>
                             </div>
                             <video
@@ -526,7 +593,14 @@ export const WorkflowResultPanel: React.FC<WorkflowResultPanelProps> = ({
                 )}
                 {item.audioUrls.length > 0 && (
                   <div className="space-y-2">
-                    <div className="text-[11px] text-slate-400">音频结果（{item.audioUrls.filter((audioUrl) => isDirectlyRenderableAudioUrl(audioUrl)).length}）</div>
+                    <div className="text-[11px] text-slate-400">
+                      音频结果（
+                      {
+                        item.audioUrls.filter((audioUrl) => isDirectlyRenderableAudioUrl(audioUrl))
+                          .length
+                      }
+                      ）
+                    </div>
                     <div className="space-y-2">
                       {item.audioUrls
                         .filter((audioUrl) => isDirectlyRenderableAudioUrl(audioUrl))
@@ -551,7 +625,10 @@ export const WorkflowResultPanel: React.FC<WorkflowResultPanelProps> = ({
           className="fixed inset-0 z-[70] bg-black/90 flex items-center justify-center px-6 py-8"
           onClick={closeImageLightbox}
         >
-          <div className="relative w-full h-full max-w-6xl flex items-center justify-center" onClick={(event) => event.stopPropagation()}>
+          <div
+            className="relative w-full h-full max-w-6xl flex items-center justify-center"
+            onClick={(event) => event.stopPropagation()}
+          >
             {canNavigateLightbox && (
               <button
                 type="button"

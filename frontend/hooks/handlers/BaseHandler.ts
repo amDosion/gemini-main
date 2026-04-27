@@ -1,17 +1,17 @@
 /**
  * BaseHandler 抽象基类
- * 
+ *
  * 提供通用功能的抽象基类，减少代码重复
  * 修复问题5：使用模板方法模式，execute() 为 final，子类实现 doExecute()
  * 修复问题7：startUploadPolling() 使用 .catch() 捕获 Promise rejection
  */
 
-import { 
-  ModeHandler, 
-  ExecutionContext, 
-  HandlerResult, 
+import {
+  ModeHandler,
+  ExecutionContext,
+  HandlerResult,
   HandlerErrorImpl,
-  UploadTaskResult
+  UploadTaskResult,
 } from './types';
 import { Attachment } from '../../types/types';
 
@@ -28,18 +28,18 @@ export abstract class BaseHandler implements ModeHandler {
     // 自动调用验证
     this.validateContext(context);
     this.validateAttachments(context.attachments, context);
-    
+
     // 调用子类实现
     return await this.doExecute(context);
   }
-  
+
   /**
    * 子类必须实现此方法
    * @param context 执行上下文
    * @returns Handler 执行结果
    */
   protected abstract doExecute(context: ExecutionContext): Promise<HandlerResult>;
-  
+
   /**
    * 验证执行上下文
    * @param context 执行上下文
@@ -47,14 +47,12 @@ export abstract class BaseHandler implements ModeHandler {
    */
   protected validateContext(context: ExecutionContext): void {
     if (!context.sessionId) {
-      throw new HandlerErrorImpl(
-        'sessionId is required',
-        'INVALID_CONTEXT',
-        'INVALID_ARGUMENT',
-        { mode: context.mode, sessionId: context.sessionId }
-      );
+      throw new HandlerErrorImpl('sessionId is required', 'INVALID_CONTEXT', 'INVALID_ARGUMENT', {
+        mode: context.mode,
+        sessionId: context.sessionId,
+      });
     }
-    
+
     if (!context.userMessageId) {
       throw new HandlerErrorImpl(
         'userMessageId is required',
@@ -63,7 +61,7 @@ export abstract class BaseHandler implements ModeHandler {
         { mode: context.mode, sessionId: context.sessionId }
       );
     }
-    
+
     if (!context.modelMessageId) {
       throw new HandlerErrorImpl(
         'modelMessageId is required',
@@ -72,16 +70,14 @@ export abstract class BaseHandler implements ModeHandler {
         { mode: context.mode, sessionId: context.sessionId }
       );
     }
-    
+
     if (!context.mode) {
-      throw new HandlerErrorImpl(
-        'mode is required',
-        'INVALID_CONTEXT',
-        'INVALID_ARGUMENT',
-        { mode: context.mode, sessionId: context.sessionId }
-      );
+      throw new HandlerErrorImpl('mode is required', 'INVALID_CONTEXT', 'INVALID_ARGUMENT', {
+        mode: context.mode,
+        sessionId: context.sessionId,
+      });
     }
-    
+
     if (!context.currentModel) {
       throw new HandlerErrorImpl(
         'currentModel is required',
@@ -91,17 +87,14 @@ export abstract class BaseHandler implements ModeHandler {
       );
     }
   }
-  
+
   /**
    * 验证附件
    * @param attachments 附件数组
    * @param context 执行上下文
    * @throws HandlerError 如果验证失败
    */
-  protected validateAttachments(
-    attachments: Attachment[],
-    context: ExecutionContext
-  ): void {
+  protected validateAttachments(attachments: Attachment[], context: ExecutionContext): void {
     for (const attachment of attachments) {
       if (!attachment.id) {
         throw new HandlerErrorImpl(
@@ -111,7 +104,7 @@ export abstract class BaseHandler implements ModeHandler {
           { mode: context.mode, sessionId: context.sessionId, attachmentId: attachment.id }
         );
       }
-      
+
       // 修复：使用 mimeType 而不是 type（Attachment 接口中没有 type 字段）
       if (!attachment.mimeType) {
         throw new HandlerErrorImpl(
@@ -121,7 +114,7 @@ export abstract class BaseHandler implements ModeHandler {
           { mode: context.mode, sessionId: context.sessionId, attachmentId: attachment.id }
         );
       }
-      
+
       if (!attachment.url && !attachment.file && !attachment.fileUri) {
         throw new HandlerErrorImpl(
           'Attachment must have url, file, or fileUri',
@@ -132,7 +125,7 @@ export abstract class BaseHandler implements ModeHandler {
       }
     }
   }
-  
+
   /**
    * 处理上传任务并启动后台轮询
    * @param attachments 需要上传的附件
@@ -145,13 +138,13 @@ export abstract class BaseHandler implements ModeHandler {
   ): Promise<UploadTaskResult> {
     // 提交上传任务（不等待完成）
     const dbAttachments = await this.submitUploadTasks(attachments, context);
-    
+
     // 启动后台轮询（使用全局 pollingManager，修复问题1）
     this.startUploadPolling(dbAttachments, context);
-    
+
     return { dbAttachments };
   }
-  
+
   /**
    * 提交上传任务到后端
    */
@@ -162,60 +155,62 @@ export abstract class BaseHandler implements ModeHandler {
     // 实现上传任务提交逻辑
     // 这里需要调用 storageService 提交上传任务
     // 返回带有 uploadTaskId 的附件
-    return attachments.map(att => ({
+    return attachments.map((att) => ({
       ...att,
       uploadStatus: 'pending' as const,
-      uploadTaskId: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      uploadTaskId: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     }));
   }
-  
+
   /**
    * 启动上传状态轮询
    * 使用全局 PollingManager 管理轮询任务（修复问题1）
    * 修复问题7：使用 .catch() 捕获 Promise rejection
-   * 
+   *
    * 长期方案：上传完成后更新数据库中的 tempUrl，但不刷新前端显示
    */
-  protected startUploadPolling(
-    attachments: Attachment[],
-    context: ExecutionContext
-  ): void {
+  protected startUploadPolling(attachments: Attachment[], context: ExecutionContext): void {
     attachments.forEach((attachment) => {
       if (attachment.uploadTaskId) {
         // 使用全局 pollingManager（从 context 获取，修复问题1）
-        context.pollingManager.startPolling(attachment.uploadTaskId, {
-          interval: 2000, // 2秒轮询一次
-          maxAttempts: 30, // 最多30次（60秒）
-          timeout: 60000, // 60秒超时
-          onStatusCheck: async (taskId) => {
-            // 调用后端 API 检查上传状态
-            const status = await context.storageService.getUploadTaskStatus(taskId);
-            return status;
-          },
-          onSuccess: async (_taskId, result) => {
-            if (result && result.url) {
+        context.pollingManager
+          .startPolling(attachment.uploadTaskId, {
+            interval: 2000, // 2秒轮询一次
+            maxAttempts: 30, // 最多30次（60秒）
+            timeout: 60000, // 60秒超时
+            onStatusCheck: async (taskId) => {
+              // 调用后端 API 检查上传状态
+              const status = await context.storageService.getUploadTaskStatus(taskId);
+              return status;
+            },
+            onSuccess: async (_taskId, result) => {
+              const r = (result && typeof result === 'object' ? result : null) as {
+                url?: string;
+              } | null;
+              if (r && r.url) {
+                context.onProgressUpdate?.({
+                  attachmentId: attachment.id,
+                  status: 'completed',
+                  url: r.url,
+                });
+              }
+            },
+            onFailure: (taskId, error) => {
+              // 更新附件状态为失败
               context.onProgressUpdate?.({
                 attachmentId: attachment.id,
-                status: 'completed',
-                url: result.url,
+                status: 'failed',
+                message: error.message,
               });
-            }
-          },
-          onFailure: (taskId, error) => {
-            // 更新附件状态为失败
-            context.onProgressUpdate?.({
-              attachmentId: attachment.id,
-              status: 'failed',
-              message: error.message
-            });
-          }
-        }).catch((error) => {
-          // 捕获 Promise rejection，记录错误但不影响主流程（修复问题7）
-        });
+            },
+          })
+          .catch((error) => {
+            // 捕获 Promise rejection，记录错误但不影响主流程（修复问题7）
+          });
       }
     });
   }
-  
+
   /**
    * 标准化错误处理
    */
@@ -224,7 +219,7 @@ export abstract class BaseHandler implements ModeHandler {
     if (error instanceof HandlerErrorImpl) {
       throw error;
     }
-    
+
     // 否则转换为 HandlerError（不传递 context，因为此处没有完整的上下文信息）
     throw new HandlerErrorImpl(
       error instanceof Error ? error.message : 'Unknown error',

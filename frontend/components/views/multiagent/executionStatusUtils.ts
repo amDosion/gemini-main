@@ -16,8 +16,36 @@ interface HistoryDetailPreviewState {
   videoUrls?: string[];
 }
 
+/**
+ * normalizeSnapshotForApply 的显式返回类型。
+ * 必填字段是函数固定产出；可选字段从 upstream payload 透传（spread）保留。
+ */
+export interface NormalizedWorkflowSnapshot {
+  status: WorkflowFinalStatus;
+  nodeStatuses: Record<string, NodeStatus>;
+  nodeProgress: Record<string, number>;
+  nodeResults: Record<string, unknown>;
+  nodeErrors: Record<string, string>;
+  nodeRuntimes: Record<string, string>;
+  runtimeHints: string[];
+  primaryRuntime: string;
+  resultSummary: Record<string, unknown>;
+  // 来自 upstream payload 的可选透传字段
+  error?: string;
+  completedAt?: number;
+  result?: unknown;
+  id?: string;
+  resultPreviewImageUrls?: string[];
+  resultPreviewAudioUrls?: string[];
+  resultPreviewVideoUrls?: string[];
+  // 其他未知字段（spread 保留）
+  [key: string]: unknown;
+}
+
 const normalizeStatusToken = (status: unknown): string =>
-  String(status || '').trim().toLowerCase();
+  String(status || '')
+    .trim()
+    .toLowerCase();
 
 export const normalizeNodeStatus = (status: unknown): NodeStatus => {
   const normalized = String(status || '').toLowerCase();
@@ -40,10 +68,7 @@ export const normalizeWorkflowFinalStatus = (status: unknown): WorkflowFinalStat
   return 'pending';
 };
 
-export const normalizeNodeProgress = (
-  rawProgress: unknown,
-  fallbackStatus: NodeStatus
-): number => {
+export const normalizeNodeProgress = (rawProgress: unknown, fallbackStatus: NodeStatus): number => {
   const numericProgress = Number(rawProgress);
   if (Number.isFinite(numericProgress)) {
     return Math.max(0, Math.min(100, Math.round(numericProgress)));
@@ -53,9 +78,7 @@ export const normalizeNodeProgress = (
   return 100;
 };
 
-export const createInitialExecutionStatus = (
-  nodes: Array<{ id: string }>
-): ExecutionStatus => {
+export const createInitialExecutionStatus = (nodes: Array<{ id: string }>): ExecutionStatus => {
   const initialStatus: ExecutionStatus = {
     nodeStatuses: {},
     nodeProgress: {},
@@ -109,11 +132,10 @@ export const buildFailedExecutionStatus = (
   };
 };
 
-export const normalizeSnapshotForApply = (snapshot: Record<string, unknown>) => {
-  const payload =
-    snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
-      ? snapshot
-      : {};
+export const normalizeSnapshotForApply = (snapshot: unknown): NormalizedWorkflowSnapshot => {
+  const payload = (
+    snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot) ? snapshot : {}
+  ) as Record<string, unknown>;
   const nodeStatuses: Record<string, NodeStatus> = {};
   const nodeProgress: Record<string, number> = {};
   const nodeResults: Record<string, unknown> = {};
@@ -201,19 +223,25 @@ export const normalizeSnapshotForApply = (snapshot: Record<string, unknown>) => 
     }
   });
 
-  const resultSummary =
+  const resultSummary = (
     payload?.resultSummary &&
     typeof payload.resultSummary === 'object' &&
     !Array.isArray(payload.resultSummary)
       ? payload.resultSummary
-      : {};
+      : {}
+  ) as Record<string, unknown>;
+  const filterStringHints = (arr: unknown): string[] =>
+    Array.isArray(arr) ? arr.filter((h): h is string => typeof h === 'string') : [];
   const runtimeHints = mergeRuntimeHints(
-    Array.isArray(payload?.runtimeHints) ? payload.runtimeHints : [],
-    Array.isArray(resultSummary?.runtimeHints) ? resultSummary.runtimeHints : []
+    filterStringHints(payload?.runtimeHints),
+    filterStringHints(resultSummary?.runtimeHints)
   );
   const primaryRuntime =
-    normalizeRuntimeHint(payload?.primaryRuntime || resultSummary?.primaryRuntime || '') ||
-    pickPrimaryRuntime(runtimeHints);
+    normalizeRuntimeHint(
+      (payload?.primaryRuntime as string | undefined) ||
+        (resultSummary?.primaryRuntime as string | undefined) ||
+        ''
+    ) || pickPrimaryRuntime(runtimeHints);
 
   return {
     ...payload,
@@ -226,7 +254,7 @@ export const normalizeSnapshotForApply = (snapshot: Record<string, unknown>) => 
     runtimeHints,
     primaryRuntime,
     resultSummary,
-  };
+  } as NormalizedWorkflowSnapshot;
 };
 
 export const buildExecutionStatusFromHistoryDetail = (
@@ -247,8 +275,9 @@ export const buildExecutionStatusFromHistoryDetail = (
     mergeRuntimeHints(runtimeFromNodes, extractRuntimeHints(normalizedDetail?.result))
   );
   const finalRuntime =
-    normalizeRuntimeHint(normalizedDetail?.primaryRuntime || detailResultSummary?.primaryRuntime || '') ||
-    pickPrimaryRuntime(runtimeHints);
+    normalizeRuntimeHint(
+      normalizedDetail?.primaryRuntime || detailResultSummary?.primaryRuntime || ''
+    ) || pickPrimaryRuntime(runtimeHints);
   const restoredLog =
     finalStatus === 'workflow_paused'
       ? '已恢复历史执行结果（状态：已暂停）'
@@ -269,22 +298,24 @@ export const buildExecutionStatusFromHistoryDetail = (
     runtimeHints,
     resultPreviewImageUrls: Array.isArray(previewState.imageUrls)
       ? previewState.imageUrls
-        .filter((url) => typeof url === 'string' && url.trim().length > 0)
-        .slice(0, PREVIEW_IMAGE_MAX_ENTRIES)
+          .filter((url) => typeof url === 'string' && url.trim().length > 0)
+          .slice(0, PREVIEW_IMAGE_MAX_ENTRIES)
       : [],
     resultPreviewAudioUrls: Array.isArray(previewState.audioUrls)
       ? previewState.audioUrls
-        .filter((url) => typeof url === 'string' && url.trim().length > 0)
-        .slice(0, MEDIA_PREVIEW_URL_MAX_ENTRIES)
+          .filter((url) => typeof url === 'string' && url.trim().length > 0)
+          .slice(0, MEDIA_PREVIEW_URL_MAX_ENTRIES)
       : [],
     resultPreviewVideoUrls: Array.isArray(previewState.videoUrls)
       ? previewState.videoUrls
-        .filter((url) => typeof url === 'string' && url.trim().length > 0)
-        .slice(0, MEDIA_PREVIEW_URL_MAX_ENTRIES)
+          .filter((url) => typeof url === 'string' && url.trim().length > 0)
+          .slice(0, MEDIA_PREVIEW_URL_MAX_ENTRIES)
       : [],
     finalError:
       normalizedDetail?.error ||
-      (finalStatus === 'workflow_paused' ? '工作流已暂停，可在历史记录中查看后续状态。' : undefined),
+      (finalStatus === 'workflow_paused'
+        ? '工作流已暂停，可在历史记录中查看后续状态。'
+        : undefined),
     completedAt: normalizedDetail?.completedAt || Date.now(),
     logs: [
       {

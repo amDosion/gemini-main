@@ -12,12 +12,13 @@ interface WorkflowTemplateCategoryListResponse {
   count: number;
 }
 
-const normalizeCategoryItem = (item: Record<string, unknown>): WorkflowTemplateCategoryItem => {
+const normalizeCategoryItem = (item: unknown): WorkflowTemplateCategoryItem => {
+  const obj = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
   return {
-    id: typeof item?.id === 'string' ? item.id : null,
-    name: String(item?.name || '').trim(),
-    createdAt: typeof item?.createdAt === 'number' ? item.createdAt : null,
-    updatedAt: typeof item?.updatedAt === 'number' ? item.updatedAt : null,
+    id: typeof obj.id === 'string' ? obj.id : null,
+    name: String(obj.name || '').trim(),
+    createdAt: typeof obj.createdAt === 'number' ? obj.createdAt : null,
+    updatedAt: typeof obj.updatedAt === 'number' ? obj.updatedAt : null,
   };
 };
 
@@ -25,7 +26,7 @@ export const listWorkflowTemplateCategories = async (
   options: {
     includePublic?: boolean;
     ensureDefaults?: boolean;
-  } = {},
+  } = {}
 ): Promise<WorkflowTemplateCategoryItem[]> => {
   const includePublic = options.includePublic !== false;
   const ensureDefaults = options.ensureDefaults !== false;
@@ -33,7 +34,7 @@ export const listWorkflowTemplateCategories = async (
   params.set('include_public', includePublic ? 'true' : 'false');
   params.set('ensure_defaults', ensureDefaults ? 'true' : 'false');
   const response = await apiClient.get<WorkflowTemplateCategoryListResponse>(
-    `/api/workflows/template-categories?${params.toString()}`,
+    `/api/workflows/template-categories?${params.toString()}`
   );
   const categories = Array.isArray(response?.categories)
     ? response.categories.map(normalizeCategoryItem).filter((item) => item.name.length > 0)
@@ -51,12 +52,11 @@ export const listWorkflowTemplateCategories = async (
 };
 
 export const createWorkflowTemplateCategory = async (
-  name: string,
+  name: string
 ): Promise<WorkflowTemplateCategoryItem> => {
   const response = await apiClient.post<Record<string, unknown>>(
     '/api/workflows/template-categories',
-    { name },
+    { name }
   );
   return normalizeCategoryItem(response);
 };
-

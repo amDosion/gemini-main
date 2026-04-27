@@ -1,6 +1,6 @@
 /**
  * 核心接口和类型定义
- * 
+ *
  * 本文件定义了 useChat 重构所需的所有核心接口和类型。
  * 这些接口遵循 SOLID 原则，特别是依赖倒置原则（DIP）。
  */
@@ -16,7 +16,7 @@ import {
   ToolResult,
   ResponseKind,
   ResearchStatus,
-  ResearchRequiredAction
+  ResearchRequiredAction,
 } from '../../types/types';
 import { llmService } from '../../services/llmService';
 import { storageUpload } from '../../services/storage/storageUpload';
@@ -48,8 +48,9 @@ export interface StreamUpdate {
 export interface ProgressUpdate {
   attachmentId?: string;
   status?: 'pending' | 'uploading' | 'completed' | 'failed';
-  progress?: number;  // 0-100
+  progress?: number; // 0-100
   message?: string;
+  url?: string; // 上传完成时返回的最终云存储 URL（onSuccess 回调使用）
 }
 
 export type ResearchActionSubmitHandler = (selectedInput: unknown) => Promise<void>;
@@ -74,27 +75,27 @@ export interface PollingConfig {
    * 轮询间隔（毫秒）
    */
   interval: number;
-  
+
   /**
    * 最大轮询次数
    */
   maxAttempts: number;
-  
+
   /**
    * 超时时间（毫秒）
    */
   timeout?: number;
-  
+
   /**
    * 状态检查回调
    */
   onStatusCheck: (taskId: string) => Promise<UploadStatus>;
-  
+
   /**
    * 成功回调
    */
   onSuccess?: (taskId: string, result: unknown) => void;
-  
+
   /**
    * 失败回调
    */
@@ -109,7 +110,7 @@ export interface PollingTask {
   config: PollingConfig;
   attempts: number;
   timerId?: number;
-  delayTimerId?: number;  // 延迟启动的定时器 ID（修复问题8）
+  delayTimerId?: number; // 延迟启动的定时器 ID（修复问题8）
   startTime: number;
 }
 
@@ -132,22 +133,22 @@ export interface ExecutionContext {
   userMessageId: string;
   modelMessageId: string;
   mode: AppMode;
-  
+
   // 输入数据（必填）
   text: string;
   attachments: Attachment[];
-  
+
   // 配置（必填）
   currentModel: ModelConfig;
   options: ChatOptions;
   protocol: 'google' | 'openai';
   previousResearchInteractionId?: string;
-  
+
   // 可选配置
   apiKey?: string;
-  timeout?: number;  // 超时时间（毫秒），默认 30000
+  timeout?: number; // 超时时间（毫秒），默认 30000
   storageId?: string;
-  
+
   // 回调函数（可选）
   onStreamUpdate?: (update: StreamUpdate) => void;
   onProgressUpdate?: (progress: ProgressUpdate) => void;
@@ -156,11 +157,11 @@ export interface ExecutionContext {
     interactionId: string,
     handler: ResearchActionSubmitHandler | null
   ) => void;
-  
+
   // 服务实例（必填）
   llmService: typeof llmService;
   storageService: typeof storageUpload;
-  
+
   // 轮询管理器（必填）- 全局单例，由 useChat Hook 创建并传递（修复问题1）
   pollingManager: IPollingManager;
 }
@@ -190,7 +191,7 @@ export interface HandlerResult {
   // 基础结果（必填）
   readonly content: string;
   readonly attachments: ReadonlyArray<Attachment>;
-  
+
   // 可选的元数据（使用正确的类型定义）
   readonly groundingMetadata?: GroundingMetadata;
   readonly urlContextMetadata?: UrlContextMetadata;
@@ -201,22 +202,22 @@ export interface HandlerResult {
   readonly researchStatus?: ResearchStatus;
   readonly researchInteractionId?: string;
   readonly researchRequiredAction?: ResearchRequiredAction;
-  
+
   // 上传任务（用于异步上传）
   readonly uploadTask?: Promise<UploadTaskResult>;
-  
+
   // 数据库保存用的附件（如果与显示附件不同）
   readonly dbAttachments?: ReadonlyArray<Attachment>;
   readonly dbUserAttachments?: ReadonlyArray<Attachment>;
-  
+
   // 部分失败支持（修复问题6）
   readonly partialSuccess?: boolean;
   readonly failedOperations?: ReadonlyArray<FailedOperation>;
-  
+
   // 思考过程和文本响应（用于图片编辑等场景）
   readonly thoughts?: Array<{ type: 'text' | 'image'; content: string }>;
   readonly textResponse?: string;
-  readonly enhancedPrompt?: string;  // AI 增强后的提示词
+  readonly enhancedPrompt?: string; // AI 增强后的提示词
   readonly continuationStrategy?: string; // 视频续接策略
   readonly videoExtensionCount?: number; // 目标延长次数
   readonly videoExtensionApplied?: number; // 实际延长次数
@@ -242,13 +243,13 @@ export interface HandlerError extends Error {
    * 例如：'INVALID_INPUT', 429, 'RESOURCE_EXHAUSTED'
    */
   code: string | number;
-  
+
   /**
    * 错误状态（可选）
    * 例如：'INVALID_ARGUMENT', 'RESOURCE_EXHAUSTED', 'INTERNAL'
    */
   status?: string;
-  
+
   /**
    * 错误上下文信息（可选）
    * 包含发生错误时的相关信息，用于调试和日志记录
@@ -272,7 +273,7 @@ export class HandlerErrorImpl extends Error implements HandlerError {
     sessionId: string;
     [key: string]: unknown;
   };
-  
+
   constructor(
     message: string,
     code: string | number,
@@ -288,7 +289,7 @@ export class HandlerErrorImpl extends Error implements HandlerError {
     this.code = code;
     this.status = status;
     this.context = context;
-    
+
     // 保持正确的原型链
     Object.setPrototypeOf(this, HandlerErrorImpl.prototype);
   }
@@ -308,7 +309,7 @@ export interface ModeHandler {
 
   /**
    * Handler 开始执行时的钩子（可选）
-   * 
+   *
    * **调用时机：** 在 execute() 方法调用之前，由协调者同步调用
    * **用途：** 初始化资源、记录日志、更新 UI 状态
    * **注意：** 此钩子应该是同步的，不应包含耗时操作
@@ -318,31 +319,31 @@ export interface ModeHandler {
 
   /**
    * Handler 执行完成时的钩子（可选）
-   * 
+   *
    * **调用时机：** 在 execute() 成功返回后，由协调者同步调用
    * **用途：** 清理资源、记录日志、触发后续操作
    * **注意：** 此钩子应该是同步的，不应包含耗时操作
    * **错误处理：** 如果此钩子抛出错误，不会影响 execute() 的结果，但会被记录
-   * 
+   *
    * @param result 执行结果
    */
   onComplete?(result: HandlerResult): void;
 
   /**
    * Handler 执行失败时的钩子（可选）
-   * 
+   *
    * **调用时机：** 在 execute() 抛出错误后，由协调者同步调用
    * **用途：** 清理资源、记录错误日志、触发错误恢复逻辑
    * **注意：** 此钩子不应该重新抛出错误，应该静默处理
    * **错误处理：** 如果此钩子抛出错误，会被记录但不会向上传播
-   * 
+   *
    * @param error 错误对象
    */
   onError?(error: Error): void;
 
   /**
    * Handler 被取消时的钩子（可选）
-   * 
+   *
    * **调用时机：** 当用户取消操作时，由协调者同步调用
    * **用途：** 取消正在进行的请求、清理资源、更新 UI 状态
    * **注意：** 此钩子应该尽快完成，避免阻塞 UI
@@ -361,14 +362,14 @@ export interface Preprocessor {
    * 数字越小优先级越高，默认为 999（修复问题2）
    */
   priority?: number;
-  
+
   /**
    * 判断是否可以处理当前上下文
    * @param context 执行上下文
    * @returns 是否可以处理
    */
   canHandle(context: ExecutionContext): boolean;
-  
+
   /**
    * 处理上下文，返回修改后的上下文
    * @param context 执行上下文

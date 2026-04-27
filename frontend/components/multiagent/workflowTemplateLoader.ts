@@ -18,6 +18,58 @@ import {
 } from './workflowResultUtils';
 import { mergeRuntimeHints } from '../views/multiagent/runtimeHints';
 
+// 后端工作流模板的精确形状（从 grep 全字段访问列表反推得到）。
+// 各字段都是 optional，因为后端可能不下发；嵌套字段同理。
+// nodes/edges 用 unknown[]，再由 normalizeLoadedNode 等下游函数做精确 narrow。
+interface WorkflowTemplateConfig {
+  nodes?: unknown[];
+  edges?: WorkflowTemplateEdge[];
+}
+
+interface WorkflowTemplateEdge {
+  id?: string | number;
+  source?: string | number;
+  target?: string | number;
+  sourceHandle?: string;
+  targetHandle?: string;
+  [k: string]: unknown;
+}
+
+interface WorkflowTemplateSampleSummary {
+  hasResult?: boolean;
+  primaryRuntime?: string;
+  runtimeHints?: unknown[];
+  imageUrls?: unknown[];
+  audioUrls?: unknown[];
+  videoUrls?: unknown[];
+  [k: string]: unknown;
+}
+
+interface WorkflowTemplateOrigin {
+  isLocked?: boolean;
+  [k: string]: unknown;
+}
+
+export interface WorkflowTemplate {
+  id?: string;
+  name?: string;
+  description?: string;
+  category?: string;
+  tags?: unknown[];
+  config?: WorkflowTemplateConfig;
+  sampleResult?: unknown;
+  sampleResultSummary?: WorkflowTemplateSampleSummary;
+  sampleInput?: unknown;
+  sampleExecutionId?: string | number;
+  sampleResultUpdatedAt?: number | null;
+  requiresImage?: boolean;
+  isEditable?: boolean;
+  isStarter?: boolean;
+  starterKey?: string;
+  origin?: WorkflowTemplateOrigin;
+  [k: string]: unknown;
+}
+
 interface ActiveTemplateMeta {
   templateId: string;
   templateName?: string;
@@ -31,7 +83,7 @@ interface ActiveTemplateMeta {
 }
 
 interface LoadTemplateIntoEditorOptions {
-  template: Record<string, unknown>;
+  template: WorkflowTemplate;
   setWorkflowPrompt: Dispatch<SetStateAction<string>>;
   setWorkflowInputImageUrl: Dispatch<SetStateAction<string>>;
   setWorkflowInputFileUrl: Dispatch<SetStateAction<string>>;
@@ -46,7 +98,13 @@ interface LoadTemplateIntoEditorOptions {
   setFinalRuntimeHints: Dispatch<SetStateAction<string[]>>;
   setShowTemplateSelector: Dispatch<SetStateAction<boolean>>;
   setPendingFitToken: (token: string) => void;
-  addLog: (id: string, name: string, level: 'info' | 'warn' | 'error', message: string, timestamp?: number) => void;
+  addLog: (
+    id: string,
+    name: string,
+    level: 'info' | 'warn' | 'error',
+    message: string,
+    timestamp?: number
+  ) => void;
   hydrateAgentBindingsFromRegistry: (
     inputNodes: Node<WorkflowNodeData>[]
   ) => Promise<Node<WorkflowNodeData>[]>;
@@ -76,28 +134,29 @@ export const loadTemplateIntoEditor = async ({
   const templateSampleSummary = isPlainObject(rawSampleSummary) ? rawSampleSummary : null;
   const templateSampleInput = normalizeTemplateSampleInput(template?.sampleInput);
   const templateSampleHasResult = Boolean(
-    (templateSampleSummary && templateSampleSummary.hasResult)
-    || templateSampleResult !== null
+    (templateSampleSummary && templateSampleSummary.hasResult) || templateSampleResult !== null
   );
   const templateSampleRuntime = String(templateSampleSummary?.primaryRuntime || '').trim();
   const templateSampleRuntimeHints = mergeRuntimeHints(
     [],
-    Array.isArray(templateSampleSummary?.runtimeHints) ? templateSampleSummary.runtimeHints : [],
+    Array.isArray(templateSampleSummary?.runtimeHints)
+      ? templateSampleSummary.runtimeHints.filter((h): h is string => typeof h === 'string')
+      : []
   );
   const templateSamplePreviewImageUrls = Array.isArray(templateSampleSummary?.imageUrls)
     ? templateSampleSummary.imageUrls
-      .map((item: Record<string, unknown>) => String(item || '').trim())
-      .filter((item: string) => item.length > 0)
+        .map((item: unknown) => String(item || '').trim())
+        .filter((item: string) => item.length > 0)
     : [];
   const templateSamplePreviewAudioUrls = Array.isArray(templateSampleSummary?.audioUrls)
     ? templateSampleSummary.audioUrls
-      .map((item: Record<string, unknown>) => String(item || '').trim())
-      .filter((item: string) => item.length > 0)
+        .map((item: unknown) => String(item || '').trim())
+        .filter((item: string) => item.length > 0)
     : [];
   const templateSamplePreviewVideoUrls = Array.isArray(templateSampleSummary?.videoUrls)
     ? templateSampleSummary.videoUrls
-      .map((item: Record<string, unknown>) => String(item || '').trim())
-      .filter((item: string) => item.length > 0)
+        .map((item: unknown) => String(item || '').trim())
+        .filter((item: string) => item.length > 0)
     : [];
   const templateSampleExecutionId = String(template?.sampleExecutionId || '').trim();
   const templateSampleUpdatedAt = Number(template?.sampleResultUpdatedAt || 0) || null;
@@ -110,13 +169,20 @@ export const loadTemplateIntoEditor = async ({
   const templateNodeIdSet = new Set(templateNodes.map((node: Record<string, unknown>) => node.id));
   const templateEdges = Array.isArray(template?.config?.edges)
     ? template.config.edges
-      .map((edge: Record<string, unknown>, index: number) => ({
-        ...edge,
-        id: String(edge?.id || `edge-template-${index}-${Date.now()}`),
-      }))
-      .filter((edge: Record<string, unknown>) => templateNodeIdSet.has(String(edge?.source || '')) && templateNodeIdSet.has(String(edge?.target || '')))
+        .map((edge: Record<string, unknown>, index: number) => ({
+          ...edge,
+          id: String(edge?.id || `edge-template-${index}-${Date.now()}`),
+        }))
+        .filter(
+          (edge: Record<string, unknown>) =>
+            templateNodeIdSet.has(String(edge?.source || '')) &&
+            templateNodeIdSet.has(String(edge?.target || ''))
+        )
     : [];
-  const templateNodesWithPortLayout = hydrateNodePortLayoutsFromEdges(templateNodes as Node<WorkflowNodeData>[], templateEdges as Edge[]);
+  const templateNodesWithPortLayout = hydrateNodePortLayoutsFromEdges(
+    templateNodes as Node<WorkflowNodeData>[],
+    templateEdges as Edge[]
+  );
 
   const loadedPrompt = buildPresetPromptValue(template);
   let parsedTask = '';
@@ -146,7 +212,7 @@ export const loadTemplateIntoEditor = async ({
         }
         if (Array.isArray(parsed.imageUrls)) {
           parsedImageUrls = parsed.imageUrls
-            .map((item: Record<string, unknown>) => String(item || '').trim())
+            .map((item: unknown) => String(item || '').trim())
             .filter(Boolean);
           if (!parsedImageUrl && parsedImageUrls.length > 0) {
             parsedImageUrl = parsedImageUrls[0];
@@ -162,16 +228,18 @@ export const loadTemplateIntoEditor = async ({
         }
         if (Array.isArray(parsed.videoUrls)) {
           parsedVideoUrls = parsed.videoUrls
-            .map((item: Record<string, unknown>) => String(item || '').trim())
+            .map((item: unknown) => String(item || '').trim())
             .filter(Boolean);
         }
         if (Array.isArray((parsed as Record<string, unknown>).video_urls)) {
-          parsedVideoUrls = Array.from(new Set([
-            ...parsedVideoUrls,
-            ...(parsed as Record<string, unknown>).video_urls
-              .map((item: Record<string, unknown>) => String(item || '').trim())
-              .filter(Boolean),
-          ]));
+          parsedVideoUrls = Array.from(
+            new Set([
+              ...parsedVideoUrls,
+              ...((parsed as Record<string, unknown>).video_urls as unknown[])
+                .map((item: unknown) => String(item || '').trim())
+                .filter(Boolean),
+            ])
+          );
         }
         if (!parsedVideoUrl && parsedVideoUrls.length > 0) {
           parsedVideoUrl = parsedVideoUrls[0];
@@ -184,23 +252,25 @@ export const loadTemplateIntoEditor = async ({
         }
         if (Array.isArray(parsed.audioUrls)) {
           parsedAudioUrls = parsed.audioUrls
-            .map((item: Record<string, unknown>) => String(item || '').trim())
+            .map((item: unknown) => String(item || '').trim())
             .filter(Boolean);
         }
         if (Array.isArray((parsed as Record<string, unknown>).audio_urls)) {
-          parsedAudioUrls = Array.from(new Set([
-            ...parsedAudioUrls,
-            ...(parsed as Record<string, unknown>).audio_urls
-              .map((item: Record<string, unknown>) => String(item || '').trim())
-              .filter(Boolean),
-          ]));
+          parsedAudioUrls = Array.from(
+            new Set([
+              ...parsedAudioUrls,
+              ...((parsed as Record<string, unknown>).audio_urls as unknown[])
+                .map((item: unknown) => String(item || '').trim())
+                .filter(Boolean),
+            ])
+          );
         }
         if (!parsedAudioUrl && parsedAudioUrls.length > 0) {
           parsedAudioUrl = parsedAudioUrls[0];
         }
         if (Array.isArray(parsed.prompts)) {
           parsedPrompts = parsed.prompts
-            .map((item: Record<string, unknown>) => String(item || '').trim())
+            .map((item: unknown) => String(item || '').trim())
             .filter(Boolean);
         }
         if (typeof parsed.fileUrl === 'string') {
@@ -208,16 +278,18 @@ export const loadTemplateIntoEditor = async ({
         }
         if (Array.isArray(parsed.fileUrls)) {
           parsedFileUrls = parsed.fileUrls
-            .map((item: Record<string, unknown>) => String(item || '').trim())
+            .map((item: unknown) => String(item || '').trim())
             .filter(Boolean);
         }
         if (Array.isArray((parsed as Record<string, unknown>).file_urls)) {
-          parsedFileUrls = Array.from(new Set([
-            ...parsedFileUrls,
-            ...(parsed as Record<string, unknown>).file_urls
-              .map((item: Record<string, unknown>) => String(item || '').trim())
-              .filter(Boolean),
-          ]));
+          parsedFileUrls = Array.from(
+            new Set([
+              ...parsedFileUrls,
+              ...((parsed as Record<string, unknown>).file_urls as unknown[])
+                .map((item: unknown) => String(item || '').trim())
+                .filter(Boolean),
+            ])
+          );
         }
         if (!parsedFileUrl && parsedFileUrls.length > 0) {
           parsedFileUrl = parsedFileUrls[0];
@@ -301,7 +373,11 @@ export const loadTemplateIntoEditor = async ({
         data: nextData,
       };
     }
-    if (!['start', 'input_text', 'input_image', 'input_video', 'input_audio', 'input_file'].includes(nodeType)) {
+    if (
+      !['start', 'input_text', 'input_image', 'input_video', 'input_audio', 'input_file'].includes(
+        nodeType
+      )
+    ) {
       return node;
     }
     const nextData: Record<string, unknown> = { ...node.data };
@@ -320,11 +396,16 @@ export const loadTemplateIntoEditor = async ({
       ...overrides,
     });
     if (nodeType === 'start' || nodeType === 'input_text') {
-      const promptFallback = parsedPrompts[promptAutoIndex] || parsedTask || loadedPrompt || templateSampleInput.task || '';
+      const promptFallback =
+        parsedPrompts[promptAutoIndex] ||
+        parsedTask ||
+        loadedPrompt ||
+        templateSampleInput.task ||
+        '';
       const resolvedTask = resolveTemplateInputPlaceholder(
         node.data?.startTask,
         buildSampleInputContext(),
-        promptFallback,
+        promptFallback
       );
       nextData.startTask = String(resolvedTask || promptFallback || '').trim();
       if (nodeType === 'input_text' && (nextData.startTask || promptFallback)) {
@@ -332,58 +413,79 @@ export const loadTemplateIntoEditor = async ({
       }
     }
     if (nodeType === 'start' || nodeType === 'input_image') {
-      const imagePool = parsedImageUrls.length > 0 ? parsedImageUrls : templateSampleInput.imageUrls;
-      const imageFallback = imagePool[imageAutoIndex] || parsedImageUrl || templateSampleInput.imageUrl || '';
+      const imagePool =
+        parsedImageUrls.length > 0 ? parsedImageUrls : templateSampleInput.imageUrls;
+      const imageFallback =
+        imagePool[imageAutoIndex] || parsedImageUrl || templateSampleInput.imageUrl || '';
       const resolvedImage = resolveTemplateInputPlaceholder(
         node.data?.startImageUrl,
         buildSampleInputContext({ imageUrls: imagePool }),
-        imageFallback,
+        imageFallback
       );
-      const rawNodeImageUrls = Array.isArray(node.data?.startImageUrls) ? node.data.startImageUrls : [];
+      const rawNodeImageUrls = Array.isArray(node.data?.startImageUrls)
+        ? node.data.startImageUrls
+        : [];
       const resolvedNodeImageUrls = rawNodeImageUrls
-        .map((item: unknown, index: number) => resolveTemplateInputPlaceholder(
-          item,
-          buildSampleInputContext({ imageUrls: imagePool }),
-          imagePool[index] || imageFallback,
-        ))
-        .map((item: Record<string, unknown>) => String(item || '').trim())
+        .map((item: unknown, index: number) =>
+          resolveTemplateInputPlaceholder(
+            item,
+            buildSampleInputContext({ imageUrls: imagePool }),
+            imagePool[index] || imageFallback
+          )
+        )
+        .map((item: unknown) => String(item || '').trim())
         .filter(Boolean);
       const normalizedImage = String(resolvedImage || imageFallback || '').trim();
-      const nextImageUrls = Array.from(new Set([
-        ...resolvedNodeImageUrls,
-        normalizedImage,
-        ...(nodeType === 'start' && resolvedNodeImageUrls.length === 0 ? imagePool : []),
-      ].filter(Boolean)));
+      const nextImageUrls = Array.from(
+        new Set(
+          [
+            ...resolvedNodeImageUrls,
+            normalizedImage,
+            ...(nodeType === 'start' && resolvedNodeImageUrls.length === 0 ? imagePool : []),
+          ].filter(Boolean)
+        )
+      );
       nextData.startImageUrl = nextImageUrls[0] || '';
       nextData.startImageUrls = nextImageUrls;
       if (nodeType === 'input_image' && nextData.startImageUrl) {
         imageAutoIndex += 1;
-        templateHasUsableImage = templateHasUsableImage || hasUsableImageInput(nextData.startImageUrl);
+        templateHasUsableImage =
+          templateHasUsableImage || hasUsableImageInput(nextData.startImageUrl);
       }
     }
     if (nodeType === 'start' || nodeType === 'input_video') {
-      const videoPool = parsedVideoUrls.length > 0 ? parsedVideoUrls : templateSampleInput.videoUrls;
-      const videoFallback = videoPool[videoAutoIndex] || parsedVideoUrl || templateSampleInput.videoUrl || '';
+      const videoPool =
+        parsedVideoUrls.length > 0 ? parsedVideoUrls : templateSampleInput.videoUrls;
+      const videoFallback =
+        videoPool[videoAutoIndex] || parsedVideoUrl || templateSampleInput.videoUrl || '';
       const resolvedVideo = resolveTemplateInputPlaceholder(
         node.data?.startVideoUrl,
         buildSampleInputContext({ videoUrls: videoPool }),
-        videoFallback,
+        videoFallback
       );
-      const rawNodeVideoUrls = Array.isArray(node.data?.startVideoUrls) ? node.data.startVideoUrls : [];
+      const rawNodeVideoUrls = Array.isArray(node.data?.startVideoUrls)
+        ? node.data.startVideoUrls
+        : [];
       const resolvedNodeVideoUrls = rawNodeVideoUrls
-        .map((item: unknown, index: number) => resolveTemplateInputPlaceholder(
-          item,
-          buildSampleInputContext({ videoUrls: videoPool }),
-          videoPool[index] || videoFallback,
-        ))
-        .map((item: Record<string, unknown>) => String(item || '').trim())
+        .map((item: unknown, index: number) =>
+          resolveTemplateInputPlaceholder(
+            item,
+            buildSampleInputContext({ videoUrls: videoPool }),
+            videoPool[index] || videoFallback
+          )
+        )
+        .map((item: unknown) => String(item || '').trim())
         .filter(Boolean);
       const normalizedVideo = String(resolvedVideo || videoFallback || '').trim();
-      const nextVideoUrls = Array.from(new Set([
-        ...resolvedNodeVideoUrls,
-        normalizedVideo,
-        ...(nodeType === 'start' && resolvedNodeVideoUrls.length === 0 ? videoPool : []),
-      ].filter(Boolean)));
+      const nextVideoUrls = Array.from(
+        new Set(
+          [
+            ...resolvedNodeVideoUrls,
+            normalizedVideo,
+            ...(nodeType === 'start' && resolvedNodeVideoUrls.length === 0 ? videoPool : []),
+          ].filter(Boolean)
+        )
+      );
       nextData.startVideoUrl = nextVideoUrls[0] || '';
       nextData.startVideoUrls = nextVideoUrls;
       if (nodeType === 'input_video' && nextData.startVideoUrl) {
@@ -391,28 +493,38 @@ export const loadTemplateIntoEditor = async ({
       }
     }
     if (nodeType === 'start' || nodeType === 'input_audio') {
-      const audioPool = parsedAudioUrls.length > 0 ? parsedAudioUrls : templateSampleInput.audioUrls;
-      const audioFallback = audioPool[audioAutoIndex] || parsedAudioUrl || templateSampleInput.audioUrl || '';
+      const audioPool =
+        parsedAudioUrls.length > 0 ? parsedAudioUrls : templateSampleInput.audioUrls;
+      const audioFallback =
+        audioPool[audioAutoIndex] || parsedAudioUrl || templateSampleInput.audioUrl || '';
       const resolvedAudio = resolveTemplateInputPlaceholder(
         node.data?.startAudioUrl,
         buildSampleInputContext({ audioUrls: audioPool }),
-        audioFallback,
+        audioFallback
       );
-      const rawNodeAudioUrls = Array.isArray(node.data?.startAudioUrls) ? node.data.startAudioUrls : [];
+      const rawNodeAudioUrls = Array.isArray(node.data?.startAudioUrls)
+        ? node.data.startAudioUrls
+        : [];
       const resolvedNodeAudioUrls = rawNodeAudioUrls
-        .map((item: unknown, index: number) => resolveTemplateInputPlaceholder(
-          item,
-          buildSampleInputContext({ audioUrls: audioPool }),
-          audioPool[index] || audioFallback,
-        ))
-        .map((item: Record<string, unknown>) => String(item || '').trim())
+        .map((item: unknown, index: number) =>
+          resolveTemplateInputPlaceholder(
+            item,
+            buildSampleInputContext({ audioUrls: audioPool }),
+            audioPool[index] || audioFallback
+          )
+        )
+        .map((item: unknown) => String(item || '').trim())
         .filter(Boolean);
       const normalizedAudio = String(resolvedAudio || audioFallback || '').trim();
-      const nextAudioUrls = Array.from(new Set([
-        ...resolvedNodeAudioUrls,
-        normalizedAudio,
-        ...(nodeType === 'start' && resolvedNodeAudioUrls.length === 0 ? audioPool : []),
-      ].filter(Boolean)));
+      const nextAudioUrls = Array.from(
+        new Set(
+          [
+            ...resolvedNodeAudioUrls,
+            normalizedAudio,
+            ...(nodeType === 'start' && resolvedNodeAudioUrls.length === 0 ? audioPool : []),
+          ].filter(Boolean)
+        )
+      );
       nextData.startAudioUrl = nextAudioUrls[0] || '';
       nextData.startAudioUrls = nextAudioUrls;
       if (nodeType === 'input_audio' && nextData.startAudioUrl) {
@@ -425,23 +537,31 @@ export const loadTemplateIntoEditor = async ({
       const resolvedFile = resolveTemplateInputPlaceholder(
         node.data?.startFileUrl,
         buildSampleInputContext({ fileUrls: filePool }),
-        fileFallback,
+        fileFallback
       );
-      const rawNodeFileUrls = Array.isArray(node.data?.startFileUrls) ? node.data.startFileUrls : [];
+      const rawNodeFileUrls = Array.isArray(node.data?.startFileUrls)
+        ? node.data.startFileUrls
+        : [];
       const resolvedNodeFileUrls = rawNodeFileUrls
-        .map((item: unknown, index: number) => resolveTemplateInputPlaceholder(
-          item,
-          buildSampleInputContext({ fileUrls: filePool }),
-          filePool[index] || fileFallback,
-        ))
-        .map((item: Record<string, unknown>) => String(item || '').trim())
+        .map((item: unknown, index: number) =>
+          resolveTemplateInputPlaceholder(
+            item,
+            buildSampleInputContext({ fileUrls: filePool }),
+            filePool[index] || fileFallback
+          )
+        )
+        .map((item: unknown) => String(item || '').trim())
         .filter(Boolean);
       const normalizedFile = String(resolvedFile || fileFallback || '').trim();
-      const nextFileUrls = Array.from(new Set([
-        ...resolvedNodeFileUrls,
-        normalizedFile,
-        ...(nodeType === 'start' && resolvedNodeFileUrls.length === 0 ? filePool : []),
-      ].filter(Boolean)));
+      const nextFileUrls = Array.from(
+        new Set(
+          [
+            ...resolvedNodeFileUrls,
+            normalizedFile,
+            ...(nodeType === 'start' && resolvedNodeFileUrls.length === 0 ? filePool : []),
+          ].filter(Boolean)
+        )
+      );
       nextData.startFileUrl = nextFileUrls[0] || '';
       nextData.startFileUrls = nextFileUrls;
     }
@@ -456,10 +576,12 @@ export const loadTemplateIntoEditor = async ({
     try {
       const fetchedPreviewImages = await fetchWorkflowPreviewImages(templateSampleExecutionId);
       if (fetchedPreviewImages.length > 0) {
-        templatePreviewImageUrls = Array.from(new Set([
-          ...templatePreviewImageUrls,
-          ...fetchedPreviewImages.map((item) => String(item || '').trim()).filter(Boolean),
-        ]));
+        templatePreviewImageUrls = Array.from(
+          new Set([
+            ...templatePreviewImageUrls,
+            ...fetchedPreviewImages.map((item) => String(item || '').trim()).filter(Boolean),
+          ])
+        );
       }
     } catch (error) {
       addLog('system', '系统', 'warn', `模板样例结果预览图加载失败: ${error}`);
@@ -473,86 +595,114 @@ export const loadTemplateIntoEditor = async ({
     mergedTemplateSampleResult = mergePreviewMediaIntoResult(
       mergedTemplateSampleResult,
       'audio',
-      templateSamplePreviewAudioUrls,
+      templateSamplePreviewAudioUrls
     );
   }
   if (templateSampleHasResult && templateSamplePreviewVideoUrls.length > 0) {
     mergedTemplateSampleResult = mergePreviewMediaIntoResult(
       mergedTemplateSampleResult,
       'video',
-      templateSamplePreviewVideoUrls,
+      templateSamplePreviewVideoUrls
     );
   }
   if (templateSampleHasResult && templateSampleSummary) {
     const mergedMetadata = {
-      continuationStrategy: String(
-        templateSampleSummary?.continuationStrategy || templateSampleSummary?.continuation_strategy || ''
-      ).trim() || undefined,
-      videoExtensionCount: Number(
-        (templateSampleSummary?.videoExtensionCount ?? templateSampleSummary?.video_extension_count) || 0
-      ) || undefined,
-      videoExtensionApplied: Number(
-        (templateSampleSummary?.videoExtensionApplied ?? templateSampleSummary?.video_extension_applied) || 0
-      ) || undefined,
-      totalDurationSeconds: Number(
-        (templateSampleSummary?.totalDurationSeconds ?? templateSampleSummary?.total_duration_seconds) || 0
-      ) || undefined,
+      continuationStrategy:
+        String(
+          templateSampleSummary?.continuationStrategy ||
+            templateSampleSummary?.continuation_strategy ||
+            ''
+        ).trim() || undefined,
+      videoExtensionCount:
+        Number(
+          (templateSampleSummary?.videoExtensionCount ??
+            templateSampleSummary?.video_extension_count) ||
+            0
+        ) || undefined,
+      videoExtensionApplied:
+        Number(
+          (templateSampleSummary?.videoExtensionApplied ??
+            templateSampleSummary?.video_extension_applied) ||
+            0
+        ) || undefined,
+      totalDurationSeconds:
+        Number(
+          (templateSampleSummary?.totalDurationSeconds ??
+            templateSampleSummary?.total_duration_seconds) ||
+            0
+        ) || undefined,
       continuedFromVideo: Boolean(
-        templateSampleSummary?.continuedFromVideo ?? templateSampleSummary?.continued_from_video ?? false
+        templateSampleSummary?.continuedFromVideo ??
+        templateSampleSummary?.continued_from_video ??
+        false
       ),
-      subtitleMode: String(
-        templateSampleSummary?.subtitleMode || templateSampleSummary?.subtitle_mode || ''
-      ).trim() || undefined,
-      subtitleFileCount: Number(
-        (templateSampleSummary?.subtitleFileCount ?? templateSampleSummary?.subtitle_file_count) || 0
-      ) || undefined,
+      subtitleMode:
+        String(
+          templateSampleSummary?.subtitleMode || templateSampleSummary?.subtitle_mode || ''
+        ).trim() || undefined,
+      subtitleFileCount:
+        Number(
+          (templateSampleSummary?.subtitleFileCount ??
+            templateSampleSummary?.subtitle_file_count) ||
+            0
+        ) || undefined,
     };
     mergedTemplateSampleResult = isPlainObject(mergedTemplateSampleResult)
       ? { ...mergedTemplateSampleResult, ...mergedMetadata }
       : mergedMetadata;
   }
 
-  const nodesWithAgentBinding = await hydrateAgentBindingsFromRegistry(hydratedTemplateNodes as Node<WorkflowNodeData>[]);
+  const nodesWithAgentBinding = await hydrateAgentBindingsFromRegistry(
+    hydratedTemplateNodes as Node<WorkflowNodeData>[]
+  );
   const nodesWithSampleResult: Node<WorkflowNodeData>[] = templateSampleHasResult
-    ? (nodesWithAgentBinding as Node<WorkflowNodeData>[]).map((node) => {
-      const nodeType = String(node?.data?.type || node?.type || '').toLowerCase();
-      if (nodeType !== 'end') {
-        return node;
-      }
-      return {
-        ...node,
-        data: {
-          ...node.data,
-          result: mergedTemplateSampleResult,
-          status: 'completed' as const,
-          progress: 100,
-          error: undefined,
-          runtime: templateSampleRuntime || node.data?.runtime,
-        },
-      };
-    }) as Node<WorkflowNodeData>[]
+    ? ((nodesWithAgentBinding as Node<WorkflowNodeData>[]).map((node) => {
+        const nodeType = String(node?.data?.type || node?.type || '').toLowerCase();
+        if (nodeType !== 'end') {
+          return node;
+        }
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            result: mergedTemplateSampleResult,
+            status: 'completed' as const,
+            progress: 100,
+            error: undefined,
+            runtime: templateSampleRuntime || node.data?.runtime,
+          },
+        };
+      }) as Node<WorkflowNodeData>[])
     : (nodesWithAgentBinding as Node<WorkflowNodeData>[]);
 
   setNodes(nodesWithSampleResult);
-  setEdges(templateEdges);
+  setEdges(templateEdges as Edge[]);
   const templateId = String(template?.id || '').trim();
-  setActiveTemplateMeta(templateId ? {
-    templateId,
-    templateName: String(template?.name || '').trim(),
-    id: templateId,
-    name: String(template?.name || '').trim(),
-    description: String(template?.description || '').trim(),
-    category: String(template?.category || '').trim(),
-    tags: Array.isArray(template?.tags) ? template.tags.filter((item: Record<string, unknown>) => typeof item === 'string') : [],
-    isEditable: template?.isEditable !== false && !(template?.origin?.isLocked),
-    isLocked: Boolean(template?.origin?.isLocked || template?.isStarter || template?.starterKey),
-  } : null);
+  setActiveTemplateMeta(
+    templateId
+      ? {
+          templateId,
+          templateName: String(template?.name || '').trim(),
+          id: templateId,
+          name: String(template?.name || '').trim(),
+          description: String(template?.description || '').trim(),
+          category: String(template?.category || '').trim(),
+          tags: Array.isArray(template?.tags)
+            ? template.tags.filter((item: unknown): item is string => typeof item === 'string')
+            : [],
+          isEditable: template?.isEditable !== false && !template?.origin?.isLocked,
+          isLocked: Boolean(
+            template?.origin?.isLocked || template?.isStarter || template?.starterKey
+          ),
+        }
+      : null
+  );
   setActiveTemplateFingerprint(
     templateId
       ? buildWorkflowStructureFingerprint(
-        nodesWithSampleResult as Node<WorkflowNodeData>[],
-        templateEdges as Edge[],
-      )
+          nodesWithSampleResult as Node<WorkflowNodeData>[],
+          templateEdges as Edge[]
+        )
       : null
   );
   if (templateSampleHasResult) {
@@ -573,5 +723,10 @@ export const loadTemplateIntoEditor = async ({
   }
   setShowTemplateSelector(false);
   setPendingFitToken(`template-${Date.now()}`);
-  addLog('system', '系统', 'info', `已加载模板: ${template.name}${templateSampleHasResult ? '（已同步最近结果）' : ''}`);
+  addLog(
+    'system',
+    '系统',
+    'info',
+    `已加载模板: ${template.name}${templateSampleHasResult ? '（已同步最近结果）' : ''}`
+  );
 };

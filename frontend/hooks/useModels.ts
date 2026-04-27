@@ -2,13 +2,15 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { ModelConfig, AppMode, ModeCatalogItem } from '../types/types';
 import { llmService } from '../services/llmService';
 
-const isValidModelConfig = (m: Record<string, unknown>): m is ModelConfig => {
-  return m &&
-    typeof m === 'object' &&
-    typeof m.id === 'string' &&
-    typeof m.name === 'string' &&
-    m.capabilities &&
-    typeof m.capabilities === 'object';
+const isValidModelConfig = (m: unknown): m is ModelConfig => {
+  if (!m || typeof m !== 'object') return false;
+  const obj = m as Record<string, unknown>;
+  return (
+    typeof obj.id === 'string' &&
+    typeof obj.name === 'string' &&
+    !!obj.capabilities &&
+    typeof obj.capabilities === 'object'
+  );
 };
 
 const normalizeModels = (models: unknown): ModelConfig[] => {
@@ -18,13 +20,15 @@ const normalizeModels = (models: unknown): ModelConfig[] => {
 
 const normalizeModeCatalog = (catalog: unknown): ModeCatalogItem[] => {
   if (!Array.isArray(catalog)) return [];
-  return catalog.filter((item: Record<string, unknown>): item is ModeCatalogItem => {
-    return item &&
-      typeof item === 'object' &&
-      typeof item.id === 'string' &&
-      typeof item.label === 'string' &&
-      typeof item.hasModels === 'boolean' &&
-      typeof item.availableModelCount === 'number';
+  return catalog.filter((item: unknown): item is ModeCatalogItem => {
+    if (!item || typeof item !== 'object') return false;
+    const obj = item as Record<string, unknown>;
+    return (
+      typeof obj.id === 'string' &&
+      typeof obj.label === 'string' &&
+      typeof obj.hasModels === 'boolean' &&
+      typeof obj.availableModelCount === 'number'
+    );
   });
 };
 
@@ -58,7 +62,7 @@ export const useModels = (
     [initialChatModels]
   );
   const savedModelsFingerprint = useMemo(
-    () => normalizedSavedModels.map(model => model.id).join('|'),
+    () => normalizedSavedModels.map((model) => model.id).join('|'),
     [normalizedSavedModels]
   );
   const savedModelsRef = useRef<ModelConfig[]>(normalizedSavedModels);
@@ -77,7 +81,7 @@ export const useModels = (
   // 手动选择模型时打标，避免后续自动切换覆盖用户意图
   const setCurrentModelIdWithUserFlag = useCallback((id: string | ((prev: string) => string)) => {
     if (typeof id === 'function') {
-      setCurrentModelId(prev => {
+      setCurrentModelId((prev) => {
         const next = id(prev);
         if (next && next !== prev) userSelectedModelRef.current = true;
         return next;
@@ -85,7 +89,7 @@ export const useModels = (
       return;
     }
 
-    setCurrentModelId(prev => {
+    setCurrentModelId((prev) => {
       if (id && id !== prev) userSelectedModelRef.current = true;
       return id;
     });
@@ -100,7 +104,7 @@ export const useModels = (
     if (!configReady || normalizedInitialModeCatalog.length === 0) {
       return;
     }
-    setModeCatalog(prev => (prev.length > 0 ? prev : normalizedInitialModeCatalog));
+    setModeCatalog((prev) => (prev.length > 0 ? prev : normalizedInitialModeCatalog));
   }, [configReady, normalizedInitialModeCatalog]);
 
   // 首屏优先使用初始化接口携带的 saved_models，避免模型选择器闪空。
@@ -200,8 +204,10 @@ export const useModels = (
 
     // ✅ 首次 configReady=true：prev ref 为 null
     const isFirstModeActivation = prevModeProviderIdRef.current === null;
-    const modeProviderChanged = !isFirstModeActivation && prevModeProviderIdRef.current !== providerId;
-    const modeProfileChanged = !isFirstModeActivation && prevModeProfileCacheKeyRef.current !== profileCacheKey;
+    const modeProviderChanged =
+      !isFirstModeActivation && prevModeProviderIdRef.current !== providerId;
+    const modeProfileChanged =
+      !isFirstModeActivation && prevModeProfileCacheKeyRef.current !== profileCacheKey;
 
     prevModeProviderIdRef.current = providerId;
     prevModeProfileCacheKeyRef.current = profileCacheKey;
@@ -267,12 +273,12 @@ export const useModels = (
       return;
     }
 
-    setCurrentModelId(prev => {
-      if (prev && visibleModels.some(m => m.id === prev)) {
+    setCurrentModelId((prev) => {
+      if (prev && visibleModels.some((m) => m.id === prev)) {
         return prev;
       }
 
-      if (modeDefaultModelId && visibleModels.some(m => m.id === modeDefaultModelId)) {
+      if (modeDefaultModelId && visibleModels.some((m) => m.id === modeDefaultModelId)) {
         userSelectedModelRef.current = false;
         return modeDefaultModelId;
       }
@@ -283,7 +289,7 @@ export const useModels = (
   }, [visibleModels, appMode, modeDefaultModelId]);
 
   const activeModelConfig = useMemo(() => {
-    return visibleModels.find(m => m.id === currentModelId) || visibleModels[0];
+    return visibleModels.find((m) => m.id === currentModelId) || visibleModels[0];
   }, [visibleModels, currentModelId]);
 
   const refreshModels = useCallback(async () => {
@@ -295,7 +301,7 @@ export const useModels = (
     try {
       const [allPayload, filteredPayload] = await Promise.all([
         llmService.getAvailableModelsPayload(false),
-        llmService.getAvailableModelsPayload(false, appMode)
+        llmService.getAvailableModelsPayload(false, appMode),
       ]);
       setAvailableModels(normalizeModels(allPayload.models));
       setModeCatalog(normalizeModeCatalog(allPayload.modeCatalog));
@@ -323,7 +329,6 @@ export const useModels = (
     isLoadingModels,
     isModelMenuOpen,
     setIsModelMenuOpen,
-    refreshModels
+    refreshModels,
   };
 };
-

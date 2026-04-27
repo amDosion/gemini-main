@@ -23,7 +23,10 @@ describe('workflowTemplateLoader media support', () => {
         }),
         sampleInput: {
           video_urls: ['https://cdn.example.com/a.mp4', 'https://cdn.example.com/b.mp4'],
-          audio_urls: ['https://cdn.example.com/narration.mp3', 'https://cdn.example.com/backup.mp3'],
+          audio_urls: [
+            'https://cdn.example.com/narration.mp3',
+            'https://cdn.example.com/backup.mp3',
+          ],
         },
         config: {
           nodes: [
@@ -160,8 +163,10 @@ describe('workflowTemplateLoader media support', () => {
     const endNode = capturedNodes.find((node) => node.id === 'end-1');
 
     expect(endNode?.data?.status).toBe('completed');
-    expect(endNode?.data?.result?.audioUrl).toBe('https://cdn.example.com/sample.mp3');
-    expect(endNode?.data?.result?.videoUrl).toBe('https://cdn.example.com/sample.mp4');
+    // result 形状由模板回写产生，类型未在 WorkflowNodeData 中精确声明，cast 用于测试断言
+    const endNodeResult = endNode?.data?.result as Record<string, unknown> | undefined;
+    expect(endNodeResult?.audioUrl).toBe('https://cdn.example.com/sample.mp3');
+    expect(endNodeResult?.videoUrl).toBe('https://cdn.example.com/sample.mp4');
     expect(capturedFinalResult?.audioUrl).toBe('https://cdn.example.com/sample.mp3');
     expect(capturedFinalResult?.videoUrl).toBe('https://cdn.example.com/sample.mp4');
   });

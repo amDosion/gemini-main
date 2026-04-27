@@ -63,7 +63,9 @@ const parseAgentTaskFilterKey = (value: unknown): AgentTaskFilter | null => {
 const inferLegacyRuntimeSupport = (agent: Record<string, unknown>): boolean => {
   const normalizedAgentType = toSafeString(agent?.agentType || agent?.agent_type).toLowerCase();
   const normalizedProviderId = toSafeString(agent?.providerId || agent?.provider_id).toLowerCase();
-  return ['adk', 'google-adk'].includes(normalizedAgentType) && normalizedProviderId.startsWith('google');
+  return (
+    ['adk', 'google-adk'].includes(normalizedAgentType) && normalizedProviderId.startsWith('google')
+  );
 };
 
 const normalizeAgentRuntime = (agent: Record<string, unknown>): AgentDef['runtime'] => {
@@ -81,31 +83,34 @@ const normalizeAgentRuntime = (agent: Record<string, unknown>): AgentDef['runtim
     };
   }
 
+  const r = runtime as Record<string, unknown>;
   return {
-    kind: toSafeString(runtime?.kind),
-    label: toSafeString(runtime?.label),
-    supportsRun: Boolean(runtime?.supportsRun ?? runtime?.supports_run),
-    supportsLiveRun: Boolean(runtime?.supportsLiveRun ?? runtime?.supports_live_run),
-    supportsSessions: Boolean(runtime?.supportsSessions ?? runtime?.supports_sessions),
-    supportsMemory: Boolean(runtime?.supportsMemory ?? runtime?.supports_memory),
+    kind: toSafeString(r.kind),
+    label: toSafeString(r.label),
+    supportsRun: Boolean(r.supportsRun ?? r.supports_run),
+    supportsLiveRun: Boolean(r.supportsLiveRun ?? r.supports_live_run),
+    supportsSessions: Boolean(r.supportsSessions ?? r.supports_sessions),
+    supportsMemory: Boolean(r.supportsMemory ?? r.supports_memory),
     supportsOfficialOrchestration: Boolean(
-      runtime?.supportsOfficialOrchestration ?? runtime?.supports_official_orchestration
+      r.supportsOfficialOrchestration ?? r.supports_official_orchestration
     ),
   };
 };
 
 const normalizeAgentSource = (agent: unknown, runtime: AgentDef['runtime']): AgentDef['source'] => {
-  const source = agent?.source;
+  const a = (agent && typeof agent === 'object' ? agent : {}) as Record<string, unknown>;
+  const source = a.source;
   if (source && typeof source === 'object') {
+    const s = source as Record<string, unknown>;
     return {
-      kind: toSafeString(source?.kind),
-      label: toSafeString(source?.label),
-      isSystem: Boolean(source?.isSystem ?? source?.is_system),
+      kind: toSafeString(s.kind),
+      label: toSafeString(s.label),
+      isSystem: Boolean(s.isSystem ?? s.is_system),
     };
   }
 
-  const normalizedAgentType = toSafeString(agent?.agentType || agent?.agent_type).toLowerCase();
-  const normalizedProviderId = toSafeString(agent?.providerId || agent?.provider_id).toLowerCase();
+  const normalizedAgentType = toSafeString(a.agentType || a.agent_type).toLowerCase();
+  const normalizedProviderId = toSafeString(a.providerId || a.provider_id).toLowerCase();
   if (normalizedAgentType === 'seed') {
     return {
       kind: 'seed',
@@ -113,7 +118,11 @@ const normalizeAgentSource = (agent: unknown, runtime: AgentDef['runtime']): Age
       isSystem: true,
     };
   }
-  if (runtime?.kind === 'google-adk' || (['adk', 'google-adk'].includes(normalizedAgentType) && normalizedProviderId.startsWith('google'))) {
+  if (
+    runtime?.kind === 'google-adk' ||
+    (['adk', 'google-adk'].includes(normalizedAgentType) &&
+      normalizedProviderId.startsWith('google'))
+  ) {
     return {
       kind: 'google-runtime',
       label: 'Google runtime',
@@ -145,7 +154,9 @@ export const createEmptyAgentTaskCounts = (): Record<AgentTaskFilter, number> =>
   'data-analysis': 0,
 });
 
-const normalizeAgentTaskCounts = (payload: Record<string, unknown>): Record<AgentTaskFilter, number> => {
+const normalizeAgentTaskCounts = (
+  payload: Record<string, unknown>
+): Record<AgentTaskFilter, number> => {
   const base = createEmptyAgentTaskCounts();
   const rawCounts = payload?.taskCounts ?? payload?.task_counts;
   if (!rawCounts || typeof rawCounts !== 'object') {
@@ -224,7 +235,9 @@ const normalizeAgentItem = (agent: Record<string, unknown>): AgentDef | null => 
     runtime,
     source,
     supportsRuntimeSessions: Boolean(
-      agent?.supportsRuntimeSessions ?? agent?.supports_runtime_sessions ?? runtime?.supportsSessions
+      agent?.supportsRuntimeSessions ??
+      agent?.supports_runtime_sessions ??
+      runtime?.supportsSessions
     ),
     supportsRuntimeLiveRun: Boolean(
       agent?.supportsRuntimeLiveRun ?? agent?.supports_runtime_live_run ?? runtime?.supportsLiveRun
@@ -233,9 +246,9 @@ const normalizeAgentItem = (agent: Record<string, unknown>): AgentDef | null => 
       agent?.supportsRuntimeMemory ?? agent?.supports_runtime_memory ?? runtime?.supportsMemory
     ),
     supportsOfficialOrchestration: Boolean(
-      agent?.supportsOfficialOrchestration
-      ?? agent?.supports_official_orchestration
-      ?? runtime?.supportsOfficialOrchestration
+      agent?.supportsOfficialOrchestration ??
+      agent?.supports_official_orchestration ??
+      runtime?.supportsOfficialOrchestration
     ),
     agentCard: agent?.agentCard || createDefaultAgentCard(),
   };
@@ -253,7 +266,9 @@ export const normalizeAgentListPayload = (payload: Record<string, unknown>): Age
     .filter((agent): agent is AgentDef => Boolean(agent));
 };
 
-export const fetchAgentList = async (options: AgentListFetchOptions = {}): Promise<AgentListFetchResult> => {
+export const fetchAgentList = async (
+  options: AgentListFetchOptions = {}
+): Promise<AgentListFetchResult> => {
   const params = new URLSearchParams();
   if (options.includeInactive) params.set('include_inactive', 'true');
   if (toSafeString(options.search)) params.set('search', toSafeString(options.search));
@@ -270,16 +285,18 @@ export const fetchAgentList = async (options: AgentListFetchOptions = {}): Promi
   });
   const agents = normalizeAgentListPayload(payload);
   const count = typeof payload?.count === 'number' ? payload.count : agents.length;
-  const activeCount = typeof payload?.activeCount === 'number'
-    ? payload.activeCount
-    : typeof payload?.active_count === 'number'
-      ? payload.active_count
-      : agents.filter((agent) => agent.status === 'active').length;
-  const inactiveCount = typeof payload?.inactiveCount === 'number'
-    ? payload.inactiveCount
-    : typeof payload?.inactive_count === 'number'
-      ? payload.inactive_count
-      : agents.filter((agent) => agent.status === 'inactive').length;
+  const activeCount =
+    typeof payload?.activeCount === 'number'
+      ? payload.activeCount
+      : typeof payload?.active_count === 'number'
+        ? payload.active_count
+        : agents.filter((agent) => agent.status === 'active').length;
+  const inactiveCount =
+    typeof payload?.inactiveCount === 'number'
+      ? payload.inactiveCount
+      : typeof payload?.inactive_count === 'number'
+        ? payload.inactive_count
+        : agents.filter((agent) => agent.status === 'inactive').length;
   const taskCounts = normalizeAgentTaskCounts(payload);
 
   return {

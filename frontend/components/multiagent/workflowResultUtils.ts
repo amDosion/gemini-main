@@ -16,21 +16,23 @@ export const isLikelyImageUrl = (value: string) => {
   if (/^https?:\/\//.test(value) || value.startsWith('/')) {
     const normalized = value.toLowerCase().split('?')[0].split('#')[0];
     if (/\.(png|jpg|jpeg|webp|gif|bmp|svg)$/.test(normalized)) return true;
-    if (/(image|images|uploads|attachments|generated|edited|expanded)/.test(normalized)) return true;
+    if (/(image|images|uploads|attachments|generated|edited|expanded)/.test(normalized))
+      return true;
   }
   return false;
 };
 
-const createLikelyMediaUrlMatcher = (extensions: RegExp, pathHints: RegExp, dataPrefix: RegExp) => (value: string) => {
-  if (!value) return false;
-  if (dataPrefix.test(value) || /^blob:/i.test(value)) return true;
-  if (/^https?:\/\//.test(value) || value.startsWith('/')) {
-    const normalized = value.toLowerCase().split('?')[0].split('#')[0];
-    if (extensions.test(normalized)) return true;
-    if (pathHints.test(normalized)) return true;
-  }
-  return false;
-};
+const createLikelyMediaUrlMatcher =
+  (extensions: RegExp, pathHints: RegExp, dataPrefix: RegExp) => (value: string) => {
+    if (!value) return false;
+    if (dataPrefix.test(value) || /^blob:/i.test(value)) return true;
+    if (/^https?:\/\//.test(value) || value.startsWith('/')) {
+      const normalized = value.toLowerCase().split('?')[0].split('#')[0];
+      if (extensions.test(normalized)) return true;
+      if (pathHints.test(normalized)) return true;
+    }
+    return false;
+  };
 
 export const isLikelyAudioUrl = createLikelyMediaUrlMatcher(
   /\.(mp3|wav|m4a|aac|flac|ogg|opus)$/i,
@@ -45,7 +47,9 @@ export const isLikelyVideoUrl = createLikelyMediaUrlMatcher(
 );
 
 const isTempAttachmentUrl = (value: string) => {
-  const normalized = String(value || '').trim().toLowerCase();
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
   if (!normalized) return false;
   if (normalized.startsWith('/api/temp-images/')) return true;
   return /^(https?:\/\/[^/]+)?\/api\/temp-images\/[^/?#]+/i.test(normalized);
@@ -53,17 +57,21 @@ const isTempAttachmentUrl = (value: string) => {
 
 const inferMediaMimeType = (payload: Record<string, unknown>): string => {
   if (!isPlainObject(payload)) return '';
-  const mimeType = payload.mimeType ?? payload.mime_type ?? payload.contentType ?? payload.content_type;
+  const mimeType =
+    payload.mimeType ?? payload.mime_type ?? payload.contentType ?? payload.content_type;
   return typeof mimeType === 'string' ? mimeType.trim().toLowerCase() : '';
 };
 
 export const isPlaceholderImageInput = (value: string) => {
-  const normalized = String(value || '').trim().toLowerCase();
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
   if (!normalized) return true;
   if (normalized.includes('{{') || normalized.includes('}}')) return true;
   if (normalized.includes('example.com') || normalized.includes('example.org')) return true;
   if (/<[^>]+>/.test(normalized)) return true;
-  if (/(your[-_\s]?image|upload.*image|placeholder|sample[-_\s]?image)/.test(normalized)) return true;
+  if (/(your[-_\s]?image|upload.*image|placeholder|sample[-_\s]?image)/.test(normalized))
+    return true;
   return false;
 };
 
@@ -136,7 +144,7 @@ export const extractImageUrls = (value: unknown): string[] => {
   const result: string[] = [];
   const seen = new Set<string>();
 
-  const push = (candidate: Record<string, unknown>) => {
+  const push = (candidate: unknown) => {
     const normalized = normalizeImageValue(candidate);
     if (normalized && !seen.has(normalized)) {
       seen.add(normalized);
@@ -144,7 +152,7 @@ export const extractImageUrls = (value: unknown): string[] => {
     }
   };
 
-  const walk = (payload: Record<string, unknown>) => {
+  const walk = (payload: unknown) => {
     push(payload);
     if (Array.isArray(payload)) {
       payload.forEach((item) => walk(item));
@@ -220,17 +228,19 @@ const extractMediaUrls = (
     if (!normalized || seen.has(normalized)) {
       return;
     }
-    const normalizedKeyHint = String(keyHint || '').trim().toLowerCase().replace(/-/g, '_');
+    const normalizedKeyHint = String(keyHint || '')
+      .trim()
+      .toLowerCase()
+      .replace(/-/g, '_');
     if (sourceHints.has(normalizedKeyHint)) {
       return;
     }
-    const normalizedMimeType = String(mimeType || '').trim().toLowerCase();
+    const normalizedMimeType = String(mimeType || '')
+      .trim()
+      .toLowerCase();
     const isMediaTempAttachment =
-      isTempAttachmentUrl(normalized)
-      && (
-        normalizedMimeType.startsWith(`${mediaKind}/`)
-        || normalizedKeyHint.includes(mediaKind)
-      );
+      isTempAttachmentUrl(normalized) &&
+      (normalizedMimeType.startsWith(`${mediaKind}/`) || normalizedKeyHint.includes(mediaKind));
     if (!isLikelyMediaUrl(normalized) && !isMediaTempAttachment) {
       return;
     }
@@ -247,7 +257,10 @@ const extractMediaUrls = (
     if (isPlainObject(payload)) {
       const objectMimeType = inferMediaMimeType(payload) || parentMimeType;
       Object.entries(payload).forEach(([key, item]) => {
-        const normalizedKey = String(key || '').trim().toLowerCase().replace(/-/g, '_');
+        const normalizedKey = String(key || '')
+          .trim()
+          .toLowerCase()
+          .replace(/-/g, '_');
         if (sourceContainerHints.has(normalizedKey)) {
           return;
         }
@@ -260,9 +273,11 @@ const extractMediaUrls = (
   return result;
 };
 
-export const extractAudioUrls = (value: unknown): string[] => extractMediaUrls(value, isLikelyAudioUrl, 'audio');
+export const extractAudioUrls = (value: unknown): string[] =>
+  extractMediaUrls(value, isLikelyAudioUrl, 'audio');
 
-export const extractVideoUrls = (value: unknown): string[] => extractMediaUrls(value, isLikelyVideoUrl, 'video');
+export const extractVideoUrls = (value: unknown): string[] =>
+  extractMediaUrls(value, isLikelyVideoUrl, 'video');
 
 const normalizeDisplayUrlValue = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
@@ -270,9 +285,9 @@ const normalizeDisplayUrlValue = (value: unknown): string | null => {
   if (!trimmed) return null;
   if (trimmed.startsWith('data:image/')) return null;
   if (
-    /^(https?:\/\/|blob:|oss:\/\/|file:\/\/)/i.test(trimmed)
-    || trimmed.startsWith('/')
-    || isLocalFilesystemPath(trimmed)
+    /^(https?:\/\/|blob:|oss:\/\/|file:\/\/)/i.test(trimmed) ||
+    trimmed.startsWith('/') ||
+    isLocalFilesystemPath(trimmed)
   ) {
     return trimmed;
   }
@@ -283,7 +298,7 @@ export const extractUrlContent = (value: unknown): string[] => {
   const result: string[] = [];
   const seen = new Set<string>();
 
-  const push = (candidate: Record<string, unknown>) => {
+  const push = (candidate: unknown) => {
     const normalized = normalizeDisplayUrlValue(candidate);
     if (!normalized || seen.has(normalized)) {
       return;
@@ -352,7 +367,7 @@ export const extractThoughtContent = (value: unknown): string[] => {
     'text_response',
   ]);
 
-  const push = (candidate: Record<string, unknown>) => {
+  const push = (candidate: unknown) => {
     const normalized = normalizeThoughtEntryText(candidate);
     if (!normalized) return;
     const compact = normalized.replace(/\s+/g, ' ').trim();
@@ -360,7 +375,9 @@ export const extractThoughtContent = (value: unknown): string[] => {
     const key = compact.slice(0, 240);
     if (seen.has(key)) return;
     seen.add(key);
-    result.push(normalized.length > 1200 ? `${normalized.slice(0, 1200)}\n...(内容已截断)` : normalized);
+    result.push(
+      normalized.length > 1200 ? `${normalized.slice(0, 1200)}\n...(内容已截断)` : normalized
+    );
   };
 
   const walk = (payload: unknown, depth = 0) => {
@@ -374,7 +391,10 @@ export const extractThoughtContent = (value: unknown): string[] => {
     }
 
     Object.entries(payload).forEach(([key, item]) => {
-      const normalizedKey = String(key || '').trim().toLowerCase().replace(/-/g, '_');
+      const normalizedKey = String(key || '')
+        .trim()
+        .toLowerCase()
+        .replace(/-/g, '_');
       if (thoughtKeys.has(normalizedKey)) {
         if (Array.isArray(item)) {
           item.forEach((entry) => push(entry));
@@ -395,7 +415,10 @@ export const extractTextContent = (value: unknown): string => {
     const normalized = stripMarkdownCodeFence(value);
     if (!normalized) return '';
     const trimmed = normalized.trim();
-    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    if (
+      (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+      (trimmed.startsWith('[') && trimmed.endsWith(']'))
+    ) {
       try {
         const parsed = JSON.parse(trimmed);
         return extractTextContent(parsed);
@@ -404,18 +427,26 @@ export const extractTextContent = (value: unknown): string => {
       }
     }
     if (
-      trimmed.startsWith('data:image/')
-      || trimmed.startsWith('data:audio/')
-      || trimmed.startsWith('data:video/')
-    ) return '';
-    if (trimmed.replace(/\s+/g, '').length >= 128 && /^[A-Za-z0-9+/=]+$/.test(trimmed.replace(/\s+/g, ''))) return '';
+      trimmed.startsWith('data:image/') ||
+      trimmed.startsWith('data:audio/') ||
+      trimmed.startsWith('data:video/')
+    )
+      return '';
+    if (
+      trimmed.replace(/\s+/g, '').length >= 128 &&
+      /^[A-Za-z0-9+/=]+$/.test(trimmed.replace(/\s+/g, ''))
+    )
+      return '';
     return normalized;
   }
   if (typeof value === 'number' || typeof value === 'boolean') {
     return String(value);
   }
   if (Array.isArray(value)) {
-    return value.map((item) => extractTextContent(item)).filter(Boolean).join('\n');
+    return value
+      .map((item) => extractTextContent(item))
+      .filter(Boolean)
+      .join('\n');
   }
   if (isPlainObject(value)) {
     const candidates = ['text', 'message', 'summary', 'content', 'result', 'finalOutput', 'merged'];
@@ -424,10 +455,11 @@ export const extractTextContent = (value: unknown): string => {
       if (typeof candidate === 'string' && candidate.trim()) {
         const normalizedCandidate = candidate.trim();
         if (
-          normalizedCandidate.startsWith('data:image/')
-          || normalizedCandidate.startsWith('data:audio/')
-          || normalizedCandidate.startsWith('data:video/')
-        ) continue;
+          normalizedCandidate.startsWith('data:image/') ||
+          normalizedCandidate.startsWith('data:audio/') ||
+          normalizedCandidate.startsWith('data:video/')
+        )
+          continue;
         return stripMarkdownCodeFence(candidate);
       }
       const nested = extractTextContent(candidate);
@@ -471,7 +503,10 @@ const inferImageExtFromMime = (mimeType: string): string => {
 
 export const inferImageExtFromUrl = (imageUrl: string, fallbackMime = ''): string => {
   if (imageUrl.startsWith('data:image/')) {
-    const mime = imageUrl.slice(5, imageUrl.indexOf(';') > 0 ? imageUrl.indexOf(';') : imageUrl.indexOf(','));
+    const mime = imageUrl.slice(
+      5,
+      imageUrl.indexOf(';') > 0 ? imageUrl.indexOf(';') : imageUrl.indexOf(',')
+    );
     return inferImageExtFromMime(mime);
   }
   const pathname = imageUrl.toLowerCase().split('?')[0].split('#')[0];
@@ -499,22 +534,36 @@ const mergeUniqueNormalizedUrls = (base: string[], extra: string[], limit: numbe
 
 export const mergePreviewImagesIntoResult = (payload: unknown, previewImages: string[]) => {
   const normalizedPreviewImages = Array.isArray(previewImages)
-    ? previewImages.map((item) => String(item || '').trim()).filter(Boolean).slice(0, PREVIEW_IMAGE_MAX_ENTRIES)
+    ? previewImages
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .slice(0, PREVIEW_IMAGE_MAX_ENTRIES)
     : [];
   if (normalizedPreviewImages.length === 0) {
     return payload;
   }
 
   const extractedImageUrls = extractImageUrls(payload);
-  const mergedImageUrls = mergeUniqueNormalizedUrls(extractedImageUrls, normalizedPreviewImages, PREVIEW_IMAGE_MAX_ENTRIES);
-  const firstRenderableImage = mergedImageUrls.find((imageUrl) => isDirectlyRenderableImageUrl(imageUrl)) || '';
+  const mergedImageUrls = mergeUniqueNormalizedUrls(
+    extractedImageUrls,
+    normalizedPreviewImages,
+    PREVIEW_IMAGE_MAX_ENTRIES
+  );
+  const firstRenderableImage =
+    mergedImageUrls.find((imageUrl) => isDirectlyRenderableImageUrl(imageUrl)) || '';
   const firstPreviewImage = normalizedPreviewImages[0];
 
   if (isPlainObject(payload)) {
     const currentImageUrls = Array.isArray(payload.imageUrls)
-      ? payload.imageUrls.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
+      ? payload.imageUrls
+          .map((item: Record<string, unknown>) => String(item || '').trim())
+          .filter(Boolean)
       : [];
-    const mergedObjectImageUrls = mergeUniqueNormalizedUrls(currentImageUrls, mergedImageUrls, PREVIEW_IMAGE_MAX_ENTRIES);
+    const mergedObjectImageUrls = mergeUniqueNormalizedUrls(
+      currentImageUrls,
+      mergedImageUrls,
+      PREVIEW_IMAGE_MAX_ENTRIES
+    );
     const payloadImageUrl = typeof payload.imageUrl === 'string' ? payload.imageUrl.trim() : '';
     return {
       ...payload,
@@ -535,10 +584,13 @@ type PreviewMediaKind = 'audio' | 'video';
 export const mergePreviewMediaIntoResult = (
   payload: unknown,
   mediaKind: PreviewMediaKind,
-  previewUrls: string[],
+  previewUrls: string[]
 ) => {
   const normalizedPreviewUrls = Array.isArray(previewUrls)
-    ? previewUrls.map((item) => String(item || '').trim()).filter(Boolean).slice(0, PREVIEW_IMAGE_MAX_ENTRIES)
+    ? previewUrls
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .slice(0, PREVIEW_IMAGE_MAX_ENTRIES)
     : [];
   if (normalizedPreviewUrls.length === 0) {
     return payload;
@@ -550,14 +602,25 @@ export const mergePreviewMediaIntoResult = (
   const extractUrls = isAudio ? extractAudioUrls : extractVideoUrls;
   const isRenderableUrl = isAudio ? isDirectlyRenderableAudioUrl : isDirectlyRenderableVideoUrl;
   const extractedMediaUrls = extractUrls(payload);
-  const mergedMediaUrls = mergeUniqueNormalizedUrls(extractedMediaUrls, normalizedPreviewUrls, PREVIEW_IMAGE_MAX_ENTRIES);
-  const firstRenderableMediaUrl = mergedMediaUrls.find((item) => isRenderableUrl(item)) || normalizedPreviewUrls[0] || '';
+  const mergedMediaUrls = mergeUniqueNormalizedUrls(
+    extractedMediaUrls,
+    normalizedPreviewUrls,
+    PREVIEW_IMAGE_MAX_ENTRIES
+  );
+  const firstRenderableMediaUrl =
+    mergedMediaUrls.find((item) => isRenderableUrl(item)) || normalizedPreviewUrls[0] || '';
 
   if (isPlainObject(payload)) {
     const currentMediaUrls = Array.isArray(payload[urlsKey])
-      ? payload[urlsKey].map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
+      ? payload[urlsKey]
+          .map((item: Record<string, unknown>) => String(item || '').trim())
+          .filter(Boolean)
       : [];
-    const mergedObjectMediaUrls = mergeUniqueNormalizedUrls(currentMediaUrls, mergedMediaUrls, PREVIEW_IMAGE_MAX_ENTRIES);
+    const mergedObjectMediaUrls = mergeUniqueNormalizedUrls(
+      currentMediaUrls,
+      mergedMediaUrls,
+      PREVIEW_IMAGE_MAX_ENTRIES
+    );
     const payloadMediaUrl = typeof payload[urlKey] === 'string' ? payload[urlKey].trim() : '';
     return {
       ...payload,

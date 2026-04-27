@@ -230,9 +230,9 @@ const normalizeSelectionId = (value: unknown): string | null => {
   return normalized || null;
 };
 
-export const applySingleNodeSelection = <TData,>(
+export const applySingleNodeSelection = <TData>(
   inputNodes: Array<Node<TData>>,
-  selectedNodeId: unknown,
+  selectedNodeId: unknown
 ): Array<Node<TData>> => {
   const targetId = normalizeSelectionId(selectedNodeId);
   if (!Array.isArray(inputNodes) || inputNodes.length === 0) {
@@ -246,7 +246,7 @@ export const applySingleNodeSelection = <TData,>(
 
 export const applySingleEdgeSelection = (
   inputEdges: Array<Edge>,
-  selectedEdgeId: unknown,
+  selectedEdgeId: unknown
 ): Array<Edge> => {
   const targetId = normalizeSelectionId(selectedEdgeId);
   if (!Array.isArray(inputEdges) || inputEdges.length === 0) {
@@ -260,7 +260,8 @@ export const applySingleEdgeSelection = (
 
 const EDITABLE_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON']);
 const EDITABLE_ROLES = new Set(['combobox', 'textbox', 'spinbutton', 'searchbox']);
-const EDITABLE_CONTEXT_SELECTOR = '[contenteditable]:not([contenteditable="false"]), [data-workflow-editor-editable="true"]';
+const EDITABLE_CONTEXT_SELECTOR =
+  '[contenteditable]:not([contenteditable="false"]), [data-workflow-editor-editable="true"]';
 export const WORKFLOW_EDITOR_SCOPE_ATTRIBUTE = 'data-workflow-editor-scope';
 const WORKFLOW_EDITOR_SCOPE_SELECTOR = `[${WORKFLOW_EDITOR_SCOPE_ATTRIBUTE}]`;
 let workflowEditorScopeCounter = 0;
@@ -280,7 +281,9 @@ export const createWorkflowEditorScopeId = (): string => {
   return `workflow-editor-${Date.now()}-${workflowEditorScopeCounter}`;
 };
 
-export const resolveWorkflowEditorScopeIdFromTarget = (target: EventTarget | null): string | null => {
+export const resolveWorkflowEditorScopeIdFromTarget = (
+  target: EventTarget | null
+): string | null => {
   const element = toElement(target);
   if (!element) {
     return null;
@@ -292,7 +295,7 @@ export const resolveWorkflowEditorScopeIdFromTarget = (target: EventTarget | nul
 
 export const isWorkflowEventForEditorScope = (
   eventScopeId: unknown,
-  expectedEditorScopeId: string,
+  expectedEditorScopeId: string
 ): boolean => {
   const expected = String(expectedEditorScopeId || '').trim();
   const received = String(eventScopeId || '').trim();
@@ -302,7 +305,7 @@ export const isWorkflowEventForEditorScope = (
 export const dispatchScopedWorkflowEvent = <TDetail extends Record<string, unknown>>(
   eventName: string,
   target: EventTarget | null,
-  detail: TDetail,
+  detail: TDetail
 ): boolean => {
   if (typeof window === 'undefined') {
     return false;
@@ -311,12 +314,14 @@ export const dispatchScopedWorkflowEvent = <TDetail extends Record<string, unkno
   if (!editorScopeId) {
     return false;
   }
-  window.dispatchEvent(new CustomEvent(eventName, {
-    detail: {
-      ...detail,
-      editorScopeId,
-    },
-  }));
+  window.dispatchEvent(
+    new CustomEvent(eventName, {
+      detail: {
+        ...detail,
+        editorScopeId,
+      },
+    })
+  );
   return true;
 };
 
@@ -331,12 +336,18 @@ export const isEventTargetWithinEditableContext = (target: EventTarget | null): 
     return true;
   }
 
-  const role = String(element.getAttribute('role') || '').trim().toLowerCase();
+  const role = String(element.getAttribute('role') || '')
+    .trim()
+    .toLowerCase();
   if (EDITABLE_ROLES.has(role)) {
     return true;
   }
 
-  if (typeof HTMLElement !== 'undefined' && element instanceof HTMLElement && element.isContentEditable) {
+  if (
+    typeof HTMLElement !== 'undefined' &&
+    element instanceof HTMLElement &&
+    element.isContentEditable
+  ) {
     return true;
   }
 
@@ -344,7 +355,7 @@ export const isEventTargetWithinEditableContext = (target: EventTarget | null): 
 };
 
 export const isKeyboardEventWithinEditableContext = (
-  event: Pick<KeyboardEvent, 'target' | 'composedPath'>,
+  event: Pick<KeyboardEvent, 'target' | 'composedPath'>
 ): boolean => {
   if (isEventTargetWithinEditableContext(event.target ?? null)) {
     return true;
@@ -355,13 +366,14 @@ export const isKeyboardEventWithinEditableContext = (
   return event.composedPath().some((target) => isEventTargetWithinEditableContext(target));
 };
 
-const hasValidPosition = (position: Record<string, unknown>): position is { x: number; y: number } => {
-  return Boolean(
-    position &&
-    typeof position.x === 'number' &&
-    Number.isFinite(position.x) &&
-    typeof position.y === 'number' &&
-    Number.isFinite(position.y)
+const hasValidPosition = (position: unknown): position is { x: number; y: number } => {
+  if (!position || typeof position !== 'object') return false;
+  const p = position as Record<string, unknown>;
+  return (
+    typeof p.x === 'number' &&
+    Number.isFinite(p.x) &&
+    typeof p.y === 'number' &&
+    Number.isFinite(p.y)
   );
 };
 
@@ -375,33 +387,37 @@ const getFallbackNodePosition = (index: number) => {
 };
 
 export const normalizeLoadedNode = (node: unknown, index: number): Node<WorkflowNodeData> => {
-  const safeType = node?.data?.type || node?.type || 'agent';
-  const safePosition = hasValidPosition(node?.position)
-    ? node.position
-    : hasValidPosition(node?.positionAbsolute)
-      ? node.positionAbsolute
+  const n = (node && typeof node === 'object' ? node : {}) as Record<string, unknown>;
+  const nData = (n.data && typeof n.data === 'object' ? n.data : {}) as Record<string, unknown>;
+  const safeType = (nData.type as string) || (n.type as string) || 'agent';
+  const safePosition = hasValidPosition(n.position)
+    ? (n.position as { x: number; y: number })
+    : hasValidPosition(n.positionAbsolute)
+      ? (n.positionAbsolute as { x: number; y: number })
       : getFallbackNodePosition(index);
-  const rawData = { ...(node?.data || {}) };
-  const rawPortLayout = rawData?.portLayout;
-  const normalizedPortLayout = rawPortLayout && typeof rawPortLayout === 'object' && !Array.isArray(rawPortLayout)
-    ? resolveNodePortLayout(safeType, rawPortLayout)
-    : undefined;
+  const rawData = { ...nData };
+  const rawPortLayout = rawData.portLayout;
+  const normalizedPortLayout =
+    rawPortLayout && typeof rawPortLayout === 'object' && !Array.isArray(rawPortLayout)
+      ? resolveNodePortLayout(safeType, rawPortLayout as Record<string, unknown>)
+      : undefined;
   const normalizedData: WorkflowNodeData = {
-    ...(rawData as WorkflowNodeData),
+    // rawData 是后端模板节点 data 字段（未类型化），通过 unknown 中转避免 TS 拒绝
+    ...(rawData as unknown as WorkflowNodeData),
     type: safeType,
-    label: node?.data?.label || node?.label || `节点 ${index + 1}`,
-    description: node?.data?.description || '',
-    icon: node?.data?.icon || '🔧',
-    iconColor: node?.data?.iconColor || 'bg-slate-500',
+    label: (nData.label as string) || (n.label as string) || `节点 ${index + 1}`,
+    description: (nData.description as string) || '',
+    icon: (nData.icon as string) || '🔧',
+    iconColor: (nData.iconColor as string) || 'bg-slate-500',
   };
   if (normalizedPortLayout) {
     normalizedData.portLayout = normalizedPortLayout;
   }
 
   return {
-    ...(node || {}),
-    id: String(node?.id || `node-loaded-${index}-${Date.now()}`),
-    type: node?.type || safeType,
+    ...(n as object),
+    id: String(n.id || `node-loaded-${index}-${Date.now()}`),
+    type: (n.type as string) || safeType,
     position: safePosition,
     data: normalizedData,
   };
@@ -441,48 +457,74 @@ export interface TemplateSampleInput {
 
 export const normalizeTemplateSampleInput = (value: unknown): TemplateSampleInput => {
   const safeValue = isPlainObject(value) ? value : {};
-  const imageUrls = Array.from(new Set([
-    ...(Array.isArray(safeValue.imageUrls)
-      ? safeValue.imageUrls.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
-      : []),
-    ...(Array.isArray(safeValue.image_urls)
-      ? safeValue.image_urls.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
-      : []),
-  ]));
+  const imageUrls = Array.from(
+    new Set([
+      ...(Array.isArray(safeValue.imageUrls)
+        ? safeValue.imageUrls
+            .map((item: Record<string, unknown>) => String(item || '').trim())
+            .filter(Boolean)
+        : []),
+      ...(Array.isArray(safeValue.image_urls)
+        ? safeValue.image_urls
+            .map((item: Record<string, unknown>) => String(item || '').trim())
+            .filter(Boolean)
+        : []),
+    ])
+  );
   const prompts = Array.isArray(safeValue.prompts)
-    ? safeValue.prompts.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
+    ? safeValue.prompts
+        .map((item: Record<string, unknown>) => String(item || '').trim())
+        .filter(Boolean)
     : [];
   const task = String(safeValue.task || safeValue.prompt || safeValue.text || '').trim();
   const imageUrlRaw = String(safeValue.imageUrl || safeValue.image_url || '').trim();
   const imageUrl = imageUrlRaw || imageUrls[0] || '';
-  const videoUrls = Array.from(new Set([
-    ...(Array.isArray(safeValue.videoUrls)
-      ? safeValue.videoUrls.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
-      : []),
-    ...(Array.isArray(safeValue.video_urls)
-      ? safeValue.video_urls.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
-      : []),
-  ]));
+  const videoUrls = Array.from(
+    new Set([
+      ...(Array.isArray(safeValue.videoUrls)
+        ? safeValue.videoUrls
+            .map((item: Record<string, unknown>) => String(item || '').trim())
+            .filter(Boolean)
+        : []),
+      ...(Array.isArray(safeValue.video_urls)
+        ? safeValue.video_urls
+            .map((item: Record<string, unknown>) => String(item || '').trim())
+            .filter(Boolean)
+        : []),
+    ])
+  );
   const videoUrlRaw = String(safeValue.videoUrl || safeValue.video_url || '').trim();
   const videoUrl = videoUrlRaw || videoUrls[0] || '';
-  const audioUrls = Array.from(new Set([
-    ...(Array.isArray(safeValue.audioUrls)
-      ? safeValue.audioUrls.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
-      : []),
-    ...(Array.isArray(safeValue.audio_urls)
-      ? safeValue.audio_urls.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
-      : []),
-  ]));
+  const audioUrls = Array.from(
+    new Set([
+      ...(Array.isArray(safeValue.audioUrls)
+        ? safeValue.audioUrls
+            .map((item: Record<string, unknown>) => String(item || '').trim())
+            .filter(Boolean)
+        : []),
+      ...(Array.isArray(safeValue.audio_urls)
+        ? safeValue.audio_urls
+            .map((item: Record<string, unknown>) => String(item || '').trim())
+            .filter(Boolean)
+        : []),
+    ])
+  );
   const audioUrlRaw = String(safeValue.audioUrl || safeValue.audio_url || '').trim();
   const audioUrl = audioUrlRaw || audioUrls[0] || '';
-  const fileUrls = Array.from(new Set([
-    ...(Array.isArray(safeValue.fileUrls)
-      ? safeValue.fileUrls.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
-      : []),
-    ...(Array.isArray(safeValue.file_urls)
-      ? safeValue.file_urls.map((item: Record<string, unknown>) => String(item || '').trim()).filter(Boolean)
-      : []),
-  ]));
+  const fileUrls = Array.from(
+    new Set([
+      ...(Array.isArray(safeValue.fileUrls)
+        ? safeValue.fileUrls
+            .map((item: Record<string, unknown>) => String(item || '').trim())
+            .filter(Boolean)
+        : []),
+      ...(Array.isArray(safeValue.file_urls)
+        ? safeValue.file_urls
+            .map((item: Record<string, unknown>) => String(item || '').trim())
+            .filter(Boolean)
+        : []),
+    ])
+  );
   const fileUrlRaw = String(safeValue.fileUrl || safeValue.file_url || '').trim();
   const fileUrl = fileUrlRaw || fileUrls[0] || '';
   return {
@@ -527,38 +569,15 @@ const WORKFLOW_ALLOWED_IMAGE_EDIT_MODES = new Set([
   'virtual-try-on',
 ]);
 
-const WORKFLOW_ALLOWED_IMAGE_OUTPUT_MIME_TYPES = new Set([
-  'image/png',
-  'image/jpeg',
-  'image/webp',
-]);
+const WORKFLOW_ALLOWED_IMAGE_OUTPUT_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
-const WORKFLOW_ALLOWED_AUDIO_OUTPUT_FORMATS = new Set([
-  'mp3',
-  'wav',
-  'opus',
-  'aac',
-  'flac',
-  'pcm',
-]);
+const WORKFLOW_ALLOWED_AUDIO_OUTPUT_FORMATS = new Set(['mp3', 'wav', 'opus', 'aac', 'flac', 'pcm']);
 
-const WORKFLOW_ALLOWED_VIDEO_ASPECT_RATIOS = new Set([
-  '16:9',
-  '9:16',
-]);
+const WORKFLOW_ALLOWED_VIDEO_ASPECT_RATIOS = new Set(['16:9', '9:16']);
 
-const WORKFLOW_ALLOWED_VIDEO_RESOLUTIONS = new Set([
-  '720p',
-  '1080p',
-  '4k',
-]);
+const WORKFLOW_ALLOWED_VIDEO_RESOLUTIONS = new Set(['720p', '1080p', '4k']);
 
-const WORKFLOW_ALLOWED_VIDEO_SUBTITLE_MODES = new Set([
-  'none',
-  'vtt',
-  'srt',
-  'both',
-]);
+const WORKFLOW_ALLOWED_VIDEO_SUBTITLE_MODES = new Set(['none', 'vtt', 'srt', 'both']);
 
 const WORKFLOW_ALLOWED_VIDEO_PERSON_GENERATION = new Set([
   'dont_allow',
@@ -566,11 +585,7 @@ const WORKFLOW_ALLOWED_VIDEO_PERSON_GENERATION = new Set([
   'allow_all',
 ]);
 
-const WORKFLOW_ALLOWED_OUTPUT_FORMATS = new Set([
-  'text',
-  'json',
-  'markdown',
-]);
+const WORKFLOW_ALLOWED_OUTPUT_FORMATS = new Set(['text', 'json', 'markdown']);
 
 const normalizeWorkflowStringList = (value: unknown, maxItems = 12): string[] => {
   if (!Array.isArray(value)) return [];
@@ -602,7 +617,9 @@ const clampOptionalFloat = (value: unknown, minimum: number, maximum: number): n
 };
 
 const normalizeOptionalChoice = (value: unknown, allowed: Set<string>): string | null => {
-  const text = String(value || '').trim().toLowerCase();
+  const text = String(value || '')
+    .trim()
+    .toLowerCase();
   if (!text) return null;
   return allowed.has(text) ? text : null;
 };
@@ -645,7 +662,10 @@ const normalizeVideoResolutionForExecute = (value: unknown): string | null => {
 };
 
 const normalizeAgentTaskTypeForExecute = (value: unknown): string => {
-  const raw = String(value || '').trim().toLowerCase().replace(/_/g, '-');
+  const raw = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, '-');
   const aliases: Record<string, string> = {
     'vision-analyze': 'vision-understand',
     'image-analyze': 'vision-understand',
@@ -668,7 +688,9 @@ const normalizeAgentTaskTypeForExecute = (value: unknown): string => {
 };
 
 const normalizeAnalysisTypeForExecute = (value: unknown): string => {
-  const raw = String(value || '').trim().toLowerCase();
+  const raw = String(value || '')
+    .trim()
+    .toLowerCase();
   const aliases: Record<string, string> = {
     summary: 'statistics',
     stats: 'statistics',
@@ -683,12 +705,19 @@ const normalizeAnalysisTypeForExecute = (value: unknown): string => {
 };
 
 const normalizeImageEditModeForExecute = (value: unknown): string | null => {
-  const normalized = String(value || '').trim().toLowerCase().replace(/_/g, '-');
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, '-');
   if (!normalized) return null;
   return WORKFLOW_ALLOWED_IMAGE_EDIT_MODES.has(normalized) ? normalized : null;
 };
 
-const normalizeNodeSizeForExecute = (value: unknown, minimum: number, maximum: number): number | undefined => {
+const normalizeNodeSizeForExecute = (
+  value: unknown,
+  minimum: number,
+  maximum: number
+): number | undefined => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return undefined;
   return Math.max(minimum, Math.min(maximum, Math.round(parsed)));
@@ -696,16 +725,10 @@ const normalizeNodeSizeForExecute = (value: unknown, minimum: number, maximum: n
 
 export const normalizeWorkflowInputForExecute = (
   rawInput: unknown,
-  fallbackTask: string,
+  fallbackTask: string
 ): Record<string, unknown> => {
   const payload = isPlainObject(rawInput) ? { ...rawInput } : {};
-  const task = String(
-    payload.task
-    || payload.prompt
-    || payload.text
-    || fallbackTask
-    || ''
-  ).trim();
+  const task = String(payload.task || payload.prompt || payload.text || fallbackTask || '').trim();
   payload.task = task || String(fallbackTask || '').trim();
 
   let imageUrls = normalizeWorkflowStringList(payload.imageUrls);
@@ -787,7 +810,7 @@ export const normalizeWorkflowInputForExecute = (
 };
 
 export const normalizeWorkflowNodeDataForExecute = (
-  rawData: Partial<WorkflowNodeData> & Record<string, unknown>,
+  rawData: Partial<WorkflowNodeData> & Record<string, unknown>
 ): Record<string, unknown> => {
   const data: Record<string, unknown> = isPlainObject(rawData) ? { ...rawData } : {};
 
@@ -811,7 +834,12 @@ export const normalizeWorkflowNodeDataForExecute = (
     }
   }
 
-  for (const fieldName of ['agentNumberOfImages', 'toolNumberOfImages', 'numberOfImages', 'number_of_images']) {
+  for (const fieldName of [
+    'agentNumberOfImages',
+    'toolNumberOfImages',
+    'numberOfImages',
+    'number_of_images',
+  ]) {
     if (data[fieldName] === undefined) continue;
     const normalized = clampOptionalInt(data[fieldName], 1, 8);
     if (normalized === null) {
@@ -841,7 +869,10 @@ export const normalizeWorkflowNodeDataForExecute = (
 
   for (const fieldName of ['agentOutputMimeType', 'toolOutputMimeType']) {
     if (data[fieldName] === undefined) continue;
-    const normalized = normalizeOptionalChoice(data[fieldName], WORKFLOW_ALLOWED_IMAGE_OUTPUT_MIME_TYPES);
+    const normalized = normalizeOptionalChoice(
+      data[fieldName],
+      WORKFLOW_ALLOWED_IMAGE_OUTPUT_MIME_TYPES
+    );
     if (!normalized) {
       delete data[fieldName];
     } else {
@@ -890,10 +921,7 @@ export const normalizeWorkflowNodeDataForExecute = (
   }
 
   if (normalizedTaskType === 'video-gen') {
-    for (const fieldName of [
-      'agentVideoDurationSeconds',
-      'agent_video_duration_seconds',
-    ]) {
+    for (const fieldName of ['agentVideoDurationSeconds', 'agent_video_duration_seconds']) {
       if (data[fieldName] === undefined) continue;
       const normalized = clampOptionalInt(data[fieldName], 1, 20);
       if (normalized === null) {
@@ -903,10 +931,7 @@ export const normalizeWorkflowNodeDataForExecute = (
       }
     }
 
-    for (const fieldName of [
-      'agentVideoExtensionCount',
-      'agent_video_extension_count',
-    ]) {
+    for (const fieldName of ['agentVideoExtensionCount', 'agent_video_extension_count']) {
       if (data[fieldName] === undefined) continue;
       const normalized = clampOptionalInt(data[fieldName], 0, 20);
       if (normalized === null) {
@@ -925,7 +950,10 @@ export const normalizeWorkflowNodeDataForExecute = (
       'agent_aspect_ratio',
     ]) {
       if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalChoice(data[fieldName], WORKFLOW_ALLOWED_VIDEO_ASPECT_RATIOS);
+      const normalized = normalizeOptionalChoice(
+        data[fieldName],
+        WORKFLOW_ALLOWED_VIDEO_ASPECT_RATIOS
+      );
       if (!normalized) {
         delete data[fieldName];
       } else {
@@ -964,12 +992,12 @@ export const normalizeWorkflowNodeDataForExecute = (
       data[fieldName] = Boolean(data[fieldName]);
     }
 
-    for (const fieldName of [
-      'agentPersonGeneration',
-      'agent_person_generation',
-    ]) {
+    for (const fieldName of ['agentPersonGeneration', 'agent_person_generation']) {
       if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalChoice(data[fieldName], WORKFLOW_ALLOWED_VIDEO_PERSON_GENERATION);
+      const normalized = normalizeOptionalChoice(
+        data[fieldName],
+        WORKFLOW_ALLOWED_VIDEO_PERSON_GENERATION
+      );
       if (!normalized) {
         delete data[fieldName];
       } else {
@@ -977,12 +1005,12 @@ export const normalizeWorkflowNodeDataForExecute = (
       }
     }
 
-    for (const fieldName of [
-      'agentSubtitleMode',
-      'agent_subtitle_mode',
-    ]) {
+    for (const fieldName of ['agentSubtitleMode', 'agent_subtitle_mode']) {
       if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalChoice(data[fieldName], WORKFLOW_ALLOWED_VIDEO_SUBTITLE_MODES);
+      const normalized = normalizeOptionalChoice(
+        data[fieldName],
+        WORKFLOW_ALLOWED_VIDEO_SUBTITLE_MODES
+      );
       if (!normalized) {
         delete data[fieldName];
       } else {
@@ -990,10 +1018,7 @@ export const normalizeWorkflowNodeDataForExecute = (
       }
     }
 
-    for (const fieldName of [
-      'agentSubtitleLanguage',
-      'agent_subtitle_language',
-    ]) {
+    for (const fieldName of ['agentSubtitleLanguage', 'agent_subtitle_language']) {
       if (data[fieldName] === undefined) continue;
       const normalized = normalizeOptionalString(data[fieldName], 32);
       if (!normalized) {
@@ -1035,10 +1060,7 @@ export const normalizeWorkflowNodeDataForExecute = (
       }
     }
 
-    for (const fieldName of [
-      'agentVideoMaskMode',
-      'agent_video_mask_mode',
-    ]) {
+    for (const fieldName of ['agentVideoMaskMode', 'agent_video_mask_mode']) {
       if (data[fieldName] === undefined) continue;
       const normalized = normalizeOptionalString(data[fieldName], 64);
       if (!normalized) {
@@ -1049,12 +1071,16 @@ export const normalizeWorkflowNodeDataForExecute = (
     }
   }
 
-  const normalizedToolName = String(data.toolName || data.tool_name || '').trim().toLowerCase().replace(/-/g, '_');
-  if (normalizedToolName === 'video_generate' || normalizedToolName === 'generate_video' || normalizedToolName === 'video_gen') {
-    for (const fieldName of [
-      'toolVideoDurationSeconds',
-      'tool_video_duration_seconds',
-    ]) {
+  const normalizedToolName = String(data.toolName || data.tool_name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, '_');
+  if (
+    normalizedToolName === 'video_generate' ||
+    normalizedToolName === 'generate_video' ||
+    normalizedToolName === 'video_gen'
+  ) {
+    for (const fieldName of ['toolVideoDurationSeconds', 'tool_video_duration_seconds']) {
       if (data[fieldName] === undefined) continue;
       const normalized = clampOptionalInt(data[fieldName], 1, 20);
       if (normalized === null) {
@@ -1064,10 +1090,7 @@ export const normalizeWorkflowNodeDataForExecute = (
       }
     }
 
-    for (const fieldName of [
-      'toolVideoExtensionCount',
-      'tool_video_extension_count',
-    ]) {
+    for (const fieldName of ['toolVideoExtensionCount', 'tool_video_extension_count']) {
       if (data[fieldName] === undefined) continue;
       const normalized = clampOptionalInt(data[fieldName], 0, 20);
       if (normalized === null) {
@@ -1077,12 +1100,12 @@ export const normalizeWorkflowNodeDataForExecute = (
       }
     }
 
-    for (const fieldName of [
-      'toolAspectRatio',
-      'tool_aspect_ratio',
-    ]) {
+    for (const fieldName of ['toolAspectRatio', 'tool_aspect_ratio']) {
       if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalChoice(data[fieldName], WORKFLOW_ALLOWED_VIDEO_ASPECT_RATIOS);
+      const normalized = normalizeOptionalChoice(
+        data[fieldName],
+        WORKFLOW_ALLOWED_VIDEO_ASPECT_RATIOS
+      );
       if (!normalized) {
         delete data[fieldName];
       } else {
@@ -1105,20 +1128,17 @@ export const normalizeWorkflowNodeDataForExecute = (
       }
     }
 
-    for (const fieldName of [
-      'toolGenerateAudio',
-      'tool_generate_audio',
-    ]) {
+    for (const fieldName of ['toolGenerateAudio', 'tool_generate_audio']) {
       if (data[fieldName] === undefined) continue;
       data[fieldName] = Boolean(data[fieldName]);
     }
 
-    for (const fieldName of [
-      'toolPersonGeneration',
-      'tool_person_generation',
-    ]) {
+    for (const fieldName of ['toolPersonGeneration', 'tool_person_generation']) {
       if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalChoice(data[fieldName], WORKFLOW_ALLOWED_VIDEO_PERSON_GENERATION);
+      const normalized = normalizeOptionalChoice(
+        data[fieldName],
+        WORKFLOW_ALLOWED_VIDEO_PERSON_GENERATION
+      );
       if (!normalized) {
         delete data[fieldName];
       } else {
@@ -1126,12 +1146,12 @@ export const normalizeWorkflowNodeDataForExecute = (
       }
     }
 
-    for (const fieldName of [
-      'toolSubtitleMode',
-      'tool_subtitle_mode',
-    ]) {
+    for (const fieldName of ['toolSubtitleMode', 'tool_subtitle_mode']) {
       if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalChoice(data[fieldName], WORKFLOW_ALLOWED_VIDEO_SUBTITLE_MODES);
+      const normalized = normalizeOptionalChoice(
+        data[fieldName],
+        WORKFLOW_ALLOWED_VIDEO_SUBTITLE_MODES
+      );
       if (!normalized) {
         delete data[fieldName];
       } else {
@@ -1139,10 +1159,7 @@ export const normalizeWorkflowNodeDataForExecute = (
       }
     }
 
-    for (const fieldName of [
-      'toolSubtitleLanguage',
-      'tool_subtitle_language',
-    ]) {
+    for (const fieldName of ['toolSubtitleLanguage', 'tool_subtitle_language']) {
       if (data[fieldName] === undefined) continue;
       const normalized = normalizeOptionalString(data[fieldName], 32);
       if (!normalized) {
@@ -1173,10 +1190,7 @@ export const normalizeWorkflowNodeDataForExecute = (
       }
     }
 
-    for (const fieldName of [
-      'toolVideoMaskMode',
-      'tool_video_mask_mode',
-    ]) {
+    for (const fieldName of ['toolVideoMaskMode', 'tool_video_mask_mode']) {
       if (data[fieldName] === undefined) continue;
       const normalized = normalizeOptionalString(data[fieldName], 64);
       if (!normalized) {
@@ -1210,7 +1224,10 @@ export const normalizeWorkflowNodeDataForExecute = (
       'agent_speech_format',
     ]) {
       if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalChoice(data[fieldName], WORKFLOW_ALLOWED_AUDIO_OUTPUT_FORMATS);
+      const normalized = normalizeOptionalChoice(
+        data[fieldName],
+        WORKFLOW_ALLOWED_AUDIO_OUTPUT_FORMATS
+      );
       if (!normalized) {
         delete data[fieldName];
       } else {
@@ -1249,7 +1266,7 @@ export const normalizeWorkflowNodeDataForExecute = (
 export const resolveTemplateInputPlaceholder = (
   rawValue: unknown,
   sampleInput: TemplateSampleInput,
-  fallbackValue = '',
+  fallbackValue = ''
 ) => {
   const text = String(rawValue || '').trim();
   if (!text) {
@@ -1264,11 +1281,31 @@ export const resolveTemplateInputPlaceholder = (
     });
 
   let resolved = text;
-  resolved = replaceByIndex(resolved, /\{\{\s*input\.imageUrls\[(\d+)\]\s*\}\}/g, sampleInput.imageUrls);
-  resolved = replaceByIndex(resolved, /\{\{\s*input\.videoUrls\[(\d+)\]\s*\}\}/g, sampleInput.videoUrls);
-  resolved = replaceByIndex(resolved, /\{\{\s*input\.audioUrls\[(\d+)\]\s*\}\}/g, sampleInput.audioUrls);
-  resolved = replaceByIndex(resolved, /\{\{\s*input\.fileUrls\[(\d+)\]\s*\}\}/g, sampleInput.fileUrls);
-  resolved = replaceByIndex(resolved, /\{\{\s*input\.prompts\[(\d+)\]\s*\}\}/g, sampleInput.prompts);
+  resolved = replaceByIndex(
+    resolved,
+    /\{\{\s*input\.imageUrls\[(\d+)\]\s*\}\}/g,
+    sampleInput.imageUrls
+  );
+  resolved = replaceByIndex(
+    resolved,
+    /\{\{\s*input\.videoUrls\[(\d+)\]\s*\}\}/g,
+    sampleInput.videoUrls
+  );
+  resolved = replaceByIndex(
+    resolved,
+    /\{\{\s*input\.audioUrls\[(\d+)\]\s*\}\}/g,
+    sampleInput.audioUrls
+  );
+  resolved = replaceByIndex(
+    resolved,
+    /\{\{\s*input\.fileUrls\[(\d+)\]\s*\}\}/g,
+    sampleInput.fileUrls
+  );
+  resolved = replaceByIndex(
+    resolved,
+    /\{\{\s*input\.prompts\[(\d+)\]\s*\}\}/g,
+    sampleInput.prompts
+  );
   resolved = resolved
     .replace(/\{\{\s*input\.(?:task|prompt|text)\s*\}\}/g, sampleInput.task)
     .replace(/\{\{\s*input\.imageUrl\s*\}\}/g, sampleInput.imageUrl)
@@ -1284,19 +1321,24 @@ export const resolveTemplateInputPlaceholder = (
   return resolved || String(fallbackValue || '').trim();
 };
 
-const normalizeAgentName = (value: string) => String(value || '').trim().toLowerCase();
+const normalizeAgentName = (value: string) =>
+  String(value || '')
+    .trim()
+    .toLowerCase();
 
-export const isTerminalExecutionStatus = (status: string) => (
-  status === 'completed'
-  || status === 'failed'
-  || status === 'cancelled'
-);
+export const isTerminalExecutionStatus = (status: string) =>
+  status === 'completed' || status === 'failed' || status === 'cancelled';
 
 export const applyAgentBindingsToNodes = (
   inputNodes: Node<WorkflowNodeData>[],
-  agents: AgentDef[],
+  agents: AgentDef[]
 ): Node<WorkflowNodeData>[] => {
-  if (!Array.isArray(inputNodes) || inputNodes.length === 0 || !Array.isArray(agents) || agents.length === 0) {
+  if (
+    !Array.isArray(inputNodes) ||
+    inputNodes.length === 0 ||
+    !Array.isArray(agents) ||
+    agents.length === 0
+  ) {
     return inputNodes;
   }
 
@@ -1349,10 +1391,15 @@ export const applyAgentBindingsToNodes = (
 
 export const buildWorkflowStructureFingerprint = (
   workflowNodes: Array<Node<WorkflowNodeData>>,
-  workflowEdges: Array<Edge>,
+  workflowEdges: Array<Edge>
 ): string => {
   const nodeTokens = workflowNodes
-    .map((node) => `${String(node?.id || '').trim()}::${String(node?.data?.type || node?.type || '').trim().toLowerCase()}`)
+    .map(
+      (node) =>
+        `${String(node?.id || '').trim()}::${String(node?.data?.type || node?.type || '')
+          .trim()
+          .toLowerCase()}`
+    )
     .sort()
     .join('|');
   const edgeTokens = workflowEdges

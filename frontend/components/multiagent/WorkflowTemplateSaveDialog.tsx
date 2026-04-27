@@ -35,10 +35,7 @@ interface WorkflowTemplateSaveDialogProps {
   nodes: Node<CustomNodeData>[];
   edges: Edge[];
   activeTemplate?: WorkflowTemplateSaveTarget | null;
-  onSaveSuccess?: (
-    template: WorkflowTemplate,
-    meta?: { mode: 'create' | 'update' }
-  ) => void;
+  onSaveSuccess?: (template: WorkflowTemplate, meta?: { mode: 'create' | 'update' }) => void;
 }
 
 const getAuthHeadersWithJson = (): HeadersInit => ({
@@ -46,34 +43,39 @@ const getAuthHeadersWithJson = (): HeadersInit => ({
   ...getAuthHeaders(),
 });
 
-const normalizeTemplateResponse = (template: Record<string, unknown>): WorkflowTemplate => {
-  const rawConfig = template?.config || {};
+const normalizeTemplateResponse = (template: unknown): WorkflowTemplate => {
+  const t = (template && typeof template === 'object' ? template : {}) as Record<string, unknown>;
+  const rawConfig = (t.config && typeof t.config === 'object' ? t.config : {}) as Record<
+    string,
+    unknown
+  >;
   return {
-    id: template?.id,
-    userId: typeof template?.userId === 'string' ? template.userId : undefined,
-    name: template?.name || '未命名模板',
-    description: template?.description || '',
-    category: template?.category || '通用',
-    tags: Array.isArray(template?.tags) ? template.tags : [],
-    workflowType: template?.workflowType || 'graph',
-    version: template?.version,
-    isEditable: Boolean(template?.isEditable ?? template?.is_editable ?? true),
-    isDeletable: Boolean(template?.isDeletable ?? template?.is_deletable ?? true),
-    isPublic: Boolean(template?.isPublic ?? template?.is_public),
+    id: t.id as WorkflowTemplate['id'],
+    userId: typeof t.userId === 'string' ? t.userId : undefined,
+    name: (t.name as string) || '未命名模板',
+    description: (t.description as string) || '',
+    category: (t.category as string) || '通用',
+    tags: Array.isArray(t.tags) ? (t.tags as string[]) : [],
+    workflowType: (t.workflowType as WorkflowTemplate['workflowType']) || 'graph',
+    version: t.version as WorkflowTemplate['version'],
+    isEditable: Boolean(t.isEditable ?? t.is_editable ?? true),
+    isDeletable: Boolean(t.isDeletable ?? t.is_deletable ?? true),
+    isPublic: Boolean(t.isPublic ?? t.is_public),
     config: {
-      schemaVersion: rawConfig?.schemaVersion || 2,
-      nodes: Array.isArray(rawConfig?.nodes) ? rawConfig.nodes : [],
-      edges: Array.isArray(rawConfig?.edges) ? rawConfig.edges : [],
+      schemaVersion: (rawConfig.schemaVersion as number) || 2,
+      nodes: Array.isArray(rawConfig.nodes)
+        ? (rawConfig.nodes as WorkflowTemplate['config']['nodes'])
+        : [],
+      edges: Array.isArray(rawConfig.edges)
+        ? (rawConfig.edges as WorkflowTemplate['config']['edges'])
+        : [],
     },
-    createdAt: template?.createdAt || Date.now(),
-    updatedAt: template?.updatedAt || Date.now(),
+    createdAt: (t.createdAt as number) || Date.now(),
+    updatedAt: (t.updatedAt as number) || Date.now(),
   };
 };
 
-const buildTemplateConfigPayload = (
-  nodes: Node<CustomNodeData>[],
-  edges: Edge[],
-) => ({
+const buildTemplateConfigPayload = (nodes: Node<CustomNodeData>[], edges: Edge[]) => ({
   schemaVersion: 2,
   nodes: nodes.map((node) => ({
     ...node,
@@ -92,7 +94,7 @@ const buildTemplateConfigPayload = (
 
 const normalizeInitialCategory = (
   categories: string[],
-  activeTemplate: WorkflowTemplateSaveTarget | null | undefined,
+  activeTemplate: WorkflowTemplateSaveTarget | null | undefined
 ): string => {
   const preferred = String(activeTemplate?.category || '').trim();
   if (preferred) {
@@ -124,8 +126,11 @@ export const WorkflowTemplateSaveDialog: React.FC<WorkflowTemplateSaveDialogProp
   const [error, setError] = useState<string | null>(null);
 
   const canOverwriteActiveTemplate = useMemo(
-    () => Boolean(activeTemplate?.id && activeTemplate?.isEditable !== false && !activeTemplate?.isLocked),
-    [activeTemplate?.id, activeTemplate?.isEditable, activeTemplate?.isLocked],
+    () =>
+      Boolean(
+        activeTemplate?.id && activeTemplate?.isEditable !== false && !activeTemplate?.isLocked
+      ),
+    [activeTemplate?.id, activeTemplate?.isEditable, activeTemplate?.isLocked]
   );
 
   const resetForm = React.useCallback(() => {
@@ -155,13 +160,13 @@ export const WorkflowTemplateSaveDialog: React.FC<WorkflowTemplateSaveDialogProp
         includePublic: true,
         ensureDefaults: true,
       });
-      const names = items
-        .map((item) => String(item.name || '').trim())
-        .filter(Boolean);
+      const names = items.map((item) => String(item.name || '').trim()).filter(Boolean);
       const preferredCategory = String(activeTemplate?.category || '').trim();
-      const nextNames = preferredCategory && !names.some((item) => item.toLowerCase() === preferredCategory.toLowerCase())
-        ? [...names, preferredCategory]
-        : names;
+      const nextNames =
+        preferredCategory &&
+        !names.some((item) => item.toLowerCase() === preferredCategory.toLowerCase())
+          ? [...names, preferredCategory]
+          : names;
       setAvailableCategories(nextNames);
       setCategory((prev) => {
         if (prev && nextNames.some((item) => item.toLowerCase() === prev.toLowerCase())) {
@@ -191,7 +196,7 @@ export const WorkflowTemplateSaveDialog: React.FC<WorkflowTemplateSaveDialogProp
     }
 
     const existing = availableCategories.find(
-      (item) => item.toLowerCase() === normalizedName.toLowerCase(),
+      (item) => item.toLowerCase() === normalizedName.toLowerCase()
     );
     if (existing) {
       setCategory(existing);
@@ -254,11 +259,7 @@ export const WorkflowTemplateSaveDialog: React.FC<WorkflowTemplateSaveDialogProp
     }
     setError(null);
     setCategoryFeedback(null);
-  }, [
-    activeTemplate,
-    canOverwriteActiveTemplate,
-    isOpen,
-  ]);
+  }, [activeTemplate, canOverwriteActiveTemplate, isOpen]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -319,7 +320,8 @@ export const WorkflowTemplateSaveDialog: React.FC<WorkflowTemplateSaveDialogProp
         config: buildTemplateConfigPayload(nodes, edges),
       };
 
-      const isUpdateMode = saveMode === 'update' && canOverwriteActiveTemplate && Boolean(activeTemplate?.id);
+      const isUpdateMode =
+        saveMode === 'update' && canOverwriteActiveTemplate && Boolean(activeTemplate?.id);
       const endpoint = isUpdateMode
         ? `/api/workflows/templates/${encodeURIComponent(String(activeTemplate?.id || '').trim())}`
         : '/api/workflows/templates';
@@ -467,9 +469,7 @@ export const WorkflowTemplateSaveDialog: React.FC<WorkflowTemplateSaveDialogProp
                   disabled={saving || creatingCategory || loadingCategories}
                 >
                   {availableCategories.length === 0 ? (
-                    <option value="">
-                      {loadingCategories ? '分类加载中...' : '暂无可用分类'}
-                    </option>
+                    <option value="">{loadingCategories ? '分类加载中...' : '暂无可用分类'}</option>
                   ) : (
                     availableCategories.map((cat) => (
                       <option key={cat} value={cat}>
@@ -495,11 +495,13 @@ export const WorkflowTemplateSaveDialog: React.FC<WorkflowTemplateSaveDialogProp
               </div>
 
               {categoryFeedback && (
-                <div className={`text-xs ${
-                  categoryFeedback.startsWith('新增失败') || categoryFeedback.startsWith('加载分类失败')
-                    ? 'text-rose-300'
-                    : 'text-emerald-300'
-                }`}
+                <div
+                  className={`text-xs ${
+                    categoryFeedback.startsWith('新增失败') ||
+                    categoryFeedback.startsWith('加载分类失败')
+                      ? 'text-rose-300'
+                      : 'text-emerald-300'
+                  }`}
                 >
                   {categoryFeedback}
                 </div>
@@ -508,9 +510,7 @@ export const WorkflowTemplateSaveDialog: React.FC<WorkflowTemplateSaveDialogProp
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-200 mb-1">
-              标签（可选）
-            </label>
+            <label className="block text-sm font-medium text-slate-200 mb-1">标签（可选）</label>
             <input
               type="text"
               value={tagsInput}
@@ -519,9 +519,7 @@ export const WorkflowTemplateSaveDialog: React.FC<WorkflowTemplateSaveDialogProp
               className="w-full px-3 py-2 border border-slate-700 bg-slate-800 text-slate-100 placeholder-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50"
               disabled={saving}
             />
-            <p className="mt-1 text-xs text-slate-500">
-              标签可以帮助其他用户更容易找到这个模板
-            </p>
+            <p className="mt-1 text-xs text-slate-500">标签可以帮助其他用户更容易找到这个模板</p>
           </div>
 
           <div className="pt-4 border-t border-slate-700">

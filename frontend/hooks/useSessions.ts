@@ -23,9 +23,9 @@ const mergeMessagesById = (existingMessages: Message[], incomingMessages: Messag
     return existingMessages;
   }
 
-  const incomingById = new Map(incomingMessages.map(message => [message.id, message]));
-  const existingIds = new Set(existingMessages.map(message => message.id));
-  const merged = existingMessages.map(message => incomingById.get(message.id) || message);
+  const incomingById = new Map(incomingMessages.map((message) => [message.id, message]));
+  const existingIds = new Set(existingMessages.map((message) => message.id));
+  const merged = existingMessages.map((message) => incomingById.get(message.id) || message);
 
   for (const message of incomingMessages) {
     if (!existingIds.has(message.id)) {
@@ -40,21 +40,28 @@ const mergeMessagesById = (existingMessages: Message[], incomingMessages: Messag
 cacheManager.setTTL(CACHE_DOMAINS.SESSIONS, 30 * 60 * 1000); // 30 minutes
 cacheManager.setTTL(CACHE_DOMAINS.CURRENT_SESSION_ID, 30 * 60 * 1000); // 30 minutes
 
-export const useSessions = (
-  initialData?: {
-    sessions: ChatSession[];
-    sessionsHasMore?: boolean;
-  }
-) => {
+export const useSessions = (initialData?: {
+  sessions: ChatSession[];
+  sessionsHasMore?: boolean;
+}) => {
   // ✅ 使用 initialData 初始化状态（如果提供）
   const initialSessions = initialData?.sessions;
 
   // ✅ Sessions and currentSessionId now use CacheManager
   const sessions = useCacheSubscription<ChatSession[]>(CACHE_DOMAINS.SESSIONS, []);
-  const { set: setSessions, update: updateSessions } = useCacheUpdater<ChatSession[]>(CACHE_DOMAINS.SESSIONS, []);
+  const { set: setSessions, update: updateSessions } = useCacheUpdater<ChatSession[]>(
+    CACHE_DOMAINS.SESSIONS,
+    []
+  );
 
-  const currentSessionId = useCacheSubscription<string | null>(CACHE_DOMAINS.CURRENT_SESSION_ID, null);
-  const { set: setCurrentSessionId } = useCacheUpdater<string | null>(CACHE_DOMAINS.CURRENT_SESSION_ID, null);
+  const currentSessionId = useCacheSubscription<string | null>(
+    CACHE_DOMAINS.CURRENT_SESSION_ID,
+    null
+  );
+  const { set: setCurrentSessionId } = useCacheUpdater<string | null>(
+    CACHE_DOMAINS.CURRENT_SESSION_ID,
+    null
+  );
 
   // ✅ UI state remains as useState
   const [isLoading, setIsLoading] = useState(false);
@@ -73,17 +80,17 @@ export const useSessions = (
   const cacheStatus = useCacheStatus('sessions');
 
   const prepareSessions = useCallback((sourceSessions: ChatSession[]) => {
-    const recoveredSessions = sourceSessions.map(session => {
+    const recoveredSessions = sourceSessions.map((session) => {
       if (!session.messages || session.messages.length === 0) {
         return session;
       }
-      
-      const recoveredMessages = session.messages.map(message => {
+
+      const recoveredMessages = session.messages.map((message) => {
         if (!message.attachments || message.attachments.length === 0) {
           return message;
         }
-        
-        const recoveredAttachments = message.attachments.map(att => {
+
+        const recoveredAttachments = message.attachments.map((att) => {
           // 检查 url 是否是 Blob URL（页面刷新后已失效）
           if (att.url && att.url.startsWith('blob:')) {
             // 如果有 tempUrl（云存储 URL），使用它替代失效的 Blob URL
@@ -91,27 +98,27 @@ export const useSessions = (
               return {
                 ...att,
                 url: att.tempUrl, // 替换为云存储 URL
-                uploadStatus: 'completed' as const
+                uploadStatus: 'completed' as const,
               };
             } else {
               // 没有有效的 tempUrl，保持原状（可能需要重新生成）
               return att;
             }
           }
-          
+
           // 其他类型的 URL（Base64, HTTP）不需要恢复
           return att;
         });
-        
+
         return {
           ...message,
-          attachments: recoveredAttachments
+          attachments: recoveredAttachments,
         };
       });
-      
+
       return {
         ...session,
-        messages: recoveredMessages
+        messages: recoveredMessages,
       };
     });
 
@@ -121,7 +128,7 @@ export const useSessions = (
   // ✅ 保存 cacheStatus 的方法到 ref
   useEffect(() => {
     cacheStatusRef.current = {
-      updateStatus: cacheStatus.updateStatus
+      updateStatus: cacheStatus.updateStatus,
     };
   }, [cacheStatus.updateStatus]);
 
@@ -142,7 +149,18 @@ export const useSessions = (
         setCurrentSessionId(null);
       }
       // ✅ 使用 ref 调用 updateStatus，避免依赖 cacheStatus
-      cacheStatusRef.current?.updateStatus(result.fromCache, result.isStale, result.timestamp);
+      // db.getSessions() 在数组对象上额外挂了 cache 元数据（JS 允许 array.foo = bar），
+      // 但 TS 声明的返回类型只到 ChatSession[]——这里 cast 仅修复类型，不改运行时。
+      const cacheMeta = result as ChatSession[] & {
+        fromCache?: boolean;
+        isStale?: boolean;
+        timestamp?: number;
+      };
+      cacheStatusRef.current?.updateStatus(
+        cacheMeta.fromCache,
+        cacheMeta.isStale,
+        cacheMeta.timestamp
+      );
     } finally {
       setIsLoading(false);
     }
@@ -159,7 +177,7 @@ export const useSessions = (
   const isLoadingMoreRef = useRef(false);
   const loadMoreSessions = useCallback(async () => {
     if (isLoadingMoreRef.current || isLoadingMore || !hasMoreSessions) return;
-    
+
     try {
       isLoadingMoreRef.current = true;
       setIsLoadingMore(true);
@@ -169,16 +187,16 @@ export const useSessions = (
         total: number;
         hasMore: boolean;
       }>(`/api/init/sessions/more?offset=${offset}&limit=20`);
-      
+
       if (result.sessions.length > 0) {
         // ✅ 滚动加载的会话 messages 为空数组，需要准备
         const preparedSessions = prepareSessions(
-          result.sessions.map(s => ({
+          result.sessions.map((s) => ({
             ...s,
-            messages: s.messages || []  // 确保 messages 存在
+            messages: s.messages || [], // 确保 messages 存在
           }))
         );
-        updateSessions(prev => [...prev, ...preparedSessions]);
+        updateSessions((prev) => [...prev, ...preparedSessions]);
         setHasMoreSessions(result.hasMore);
       } else {
         setHasMoreSessions(false);
@@ -234,37 +252,40 @@ export const useSessions = (
       return session;
     }
 
-    const cleanedMessages = session.messages.map(message => {
+    const cleanedMessages = session.messages.map((message) => {
       if (!message.attachments || message.attachments.length === 0) {
         return message;
       }
 
       return {
         ...message,
-        attachments: cleanAttachmentsForDb(message.attachments, false)
+        attachments: cleanAttachmentsForDb(message.attachments, false),
       };
     });
 
     return {
       ...session,
-      messages: cleanedMessages
+      messages: cleanedMessages,
     };
   }, []);
 
   // Save session to database (with error handling for offline mode)
   // 使用 cachedDb 实现写穿透
-  const saveSessionToDb = useCallback(async (session: ChatSession) => {
-    try {
-      await db.saveSession(prepareSessionForDb(session));
-    } catch (error) {
-      // Silently fail - 可能是后端不可用或组件卸载导致请求取消
-      // Sessions 仍然会在内存中工作，只是不会持久化
-      if (error instanceof Error && error.message.includes('component unmount')) {
-        // React Strict Mode 双重渲染或组件卸载导致，忽略
-        return;
+  const saveSessionToDb = useCallback(
+    async (session: ChatSession) => {
+      try {
+        await db.saveSession(prepareSessionForDb(session));
+      } catch (error) {
+        // Silently fail - 可能是后端不可用或组件卸载导致请求取消
+        // Sessions 仍然会在内存中工作，只是不会持久化
+        if (error instanceof Error && error.message.includes('component unmount')) {
+          // React Strict Mode 双重渲染或组件卸载导致，忽略
+          return;
+        }
       }
-    }
-  }, [prepareSessionForDb]);
+    },
+    [prepareSessionForDb]
+  );
 
   // Delete session from database
   // 使用 cachedDb 实现删除并失效缓存
@@ -272,143 +293,163 @@ export const useSessions = (
     await db.deleteSession(sessionId);
   }, []);
 
-  const createNewSession = useCallback((personaId?: string) => {
-    const newSession: ChatSession = {
-      id: uuidv4(),
-      title: 'New Chat',
-      messages: [],
-      createdAt: Date.now(),
-      mode: 'chat', // Default mode
-      personaId: personaId // 保存当前激活的 persona
-    };
-    
-    updateSessions(prev => [newSession, ...prev]);
-    setCurrentSessionId(newSession.id);
-    
-    // Save to database (async, non-blocking)
-    saveSessionToDb(newSession);
-    
-    return newSession;
-  }, [saveSessionToDb, updateSessions, setCurrentSessionId]);
+  const createNewSession = useCallback(
+    (personaId?: string) => {
+      const newSession: ChatSession = {
+        id: uuidv4(),
+        title: 'New Chat',
+        messages: [],
+        createdAt: Date.now(),
+        mode: 'chat', // Default mode
+        personaId: personaId, // 保存当前激活的 persona
+      };
 
-  const updateSessionMessages = useCallback((
-    sessionId: string,
-    newMessages: Message[],
-    options?: UpdateSessionMessagesOptions,
-  ) => {
-    const strategy = options?.strategy || 'replace';
+      updateSessions((prev) => [newSession, ...prev]);
+      setCurrentSessionId(newSession.id);
 
-    updateSessions(prev => {
-      const updated = prev.map(s => {
-        if (s.id === sessionId) {
-          const nextMessages = strategy === 'merge-by-id'
-            ? mergeMessagesById(s.messages || [], newMessages)
-            : newMessages;
-          let title = s.title;
-          // Auto-generate title from first user message
-          if (s.title === 'New Chat' && nextMessages.length > 0) {
-            const firstUserMsg = nextMessages.find(m => m.role === Role.USER);
-            if (firstUserMsg) {
-              title = firstUserMsg.content.slice(0, 30) + (firstUserMsg.content.length > 30 ? '...' : '');
+      // Save to database (async, non-blocking)
+      saveSessionToDb(newSession);
+
+      return newSession;
+    },
+    [saveSessionToDb, updateSessions, setCurrentSessionId]
+  );
+
+  const updateSessionMessages = useCallback(
+    (sessionId: string, newMessages: Message[], options?: UpdateSessionMessagesOptions) => {
+      const strategy = options?.strategy || 'replace';
+
+      updateSessions((prev) => {
+        const updated = prev.map((s) => {
+          if (s.id === sessionId) {
+            const nextMessages =
+              strategy === 'merge-by-id'
+                ? mergeMessagesById(s.messages || [], newMessages)
+                : newMessages;
+            let title = s.title;
+            // Auto-generate title from first user message
+            if (s.title === 'New Chat' && nextMessages.length > 0) {
+              const firstUserMsg = nextMessages.find((m) => m.role === Role.USER);
+              if (firstUserMsg) {
+                title =
+                  firstUserMsg.content.slice(0, 30) +
+                  (firstUserMsg.content.length > 30 ? '...' : '');
+              }
             }
+
+            // Determine mode from the last message that has a mode property, fallback to existing or 'chat'
+            const lastMsgWithMode = [...nextMessages].reverse().find((m) => m.mode);
+            const currentMode = lastMsgWithMode?.mode || s.mode || 'chat';
+
+            // ✅ 根据会话模式判断是否需要清理附件
+            // 图片模式和 chat 模式（含附件时）需要清理 Blob URL 和 Base64 URL
+            // 因为这些模式都有异步上传任务，清理后 URL 为空，等待后端上传完成后更新
+            const needsCleanSession =
+              currentMode === 'chat' ||
+              currentMode === 'image-outpainting' ||
+              currentMode === 'image-chat-edit' ||
+              currentMode === 'image-mask-edit' ||
+              currentMode === 'image-inpainting' ||
+              currentMode === 'image-background-edit' ||
+              currentMode === 'image-recontext' ||
+              currentMode === 'image-gen';
+
+            const cleanedMessages = needsCleanSession
+              ? nextMessages.map((msg) => {
+                  if (msg.attachments) {
+                    return {
+                      ...msg,
+                      attachments: cleanAttachmentsForDb(msg.attachments, false),
+                    };
+                  }
+                  return msg;
+                })
+              : nextMessages;
+
+            const updatedSession = { ...s, title, messages: cleanedMessages, mode: currentMode };
+
+            // Save to database (async, non-blocking)
+            saveSessionToDb(updatedSession);
+
+            return updatedSession;
           }
-          
-          // Determine mode from the last message that has a mode property, fallback to existing or 'chat'
-          const lastMsgWithMode = [...nextMessages].reverse().find(m => m.mode);
-          const currentMode = lastMsgWithMode?.mode || s.mode || 'chat';
+          return s;
+        });
 
-          // ✅ 根据会话模式判断是否需要清理附件
-          // 图片模式和 chat 模式（含附件时）需要清理 Blob URL 和 Base64 URL
-          // 因为这些模式都有异步上传任务，清理后 URL 为空，等待后端上传完成后更新
-          const needsCleanSession = currentMode === 'chat' ||
-                                    currentMode === 'image-outpainting' ||
-                                    (currentMode === 'image-chat-edit' || currentMode === 'image-mask-edit' ||
-                                     currentMode === 'image-inpainting' || currentMode === 'image-background-edit' ||
-                                     currentMode === 'image-recontext') ||
-                                    currentMode === 'image-gen';
-          
-          const cleanedMessages = needsCleanSession 
-            ? nextMessages.map(msg => {
-                if (msg.attachments) {
-                  return {
-                    ...msg,
-                    attachments: cleanAttachmentsForDb(msg.attachments, false)
-                  };
-                }
-                return msg;
-              })
-            : nextMessages;
-
-          const updatedSession = { ...s, title, messages: cleanedMessages, mode: currentMode };
-          
-          // Save to database (async, non-blocking)
-          saveSessionToDb(updatedSession);
-          
-          return updatedSession;
-        }
-        return s;
+        return updated;
       });
-      
-      return updated;
-    });
-  }, [saveSessionToDb, updateSessions]);
+    },
+    [saveSessionToDb, updateSessions]
+  );
 
-  const deleteSession = useCallback(async (sessionId: string) => {
-    // Remove from memory and get remaining sessions
-    let remainingSessions: ChatSession[] = [];
-    updateSessions(prev => {
-      remainingSessions = prev.filter(s => s.id !== sessionId);
-      return remainingSessions;
-    });
-    
-    // If deleting current session, switch to another or clear
-    if (currentSessionId === sessionId) {
-      setCurrentSessionId(remainingSessions.length > 0 ? remainingSessions[0].id : null);
-    }
-    
-    // Delete from database
-    await deleteSessionFromDb(sessionId);
-  }, [currentSessionId, deleteSessionFromDb, updateSessions, setCurrentSessionId]);
-
-  const updateSessionPersona = useCallback((sessionId: string, personaId: string) => {
-    updateSessions(prev => {
-      const updated = prev.map(s => {
-        if (s.id === sessionId) {
-          const updatedSession = { ...s, personaId };
-          
-          // Save to database (async, non-blocking)
-          saveSessionToDb(updatedSession);
-          
-          return updatedSession;
-        }
-        return s;
+  const deleteSession = useCallback(
+    async (sessionId: string) => {
+      // Remove from memory and get remaining sessions
+      let remainingSessions: ChatSession[] = [];
+      updateSessions((prev) => {
+        remainingSessions = prev.filter((s) => s.id !== sessionId);
+        return remainingSessions;
       });
-      
-      return updated;
-    });
-  }, [saveSessionToDb, updateSessions]);
 
-  const updateSessionTitle = useCallback((sessionId: string, newTitle: string) => {
-    updateSessions(prev => {
-      const updated = prev.map(s => {
-        if (s.id === sessionId) {
-          const updatedSession = { ...s, title: newTitle };
-          
-          // Save to database (async, non-blocking)
-          saveSessionToDb(updatedSession);
-          
-          return updatedSession;
-        }
-        return s;
+      // If deleting current session, switch to another or clear
+      if (currentSessionId === sessionId) {
+        setCurrentSessionId(remainingSessions.length > 0 ? remainingSessions[0].id : null);
+      }
+
+      // Delete from database
+      await deleteSessionFromDb(sessionId);
+    },
+    [currentSessionId, deleteSessionFromDb, updateSessions, setCurrentSessionId]
+  );
+
+  const updateSessionPersona = useCallback(
+    (sessionId: string, personaId: string) => {
+      updateSessions((prev) => {
+        const updated = prev.map((s) => {
+          if (s.id === sessionId) {
+            const updatedSession = { ...s, personaId };
+
+            // Save to database (async, non-blocking)
+            saveSessionToDb(updatedSession);
+
+            return updatedSession;
+          }
+          return s;
+        });
+
+        return updated;
       });
-      
-      return updated;
-    });
-  }, [saveSessionToDb, updateSessions]);
+    },
+    [saveSessionToDb, updateSessions]
+  );
 
-  const getSession = useCallback((id: string) => {
-    return sessions.find(s => s.id === id);
-  }, [sessions]);
+  const updateSessionTitle = useCallback(
+    (sessionId: string, newTitle: string) => {
+      updateSessions((prev) => {
+        const updated = prev.map((s) => {
+          if (s.id === sessionId) {
+            const updatedSession = { ...s, title: newTitle };
+
+            // Save to database (async, non-blocking)
+            saveSessionToDb(updatedSession);
+
+            return updatedSession;
+          }
+          return s;
+        });
+
+        return updated;
+      });
+    },
+    [saveSessionToDb, updateSessions]
+  );
+
+  const getSession = useCallback(
+    (id: string) => {
+      return sessions.find((s) => s.id === id);
+    },
+    [sessions]
+  );
 
   return {
     sessions,

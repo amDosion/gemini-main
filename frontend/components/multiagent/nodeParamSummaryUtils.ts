@@ -16,54 +16,67 @@ const isBlank = (value: unknown): boolean => {
 const withDefault = <K extends keyof WorkflowNodeData>(
   target: Partial<WorkflowNodeData>,
   key: K,
-  value: WorkflowNodeData[K],
+  value: WorkflowNodeData[K]
 ) => {
   if (isBlank(target[key])) {
     target[key] = value;
   }
 };
 
-const normalizeAgentTaskType = (value: unknown): 'chat' | 'image-gen' | 'image-edit' | 'video-gen' | 'audio-gen' | 'vision-understand' | 'data-analysis' => {
-  const normalized = String(value || '').trim().toLowerCase().replace(/_/g, '-');
-  const aliases: Record<string, 'video-gen' | 'audio-gen' | 'vision-understand' | 'data-analysis'> = {
-    video: 'video-gen',
-    'video-generate': 'video-gen',
-    'video-generation': 'video-gen',
-    audio: 'audio-gen',
-    speech: 'audio-gen',
-    tts: 'audio-gen',
-    'speech-gen': 'audio-gen',
-    'speech-generate': 'audio-gen',
-    'speech-generation': 'audio-gen',
-    'audio-generate': 'audio-gen',
-    'audio-generation': 'audio-gen',
-    'vision-analyze': 'vision-understand',
-    'image-analyze': 'vision-understand',
-    'image-understand': 'vision-understand',
-    'table-analysis': 'data-analysis',
-  };
+const normalizeAgentTaskType = (
+  value: unknown
+):
+  | 'chat'
+  | 'image-gen'
+  | 'image-edit'
+  | 'video-gen'
+  | 'audio-gen'
+  | 'vision-understand'
+  | 'data-analysis' => {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, '-');
+  const aliases: Record<string, 'video-gen' | 'audio-gen' | 'vision-understand' | 'data-analysis'> =
+    {
+      video: 'video-gen',
+      'video-generate': 'video-gen',
+      'video-generation': 'video-gen',
+      audio: 'audio-gen',
+      speech: 'audio-gen',
+      tts: 'audio-gen',
+      'speech-gen': 'audio-gen',
+      'speech-generate': 'audio-gen',
+      'speech-generation': 'audio-gen',
+      'audio-generate': 'audio-gen',
+      'audio-generation': 'audio-gen',
+      'vision-analyze': 'vision-understand',
+      'image-analyze': 'vision-understand',
+      'image-understand': 'vision-understand',
+      'table-analysis': 'data-analysis',
+    };
   const safeTask = aliases[normalized] || normalized;
   if (
-    safeTask === 'chat'
-    || safeTask === 'image-gen'
-    || safeTask === 'image-edit'
-    || safeTask === 'video-gen'
-    || safeTask === 'audio-gen'
-    || safeTask === 'vision-understand'
-    || safeTask === 'data-analysis'
+    safeTask === 'chat' ||
+    safeTask === 'image-gen' ||
+    safeTask === 'image-edit' ||
+    safeTask === 'video-gen' ||
+    safeTask === 'audio-gen' ||
+    safeTask === 'vision-understand' ||
+    safeTask === 'data-analysis'
   ) {
     return safeTask;
   }
   return 'chat';
 };
 
-const normalizeToolName = (value: unknown): string => String(value || '').trim().toLowerCase().replace(/-/g, '_');
+const normalizeToolName = (value: unknown): string =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, '_');
 
-const IMAGE_GEN_TOOL_NAMES = new Set([
-  'image_generate',
-  'generate_image',
-  'image_gen',
-]);
+const IMAGE_GEN_TOOL_NAMES = new Set(['image_generate', 'generate_image', 'image_gen']);
 
 const IMAGE_EDIT_TOOL_NAMES = new Set([
   'image_edit',
@@ -94,9 +107,9 @@ const TABLE_ANALYZE_TOOL_NAMES = new Set([
   'sheet_profile',
 ]);
 
-const parseToolArgsObject = (rawValue: Record<string, unknown>): Record<string, unknown> | null => {
+const parseToolArgsObject = (rawValue: unknown): Record<string, unknown> | null => {
   if (rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)) {
-    return { ...rawValue };
+    return { ...(rawValue as Record<string, unknown>) };
   }
   if (typeof rawValue !== 'string') {
     return null;
@@ -116,7 +129,9 @@ const parseToolArgsObject = (rawValue: Record<string, unknown>): Record<string, 
   return null;
 };
 
-export const buildEffectiveNodeData = (data: Partial<WorkflowNodeData>): Partial<WorkflowNodeData> => {
+export const buildEffectiveNodeData = (
+  data: Partial<WorkflowNodeData>
+): Partial<WorkflowNodeData> => {
   const raw = data || {};
   const next: Partial<WorkflowNodeData> = { ...raw };
   const nodeType = String(next.type || '').toLowerCase();
@@ -400,7 +415,17 @@ const FIELD_PRIORITY_BY_NODE_TYPE: Record<string, string[]> = {
     'toolReferenceImageUrl',
     'toolAnalysisType',
   ],
-  start: ['startTask', 'startImageUrls', 'startImageUrl', 'startVideoUrls', 'startVideoUrl', 'startAudioUrls', 'startAudioUrl', 'startFileUrls', 'startFileUrl'],
+  start: [
+    'startTask',
+    'startImageUrls',
+    'startImageUrl',
+    'startVideoUrls',
+    'startVideoUrl',
+    'startAudioUrls',
+    'startAudioUrl',
+    'startFileUrls',
+    'startFileUrl',
+  ],
   input_text: ['startTask'],
   input_image: ['startImageUrls', 'startImageUrl'],
   input_video: ['startVideoUrls', 'startVideoUrl'],
@@ -482,7 +507,7 @@ export interface NodeParamChipItem {
   text: string;
 }
 
-const buildToolArgsChipItems = (rawValue: Record<string, unknown>): NodeParamChipItem[] => {
+const buildToolArgsChipItems = (rawValue: unknown): NodeParamChipItem[] => {
   if (!isConfiguredValue(rawValue)) return [];
   const parsed = (() => {
     if (typeof rawValue === 'string') {
@@ -516,12 +541,14 @@ const buildToolArgsChipItems = (rawValue: Record<string, unknown>): NodeParamChi
 
   const formatted = formatValue('toolArgsTemplate', parsed);
   if (!formatted) return [];
-  return [{
-    fieldKey: 'toolArgsTemplate',
-    label: 'toolArgs',
-    value: formatted,
-    text: `toolArgs: ${formatted}`,
-  }];
+  return [
+    {
+      fieldKey: 'toolArgsTemplate',
+      label: 'toolArgs',
+      value: formatted,
+      text: `toolArgs: ${formatted}`,
+    },
+  ];
 };
 
 export const buildNodeParamChipItems = (data: Partial<WorkflowNodeData>): NodeParamChipItem[] => {

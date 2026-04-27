@@ -4,31 +4,55 @@ import { LoadingSpinner } from '../common/LoadingSpinner';
 import { useViewMessages } from '../../hooks/useViewMessages';
 
 // Lazy load all Studio sub-views
-const ImageGenView = lazy(() => import('./ImageGenView').then(m => ({ default: m.ImageGenView })));
-const ImageEditView = lazy(() => import('./ImageEditView').then(m => ({ default: m.ImageEditView })));
-const ImageMaskEditView = lazy(() => import('./ImageMaskEditView').then(m => ({ default: m.ImageMaskEditView })));
-const ImageInpaintingView = lazy(() => import('./ImageInpaintingView').then(m => ({ default: m.ImageInpaintingView })));
-const ImageBackgroundEditView = lazy(() => import('./ImageBackgroundEditView').then(m => ({ default: m.ImageBackgroundEditView })));
-const ImageRecontextView = lazy(() => import('./ImageRecontextView').then(m => ({ default: m.ImageRecontextView })));
-const ImageExpandView = lazy(() => import('./ImageExpandView').then(m => ({ default: m.ImageExpandView })));
-const VideoGenView = lazy(() => import('./VideoGenView').then(m => ({ default: m.VideoGenView })));
-const AudioGenView = lazy(() => import('./AudioGenView').then(m => ({ default: m.AudioGenView })));
-const PdfExtractView = lazy(() => import('./PdfExtractView').then(m => ({ default: m.PdfExtractView })));
-const VirtualTryOnView = lazy(() => import('./VirtualTryOnView').then(m => ({ default: m.VirtualTryOnView })));
+const ImageGenView = lazy(() =>
+  import('./ImageGenView').then((m) => ({ default: m.ImageGenView }))
+);
+const ImageEditView = lazy(() =>
+  import('./ImageEditView').then((m) => ({ default: m.ImageEditView }))
+);
+const ImageMaskEditView = lazy(() =>
+  import('./ImageMaskEditView').then((m) => ({ default: m.ImageMaskEditView }))
+);
+const ImageInpaintingView = lazy(() =>
+  import('./ImageInpaintingView').then((m) => ({ default: m.ImageInpaintingView }))
+);
+const ImageBackgroundEditView = lazy(() =>
+  import('./ImageBackgroundEditView').then((m) => ({ default: m.ImageBackgroundEditView }))
+);
+const ImageRecontextView = lazy(() =>
+  import('./ImageRecontextView').then((m) => ({ default: m.ImageRecontextView }))
+);
+const ImageExpandView = lazy(() =>
+  import('./ImageExpandView').then((m) => ({ default: m.ImageExpandView }))
+);
+const VideoGenView = lazy(() =>
+  import('./VideoGenView').then((m) => ({ default: m.VideoGenView }))
+);
+const AudioGenView = lazy(() =>
+  import('./AudioGenView').then((m) => ({ default: m.AudioGenView }))
+);
+const PdfExtractView = lazy(() =>
+  import('./PdfExtractView').then((m) => ({ default: m.PdfExtractView }))
+);
+const VirtualTryOnView = lazy(() =>
+  import('./VirtualTryOnView').then((m) => ({ default: m.VirtualTryOnView }))
+);
 
 // Mode to component mapping
-const MODE_COMPONENTS: Record<string, React.LazyExoticComponent<React.ComponentType<Record<string, unknown>>>> = {
-  'image-gen': ImageGenView as React.LazyExoticComponent<React.ComponentType<Record<string, unknown>>>,
-  'image-chat-edit': ImageEditView as React.LazyExoticComponent<React.ComponentType<Record<string, unknown>>>,
-  'image-mask-edit': ImageMaskEditView as React.LazyExoticComponent<React.ComponentType<Record<string, unknown>>>,
-  'image-inpainting': ImageInpaintingView as React.LazyExoticComponent<React.ComponentType<Record<string, unknown>>>,
-  'image-background-edit': ImageBackgroundEditView as React.LazyExoticComponent<React.ComponentType<Record<string, unknown>>>,
-  'image-recontext': ImageRecontextView as React.LazyExoticComponent<React.ComponentType<Record<string, unknown>>>,
-  'image-outpainting': ImageExpandView as React.LazyExoticComponent<React.ComponentType<Record<string, unknown>>>,
-  'video-gen': VideoGenView as React.LazyExoticComponent<React.ComponentType<Record<string, unknown>>>,
-  'audio-gen': AudioGenView as React.LazyExoticComponent<React.ComponentType<Record<string, unknown>>>,
-  'pdf-extract': PdfExtractView as React.LazyExoticComponent<React.ComponentType<Record<string, unknown>>>,
-  'virtual-try-on': VirtualTryOnView as React.LazyExoticComponent<React.ComponentType<Record<string, unknown>>>,
+// 使用 ComponentType<any> 避免不同子视图各自 props 类型与统一索引签名互斥；
+// 运行时通过 spread {...props} 把所需字段传给各组件，类型在 caller 端把关。
+const MODE_COMPONENTS: Record<string, React.LazyExoticComponent<React.ComponentType<any>>> = {
+  'image-gen': ImageGenView,
+  'image-chat-edit': ImageEditView,
+  'image-mask-edit': ImageMaskEditView,
+  'image-inpainting': ImageInpaintingView,
+  'image-background-edit': ImageBackgroundEditView,
+  'image-recontext': ImageRecontextView,
+  'image-outpainting': ImageExpandView,
+  'video-gen': VideoGenView,
+  'audio-gen': AudioGenView,
+  'pdf-extract': PdfExtractView,
+  'virtual-try-on': VirtualTryOnView,
 };
 
 interface StudioViewProps {
@@ -58,15 +82,15 @@ interface StudioViewProps {
 
 /**
  * StudioView - Keep-Alive architecture
- * 
+ *
  * Instead of switch(mode) which destroys/recreates components on every mode change,
  * this renders all visited modes simultaneously and controls visibility via CSS.
- * 
+ *
  * Benefits:
  * - Zero re-requests on mode switch (hooks don't re-execute)
  * - State preserved (canvas zoom, scroll position, form inputs)
  * - Instant mode switching (CSS display toggle)
- * 
+ *
  * Memory optimization:
  * - Only visited modes are mounted (lazy mount on first visit)
  * - Unvisited modes cost zero memory
@@ -124,23 +148,20 @@ const KeepAliveViewWrapper: React.FC<{
   isActive: boolean;
   messages: Message[];
   [key: string]: unknown;
-}> = React.memo(({ Component, mode, isActive, messages, ...props }) => {
-  // Each view gets its own filtered messages
-  const viewMessages = useViewMessages(messages, mode);
+}> = React.memo(
+  ({ Component, mode, isActive, messages, ...props }) => {
+    // Each view gets its own filtered messages
+    const viewMessages = useViewMessages(messages, mode);
 
-  return (
-    <Component
-      {...props}
-      messages={viewMessages}
-      mode={mode}
-    />
-  );
-}, (prevProps, nextProps) => {
-  // Custom comparison: skip re-render for hidden views unless messages changed
-  if (!nextProps.isActive && !prevProps.isActive) {
-    // Both hidden - skip re-render entirely
-    return true;
+    return <Component {...props} messages={viewMessages} mode={mode} />;
+  },
+  (prevProps, nextProps) => {
+    // Custom comparison: skip re-render for hidden views unless messages changed
+    if (!nextProps.isActive && !prevProps.isActive) {
+      // Both hidden - skip re-render entirely
+      return true;
+    }
+    // Active or becoming active - let React decide
+    return false;
   }
-  // Active or becoming active - let React decide
-  return false;
-});
+);

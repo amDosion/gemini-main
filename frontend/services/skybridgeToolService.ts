@@ -52,7 +52,16 @@ const callAppsSdkTool = async (
   toolName: string,
   argsPayload: Record<string, unknown>
 ): Promise<SkybridgeToolResult> => {
-  const openai = (window as Window & { openai?: { callTool?: (name: string, args: Record<string, unknown> | null) => Promise<SkybridgeToolResult> } }).openai;
+  const openai = (
+    window as Window & {
+      openai?: {
+        callTool?: (
+          name: string,
+          args: Record<string, unknown> | null
+        ) => Promise<SkybridgeToolResult>;
+      };
+    }
+  ).openai;
   if (!openai || typeof openai.callTool !== 'function') {
     throw new Error('Skybridge Apps SDK host is unavailable');
   }
@@ -92,11 +101,20 @@ const callMcpAppTool = async (
         return;
       }
 
-      const payload = ('result' in data ? data.result : null) || {};
+      interface McpToolCallResult {
+        content?: Array<{ type?: string; text?: string }>;
+        structuredContent?: unknown;
+        isError?: boolean;
+        _meta?: Record<string, unknown>;
+      }
+      const payload = (('result' in data ? data.result : null) || {}) as McpToolCallResult;
       const content = Array.isArray(payload.content) ? payload.content : [];
       const resultText = content
-        .filter((item: Record<string, unknown>) => item && item.type === 'text' && typeof item.text === 'string')
-        .map((item: Record<string, unknown>) => item.text as string)
+        .filter(
+          (item): item is { type: 'text'; text: string } =>
+            !!item && item.type === 'text' && typeof item.text === 'string'
+        )
+        .map((item) => item.text)
         .join('\n');
 
       resolve({

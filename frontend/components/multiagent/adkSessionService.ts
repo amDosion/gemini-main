@@ -1,6 +1,4 @@
-import {
-  requestJson,
-} from '../../services/http';
+import { requestJson } from '../../services/http';
 
 export interface AdkSessionItem {
   id: string;
@@ -111,10 +109,7 @@ const CONFIRMATION_CONTAINER_KEYS = new Set([
   'toolConfirmations',
 ]);
 
-const FUNCTION_CALL_CONTAINER_KEYS = new Set([
-  'function_calls',
-  'functionCalls',
-]);
+const FUNCTION_CALL_CONTAINER_KEYS = new Set(['function_calls', 'functionCalls']);
 
 const CANDIDATE_ID_KEYS = [
   'id',
@@ -126,13 +121,7 @@ const CANDIDATE_ID_KEYS = [
   'toolCallId',
 ];
 
-const CANDIDATE_NAME_KEYS = [
-  'name',
-  'function_name',
-  'functionName',
-  'tool_name',
-  'toolName',
-];
+const CANDIDATE_NAME_KEYS = ['name', 'function_name', 'functionName', 'tool_name', 'toolName'];
 
 const CANDIDATE_HINT_KEYS = [
   'hint',
@@ -182,13 +171,7 @@ const CANDIDATE_NONCE_EXPIRES_KEYS = [
   'deadline',
 ];
 
-const CANDIDATE_TENANT_KEYS = [
-  'tenant_id',
-  'tenantId',
-  'tenant',
-  'tenant_scope',
-  'tenantScope',
-];
+const CANDIDATE_TENANT_KEYS = ['tenant_id', 'tenantId', 'tenant', 'tenant_scope', 'tenantScope'];
 
 const CANDIDATE_CONTEXT_KEYS = [
   'ticket',
@@ -214,13 +197,7 @@ const EXPORT_PRECHECK_CONTAINER_KEYS = new Set([
   'pre_check',
 ]);
 
-const EXPORT_PRECHECK_ISSUES_KEYS = [
-  'issues',
-  'errors',
-  'reasons',
-  'violations',
-  'findings',
-];
+const EXPORT_PRECHECK_ISSUES_KEYS = ['issues', 'errors', 'reasons', 'violations', 'findings'];
 
 const EXPORT_PRECHECK_CODE_KEYS = [
   'code',
@@ -336,7 +313,9 @@ const pickFirstValue = (record: UnknownRecord, keys: string[]): unknown => {
 };
 
 const trimPreview = (text: string, maxLen: number = 220): string => {
-  const compact = String(text || '').replace(/\s+/g, ' ').trim();
+  const compact = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (!compact) return '';
   if (compact.length <= maxLen) return compact;
   return `${compact.slice(0, maxLen)}...`;
@@ -411,7 +390,7 @@ const isApprovalTicketLike = (record: UnknownRecord): boolean => {
 
 const parseJsonObject = (value: string): UnknownRecord | null => {
   const raw = String(value || '').trim();
-  if (!raw || (!raw.startsWith('{') || !raw.endsWith('}'))) return null;
+  if (!raw || !raw.startsWith('{') || !raw.endsWith('}')) return null;
   try {
     const parsed = JSON.parse(raw);
     return isRecord(parsed) ? parsed : null;
@@ -458,9 +437,7 @@ const resolveTicketTimestampAndTtl = ({
       )
     : 0;
   const existingTtl = ticketRecord
-    ? toPositiveInteger(
-        pickFirstValue(ticketRecord, ['ttl_seconds', 'ttlSeconds', 'ttl'])
-      )
+    ? toPositiveInteger(pickFirstValue(ticketRecord, ['ttl_seconds', 'ttlSeconds', 'ttl']))
     : 0;
   if (existingTimestamp > 0 && existingTtl > 0) {
     return {
@@ -653,7 +630,11 @@ const resolveCandidateSecurityField = (
 
   for (const contextKey of CANDIDATE_CONTEXT_KEYS) {
     const nested = pickFirstValue(record, [contextKey]);
-    const nestedText = resolveNestedSecurityString(nested, keys, options.allowIdValueFallback === true);
+    const nestedText = resolveNestedSecurityString(
+      nested,
+      keys,
+      options.allowIdValueFallback === true
+    );
     if (nestedText) return nestedText;
   }
 
@@ -664,7 +645,11 @@ const resolveCandidateSecurityField = (
 
     for (const contextKey of CANDIDATE_CONTEXT_KEYS) {
       const nested = pickFirstValue(nestedCall, [contextKey]);
-      const nestedText = resolveNestedSecurityString(nested, keys, options.allowIdValueFallback === true);
+      const nestedText = resolveNestedSecurityString(
+        nested,
+        keys,
+        options.allowIdValueFallback === true
+      );
       if (nestedText) return nestedText;
     }
   }
@@ -920,9 +905,7 @@ export const extractAdkConfirmCandidates = (sessionSnapshot: unknown): AdkConfir
 
 const collectStringList = (value: unknown): string[] => {
   if (Array.isArray(value)) {
-    return value
-      .map((item) => toSafeString(item))
-      .filter(Boolean);
+    return value.map((item) => toSafeString(item)).filter(Boolean);
   }
 
   if (typeof value === 'string') {
@@ -948,10 +931,10 @@ const normalizeExportPrecheckCode = (
   }
 
   if (
-    fields.length > 0
-    || Boolean(record.sensitive_fields)
-    || Boolean(record.sensitiveFields)
-    || /sensitive|pii|secret|隐私|敏感/.test(text)
+    fields.length > 0 ||
+    Boolean(record.sensitive_fields) ||
+    Boolean(record.sensitiveFields) ||
+    /sensitive|pii|secret|隐私|敏感/.test(text)
   ) {
     return 'sensitive_fields';
   }
@@ -975,22 +958,20 @@ const buildExportPrecheckIssue = (
     return null;
   }
 
-  const title = (
+  const title =
     code === 'sensitive_fields'
       ? '导出前校验失败：命中敏感字段'
       : code === 'tenant_mismatch'
         ? '导出前校验失败：租户不匹配'
-        : '导出前校验失败'
-  );
+        : '导出前校验失败';
 
-  const resolvedDetail = (
-    detail
-    || (code === 'sensitive_fields'
+  const resolvedDetail =
+    detail ||
+    (code === 'sensitive_fields'
       ? '检测到敏感字段，导出被后端安全策略拒绝。'
       : code === 'tenant_mismatch'
         ? '检测到导出租户与会话租户不一致，导出被拒绝。'
-        : '导出 precheck 未通过。')
-  );
+        : '导出 precheck 未通过。');
 
   return {
     id: `${sourcePath}:${rawCode || code || fallbackIndex}`,
@@ -1047,7 +1028,9 @@ const collectExportPrecheckIssuesFromContainer = (
   }
 };
 
-export const extractAdkExportPrecheckIssues = (sessionSnapshot: unknown): AdkExportPrecheckIssue[] => {
+export const extractAdkExportPrecheckIssues = (
+  sessionSnapshot: unknown
+): AdkExportPrecheckIssue[] => {
   if (!sessionSnapshot) return [];
 
   const collector = new Map<string, AdkExportPrecheckIssue>();
@@ -1094,7 +1077,7 @@ const collectRuntimeStrategyValues = (sessionSnapshot: unknown): string[] => {
   const collector = new Set<string>();
   const visited = new WeakSet<object>();
 
-  const addStrategy = (rawValue: Record<string, unknown>): void => {
+  const addStrategy = (rawValue: unknown): void => {
     if (Array.isArray(rawValue)) {
       rawValue.forEach((item) => addStrategy(item));
       return;
@@ -1169,7 +1152,11 @@ interface RuntimePolicyProbe {
   sourcePath: string;
 }
 
-const probeRuntimePolicy = (value: unknown, path: string, visited: WeakSet<object>): RuntimePolicyProbe | null => {
+const probeRuntimePolicy = (
+  value: unknown,
+  path: string,
+  visited: WeakSet<object>
+): RuntimePolicyProbe | null => {
   if (Array.isArray(value)) {
     for (let index = 0; index < value.length; index += 1) {
       const nested = probeRuntimePolicy(value[index], `${path}[${index}]`, visited);
@@ -1211,14 +1198,14 @@ export const extractAdkRuntimePolicyState = (
   draft: Partial<Pick<AdkRuntimePolicyState, 'selectedStrategy' | 'selectedStrictMode'>> = {}
 ): AdkRuntimePolicyState => {
   const probe = probeRuntimePolicy(sessionSnapshot, 'snapshot', new WeakSet<object>());
-  const effectiveStrategy = normalizeRuntimeStrategyValue(probe?.runtimeStrategy || DEFAULT_RUNTIME_STRATEGY);
-  const effectiveStrictMode = probe?.strictMode ?? false;
-  const selectedStrategy = normalizeRuntimeStrategyValue(draft.selectedStrategy) || effectiveStrategy;
-  const selectedStrictMode = (
-    typeof draft.selectedStrictMode === 'boolean'
-      ? draft.selectedStrictMode
-      : effectiveStrictMode
+  const effectiveStrategy = normalizeRuntimeStrategyValue(
+    probe?.runtimeStrategy || DEFAULT_RUNTIME_STRATEGY
   );
+  const effectiveStrictMode = probe?.strictMode ?? false;
+  const selectedStrategy =
+    normalizeRuntimeStrategyValue(draft.selectedStrategy) || effectiveStrategy;
+  const selectedStrictMode =
+    typeof draft.selectedStrictMode === 'boolean' ? draft.selectedStrictMode : effectiveStrictMode;
 
   return {
     effectiveStrategy,
@@ -1240,9 +1227,15 @@ const detectExplicitRejectSupport = (record: UnknownRecord): boolean | null => {
     return toBoolean(direct);
   }
 
-  const supportedActions = pickFirstValue(record, ['supported_actions', 'supportedActions', 'actions']);
+  const supportedActions = pickFirstValue(record, [
+    'supported_actions',
+    'supportedActions',
+    'actions',
+  ]);
   if (Array.isArray(supportedActions)) {
-    const normalized = supportedActions.map((item) => toSafeString(item).toLowerCase()).filter(Boolean);
+    const normalized = supportedActions
+      .map((item) => toSafeString(item).toLowerCase())
+      .filter(Boolean);
     if (normalized.includes('reject') || normalized.includes('deny')) {
       return true;
     }
@@ -1251,7 +1244,9 @@ const detectExplicitRejectSupport = (record: UnknownRecord): boolean | null => {
   const confirmedValues = pickFirstValue(record, ['confirmed_values', 'confirmedValues']);
   if (Array.isArray(confirmedValues)) {
     const hasTrue = confirmedValues.some((item) => item === true || toSafeString(item) === 'true');
-    const hasFalse = confirmedValues.some((item) => item === false || toSafeString(item) === 'false');
+    const hasFalse = confirmedValues.some(
+      (item) => item === false || toSafeString(item) === 'false'
+    );
     if (hasTrue && hasFalse) {
       return true;
     }
@@ -1260,7 +1255,9 @@ const detectExplicitRejectSupport = (record: UnknownRecord): boolean | null => {
   return null;
 };
 
-export const extractAdkConfirmActionSupport = (sessionSnapshot: unknown): AdkConfirmActionSupport => {
+export const extractAdkConfirmActionSupport = (
+  sessionSnapshot: unknown
+): AdkConfirmActionSupport => {
   const visited = new WeakSet<object>();
   const fallback: AdkConfirmActionSupport = {
     supportsExplicitReject: false,
@@ -1376,7 +1373,10 @@ const mapAdkRuntimeErrorMessage = (message: string): string | null => {
   return `运行策略冲突（runtime_strategy=${payload.runtimeStrategy}，strict_mode=${payload.strictMode ? 'true' : 'false'}），请在 Runtime Policy 面板检查配置。`;
 };
 
-export const formatAdkRuntimeContractErrorMessage = (error: unknown, fallbackMessage: string): string => {
+export const formatAdkRuntimeContractErrorMessage = (
+  error: unknown,
+  fallbackMessage: string
+): string => {
   if (error instanceof Error) {
     const mapped = mapAdkRuntimeErrorMessage(error.message);
     if (mapped) return mapped;
@@ -1395,14 +1395,13 @@ const mapConfirmToolErrorMessage = (message: string): string | null => {
   const hasNonce = normalized.includes('nonce');
   const hasTicket = normalized.includes('ticket');
   const isExpired = normalized.includes('expire') || normalized.includes('过期');
-  const isInvalid = (
-    normalized.includes('invalid')
-    || normalized.includes('mismatch')
-    || normalized.includes('replay')
-    || normalized.includes('consumed')
-    || normalized.includes('used')
-    || normalized.includes('绑定')
-  );
+  const isInvalid =
+    normalized.includes('invalid') ||
+    normalized.includes('mismatch') ||
+    normalized.includes('replay') ||
+    normalized.includes('consumed') ||
+    normalized.includes('used') ||
+    normalized.includes('绑定');
 
   if ((hasNonce || hasTicket) && isExpired) {
     return '审批票据已过期，请刷新会话后重新选择候选确认项。';
@@ -1412,14 +1411,17 @@ const mapConfirmToolErrorMessage = (message: string): string | null => {
     return '审批票据无效或已被消费，请刷新会话后重新提交。';
   }
 
-  if (normalized.includes('tenant') && (normalized.includes('mismatch') || normalized.includes('invalid'))) {
+  if (
+    normalized.includes('tenant') &&
+    (normalized.includes('mismatch') || normalized.includes('invalid'))
+  ) {
     return '审批票据与当前租户不匹配，请确认租户上下文后重试。';
   }
 
   if (
-    normalized.includes('default deny')
-    || normalized.includes('explicit approve')
-    || normalized.includes('explicit confirmed=true')
+    normalized.includes('default deny') ||
+    normalized.includes('explicit approve') ||
+    normalized.includes('explicit confirmed=true')
   ) {
     return '当前策略默认拒绝，请先显式选择“批准”并使用有效票据。';
   }
@@ -1427,7 +1429,10 @@ const mapConfirmToolErrorMessage = (message: string): string | null => {
   return null;
 };
 
-export const formatAdkConfirmToolErrorMessage = (error: unknown, fallbackMessage: string): string => {
+export const formatAdkConfirmToolErrorMessage = (
+  error: unknown,
+  fallbackMessage: string
+): string => {
   if (error instanceof Error) {
     const runtimeMapped = mapAdkRuntimeErrorMessage(error.message);
     if (runtimeMapped) return runtimeMapped;
@@ -1459,10 +1464,10 @@ export const formatAdkExportPrecheckErrorMessage = (
   }
 
   if (
-    normalized.includes('sensitive')
-    || normalized.includes('pii')
-    || normalized.includes('secret')
-    || normalized.includes('敏感')
+    normalized.includes('sensitive') ||
+    normalized.includes('pii') ||
+    normalized.includes('secret') ||
+    normalized.includes('敏感')
   ) {
     return '导出被拒绝：检测到敏感字段，请先脱敏后再导出。';
   }
@@ -1485,10 +1490,10 @@ const remapRequestFailedError = (error: unknown, fallbackMessage: string): Error
   return new Error(fallbackMessage);
 };
 
-const normalizeSessionId = (payload: Record<string, unknown>): string => toSafeString(payload?.sessionId || payload?.session_id || payload?.id);
-const buildAgentRuntimeRoute = (agentId: string, suffix: string): string => (
-  `/api/multi-agent/agents/${encodeURIComponent(agentId)}/runtime${suffix}`
-);
+const normalizeSessionId = (payload: Record<string, unknown>): string =>
+  toSafeString(payload?.sessionId || payload?.session_id || payload?.id);
+const buildAgentRuntimeRoute = (agentId: string, suffix: string): string =>
+  `/api/multi-agent/agents/${encodeURIComponent(agentId)}/runtime${suffix}`;
 
 export const listAdkAgentSessions = async (
   agentId: string,
@@ -1499,24 +1504,31 @@ export const listAdkAgentSessions = async (
 
   let payload: unknown;
   try {
-    payload = await requestJson<unknown>(
-      buildAgentRuntimeRoute(normalizedAgentId, '/sessions'),
-      {
-        signal,
-        timeoutMs: 0,
-        withAuth: true,
-      }
-    );
+    payload = await requestJson<unknown>(buildAgentRuntimeRoute(normalizedAgentId, '/sessions'), {
+      signal,
+      timeoutMs: 0,
+      withAuth: true,
+    });
   } catch (error) {
     throw remapRequestFailedError(error, '加载运行时会话失败');
   }
-  const sessions = Array.isArray(payload?.sessions) ? payload.sessions : [];
+  const payloadObj = (payload && typeof payload === 'object' ? payload : {}) as Record<
+    string,
+    unknown
+  >;
+  const sessions = Array.isArray(payloadObj.sessions) ? (payloadObj.sessions as unknown[]) : [];
 
   return sessions
-    .map((session: Record<string, unknown>) => ({
-      id: normalizeSessionId(session),
-      raw: session,
-    }))
+    .map((session) => {
+      const sessObj = (session && typeof session === 'object' ? session : {}) as Record<
+        string,
+        unknown
+      >;
+      return {
+        id: normalizeSessionId(sessObj),
+        raw: sessObj,
+      };
+    })
     .filter((item: AdkSessionItem) => Boolean(item.id));
 };
 
@@ -1547,12 +1559,20 @@ export const getAdkAgentSession = async (
   } catch (error) {
     throw remapRequestFailedError(error, '加载运行时会话详情失败');
   }
-  const session = payload?.session;
-  const resolvedId = normalizeSessionId(session) || normalizedSessionId;
+  const payloadObj = (payload && typeof payload === 'object' ? payload : {}) as Record<
+    string,
+    unknown
+  >;
+  const session = payloadObj.session;
+  const sessObj = (session && typeof session === 'object' ? session : {}) as Record<
+    string,
+    unknown
+  >;
+  const resolvedId = normalizeSessionId(sessObj) || normalizedSessionId;
 
   return {
     id: resolvedId,
-    raw: session,
+    raw: sessObj,
   };
 };
 
@@ -1574,11 +1594,9 @@ export const confirmAdkToolCall = async (
 
   const invocationId = toSafeString(request.invocationId);
   const rawTicket = request.ticket;
-  const legacyTicketField: unknown = (
-    isRecord(rawTicket)
-      ? rawTicket
-      : (toSafeString(rawTicket) || undefined)
-  );
+  const legacyTicketField: unknown = isRecord(rawTicket)
+    ? rawTicket
+    : toSafeString(rawTicket) || undefined;
   const nonce = toSafeString(request.nonce);
   const nonceExpiresAt = toSafeString(request.nonceExpiresAt);
   const tenantId = toSafeString(request.tenantId);
