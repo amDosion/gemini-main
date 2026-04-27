@@ -64,9 +64,9 @@ export const WorkflowEditorCanvasPane: React.FC<WorkflowEditorCanvasPaneProps> =
   focusRequest,
   onConsumeFocusRequest,
 }) => {
-  const stableNodeTypes = React.useMemo(() => FLOW_NODE_TYPES, []);
-  const stableEdgeTypes = React.useMemo(() => FLOW_EDGE_TYPES, []);
-  const stableDefaultEdgeOptions = React.useMemo(() => FLOW_DEFAULT_EDGE_OPTIONS, []);
+  // 不要用 useMemo 包装——这些已经是 module-level 常量，直接传引用最稳定。
+  // useMemo 在 HMR 重载时会重新生成 memo cell，触发 ReactFlow 的
+  // "new nodeTypes/edgeTypes object" 警告（误报，但很烦）。
 
   return (
     <div className="flex flex-1 overflow-hidden relative">
@@ -85,13 +85,13 @@ export const WorkflowEditorCanvasPane: React.FC<WorkflowEditorCanvasPaneProps> =
           onInit={onInit}
           onDrop={onDrop}
           onDragOver={onDragOver}
-          nodeTypes={stableNodeTypes}
-          edgeTypes={stableEdgeTypes}
+          nodeTypes={FLOW_NODE_TYPES}
+          edgeTypes={FLOW_EDGE_TYPES}
           isValidConnection={isValidConnection}
           fitView
           deleteKeyCode={null}
           attributionPosition="bottom-left"
-          defaultEdgeOptions={stableDefaultEdgeOptions}
+          defaultEdgeOptions={FLOW_DEFAULT_EDGE_OPTIONS}
           style={{ backgroundColor: '#0f172a' }}
         >
           <Background color="#1e293b" gap={20} size={1} />
