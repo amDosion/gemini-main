@@ -24,6 +24,7 @@ from ..common.base_provider import BaseProviderService
 from ..common.client_selector import ProviderCapabilities, UserPreferences
 from ..common.model_capabilities import ModelConfig
 from ..common.provider_config import ProviderConfig
+from ...utils.attachment_handler import is_http_url
 
 logger = logging.getLogger(__name__)
 
@@ -358,7 +359,7 @@ class TongyiService(BaseProviderService):
                 "mime_type": getattr(result, "mime_type", "image/png")
             }
             formatted_results.append(formatted_result)
-            url_type = "HTTP" if result.url and result.url.startswith('http') else "其他"
+            url_type = "HTTP" if result.url and is_http_url(result.url) else "其他"
             logger.info(f"[TongyiService]     - 第 {idx+1} 张图片: URL类型={url_type}, mime_type={formatted_result['mime_type']}")
             if enhanced_prompt:
                 logger.info(f"[TongyiService]     - 增强后提示词: {enhanced_prompt[:80]}...")

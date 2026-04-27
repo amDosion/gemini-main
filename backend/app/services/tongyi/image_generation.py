@@ -13,6 +13,7 @@ from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
 
 from .base import get_endpoint, get_pixel_resolution, QWEN_RESOLUTIONS
+from ...utils.attachment_handler import is_http_url
 
 logger = logging.getLogger(__name__)
 
@@ -406,7 +407,7 @@ class ImageGenerationService:
             for item_idx, item in enumerate(content):
                 if "image" in item:
                     image_url = item["image"]
-                    url_type = "HTTP" if image_url.startswith('http') else "其他"
+                    url_type = "HTTP" if is_http_url(image_url) else "其他"
                     results.append(ImageGenerationResult(url=image_url))
                     logger.info(f"[ImageGenerationService]     - ✅ 从 choice[{idx}].content[{item_idx}] 解析到图片: URL类型={url_type}")
 
@@ -418,7 +419,7 @@ class ImageGenerationService:
             for idx, item in enumerate(results_list):
                 if "url" in item:
                     image_url = item["url"]
-                    url_type = "HTTP" if image_url.startswith('http') else "其他"
+                    url_type = "HTTP" if is_http_url(image_url) else "其他"
                     results.append(ImageGenerationResult(url=image_url))
                     logger.info(f"[ImageGenerationService]     - ✅ 从 results[{idx}] 解析到图片: URL类型={url_type}")
 

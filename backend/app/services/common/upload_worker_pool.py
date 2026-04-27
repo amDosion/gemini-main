@@ -29,6 +29,7 @@ from ...utils.url_security import (
     get_with_redirect_guard,
     validate_outbound_http_url,
 )
+from ...utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
 
@@ -574,7 +575,7 @@ class UploadWorkerPool:
             log_print(f"    - 源 URL: {task.source_url or 'None'}")
             # ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
             if task.source_ai_url:
-                if task.source_ai_url.startswith('data:'):
+                if is_base64_url(task.source_ai_url):
                     log_print(f"    - AI URL: Base64 Data URL (长度: {len(task.source_ai_url)} 字符)")
                 else:
                     log_print(f"    - AI URL: {task.source_ai_url[:80] + '...' if len(task.source_ai_url) > 80 else task.source_ai_url}")
@@ -660,12 +661,12 @@ class UploadWorkerPool:
                 log_print(f"[{worker_name}] ✅ 上传成功！")
                 log_print(f"    - 耗时: {upload_duration:.2f} 秒")
                 # 对于BASE64 URL，只输出类型和长度，不输出内容
-                if url and url.startswith('data:'):
+                if url and is_base64_url(url):
                     log_print(f"    - URL: Base64 Data URL (长度: {len(url)} 字符)")
                 else:
                     log_print(f"    - URL: {url}")
                 # 对于BASE64 URL，在日志中只记录类型，不记录完整内容
-                url_log = f"Base64 Data URL (长度: {len(url)} 字符)" if url and url.startswith('data:') else str(url)
+                url_log = f"Base64 Data URL (长度: {len(url)} 字符)" if url and is_base64_url(url) else str(url)
                 await redis_queue.append_task_log(
                     task_id,
                     level="info",
@@ -802,13 +803,13 @@ class UploadWorkerPool:
         elif task.source_ai_url:
             ai_url = task.source_ai_url
             # ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
-            if ai_url.startswith('data:'):
+            if is_base64_url(ai_url):
                 log_print(f"[{worker_name}] 🤖 Process AI URL: Base64 Data URL (长度: {len(ai_url)} 字符)")
             else:
                 log_print(f"[{worker_name}] 🤖 Process AI URL: {ai_url[:80] + '...' if len(ai_url) > 80 else ai_url}")
             
             # 判断是Base64 Data URL还是HTTP URL
-            if ai_url.startswith('data:'):
+            if is_base64_url(ai_url):
                 # Base64 Data URL
                 log_print(f"[{worker_name}] 📦 Decoding Base64 Data URL...")
                 mime_type, base64_str = self._parse_data_url(ai_url)
@@ -871,7 +872,7 @@ class UploadWorkerPool:
                 return attachment_mime_type
 
         source_ai_url = str(getattr(task, "source_ai_url", "") or "").strip()
-        if source_ai_url.startswith("data:"):
+        if is_base64_url(source_ai_url):
             header = source_ai_url.split(",", 1)[0]
             mime_type = str(header.split(":", 1)[1].split(";", 1)[0] if ":" in header else "").strip().lower()
             if mime_type:
@@ -899,7 +900,7 @@ class UploadWorkerPool:
         
         返回: (mime_type, base64_str)
         """
-        if not data_url.startswith('data:'):
+        if not is_base64_url(data_url):
             raise ValueError("Invalid data URL")
         
         # 格式: data:image/png;base64,iVBORw0KGgo...

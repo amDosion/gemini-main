@@ -8,6 +8,7 @@ Supports multimodal messages (text + images/files).
 import re
 import logging
 from typing import Dict, Any, List, Optional
+from ....utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +133,7 @@ class MessageConverter:
 
         # Priority 2: url or tempUrl with Base64 Data URL
         url = attachment.get('url') or attachment.get('tempUrl')
-        if url and url.startswith('data:'):
+        if url and is_base64_url(url):
             match = re.match(r'^data:(.*?);base64,(.*)$', url)
             if match:
                 actual_mime = match.group(1) or mime_type
@@ -149,7 +150,7 @@ class MessageConverter:
         # Priority 3: base64Data field
         base64_data = attachment.get('base64Data')
         if base64_data:
-            if base64_data.startswith('data:'):
+            if is_base64_url(base64_data):
                 match = re.match(r'^data:(.*?);base64,(.*)$', base64_data)
                 if match:
                     actual_mime = match.group(1) or mime_type

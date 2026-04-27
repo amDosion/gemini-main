@@ -17,6 +17,7 @@ from typing import Optional, Tuple, Dict, Any
 from dataclasses import dataclass
 
 from google.genai import types
+from ....utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ class TryOnService:
 
     def _clean_base64(self, data: str) -> str:
         """清理 Base64 前缀"""
-        if data.startswith("data:"):
+        if is_base64_url(data):
             return data.split(",", 1)[1]
         return data
 

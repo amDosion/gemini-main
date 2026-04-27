@@ -28,6 +28,7 @@ from .sheet_policy_hooks import (
     assert_stage_row_level_policy_pair,
 )
 from .workflow_runtime_store import create_workflow_runtime_store
+from ...utils.attachment_handler import is_base64_url
 
 _SHEET_STAGE_ALLOWED_PREVIOUS: Dict[str, set[str]] = {
     "ingest": {"", "ingest"},
@@ -463,7 +464,7 @@ def build_sheet_ingest_kwargs_from_request(
     if file_url:
         normalized_file_url = str(file_url or "").strip()
         lowered = normalized_file_url.lower()
-        if lowered.startswith("data:"):
+        if is_base64_url(normalized_file_url):
             kwargs["data_url"] = normalized_file_url
             return kwargs
         if lowered.startswith(("http://", "https://")):
@@ -490,7 +491,7 @@ def build_sheet_ingest_kwargs_from_request(
     )
     normalized_reference = str(file_reference or "").strip()
     lower_reference = normalized_reference.lower()
-    if lower_reference.startswith("data:"):
+    if is_base64_url(normalized_reference):
         kwargs["data_url"] = normalized_reference
     elif lower_reference.startswith(("http://", "https://")):
         kwargs["file_url"] = normalized_reference

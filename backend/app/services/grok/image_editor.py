@@ -10,6 +10,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 import httpx
+from ...utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ class ImageEditor:
         """Load image bytes from URL or data URI."""
         if isinstance(source, str):
             source = source.strip()
-            if source.startswith("data:"):
+            if is_base64_url(source):
                 # data:image/png;base64,...
                 _, encoded = source.split(",", 1)
                 return base64.b64decode(encoded)

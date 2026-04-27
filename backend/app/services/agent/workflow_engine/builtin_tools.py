@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from ..execution_context import ExecutionContext
+from ....utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
 
@@ -606,7 +607,7 @@ def build_sheet_stage_request_payload(
                         break
             elif isinstance(latest_input, str) and latest_input.strip():
                 latest_text = latest_input.strip()
-                if latest_text.startswith("data:"):
+                if is_base64_url(latest_text):
                     request_payload["data_url"] = latest_text
                 elif "://" in latest_text:
                     request_payload["file_url"] = latest_text

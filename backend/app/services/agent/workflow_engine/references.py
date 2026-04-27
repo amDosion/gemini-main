@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from ....core.config import settings
+from ....utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,7 @@ def load_binary_from_reference(
     if not ref_text:
         raise ValueError("文件引用为空")
 
-    if ref_text.startswith("data:"):
+    if is_base64_url(ref_text):
         mime_type, raw = engine._decode_data_url(ref_text)
         return raw, mime_type, "inline-data"
 
@@ -236,7 +237,7 @@ def table_payload_to_dataframe(engine: Any, payload: Any) -> Tuple[Any, str]:
 
         maybe_ref = False
         parsed = urlparse(text)
-        if text.startswith("data:") or parsed.scheme in ("http", "https", "file"):
+        if is_base64_url(text) or parsed.scheme in ("http", "https", "file"):
             maybe_ref = True
         elif parsed.scheme == "" and (text.startswith("/") or Path(text).expanduser().exists()):
             maybe_ref = True
@@ -244,7 +245,7 @@ def table_payload_to_dataframe(engine: Any, payload: Any) -> Tuple[Any, str]:
         if maybe_ref:
             raw, mime_type, file_name = load_binary_from_reference(engine, text)
             frame = bytes_to_dataframe(engine, raw=raw, mime_type=mime_type, file_name=file_name)
-            source = "data-url" if text.startswith("data:") else f"ref:{file_name or mime_type or 'unknown'}"
+            source = "data-url" if is_base64_url(text) else f"ref:{file_name or mime_type or 'unknown'}"
             return frame, source
 
         frame = text_to_dataframe(engine, text=text, source_hint="")
@@ -275,7 +276,7 @@ def table_payload_to_text(engine: Any, payload: Any) -> Tuple[str, str]:
         text = payload.strip()
         if not text:
             return "", "empty_string"
-        if text.startswith("data:"):
+        if is_base64_url(text):
             mime_type, raw = engine._decode_data_url(text)
             textual_mime = (
                 mime_type.startswith("text/")
@@ -332,7 +333,7 @@ def build_file_reference_context(engine: Any, file_ref: str) -> str:
     normalized_mime = str(mime_type or "").lower()
     normalized_name = str(file_name or "").strip() or "unknown"
     ext = Path(normalized_name).suffix.lower()
-    is_data_url = ref.startswith("data:")
+    is_data_url = is_base64_url(ref)
     source_label = "data-url" if is_data_url else ref
 
     table_like = (

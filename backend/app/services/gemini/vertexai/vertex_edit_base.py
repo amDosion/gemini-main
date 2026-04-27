@@ -37,6 +37,7 @@ from ..base.image_edit_common import (
     VALID_REFERENCE_IMAGE_TYPES,
     VALID_ASPECT_RATIOS
 )
+from ....utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
 
@@ -319,7 +320,7 @@ class VertexAIEditBase(BaseImageEditor):
         for ref_type, base64_data in reference_images.items():
             if isinstance(base64_data, dict):
                 base64_data = base64_data.get('url', '')
-            if isinstance(base64_data, str) and base64_data.startswith('data:'):
+            if isinstance(base64_data, str) and is_base64_url(base64_data):
                 base64_data = base64_data.split(',', 1)[-1] if ',' in base64_data else base64_data
 
             image_bytes = decode_base64_image(base64_data)

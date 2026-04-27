@@ -21,6 +21,7 @@ import aiohttp
 
 from ..client_pool import get_client_pool
 from ..common.parameter_validation import ImageServiceValidator
+from ....utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
 
@@ -262,7 +263,7 @@ class ExpandService:
         Returns:
             (image_bytes, mime_type)
         """
-        if image_path.startswith('data:'):
+        if is_base64_url(image_path):
             # Base64 编码: data:image/png;base64,xxxxx
             if ',' in image_path:
                 header, b64_data = image_path.split(',', 1)
@@ -1104,7 +1105,7 @@ class ExpandService:
             # ✅ 支持直接传入 bytes（已由 _load_image_from_path 加载）
             if isinstance(image_path_or_bytes, bytes):
                 img = PILImage.open(io.BytesIO(image_path_or_bytes))
-            elif isinstance(image_path_or_bytes, str) and image_path_or_bytes.startswith('data:'):
+            elif isinstance(image_path_or_bytes, str) and is_base64_url(image_path_or_bytes):
                 b64_data = image_path_or_bytes.split(',', 1)[1] if ',' in image_path_or_bytes else image_path_or_bytes
                 img = PILImage.open(io.BytesIO(base64.b64decode(b64_data)))
             else:
@@ -1159,7 +1160,7 @@ class ExpandService:
             raise RuntimeError("PIL is required for outpaint padding")
 
         # 加载原图
-        if image_path.startswith('data:'):
+        if is_base64_url(image_path):
             b64_data = image_path.split(',', 1)[1] if ',' in image_path else image_path
             image_bytes = base64.b64decode(b64_data)
             source_image = PILImage.open(io.BytesIO(image_bytes))
@@ -1235,7 +1236,7 @@ class ExpandService:
             raise RuntimeError("PIL is required for offset padding")
 
         # 加载原图
-        if image_path.startswith('data:'):
+        if is_base64_url(image_path):
             b64_data = image_path.split(',', 1)[1] if ',' in image_path else image_path
             image_bytes = base64.b64decode(b64_data)
             source_image = PILImage.open(io.BytesIO(image_bytes))

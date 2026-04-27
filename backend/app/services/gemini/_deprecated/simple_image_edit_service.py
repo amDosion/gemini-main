@@ -18,6 +18,7 @@ import aiohttp
 
 from .sdk_initializer import SDKInitializer
 from .file_handler import FileHandler
+from .....utils.attachment_handler import is_base64_url, is_http_url
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +114,7 @@ class SimpleImageEditService:
         
         # 优先级 2：Base64 数据
         base64_data = reference_image.get('base64Data') or reference_image.get('url', '')
-        if base64_data and isinstance(base64_data, str) and base64_data.startswith('data:'):
+        if base64_data and isinstance(base64_data, str) and is_base64_url(base64_data):
             match = re.match(r'^data:(.*?);base64,(.*)$', base64_data)
             if match:
                 mime_type = match.group(1) or reference_image.get('mimeType', 'image/png')
@@ -149,7 +150,7 @@ class SimpleImageEditService:
         
         # 优先级 3：HTTP URL（需要下载）
         url = reference_image.get('url', '')
-        if url and url.startswith('http'):
+        if url and is_http_url(url):
             try:
                 # 下载图片
                 async with aiohttp.ClientSession() as session:
@@ -415,7 +416,7 @@ class SimpleImageEditService:
                         'url': raw_img,
                         'mimeType': 'image/png'
                     })
-                elif raw_img.startswith('data:'):
+                elif is_base64_url(raw_img):
                     # Data URL：直接使用
                     reference_images_list.append({
                         'url': raw_img,

@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List
 from urllib.parse import urlparse
+from ....utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ async def run_sheet_analyze_tool(
                     break
         elif isinstance(latest_input, str) and latest_input.strip():
             latest_text = latest_input.strip()
-            if latest_text.startswith("data:"):
+            if is_base64_url(latest_text):
                 normalized_tool_args["data_url"] = latest_text
             elif "://" in latest_text:
                 normalized_tool_args["file_url"] = latest_text
@@ -233,7 +234,7 @@ async def run_table_analyze_tool(
 
         if isinstance(payload, str):
             reference = payload.strip()
-            if reference.startswith("data:"):
+            if is_base64_url(reference):
                 input_kind = "data_url"
                 mime_type = reference.split(";", 1)[0].replace("data:", "", 1).strip().lower()
             else:

@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from ...core.credential_manager import get_provider_credentials
-from ...core.encryption import decrypt_data, is_encrypted
+from ...core.encryption import decrypt_api_key
 from ...models.db_models import ConfigProfile, UserSettings
 
 
@@ -57,14 +57,6 @@ class ProviderCredentialsResolver:
             return True
         return False
 
-    def _decrypt_api_key(self, api_key: str) -> str:
-        raw = str(api_key or "")
-        if not raw:
-            return raw
-        if is_encrypted(raw):
-            return decrypt_data(raw, silent=True)
-        return raw
-
     def _resolve_sync_for_explicit_profile(
         self,
         provider_id: str,
@@ -93,7 +85,7 @@ class ProviderCredentialsResolver:
                 ),
             )
 
-        api_key = self._decrypt_api_key(str(profile.api_key or ""))
+        api_key = decrypt_api_key(str(profile.api_key or ""), silent=True)
         if not str(api_key or "").strip():
             raise HTTPException(
                 status_code=401,
@@ -150,6 +142,6 @@ class ProviderCredentialsResolver:
                 detail=f"API Key not found for provider: {provider_id}. Please configure it in Settings → Profiles.",
             )
 
-        api_key = self._decrypt_api_key(api_key)
+        api_key = decrypt_api_key(api_key, silent=True)
 
         return api_key, base_url

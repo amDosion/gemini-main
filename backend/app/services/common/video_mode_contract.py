@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from sqlalchemy.orm import Session
 
 from .mode_controls_catalog import resolve_mode_controls
+from ...utils.attachment_handler import is_base64_url
 
 VIDEO_MODE_CONTRACT_VERSION = "2026-03-17"
 _GOOGLE_VIDEO_PROVIDER = "google"
@@ -94,7 +95,7 @@ def attachment_to_media_input(attachment: Any) -> Optional[Dict[str, Any]]:
         candidate_url = normalized_file_uri
     elif base64_data:
         raw_base64 = str(base64_data)
-        if raw_base64.startswith("data:"):
+        if is_base64_url(raw_base64):
             candidate_url = raw_base64
         else:
             candidate_url = f"data:{mime_type};base64,{raw_base64}"

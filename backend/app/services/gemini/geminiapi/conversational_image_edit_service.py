@@ -20,6 +20,7 @@ from ..client_pool import get_client_pool
 from ..common.chat_session_manager import ChatSessionManager
 from ..common.file_handler import FileHandler
 from ...common.model_capabilities import get_google_capabilities
+from ....utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +181,7 @@ class ConversationalImageEditService:
 
         # 本地存储 URL：读取文件转为 bytes
         if raw_url.startswith('/api/storage/local-files/'):
-            from ...services.storage.local_provider import resolve_local_public_file_path
+            from ...storage.local_provider import resolve_local_public_file_path
             local_file_path = resolve_local_public_file_path(raw_url)
             if local_file_path and local_file_path.exists():
                 with open(local_file_path, 'rb') as lf:
@@ -192,7 +193,7 @@ class ConversationalImageEditService:
                     return genai_types.Part(inline_data=genai_types.Blob(data=image_bytes, mime_type=mime_type))
             return None
 
-        if not raw_url.startswith("data:"):
+        if not is_base64_url(raw_url):
             return None
 
         match = re.match(r"^data:(.*?);base64,(.*)$", raw_url)
@@ -771,7 +772,7 @@ class ConversationalImageEditService:
                         })
                 elif ref_img.get('url'):
                     url = ref_img['url']
-                    if url.startswith('data:'):
+                    if is_base64_url(url):
                         # Base64 Data URL
                         match = re.match(r'^data:(.*?);base64,(.*)$', url)
                         if match:
@@ -805,7 +806,7 @@ class ConversationalImageEditService:
                                 })
                     elif url.startswith('/api/storage/local-files/'):
                         # 本地存储 URL：直接从本地文件系统读取
-                        from ...services.storage.local_provider import resolve_local_public_file_path
+                        from ...storage.local_provider import resolve_local_public_file_path
                         local_file_path = resolve_local_public_file_path(url)
                         if local_file_path and local_file_path.exists():
                             with open(local_file_path, 'rb') as lf:
@@ -1055,7 +1056,7 @@ class ConversationalImageEditService:
                         # 兼容 data 为 str/base64 的情况
                         if isinstance(image_bytes, str):
                             data_str = image_bytes
-                            if data_str.startswith('data:'):
+                            if is_base64_url(data_str):
                                 _, data_str = data_str.split(',', 1)
                             try:
                                 image_bytes = base64.b64decode(data_str)
@@ -1396,7 +1397,12 @@ class ConversationalImageEditService:
                     # 字符串格式：根据 URL 类型处理
                     if text.startswith('http://') or text.startswith('https://'):
                         return {'url': text, 'mime_type': 'image/png'}
-                    if text.startswith('data:'):
+                    if is_base64_url(text):
+                        return {'url': text, 'mime_type': 'image/png'}
+
+                    # 本地存储 URL（/api/storage/local-files/...）
+                    # 直接透传，由 _send_edit_message_internal 的专用路径处理
+                    if text.startswith('/api/storage/local-files/'):
                         return {'url': text, 'mime_type': 'image/png'}
 
                     # 本地路径（绝对路径、file://、相对路径但存在）
@@ -1434,7 +1440,11 @@ class ConversationalImageEditService:
                         if url.startswith('http://') or url.startswith('https://'):
                             processed_img['url'] = url
                             processed_img['mime_type'] = img_item.get('mime_type', 'image/png')
-                        elif url.startswith('data:'):
+                        elif is_base64_url(url):
+                            processed_img['url'] = url
+                            processed_img['mime_type'] = img_item.get('mime_type', 'image/png')
+                        elif url.startswith('/api/storage/local-files/'):
+                            # 本地存储 URL：直接透传，由 _send_edit_message_internal 的专用路径处理
                             processed_img['url'] = url
                             processed_img['mime_type'] = img_item.get('mime_type', 'image/png')
                         elif url.startswith('/') or url.startswith('file://') or Path(url).expanduser().exists():

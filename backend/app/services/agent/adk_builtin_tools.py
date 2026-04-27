@@ -16,6 +16,7 @@ from urllib.parse import unquote_to_bytes, urlparse
 import httpx
 
 from ...utils.url_security import UnsafeURLError, resolve_safe_redirect_url, validate_outbound_http_url
+from ...utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +114,7 @@ def _guess_file_format(*, file_name: str, explicit_file_format: Optional[str], m
 
 def _decode_data_url(data_url: str) -> Tuple[bytes, str]:
     raw = str(data_url or "").strip()
-    if not raw.startswith("data:") or "," not in raw:
+    if not is_base64_url(raw) or "," not in raw:
         raise ValueError("invalid data URL")
     header, payload = raw.split(",", 1)
     mime_type = str(header[5:].split(";", 1)[0] or "").strip().lower()

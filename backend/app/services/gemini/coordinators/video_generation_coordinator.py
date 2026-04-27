@@ -30,6 +30,7 @@ from ..client_pool import get_client_pool
 from ...common.google_model_catalog import VEO_VIDEO_MODELS
 from ..geminiapi.video_generation_service import GeminiAPIVideoGenerationService
 from ..vertexai.video_generation_service import VertexAIVideoGenerationService
+from ....utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
 
@@ -283,19 +284,19 @@ class VideoGenerationCoordinator:
             candidate = source_value.strip().lower()
             if not candidate:
                 return False
-            return candidate.startswith("data:")
+            return is_base64_url(candidate)
         if not isinstance(source_value, dict):
             return False
 
         raw_source = source_value.get("raw", source_value)
         if isinstance(raw_source, str):
             candidate = raw_source.strip().lower()
-            return bool(candidate) and candidate.startswith("data:")
+            return bool(candidate) and is_base64_url(candidate)
 
         for key in ("url", "videoUrl", "video_url", "raw_url", "rawUrl", "temp_url", "tempUrl"):
             value = raw_source.get(key) if isinstance(raw_source, dict) else None
             if isinstance(value, str) and value.strip():
-                return value.strip().lower().startswith("data:")
+                return is_base64_url(value.strip())
         return False
 
     def _request_uses_last_frame_bridge(self, kwargs: Dict[str, Any]) -> bool:
@@ -377,7 +378,7 @@ class VideoGenerationCoordinator:
             payload["gcs_uri"] = gcs_uri
         if file_uri:
             payload["file_uri"] = file_uri
-        if url and not url.startswith("data:"):
+        if url and not is_base64_url(url):
             payload["url"] = url
 
         if len(payload) > 1:

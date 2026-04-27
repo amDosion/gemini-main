@@ -18,6 +18,7 @@ import httpx
 
 from ...common.google_model_catalog import VEO_VIDEO_MODELS
 from ....utils.url_security import get_with_redirect_guard, validate_outbound_http_url
+from ....utils.attachment_handler import is_base64_url
 
 DEFAULT_VIDEO_MODEL = "veo-3.1-generate-preview"
 DEFAULT_ASPECT_RATIO = "16:9"
@@ -525,7 +526,7 @@ async def load_binary_bytes(
     normalized_url = str(url or "").strip()
     if not normalized_url:
         raise ValueError("Video generation input is missing a usable URL.")
-    if normalized_url.startswith("data:"):
+    if is_base64_url(normalized_url):
         return parse_data_url(normalized_url)
 
     safe_url = validate_outbound_http_url(normalized_url)
@@ -547,7 +548,7 @@ def parse_data_url(data_url: str) -> Tuple[bytes, str]:
         raise ValueError("Malformed data URL for Google video input.") from exc
 
     mime_type = "image/png"
-    if header.startswith("data:"):
+    if is_base64_url(header):
         header_body = header[5:]
         mime_type = header_body.split(";", 1)[0] or mime_type
     return base64.b64decode(encoded), mime_type

@@ -19,6 +19,7 @@ import logging
 import httpx
 
 from ...core.encryption import decrypt_config
+from ...utils.attachment_handler import is_base64_url, is_blob_url, is_http_url, get_url_type
 from ...models.db_models import MessageAttachment, UploadTask, StorageConfig, ActiveStorage
 from .redis_queue_service import redis_queue
 from .upload_worker_pool import worker_pool
@@ -216,7 +217,7 @@ class AttachmentService:
         logger.info(f"[AttachmentService]     - storage_id: {storage_id if storage_id else 'None'}")
         
         # ✅ 详细日志：步骤1 - 判断URL类型
-        url_type = "Base64" if ai_url.startswith('data:') else "HTTP" if ai_url.startswith('http') else "未知"
+        url_type = "Base64" if is_base64_url(ai_url) else "HTTP" if is_http_url(ai_url) else "未知"
         logger.info(f"[AttachmentService] 🔍 [步骤1] 判断URL类型: {url_type}")
         logger.info(f"[AttachmentService]     - ai_url长度: {len(ai_url)}")
         if url_type == "Base64":
@@ -243,7 +244,7 @@ class AttachmentService:
         # ✅ 步骤2 - 统一返回临时代理 URL，前端不直接接触 base64/第三方临时 URL
         logger.info(f"[AttachmentService] 🔄 [步骤2] 设置显示URL...")
         display_url = f"/api/temp-images/{attachment_id}"
-        if ai_url.startswith('data:'):
+        if is_base64_url(ai_url):
             logger.info(f"[AttachmentService]     - Base64 Data URL，改为代理URL: {display_url}")
         else:
             logger.info(f"[AttachmentService]     - HTTP URL，改为代理URL: {display_url}")
@@ -374,7 +375,7 @@ class AttachmentService:
         
         # ✅ 详细日志：步骤1 - 查找匹配的附件ID
         logger.info(f"[AttachmentService] 🔍 [步骤1] 开始查找匹配的附件ID...")
-        logger.info(f"[AttachmentService]     - active_image_url类型: {'Blob' if active_image_url.startswith('blob:') else 'Base64' if active_image_url.startswith('data:') else 'HTTP' if active_image_url.startswith('http') else '未知'}")
+        logger.info(f"[AttachmentService]     - active_image_url类型: {'Blob' if is_blob_url(active_image_url) else 'Base64' if is_base64_url(active_image_url) else 'HTTP' if is_http_url(active_image_url) else '未知'}")
         logger.info(f"[AttachmentService]     - active_image_url长度: {len(active_image_url)}")
         logger.info(f"[AttachmentService]     - messages数量: {len(messages)}")
         
@@ -387,7 +388,7 @@ class AttachmentService:
 
         if not attachment_id:
             # 策略: Blob URL兜底 - 查找最近的已上传图片
-            if active_image_url.startswith('blob:'):
+            if is_blob_url(active_image_url):
                 logger.info(f"[AttachmentService] 🔄 [步骤1-兜底] Blob URL，尝试查找最近的已上传图片...")
                 attachment_id = self._find_latest_uploaded_image(session_id, user_id)
                 if attachment_id:
@@ -418,15 +419,15 @@ class AttachmentService:
         logger.info(f"[AttachmentService] ✅ [步骤2] 找到附件记录:")
         logger.info(f"[AttachmentService]     - upload_status: {attachment.upload_status}")
         # 对于BASE64 URL，只输出类型和长度，不输出内容
-        if attachment.url and attachment.url.startswith('data:'):
+        if is_base64_url(attachment.url):
             logger.info(f"[AttachmentService]     - url: Base64 Data URL (长度: {len(attachment.url)} 字符)")
         else:
             logger.info(f"[AttachmentService]     - url: {attachment.url[:80] + '...' if attachment.url and len(attachment.url) > 80 else attachment.url or 'None'}")
         logger.info(f"[AttachmentService]     - temp_url: {'存在' if attachment.temp_url else 'None'}")
-        if attachment.temp_url and attachment.temp_url.startswith('data:'):
+        if is_base64_url(attachment.temp_url):
             logger.info(f"[AttachmentService]     - temp_url类型: Base64 (长度: {len(attachment.temp_url)} 字符)")
         else:
-            logger.info(f"[AttachmentService]     - temp_url类型: {'HTTP' if attachment.temp_url and attachment.temp_url.startswith('http') else 'None' if not attachment.temp_url else '其他'}")
+            logger.info(f"[AttachmentService]     - temp_url类型: {'HTTP' if is_http_url(attachment.temp_url) else 'None' if not attachment.temp_url else '其他'}")
 
         # ✅ 详细日志：步骤3 - 检查上传状态
         logger.info(f"[AttachmentService] 🔍 [步骤3] 检查上传状态...")
@@ -438,7 +439,7 @@ class AttachmentService:
             logger.info(f"[AttachmentService] ✅ [步骤3] 附件已上传完成，直接复用 (耗时: {elapsed_time:.2f}ms)")
             logger.info(f"[AttachmentService]     - 跳过上传任务创建")
             # 对于BASE64 URL，只输出类型和长度，不输出内容
-            if attachment.url and attachment.url.startswith('data:'):
+            if is_base64_url(attachment.url):
                 logger.info(f"[AttachmentService]     - 返回云URL: Base64 Data URL (长度: {len(attachment.url)} 字符)")
             else:
                 logger.info(f"[AttachmentService]     - 返回云URL: {attachment.url[:80] + '...' if len(attachment.url) > 80 else attachment.url}")
@@ -497,22 +498,22 @@ class AttachmentService:
             # 有 temp_url（Base64或HTTP URL），使用 source_ai_url
             source_ai_url = attachment.temp_url
             logger.info(f"[AttachmentService]     - 使用 temp_url 作为 source_ai_url")
-            logger.info(f"[AttachmentService]     - temp_url类型: {'Base64' if attachment.temp_url.startswith('data:') else 'HTTP'}")
-        elif attachment.url and not attachment.url.startswith('http'):
+            logger.info(f"[AttachmentService]     - temp_url类型: {'Base64' if is_base64_url(attachment.temp_url) else 'HTTP'}")
+        elif attachment.url and not is_http_url(attachment.url):
             # 有 url 但不是 HTTP URL（可能是Base64），使用 source_ai_url
             source_ai_url = attachment.url
             logger.info(f"[AttachmentService]     - 使用 url (非HTTP) 作为 source_ai_url")
-        elif attachment.url and attachment.url.startswith('http'):
+        elif attachment.url and is_http_url(attachment.url):
             # 有 HTTP URL，使用 source_url
             source_url = attachment.url
             logger.info(f"[AttachmentService]     - 使用 url (HTTP) 作为 source_url")
         elif active_image_url:
             # ✅ 关键修复：附件没有任何 URL，使用请求中的 active_image_url
             logger.info(f"[AttachmentService]     - 附件没有 URL，使用请求中的 active_image_url")
-            if active_image_url.startswith('data:') or active_image_url.startswith('blob:'):
+            if is_base64_url(active_image_url) or is_blob_url(active_image_url):
                 source_ai_url = active_image_url
-                logger.info(f"[AttachmentService]     - active_image_url类型: {'Base64' if active_image_url.startswith('data:') else 'Blob'}")
-            elif active_image_url.startswith('http'):
+                logger.info(f"[AttachmentService]     - active_image_url类型: {'Base64' if is_base64_url(active_image_url) else 'Blob'}")
+            elif is_http_url(active_image_url):
                 source_url = active_image_url
                 logger.info(f"[AttachmentService]     - active_image_url类型: HTTP")
             else:
@@ -705,7 +706,7 @@ class AttachmentService:
         if not normalized_ai_url:
             raise ValueError("Local storage persistence requires a source payload.")
 
-        if normalized_ai_url.startswith('data:'):
+        if is_base64_url(normalized_ai_url):
             _mime_type, base64_str = self._parse_data_url(normalized_ai_url)
             return base64.b64decode(base64_str)
 
@@ -747,7 +748,7 @@ class AttachmentService:
         normalized = str(url or "").strip()
         if not normalized:
             return False
-        if normalized.startswith('data:') or normalized.startswith('blob:'):
+        if is_base64_url(normalized) or is_blob_url(normalized):
             return False
         if normalized.startswith('gs://') or normalized.startswith('files/'):
             return False
@@ -760,7 +761,7 @@ class AttachmentService:
         return normalized.startswith("https://") and "/files/" in normalized
 
     def _parse_data_url(self, data_url: str) -> tuple[str, str]:
-        if not data_url.startswith('data:'):
+        if not is_base64_url(data_url):
             raise ValueError("Invalid data URL")
 
         parts = data_url.split(',', 1)
@@ -821,7 +822,7 @@ class AttachmentService:
         logger.info(f"[AttachmentService] 🔍 检查源类型:")
         logger.info(f"[AttachmentService]     - source_file_path: {'存在' if source_file_path else 'None'}")
         logger.info(f"[AttachmentService]     - source_url: {'存在 (HTTP URL)' if source_url else 'None'}")
-        logger.info(f"[AttachmentService]     - source_ai_url: {'存在 (' + ('Base64' if source_ai_url and source_ai_url.startswith('data:') else 'HTTP') + ')' if source_ai_url else 'None'}")
+        logger.info(f"[AttachmentService]     - source_ai_url: {'存在 (' + ('Base64' if is_base64_url(source_ai_url) else 'HTTP') + ')' if source_ai_url else 'None'}")
         logger.info(f"[AttachmentService]     - source_attachment_id: {source_attachment_id if source_attachment_id else 'None'}")
         
         # 确保至少有一个source

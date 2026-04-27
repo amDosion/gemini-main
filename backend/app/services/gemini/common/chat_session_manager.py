@@ -23,6 +23,7 @@ from ....models.db_models import (
     MessageAttachment
 )
 from ....utils.message_utils import get_message_table_class_by_name
+from ....utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +232,7 @@ class ChatSessionManager:
                             'mime_type': att.mime_type or 'image/png'
                         }
                     })
-                elif att.url and att.url.startswith('data:'):
+                elif att.url and is_base64_url(att.url):
                     # Base64 Data URL
                     match = re.match(r'^data:(.*?);base64,(.*)$', att.url)
                     if match:

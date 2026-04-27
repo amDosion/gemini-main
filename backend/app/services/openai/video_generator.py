@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional, Tuple
 import httpx
 
 from ...utils.url_security import get_with_redirect_guard, validate_outbound_http_url
+from ...utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
 
@@ -235,7 +236,7 @@ class VideoGenerator:
         if not url:
             raise ValueError("Reference image is missing a usable URL.")
 
-        if url.startswith("data:"):
+        if is_base64_url(url):
             return self._parse_data_url(url)
 
         safe_url = validate_outbound_http_url(url)

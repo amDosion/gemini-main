@@ -35,6 +35,7 @@ from .vertexai.expand_service import ExpandService
 from .vertexai.segmentation_service import SegmentationService
 from .vertexai.tryon_service import TryOnService
 from .common.pdf_extractor import PDFExtractorService
+from ...utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
 
@@ -1488,7 +1489,7 @@ class GoogleService(BaseProviderService):
             raise Exception(result.error or "Virtual try-on failed")
 
         data_url = result.image
-        if data_url and not data_url.startswith("data:"):
+        if data_url and not is_base64_url(data_url):
             data_url = f"data:{result.mime_type};base64,{data_url}"
 
         # ✅ 与 GEN 模式保持一致：从 kwargs 中获取 session_id 和 message_id
@@ -1572,7 +1573,7 @@ class GoogleService(BaseProviderService):
                 if isinstance(raw_data, dict):
                     raw_data = raw_data.get("url") or raw_data.get("data")
                 if isinstance(raw_data, str):
-                    if raw_data.startswith("data:"):
+                    if is_base64_url(raw_data):
                         image_base64 = raw_data.split(",", 1)[1] if "," in raw_data else raw_data
                     else:
                         image_base64 = raw_data

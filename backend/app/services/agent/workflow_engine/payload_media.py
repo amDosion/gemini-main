@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 
 from ...gemini.base.video_common import is_google_provider_video_uri
 from ..execution_context import ExecutionContext
+from ....utils.attachment_handler import is_base64_url, is_blob_url
 
 logger = logging.getLogger(__name__)
 
@@ -122,9 +123,9 @@ def normalize_possible_image_url(engine: Any, value: Any, key_hint: str = "") ->
         return None
 
     lower = text.lower()
-    if lower.startswith("data:image/"):
+    if is_base64_url(text):
         return text
-    if lower.startswith("blob:"):
+    if is_blob_url(text):
         return text
     if lower.startswith("oss://"):
         return text
@@ -169,7 +170,7 @@ def normalize_possible_file_url(engine: Any, value: Any) -> Optional[str]:
     lower = text.lower()
     if "{{" in text or "}}" in text:
         return None
-    if lower.startswith("data:"):
+    if is_base64_url(text):
         return text
     if (
         lower.startswith("http://")
@@ -193,7 +194,7 @@ def normalize_possible_result_media_url(engine: Any, value: Any) -> Optional[str
     lower = text.lower()
     if "{{" in text or "}}" in text:
         return None
-    if lower.startswith("data:"):
+    if is_base64_url(text):
         return text
     if is_google_provider_video_uri(text):
         return text

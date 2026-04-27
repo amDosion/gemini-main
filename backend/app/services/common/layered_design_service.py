@@ -25,6 +25,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 import logging
+from ...utils.attachment_handler import is_base64_url, is_http_url
 
 logger = logging.getLogger(__name__)
 
@@ -555,11 +556,11 @@ class LayeredDesignService:
             logger.info(f"[LayeredDesignService] _extract_image_data: extracted url/data type={type(raw).__name__ if raw else 'None'}")
 
         if isinstance(raw, str):
-            if raw.startswith("data:"):
+            if is_base64_url(raw):
                 logger.info(f"[LayeredDesignService] _extract_image_data: data URL, length={len(raw)}")
                 base64_str = raw.split(",", 1)[1] if "," in raw else raw
                 return base64.b64decode(base64_str)
-            elif raw.startswith("http"):
+            elif is_http_url(raw):
                 # HTTP URL - 需要下载图片
                 logger.warning(f"[LayeredDesignService] _extract_image_data: HTTP URL not supported yet: {raw[:100]}...")
                 return None

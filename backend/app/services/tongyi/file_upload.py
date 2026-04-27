@@ -21,6 +21,7 @@ import time
 import logging
 from typing import Optional
 from dataclasses import dataclass
+from ...utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
 
@@ -230,7 +231,7 @@ def upload_to_dashscope(
         # 步骤 2: 转换图片为二进制数据
         logger.info("[DashScope Upload] 步骤 2: 转换图片为二进制数据...")
         
-        if image_url.startswith("data:"):
+        if is_base64_url(image_url):
             # Base64 数据 URL
             # 格式: data:image/jpeg;base64,/9j/4AAQ...
             try:

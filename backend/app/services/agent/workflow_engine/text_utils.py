@@ -12,6 +12,7 @@ import json
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import unquote_to_bytes
+from ....utils.attachment_handler import is_base64_url
 
 
 def build_node_input_snapshot(engine: Any, input_packets: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -249,7 +250,7 @@ def truncate_text(engine: Any, text: str, max_chars: int = 8000) -> str:
 
 def decode_data_url(engine: Any, data_url: str) -> Tuple[str, bytes]:
     _ = engine
-    if not isinstance(data_url, str) or not data_url.startswith("data:"):
+    if not isinstance(data_url, str) or not is_base64_url(data_url):
         raise ValueError("不是合法的 data URL")
 
     header, payload = data_url.split(",", 1) if "," in data_url else ("", "")

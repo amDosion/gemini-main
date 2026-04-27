@@ -41,6 +41,7 @@ from .test_template_fixture_service import (
 )
 from .tools.excel_tools import analyze_dataframe, clean_dataframe, read_excel_file
 from .workflow_template_service import WorkflowTemplateService
+from ....utils.attachment_handler import is_base64_url, is_blob_url, is_base64_image_url
 
 logger = logging.getLogger(__name__)
 
@@ -330,7 +331,7 @@ class WorkflowTemplateSampleService:
         if not isinstance(value, str):
             return value
         normalized = value.strip()
-        if not normalized or normalized.startswith("data:"):
+        if not normalized or is_base64_url(normalized):
             return value
         if normalized.startswith("sample://"):
             sample_name = normalized[len("sample://"):].strip().lstrip("/")
@@ -499,9 +500,9 @@ class WorkflowTemplateSampleService:
             lowered = raw.lower()
             if lowered.startswith("/api/temp-images/"):
                 continue
-            if lowered.startswith("blob:"):
+            if is_blob_url(raw):
                 continue
-            if not lowered.startswith(("data:image/", "http://", "https://")):
+            if not (is_base64_image_url(raw) or lowered.startswith("http://") or lowered.startswith("https://")):
                 continue
             seen.add(raw)
             candidates.append(raw)
