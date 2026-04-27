@@ -6,7 +6,7 @@ v3 架构采用"按模式分表 + 消息索引表"设计：
 - messages_chat/messages_image_gen/messages_video_gen/messages_generic: 模式表
 - message_attachments: 附件表
 """
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Set, Optional
 from datetime import datetime
@@ -59,37 +59,36 @@ class HistoryPreferenceUpdateRequest(BaseModel):
 
 @router.get("/sessions")
 async def get_sessions(
+    mode: Optional[str] = Query(None, description="按 mode 过滤；不传则返回该用户所有 session"),
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db),
     cache = Depends(get_cache)
 ):
     """
-    获取所有会话 (v3 架构，带 Redis 缓存)
-    
-    查询逻辑：
-    1. 查询所有 ChatSession
-    2. 批量查询 MessageIndex（按 session_id, seq 排序）
-    3. 按 table_name 分组批量查询各模式表
-    4. 批量查询 MessageAttachment
-    5. 按 seq 顺序组装 messages 数组
-    
-    缓存策略：
-    - 缓存键：cache:sessions:{user_id}
-    - TTL：5 分钟（300 秒）
-    - 失效时机：创建/更新/删除会话时
+    获取会话 (v3 架构，带 Redis 缓存)
+
+    Per-mode 完全独立(Sprint 3 方案 1):每个 session 在创建时绑定 mode；
+    传入 ?mode=xxx 时只返回该 mode 的 session,UI 不同 mode 看到独立的会话列表。
+
+    缓存策略:
+    - 缓存键: cache:sessions:{user_id}:{mode_or_all}
+    - TTL: 5 分钟
+    - 失效: 写/删时使用通配 cache:sessions:{user_id}:* 清除所有 mode 变体
     """
     from ...services.common.cache_service import CacheService
     cache_service: CacheService = cache
-    
-    # 生成缓存键
-    cache_key = cache_service._make_key("sessions", user_id)
-    
+
+    # 缓存键包含 mode segment, 避免不同 mode 列表互相污染
+    cache_key = cache_service._make_key("sessions", user_id, mode or "_all")
+
     # 定义数据获取函数
     async def fetch_sessions():
         user_query = UserScopedQuery(db, user_id)
 
-        # 1. 查询所有会话
+        # 1. 查询所有会话(可按 mode 过滤)
         sessions = user_query.get_all(DBChatSession)
+        if mode:
+            sessions = [s for s in sessions if s.mode == mode]
         if not sessions:
             return []
         
@@ -212,24 +211,35 @@ async def create_or_update_session(
     user_query = UserScopedQuery(db, user_id)
     session_id = session_data.get("id")
     new_messages = session_data.get("messages", [])
-    
+    posted_mode = session_data.get("mode")
+
     # 1. upsert ChatSession
     session = user_query.get(DBChatSession, session_id)
-    
+
     if session:
         # 更新现有会话元数据
+        # Sprint 3 方案 1: mode 在创建后不可变(per-mode session 完全独立)
+        if posted_mode is not None and posted_mode != session.mode:
+            raise HTTPException(
+                status_code=409,
+                detail=f"session.mode is immutable (existing={session.mode!r}, posted={posted_mode!r})"
+            )
         session.title = session_data.get("title", session.title)
         session.persona_id = session_data.get("persona_id", session.persona_id)
-        session.mode = session_data.get("mode", session.mode)
     else:
-        # 创建新会话
+        # 创建新会话: mode 必填
+        if not posted_mode or not isinstance(posted_mode, str) or not posted_mode.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="session.mode is required when creating a new session (Sprint 3: per-mode independence)"
+            )
         session = DBChatSession(
             id=session_id,
             user_id=user_id,
             title=session_data.get("title", "新对话"),
             created_at=session_data.get("created_at", int(datetime.now().timestamp() * 1000)),
             persona_id=session_data.get("persona_id"),
-            mode=session_data.get("mode")
+            mode=posted_mode.strip()
         )
         db.add(session)
     
@@ -368,6 +378,17 @@ async def create_or_update_session(
         msg_id = msg["id"]
         mode = msg.get("mode", "chat")
         timestamp = msg.get("timestamp", int(datetime.now().timestamp() * 1000))
+
+        # Sprint 3 方案 1: 强制 message.mode == session.mode
+        # 拒绝跨 mode 写入(如把 image-gen 的消息写入 chat session)
+        if mode != session.mode:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"message.mode={mode!r} mismatches session.mode={session.mode!r} "
+                    f"(msg_id={msg_id!r}); cross-mode messages are not allowed under per-mode session model"
+                )
+            )
 
         # 确定 table_name
         table_name = get_table_name_for_mode(mode)
@@ -514,9 +535,10 @@ async def create_or_update_session(
     try:
         from ...services.common.cache_service import CacheService
         cache_service: CacheService = cache
-        cache_key = cache_service._make_key("sessions", user_id)
-        await cache_service.delete(cache_key)
-        logger.debug(f"[Sessions] 已清除缓存: {cache_key}")
+        # 通配清除该用户下所有 mode 变体的缓存(Sprint 3 per-mode key)
+        cache_pattern = cache_service._make_key("sessions", user_id, "*")
+        await cache_service.delete(cache_pattern)
+        logger.debug(f"[Sessions] 已清除缓存(通配): {cache_pattern}")
     except Exception as e:
         logger.warning(f"[Sessions] 清除缓存失败: {e}")
     
@@ -701,9 +723,10 @@ async def delete_session(
     try:
         from ...services.common.cache_service import CacheService
         cache_service: CacheService = cache
-        cache_key = cache_service._make_key("sessions", user_id)
-        await cache_service.delete(cache_key)
-        logger.debug(f"[Sessions] 已清除缓存: {cache_key}")
+        # 通配清除该用户下所有 mode 变体的缓存(Sprint 3 per-mode key)
+        cache_pattern = cache_service._make_key("sessions", user_id, "*")
+        await cache_service.delete(cache_pattern)
+        logger.debug(f"[Sessions] 已清除缓存(通配): {cache_pattern}")
     except Exception as e:
         logger.warning(f"[Sessions] 清除缓存失败: {e}")
 
