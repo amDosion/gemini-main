@@ -1,29 +1,40 @@
-
 import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 
 import { AppMode, Attachment, Role, ChatOptions } from './types/types';
 import { llmService } from './services/llmService';
 import { initGlobalErrorHandlers, registerGlobalErrorNotifier } from './utils/globalErrorHandler';
-import { ConfigProfile } from './services/db';  // ✅ 新增：ConfigProfile 类型
+import { ConfigProfile } from './services/db'; // ✅ 新增：ConfigProfile 类型
 
 // Cleaner Imports via Barrel Files
 import {
   AppLayout,
-  ChatView,  // ✅ 保持同步加载（默认模式）
+  ChatView, // ✅ 保持同步加载（默认模式）
   SettingsModal,
   ImageModal,
   LoadingSpinner,
   ErrorView,
-  WelcomeScreen
+  WelcomeScreen,
 } from './components';
 
 // ✅ 懒加载非关键视图组件（命名导出需要转换为默认导出）
-const MultiAgentView = lazy(() => import('./components/views/MultiAgentView').then(m => ({ default: m.MultiAgentView })));
-const StudioView = lazy(() => import('./components/views/StudioView').then(m => ({ default: m.StudioView })));
-const CloudStorageView = lazy(() => import('./components/views/CloudStorageView').then(m => ({ default: m.CloudStorageView })));
-const PersonaManagementView = lazy(() => import('./components/views/PersonaManagementView').then(m => ({ default: m.PersonaManagementView })));
-const LiveAPIView = lazy(() => import('./components/live/LiveAPIView').then(m => ({ default: m.LiveAPIView })));
+const MultiAgentView = lazy(() =>
+  import('./components/views/MultiAgentView').then((m) => ({ default: m.MultiAgentView }))
+);
+const StudioView = lazy(() =>
+  import('./components/views/StudioView').then((m) => ({ default: m.StudioView }))
+);
+const CloudStorageView = lazy(() =>
+  import('./components/views/CloudStorageView').then((m) => ({ default: m.CloudStorageView }))
+);
+const PersonaManagementView = lazy(() =>
+  import('./components/views/PersonaManagementView').then((m) => ({
+    default: m.PersonaManagementView,
+  }))
+);
+const LiveAPIView = lazy(() =>
+  import('./components/live/LiveAPIView').then((m) => ({ default: m.LiveAPIView }))
+);
 
 // Import Auth Components
 import { LoginPage, RegisterPage } from './components/auth';
@@ -42,7 +53,7 @@ import {
   useLLMService,
   useModeSwitch,
   useImageHandlers,
-  useSessionSync
+  useSessionSync,
 } from './hooks';
 import { ToastProvider, useToastContext } from './contexts/ToastContext';
 import { startTelemetrySpan } from './services/frontendTelemetry';
@@ -60,13 +71,13 @@ const AppContent: React.FC = () => {
     isAuthenticated,
     isLoading: isAuthLoading,
     allowRegistration,
-    hasActiveProfile,  // ✅ 新增：配置状态
+    hasActiveProfile, // ✅ 新增：配置状态
     login,
     register,
     error: authError,
     logout,
-    refreshUser,  // ✅ 新增：刷新用户信息（用于更新 hasActiveProfile）
-    changePassword
+    refreshUser, // ✅ 新增：刷新用户信息（用于更新 hasActiveProfile）
+    changePassword,
   } = useAuth();
 
   // ✅ 条件加载：只要已认证就加载初始化数据（包括 storageConfigs、personas 等）
@@ -74,8 +85,13 @@ const AppContent: React.FC = () => {
   const shouldLoadInitData = isAuthenticated;
 
   // --- 统一初始化数据 ---
-  const { initData, isLoading: isInitLoading, error: initError, isConfigReady, retry } = useInitData(shouldLoadInitData);
-
+  const {
+    initData,
+    isLoading: isInitLoading,
+    error: initError,
+    isConfigReady,
+    retry,
+  } = useInitData(shouldLoadInitData);
 
   // --- UI State ---
   const [isPersonaViewOpen, setIsPersonaViewOpen] = useState(false);
@@ -92,45 +108,67 @@ const AppContent: React.FC = () => {
     setIsPersonaViewOpen(false);
   }, [appMode]);
 
-
   // --- Domain Hooks ---
   const {
-    config, isSettingsOpen, setIsSettingsOpen,
-    profiles, activeProfileId, activeProfile: activeProfileFromSettings,
+    config,
+    isSettingsOpen,
+    setIsSettingsOpen,
+    profiles,
+    activeProfileId,
+    activeProfile: activeProfileFromSettings,
     saveProfile: originalSaveProfile,
     deleteProfile,
     activateProfile: originalActivateProfile,
-    hiddenModelIds
-  } = useSettings(initData ? {
-    profiles: initData.profiles || [],  // ✅ 确保不为 undefined
-    activeProfileId: initData.activeProfileId || null,  // ✅ 确保不为 undefined
-    activeProfile: initData.activeProfile || null,  // ✅ 确保不为 undefined
-    dashscopeKey: initData.dashscopeKey || ''  // ✅ 确保不为 undefined
-  } : undefined);
+    hiddenModelIds,
+  } = useSettings(
+    initData
+      ? {
+          profiles: initData.profiles || [], // ✅ 确保不为 undefined
+          activeProfileId: initData.activeProfileId || null, // ✅ 确保不为 undefined
+          activeProfile: initData.activeProfile || null, // ✅ 确保不为 undefined
+          dashscopeKey: initData.dashscopeKey || '', // ✅ 确保不为 undefined
+        }
+      : undefined
+  );
 
   // ✅ 包装 saveProfile：保存后刷新用户信息，更新 hasActiveProfile
-  const saveProfile = useCallback(async (profile: ConfigProfile, autoActivate: boolean = false) => {
-    await originalSaveProfile(profile, autoActivate);
-    // 刷新用户信息，更新 hasActiveProfile 状态
-    if (autoActivate) {
-      await refreshUser();
-    }
-  }, [originalSaveProfile, refreshUser]);
+  const saveProfile = useCallback(
+    async (profile: ConfigProfile, autoActivate: boolean = false) => {
+      await originalSaveProfile(profile, autoActivate);
+      // 刷新用户信息，更新 hasActiveProfile 状态
+      if (autoActivate) {
+        await refreshUser();
+      }
+    },
+    [originalSaveProfile, refreshUser]
+  );
 
   // ✅ 包装 activateProfile：激活后刷新用户信息，更新 hasActiveProfile
-  const activateProfile = useCallback(async (id: string) => {
-    await originalActivateProfile(id);
-    // 刷新用户信息，更新 hasActiveProfile 状态
-    await refreshUser();
-  }, [originalActivateProfile, refreshUser]);
-
+  const activateProfile = useCallback(
+    async (id: string) => {
+      await originalActivateProfile(id);
+      // 刷新用户信息，更新 hasActiveProfile 状态
+      await refreshUser();
+    },
+    [originalActivateProfile, refreshUser]
+  );
 
   const {
-    personas, activePersona, activePersonaId, setActivePersonaId,
-    createPersona, updatePersona, deletePersona, refreshPersonas
-  } = usePersonas(initData ? {
-    personas: initData.personas
-  } : undefined);
+    personas,
+    activePersona,
+    activePersonaId,
+    setActivePersonaId,
+    createPersona,
+    updatePersona,
+    deletePersona,
+    refreshPersonas,
+  } = usePersonas(
+    initData
+      ? {
+          personas: initData.personas,
+        }
+      : undefined
+  );
 
   // --- 云存储管理 ---
   const {
@@ -138,17 +176,26 @@ const AppContent: React.FC = () => {
     activeStorageId,
     handleSaveStorage,
     handleDeleteStorage,
-    handleActivateStorage
-  } = useStorageConfigs(initData ? {
-    storageConfigs: initData.storageConfigs,
-    activeStorageId: initData.activeStorageId
-  } : undefined);
+    handleActivateStorage,
+  } = useStorageConfigs(
+    initData
+      ? {
+          storageConfigs: initData.storageConfigs,
+          activeStorageId: initData.activeStorageId,
+        }
+      : undefined
+  );
 
   // --- Auth 路由重定向 ---
   useEffect(() => {
     if (isAuthenticated && (location.pathname === '/login' || location.pathname === '/register')) {
       navigate('/', { replace: true });
-    } else if (!isAuthenticated && !isAuthLoading && location.pathname !== '/login' && location.pathname !== '/register') {
+    } else if (
+      !isAuthenticated &&
+      !isAuthLoading &&
+      location.pathname !== '/login' &&
+      location.pathname !== '/register'
+    ) {
       navigate('/login', { replace: true });
     }
   }, [isAuthenticated, isAuthLoading, location.pathname, navigate]);
@@ -161,20 +208,22 @@ const AppContent: React.FC = () => {
     return `${activeProfile.id}:${activeProfile.providerId}:${activeProfile.updatedAt || 0}`;
   }, [activeProfile]);
   const initialSavedModels = useMemo(() => {
-    const fromActiveProfile = Array.isArray(activeProfile?.savedModels) ? activeProfile.savedModels : [];
+    const fromActiveProfile = Array.isArray(activeProfile?.savedModels)
+      ? activeProfile.savedModels
+      : [];
     if (fromActiveProfile.length > 0) {
-      return fromActiveProfile.filter(model => model && typeof model.id === 'string');
+      return fromActiveProfile.filter((model) => model && typeof model.id === 'string');
     }
 
     const fromInitCache = Array.isArray(initData?.cachedModels) ? initData.cachedModels : [];
-    return fromInitCache.filter(model => model && typeof model.id === 'string');
+    return fromInitCache.filter((model) => model && typeof model.id === 'string');
   }, [activeProfile?.savedModels, initData?.cachedModels]);
   const initialModeCatalog = useMemo(() => {
     return Array.isArray(initData?.cachedModeCatalog) ? initData.cachedModeCatalog : [];
   }, [initData?.cachedModeCatalog]);
   const initialChatModels = useMemo(() => {
     const models = Array.isArray(initData?.cachedChatModels) ? initData.cachedChatModels : [];
-    return models.filter(model => model && typeof model.id === 'string');
+    return models.filter((model) => model && typeof model.id === 'string');
   }, [initData?.cachedChatModels]);
   const initialDefaultModelId = useMemo(() => {
     return initData?.cachedDefaultModelId || null;
@@ -190,7 +239,7 @@ const AppContent: React.FC = () => {
   // 注意：isConfigReady 已从 useInitData Hook 中获取，这里使用 isProfileReady 避免重复声明
   const isProfileReady = isAuthenticated && activeProfile !== undefined && activeProfile !== null;
 
-  // Always try to fetch models when provider changes. 
+  // Always try to fetch models when provider changes.
   const {
     visibleModels,
     allVisibleModels,
@@ -204,12 +253,12 @@ const AppContent: React.FC = () => {
   } = useModels(
     isProfileReady, // ✅ 使用 isProfileReady 而不是 isConfigReady
     config.providerId,
-    appMode,  // ✅ 传递 appMode，后端会根据模式过滤模型
+    appMode, // ✅ 传递 appMode，后端会根据模式过滤模型
     profileCacheKey,
     initialSavedModels,
     initialModeCatalog,
-    initialChatModels,       // ✅ init/critical 预过滤的 chat 模型
-    initialDefaultModelId    // ✅ init/critical 的默认模型 ID
+    initialChatModels, // ✅ init/critical 预过滤的 chat 模型
+    initialDefaultModelId // ✅ init/critical 的默认模型 ID
   );
 
   const {
@@ -228,21 +277,17 @@ const AppContent: React.FC = () => {
     hasMoreSessions,
     isLoadingMore,
     loadMoreSessions,
-  } = useSessions(initData ? {
-    sessions: initData.sessions,
-    sessionsHasMore: initData.sessionsHasMore
-  } : undefined);
+  } = useSessions(
+    initData
+      ? {
+          sessions: initData.sessions,
+          sessionsHasMore: initData.sessionsHasMore,
+        }
+      : undefined
+  );
 
-
-  const {
-    messages,
-    setMessages,
-    loadingState,
-    sendMessage,
-    submitResearchAction,
-    stopGeneration
-  } = useChat(currentSessionId, updateSessionMessages, config.apiKey, activeStorageId);
-
+  const { messages, setMessages, loadingState, sendMessage, submitResearchAction, stopGeneration } =
+    useChat(currentSessionId, updateSessionMessages, config.apiKey, activeStorageId);
 
   // --- 消息过滤 ---
   const currentViewMessages = useViewMessages(messages, appMode);
@@ -254,35 +299,38 @@ const AppContent: React.FC = () => {
     allImages,
     handleNextImage,
     handlePrevImage,
-    handleImageClick
+    handleImageClick,
   } = useImageNavigation(currentViewMessages);
 
   // --- 模式切换（需要在其他 handlers 之前定义）---
   const { handleModeSwitch: baseHandleModeSwitch } = useModeSwitch({
-    setAppMode
+    setAppMode,
   });
-  const handleModeSwitch = useCallback((mode: AppMode) => {
-    const span = startTelemetrySpan(
-      'app.mode.switch',
-      { from: appMode, to: mode },
-      { category: 'ui-interaction' },
-    );
-    try {
-      baseHandleModeSwitch(mode);
-      span.end('ok');
-    } catch (error) {
-      span.end('error', {
-        message: error instanceof Error ? error.message : String(error),
-      });
-      throw error;
-    }
-  }, [appMode, baseHandleModeSwitch]);
+  const handleModeSwitch = useCallback(
+    (mode: AppMode) => {
+      const span = startTelemetrySpan(
+        'app.mode.switch',
+        { from: appMode, to: mode },
+        { category: 'ui-interaction' }
+      );
+      try {
+        baseHandleModeSwitch(mode);
+        span.end('ok');
+      } catch (error) {
+        span.end('error', {
+          message: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    },
+    [appMode, baseHandleModeSwitch]
+  );
 
   useEffect(() => {
     const span = startTelemetrySpan(
       'app.route.render',
       { path: location.pathname, search: location.search },
-      { category: 'navigation' },
+      { category: 'navigation' }
     );
     let finished = false;
     const finalize = () => {
@@ -318,7 +366,7 @@ const AppContent: React.FC = () => {
     sessions,
     activeModelConfig,
     setMessages,
-    setAppMode: handleModeSwitch
+    setAppMode: handleModeSwitch,
   });
 
   // --- Handlers ---
@@ -330,11 +378,14 @@ const AppContent: React.FC = () => {
     setInitialPrompt(undefined);
   };
 
-  const handleModelSelect = useCallback((id: string) => {
-    setCurrentModelId(id);
-    setIsModelMenuOpen(false);
-    // Let useEffect handle llmService.startNewChat to avoid duplicate calls
-  }, [setCurrentModelId, setIsModelMenuOpen]);
+  const handleModelSelect = useCallback(
+    (id: string) => {
+      setCurrentModelId(id);
+      setIsModelMenuOpen(false);
+      // Let useEffect handle llmService.startNewChat to avoid duplicate calls
+    },
+    [setCurrentModelId, setIsModelMenuOpen]
+  );
 
   const handlePersonaSelect = (id: string) => {
     setActivePersonaId(id);
@@ -345,118 +396,145 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const onSend = useCallback((
-    text: string,
-    options: ChatOptions,
-    attachments: Attachment[],
-    mode: AppMode,
-    forcedModelId?: string,
-  ) => {
-    // Only check for Key if not Ollama
-    if (!config.apiKey && config.providerId !== 'ollama') {
-      setSettingsInitialTab('profiles');
-      setIsSettingsOpen(true);
-      return;
-    }
+  const onSend = useCallback(
+    (
+      text: string,
+      options: ChatOptions,
+      attachments: Attachment[],
+      mode: AppMode,
+      forcedModelId?: string
+    ) => {
+      // Only check for Key if not Ollama
+      if (!config.apiKey && config.providerId !== 'ollama') {
+        setSettingsInitialTab('profiles');
+        setIsSettingsOpen(true);
+        return;
+      }
 
-    if (mode === 'image-outpainting' && !config.dashscopeApiKey && config.providerId !== 'tongyi') {
-      showWarning("DashScope API Key is required for 'Expand Image'. Please configure it in Settings.");
-      setIsSettingsOpen(true);
-      return;
-    }
+      if (
+        mode === 'image-outpainting' &&
+        !config.dashscopeApiKey &&
+        config.providerId !== 'tongyi'
+      ) {
+        showWarning(
+          "DashScope API Key is required for 'Expand Image'. Please configure it in Settings."
+        );
+        setIsSettingsOpen(true);
+        return;
+      }
 
-    // ✅ 如果没有当前会话，自动创建一个新会话，并立即使用新会话 id 发送首条消息
-    let targetSessionId = currentSessionId;
-    if (!targetSessionId) {
-      const newSession = createNewSession(activePersonaId);
-      targetSessionId = newSession.id;
-    }
+      // ✅ 如果没有当前会话，自动创建一个新会话，并立即使用新会话 id 发送首条消息
+      let targetSessionId = currentSessionId;
+      if (!targetSessionId) {
+        const newSession = createNewSession(activePersonaId);
+        targetSessionId = newSession.id;
+      }
 
-    const optionsWithPersona = { ...options, personaId: activePersonaId };
-    const selectedModel = resolveModelForModeSend({
-      mode,
-      currentModelId,
+      const optionsWithPersona = { ...options, personaId: activePersonaId };
+      const selectedModel = resolveModelForModeSend({
+        mode,
+        currentModelId,
+        visibleModels,
+        allVisibleModels,
+        activeModelConfig,
+        forcedModelId,
+        isLoadingModels,
+      });
+
+      if (forcedModelId && selectedModel.reason !== 'resolved') {
+        showError('欢迎词指定模型当前不可用，请刷新模型列表后重试。');
+        return;
+      }
+
+      if (!forcedModelId && selectedModel.reason === 'loading') {
+        showError('当前模式模型正在加载，请稍后再试。');
+        return;
+      }
+
+      if (!forcedModelId && selectedModel.reason !== 'resolved') {
+        showError('当前模式没有可用模型，请先在模型列表中选择支持该模式的模型。');
+        return;
+      }
+
+      const modelForSend = selectedModel.reason === 'resolved' ? selectedModel.model : undefined;
+
+      // For PDF extraction, enforce using the user-selected model only (no fallback).
+      if (mode === 'pdf-extract' && selectedModel.reason !== 'resolved') {
+        showError('当前选择的模型不可用，请在模型列表中重新选择后再进行 PDF 提取。');
+        return;
+      }
+
+      if (modelForSend) {
+        sendMessage(
+          text,
+          optionsWithPersona,
+          attachments,
+          mode,
+          modelForSend,
+          config.protocol,
+          targetSessionId
+        );
+      }
+      setInitialAttachments(undefined);
+      setInitialPrompt(undefined);
+    },
+    [
+      config.apiKey,
+      config.providerId,
+      config.dashscopeApiKey,
+      config.protocol,
+      currentSessionId,
+      showError,
+      showWarning,
+      createNewSession,
+      activePersonaId,
+      activePersona,
       visibleModels,
       allVisibleModels,
+      currentModelId,
       activeModelConfig,
-      forcedModelId,
       isLoadingModels,
-    });
-
-    if (forcedModelId && selectedModel.reason !== 'resolved') {
-      showError('欢迎词指定模型当前不可用，请刷新模型列表后重试。');
-      return;
-    }
-
-    if (!forcedModelId && selectedModel.reason === 'loading') {
-      showError('当前模式模型正在加载，请稍后再试。');
-      return;
-    }
-
-    if (!forcedModelId && selectedModel.reason !== 'resolved') {
-      showError('当前模式没有可用模型，请先在模型列表中选择支持该模式的模型。');
-      return;
-    }
-
-    const modelForSend = selectedModel.reason === 'resolved' ? selectedModel.model : undefined;
-
-    // For PDF extraction, enforce using the user-selected model only (no fallback).
-    if (mode === 'pdf-extract' && selectedModel.reason !== 'resolved') {
-      showError('当前选择的模型不可用，请在模型列表中重新选择后再进行 PDF 提取。');
-      return;
-    }
-
-    if (modelForSend) {
-      sendMessage(text, optionsWithPersona, attachments, mode, modelForSend, config.protocol, targetSessionId);
-    }
-    setInitialAttachments(undefined);
-    setInitialPrompt(undefined);
-  }, [
-    config.apiKey,
-    config.providerId,
-    config.dashscopeApiKey,
-    config.protocol,
-    currentSessionId,
-    showError,
-    showWarning,
-    createNewSession,
-    activePersonaId,
-    activePersona,
-    visibleModels,
-    allVisibleModels,
-    currentModelId,
-    activeModelConfig,
-    isLoadingModels,
-    sendMessage,
-    setInitialAttachments,
-    setInitialPrompt,
-    setIsSettingsOpen,
-    setSettingsInitialTab
-  ]);
+      sendMessage,
+      setInitialAttachments,
+      setInitialPrompt,
+      setIsSettingsOpen,
+      setSettingsInitialTab,
+    ]
+  );
 
   // --- 图片处理 Handlers ---
   const { handleEditImage, handleExpandImage } = useImageHandlers({
     messages,
-    currentSessionId,
     visibleModels,
     activeModelConfig,
     setAppMode: handleModeSwitch, // ✅ 使用 handleModeSwitch 确保模型选择逻辑正确
     setCurrentModelId,
     setInitialAttachments,
-    setInitialPrompt
+    setInitialPrompt,
   });
 
-  const handleWelcomePrompt = (text: string, mode: AppMode, modelId: string, requiredCap: string) => {
+  const handleWelcomePrompt = (
+    text: string,
+    mode: AppMode,
+    modelId: string,
+    requiredCap: string
+  ) => {
     handleModelSelect(modelId);
     handleModeSwitch(mode); // ✅ 使用 handleModeSwitch 确保模型选择逻辑正确
-    onSend(text, {
-      enableSearch: requiredCap === 'search',
-      enableThinking: requiredCap === 'reasoning',
-      enableCodeExecution: false,
-      imageAspectRatio: '1:1',
-      imageResolution: '1K',
-      voiceName: 'Puck'
-    }, [], mode, modelId);
+    onSend(
+      text,
+      {
+        enableSearch: requiredCap === 'search',
+        enableThinking: requiredCap === 'reasoning',
+        enableCodeExecution: false,
+        imageAspectRatio: '1:1',
+        imageResolution: '1K',
+        voiceName: 'Puck',
+      },
+      [],
+      mode,
+      modelId
+    );
   };
 
   const handleOpenSettings = (tab: 'profiles' | 'editor' = 'profiles') => {
@@ -474,19 +552,18 @@ const AppContent: React.FC = () => {
     setIsPersonaViewOpen(true);
   }, []);
 
-
   // 删除单条消息（同时删除对应的用户消息）
   const handleDeleteMessage = (messageId: string) => {
     if (!currentSessionId) return;
 
     // 找到要删除的消息
-    const msgToDelete = messages.find(m => m.id === messageId);
+    const msgToDelete = messages.find((m) => m.id === messageId);
     if (!msgToDelete) return;
 
     // 如果是 MODEL 消息，同时删除前一条 USER 消息（成对删除）
     let idsToDelete = [messageId];
     if (msgToDelete.role === Role.MODEL) {
-      const msgIndex = messages.findIndex(m => m.id === messageId);
+      const msgIndex = messages.findIndex((m) => m.id === messageId);
       if (msgIndex > 0) {
         const prevMsg = messages[msgIndex - 1];
         if (prevMsg.role === Role.USER && prevMsg.mode === msgToDelete.mode) {
@@ -496,7 +573,7 @@ const AppContent: React.FC = () => {
     }
 
     // 过滤掉要删除的消息
-    const newMessages = messages.filter(m => !idsToDelete.includes(m.id));
+    const newMessages = messages.filter((m) => !idsToDelete.includes(m.id));
     setMessages(newMessages);
     updateSessionMessages(currentSessionId, newMessages);
   };
@@ -534,7 +611,7 @@ const AppContent: React.FC = () => {
     const commonProps = {
       messages: currentViewMessages,
       setAppMode: handleModeSwitch,
-      onImageClick: handleImageClick,  // ✅ 使用稳定的引用
+      onImageClick: handleImageClick, // ✅ 使用稳定的引用
       loadingState,
       onSend,
       onStop: stopGeneration,
@@ -546,8 +623,8 @@ const AppContent: React.FC = () => {
       personas,
       activePersonaId,
       onSelectPersona: handlePersonaSelect,
-      sessionId: currentSessionId,  // ✅ 传递 sessionId 用于查询附件
-      apiKey: config.apiKey  // ✅ 传递 apiKey 用于调用 API
+      sessionId: currentSessionId, // ✅ 传递 sessionId 用于查询附件
+      apiKey: config.apiKey, // ✅ 传递 apiKey 用于调用 API
     };
 
     if (appMode === 'multi-agent') {
@@ -557,7 +634,7 @@ const AppContent: React.FC = () => {
             {...commonProps}
             isLoadingModels={isLoadingModels}
             visibleModels={visibleModels}
-            allVisibleModels={allVisibleModels}  // ✅ 传递完整模型列表
+            allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
             apiKey={config.apiKey}
             protocol={config.protocol}
             onPromptSelect={handleWelcomePrompt}
@@ -573,7 +650,7 @@ const AppContent: React.FC = () => {
           {...commonProps}
           isLoadingModels={isLoadingModels}
           visibleModels={visibleModels}
-          allVisibleModels={allVisibleModels}  // ✅ 传递完整模型列表
+          allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
           apiKey={config.apiKey}
           protocol={config.protocol}
           onPromptSelect={handleWelcomePrompt}
@@ -588,7 +665,7 @@ const AppContent: React.FC = () => {
           messages={messages}
           mode={appMode}
           visibleModels={visibleModels}
-          allVisibleModels={allVisibleModels}  // ✅ 传递完整模型列表
+          allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
           initialPrompt={initialPrompt}
           initialAttachments={initialAttachments}
           onDeleteMessage={handleDeleteMessage}
@@ -608,13 +685,11 @@ const AppContent: React.FC = () => {
       onSaveProfile={saveProfile}
       onDeleteProfile={deleteProfile}
       onActivateProfile={activateProfile}
-
       storageConfigs={storageConfigs}
       activeStorageId={activeStorageId}
       onSaveStorage={handleSaveStorage}
       onDeleteStorage={handleDeleteStorage}
       onActivateStorage={handleActivateStorage}
-
       initialApiKey={config.apiKey}
       initialBaseUrl={config.baseUrl}
       hiddenModelIds={hiddenModelIds}
@@ -623,7 +698,8 @@ const AppContent: React.FC = () => {
   );
 
   // ✅ 优化：统一加载状态（合并认证和初始化加载）
-  const isAppLoading = isAuthLoading || (isAuthenticated && hasActiveProfile === true && isInitLoading);
+  const isAppLoading =
+    isAuthLoading || (isAuthenticated && hasActiveProfile === true && isInitLoading);
 
   // --- Early Return for Loading ---
   if (isAppLoading) {
@@ -671,7 +747,6 @@ const AppContent: React.FC = () => {
         hasMoreSessions={hasMoreSessions}
         isLoadingMore={isLoadingMore}
         loadMoreSessions={loadMoreSessions}
-
         isLoadingModels={isLoadingModels}
         isModelMenuOpen={isModelMenuOpen}
         setIsModelMenuOpen={setIsModelMenuOpen}
@@ -691,12 +766,9 @@ const AppContent: React.FC = () => {
         onLogout={logout}
         cacheStatus={cacheStatus}
         onRefreshSessions={refreshSessions}
-
         isPersonaViewOpen={isPersonaViewOpen}
         onOpenPersonaView={handleOpenPersonaView}
-
         settings={settingsModal}
-
         showModeNavigation={true}
         setAppMode={handleModeSwitch}
         modeCatalog={modeCatalog}
@@ -745,13 +817,7 @@ const AppContent: React.FC = () => {
       />
       <Route
         path="/*"
-        element={
-          isAuthenticated ? (
-            mainAppElement
-          ) : (
-            <Navigate to="/login" replace />
-          )
-        }
+        element={isAuthenticated ? mainAppElement : <Navigate to="/login" replace />}
       />
     </Routes>
   );

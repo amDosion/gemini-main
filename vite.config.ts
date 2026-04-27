@@ -1,4 +1,3 @@
-
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -68,14 +67,22 @@ export default defineConfig({
     host: '0.0.0.0', // 监听所有 IPv4 网络接口（包括 localhost 和局域网 IP）
     port: 21573,
     strictPort: false, // 如果端口被占用，自动尝试下一个可用端口
-    allowedHosts: ['gemini.lspon.com', 'geminiai.lspon.com'], // 允许的域名
+    // 允许的域名：可通过 VITE_ALLOWED_HOSTS（逗号分隔）覆盖，避免把生产域名硬编码到提交里
+    // 安全：过滤掉裸 "*" 字面值——Vite 会把 ['*'] 当通配匹配所有 Host，导致 DNS rebinding 攻击面
+    allowedHosts: process.env.VITE_ALLOWED_HOSTS
+      ? process.env.VITE_ALLOWED_HOSTS.split(',')
+          .map((s) => s.trim())
+          .filter((h) => h && h !== '*')
+      : ['gemini.lspon.com', 'geminiai.lspon.com', 'gemini.dicry.cn'],
     open: '/login', // 自动打开浏览器到登录页面
     cors: true, // 启用 CORS
     hmr: {
       protocol: 'wss', // 使用 WebSocket 协议
       // 不指定 host，让 HMR 自动适配当前访问地址（支持 localhost、127.0.0.1 和局域网 IP）
       port: 21573,
-      clientPort: 443,
+      // 反向代理外网端口；可通过 VITE_HMR_CLIENT_PORT 覆盖，默认 18443 保持现有部署兼容
+      // parseInt 在空串/非数字输入时返回 NaN，|| 0 fallback 到默认值，避免 Vite 接收 NaN
+      clientPort: parseInt(process.env.VITE_HMR_CLIENT_PORT ?? '', 10) || 18443,
       timeout: 30000, // 30 秒超时
       overlay: true, // 在浏览器中显示错误覆盖层
     },
@@ -116,12 +123,12 @@ export default defineConfig({
         target: 'http://localhost:21574',
         changeOrigin: true,
         secure: false,
-      }
-    }
+      },
+    },
   },
-  define: {
-    'process.env.API_KEY': JSON.stringify(process.env.API_KEY || ''),
-  },
+  // 注意：不再通过 define 把 API key 编译进前端 bundle（之前的 process.env.API_KEY 注入会
+  // 让 key 以明文形式出现在 production JS 中，任何拿到 bundle 的人都可提取）。
+  // Provider API key 现在统一通过 profile UI 配置，由后端加密存储与中转使用。
   // 优化构建配置
   build: {
     sourcemap: true, // 生成 source map，方便调试

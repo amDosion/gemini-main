@@ -87,24 +87,24 @@ const debounce = <F extends (...args: unknown[]) => void>(func: F, delay: number
   };
 };
 
-export const useSettings = (
-  initialData?: {
-    profiles: ConfigProfile[];
-    activeProfileId: string | null;
-    activeProfile: ConfigProfile | null;
-    dashscopeKey: string;
-  }
-) => {
+export const useSettings = (initialData?: {
+  profiles: ConfigProfile[];
+  activeProfileId: string | null;
+  activeProfile: ConfigProfile | null;
+  dashscopeKey: string;
+}) => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Initialize fullSettings with initialData if provided, otherwise null
   const [fullSettings, setFullSettings] = useState<FullSettings | null>(
-    initialData ? {
-      profiles: initialData.profiles,
-      activeProfileId: initialData.activeProfileId,
-      activeProfile: initialData.activeProfile,
-      dashscopeKey: initialData.dashscopeKey
-    } : null
+    initialData
+      ? {
+          profiles: initialData.profiles,
+          activeProfileId: initialData.activeProfileId,
+          activeProfile: initialData.activeProfile,
+          dashscopeKey: initialData.dashscopeKey,
+        }
+      : null
   );
   const [cacheTimestamp, setCacheTimestamp] = useState<number | null>(null);
 
@@ -113,7 +113,7 @@ export const useSettings = (
   const profileCacheFingerprintRef = useRef(
     buildProfileCacheFingerprint(initialData?.activeProfile || null)
   );
-  
+
   // ✅ 修复：使用 ref 追踪是否已从 initialData 初始化，避免覆盖后续的状态更新
   const isInitializedFromDataRef = useRef(false);
 
@@ -128,7 +128,7 @@ export const useSettings = (
         profiles: initialData.profiles,
         activeProfileId: initialData.activeProfileId,
         activeProfile: initialData.activeProfile,
-        dashscopeKey: initialData.dashscopeKey
+        dashscopeKey: initialData.dashscopeKey,
       });
       isInitializedFromDataRef.current = true;
     }
@@ -138,7 +138,6 @@ export const useSettings = (
   const profiles = useMemo(() => fullSettings?.profiles || [], [fullSettings?.profiles]);
   const activeProfileId = fullSettings?.activeProfileId || null;
 
-  
   // ✅ 修复：如果 activeProfile 为 null 但 activeProfileId 存在，从 profiles 中查找
   const activeProfile = useMemo(() => {
     if (fullSettings?.activeProfile) {
@@ -146,7 +145,7 @@ export const useSettings = (
     }
     // 回退：如果后端返回的 activeProfile 为 null，尝试从 profiles 中查找
     if (activeProfileId && profiles.length > 0) {
-      const found = profiles.find(p => p.id === activeProfileId);
+      const found = profiles.find((p) => p.id === activeProfileId);
       if (found) {
         return found;
       }
@@ -155,29 +154,32 @@ export const useSettings = (
   }, [fullSettings?.activeProfile, activeProfileId, profiles]);
 
   // Use useMemo for stable hiddenModels array reference
-  const hiddenModels = useMemo(() =>
-    activeProfile?.hiddenModels || [],
+  const hiddenModels = useMemo(
+    () => activeProfile?.hiddenModels || [],
     [activeProfile?.hiddenModels?.join(',')]
   );
 
   // Construct AppConfig
-  const config: AppConfig = useMemo(() => ({
-    apiKey: activeProfile?.apiKey || '',
-    baseUrl: activeProfile?.baseUrl || '',
-    protocol: (activeProfile?.protocol as ApiProtocol) || null,
-    providerId: activeProfile?.providerId || '',
-    hiddenModels,
-    isProxy: activeProfile?.isProxy || false,
-    dashscopeApiKey: fullSettings?.dashscopeKey || ''
-  }), [
-    activeProfile?.apiKey,
-    activeProfile?.baseUrl,
-    activeProfile?.protocol,
-    activeProfile?.providerId,
-    hiddenModels,
-    activeProfile?.isProxy,
-    fullSettings?.dashscopeKey
-  ]);
+  const config: AppConfig = useMemo(
+    () => ({
+      apiKey: activeProfile?.apiKey || '',
+      baseUrl: activeProfile?.baseUrl || '',
+      protocol: (activeProfile?.protocol as ApiProtocol) || null,
+      providerId: activeProfile?.providerId || '',
+      hiddenModels,
+      isProxy: activeProfile?.isProxy || false,
+      dashscopeApiKey: fullSettings?.dashscopeKey || '',
+    }),
+    [
+      activeProfile?.apiKey,
+      activeProfile?.baseUrl,
+      activeProfile?.protocol,
+      activeProfile?.providerId,
+      hiddenModels,
+      activeProfile?.isProxy,
+      fullSettings?.dashscopeKey,
+    ]
+  );
 
   const isCacheExpired = (timestamp: number | null): boolean => {
     if (!timestamp) {
@@ -192,17 +194,13 @@ export const useSettings = (
     llmService.clearModelCache();
 
     const targets = Array.from(
-      new Set(
-        providerIds
-          .map(id => String(id || '').trim())
-          .filter(Boolean)
-      )
+      new Set(providerIds.map((id) => String(id || '').trim()).filter(Boolean))
     );
 
     if (targets.length === 0) return;
 
     await Promise.all(
-      targets.map(async providerId => {
+      targets.map(async (providerId) => {
         await configService.clearProviderModelCache(providerId);
       })
     );
@@ -241,22 +239,23 @@ export const useSettings = (
 
       let { apiKey, baseUrl, protocol, providerId, isProxy } = activeProfile;
 
-      // Intelligent Key Resolution for Google: Use environment variable as a fallback.
+      // 不再走 import.meta.env.VITE_API_KEY fallback——build-time 注入会把 provider key
+      // 编译进前端 bundle（明文可提取）。请通过 profile UI 配置 Google API key，
+      // 后端会加密存储并代为调用。
       if (providerId === 'google' && !apiKey) {
-        apiKey = process.env.API_KEY || '';
+        apiKey = '';
       }
 
       // Propagate the resolved and effective configuration to the global service singleton.
-      llmService.setConfig(
-        apiKey,
-        baseUrl,
-        protocol as ApiProtocol,
-        providerId
-      );
+      llmService.setConfig(apiKey, baseUrl, protocol as ApiProtocol, providerId);
     } catch (error: unknown) {
       // ✅ 静默处理 401 错误（用户未登录或 token 过期）
       const errorMessage = error instanceof Error ? error.message : String(error || '');
-      if (errorMessage.includes('401') || errorMessage.includes('Unauthorized') || errorMessage.includes('Authentication required')) {
+      if (
+        errorMessage.includes('401') ||
+        errorMessage.includes('Unauthorized') ||
+        errorMessage.includes('Authentication required')
+      ) {
         // 用户未登录，静默失败，不打印错误
         return;
       }
@@ -278,7 +277,7 @@ export const useSettings = (
         // 用户未登录，不刷新设置
         return;
       }
-      
+
       // Only refresh if cache is expired and we have settings loaded
       if (fullSettings && isCacheExpired(cacheTimestamp)) {
         refreshSettings();
@@ -317,86 +316,88 @@ export const useSettings = (
   // --- Profile Actions ---
 
   const saveProfile = async (profile: ConfigProfile, autoActivate: boolean = false) => {
-      const previousState = fullSettings;
-      const previousProfile = previousState?.profiles.find(p => p.id === profile.id) || null;
-      const previousActiveProfileId = previousState?.activeProfileId || null;
-      const previousActiveProfile = previousState?.profiles.find(p => p.id === previousActiveProfileId) || null;
+    const previousState = fullSettings;
+    const previousProfile = previousState?.profiles.find((p) => p.id === profile.id) || null;
+    const previousActiveProfileId = previousState?.activeProfileId || null;
+    const previousActiveProfile =
+      previousState?.profiles.find((p) => p.id === previousActiveProfileId) || null;
 
-      // 先做同页即时更新，保证 Header 和模型选择器立即响应
-      setFullSettings(prev => {
-        if (!prev) return prev;
+    // 先做同页即时更新，保证 Header 和模型选择器立即响应
+    setFullSettings((prev) => {
+      if (!prev) return prev;
 
-        const existingIndex = prev.profiles.findIndex(p => p.id === profile.id);
-        const normalizedProfile: ConfigProfile = {
-          ...profile,
-          hiddenModels: profile.hiddenModels || [],
-          savedModels: profile.savedModels || [],
-          cachedModelCount: profile.cachedModelCount ?? profile.savedModels?.length ?? 0
+      const existingIndex = prev.profiles.findIndex((p) => p.id === profile.id);
+      const normalizedProfile: ConfigProfile = {
+        ...profile,
+        hiddenModels: profile.hiddenModels || [],
+        savedModels: profile.savedModels || [],
+        cachedModelCount: profile.cachedModelCount ?? profile.savedModels?.length ?? 0,
+      };
+
+      const nextProfiles = [...prev.profiles];
+      if (existingIndex >= 0) {
+        nextProfiles[existingIndex] = {
+          ...nextProfiles[existingIndex],
+          ...normalizedProfile,
         };
-
-        const nextProfiles = [...prev.profiles];
-        if (existingIndex >= 0) {
-          nextProfiles[existingIndex] = {
-            ...nextProfiles[existingIndex],
-            ...normalizedProfile
-          };
-        } else {
-          nextProfiles.push(normalizedProfile);
-        }
-
-        const nextActiveProfileId = autoActivate ? normalizedProfile.id : prev.activeProfileId;
-        const nextActiveProfile = nextProfiles.find(p => p.id === nextActiveProfileId) || null;
-
-        let nextDashscopeKey = prev.dashscopeKey;
-        if (normalizedProfile.providerId === 'tongyi' && normalizedProfile.apiKey) {
-          nextDashscopeKey = normalizedProfile.apiKey;
-        }
-
-        return {
-          ...prev,
-          profiles: nextProfiles,
-          activeProfileId: nextActiveProfileId,
-          activeProfile: nextActiveProfile,
-          dashscopeKey: nextDashscopeKey
-        };
-      });
-
-      // 当前激活配置发生变化时，先清理模型缓存，避免 Header 仍显示旧模型列表
-      if (autoActivate || activeProfileId === profile.id) {
-        llmService.clearModelCache();
+      } else {
+        nextProfiles.push(normalizedProfile);
       }
 
-      try {
-        await configService.saveProfile(profile);
-        if (autoActivate) {
-          await configService.setActiveProfileId(profile.id);
-        }
-        await invalidateProviderCaches([
-          profile.providerId,
-          previousProfile?.providerId,
-          autoActivate ? previousActiveProfile?.providerId : null
-        ]);
-        await refreshSettings();
-        notifyOtherTabs(); // Notify other tabs of the change
-      } catch (error) {
-        // 后端失败时回滚 optimistic 更新
-        if (previousState) {
-          setFullSettings(previousState);
-        }
-        throw error;
-      }
-  };
+      const nextActiveProfileId = autoActivate ? normalizedProfile.id : prev.activeProfileId;
+      const nextActiveProfile = nextProfiles.find((p) => p.id === nextActiveProfileId) || null;
 
-  const deleteProfile = async (id: string) => {
-      const previousProfile = fullSettings?.profiles.find(p => p.id === id) || null;
-      const previousActiveProfile = fullSettings?.profiles.find(p => p.id === fullSettings?.activeProfileId) || null;
-      await configService.deleteProfile(id);
+      let nextDashscopeKey = prev.dashscopeKey;
+      if (normalizedProfile.providerId === 'tongyi' && normalizedProfile.apiKey) {
+        nextDashscopeKey = normalizedProfile.apiKey;
+      }
+
+      return {
+        ...prev,
+        profiles: nextProfiles,
+        activeProfileId: nextActiveProfileId,
+        activeProfile: nextActiveProfile,
+        dashscopeKey: nextDashscopeKey,
+      };
+    });
+
+    // 当前激活配置发生变化时，先清理模型缓存，避免 Header 仍显示旧模型列表
+    if (autoActivate || activeProfileId === profile.id) {
+      llmService.clearModelCache();
+    }
+
+    try {
+      await configService.saveProfile(profile);
+      if (autoActivate) {
+        await configService.setActiveProfileId(profile.id);
+      }
       await invalidateProviderCaches([
+        profile.providerId,
         previousProfile?.providerId,
-        previousActiveProfile?.providerId
+        autoActivate ? previousActiveProfile?.providerId : null,
       ]);
       await refreshSettings();
       notifyOtherTabs(); // Notify other tabs of the change
+    } catch (error) {
+      // 后端失败时回滚 optimistic 更新
+      if (previousState) {
+        setFullSettings(previousState);
+      }
+      throw error;
+    }
+  };
+
+  const deleteProfile = async (id: string) => {
+    const previousProfile = fullSettings?.profiles.find((p) => p.id === id) || null;
+    const previousActiveProfile =
+      fullSettings?.profiles.find((p) => p.id === fullSettings?.activeProfileId) || null;
+    await configService.deleteProfile(id);
+    await invalidateProviderCaches([
+      previousProfile?.providerId,
+      previousActiveProfile?.providerId,
+    ]);
+    await refreshSettings();
+    notifyOtherTabs(); // Notify other tabs of the change
   };
 
   const activateProfile = async (id: string) => {
@@ -406,14 +407,14 @@ export const useSettings = (
 
     const previousActiveProfileId = fullSettings.activeProfileId;
     const previousActiveProfile = fullSettings.activeProfile;
-    const newActiveProfile = fullSettings.profiles.find(p => p.id === id);
+    const newActiveProfile = fullSettings.profiles.find((p) => p.id === id);
 
     if (!newActiveProfile) {
       return;
     }
 
     // Layer 1 - Fast Response: Optimistically update state for quick UI response
-    setFullSettings(prev => {
+    setFullSettings((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
@@ -424,9 +425,9 @@ export const useSettings = (
 
     const profileForLlm = { ...newActiveProfile };
 
-    // Apply Google API Key resolution if necessary
+    // 见上方说明：不再使用 build-time env fallback，避免 provider key 编译进前端 bundle
     if (profileForLlm.providerId === 'google' && !profileForLlm.apiKey) {
-      profileForLlm.apiKey = process.env.API_KEY || '';
+      profileForLlm.apiKey = '';
     }
 
     // Clear baseUrl for non-proxied Google provider to use SDK default
@@ -447,20 +448,15 @@ export const useSettings = (
     try {
       // Layer 2 - Backend Update: Persist the active profile change
       await configService.setActiveProfileId(id);
-      await invalidateProviderCaches([
-        profileForLlm.providerId,
-        previousActiveProfile?.providerId
-      ]);
+      await invalidateProviderCaches([profileForLlm.providerId, previousActiveProfile?.providerId]);
       // Re-sync from backend to avoid local state drifting from persisted state.
       await refreshSettings();
 
       // ✅ 修复：通知其他标签页同步状态
       notifyOtherTabs();
-
     } catch (error) {
-
       // Rollback optimistic UI update
-      setFullSettings(prev => {
+      setFullSettings((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
@@ -481,7 +477,7 @@ export const useSettings = (
       } else {
         profileCacheFingerprintRef.current = buildProfileCacheFingerprint(null);
       }
-      
+
       // ✅ 抛出错误，让调用方（Header.tsx）知道切换失败
       throw error;
     }
@@ -497,21 +493,21 @@ export const useSettings = (
     onSaved?: () => void,
     targetProviderId?: string
   ) => {
-     // This legacy method is becoming less relevant with Profiles,
-     // but we can map it to "Update Active Profile" for compatibility.
-     if (activeProfileId) {
-         const current = profiles.find(p => p.id === activeProfileId);
-         if (current) {
-             await saveProfile({
-                 ...current,
-                 apiKey,
-                 baseUrl,
-                 hiddenModels,
-                 protocol
-             });
-         }
-     }
-     if (onSaved) onSaved();
+    // This legacy method is becoming less relevant with Profiles,
+    // but we can map it to "Update Active Profile" for compatibility.
+    if (activeProfileId) {
+      const current = profiles.find((p) => p.id === activeProfileId);
+      if (current) {
+        await saveProfile({
+          ...current,
+          apiKey,
+          baseUrl,
+          hiddenModels,
+          protocol,
+        });
+      }
+    }
+    if (onSaved) onSaved();
   };
 
   return {
@@ -527,6 +523,6 @@ export const useSettings = (
     deleteProfile,
     activateProfile,
     saveSettings, // Deprecated but kept for signature compat
-    refreshSettings
+    refreshSettings,
   };
 };
