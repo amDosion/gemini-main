@@ -18,6 +18,38 @@ logger = logging.getLogger(__name__)
 # 缓存项目根目录，避免重复计算
 _project_root_cache: Optional[str] = None
 
+# 凭证目录路径（backend/credentials）
+# 注意: 不在导入时创建目录，避免在 read-only / nobody-user / pytest-collection 场景下
+# import 即崩溃。启动期由 startup_tasks 显式调用 ensure_credentials_dir()。
+CREDENTIALS_DIR = Path(__file__).resolve().parents[2] / "credentials"
+
+
+def ensure_credentials_dir() -> Path:
+    """创建凭证目录（mode=0o700，幂等）。应在应用启动期显式调用。
+
+    注意：Path.mkdir 的 mode 仅在首次创建时生效；exist_ok=True 命中已有目录时
+    不会调整权限。因此对存量目录追加显式 chmod 以收紧到 0o700，并 stat 校验最终
+    权限——chmod 在 NFS / 共享卷场景下可能被静默拒绝，必须主动检测以避免"看似已收紧
+    实际仍 0o755"的盲点。
+    """
+    CREDENTIALS_DIR.mkdir(mode=0o700, exist_ok=True)
+    try:
+        os.chmod(CREDENTIALS_DIR, 0o700)
+    except OSError as e:
+        logger.warning(f"[PathUtils] 无法将凭证目录权限收紧到 0o700: {e}")
+    # 校验最终权限：chmod 可能在某些文件系统上无效；启动后必须留下可见信号
+    try:
+        actual_mode = os.stat(CREDENTIALS_DIR).st_mode & 0o777
+        if actual_mode != 0o700:
+            logger.error(
+                f"[PathUtils] 凭证目录权限未达 0o700：实际 {oct(actual_mode)} "
+                f"({CREDENTIALS_DIR})——可能在 NFS / 共享卷上 chmod 被忽略；"
+                f"请手动 `chmod 700` 或迁移到本地文件系统"
+            )
+    except OSError as e:
+        logger.warning(f"[PathUtils] 无法 stat 凭证目录: {e}")
+    return CREDENTIALS_DIR
+
 
 def get_project_root() -> str:
     """

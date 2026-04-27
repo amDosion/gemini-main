@@ -31,8 +31,7 @@ logger = logging.getLogger(__name__)
 # ==================== ENCRYPTION_KEY 管理 ====================
 
 # 文件路径
-_credentials_dir = Path(__file__).resolve().parents[2] / "credentials"
-_credentials_dir.mkdir(exist_ok=True)
+from .path_utils import CREDENTIALS_DIR as _credentials_dir, ensure_credentials_dir
 
 ENCRYPTION_KEY_FILE = _credentials_dir / ".encryption_key"
 
@@ -60,9 +59,9 @@ class EncryptionKeyManager:
             key: ENCRYPTION_KEY（Fernet 格式）
         """
         try:
-            # 确保目录存在
-            _credentials_dir.mkdir(exist_ok=True)
-            
+            # 确保目录存在并强制收紧到 0o700（对存量 0o755 目录会调用 chmod 矫正）
+            ensure_credentials_dir()
+
             # 保存到文件（不加密，但用文件权限保护）
             data = {
                 'key': key,
@@ -439,6 +438,34 @@ def decrypt_config(config: Dict[str, Any]) -> Dict[str, Any]:
         logger.error(f"[Encryption] Decryption failed: {e}")
         # Return original config if decryption fails
         return config
+
+
+def decrypt_api_key(api_key: str, silent: bool = False) -> str:
+    """
+    解密 API Key（如果已加密），否则原样返回。
+
+    Args:
+        api_key: API Key（可能是明文或已加密）
+        silent: 如果为 True，解密失败时返回原值而非抛异常
+
+    Returns:
+        解密后的 API Key
+
+    Raises:
+        Exception: 当 silent=False 且解密失败时
+    """
+    if not api_key:
+        return api_key
+
+    if not is_encrypted(api_key):
+        return api_key
+
+    try:
+        return decrypt_data(api_key, silent=silent)
+    except Exception:
+        if silent:
+            return api_key
+        raise
 
 
 def mask_sensitive_fields(config: Dict[str, Any], mask: str = "***") -> Dict[str, Any]:

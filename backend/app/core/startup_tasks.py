@@ -11,6 +11,8 @@ import time
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional
 
+from .path_utils import ensure_credentials_dir
+
 logger = logging.getLogger(__name__)
 
 
@@ -399,34 +401,40 @@ async def run_all_startup_tasks(
     Returns:
         Dict: 启动任务结果，包含 worker_mode 等信息
     """
-    # 1. 配置 logger
+    # 1. 配置 logger（必须最先完成，后续任务依赖日志）
     await setup_logger_configuration(log_prefixes)
 
-    # 2. 初始化密钥
-    await initialize_encryption_keys(log_prefixes)
+    # 1.5 凭证目录（同步、幂等、放在加密密钥初始化之前）
+    # 之前由 path_utils 导入时副作用创建，已挪到此处以避免 read-only / pytest 等场景 import 即崩溃
+    try:
+        ensure_credentials_dir()
+    except OSError as e:
+        logger.error(f"{log_prefixes['error']} Failed to ensure credentials dir: {e}")
+        raise
 
-    # 3. 初始化系统配置
-    await initialize_system_config(log_prefixes)
+    # 2. Group 1: 无依赖的初始化任务（并行）
+    await asyncio.gather(
+        initialize_encryption_keys(log_prefixes),
+        initialize_system_config(log_prefixes),
+        initialize_redis_pool(log_prefixes),
+    )
 
-    # 4. 迁移 users 管理员字段（兼容旧库）
-    await migrate_user_admin_schema(log_prefixes)
+    # 3. Group 2: 依赖 Group 1 的任务（并行）
+    # validate_provider_configs 从 Group 1 移到此处作为防御深度——若未来在 validate
+    # 中加入"测试解密样例凭证"等逻辑，需要 encryption_keys 已就绪。
+    await asyncio.gather(
+        validate_provider_configs(log_prefixes),
+        migrate_user_admin_schema(log_prefixes),
+        migrate_workflow_idempotency_schema(log_prefixes),
+    )
 
-    # 5. 迁移 workflow 幂等字段/索引（兼容旧库）
-    await migrate_workflow_idempotency_schema(log_prefixes)
+    # 4. Group 3: 清理任务（依赖迁移完成，并行）
+    await asyncio.gather(
+        cleanup_expired_tokens(log_prefixes),
+        reconcile_orphan_workflow_executions(log_prefixes),
+    )
 
-    # 6. 初始化 Redis 连接池
-    await initialize_redis_pool(log_prefixes)
-
-    # 7. 清理过期 tokens
-    await cleanup_expired_tokens(log_prefixes)
-
-    # 8. 回收重启遗留的 running 工作流执行
-    await reconcile_orphan_workflow_executions(log_prefixes)
-
-    # 9. 验证 provider 配置
-    await validate_provider_configs(log_prefixes)
-
-    # 10. 启动 Worker 池
+    # 5. 启动 Worker 池（最后执行）
     worker_mode = await start_worker_pool(worker_pool, worker_pool_available, log_prefixes)
 
     return {
