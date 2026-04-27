@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
 from ..models.db_models import UserSettings, ConfigProfile
-from .encryption import decrypt_data, is_encrypted
+from .encryption import decrypt_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -48,34 +48,6 @@ async def get_provider_credentials(
     Raises:
         HTTPException: 如果未找到 API Key
     """
-    def _decrypt_api_key(api_key: str, silent: bool = False) -> str:
-        """
-        解密 API Key（如果已加密）
-        
-        Args:
-            api_key: API Key（可能是明文或已加密）
-            silent: 如果为 True，解密失败时不记录错误（用于兼容性检查）
-        
-        Returns:
-            解密后的 API Key（如果未加密则原样返回）
-        """
-        if not api_key:
-            return api_key
-        
-        # 如果未加密，直接返回
-        if not is_encrypted(api_key):
-            return api_key
-        
-        # 尝试解密
-        try:
-            return decrypt_data(api_key, silent=silent)
-        except Exception as e:
-            if not silent:
-                logger.warning(f"[CredentialManager] Failed to decrypt API key: {e}")
-            # ✅ 解密失败时抛出异常，而不是返回加密的值
-            # 返回加密的值会导致 API 调用失败（如 "API key expired"）
-            raise
-    
     # 1. 优先使用请求参数（用于验证连接）
     if request_api_key and request_api_key.strip():
         logger.info(f"[CredentialManager] Using API key from request parameter for {provider}")
@@ -98,7 +70,7 @@ async def get_provider_credentials(
             logger.info(f"[CredentialManager] Using API key from active profile '{active_profile.name}' for {provider}")
             # ✅ 自动解密 API key（用于业务逻辑使用）
             # 使用 silent=True 保持与 chat 模式一致的行为
-            api_key = _decrypt_api_key(active_profile.api_key, silent=True)
+            api_key = decrypt_api_key(active_profile.api_key, silent=True)
             # ✅ 直接使用数据库中的 base_url（已经是完整的 URL）
             return api_key, active_profile.base_url
 
@@ -111,7 +83,7 @@ async def get_provider_credentials(
         logger.info(f"[CredentialManager] Using API key from profile '{any_profile.name}' for {provider}")
         # ✅ 自动解密 API key（用于业务逻辑使用）
         # 使用 silent=True 保持与 chat 模式一致的行为
-        api_key = _decrypt_api_key(any_profile.api_key, silent=True)
+        api_key = decrypt_api_key(any_profile.api_key, silent=True)
         # ✅ 直接使用数据库中的 base_url（已经是完整的 URL）
         return api_key, any_profile.base_url
 

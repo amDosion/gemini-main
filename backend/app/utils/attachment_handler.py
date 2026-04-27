@@ -169,6 +169,27 @@ def is_http_url(url: Optional[str]) -> bool:
     return url.startswith('http://') or url.startswith('https://')
 
 
+def is_base64_image_url(url: Optional[str]) -> bool:
+    """检查是否为 Base64 图片 Data URL (data:image/...)"""
+    if not url:
+        return False
+    return url.startswith('data:image/')
+
+
+def is_base64_audio_url(url: Optional[str]) -> bool:
+    """检查是否为 Base64 音频 Data URL (data:audio/...)"""
+    if not url:
+        return False
+    return url.startswith('data:audio/')
+
+
+def is_base64_video_url(url: Optional[str]) -> bool:
+    """检查是否为 Base64 视频 Data URL (data:video/...)"""
+    if not url:
+        return False
+    return url.startswith('data:video/')
+
+
 def get_url_type(url: Optional[str]) -> str:
     """
     获取 URL 类型
@@ -188,6 +209,46 @@ def get_url_type(url: Optional[str]) -> str:
     if is_http_url(url):
         return 'http'
     return 'unknown'
+
+
+def extract_mime_from_data_url(data_url: str) -> str:
+    """
+    从 Data URL 中提取 MIME 类型
+
+    Args:
+        data_url: Data URL (如 'data:image/png;base64,iVBORw0...')
+
+    Returns:
+        MIME 类型字符串，解析失败返回 'application/octet-stream'
+    """
+    if not data_url or not data_url.startswith('data:'):
+        return 'application/octet-stream'
+    try:
+        header = data_url.split(',', 1)[0]  # data:image/png;base64
+        mime_part = header.split(':')[1]      # image/png;base64
+        return mime_part.split(';')[0] or 'application/octet-stream'
+    except (IndexError, ValueError):
+        return 'application/octet-stream'
+
+
+def extract_base64_from_data_url(data_url: str) -> str:
+    """
+    从 Data URL 中提取纯 Base64 字符串（不含 data: 前缀）
+
+    Args:
+        data_url: Data URL (如 'data:image/png;base64,iVBORw0...')
+
+    Returns:
+        Base64 字符串，解析失败返回空字符串
+    """
+    if not data_url:
+        return ''
+    if not data_url.startswith('data:'):
+        return data_url  # 已经是纯 base64
+    try:
+        return data_url.split(',', 1)[1]
+    except IndexError:
+        return ''
 
 
 # ============================================================
@@ -764,9 +825,16 @@ __all__ = [
 
     # URL 检测
     'is_base64_url',
+    'is_base64_image_url',
+    'is_base64_audio_url',
+    'is_base64_video_url',
     'is_blob_url',
     'is_http_url',
     'get_url_type',
+
+    # Data URL 解析
+    'extract_mime_from_data_url',
+    'extract_base64_from_data_url',
 
     # Base64 处理
     'parse_data_url',

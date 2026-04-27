@@ -34,8 +34,7 @@ logger = logging.getLogger(__name__)
 # JWT Secret Key 存储文件路径（存储在 backend/credentials 目录）
 # 注意：此文件应添加到 .gitignore，确保不会提交到版本控制
 # backend/credentials 目录已在 .gitignore 中忽略
-_credentials_dir = Path(__file__).resolve().parents[2] / "credentials"
-_credentials_dir.mkdir(exist_ok=True)  # 确保目录存在
+from .path_utils import CREDENTIALS_DIR as _credentials_dir
 JWT_SECRET_FILE = _credentials_dir / ".jwt_secret"
 JWT_SECRET_ENCRYPTED_FILE = _credentials_dir / ".jwt_secret.enc"
 
@@ -82,44 +81,15 @@ class JWTSecretManager:
     
     @staticmethod
     def _encrypt_secret(secret: str) -> str:
-        """
-        加密 JWT Secret Key
-        
-        Args:
-            secret: 原始密钥
-        
-        Returns:
-            加密后的密钥（base64 编码）
-        """
-        try:
-            master_key = JWTSecretManager._get_master_key()
-            fernet = Fernet(master_key)
-            encrypted = fernet.encrypt(secret.encode())
-            return base64.b64encode(encrypted).decode()
-        except Exception as e:
-            logger.error(f"[JWTSecretManager] 加密失败: {e}")
-            raise
-    
+        """加密 JWT Secret Key（委托给 encryption.py）"""
+        from .encryption import encrypt_data
+        return encrypt_data(secret)
+
     @staticmethod
     def _decrypt_secret(encrypted_secret: str) -> str:
-        """
-        解密 JWT Secret Key
-        
-        Args:
-            encrypted_secret: 加密后的密钥（base64 编码）
-        
-        Returns:
-            原始密钥
-        """
-        try:
-            master_key = JWTSecretManager._get_master_key()
-            fernet = Fernet(master_key)
-            encrypted_bytes = base64.b64decode(encrypted_secret.encode())
-            decrypted = fernet.decrypt(encrypted_bytes)
-            return decrypted.decode()
-        except Exception as e:
-            logger.error(f"[JWTSecretManager] 解密失败: {e}")
-            raise
+        """解密 JWT Secret Key（委托给 encryption.py）"""
+        from .encryption import decrypt_data
+        return decrypt_data(encrypted_secret)
     
     @staticmethod
     def get_or_create_secret() -> str:

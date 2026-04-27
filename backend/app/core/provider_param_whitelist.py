@@ -7,27 +7,12 @@ Validate user-supplied option/extra keys before provider method invocation.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import re
 from typing import Any, Dict, Iterable, Optional, Set
+
+from ..utils.case_converter import snake_to_camel, camel_to_snake
 
 
 INVALID_PROVIDER_PARAMS_CODE = "invalid_provider_params"
-
-
-def _snake_to_camel(name: str) -> str:
-    if not name:
-        return name
-    if "_" not in name:
-        return name
-    parts = name.split("_")
-    return parts[0] + "".join(part[:1].upper() + part[1:] for part in parts[1:])
-
-
-def _camel_to_snake(name: str) -> str:
-    if not name:
-        return name
-    s1 = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
-    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
 
 
 def _expand_key_aliases(keys: Iterable[str]) -> Set[str]:
@@ -36,8 +21,8 @@ def _expand_key_aliases(keys: Iterable[str]) -> Set[str]:
         if not key:
             continue
         expanded.add(key)
-        expanded.add(_snake_to_camel(key))
-        expanded.add(_camel_to_snake(key))
+        expanded.add(snake_to_camel(key))
+        expanded.add(camel_to_snake(key))
     return {key for key in expanded if key}
 
 
