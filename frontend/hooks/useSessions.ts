@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ChatSession, Message, Role } from '../types/types';
+import { AppMode, ChatSession, Message, Role } from '../types/types';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../services/db';
 import { cleanAttachmentsForDb } from './handlers/attachmentUtils';
@@ -40,12 +40,21 @@ const mergeMessagesById = (existingMessages: Message[], incomingMessages: Messag
 cacheManager.setTTL(CACHE_DOMAINS.SESSIONS, 30 * 60 * 1000); // 30 minutes
 cacheManager.setTTL(CACHE_DOMAINS.CURRENT_SESSION_ID, 30 * 60 * 1000); // 30 minutes
 
-export const useSessions = (initialData?: {
-  sessions: ChatSession[];
-  sessionsHasMore?: boolean;
-}) => {
+export const useSessions = (
+  appMode: AppMode,
+  initialData?: {
+    sessions: ChatSession[];
+    sessionsHasMore?: boolean;
+  }
+) => {
   // ✅ 使用 initialData 初始化状态（如果提供）
-  const initialSessions = initialData?.sessions;
+  // ✅ Sprint 3 Phase B: per-mode 隔离——initialData.sessions 来自 /api/init 全量列表，
+  // 这里按当前 appMode 过滤，作为首屏；切 mode 后由 effect 重新调用 db.getSessions(mode)
+  const initialSessions = initialData?.sessions
+    ? initialData.sessions.filter((s) => (s.mode || 'chat') === appMode)
+    : undefined;
+  // ✅ 使用 ref 跟踪上一次的 appMode，用于检测 mode 切换
+  const prevAppModeRef = useRef<AppMode>(appMode);
 
   // ✅ Sessions and currentSessionId now use CacheManager
   const sessions = useCacheSubscription<ChatSession[]>(CACHE_DOMAINS.SESSIONS, []);
@@ -132,11 +141,11 @@ export const useSessions = (initialData?: {
     };
   }, [cacheStatus.updateStatus]);
 
-  // 刷新会话列表（强制从后端获取）
+  // 刷新会话列表（强制从后端获取，按当前 appMode 过滤）
   const refreshSessions = useCallback(async () => {
     try {
       setIsLoading(true);
-      const result = await db.getSessions();
+      const result = await db.getSessions(appMode);
       const preparedSessions = prepareSessions(result);
       setSessions(preparedSessions);
       // Use updater to read current value for conditional logic
@@ -164,7 +173,7 @@ export const useSessions = (initialData?: {
     } finally {
       setIsLoading(false);
     }
-  }, [prepareSessions, setSessions, setCurrentSessionId]); // ✅ 移除 cacheStatus 依赖
+  }, [appMode, prepareSessions, setSessions, setCurrentSessionId]); // ✅ 移除 cacheStatus 依赖
 
   // ✅ 从 initialData 中获取 sessionsHasMore
   useEffect(() => {
@@ -211,9 +220,14 @@ export const useSessions = (initialData?: {
 
   // ? 处理 initialData：恢复 Blob URL 和设置 currentSessionId
   // ?? 优先使用 initData.sessions，缺失时回退到 /sessions
+  // ✅ Sprint 3 Phase B: 只在首次（isInitializedFromPropsRef 未置位）执行；
+  // 之后 appMode 切换由专门的 mode-switch effect 处理，避免两个 effect 竞争 setSessions
   useEffect(() => {
+    if (isInitializedFromPropsRef.current) {
+      return;
+    }
+
     if (initialSessions === undefined) {
-      isInitializedFromPropsRef.current = false;
       setSessions([]);
       setCurrentSessionId(null);
       return;
@@ -235,10 +249,6 @@ export const useSessions = (initialData?: {
       } else {
         setCurrentSessionId(null);
       }
-      return;
-    }
-
-    if (isInitializedFromPropsRef.current) {
       return;
     }
 
@@ -300,7 +310,7 @@ export const useSessions = (initialData?: {
         title: 'New Chat',
         messages: [],
         createdAt: Date.now(),
-        mode: 'chat', // Default mode
+        mode: appMode, // ✅ Sprint 3 Phase B: per-mode 隔离——使用当前 appMode（不再硬编码 'chat'）
         personaId: personaId, // 保存当前激活的 persona
       };
 
@@ -312,8 +322,21 @@ export const useSessions = (initialData?: {
 
       return newSession;
     },
-    [saveSessionToDb, updateSessions, setCurrentSessionId]
+    [appMode, saveSessionToDb, updateSessions, setCurrentSessionId]
   );
+
+  // ✅ Sprint 3 Phase B: 监听 appMode 变化——切 mode 时重置 currentSessionId 并按新 mode 重拉列表
+  // 首次渲染（prevAppModeRef.current === appMode）跳过，由 initialSessions effect 处理首屏
+  useEffect(() => {
+    if (prevAppModeRef.current === appMode) {
+      return;
+    }
+    prevAppModeRef.current = appMode;
+    // 立刻清空 currentSessionId，避免短暂显示其它 mode 的标题
+    setCurrentSessionId(null);
+    // 按新 mode 重拉列表；refreshSessions 内部会在列表非空时设置最近一条为 current
+    refreshSessions();
+  }, [appMode, refreshSessions, setCurrentSessionId]);
 
   const updateSessionMessages = useCallback(
     (sessionId: string, newMessages: Message[], options?: UpdateSessionMessagesOptions) => {

@@ -77,8 +77,9 @@ class ApiDB {
     }
 
     // ==================== Sessions ====================
-    async getSessions(): Promise<ChatSession[]> {
-        return this.request<ChatSession[]>('/sessions');
+    async getSessions(mode?: string): Promise<ChatSession[]> {
+        const suffix = mode ? `?mode=${encodeURIComponent(mode)}` : '';
+        return this.request<ChatSession[]>(`/sessions${suffix}`);
     }
 
     async saveSession(session: ChatSession): Promise<void> {

@@ -278,6 +278,7 @@ const AppContent: React.FC = () => {
     isLoadingMore,
     loadMoreSessions,
   } = useSessions(
+    appMode,
     initData
       ? {
           sessions: initData.sessions,
@@ -424,8 +425,14 @@ const AppContent: React.FC = () => {
       }
 
       // ✅ 如果没有当前会话，自动创建一个新会话，并立即使用新会话 id 发送首条消息
+      // ✅ Sprint 3 Phase B: 防御性——若当前 session 的 mode 与本次发送的 mode 不一致
+      // （理论上切 mode 会重置 currentSessionId，不应触发；保留以防异步边界条件），
+      // 也强制建一个属于当前 mode 的新 session，避免后端 message.mode != session.mode 拒绝。
       let targetSessionId = currentSessionId;
-      if (!targetSessionId) {
+      const existingSession = targetSessionId
+        ? sessions.find((s) => s.id === targetSessionId)
+        : undefined;
+      if (!targetSessionId || (existingSession && existingSession.mode !== mode)) {
         const newSession = createNewSession(activePersonaId);
         targetSessionId = newSession.id;
       }
@@ -484,6 +491,7 @@ const AppContent: React.FC = () => {
       config.dashscopeApiKey,
       config.protocol,
       currentSessionId,
+      sessions,
       showError,
       showWarning,
       createNewSession,
