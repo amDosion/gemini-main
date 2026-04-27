@@ -21,6 +21,7 @@ from ...services.common.model_capabilities import (
     get_model_traits,
 )
 from ...core.dependencies import require_current_user, get_cache
+from ...core.credential_manager import get_provider_credentials
 from ...services.common.google_model_catalog import (
     IMAGEN_GENERATE_MODELS,
     IMAGEN_EDIT_MODELS,
@@ -594,84 +595,8 @@ def _resolve_mode_view(
     return mode_catalog, filtered_models, default_model_id
 
 
-async def get_provider_credentials(
-    provider: str,
-    db: Session,
-    user_id: str,
-    request_api_key: Optional[str] = None,
-    request_base_url: Optional[str] = None
-) -> Tuple[str, Optional[str]]:
-    """
-    从数据库获取 Provider 的凭证（API Key 和 Base URL）
 
-    优先级：
-    1. 请求参数（用于测试/覆盖）- 验证连接时使用
-    2. 数据库配置 - 正常使用时使用
-
-    Args:
-        provider: Provider 标识（google, openai, tongyi 等）
-        db: 数据库会话
-        user_id: 当前用户 ID
-        request_api_key: 请求中的 API Key（可选，用于覆盖）
-        request_base_url: 请求中的 Base URL（可选，用于验证）
-
-    Returns:
-        Tuple[api_key, base_url]
-
-    Raises:
-        HTTPException: 如果未找到 API Key
-    """
-    # 导入解密函数
-    from ...core.encryption import decrypt_data, is_encrypted
-    
-    def _decrypt_api_key(api_key: str, silent: bool = False) -> str:
-        """
-        解密 API Key（如果已加密）
-        
-        Args:
-            api_key: API Key（可能是明文或已加密）
-            silent: 如果为 True，解密失败时不记录错误（用于兼容性检查）
-        
-        Returns:
-            解密后的 API Key（如果未加密则原样返回）
-        """
-        if not api_key:
-            return api_key
-        
-        # 如果未加密，直接返回
-        if not is_encrypted(api_key):
-            return api_key
-        
-        # 尝试解密
-        try:
-            return decrypt_data(api_key, silent=silent)
-        except Exception as e:
-            if not silent:
-                logger.warning(f"[Models] Failed to decrypt API key: {e}")
-            # 解密失败时返回原值（可能是旧数据或密钥不匹配）
-            return api_key
-    
-    # 1. 优先使用请求参数（用于验证连接）
-    if request_api_key:
-        logger.info(f"[Models] Using API key from request parameter for {provider}")
-        # 请求参数通常是明文，直接使用
-        return request_api_key, request_base_url
-
-    # 2. 从数据库获取（正常使用）
-    effective_profile = _get_effective_profile(provider, db, user_id)
-    if effective_profile and effective_profile.api_key:
-        logger.info(
-            f"[Models] Using API key from profile '{effective_profile.name}' for {provider}"
-        )
-        api_key = _decrypt_api_key(effective_profile.api_key, silent=True)
-        return api_key, effective_profile.base_url
-
-    # 3. 未找到 API Key，返回 401 错误
-    raise HTTPException(
-        status_code=401,
-        detail=f"API Key not found for provider: {provider}. "
-               f"Please configure it in Settings → Profiles."
-    )
+# get_provider_credentials 已统一到 core.credential_manager，通过顶部 import 引入
 
 
 def is_cache_valid(provider: str) -> bool:

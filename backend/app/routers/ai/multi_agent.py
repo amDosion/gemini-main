@@ -66,6 +66,7 @@ from ...services.gemini.agent.adk_runner import (
 from ...services.gemini.agent.memory_manager import MemoryManager
 from ...services.gemini.agent.memory_bank_service import VertexAiMemoryBankService
 from ...services.common.provider_factory import ProviderFactory
+from ...utils.attachment_handler import is_base64_url, is_blob_url
 
 logger = logging.getLogger(__name__)
 
@@ -744,7 +745,7 @@ def _is_path_within_roots(candidate: Path, roots: List[Path]) -> bool:
 
 def _validate_excel_reference_suffix(file_ref: str) -> None:
     raw = str(file_ref or "").strip()
-    if not raw or raw.startswith("data:"):
+    if not raw or is_base64_url(raw):
         return
     parsed = urlparse(raw)
     path_text = parsed.path if parsed.scheme else raw
@@ -821,7 +822,7 @@ def _resolve_excel_attachment_reference(db: Session, user_id: str, attachment_id
         if not ref:
             continue
         lower = ref.lower()
-        if lower.startswith("blob:"):
+        if is_blob_url(ref):
             continue
         if lower.startswith("file://") or ref.startswith("/"):
             continue
@@ -1235,7 +1236,7 @@ def _build_sheet_ingest_kwargs(
     )
     normalized_reference = str(file_reference or "").strip()
     lower_reference = normalized_reference.lower()
-    if lower_reference.startswith("data:"):
+    if is_base64_url(normalized_reference):
         kwargs["data_url"] = normalized_reference
     elif lower_reference.startswith(("http://", "https://")):
         kwargs["file_url"] = normalized_reference

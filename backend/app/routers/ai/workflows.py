@@ -95,6 +95,7 @@ from ...services.common.reference_image_catalog import (
     is_placeholder_reference_image_url,
     pick_reference_image,
 )
+from ...utils.attachment_handler import is_base64_url, is_blob_url, is_base64_image_url, is_base64_audio_url, is_base64_video_url
 
 logger = logging.getLogger(__name__)
 
@@ -1467,13 +1468,13 @@ def _sanitize_history_detail_payload(
     if isinstance(payload, str):
         text = payload.strip()
         lowered = text.lower()
-        if lowered.startswith("data:image/"):
+        if is_base64_image_url(text):
             return "[inline-image-omitted; use history images preview/download endpoint]"
-        if lowered.startswith("data:audio/"):
+        if is_base64_audio_url(text):
             return "[inline-audio-omitted; use media download/link endpoint]"
-        if lowered.startswith("data:video/"):
+        if is_base64_video_url(text):
             return "[inline-video-omitted; use media download/link endpoint]"
-        if lowered.startswith("data:") and ";base64," in lowered:
+        if is_base64_url(text) and ";base64," in lowered:
             return "[inline-binary-data-url-omitted]"
         compact = text.replace("\n", "").replace("\r", "")
         if (
@@ -2141,7 +2142,7 @@ async def _persist_workflow_result_media(
 
     async def persist_source(entry: Dict[str, str], index: int) -> Optional[Dict[str, Any]]:
         source = str(entry.get("source") or "").strip()
-        if not source or source.startswith("/api/temp-images/") or source.startswith("blob:"):
+        if not source or source.startswith("/api/temp-images/") or is_blob_url(source):
             return None
         cached = processed_sources.get(source)
         if cached is not None:
@@ -2416,9 +2417,9 @@ async def _persist_workflow_result_images(
         lowered = raw.lower()
         if lowered.startswith("/api/temp-images/"):
             continue
-        if lowered.startswith("blob:"):
+        if is_blob_url(lowered):
             continue
-        if not lowered.startswith(("data:image/", "http://", "https://")):
+        if not (is_base64_image_url(lowered) or lowered.startswith("http://") or lowered.startswith("https://")):
             continue
         seen.add(raw)
         candidates.append(raw)

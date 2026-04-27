@@ -86,13 +86,40 @@ class CaseConversionMiddleware:
 
     def __init__(self, app: ASGIApp):
         self.app = app
+        # 路由 → CaseConversionOptions 缓存，避免每次请求遍历所有路由
+        self._route_options_cache: dict[str, CaseConversionOptions] = {}
+        self._cache_built = False
 
-    @staticmethod
-    def _resolve_case_options(scope: Scope) -> CaseConversionOptions:
+    def _build_route_cache(self, app_obj: Any) -> None:
+        """启动时一次性构建所有路由的 CaseConversionOptions 映射"""
+        if self._cache_built:
+            return
+        routes = getattr(getattr(app_obj, "router", None), "routes", None)
+        if routes is None:
+            routes = getattr(app_obj, "routes", [])
+        for route in routes:
+            if not isinstance(route, APIRoute):
+                continue
+            opts = CaseConversionOptions.from_endpoint(route.endpoint)
+            self._route_options_cache[route.path] = opts
+        self._cache_built = True
+
+    def _resolve_case_options(self, scope: Scope) -> CaseConversionOptions:
         app_obj = scope.get("app")
         if app_obj is None:
             return CaseConversionOptions()
 
+        # 首次请求时构建缓存
+        if not self._cache_built:
+            self._build_route_cache(app_obj)
+
+        path = scope.get("path", "")
+
+        # 快速路径：精确匹配缓存
+        if path in self._route_options_cache:
+            return self._route_options_cache[path]
+
+        # 慢速路径：含路径参数的路由需要遍历匹配，匹配后缓存实际 path
         routes = getattr(getattr(app_obj, "router", None), "routes", None)
         if routes is None:
             routes = getattr(app_obj, "routes", [])
@@ -105,9 +132,14 @@ class CaseConversionMiddleware:
             except Exception:
                 continue
             if match is Match.FULL:
-                return CaseConversionOptions.from_endpoint(route.endpoint)
+                opts = CaseConversionOptions.from_endpoint(route.endpoint)
+                self._route_options_cache[path] = opts
+                return opts
 
-        return CaseConversionOptions()
+        # 未匹配路由也缓存，避免重复遍历
+        default_opts = CaseConversionOptions()
+        self._route_options_cache[path] = default_opts
+        return default_opts
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":

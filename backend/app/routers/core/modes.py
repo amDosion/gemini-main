@@ -30,6 +30,7 @@ from ...core.provider_param_whitelist import (
 )
 from ...services.common.provider_factory import ProviderFactory
 from ...services.common.attachment_service import AttachmentService
+from ...utils.attachment_handler import is_base64_url, is_blob_url, is_http_url
 from ...services.common.mode_controls_catalog import validate_params_with_catalog
 from ...services.common.model_capabilities import build_provider_mode_capabilities
 from ...services.common.video_mode_contract import (
@@ -38,6 +39,7 @@ from ...services.common.video_mode_contract import (
     resolve_runtime_mode_controls_schema,
 )
 from ...utils.sse import build_safe_error_chunk, create_sse_response, encode_sse_data
+from ...utils.error_handler import classify_provider_error_code
 
 # Get logger - it will propagate to root logger which has handler configured
 logger = logging.getLogger(__name__)
@@ -63,6 +65,7 @@ class Attachment(BaseModel):
     file_uri: Optional[str] = None
     base64_data: Optional[str] = None
     role: Optional[str] = None  # 'mask' for mask images, etc.
+    google_file_uri: Optional[str] = None  # Google Files API URI (48h有效)
 
 
 class ModeOptions(BaseModel):
@@ -262,17 +265,7 @@ def _build_mode_error_detail(
 def _resolve_video_generation_error_status_code(error: Exception) -> int:
     if isinstance(error, ValueError):
         return 400
-
-    lowered = str(error or "").lower()
-    if (
-        "resource_exhausted" in lowered
-        or "exceeded your current quota" in lowered
-        or "rate limit" in lowered
-        or "quota" in lowered
-    ):
-        return 429
-
-    return 500
+    return classify_provider_error_code(str(error))
 
 
 def _build_stream_error_done_chunk() -> Dict[str, Any]:
@@ -1164,7 +1157,7 @@ async def handle_mode(
             logger.info(f"[Modes] ========== 开始处理Edit模式的CONTINUITY LOGIC ==========")
             logger.info(f"[Modes] 📥 CONTINUITY参数:")
             logger.debug(f"[Modes]     - method_name: {method_name}")
-            url_type = 'Blob' if request_body.options.active_image_url.startswith('blob:') else 'Base64' if request_body.options.active_image_url.startswith('data:') else 'HTTP' if request_body.options.active_image_url.startswith('http') else '未知'
+            url_type = 'Blob' if is_blob_url(request_body.options.active_image_url) else 'Base64' if is_base64_url(request_body.options.active_image_url) else 'HTTP' if is_http_url(request_body.options.active_image_url) else '未知'
             logger.debug(f"[Modes]     - active_image_url类型: {url_type}")
             logger.debug(f"[Modes]     - active_image_url长度: {len(request_body.options.active_image_url)}")
 
@@ -1206,14 +1199,14 @@ async def handle_mode(
                         params["reference_images"] = {}
                     params["reference_images"]["raw"] = resolved["url"]
                     
-                    has_cloud_url = resolved["status"] == "completed" and resolved["url"] and resolved["url"].startswith("http")
+                    has_cloud_url = resolved["status"] == "completed" and resolved["url"] and is_http_url(resolved["url"])
                     logger.info(f"[Modes] ✅ CONTINUITY附件解析成功 (耗时: {continuity_elapsed:.2f}ms):")
                     logger.debug(f"[Modes]     - attachment_id: {resolved['attachment_id']}")  # ✅ 不截断 ID，显示完整 ID
                     logger.debug(f"[Modes]     - status: {resolved['status']}")
                     logger.debug(f"[Modes]     - hasCloudUrl: {has_cloud_url}")
                     # ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
                     if resolved.get('url'):
-                        if resolved['url'].startswith('data:'):
+                        if is_base64_url(resolved['url']):
                             url_display = f"Base64 Data URL (长度: {len(resolved['url'])} 字符)"
                         else:
                             url_display = resolved['url'][:80] + '...' if len(resolved['url']) > 80 else resolved['url']
@@ -1277,7 +1270,7 @@ async def handle_mode(
                             if db_attachment.upload_status == 'completed' and db_attachment.url:
                                 raw_data['url'] = db_attachment.url
                                 # ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
-                                if db_attachment.url.startswith('data:'):
+                                if is_base64_url(db_attachment.url):
                                     logger.debug(f"[Modes]     - 使用云存储 URL: Base64 Data URL (长度: {len(db_attachment.url)} 字符)")
                                 else:
                                     logger.debug(f"[Modes]     - 使用云存储 URL: {db_attachment.url[:80] + '...' if len(db_attachment.url) > 80 else db_attachment.url}")
@@ -1285,7 +1278,7 @@ async def handle_mode(
                             elif db_attachment.temp_url:
                                 raw_data['url'] = db_attachment.temp_url
                                 # ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
-                                if db_attachment.temp_url.startswith('data:'):
+                                if is_base64_url(db_attachment.temp_url):
                                     logger.debug(f"[Modes]     - 使用临时 URL: Base64 Data URL (长度: {len(db_attachment.temp_url)} 字符)")
                                 else:
                                     logger.debug(f"[Modes]     - 使用临时 URL: {db_attachment.temp_url[:80] + '...' if len(db_attachment.temp_url) > 80 else db_attachment.temp_url}")
@@ -1307,7 +1300,7 @@ async def handle_mode(
                         # 如果有 base64_data，直接使用
                         if attachment.base64_data:
                             image_data = attachment.base64_data
-                            if image_data.startswith("data:"):
+                            if is_base64_url(image_data):
                                 image_data = image_data.split(",", 1)[1]
                             if "reference_images" not in params:
                                 params["reference_images"] = {}
@@ -1332,7 +1325,7 @@ async def handle_mode(
                             import base64
                             # 移除 data URI 前缀（如果有）
                             pdf_data = attachment.base64_data
-                            if pdf_data.startswith("data:"):
+                            if is_base64_url(pdf_data):
                                 pdf_data = pdf_data.split(",", 1)[1]
                             if "reference_images" not in params:
                                 params["reference_images"] = {}
@@ -1557,7 +1550,7 @@ async def handle_mode(
                         logger.warning(f"[Modes] ⚠️ 第 {idx+1} 张图片缺少URL，跳过")
                         continue
                     
-                    url_type = "Base64" if ai_url.startswith('data:') else "HTTP" if ai_url.startswith('http') else "其他"
+                    url_type = "Base64" if is_base64_url(ai_url) else "HTTP" if is_http_url(ai_url) else "其他"
                     logger.debug(f"[Modes]     - 图片URL类型: {url_type}")
                     logger.debug(f"[Modes]     - mime_type: {mime_type}")
                     
@@ -1758,15 +1751,8 @@ async def handle_mode(
     except Exception as e:
         logger.error(f"[Modes] Error: provider={provider}, mode={mode}, error={e}", exc_info=True)
         error_text = str(e or "")
-        lowered = error_text.lower()
-        if (
-            "resource_exhausted" in lowered
-            or "exceeded your current quota" in lowered
-            or "rate limit" in lowered
-            or "quota" in lowered
-        ):
-            raise HTTPException(status_code=429, detail=error_text)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        status_code = classify_provider_error_code(error_text)
+        raise HTTPException(status_code=status_code, detail=error_text)
 
 
 @router.post("/{provider}/{mode}/stream")

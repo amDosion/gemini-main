@@ -12,7 +12,7 @@ from ...core.database import SessionLocal, get_db
 from ...models.db_models import ConfigProfile as DBConfigProfile, UserSettings
 from ...core.dependencies import require_current_user
 from ...core.user_scoped_query import UserScopedQuery
-from ...core.encryption import encrypt_data, decrypt_data, is_encrypted
+from ...core.encryption import encrypt_data, is_encrypted, decrypt_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -42,34 +42,6 @@ def _encrypt_api_key(api_key: str) -> str:
     except Exception as e:
         logger.error(f"[Profiles] Failed to encrypt API key: {e}")
         raise
-
-
-def _decrypt_api_key(api_key: str, silent: bool = False) -> str:
-    """
-    解密 API Key（如果已加密）
-
-    Args:
-        api_key: API Key（可能是明文或已加密）
-        silent: 如果为 True，解密失败时不记录错误（用于兼容性检查）
-
-    Returns:
-        解密后的 API Key（如果未加密则原样返回）
-    """
-    if not api_key:
-        return api_key
-    
-    # 如果未加密，直接返回
-    if not is_encrypted(api_key):
-        return api_key
-    
-    # 尝试解密
-    try:
-        return decrypt_data(api_key, silent=silent)
-    except Exception as e:
-        if not silent:
-            logger.warning(f"[Profiles] Failed to decrypt API key: {e}")
-        # 解密失败时返回原值（可能是旧数据或密钥不匹配）
-        return api_key
 
 
 class ConfigProfilePayload(BaseModel):
@@ -113,7 +85,7 @@ async def get_profiles(
         if edit_mode and profile_dict.get("api_key"):
             # 编辑模式：解密返回给前端
             try:
-                profile_dict["api_key"] = _decrypt_api_key(profile_dict["api_key"], silent=True)
+                profile_dict["api_key"] = decrypt_api_key(profile_dict["api_key"], silent=True)
                 logger.debug(f"[Profiles] Decrypted API key for edit mode (profile={profile.id})")
             except Exception as e:
                 logger.warning(f"[Profiles] Failed to decrypt API key in edit mode: {e}")
@@ -172,7 +144,7 @@ async def create_or_update_profile(
                             if existing_encrypted:
                                 try:
                                     if is_encrypted(existing_encrypted):
-                                        existing_decrypted = _decrypt_api_key(existing_encrypted, silent=True)
+                                        existing_decrypted = decrypt_api_key(existing_encrypted, silent=True)
                                         if existing_decrypted == api_key_to_save:
                                             # 用户没有修改 API Key，保持加密状态
                                             logger.debug(f"[Profiles] API key unchanged (decrypted comparison), keeping encrypted value (profile={profile.id})")
@@ -354,7 +326,7 @@ async def get_full_settings(
         if edit_mode and profile_dict.get("api_key"):
             # 编辑模式：解密返回给前端
             try:
-                profile_dict["api_key"] = _decrypt_api_key(profile_dict["api_key"], silent=True)
+                profile_dict["api_key"] = decrypt_api_key(profile_dict["api_key"], silent=True)
                 logger.debug(f"[Profiles] Decrypted API key for edit mode in full settings (profile={profile.id})")
             except Exception as e:
                 logger.warning(f"[Profiles] Failed to decrypt API key in edit mode: {e}")
