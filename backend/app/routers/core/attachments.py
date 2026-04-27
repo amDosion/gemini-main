@@ -18,6 +18,7 @@ from ...core.database import get_db
 from ...core.dependencies import require_current_user
 from ...models.db_models import MessageAttachment
 from ...services.common.attachment_service import AttachmentService
+from ...utils.attachment_handler import is_base64_url, is_blob_url, is_http_url
 from ...services.gemini.base.video_asset_download import download_google_video_asset_for_user
 from ...services.gemini.base.video_common import normalize_gemini_file_name
 from ...services.storage.local_provider import resolve_local_public_file_path
@@ -259,10 +260,10 @@ async def get_temp_image(
     # 判断temp_url类型
     temp_url = attachment.temp_url
 
-    if temp_url.startswith('data:'):
+    if is_base64_url(temp_url):
         # Base64 Data URL → 解码并返回
         try:
-            mime_type, base64_str = parse_data_url(temp_url)
+            mime_type, base64_str = _split_data_url_header(temp_url)
             image_bytes = base64.b64decode(base64_str)
 
             logger.info(f"[TempImage] Serving Base64 image: {attachment_id} (size: {len(image_bytes) / 1024:.2f} KB)")
@@ -280,7 +281,7 @@ async def get_temp_image(
             logger.error(f"[TempImage] Failed to decode Base64: {attachment_id}: {e}")
             raise HTTPException(status_code=400, detail=f"Invalid Base64 data URL: {str(e)}")
     
-    elif temp_url.startswith('http'):
+    elif is_http_url(temp_url):
         if no_redirect:
             # HTTP URL → 后端代理返回，避免前端跨域导出/截图失败
             logger.info(f"[TempImage] Proxying HTTP URL (no_redirect=1): {attachment_id}")
@@ -334,15 +335,16 @@ def _find_first_diff(s1: str, s2: str) -> str:
     return "完全相同"
 
 
-def parse_data_url(data_url: str) -> tuple[str, str]:
+def _split_data_url_header(data_url: str) -> tuple[str, str]:
     """
-    解析Data URL
-    
-    返回: (mime_type, base64_str)
-    
+    切分 Data URL 为 (mime_type, base64_str) — 不解码。
+
+    与 utils.attachment_handler.parse_data_url 区分：后者返回 (mime, bytes)。
+    本函数返回 base64 字符串，避免下游需要 base64 形式时反复 encode/decode。
+
     格式: data:image/png;base64,iVBORw0KGgo...
     """
-    if not data_url.startswith('data:'):
+    if not is_base64_url(data_url):
         raise ValueError("Invalid data URL")
 
     # 格式: data:image/png;base64,iVBORw0KGgo...
@@ -391,9 +393,9 @@ async def resolve_continuity(
     
     try:
         # ✅ 详细日志：记录请求信息
-        url_type = "Blob" if request_body.active_image_url.startswith("blob:") else \
-                   "Base64" if request_body.active_image_url.startswith("data:") else \
-                   "HTTP" if request_body.active_image_url.startswith("http") else "未知"
+        url_type = "Blob" if is_blob_url(request_body.active_image_url) else \
+                   "Base64" if is_base64_url(request_body.active_image_url) else \
+                   "HTTP" if is_http_url(request_body.active_image_url) else "未知"
         logger.info(
             f"[Attachments] ========== 开始解析CONTINUITY附件 =========="
         )
@@ -424,7 +426,7 @@ async def resolve_continuity(
             raise HTTPException(status_code=404, detail="Attachment not found")
         
         # ✅ 详细日志：显示解析结果
-        has_cloud_url = resolved["status"] == "completed" and resolved["url"] and resolved["url"].startswith("http")
+        has_cloud_url = resolved["status"] == "completed" and resolved["url"] and is_http_url(resolved["url"])
         logger.info(
             f"[Attachments] ✅ CONTINUITY附件解析成功 (耗时: {elapsed_time:.2f}ms):"
         )
