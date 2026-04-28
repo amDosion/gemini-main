@@ -1563,41 +1563,55 @@ async def handle_mode(
                     else:
                         prefix = "edited"
                     logger.debug(f"[Modes]     - 调用 AttachmentService.process_ai_result()...")
-                    processed = await attachment_service.process_ai_result(
-                        ai_url=ai_url,
-                        mime_type=mime_type,
-                        session_id=session_id,
-                        message_id=message_id,
-                        user_id=user_id,
-                        prefix=prefix,
-                        filename=filename,
-                    )
-                    
-                    logger.info(f"[Modes] ✅ [步骤7] 第 {idx+1} 张图片处理完成:")
-                    logger.debug(f"[Modes]     - attachment_id: {processed['attachment_id']}")  # ✅ 不截断 ID，显示完整 ID
-                    logger.debug(f"[Modes]     - status: {processed['status']}")
-                    logger.debug(f"[Modes]     - task_id: {processed.get('task_id') or 'None'}")  # ✅ 不截断 task_id，显示完整 ID
-                    
-                    # 构建响应格式（使用 snake_case，中间件会自动转换为 camelCase）
-                    image_result = {
-                        "url": processed["display_url"],  # 显示URL（前端立即显示）
-                        "attachment_id": processed["attachment_id"],
-                        "upload_status": processed["status"],
-                        "task_id": processed["task_id"],
-                        "mime_type": processed.get("mime_type") or mime_type,
-                        "filename": processed.get("filename") or filename or f"{prefix}-{processed['attachment_id'][:8]}.png",
-                        # ✅ 新增：返回完整的元数据，供前端保存和后续 CONTINUITY LOGIC 使用
-                        "session_id": processed.get("session_id") or session_id,
-                        "message_id": processed.get("message_id") or message_id,
-                        "user_id": processed.get("user_id") or user_id,
-                        "cloud_url": processed.get("cloud_url") or "",  # 云URL（空，待上传完成）
-                    }
+                    # Bug E 修复:每张图独立 try/except — 一张失败不应让整个批次响应 5xx
+                    try:
+                        processed = await attachment_service.process_ai_result(
+                            ai_url=ai_url,
+                            mime_type=mime_type,
+                            session_id=session_id,
+                            message_id=message_id,
+                            user_id=user_id,
+                            prefix=prefix,
+                            filename=filename,
+                        )
+
+                        logger.info(f"[Modes] ✅ [步骤7] 第 {idx+1} 张图片处理完成:")
+                        logger.debug(f"[Modes]     - attachment_id: {processed['attachment_id']}")  # ✅ 不截断 ID，显示完整 ID
+                        logger.debug(f"[Modes]     - status: {processed['status']}")
+                        logger.debug(f"[Modes]     - task_id: {processed.get('task_id') or 'None'}")  # ✅ 不截断 task_id，显示完整 ID
+
+                        # 构建响应格式（使用 snake_case，中间件会自动转换为 camelCase）
+                        image_result = {
+                            "url": processed["display_url"],  # 显示URL（前端立即显示）
+                            "attachment_id": processed["attachment_id"],
+                            "upload_status": processed["status"],
+                            "task_id": processed["task_id"],
+                            "mime_type": processed.get("mime_type") or mime_type,
+                            "filename": processed.get("filename") or filename or f"{prefix}-{processed['attachment_id'][:8]}.png",
+                            # ✅ 新增：返回完整的元数据，供前端保存和后续 CONTINUITY LOGIC 使用
+                            "session_id": processed.get("session_id") or session_id,
+                            "message_id": processed.get("message_id") or message_id,
+                            "user_id": processed.get("user_id") or user_id,
+                            "cloud_url": processed.get("cloud_url") or "",  # 云URL（空，待上传完成）
+                        }
+                    except Exception as image_persist_err:
+                        logger.error(
+                            f"[Modes] ❌ [步骤7] 第 {idx+1} 张图片持久化失败,降级返回原始 img: {image_persist_err}",
+                            exc_info=True,
+                        )
+                        # 降级:返回原始 img(无 attachment_id),前端 Bug A fix(be5515f)已 graceful 处理
+                        image_result = {
+                            "url": ai_url,
+                            "mime_type": mime_type,
+                            "filename": filename or f"{prefix}-fallback.png",
+                            "upload_status": "failed",
+                        }
 
                     # 添加增强后的提示词（如果有）
                     if enhanced_prompt:
                         image_result["enhanced_prompt"] = enhanced_prompt
                         logger.debug(f"[Modes]     - enhanced_prompt: {enhanced_prompt}")
-                    
+
                     # ✅ 修复断点1：保留 thinking 数据（如果存在）
                     if thoughts:
                         image_result["thoughts"] = thoughts
@@ -1605,7 +1619,7 @@ async def handle_mode(
                     if text:
                         image_result["text"] = text
                         logger.debug(f"[Modes]     - text: {text[:100]}..." if len(text) > 100 else f"[Modes]     - text: {text}")
-                    
+
                     processed_images.append(image_result)
                 
                 # 更新结果
@@ -1655,36 +1669,44 @@ async def handle_mode(
             if has_provider_attachment:
                 logger.info(f"[Modes] ✅ [步骤7] 跳过视频附件处理: Provider 已返回 attachment_id")
             elif session_id and message_id and attachment_source_url:
-                processed = await attachment_service.process_ai_result(
-                    ai_url=attachment_source_url,
-                    mime_type=mime_type,
-                    session_id=session_id,
-                    message_id=message_id,
-                    user_id=user_id,
-                    prefix="video",
-                    filename=filename,
-                    file_uri=stored_file_uri or None,
-                    provider_file_name=provider_file_name or None,
-                    provider_file_uri=provider_file_uri or None,
-                    gcs_uri=gcs_uri or None,
-                )
+                # Bug E 修复:try/except 隔离 — 200+ 秒视频生成不能因 DB/storage 临时故障 5xx
+                try:
+                    processed = await attachment_service.process_ai_result(
+                        ai_url=attachment_source_url,
+                        mime_type=mime_type,
+                        session_id=session_id,
+                        message_id=message_id,
+                        user_id=user_id,
+                        prefix="video",
+                        filename=filename,
+                        file_uri=stored_file_uri or None,
+                        provider_file_name=provider_file_name or None,
+                        provider_file_uri=provider_file_uri or None,
+                        gcs_uri=gcs_uri or None,
+                    )
 
-                result = {
-                    **video_payload,
-                    "url": processed["display_url"],
-                    "attachment_id": processed["attachment_id"],
-                    "upload_status": processed["status"],
-                    "task_id": processed["task_id"],
-                    "mime_type": processed.get("mime_type") or mime_type,
-                    "filename": processed.get("filename") or filename or f"video-{processed['attachment_id'][:8]}.mp4",
-                    "session_id": processed.get("session_id") or session_id,
-                    "message_id": processed.get("message_id") or message_id,
-                    "user_id": processed.get("user_id") or user_id,
-                    "cloud_url": processed.get("cloud_url") or "",
-                }
-                if processed.get("file_uri") or stored_file_uri:
-                    result["file_uri"] = processed.get("file_uri") or stored_file_uri
-                logger.info(f"[Modes] ✅ [步骤7] 视频结果已桥接为附件代理 URL")
+                    result = {
+                        **video_payload,
+                        "url": processed["display_url"],
+                        "attachment_id": processed["attachment_id"],
+                        "upload_status": processed["status"],
+                        "task_id": processed["task_id"],
+                        "mime_type": processed.get("mime_type") or mime_type,
+                        "filename": processed.get("filename") or filename or f"video-{processed['attachment_id'][:8]}.mp4",
+                        "session_id": processed.get("session_id") or session_id,
+                        "message_id": processed.get("message_id") or message_id,
+                        "user_id": processed.get("user_id") or user_id,
+                        "cloud_url": processed.get("cloud_url") or "",
+                    }
+                    if processed.get("file_uri") or stored_file_uri:
+                        result["file_uri"] = processed.get("file_uri") or stored_file_uri
+                    logger.info(f"[Modes] ✅ [步骤7] 视频结果已桥接为附件代理 URL")
+                except Exception as persist_err:
+                    logger.error(
+                        f"[Modes] ❌ [步骤7] 视频附件持久化失败,降级返回原始 result: {persist_err}",
+                        exc_info=True,
+                    )
+                    # result 保持原样;前端 graceful 处理(Bug A fix)
             else:
                 logger.warning(f"[Modes] ⚠️ [步骤7] 跳过视频附件处理: 缺少 session_id/message_id 或视频资产引用")
 
@@ -1698,30 +1720,39 @@ async def handle_mode(
                     sidecar_filename = str(sidecar.get("filename") or "").strip() or None
                     if not sidecar_url:
                         continue
-                    processed_sidecar = await attachment_service.process_ai_result(
-                        ai_url=sidecar_url,
-                        mime_type=sidecar_mime_type,
-                        session_id=session_id,
-                        message_id=message_id,
-                        user_id=user_id,
-                        prefix="video-sidecar",
-                        filename=sidecar_filename,
-                    )
-                    processed_sidecars.append(
-                        {
-                            **sidecar,
-                            "url": processed_sidecar["display_url"],
-                            "attachment_id": processed_sidecar["attachment_id"],
-                            "upload_status": processed_sidecar["status"],
-                            "task_id": processed_sidecar["task_id"],
-                            "cloud_url": processed_sidecar.get("cloud_url") or "",
-                            "message_id": processed_sidecar.get("message_id") or message_id,
-                            "session_id": processed_sidecar.get("session_id") or session_id,
-                            "user_id": processed_sidecar.get("user_id") or user_id,
-                            "filename": processed_sidecar.get("filename") or sidecar_filename,
-                            "mime_type": processed_sidecar.get("mime_type") or sidecar_mime_type,
-                        }
-                    )
+                    # Bug E 修复:每个 sidecar 独立 try/except — 一个 subtitle 失败不应让整个 video 响应 5xx
+                    try:
+                        processed_sidecar = await attachment_service.process_ai_result(
+                            ai_url=sidecar_url,
+                            mime_type=sidecar_mime_type,
+                            session_id=session_id,
+                            message_id=message_id,
+                            user_id=user_id,
+                            prefix="video-sidecar",
+                            filename=sidecar_filename,
+                        )
+                        processed_sidecars.append(
+                            {
+                                **sidecar,
+                                "url": processed_sidecar["display_url"],
+                                "attachment_id": processed_sidecar["attachment_id"],
+                                "upload_status": processed_sidecar["status"],
+                                "task_id": processed_sidecar["task_id"],
+                                "cloud_url": processed_sidecar.get("cloud_url") or "",
+                                "message_id": processed_sidecar.get("message_id") or message_id,
+                                "session_id": processed_sidecar.get("session_id") or session_id,
+                                "user_id": processed_sidecar.get("user_id") or user_id,
+                                "filename": processed_sidecar.get("filename") or sidecar_filename,
+                                "mime_type": processed_sidecar.get("mime_type") or sidecar_mime_type,
+                            }
+                        )
+                    except Exception as sidecar_err:
+                        logger.error(
+                            f"[Modes] ❌ [步骤7] sidecar 持久化失败,保留原始 sidecar 字段: {sidecar_err}",
+                            exc_info=True,
+                        )
+                        # 保留原始 sidecar dict(无 attachment_id),前端 graceful 处理
+                        processed_sidecars.append(sidecar)
                 if processed_sidecars:
                     result = {
                         **(result if isinstance(result, dict) else {}),
@@ -1756,30 +1787,39 @@ async def handle_mode(
             if has_provider_attachment:
                 logger.info(f"[Modes] ✅ [步骤7] 跳过音频附件处理: Provider 已返回 attachment_id")
             elif session_id and message_id and ai_url:
-                processed = await attachment_service.process_ai_result(
-                    ai_url=ai_url,
-                    mime_type=mime_type,
-                    session_id=session_id,
-                    message_id=message_id,
-                    user_id=user_id,
-                    prefix="audio",
-                    filename=filename,
-                )
+                # Bug E 修复:try/except 隔离 — process_ai_result 失败(DB/storage 临时故障)
+                # 不应让整个音频生成响应 5xx;降级返回原始 result,前端 Bug A fix 已能处理无 attachment_id
+                try:
+                    processed = await attachment_service.process_ai_result(
+                        ai_url=ai_url,
+                        mime_type=mime_type,
+                        session_id=session_id,
+                        message_id=message_id,
+                        user_id=user_id,
+                        prefix="audio",
+                        filename=filename,
+                    )
 
-                result = {
-                    **audio_payload,
-                    "url": processed["display_url"],
-                    "attachment_id": processed["attachment_id"],
-                    "upload_status": processed["status"],
-                    "task_id": processed["task_id"],
-                    "mime_type": processed.get("mime_type") or mime_type,
-                    "filename": processed.get("filename") or filename or f"audio-{processed['attachment_id'][:8]}.mp3",
-                    "session_id": processed.get("session_id") or session_id,
-                    "message_id": processed.get("message_id") or message_id,
-                    "user_id": processed.get("user_id") or user_id,
-                    "cloud_url": processed.get("cloud_url") or "",
-                }
-                logger.info(f"[Modes] ✅ [步骤7] 音频结果已桥接为附件代理 URL")
+                    result = {
+                        **audio_payload,
+                        "url": processed["display_url"],
+                        "attachment_id": processed["attachment_id"],
+                        "upload_status": processed["status"],
+                        "task_id": processed["task_id"],
+                        "mime_type": processed.get("mime_type") or mime_type,
+                        "filename": processed.get("filename") or filename or f"audio-{processed['attachment_id'][:8]}.mp3",
+                        "session_id": processed.get("session_id") or session_id,
+                        "message_id": processed.get("message_id") or message_id,
+                        "user_id": processed.get("user_id") or user_id,
+                        "cloud_url": processed.get("cloud_url") or "",
+                    }
+                    logger.info(f"[Modes] ✅ [步骤7] 音频结果已桥接为附件代理 URL")
+                except Exception as persist_err:
+                    logger.error(
+                        f"[Modes] ❌ [步骤7] 音频附件持久化失败,降级返回原始 result: {persist_err}",
+                        exc_info=True,
+                    )
+                    # result 保持原样(无 attachment_id);前端 graceful 处理
             else:
                 logger.warning(f"[Modes] ⚠️ [步骤7] 跳过音频附件处理: 缺少 session_id/message_id 或 url")
 
