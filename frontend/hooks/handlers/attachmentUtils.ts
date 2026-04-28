@@ -80,10 +80,6 @@ export const isCloudStorageUrl = (url: string | undefined): boolean => {
   return isHttpUrl(url);
 };
 
-// cleanAttachmentsForDb removed — Sprint 2 PR-3 (commit b0bd8ee 后端权威清洗)
-// 后端 routers/user/sessions.py upsert 路径在 INSERT 时强制 strip blob/base64 URL,
-// 推导 upload_status,清洗 temp_url。前端不再需要预清洗。useSessions.ts 现在
-// 直接传 raw attachments,后端会权威落库。
 
 /**
  * 同步上传图片到云存储（等待完成后返回 URL）
@@ -108,18 +104,6 @@ export const uploadToCloudStorageSync = async (
     const finalFilename = filename || `image-${Date.now()}.png`;
 
     // 判断输入类型（用于日志）
-    const isFile = imageSource instanceof File;
-    const sourceUrl = typeof imageSource === 'string' ? imageSource : '';
-    const urlType = isFile
-      ? 'File'
-      : isBase64Url(sourceUrl)
-        ? 'Base64'
-        : isBlobUrl(sourceUrl)
-          ? 'Blob URL'
-          : isHttpUrl(sourceUrl)
-            ? 'HTTP URL'
-            : 'Unknown';
-
     // 使用统一函数转换为 File
     const file = await sourceToFile(imageSource, finalFilename);
 
@@ -217,17 +201,11 @@ export const sourceToFile = async (
   return new File([blob], filename, { type: mimeType || blob.type || 'image/png' });
 };
 
-// tryFetchCloudUrl removed — Sprint 2 PR-3
-// 唯一 caller(prepareAttachmentForApi 的降级分支)在 PR-2 (8238f9d) 已删除。
-// 后端 /api/attachments/resolve-continuity 现在做权威解析,不需要前端轮询 cloud URL。
 
 // ============================================================
 // URL 转换工具函数
 // ============================================================
 
-// urlToBase64 removed — Sprint 2 PR-3
-// 唯一 caller(prepareAttachmentForApi 三层 fallback)在 PR-2 (8238f9d) 已删除。
-// 后端处理 base64/blob → cloud URL 转换,前端不再需要 client-side base64 转。
 
 /**
  * 将 File 对象转换为 Base64 Data URL
@@ -288,8 +266,6 @@ export const urlToFile = async (
   }
 
   const blob = await response.blob();
-  if (!blob.type) {
-  }
 
   return new File([blob], filename, { type: mimeType || blob.type || 'image/png' });
 };
@@ -322,14 +298,6 @@ export const findAttachmentByUrl = (
   if (!targetUrl) {
     return null;
   }
-
-  const urlType = isBase64Url(targetUrl)
-    ? 'Base64'
-    : isBlobUrl(targetUrl)
-      ? 'Blob'
-      : isHttpUrl(targetUrl)
-        ? 'HTTP'
-        : '未知';
 
   // 策略 1: 精确匹配 url 或 tempUrl
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -428,17 +396,13 @@ export const fetchAttachmentStatus = async (
  * @param messages 消息历史（用于查找匹配附件）
  * @param sessionId 当前会话 ID（用于后端 API 调用）
  * @param filePrefix 文件名前缀（如 'canvas', 'expand'）
- * @param skipBase64 是否跳过 base64Data 获取（默认 true，后端会处理）
  * @returns 准备好的 Attachment 对象，失败返回 null
  */
 export const prepareAttachmentForApi = async (
   imageUrl: string,
   messages: Message[],
   sessionId: string | null,
-  filePrefix: string = 'canvas',
-  // skipBase64 已 deprecated（后端权威解析,不再需要前端 base64 转换）
-  // 参数保留仅为向后兼容 caller 调用签名;函数内部不再使用。
-  _skipBase64: boolean = true
+  filePrefix: string = 'canvas'
 ): Promise<Attachment | null> => {
   if (!imageUrl) return null;
 
@@ -566,8 +530,7 @@ export const processUserAttachments = async (
       activeImageUrl,
       messages,
       sessionId,
-      filePrefix,
-      true // skipBase64: 后端会处理所有 URL 类型
+      filePrefix
     );
 
     if (prepared) {
@@ -592,20 +555,6 @@ export const processUserAttachments = async (
     // 原因：JSON.stringify 会忽略 File 对象，Blob URL 无法被后端访问
     const processedAttachments = await Promise.all(
       attachments.map(async (att, index) => {
-        // 日志记录
-        const urlInfo = att.url ? formatUrlForLog(att.url) : 'N/A';
-        const urlType = att.url?.startsWith('blob:')
-          ? 'Blob'
-          : att.url?.startsWith('data:')
-            ? 'Base64'
-            : att.url?.startsWith('http')
-              ? 'HTTP'
-              : 'Other';
-
-        // 验证 URL 字段
-        if (!att.url && !att.tempUrl) {
-        }
-
         // ✅ 如果有 File 对象且 URL 是 Blob URL，转换为 Base64（与 ChatInputArea 一致）
         if (att.file && isBlobUrl(att.url)) {
           try {
@@ -661,8 +610,7 @@ export const processUserAttachments = async (
           activeImageUrl,
           messages,
           sessionId,
-          filePrefix,
-          true
+          filePrefix
         );
         if (canvasAttachment) {
           // 画布图片放在最前面（图1），用户上传的图片在后面（图2, 图3...）
