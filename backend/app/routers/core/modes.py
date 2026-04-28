@@ -48,6 +48,69 @@ logger.setLevel(logging.INFO)
 logger.propagate = True
 
 router = APIRouter(prefix="/api/modes", tags=["modes"])
+
+
+async def _persist_ai_media_with_fallback(
+    attachment_service: Any,
+    *,
+    ai_url: str,
+    mime_type: str,
+    session_id: str,
+    message_id: str,
+    user_id: str,
+    prefix: str,
+    default_ext: str,
+    filename: Optional[str] = None,
+    log_label: str = "媒体",
+    log_with_traceback: bool = True,
+    **persist_extra: Any,
+) -> Optional[Dict[str, Any]]:
+    """
+    调用 attachment_service.process_ai_result 并构造 response overlay。
+
+    成功:返回 10/11 字段 overlay dict(url/attachment_id/upload_status/task_id/
+    mime_type/filename/session_id/message_id/user_id/cloud_url[/file_uri]),caller
+    用 {**payload, **overlay} 合并;失败:log + return None,caller 自定义降级。
+
+    log_with_traceback=False 用于 N-iteration 循环(避免批量失败时 traceback 风暴)。
+    """
+    try:
+        processed = await attachment_service.process_ai_result(
+            ai_url=ai_url,
+            mime_type=mime_type,
+            session_id=session_id,
+            message_id=message_id,
+            user_id=user_id,
+            prefix=prefix,
+            filename=filename,
+            **persist_extra,
+        )
+        overlay: Dict[str, Any] = {
+            "url": processed["display_url"],
+            "attachment_id": processed["attachment_id"],
+            "upload_status": processed["status"],
+            "task_id": processed["task_id"],
+            "mime_type": processed.get("mime_type") or mime_type,
+            "filename": processed.get("filename") or filename or f"{prefix}-{processed['attachment_id'][:8]}.{default_ext}",
+            "session_id": processed.get("session_id") or session_id,
+            "message_id": processed.get("message_id") or message_id,
+            "user_id": processed.get("user_id") or user_id,
+            "cloud_url": processed.get("cloud_url") or "",
+        }
+        if processed.get("file_uri"):
+            overlay["file_uri"] = processed["file_uri"]
+        return overlay
+    except Exception as err:
+        if log_with_traceback:
+            logger.error(
+                f"[Modes] [步骤7] {log_label} 持久化失败,降级: {err}",
+                exc_info=True,
+            )
+        else:
+            logger.warning("[Modes] [步骤7] %s 持久化失败,降级: %s", log_label, err)
+        return None
+
+
 # ==================== Request/Response Models ====================
 
 class Attachment(BaseModel):
@@ -1570,45 +1633,24 @@ async def handle_mode(
                         processed_images.append(img)
                         continue
 
-                    logger.debug(f"[Modes]     - 调用 AttachmentService.process_ai_result()...")
-                    # 单张失败不让整批 5xx —— 失败时降级返回 fallback dict,
-                    # 前端 processMediaResult 已处理无 attachmentId 的 graceful path
-                    try:
-                        processed = await attachment_service.process_ai_result(
-                            ai_url=ai_url,
-                            mime_type=mime_type,
-                            session_id=session_id,
-                            message_id=message_id,
-                            user_id=user_id,
-                            prefix=prefix,
-                            filename=filename,
-                        )
-
-                        logger.info(f"[Modes] ✅ [步骤7] 第 {idx+1} 张图片处理完成:")
-                        logger.debug(f"[Modes]     - attachment_id: {processed['attachment_id']}")
-                        logger.debug(f"[Modes]     - status: {processed['status']}")
-                        logger.debug(f"[Modes]     - task_id: {processed.get('task_id') or 'None'}")
-
-                        image_result = {
-                            "url": processed["display_url"],
-                            "attachment_id": processed["attachment_id"],
-                            "upload_status": processed["status"],
-                            "task_id": processed["task_id"],
-                            "mime_type": processed.get("mime_type") or mime_type,
-                            "filename": processed.get("filename") or filename or f"{prefix}-{processed['attachment_id'][:8]}.png",
-                            "session_id": processed.get("session_id") or session_id,
-                            "message_id": processed.get("message_id") or message_id,
-                            "user_id": processed.get("user_id") or user_id,
-                            "cloud_url": processed.get("cloud_url") or "",
-                        }
-                    except Exception as image_persist_err:
-                        # 不带 traceback —— N-image 批量失败时(如 storage 宕机)
-                        # 避免 N 份 ~30 行 traceback 淹没日志
-                        logger.warning(
-                            "[Modes] [步骤7] 第 %d 张图片持久化失败,降级 fallback: %s",
-                            idx + 1,
-                            image_persist_err,
-                        )
+                    overlay = await _persist_ai_media_with_fallback(
+                        attachment_service,
+                        ai_url=ai_url,
+                        mime_type=mime_type,
+                        session_id=session_id,
+                        message_id=message_id,
+                        user_id=user_id,
+                        prefix=prefix,
+                        default_ext="png",
+                        filename=filename,
+                        log_label=f"第 {idx+1} 张图片",
+                        log_with_traceback=False,
+                    )
+                    if overlay:
+                        logger.info(f"[Modes] ✅ [步骤7] 第 {idx+1} 张图片处理完成 (attachment_id={overlay['attachment_id']})")
+                        image_result = overlay
+                    else:
+                        # 降级:返回 ai_url 原文 + upload_status=failed
                         image_result = {
                             "url": ai_url,
                             "mime_type": mime_type,
@@ -1679,43 +1721,29 @@ async def handle_mode(
                 logger.info(f"[Modes] ✅ [步骤7] 跳过视频附件处理: Provider 已返回 attachment_id")
             elif session_id and message_id and attachment_source_url:
                 # 200+ 秒视频生成不能因 DB/storage 临时故障 5xx —— 失败降级保留原 result
-                try:
-                    processed = await attachment_service.process_ai_result(
-                        ai_url=attachment_source_url,
-                        mime_type=mime_type,
-                        session_id=session_id,
-                        message_id=message_id,
-                        user_id=user_id,
-                        prefix="video",
-                        filename=filename,
-                        file_uri=stored_file_uri or None,
-                        provider_file_name=provider_file_name or None,
-                        provider_file_uri=provider_file_uri or None,
-                        gcs_uri=gcs_uri or None,
-                    )
-
-                    result = {
-                        **video_payload,
-                        "url": processed["display_url"],
-                        "attachment_id": processed["attachment_id"],
-                        "upload_status": processed["status"],
-                        "task_id": processed["task_id"],
-                        "mime_type": processed.get("mime_type") or mime_type,
-                        "filename": processed.get("filename") or filename or f"video-{processed['attachment_id'][:8]}.mp4",
-                        "session_id": processed.get("session_id") or session_id,
-                        "message_id": processed.get("message_id") or message_id,
-                        "user_id": processed.get("user_id") or user_id,
-                        "cloud_url": processed.get("cloud_url") or "",
-                    }
-                    if processed.get("file_uri") or stored_file_uri:
-                        result["file_uri"] = processed.get("file_uri") or stored_file_uri
-                    logger.info(f"[Modes] ✅ [步骤7] 视频结果已桥接为附件代理 URL")
-                except Exception as persist_err:
-                    logger.error(
-                        f"[Modes] ❌ [步骤7] 视频附件持久化失败,降级返回原始 result: {persist_err}",
-                        exc_info=True,
-                    )
-                    # result 保持原样;前端 graceful 处理(Bug A fix)
+                overlay = await _persist_ai_media_with_fallback(
+                    attachment_service,
+                    ai_url=attachment_source_url,
+                    mime_type=mime_type,
+                    session_id=session_id,
+                    message_id=message_id,
+                    user_id=user_id,
+                    prefix="video",
+                    default_ext="mp4",
+                    filename=filename,
+                    log_label="视频",
+                    file_uri=stored_file_uri or None,
+                    provider_file_name=provider_file_name or None,
+                    provider_file_uri=provider_file_uri or None,
+                    gcs_uri=gcs_uri or None,
+                )
+                if overlay:
+                    result = {**video_payload, **overlay}
+                    # overlay 已可能携带 file_uri;若未携带但 stored_file_uri 非空,补上
+                    if "file_uri" not in overlay and stored_file_uri:
+                        result["file_uri"] = stored_file_uri
+                    logger.info(f"[Modes] ✅ [步骤7] 视频结果已桥接为附件代理 URL (attachment_id={overlay['attachment_id']})")
+                # else: result 保持原样
             else:
                 logger.warning(f"[Modes] ⚠️ [步骤7] 跳过视频附件处理: 缺少 session_id/message_id 或视频资产引用")
 
@@ -1730,37 +1758,21 @@ async def handle_mode(
                     if not sidecar_url:
                         continue
                     # 每个 sidecar 独立隔离 —— 一个 subtitle 失败不让整个 video 响应 5xx
-                    try:
-                        processed_sidecar = await attachment_service.process_ai_result(
-                            ai_url=sidecar_url,
-                            mime_type=sidecar_mime_type,
-                            session_id=session_id,
-                            message_id=message_id,
-                            user_id=user_id,
-                            prefix="video-sidecar",
-                            filename=sidecar_filename,
-                        )
-                        processed_sidecars.append(
-                            {
-                                **sidecar,
-                                "url": processed_sidecar["display_url"],
-                                "attachment_id": processed_sidecar["attachment_id"],
-                                "upload_status": processed_sidecar["status"],
-                                "task_id": processed_sidecar["task_id"],
-                                "cloud_url": processed_sidecar.get("cloud_url") or "",
-                                "message_id": processed_sidecar.get("message_id") or message_id,
-                                "session_id": processed_sidecar.get("session_id") or session_id,
-                                "user_id": processed_sidecar.get("user_id") or user_id,
-                                "filename": processed_sidecar.get("filename") or sidecar_filename,
-                                "mime_type": processed_sidecar.get("mime_type") or sidecar_mime_type,
-                            }
-                        )
-                    except Exception as sidecar_err:
-                        logger.error(
-                            f"[Modes] ❌ [步骤7] sidecar 持久化失败,保留原始 sidecar 字段: {sidecar_err}",
-                            exc_info=True,
-                        )
-                        # 保留原始 sidecar dict(无 attachment_id),前端 graceful 处理
+                    sidecar_overlay = await _persist_ai_media_with_fallback(
+                        attachment_service,
+                        ai_url=sidecar_url,
+                        mime_type=sidecar_mime_type,
+                        session_id=session_id,
+                        message_id=message_id,
+                        user_id=user_id,
+                        prefix="video-sidecar",
+                        default_ext="vtt",
+                        filename=sidecar_filename,
+                        log_label="sidecar",
+                    )
+                    if sidecar_overlay:
+                        processed_sidecars.append({**sidecar, **sidecar_overlay})
+                    else:
                         processed_sidecars.append(sidecar)
                 if processed_sidecars:
                     result = {
@@ -1797,37 +1809,22 @@ async def handle_mode(
                 logger.info(f"[Modes] ✅ [步骤7] 跳过音频附件处理: Provider 已返回 attachment_id")
             elif session_id and message_id and ai_url:
                 # 持久化失败降级返回原始 result —— 前端已处理无 attachment_id 的 graceful path
-                try:
-                    processed = await attachment_service.process_ai_result(
-                        ai_url=ai_url,
-                        mime_type=mime_type,
-                        session_id=session_id,
-                        message_id=message_id,
-                        user_id=user_id,
-                        prefix="audio",
-                        filename=filename,
-                    )
-
-                    result = {
-                        **audio_payload,
-                        "url": processed["display_url"],
-                        "attachment_id": processed["attachment_id"],
-                        "upload_status": processed["status"],
-                        "task_id": processed["task_id"],
-                        "mime_type": processed.get("mime_type") or mime_type,
-                        "filename": processed.get("filename") or filename or f"audio-{processed['attachment_id'][:8]}.mp3",
-                        "session_id": processed.get("session_id") or session_id,
-                        "message_id": processed.get("message_id") or message_id,
-                        "user_id": processed.get("user_id") or user_id,
-                        "cloud_url": processed.get("cloud_url") or "",
-                    }
-                    logger.info(f"[Modes] ✅ [步骤7] 音频结果已桥接为附件代理 URL")
-                except Exception as persist_err:
-                    logger.error(
-                        f"[Modes] ❌ [步骤7] 音频附件持久化失败,降级返回原始 result: {persist_err}",
-                        exc_info=True,
-                    )
-                    # result 保持原样(无 attachment_id);前端 graceful 处理
+                overlay = await _persist_ai_media_with_fallback(
+                    attachment_service,
+                    ai_url=ai_url,
+                    mime_type=mime_type,
+                    session_id=session_id,
+                    message_id=message_id,
+                    user_id=user_id,
+                    prefix="audio",
+                    default_ext="mp3",
+                    filename=filename,
+                    log_label="音频",
+                )
+                if overlay:
+                    result = {**audio_payload, **overlay}
+                    logger.info(f"[Modes] ✅ [步骤7] 音频结果已桥接为附件代理 URL (attachment_id={overlay['attachment_id']})")
+                # else: result 保持原样(无 attachment_id);前端 graceful 处理
             else:
                 logger.warning(f"[Modes] ⚠️ [步骤7] 跳过音频附件处理: 缺少 session_id/message_id 或 url")
 

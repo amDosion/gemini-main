@@ -80,7 +80,6 @@ export const isCloudStorageUrl = (url: string | undefined): boolean => {
   return isHttpUrl(url);
 };
 
-
 /**
  * 同步上传图片到云存储（等待完成后返回 URL）
  *
@@ -201,11 +200,9 @@ export const sourceToFile = async (
   return new File([blob], filename, { type: mimeType || blob.type || 'image/png' });
 };
 
-
 // ============================================================
 // URL 转换工具函数
 // ============================================================
-
 
 /**
  * 将 File 对象转换为 Base64 Data URL
@@ -526,12 +523,7 @@ export const processUserAttachments = async (
       activeMimeType = mimeMatch ? mimeMatch[1] : 'unknown';
     }
 
-    const prepared = await prepareAttachmentForApi(
-      activeImageUrl,
-      messages,
-      sessionId,
-      filePrefix
-    );
+    const prepared = await prepareAttachmentForApi(activeImageUrl, messages, sessionId, filePrefix);
 
     if (prepared) {
       result.push(prepared);
