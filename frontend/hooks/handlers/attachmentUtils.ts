@@ -634,185 +634,74 @@ export const prepareAttachmentForApi = async (
   messages: Message[],
   sessionId: string | null,
   filePrefix: string = 'canvas',
-  skipBase64: boolean = true
+  // skipBase64 已 deprecated（后端权威解析,不再需要前端 base64 转换）
+  // 参数保留仅为向后兼容 caller 调用签名;函数内部不再使用。
+  _skipBase64: boolean = true
 ): Promise<Attachment | null> => {
-  const urlType = isBase64Url(imageUrl) ? 'Base64' : isBlobUrl(imageUrl) ? 'Blob' : 'HTTP';
-  const urlLength = imageUrl?.length || 0;
+  if (!imageUrl) return null;
 
-  // 提取 Base64 的 MIME 类型
-  let base64MimeType = 'unknown';
-  if (urlType === 'Base64') {
-    const mimeMatch = imageUrl.match(/^data:([^;]+);/);
-    base64MimeType = mimeMatch ? mimeMatch[1] : 'unknown';
-  }
-
-  // 打印消息历史中的附件信息
-  if (messages && messages.length > 0) {
-    const messagesWithAttachments = messages.filter(
-      (m) => m.attachments && m.attachments.length > 0
-    );
-  }
-
+  // Sprint 2 PR-2: CONTINUITY 解析完全交给后端权威实现
+  // 不再做前端降级查找/转换 — 删除原 ~187 行三层 fallback
+  // (后端 API + findAttachmentByUrl + urlToBase64 + 新建)
   try {
-    // 步骤 1: 优先使用后端 CONTINUITY API
-    if (sessionId) {
-      try {
-        const headers: HeadersInit = {
-          'Content-Type': 'application/json',
-        };
-        const token = getAccessToken();
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
+    const headers: HeadersInit = { 'Content-Type': 'application/json' };
+    const token = getAccessToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
 
-        // 构建请求体 - 只发送必要的消息信息，不发送完整的 Base64 数据
-        const simplifiedMessages =
-          messages?.map((m) => ({
-            id: m.id,
-            role: m.role,
-            attachments: m.attachments?.map((att) => ({
-              id: att.id,
-              url: att.url,
-              tempUrl: att.tempUrl,
-              uploadStatus: att.uploadStatus,
-              mimeType: att.mimeType,
-            })),
-          })) || [];
+    // 简化消息历史,只发后端 lookup 必要字段(避免发送整个 base64 payload)
+    const simplifiedMessages =
+      messages?.map((m) => ({
+        id: m.id,
+        role: m.role,
+        attachments: m.attachments?.map((att) => ({
+          id: att.id,
+          url: att.url,
+          tempUrl: att.tempUrl,
+          uploadStatus: att.uploadStatus,
+          mimeType: att.mimeType,
+        })),
+      })) || [];
 
-        const requestBody = {
-          activeImageUrl: imageUrl,
-          sessionId: sessionId,
-          messages: simplifiedMessages,
-        };
+    const response = await fetch('/api/attachments/resolve-continuity', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        activeImageUrl: imageUrl,
+        sessionId: sessionId,
+        messages: simplifiedMessages,
+      }),
+    });
 
-        const response = await fetch('/api/attachments/resolve-continuity', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(requestBody),
-        });
-
-        if (response.ok) {
-          const resolved = await response.json();
-          const hasCloudUrl =
-            resolved.status === 'completed' && resolved.url && isHttpUrl(resolved.url);
-
-          const attachment: Attachment = {
-            id: resolved.attachmentId,
-            mimeType: resolved.mimeType || 'image/png',
-            name: resolved.filename || `${filePrefix}-${Date.now()}.png`,
-            url: resolved.url,
-            uploadStatus: resolved.status as 'pending' | 'uploading' | 'completed' | 'failed',
-            uploadTaskId: resolved.taskId,
-            // ✅ 新增：保存后端返回的完整元数据
-            messageId: resolved.messageId,
-            sessionId: resolved.sessionId,
-            userId: resolved.userId,
-            size: resolved.size,
-            cloudUrl: resolved.cloudUrl,
-            createdAt: resolved.createdAt,
-          };
-
-          return attachment;
-        } else {
-          // 尝试读取错误响应体
-          let errorBody = '';
-          try {
-            errorBody = await response.text();
-          } catch (e) {
-            errorBody = '无法读取错误响应体';
-          }
-        }
-      } catch (err) {
-        reportError('图片重新加载失败', err);
-      }
+    if (response.status === 404) {
+      // 后端找不到匹配的附件 — 这是正常情况,callers 已处理 null
+      return null;
+    }
+    if (!response.ok) {
+      reportError('附件解析失败', new Error(`HTTP ${response.status}`));
+      return null;
     }
 
-    // 步骤 2: 降级方案 - 前端查找历史附件
-    const found = findAttachmentByUrl(imageUrl, messages);
-
-    if (found) {
-      const { attachment: existingAttachment, messageId } = found;
-
-      let finalUrl = existingAttachment.url;
-      let finalUploadStatus = existingAttachment.uploadStatus || 'pending';
-
-      // 查询后端获取最新的云存储 URL
-      const cloudResult = await tryFetchCloudUrl(
-        sessionId,
-        existingAttachment.id,
-        finalUrl,
-        finalUploadStatus
-      );
-
-      if (cloudResult) {
-        finalUrl = cloudResult.url;
-        finalUploadStatus = 'completed';
-      } else {
-      }
-
-      const attachment: Attachment = {
-        id: existingAttachment.id, // ✅ 复用原始附件 ID，避免重复上传
-        mimeType: existingAttachment.mimeType || 'image/png',
-        name: existingAttachment.name || `${filePrefix}-${Date.now()}.png`,
-        url: finalUrl,
-        uploadStatus: finalUploadStatus as 'pending' | 'uploading' | 'completed' | 'failed',
-        // ✅ 复用原始附件的元数据
-        messageId: existingAttachment.messageId,
-        sessionId: existingAttachment.sessionId,
-        userId: existingAttachment.userId,
-        size: existingAttachment.size,
-        cloudUrl: existingAttachment.cloudUrl,
-        createdAt: existingAttachment.createdAt,
-      };
-
-      // 对于非 HTTP URL，可选转换为 Base64（如果 skipBase64 为 false）
-      if (!skipBase64 && finalUrl && !isHttpUrl(finalUrl)) {
-        try {
-          const base64Data = await urlToBase64(finalUrl);
-          (attachment as any).base64Data = base64Data;
-          attachment.tempUrl = base64Data;
-        } catch (err) {
-          reportError('图片转换失败', err);
-        }
-      }
-
-      return attachment;
-    }
-
-    // 步骤 3: 未在历史中找到，根据 URL 类型创建新附件
-
-    const attachmentId = uuidv4();
-    const attachmentName = `${filePrefix}-${Date.now()}.png`;
-
-    // Base64 或 Blob URL：转换为 Base64 Data URL
-    if (isBase64Url(imageUrl) || isBlobUrl(imageUrl)) {
-      const mimeType = imageUrl.match(/^data:([^;]+);/)?.[1] || 'image/png';
-      const base64Data = isBase64Url(imageUrl) ? imageUrl : await urlToBase64(imageUrl);
-
-      return {
-        id: attachmentId,
-        mimeType: mimeType,
-        name: attachmentName,
-        url: '', // 本地数据没有永久 URL
-        uploadStatus: 'pending',
-        base64Data: base64Data,
-      } as Attachment;
-    }
-
-    // HTTP URL：直接传递 URL，后端会下载
-    if (isHttpUrl(imageUrl)) {
-      return {
-        id: attachmentId,
-        mimeType: 'image/png',
-        name: attachmentName,
-        url: imageUrl,
-        uploadStatus: 'completed',
-      };
-    }
-
-    return null;
-  } catch (e) {
-    reportError('准备附件失败', e);
+    const resolved = await response.json();
+    return {
+      id: resolved.attachmentId,
+      mimeType: resolved.mimeType || 'image/png',
+      name: resolved.filename || `${filePrefix}-${Date.now()}.png`,
+      url: resolved.url || '',
+      uploadStatus: (resolved.status || 'pending') as
+        | 'pending'
+        | 'uploading'
+        | 'completed'
+        | 'failed',
+      uploadTaskId: resolved.taskId,
+      messageId: resolved.messageId,
+      sessionId: resolved.sessionId,
+      userId: resolved.userId,
+      size: resolved.size,
+      cloudUrl: resolved.cloudUrl,
+      createdAt: resolved.createdAt,
+    };
+  } catch (err) {
+    reportError('准备附件失败', err);
     return null;
   }
 };
