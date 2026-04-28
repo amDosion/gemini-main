@@ -233,14 +233,18 @@ const AppContent: React.FC = () => {
       return fromActiveProfile.filter((model) => model && typeof model.id === 'string');
     }
 
-    const fromInitCache = Array.isArray(criticalData?.cachedModels) ? criticalData.cachedModels : [];
+    const fromInitCache = Array.isArray(criticalData?.cachedModels)
+      ? criticalData.cachedModels
+      : [];
     return fromInitCache.filter((model) => model && typeof model.id === 'string');
   }, [activeProfile?.savedModels, criticalData?.cachedModels]);
   const initialModeCatalog = useMemo(() => {
     return Array.isArray(criticalData?.cachedModeCatalog) ? criticalData.cachedModeCatalog : [];
   }, [criticalData?.cachedModeCatalog]);
   const initialChatModels = useMemo(() => {
-    const models = Array.isArray(criticalData?.cachedChatModels) ? criticalData.cachedChatModels : [];
+    const models = Array.isArray(criticalData?.cachedChatModels)
+      ? criticalData.cachedChatModels
+      : [];
     return models.filter((model) => model && typeof model.id === 'string');
   }, [criticalData?.cachedChatModels]);
   const initialDefaultModelId = useMemo(() => {
