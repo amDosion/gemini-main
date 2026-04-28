@@ -747,11 +747,14 @@ export const processMediaResult = async (
     uploadStatus: 'pending' as const,
   };
 
-  // Sprint 2 PR-5: 后端在 image/video/audio mode 已自动创建 attachment 行并触发上传任务
-  // 响应必带 attachmentId（fast-path）。前端不再 orchestrate 下载+上传（已删除 slow-path）。
+  // Sprint 2 PR-5: 后端在 image/video/audio mode 已自动创建 attachment 行并触发上传任务。
+  // 但后端 modes.py 在 sessionId/messageId 缺失时会 graceful skip 持久化(如用户在
+  // useSessions 还没建好 session 时立即发媒体请求),此时响应无 attachmentId。
+  // 前端用 client-side uuid 作为 displayAttachment.id(line 727 已 fallback),
+  // 只是 dbAttachment 不会真正落库——这是合理的 degraded mode,不该抛错。
   if (!res.attachmentId) {
-    throw new Error(
-      `[processMediaResult] 后端响应缺少 attachmentId（${filePrefix} mode）。请确认后端 modes.py 已为该方法启用自动持久化。`
+    console.warn(
+      `[processMediaResult] 后端响应缺少 attachmentId（${filePrefix} mode）— 可能是 sessionId/messageId 缺失导致后端 skip 持久化。前端用 client-side uuid 继续渲染,本次结果不会写库。`
     );
   }
 
