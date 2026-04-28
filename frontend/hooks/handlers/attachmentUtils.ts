@@ -80,78 +80,10 @@ export const isCloudStorageUrl = (url: string | undefined): boolean => {
   return isHttpUrl(url);
 };
 
-/**
- * 清理附件用于数据库存储
- * - 保留已上传的云存储 URL（uploadStatus === 'completed'）
- * - 清空 Blob URL 和 Base64 URL（这些是临时 URL，不应保存到数据库）
- * - 清除 File 对象和临时数据（不能序列化）
- *
- * @param atts 附件数组
- * @param verbose 是否输出详细日志（默认 false）
- */
-export const cleanAttachmentsForDb = (
-  atts: Attachment[],
-  verbose: boolean = false
-): Attachment[] => {
-  // 1. Input Validation: Add early return for undefined, null, or non-array inputs.
-  if (!atts || !Array.isArray(atts)) {
-    return [];
-  }
-
-  return atts.map((att) => {
-    const cleaned = { ...att };
-    const url = cleaned.url || '';
-
-    // Blob URL：临时 URL，不能持久化
-    if (isBlobUrl(url)) {
-      cleaned.url = '';
-      cleaned.uploadStatus = 'pending';
-    }
-    // Base64 URL：数据太大，不能保存到数据库
-    else if (isBase64Url(url)) {
-      cleaned.url = '';
-      cleaned.uploadStatus = 'pending';
-    }
-    // HTTP URL：根据状态和特征判断
-    else if (isHttpUrl(url)) {
-      // 已上传完成：保留云存储 URL
-      if (cleaned.uploadStatus === 'completed') {
-      }
-      // 有上传任务：保留 URL，状态设为 pending
-      else if ((cleaned as any).uploadTaskId) {
-        cleaned.uploadStatus = 'pending';
-      }
-      // 临时 URL：清空
-      else if (url.includes('/temp/') || url.includes('expires=')) {
-        cleaned.url = '';
-        cleaned.uploadStatus = 'pending';
-      }
-      // 其他 HTTP URL：保留但标记为 pending
-      else {
-        cleaned.uploadStatus = 'pending';
-      }
-    }
-
-    // Always remove non-serializable File objects and temporary base64 data.
-    delete cleaned.file;
-    delete (cleaned as any).base64Data;
-
-    // tempUrl 清理：只保留有效的非临时 HTTP URL
-    // 如果有上传任务，保留 tempUrl（上传中）
-    if (cleaned.tempUrl) {
-      const isTemporary =
-        !isHttpUrl(cleaned.tempUrl) ||
-        cleaned.tempUrl.includes('/temp/') ||
-        cleaned.tempUrl.includes('expires=');
-
-      if (isTemporary && !(cleaned as any).uploadTaskId) {
-        delete cleaned.tempUrl;
-      }
-    }
-
-    return cleaned;
-  });
-};
+// cleanAttachmentsForDb removed — Sprint 2 PR-3 (commit b0bd8ee 后端权威清洗)
+// 后端 routers/user/sessions.py upsert 路径在 INSERT 时强制 strip blob/base64 URL,
+// 推导 upload_status,清洗 temp_url。前端不再需要预清洗。useSessions.ts 现在
+// 直接传 raw attachments,后端会权威落库。
 
 /**
  * 同步上传图片到云存储（等待完成后返回 URL）
@@ -326,106 +258,17 @@ export const sourceToFile = async (
   throw new Error(`[sourceToFile] 未知错误`);
 };
 
-/**
- * 尝试从后端获取云存储 URL
- *
- * 功能说明：
- * - 用于 CONTINUITY LOGIC：当本地 URL 不是云存储 URL 时，查询后端获取永久 URL
- * - Base64/Blob URL 直接使用，不查询后端（本地数据无需查询）
- * - 只有 HTTP URL 且状态为 pending 时才查询（避免不必要的请求）
- *
- * 返回值说明：
- * - 返回的 URL 是永久性的云存储 URL
- * - 调用方应将返回的 URL 保存到附件的 `url` 字段（而非 `tempUrl`）
- *
- * @param sessionId 会话 ID
- * @param attachmentId 附件 ID
- * @param currentUrl 当前 URL
- * @param currentStatus 当前上传状态
- * @returns 包含永久云存储 URL 和状态的对象，如果无法获取则返回 null
- */
-export const tryFetchCloudUrl = async (
-  sessionId: string | null,
-  attachmentId: string,
-  currentUrl: string | undefined,
-  currentStatus: string | undefined
-): Promise<{ url: string; uploadStatus: string } | null> => {
-  // Base64/Blob URL 直接使用，不查询后端
-  if (currentUrl) {
-    if (isBase64Url(currentUrl) || isBlobUrl(currentUrl)) {
-      return null;
-    }
-  }
-
-  // 只有 HTTP URL 且状态为 pending 时才查询
-  const needFetch = sessionId && currentStatus === 'pending' && isHttpUrl(currentUrl);
-
-  if (!needFetch) {
-    return null;
-  }
-
-  const backendData = await fetchAttachmentStatus(sessionId, attachmentId);
-
-  // 验证返回的是有效的云存储 URL
-  if (backendData && isHttpUrl(backendData.url) && backendData.uploadStatus === 'completed') {
-    return {
-      url: backendData.url,
-      uploadStatus: 'completed',
-    };
-  }
-
-  return null;
-};
+// tryFetchCloudUrl removed — Sprint 2 PR-3
+// 唯一 caller(prepareAttachmentForApi 的降级分支)在 PR-2 (8238f9d) 已删除。
+// 后端 /api/attachments/resolve-continuity 现在做权威解析,不需要前端轮询 cloud URL。
 
 // ============================================================
 // URL 转换工具函数
 // ============================================================
 
-/**
- * 将任意 URL 转换为 Base64 Data URL
- *
- * 支持的输入类型：
- * - Base64 URL：直接返回
- * - Blob URL：fetch 后转换为 Base64
- * - HTTP URL：通过后端代理下载后转换为 Base64（解决 CORS）
- *
- * @param url 源 URL
- * @returns Base64 Data URL
- * @throws 如果 URL 无效或 MIME 类型不支持（仅支持图片类型）
- */
-export const urlToBase64 = async (url: string): Promise<string> => {
-  if (isBase64Url(url)) {
-    return url;
-  }
-
-  // HTTP URL 需要通过后端代理下载（解决 CORS）
-  let fetchUrl = url;
-  if (isHttpUrl(url)) {
-    fetchUrl = `/api/storage/download?url=${encodeURIComponent(url)}`;
-  }
-
-  const response = await fetch(fetchUrl);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch from ${url}. HTTP status: ${response.status}`);
-  }
-
-  const blob = await response.blob();
-
-  // 验证 MIME 类型（仅支持图片）
-  if (!blob.type) {
-  } else if (!blob.type.startsWith('image/')) {
-    throw new Error(
-      `[urlToBase64] Unsupported MIME type: ${blob.type}. Only image types are supported.`
-    );
-  }
-
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.onerror = (error) => reject(new Error(`[urlToBase64] FileReader failed: ${error}`));
-    reader.readAsDataURL(blob);
-  });
-};
+// urlToBase64 removed — Sprint 2 PR-3
+// 唯一 caller(prepareAttachmentForApi 三层 fallback)在 PR-2 (8238f9d) 已删除。
+// 后端处理 base64/blob → cloud URL 转换,前端不再需要 client-side base64 转。
 
 /**
  * 将 File 对象转换为 Base64 Data URL

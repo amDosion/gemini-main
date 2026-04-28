@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppMode, ChatSession, Message, Role } from '../types/types';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../services/db';
-import { cleanAttachmentsForDb } from './handlers/attachmentUtils';
+// cleanAttachmentsForDb removed — backend authoritative cleansing in
+// routers/user/sessions.py upsert path (Sprint 2 PR-1, commit b0bd8ee)
 import { useCacheStatus, CacheStatusInfo } from './useCacheStatus';
 import { apiClient } from '../services/apiClient';
 import { cacheManager, CACHE_DOMAINS } from '../services/CacheManager';
@@ -267,10 +268,8 @@ export const useSessions = (
         return message;
       }
 
-      return {
-        ...message,
-        attachments: cleanAttachmentsForDb(message.attachments, false),
-      };
+      // 直接传原始 attachments,后端 PR-1 在 upsert 时权威清洗 blob/base64
+      return message;
     });
 
     return {
@@ -364,32 +363,9 @@ export const useSessions = (
             const lastMsgWithMode = [...nextMessages].reverse().find((m) => m.mode);
             const currentMode = lastMsgWithMode?.mode || s.mode || 'chat';
 
-            // ✅ 根据会话模式判断是否需要清理附件
-            // 图片模式和 chat 模式（含附件时）需要清理 Blob URL 和 Base64 URL
-            // 因为这些模式都有异步上传任务，清理后 URL 为空，等待后端上传完成后更新
-            const needsCleanSession =
-              currentMode === 'chat' ||
-              currentMode === 'image-outpainting' ||
-              currentMode === 'image-chat-edit' ||
-              currentMode === 'image-mask-edit' ||
-              currentMode === 'image-inpainting' ||
-              currentMode === 'image-background-edit' ||
-              currentMode === 'image-recontext' ||
-              currentMode === 'image-gen';
-
-            const cleanedMessages = needsCleanSession
-              ? nextMessages.map((msg) => {
-                  if (msg.attachments) {
-                    return {
-                      ...msg,
-                      attachments: cleanAttachmentsForDb(msg.attachments, false),
-                    };
-                  }
-                  return msg;
-                })
-              : nextMessages;
-
-            const updatedSession = { ...s, title, messages: cleanedMessages, mode: currentMode };
+            // 直接传 raw nextMessages — 后端 PR-1 (b0bd8ee) 在 upsert 时
+            // 权威清洗 blob/base64 URL,前端无需根据 mode 做条件预清洗。
+            const updatedSession = { ...s, title, messages: nextMessages, mode: currentMode };
 
             // Save to database (async, non-blocking)
             saveSessionToDb(updatedSession);

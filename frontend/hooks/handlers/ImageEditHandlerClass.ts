@@ -137,16 +137,17 @@ export class ImageEditHandler extends BaseHandler {
               
               
               // ✅ 修复：保留原始 Blob URL 到 tempUrl，用于当前会话显示
-              // 注意：这个返回的附件会保存到数据库（cleanAttachmentsForDb 会清空 Blob URL）
+              // 注意：这个返回的附件会保存到数据库（后端 PR-1 b0bd8ee 在 upsert 时
+              // 权威清洗 Blob URL,落库时 url=""+status="pending"）。
               // 但当前会话的 messages 状态会保留原始 Blob URL（因为 setMessages 在 updateSessionMessages 之前调用）
               const originalUrl = att.url || att.tempUrl;
               const isBlobUrl = originalUrl?.startsWith('blob:');
-              
+
               return {
                 ...att,
                 id: result.attachmentId || att.id,  // 使用后端返回的 attachmentId
                 // ✅ 保留原始 URL 到 tempUrl，用于当前会话显示
-                // url 字段保留 Blob URL（如果存在），cleanAttachmentsForDb 会在保存到数据库时清空
+                // url 字段保留 Blob URL（如果存在），后端 upsert 路径会落库时清空
                 url: originalUrl || '',
                 tempUrl: originalUrl || att.tempUrl, // 保留原始 URL 用于显示
                 uploadStatus: result.taskId ? 'pending' : 'failed',
