@@ -284,7 +284,8 @@ async def login(
         user_agent = request.headers.get("User-Agent")
         
         result = auth_service.login(data, ip_address=ip_address, user_agent=user_agent)
-        user_response = auth_service.get_current_user(result.tokens.access_token)
+        # ✅ A-4: 复用 auth_service.login 内已构造的 UserResponse，避免再次查询 user + IPLoginHistory
+        user_response = result.user
 
         # ✅ 检查用户是否有活跃的配置文件（优化：减少前端初始化请求）
         from ...models.db_models import UserSettings
@@ -313,8 +314,13 @@ async def login(
         raise HTTPException(status_code=401, detail="Invalid email or password")
     except AccountDisabledError as e:
         raise HTTPException(status_code=403, detail=e.message)
+    except HTTPException:
+        # 透传 auth_service 内部主动抛出的 HTTPException（如 429 频率限制、403 IP 封禁）
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
+        # ✅ A-1/C-8: 不向客户端泄漏内部异常细节，仅服务端日志保留完整 traceback
+        logger.error(f"[Auth] 登录失败 (email={data.email}): {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Login failed")
 
 
 @router.post("/logout")

@@ -56,7 +56,11 @@ async def get_critical_init_data(
         provider_id = str((active_profile or {}).get("provider_id") or "").strip().lower()
 
         if provider_id:
-            effective_profile = _get_effective_profile(provider_id, db, user_id)
+            # ✅ A-6: 复用 _query_profiles 已查到的 active_profile_id，避免再次 UserSettings 查询
+            effective_profile = _get_effective_profile(
+                provider_id, db, user_id,
+                active_profile_id_hint=profiles_result.get("active_profile_id"),
+            )
             vertex_config = _get_vertex_ai_config(db, user_id) if provider_id == "google" else None
 
             models = _merge_saved_models(
@@ -127,32 +131,39 @@ async def get_critical_init_data(
 async def get_more_sessions(
     offset: int = 0,
     limit: int = 20,
+    cursor: str | None = None,
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)
 ):
     """
     滚动加载更多会话元数据（惰性加载）
-    
+
     用于 Sidebar 滚动到底部时加载更多会话
     只返回会话元数据，messages 为空数组
+
+    A-7: 支持 cursor 分页（首选）。cursor 为上一页最后一条 session 的 created_at
+    时间戳（毫秒，字符串）。若提供，过滤 `created_at < cursor`，避免 OFFSET
+    大数据集劣化。无 cursor 时退回 OFFSET 模式以保持兼容。total 仅在第一页
+    （无 cursor 且 offset==0）时返回，避免每页全表 count(*)。
+
+    建议在 chat_sessions 上加索引 (user_id, created_at DESC) 以最大化收益。
     """
     from ...services.common.init_service import _query_sessions_metadata_only
-    from fastapi import Query
-    
+
     try:
-        result = await _query_sessions_metadata_only(user_id, db, limit=limit, offset=offset)
+        result = await _query_sessions_metadata_only(
+            user_id, db, limit=limit, offset=offset, cursor=cursor
+        )
         return {
             "sessions": result.get("sessions", []),
-            "total": result.get("total", 0),
-            "hasMore": result.get("hasMore", False)
+            "total": result.get("total"),
+            "hasMore": result.get("has_more", False),
+            "nextCursor": result.get("next_cursor"),
         }
     except Exception as e:
+        # A-10: 不再静默返空——前端能区分加载错误与"无更多数据"
         logger.error(f"Failed to load more sessions for user {user_id}: {e}", exc_info=True)
-        return {
-            "sessions": [],
-            "total": 0,
-            "hasMore": False
-        }
+        raise HTTPException(status_code=503, detail="Failed to load more sessions")
 
 
 @router.get("/init/non-critical")
@@ -175,22 +186,28 @@ async def get_non_critical_init_data(
     """
     from ...services.common.init_service import (
         _query_sessions_with_first_messages,
-        _query_personas, 
+        _query_personas,
         _query_storage_configs,
         _query_vertex_ai_config
     )
-    import asyncio
-    
+
+    # A-2: SQLAlchemy 同步 Session 在并发任务下不安全（identity map / 事务边界 /
+    # pending 改动会被并发污染）。即便这些查询当前看起来"只读"，共享单一 db
+    # Session 跑 asyncio.gather 仍属未定义行为。改为串行 await：性能损失 ~10ms，
+    # 换数据一致性。如未来要恢复并发，必须给每个任务注入独立 SessionLocal()。
+    async def _safe(coro, label: str):
+        try:
+            return await coro
+        except Exception as exc:
+            logger.warning(f"[Init/non-critical] {label} 查询失败: {exc}", exc_info=True)
+            return exc
+
     try:
-        # 并行查询非关键数据
-        sessions_result, personas_result, storage_result, vertex_ai_result = await asyncio.gather(
-            _query_sessions_with_first_messages(user_id, db, limit=20),
-            _query_personas(user_id, db),
-            _query_storage_configs(user_id, db),
-            _query_vertex_ai_config(user_id, db),
-            return_exceptions=True
-        )
-        
+        sessions_result = await _safe(_query_sessions_with_first_messages(user_id, db, limit=20), "sessions")
+        personas_result = await _safe(_query_personas(user_id, db), "personas")
+        storage_result = await _safe(_query_storage_configs(user_id, db), "storage")
+        vertex_ai_result = await _safe(_query_vertex_ai_config(user_id, db), "vertex_ai")
+
         return {
             "sessions": sessions_result.get("sessions", []) if isinstance(sessions_result, dict) else [],
             "sessionsTotal": sessions_result.get("total", 0) if isinstance(sessions_result, dict) else 0,

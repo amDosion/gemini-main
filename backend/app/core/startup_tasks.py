@@ -132,6 +132,42 @@ async def migrate_user_admin_schema(log_prefixes: Dict[str, str]):
         logger.warning(f"{log_prefixes['warning']} Failed to migrate users.is_admin schema: {e}")
 
 
+async def migrate_ip_login_history_index(log_prefixes: Dict[str, str]):
+    """
+    ✅ A-9: 在 ip_login_history 上幂等补建复合索引 (user_id, action, created_at)。
+
+    AuthService.get_current_user() 会按 user_id+action='login' 过滤并按 created_at
+    倒序取首条；缺索引时会退化为表扫描 + sort，登录期间显著影响延迟。
+    declarative 模型已声明该索引，但已有库需要在启动期通过
+    CREATE INDEX IF NOT EXISTS 补建（项目当前无 alembic）。
+    """
+    try:
+        from sqlalchemy import inspect, text
+        from .database import engine
+
+        inspector = inspect(engine)
+        if "ip_login_history" not in set(inspector.get_table_names()):
+            logger.info(
+                f"{log_prefixes.get('info', log_prefixes['success'])} "
+                "ip_login_history table not found, skip index migration"
+            )
+            return
+
+        with engine.begin() as conn:
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_ip_login_user_action_time "
+                "ON ip_login_history (user_id, action, created_at)"
+            ))
+        logger.info(
+            f"{log_prefixes['success']} Ensured ip_login_history composite index "
+            "(user_id, action, created_at)"
+        )
+    except Exception as e:
+        logger.warning(
+            f"{log_prefixes['warning']} Failed to ensure ip_login_history index: {e}"
+        )
+
+
 async def migrate_workflow_idempotency_schema(log_prefixes: Dict[str, str]):
     """
     兼容旧库：确保 workflow_executions.idempotency_key 与跨实例唯一约束存在。
@@ -426,6 +462,7 @@ async def run_all_startup_tasks(
         validate_provider_configs(log_prefixes),
         migrate_user_admin_schema(log_prefixes),
         migrate_workflow_idempotency_schema(log_prefixes),
+        migrate_ip_login_history_index(log_prefixes),
     )
 
     # 4. Group 3: 清理任务（依赖迁移完成，并行）

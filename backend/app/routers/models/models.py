@@ -232,14 +232,27 @@ def filter_models_by_mode(models: List[ModelConfig], mode: str) -> List[ModelCon
     return filtered
 
 
-def _get_effective_profile(provider: str, db: Session, user_id: str) -> Optional[ConfigProfile]:
+def _get_effective_profile(
+    provider: str,
+    db: Session,
+    user_id: str,
+    *,
+    active_profile_id_hint: Optional[str] = None,
+) -> Optional[ConfigProfile]:
     """
     获取当前 provider 对应的生效配置：
     1) 当前激活 profile（若 provider 匹配）
     2) 任意同 provider profile（按更新时间倒序）
+
+    A-6 优化：当调用方已经查过 UserSettings.active_profile_id（例如
+    /api/init/critical 通过 _query_profiles 已取到），可以传 active_profile_id_hint
+    跳过这里重复的 UserSettings 单点查询。默认行为不变。
     """
-    settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
-    active_profile_id = settings.active_profile_id if settings else None
+    if active_profile_id_hint is not None:
+        active_profile_id = active_profile_id_hint or None
+    else:
+        settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+        active_profile_id = settings.active_profile_id if settings else None
 
     if active_profile_id:
         active_profile = db.query(ConfigProfile).filter(

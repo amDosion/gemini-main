@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, BigInteger, String, DateTime, Boolean, Text, JSON, Float, func, UniqueConstraint
+from sqlalchemy import Column, Integer, BigInteger, String, DateTime, Boolean, Text, JSON, Float, func, UniqueConstraint, Index
 from ..core.database import Base
 from datetime import datetime
 import uuid
@@ -628,6 +628,14 @@ class IPLoginHistory(Base):
     action = Column(String, nullable=False)  # login, logout, failed_login, token_refresh
     user_agent = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # ✅ A-9: 复合索引——auth_service.get_current_user 中按 (user_id, action='login')
+    # 过滤并 ORDER BY created_at DESC LIMIT 1；现有单列索引无法覆盖，会全表扫描。
+    # 这是 SQLAlchemy declarative 风格；项目无 alembic，依靠 startup_tasks 在
+    # 启动期通过 CREATE INDEX IF NOT EXISTS 在已有库上幂等补建。
+    __table_args__ = (
+        Index('ix_ip_login_user_action_time', 'user_id', 'action', 'created_at'),
+    )
 
     # 使用基类 to_dict()：DateTime → isoformat
     _datetime_format = 'isoformat'

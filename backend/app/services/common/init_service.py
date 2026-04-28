@@ -243,14 +243,29 @@ async def _query_sessions_with_first_messages(user_id: str, db: Session, limit: 
     """
     try:
         logger.info(f"[InitService] 查询 Sessions（包含第一个会话的完整消息，limit={limit}）...")
-        
-        # ✅ 查询会话列表（按更新时间排序）
+
+        # ✅ A-5: ChatSession 没有 updated_at 列，按 created_at 排序会让"最近活跃"
+        # 的会话被旧创建时间淹没。改为按"最近一条 message 的 timestamp"降序排序，
+        # 无消息的会话退回 session.created_at（COALESCE）。
         from sqlalchemy import func
-        sessions = db.query(ChatSession).filter(
-            ChatSession.user_id == user_id
-        ).order_by(
-            ChatSession.created_at.desc()  # 按创建时间排序，获取最新的会话
-        ).limit(limit).all()
+        last_msg_subq = (
+            db.query(
+                MessageIndex.session_id.label("sid"),
+                func.max(MessageIndex.timestamp).label("last_ts"),
+            )
+            .filter(MessageIndex.user_id == user_id)
+            .group_by(MessageIndex.session_id)
+            .subquery()
+        )
+        last_ts_col = func.coalesce(last_msg_subq.c.last_ts, ChatSession.created_at)
+        sessions = (
+            db.query(ChatSession)
+            .outerjoin(last_msg_subq, last_msg_subq.c.sid == ChatSession.id)
+            .filter(ChatSession.user_id == user_id)
+            .order_by(last_ts_col.desc())
+            .limit(limit)
+            .all()
+        )
         
         if not sessions:
             logger.info(f"[InitService] Sessions 加载成功: 0 个会话")
@@ -374,43 +389,80 @@ async def _query_sessions_with_first_messages(user_id: str, db: Session, limit: 
         }
 
 
-async def _query_sessions_metadata_only(user_id: str, db: Session, limit: int = 20, offset: int = 0) -> Dict[str, Any]:
+async def _query_sessions_metadata_only(
+    user_id: str,
+    db: Session,
+    limit: int = 20,
+    offset: int = 0,
+    cursor: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     查询会话元数据（仅元数据，不包含消息）
-    
-    用于滚动加载更多会话（惰性加载）
-    
+
+    用于滚动加载更多会话（惰性加载）。
+
+    A-7 cursor 分页:
+    - 若提供 cursor（上一页最后一条 session.created_at，毫秒字符串），按
+      `created_at < cursor` 过滤，避免大 OFFSET 劣化。
+    - total 仅在第一页（无 cursor 且 offset==0）返回，避免每页全表 count(*)。
+    - next_cursor 为本页最后一条的 created_at（若 has_more 为真），便于下一次调用。
+    - 不带 cursor 时退回 OFFSET 模式（向后兼容）。
+    建议在 chat_sessions 上加索引 (user_id, created_at DESC)。
+
     Returns:
         {
             "sessions": [...],  # messages 为空数组
-            "total": int,
-            "has_more": bool
+            "total": int | None,
+            "has_more": bool,
+            "next_cursor": str | None,
         }
     """
     try:
-        logger.info(f"[InitService] 查询 Sessions 元数据（limit={limit}, offset={offset}）...")
-        
-        # ✅ 查询会话列表（按创建时间排序）
+        logger.info(
+            f"[InitService] 查询 Sessions 元数据（limit={limit}, offset={offset}, cursor={cursor}）..."
+        )
+
         from sqlalchemy import func
-        sessions = db.query(ChatSession).filter(
-            ChatSession.user_id == user_id
-        ).order_by(
-            ChatSession.created_at.desc()
-        ).offset(offset).limit(limit).all()
-        
+
+        base_q = db.query(ChatSession).filter(ChatSession.user_id == user_id)
+
+        cursor_ts: Optional[int] = None
+        if cursor:
+            try:
+                cursor_ts = int(cursor)
+                base_q = base_q.filter(ChatSession.created_at < cursor_ts)
+            except (TypeError, ValueError):
+                logger.warning(f"[InitService] 非法 cursor: {cursor!r}，退回 OFFSET 模式")
+                cursor_ts = None
+
+        ordered_q = base_q.order_by(ChatSession.created_at.desc())
+
+        # 多取 1 条用来判断 has_more（避免再发一次 count）
+        if cursor_ts is not None:
+            page = ordered_q.limit(limit + 1).all()
+        else:
+            page = ordered_q.offset(offset).limit(limit + 1).all()
+
+        has_more = len(page) > limit
+        sessions = page[:limit]
+
         if not sessions:
+            # 仅在首屏才尝试给 total 一个数值
             return {
                 "sessions": [],
-                "total": 0,
+                "total": 0 if (cursor_ts is None and offset == 0) else None,
                 "has_more": False,
-                "error": None
+                "next_cursor": None,
+                "error": None,
             }
-        
-        # ✅ 查询总会话数量
-        total_count = db.query(ChatSession).filter(
-            ChatSession.user_id == user_id
-        ).count()
-        
+
+        # ✅ total 只在第一页查（避免每次滚动都全表 count）
+        total_count: Optional[int] = None
+        if cursor_ts is None and offset == 0:
+            total_count = db.query(func.count(ChatSession.id)).filter(
+                ChatSession.user_id == user_id
+            ).scalar() or 0
+
         # ✅ 批量查询每个会话的消息数量
         session_ids = [s.id for s in sessions]
         message_counts = db.query(
@@ -420,10 +472,9 @@ async def _query_sessions_metadata_only(user_id: str, db: Session, limit: int = 
             MessageIndex.session_id.in_(session_ids),
             MessageIndex.user_id == user_id
         ).group_by(MessageIndex.session_id).all()
-        
+
         message_count_map = {mc.session_id: mc.count for mc in message_counts}
-        
-        # ✅ 组装会话结果（messages 为空数组）
+
         sessions_result = []
         for session in sessions:
             session_dict = {
@@ -433,26 +484,32 @@ async def _query_sessions_metadata_only(user_id: str, db: Session, limit: int = 
                 "persona_id": session.persona_id,
                 "mode": session.mode,
                 "message_count": message_count_map.get(session.id, 0),
-                "messages": []  # ✅ 滚动加载的会话 messages 为空数组
+                "messages": []
             }
             sessions_result.append(session_dict)
-        
-        has_more = (offset + limit) < total_count
-        
-        logger.info(f"[InitService] Sessions 元数据加载成功: {len(sessions_result)} 个会话")
-        
+
+        next_cursor: Optional[str] = None
+        if has_more and sessions:
+            next_cursor = str(sessions[-1].created_at)
+
+        logger.info(
+            f"[InitService] Sessions 元数据加载成功: {len(sessions_result)} 个会话, has_more={has_more}"
+        )
+
         return {
             "sessions": sessions_result,
             "total": total_count,
             "has_more": has_more,
-            "error": None
+            "next_cursor": next_cursor,
+            "error": None,
         }
     except Exception as e:
         logger.error(f"[InitService] Sessions 元数据加载失败: {e}")
         return {
             "sessions": [],
-            "total": 0,
+            "total": None,
             "has_more": False,
+            "next_cursor": None,
             "error": str(e)
         }
 
@@ -558,23 +615,27 @@ async def get_init_data(user_id: str, db: Session) -> Dict[str, Any]:
     }
     
     try:
-        # 使用 asyncio.gather() 并行查询所有数据源（带超时）
-        profiles_task = _query_profiles(user_id, db)
-        storage_task = _query_storage_configs(user_id, db)
-        sessions_task = _query_sessions(user_id, db)
-        personas_task = _query_personas(user_id, db)
-        vertex_ai_task = _query_vertex_ai_config(user_id, db)
-        
-        # 并行执行所有查询，设置超时
+        # ✅ A-2: SQLAlchemy 同步 Session 跨任务非线程安全（identity map / 事务边界 /
+        # pending 改动并发污染）。原来的 asyncio.gather 让 5 个查询共享同一个 db
+        # Session — 即便看似只读，仍属未定义行为。改为串行 await，整体超时仍由
+        # asyncio.wait_for 控制。如未来要恢复并发，必须给每个任务注入独立 SessionLocal()。
+        async def _serial_collect():
+            results = []
+            for coro in (
+                _query_profiles(user_id, db),
+                _query_storage_configs(user_id, db),
+                _query_sessions(user_id, db),
+                _query_personas(user_id, db),
+                _query_vertex_ai_config(user_id, db),
+            ):
+                try:
+                    results.append(await coro)
+                except Exception as exc:
+                    results.append(exc)
+            return results
+
         profiles_result, storage_result, sessions_result, personas_result, vertex_ai_result = await asyncio.wait_for(
-            asyncio.gather(
-                profiles_task,
-                storage_task,
-                sessions_task,
-                personas_task,
-                vertex_ai_task,
-                return_exceptions=True  # 不让单个查询失败影响整体
-            ),
+            _serial_collect(),
             timeout=QUERY_TIMEOUT
         )
         

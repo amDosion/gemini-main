@@ -220,15 +220,16 @@ class AuthService:
             logger.error(f"[AuthService] 记录登录尝试失败: {e}", exc_info=True)
             self.db.rollback()
     
-    def _record_ip_login_history(self, user_id: str, ip_address: str, action: str, user_agent: Optional[str] = None) -> None:
+    def _record_ip_login_history(self, user_id: str, ip_address: str, action: str, user_agent: Optional[str] = None, commit: bool = True) -> None:
         """
         记录 IP 登录历史到 IPLoginHistory 表（用于历史追踪和安全分析）
-        
+
         Args:
             user_id: 用户 ID
             ip_address: IP 地址
             action: 操作类型（login, logout, failed_login, token_refresh）
             user_agent: 用户代理
+            commit: 是否立即提交（A-3: 登录成功路径传 False 以合并到外层事务一次提交）
         """
         try:
             ip_history = IPLoginHistory(
@@ -238,10 +239,12 @@ class AuthService:
                 user_agent=user_agent
             )
             self.db.add(ip_history)
-            self.db.commit()
+            if commit:
+                self.db.commit()
         except Exception as e:
             logger.warning(f"[AuthService] 记录 IP 登录历史失败: {e}")
-            self.db.rollback()
+            if commit:
+                self.db.rollback()
 
     def _check_login_attempts(self, email: Optional[str], ip_address: str) -> Tuple[bool, Optional[str]]:
         """
@@ -388,21 +391,36 @@ class AuthService:
         if user.status != 'active':
             raise AccountDisabledError(user.status_reason)
 
-        # 生成令牌
+        # 生成令牌（_create_tokens 内部会 commit 一次：撤销旧 token + 写入新 RefreshToken）
         tokens = self._create_tokens(user.id)
 
-        # ✅ 将 access_token 存储到用户表
-        user.access_token = tokens.access_token
-        user.token_expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_access_token_expire_minutes)
-        self.db.commit()
-        
-        # ✅ 登录成功后，记录到 IPLoginHistory（用于历史追踪）
-        self._record_ip_login_history(user.id, ip_address or "unknown", "login", user_agent)
+        # ✅ A-3: 合并 user.access_token 更新 + ip_login_history 写入到同一次 commit
+        try:
+            user.access_token = tokens.access_token
+            user.token_expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_access_token_expire_minutes)
+            # 登录成功 IP 历史用 commit=False，与 user 字段更新合并提交
+            self._record_ip_login_history(user.id, ip_address or "unknown", "login", user_agent, commit=False)
+            self.db.commit()
+        except Exception as commit_err:
+            self.db.rollback()
+            logger.error(f"[AuthService] 登录提交事务失败: {commit_err}", exc_info=True)
+            raise
 
         logger.info(f"[AuthService] ✅ 用户登录成功: {user.email} (IP: {ip_address})")
 
-        # 统一从 token 中提取 user_id 获取用户信息
-        user_response = self.get_current_user(tokens.access_token)
+        # ✅ A-4: 直接复用已查到的 user 实例构造 UserResponse，不再通过 token 反查
+        # last_login_at 从本次 ip_history 即可推断（now()），避免再查 IPLoginHistory
+        now_dt = datetime.now(timezone.utc)
+        user_response = UserResponse(
+            id=user.id,
+            email=user.email,
+            name=user.name,
+            status=user.status,
+            is_admin=bool(user.is_admin),
+            created_at=user.created_at,
+            updated_at=user.updated_at,
+            last_login_at=now_dt,
+        )
 
         return AuthResponse(
             user=user_response,
@@ -412,19 +430,39 @@ class AuthService:
     def validate_token(self, token: str) -> TokenPayload:
         """
         验证令牌
-        
+
         Raises:
             InvalidTokenError: 无效令牌
             TokenExpiredError: 令牌已过期
         """
+        # ✅ A-8: 显式区分 jose 异常类别，保留诊断上下文（避免吞掉所有 Exception）
+        from jose import JWTError
+        try:
+            from jose import ExpiredSignatureError, JWTClaimsError
+        except ImportError:  # pragma: no cover - jose 老版本兼容
+            ExpiredSignatureError = JWTError  # type: ignore[assignment]
+            JWTClaimsError = JWTError  # type: ignore[assignment]
+
         try:
             payload = decode_token(token)
-            # 检查是否过期
-            if payload.exp < int(datetime.now(timezone.utc).timestamp()):
-                raise TokenExpiredError()
-            return payload
-        except Exception:
+        except ExpiredSignatureError:
+            logger.warning("[AuthService] Token 已过期 (jose ExpiredSignatureError)")
+            raise TokenExpiredError()
+        except (JWTClaimsError, JWTError) as e:
+            logger.warning(f"[AuthService] Token 无效: {type(e).__name__}: {e}")
             raise InvalidTokenError()
+        except TokenExpiredError:
+            raise
+        except Exception as e:
+            # 非预期异常类型——记录类型以便定位，仍按无效令牌处理
+            logger.warning(f"[AuthService] Token 解码异常: {type(e).__name__}: {e}")
+            raise InvalidTokenError()
+
+        # 内部 exp 检查（jwt_utils.decode_token 包了一层 JWTError，
+        # 这里仍需基于 payload.exp 判定，以与 is_token_expired 行为一致）
+        if payload.exp < int(datetime.now(timezone.utc).timestamp()):
+            raise TokenExpiredError()
+        return payload
 
     def get_user_by_id(self, user_id: str) -> Optional[User]:
         """根据 ID 获取用户"""
