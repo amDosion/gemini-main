@@ -29,7 +29,7 @@ from ...agent.workflow_result_contract import (
     normalize_runtime_hint as _normalize_runtime_hint_shared,
     pick_primary_runtime as _pick_primary_runtime_shared,
 )
-from ...common.attachment_service import AttachmentService
+from ...common.attachment_service import AttachmentService, safe_persist_ai_result
 from ...common.reference_image_catalog import pick_reference_image
 from ....utils.case_converter import to_camel_case
 from .test_template_fixture_service import (
@@ -519,21 +519,24 @@ class WorkflowTemplateSampleService:
         replacements: Dict[str, str] = {}
 
         for index, image_url in enumerate(candidates, start=1):
-            try:
-                processed = await attachment_service.process_ai_result(
-                    ai_url=image_url,
-                    mime_type=self._guess_image_mime_type(image_url),
-                    session_id=safe_ref_id,
-                    message_id=safe_ref_id,
-                    user_id=user_id,
-                    prefix=f"template-sample-{index:02d}",
-                    storage_id=storage_id,
-                )
-                display_url = str(processed.get("display_url") or "").strip()
-                replacements[image_url] = display_url or image_url
-            except Exception as exc:
+            processed = await safe_persist_ai_result(
+                attachment_service,
+                log_label=f"TemplateSample image #{index} ({image_url[:60]}...)",
+                log_with_traceback=False,
+                ai_url=image_url,
+                mime_type=self._guess_image_mime_type(image_url),
+                session_id=safe_ref_id,
+                message_id=safe_ref_id,
+                user_id=user_id,
+                prefix=f"template-sample-{index:02d}",
+                storage_id=storage_id,
+            )
+            if processed is None:
+                # session 可能在 process_ai_result 半路抛错时留下 pending changes,显式回滚
                 self.db.rollback()
-                logger.warning("[TemplateSample] Failed to persist result image: %s", exc)
+                continue
+            display_url = str(processed.get("display_url") or "").strip()
+            replacements[image_url] = display_url or image_url
 
         if not replacements:
             return result_payload, {}

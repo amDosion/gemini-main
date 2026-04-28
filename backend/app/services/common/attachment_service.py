@@ -17,6 +17,30 @@ from typing import Optional, Dict, Any, List, Literal, TypedDict
 UploadStatus = Literal["pending", "uploading", "completed", "failed"]
 
 
+async def safe_persist_ai_result(
+    attachment_service: "AttachmentService",
+    *,
+    log_label: str = "媒体",
+    log_with_traceback: bool = True,
+    **kwargs: Any,
+) -> Optional["ProcessAIResultDict"]:
+    """``process_ai_result`` 的容错 wrapper —— 把"调用 + try/except + log"模式
+    集中到一处,modes.py / workflows.py / template_sample / google_service 共用。
+
+    成功:返回 ``ProcessAIResultDict``。失败:log 后返回 ``None``,caller 自定义降级。
+
+    ``log_with_traceback=False`` 用于 N-iteration loop(避免批量失败时 traceback 风暴)。
+    """
+    try:
+        return await attachment_service.process_ai_result(**kwargs)
+    except Exception as err:
+        if log_with_traceback:
+            logger.error(f"[Persist] {log_label} 失败: {err}", exc_info=True)
+        else:
+            logger.warning("[Persist] %s 失败: %s", log_label, err)
+        return None
+
+
 class ProcessAIResultDict(TypedDict, total=False):
     """``AttachmentService.process_ai_result(...)`` 的返回 shape。
 

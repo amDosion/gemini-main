@@ -1498,26 +1498,22 @@ class GoogleService(BaseProviderService):
         
         logger.info(f"[Google Service] Virtual try-on result processing: session_id={session_id}, message_id={message_id}")
         
-        # ✅ 如果有 session_id 和 message_id，调用 AttachmentService 处理图片（方案 B）
-        # 这样做的原因是 modes.py 禁止修改，所以在服务层自行处理附件
+        # 在服务层自行持久化附件(modes.py 不会再次处理 try-on result)
         if session_id and message_id and self.db and self.user_id:
-            try:
-                from ..common.attachment_service import AttachmentService
-                attachment_service = AttachmentService(self.db)
-                
-                # 调用 process_ai_result 创建数据库附件记录和上传任务
-                processed = await attachment_service.process_ai_result(
-                    ai_url=data_url,
-                    mime_type=mime,
-                    session_id=session_id,
-                    message_id=message_id,
-                    user_id=self.user_id,
-                    prefix="tryon"
-                )
-                
+            from ..common.attachment_service import AttachmentService, safe_persist_ai_result
+            attachment_service = AttachmentService(self.db)
+            processed = await safe_persist_ai_result(
+                attachment_service,
+                log_label="Virtual try-on",
+                ai_url=data_url,
+                mime_type=mime,
+                session_id=session_id,
+                message_id=message_id,
+                user_id=self.user_id,
+                prefix="tryon",
+            )
+            if processed is not None:
                 logger.info(f"[Google Service] Virtual try-on attachment processed: attachment_id={processed['attachment_id']}, status={processed['status']}")
-                
-                # ✅ 返回与 GEN 模式完全一致的 images 数组格式
                 return {
                     "images": [{
                         "url": processed["display_url"],
@@ -1528,9 +1524,7 @@ class GoogleService(BaseProviderService):
                         "filename": f"tryon-{processed['attachment_id']}.png"
                     }]
                 }
-            except Exception as e:
-                logger.warning(f"[Google Service] AttachmentService processing failed, returning raw result: {e}")
-                # 降级：返回原始结果（不入库）
+            # 失败:fall-through 到默认 raw-result 返回(下方)
         
         # ✅ 没有 session_id/message_id 时，也返回 images 数组格式（与 GEN 一致）
         # 这样前端可以统一处理 data.images

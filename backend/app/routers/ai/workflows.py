@@ -90,7 +90,7 @@ from ...services.agent.workflow_payload_normalizer import (
 )
 from ...services.agent.agent_seed_service import ensure_seed_agents, get_default_seed_agents
 from ...services.gemini.agent.workflow_template_service import WorkflowTemplateService
-from ...services.common.attachment_service import AttachmentService
+from ...services.common.attachment_service import AttachmentService, safe_persist_ai_result
 from ...services.common.reference_image_catalog import (
     is_placeholder_reference_image_url,
     pick_reference_image,
@@ -2147,30 +2147,26 @@ async def _persist_workflow_result_media(
         cached = processed_sources.get(source)
         if cached is not None:
             return cached
-        # 单个媒体持久化失败不应让整个 workflow 标记 failed —— 与 modes.py 同策略,
-        # 捕获 + 返回 None 让上游 walker 保留原 source URL,workflow 整体 still 200。
-        try:
-            processed = await attachment_service.process_ai_result(
-                ai_url=source,
-                mime_type=str(entry.get("mime_type") or "").strip() or _guess_workflow_media_mime_type(source, normalized_kind),
-                session_id=execution_id,
-                message_id=execution_id,
-                user_id=user_id,
-                prefix=f"workflow-{normalized_kind}-result-{index:02d}",
-                storage_id=storage_id,
-                filename=str(entry.get("filename") or "").strip() or None,
-                file_uri=str(entry.get("file_uri") or "").strip() or None,
-                provider_file_name=str(entry.get("provider_file_name") or "").strip() or None,
-                provider_file_uri=str(entry.get("provider_file_uri") or "").strip() or None,
-                gcs_uri=str(entry.get("gcs_uri") or "").strip() or None,
-            )
-        except Exception as persist_err:
-            logger.warning(
-                "[Workflow] persist_source failed (kind=%s, source=%s...): %s",
-                normalized_kind,
-                source[:80],
-                persist_err,
-            )
+        # 单个媒体持久化失败不应让整个 workflow 标记 failed —— 复用 attachment_service
+        # 的共享 wrapper:成功 → ProcessAIResultDict,失败 → None(walker 保留原 source URL)
+        processed = await safe_persist_ai_result(
+            attachment_service,
+            log_label=f"workflow {normalized_kind} (source={source[:60]}...)",
+            log_with_traceback=False,
+            ai_url=source,
+            mime_type=str(entry.get("mime_type") or "").strip() or _guess_workflow_media_mime_type(source, normalized_kind),
+            session_id=execution_id,
+            message_id=execution_id,
+            user_id=user_id,
+            prefix=f"workflow-{normalized_kind}-result-{index:02d}",
+            storage_id=storage_id,
+            filename=str(entry.get("filename") or "").strip() or None,
+            file_uri=str(entry.get("file_uri") or "").strip() or None,
+            provider_file_name=str(entry.get("provider_file_name") or "").strip() or None,
+            provider_file_uri=str(entry.get("provider_file_uri") or "").strip() or None,
+            gcs_uri=str(entry.get("gcs_uri") or "").strip() or None,
+        )
+        if processed is None:
             return None
         processed_sources[source] = processed
         replacements[source] = str(processed.get("display_url") or "").strip() or source
@@ -2446,20 +2442,22 @@ async def _persist_workflow_result_images(
     replacements: Dict[str, str] = {}
 
     for index, image_url in enumerate(candidates, start=1):
-        try:
-            processed = await attachment_service.process_ai_result(
-                ai_url=image_url,
-                mime_type=_guess_image_mime_type(image_url),
-                session_id=execution_id,
-                message_id=execution_id,
-                user_id=user_id,
-                prefix=f"workflow-result-{index:02d}",
-                storage_id=storage_id,
-            )
+        # 单张持久化失败保留原 URL,不让整个 workflow 5xx
+        processed = await safe_persist_ai_result(
+            attachment_service,
+            log_label=f"workflow image #{index} ({image_url[:60]}...)",
+            log_with_traceback=False,
+            ai_url=image_url,
+            mime_type=_guess_image_mime_type(image_url),
+            session_id=execution_id,
+            message_id=execution_id,
+            user_id=user_id,
+            prefix=f"workflow-result-{index:02d}",
+            storage_id=storage_id,
+        )
+        if processed is not None:
             display_url = str(processed.get("display_url") or "").strip()
             replacements[image_url] = display_url or image_url
-        except Exception as exc:
-            logger.warning(f"[Workflow] Failed to persist result image via worker pool: {exc}")
 
     if not replacements:
         return result_payload, {}

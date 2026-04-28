@@ -29,7 +29,7 @@ from ...core.provider_param_whitelist import (
     validate_mode_param_keys,
 )
 from ...services.common.provider_factory import ProviderFactory
-from ...services.common.attachment_service import AttachmentService, UploadStatus
+from ...services.common.attachment_service import AttachmentService, UploadStatus, safe_persist_ai_result
 from ...utils.attachment_handler import is_base64_url, is_blob_url, is_http_url
 from ...services.common.mode_controls_catalog import validate_params_with_catalog
 from ...services.common.model_capabilities import build_provider_mode_capabilities
@@ -93,41 +93,37 @@ async def _persist_ai_media_with_fallback(
 
     log_with_traceback=False 用于 N-iteration 循环(避免批量失败时 traceback 风暴)。
     """
-    try:
-        processed = await attachment_service.process_ai_result(
-            ai_url=ai_url,
-            mime_type=mime_type,
-            session_id=session_id,
-            message_id=message_id,
-            user_id=user_id,
-            prefix=prefix,
-            filename=filename,
-            **persist_extra,
-        )
-        overlay: _PersistOverlayDict = {
-            "url": processed["display_url"],
-            "attachment_id": processed["attachment_id"],
-            "upload_status": processed["status"],
-            "task_id": processed["task_id"],
-            "mime_type": processed.get("mime_type") or mime_type,
-            "filename": processed.get("filename") or filename or f"{prefix}-{processed['attachment_id'][:8]}.{default_ext}",
-            "session_id": processed.get("session_id") or session_id,
-            "message_id": processed.get("message_id") or message_id,
-            "user_id": processed.get("user_id") or user_id,
-            "cloud_url": processed.get("cloud_url") or "",
-        }
-        if processed.get("file_uri"):
-            overlay["file_uri"] = processed["file_uri"]
-        return overlay
-    except Exception as err:
-        if log_with_traceback:
-            logger.error(
-                f"[Modes] [步骤7] {log_label} 持久化失败,降级: {err}",
-                exc_info=True,
-            )
-        else:
-            logger.warning("[Modes] [步骤7] %s 持久化失败,降级: %s", log_label, err)
+    # try/except + log 集中在 safe_persist_ai_result 中,本 helper 只负责 overlay 构造
+    processed = await safe_persist_ai_result(
+        attachment_service,
+        log_label=log_label,
+        log_with_traceback=log_with_traceback,
+        ai_url=ai_url,
+        mime_type=mime_type,
+        session_id=session_id,
+        message_id=message_id,
+        user_id=user_id,
+        prefix=prefix,
+        filename=filename,
+        **persist_extra,
+    )
+    if processed is None:
         return None
+    overlay: _PersistOverlayDict = {
+        "url": processed["display_url"],
+        "attachment_id": processed["attachment_id"],
+        "upload_status": processed["status"],
+        "task_id": processed["task_id"],
+        "mime_type": processed.get("mime_type") or mime_type,
+        "filename": processed.get("filename") or filename or f"{prefix}-{processed['attachment_id'][:8]}.{default_ext}",
+        "session_id": processed.get("session_id") or session_id,
+        "message_id": processed.get("message_id") or message_id,
+        "user_id": processed.get("user_id") or user_id,
+        "cloud_url": processed.get("cloud_url") or "",
+    }
+    if processed.get("file_uri"):
+        overlay["file_uri"] = processed["file_uri"]
+    return overlay
 
 
 # ==================== Request/Response Models ====================
