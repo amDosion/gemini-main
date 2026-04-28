@@ -1728,6 +1728,61 @@ async def handle_mode(
                         "sidecar_files": processed_sidecars,
                     }
 
+        # Sprint 2 PR-5: audio mode 自动持久化（与 video block 对称）
+        # generate_speech 返回 {url: dataURL, mime_type, ...} — 在响应前
+        # 创建 MessageAttachment 行 + 触发上传任务，让前端走 fast-path
+        elif method_name == "generate_speech":
+            logger.info(f"[Modes] 🔄 [步骤7] 处理音频生成结果...")
+            attachment_service = AttachmentService(db)
+
+            session_id = None
+            message_id = None
+            if request_body.options:
+                session_id = request_body.options.frontend_session_id or request_body.options.session_id
+                message_id = request_body.options.message_id
+
+            audio_payload = result if isinstance(result, dict) else {}
+            ai_url = audio_payload.get("url") or audio_payload.get("audio_url") or audio_payload.get("audioUrl")
+            mime_type = (
+                audio_payload.get("mime_type")
+                or audio_payload.get("mimeType")
+                or "audio/mpeg"
+            )
+            filename = audio_payload.get("filename")
+            has_provider_attachment = bool(
+                audio_payload.get("attachment_id") or audio_payload.get("attachmentId")
+            )
+
+            if has_provider_attachment:
+                logger.info(f"[Modes] ✅ [步骤7] 跳过音频附件处理: Provider 已返回 attachment_id")
+            elif session_id and message_id and ai_url:
+                processed = await attachment_service.process_ai_result(
+                    ai_url=ai_url,
+                    mime_type=mime_type,
+                    session_id=session_id,
+                    message_id=message_id,
+                    user_id=user_id,
+                    prefix="audio",
+                    filename=filename,
+                )
+
+                result = {
+                    **audio_payload,
+                    "url": processed["display_url"],
+                    "attachment_id": processed["attachment_id"],
+                    "upload_status": processed["status"],
+                    "task_id": processed["task_id"],
+                    "mime_type": processed.get("mime_type") or mime_type,
+                    "filename": processed.get("filename") or filename or f"audio-{processed['attachment_id'][:8]}.mp3",
+                    "session_id": processed.get("session_id") or session_id,
+                    "message_id": processed.get("message_id") or message_id,
+                    "user_id": processed.get("user_id") or user_id,
+                    "cloud_url": processed.get("cloud_url") or "",
+                }
+                logger.info(f"[Modes] ✅ [步骤7] 音频结果已桥接为附件代理 URL")
+            else:
+                logger.warning(f"[Modes] ⚠️ [步骤7] 跳过音频附件处理: 缺少 session_id/message_id 或 url")
+
         # ✅ 8. 返回响应
         total_time = (time.time() - request_start_time) * 1000
         logger.info(f"[Modes] ========== 模式请求处理完成 (总耗时: {total_time:.2f}ms) ==========")

@@ -747,49 +747,32 @@ export const processMediaResult = async (
     uploadStatus: 'pending' as const,
   };
 
-  if (res.attachmentId) {
-    return {
-      displayAttachment,
-      dbAttachmentPromise: Promise.resolve({
-        id: attachmentId,
-        mimeType: res.mimeType,
-        name: filename,
-        url: res.cloudUrl || '',
-        tempUrl: originalUrl,
-        uploadStatus: res.uploadStatus || 'pending',
-        uploadTaskId: res.taskId,
-        cloudUrl: res.cloudUrl,
-        size: res.size,
-        messageId: res.messageId,
-        sessionId: res.sessionId,
-        userId: res.userId,
-        createdAt: res.createdAt,
-      }),
-    };
+  // Sprint 2 PR-5: 后端在 image/video/audio mode 已自动创建 attachment 行并触发上传任务
+  // 响应必带 attachmentId（fast-path）。前端不再 orchestrate 下载+上传（已删除 slow-path）。
+  if (!res.attachmentId) {
+    throw new Error(
+      `[processMediaResult] 后端响应缺少 attachmentId（${filePrefix} mode）。请确认后端 modes.py 已为该方法启用自动持久化。`
+    );
   }
 
-  // 创建异步上传任务
-  const dbAttachmentPromise = (async (): Promise<Attachment> => {
-    const file = await sourceToFile(res.url, filename, res.mimeType);
-    const result = await storageUpload.uploadFileAsync(file, {
-      sessionId: context.sessionId,
-      messageId: context.modelMessageId,
-      attachmentId: attachmentId,
-      storageId: context.storageId,
-    });
-
-    return {
+  return {
+    displayAttachment,
+    dbAttachmentPromise: Promise.resolve({
       id: attachmentId,
       mimeType: res.mimeType,
       name: filename,
-      url: isHttpUrl(originalUrl) ? originalUrl : '', // HTTP URL 作为临时 URL
-      tempUrl: isHttpUrl(originalUrl) ? originalUrl : undefined, // 保存用于跨模式查找
-      uploadStatus: result.taskId ? ('pending' as const) : ('failed' as const),
-      uploadTaskId: result.taskId || undefined,
-    };
-  })();
-
-  return { displayAttachment, dbAttachmentPromise };
+      url: res.cloudUrl || '',
+      tempUrl: originalUrl,
+      uploadStatus: res.uploadStatus || 'pending',
+      uploadTaskId: res.taskId,
+      cloudUrl: res.cloudUrl,
+      size: res.size,
+      messageId: res.messageId,
+      sessionId: res.sessionId,
+      userId: res.userId,
+      createdAt: res.createdAt,
+    }),
+  };
 };
 
 /**
