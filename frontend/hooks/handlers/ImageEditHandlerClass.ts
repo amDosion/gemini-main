@@ -47,9 +47,8 @@ export class ImageEditHandler extends BaseHandler {
           referenceImages.raw = rawAttachment;
         } else {
           // ✅ 多图：raw 是附件数组
-          context.attachments.forEach((att, idx) => {
-          });
-          referenceImages.raw = context.attachments;  // ✅ 传递附件数组
+          context.attachments.forEach((att, idx) => {});
+          referenceImages.raw = context.attachments; // ✅ 传递附件数组
         }
       }
       // ✅ 其他模式：只使用第一个附件
@@ -58,21 +57,21 @@ export class ImageEditHandler extends BaseHandler {
         referenceImages.raw = rawAttachment;
       }
     }
-    
+
     // 传递模式参数、sessionId 和 messageId（用于对话式编辑和附件保存）
     // 将 sessionId 和 messageId 添加到 options 中，以便后端使用
     const editOptions = {
       ...context.options,
-      frontendSessionId: context.sessionId,  // 传递前端会话 ID
-      sessionId: context.sessionId,  // 向后兼容
-      messageId: context.modelMessageId  // ✅ 新增：后端需要 messageId 来创建附件记录
+      frontendSessionId: context.sessionId, // 传递前端会话 ID
+      sessionId: context.sessionId, // 向后兼容
+      messageId: context.modelMessageId, // ✅ 新增：后端需要 messageId 来创建附件记录
     };
-    
+
     const results = await llmService.editImage(
-      context.text, 
+      context.text,
       referenceImages,
-      context.mode,  // 传递模式参数
-      editOptions  // 传递包含 sessionId 的 options
+      context.mode, // 传递模式参数
+      editOptions // 传递包含 sessionId 的 options
     );
 
     // 提取 thoughts 和 text（从第一个结果中，因为所有图片共享相同的 thoughts）
@@ -81,7 +80,9 @@ export class ImageEditHandler extends BaseHandler {
     const textResponse = firstResult?.text;
 
     // ✅ 提取增强后的提示词（如果有）- 同一批次所有图片共享相同的 enhancedPrompt
-    const enhancedPrompt = results.find((res: ImageGenerationResult) => res.enhancedPrompt)?.enhancedPrompt;
+    const enhancedPrompt = results.find(
+      (res: ImageGenerationResult) => res.enhancedPrompt
+    )?.enhancedPrompt;
 
     // ✅ 后端已处理图片（返回完整的附件元数据）
     // 直接使用后端返回的结果，不需要再次处理
@@ -89,22 +90,22 @@ export class ImageEditHandler extends BaseHandler {
       // ✅ 记录后端返回的完整元数据
 
       return {
-        id: res.attachmentId || uuidv4(),  // 使用后端返回的 attachmentId
+        id: res.attachmentId || uuidv4(), // 使用后端返回的 attachmentId
         mimeType: res.mimeType || 'image/png',
         name: res.filename || `edited-${Date.now()}.png`,
-        url: res.url,  // 显示URL（Base64 Data URL 或 HTTP URL）
+        url: res.url, // 显示URL（Base64 Data URL 或 HTTP URL）
         uploadStatus: res.uploadStatus || 'pending',
         uploadTaskId: res.taskId,
         // ✅ 新增：保存后端返回的额外元数据
-        size: res.size,  // 文件大小（bytes）
-        cloudUrl: res.cloudUrl,  // 云存储 URL（如果已上传）
-        messageId: res.messageId,  // 消息 ID
-        sessionId: res.sessionId,  // 会话 ID
-        userId: res.userId,  // 用户 ID
-        createdAt: res.createdAt,  // 创建时间戳
+        size: res.size, // 文件大小（bytes）
+        cloudUrl: res.cloudUrl, // 云存储 URL（如果已上传）
+        messageId: res.messageId, // 消息 ID
+        sessionId: res.sessionId, // 会话 ID
+        userId: res.userId, // 用户 ID
+        createdAt: res.createdAt, // 创建时间戳
       } as Attachment;
     });
-    
+
     // ✅ 构建显示内容：只保存原始提示词
     // enhancedPrompt 作为单独字段存储，在前端单独显示
     // thoughts 和 textResponse 通过 ThinkingBlock 单独显示
@@ -113,7 +114,7 @@ export class ImageEditHandler extends BaseHandler {
     const uploadTask = async () => {
       // ✅ 后端已创建附件记录和上传任务（AI 返回的图片）
       const dbAttachments = displayAttachments;
-      
+
       // ✅ 处理用户上传的附件
       // 注意：用户上传的文件仍然需要前端通过 FormData 上传到后端
       // 但后端现在使用 AttachmentService.process_user_upload() 统一处理
@@ -123,7 +124,7 @@ export class ImageEditHandler extends BaseHandler {
           if (att.uploadStatus === 'completed' && att.url?.startsWith('http')) {
             return att;
           }
-          
+
           // ✅ 如果有 File 对象，上传到后端（后端会统一处理）
           // 后端 /api/storage/upload-async 现在使用 AttachmentService.process_user_upload()
           if (att.file) {
@@ -134,8 +135,7 @@ export class ImageEditHandler extends BaseHandler {
                 attachmentId: att.id || uuidv4(),
                 storageId: context.storageId,
               });
-              
-              
+
               // ✅ 修复：保留原始 Blob URL 到 tempUrl，用于当前会话显示
               // 注意：这个返回的附件会保存到数据库（后端 PR-1 b0bd8ee 在 upsert 时
               // 权威清洗 Blob URL,落库时 url=""+status="pending"）。
@@ -145,7 +145,7 @@ export class ImageEditHandler extends BaseHandler {
 
               return {
                 ...att,
-                id: result.attachmentId || att.id,  // 使用后端返回的 attachmentId
+                id: result.attachmentId || att.id, // 使用后端返回的 attachmentId
                 // ✅ 保留原始 URL 到 tempUrl，用于当前会话显示
                 // url 字段保留 Blob URL（如果存在），后端 upsert 路径会落库时清空
                 url: originalUrl || '',
@@ -157,13 +157,13 @@ export class ImageEditHandler extends BaseHandler {
               return { ...att, uploadStatus: 'failed' as const };
             }
           }
-          
+
           // ✅ 其他情况（URL 类型），后端 modes.py 会处理
           // 不需要前端转换，直接传递元数据
           return att;
         })
       );
-      
+
       return { dbAttachments, dbUserAttachments };
     };
 
@@ -174,7 +174,7 @@ export class ImageEditHandler extends BaseHandler {
       // 将 thoughts、textResponse、enhancedPrompt 存储在自定义字段中（用于前端显示和数据库持久化）
       thoughts: thoughts,
       textResponse: textResponse,
-      enhancedPrompt: enhancedPrompt
+      enhancedPrompt: enhancedPrompt,
     };
   }
 }
