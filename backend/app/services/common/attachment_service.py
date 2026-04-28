@@ -8,7 +8,33 @@
 4. 管理附件生命周期
 """
 
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Literal, TypedDict
+
+
+# 附件上传状态契约 —— 与 message_attachments.upload_status 列对齐。
+# 其他模块(modes.py / workflows.py / handlers)从此处 import,确保 typo
+# 在 IDE / mypy 静态检查阶段被发现。
+UploadStatus = Literal["pending", "uploading", "completed", "failed"]
+
+
+class ProcessAIResultDict(TypedDict, total=False):
+    """``AttachmentService.process_ai_result(...)`` 的返回 shape。
+
+    total=False:所有字段 optional —— 不同 provider 路径 / 降级路径返回的 keyset 不同。
+    ``status`` 是 ``UploadStatus`` 字面量四选一,IDE 会针对赋值字面量 typo 报错。
+    """
+    attachment_id: str
+    display_url: str
+    cloud_url: str
+    status: UploadStatus
+    task_id: Optional[str]
+    file_uri: Optional[str]
+    google_file_uri: Optional[str]
+    mime_type: str
+    filename: str
+    session_id: str
+    message_id: str
+    user_id: str
 from sqlalchemy.orm import Session
 from datetime import datetime
 import base64
@@ -170,7 +196,7 @@ class AttachmentService:
         provider_file_name: Optional[str] = None,
         provider_file_uri: Optional[str] = None,
         gcs_uri: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> ProcessAIResultDict:
         """
         处理AI返回的图片URL
 

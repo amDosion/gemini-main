@@ -15,7 +15,7 @@
 """
 from fastapi import APIRouter, HTTPException, Request, Depends, Query
 from pydantic import BaseModel, ConfigDict
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, TypedDict
 from sqlalchemy.orm import Session
 import logging
 
@@ -29,7 +29,7 @@ from ...core.provider_param_whitelist import (
     validate_mode_param_keys,
 )
 from ...services.common.provider_factory import ProviderFactory
-from ...services.common.attachment_service import AttachmentService
+from ...services.common.attachment_service import AttachmentService, UploadStatus
 from ...utils.attachment_handler import is_base64_url, is_blob_url, is_http_url
 from ...services.common.mode_controls_catalog import validate_params_with_catalog
 from ...services.common.model_capabilities import build_provider_mode_capabilities
@@ -50,6 +50,25 @@ logger.propagate = True
 router = APIRouter(prefix="/api/modes", tags=["modes"])
 
 
+class _PersistOverlayDict(TypedDict, total=False):
+    """``_persist_ai_media_with_fallback`` 成功路径返回的 response overlay shape。
+
+    所有字段 optional —— 不同 AI 模式(image/video/audio/sidecar)写出的 keyset 略不同。
+    ``upload_status`` 是 ``UploadStatus`` 字面量,IDE 会针对 typo 报错。
+    """
+    url: str
+    attachment_id: str
+    upload_status: UploadStatus
+    task_id: Optional[str]
+    mime_type: str
+    filename: str
+    session_id: str
+    message_id: str
+    user_id: str
+    cloud_url: str
+    file_uri: str
+
+
 async def _persist_ai_media_with_fallback(
     attachment_service: Any,
     *,
@@ -64,7 +83,7 @@ async def _persist_ai_media_with_fallback(
     log_label: str = "媒体",
     log_with_traceback: bool = True,
     **persist_extra: Any,
-) -> Optional[Dict[str, Any]]:
+) -> Optional[_PersistOverlayDict]:
     """
     调用 attachment_service.process_ai_result 并构造 response overlay。
 
@@ -85,7 +104,7 @@ async def _persist_ai_media_with_fallback(
             filename=filename,
             **persist_extra,
         )
-        overlay: Dict[str, Any] = {
+        overlay: _PersistOverlayDict = {
             "url": processed["display_url"],
             "attachment_id": processed["attachment_id"],
             "upload_status": processed["status"],
