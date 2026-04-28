@@ -127,25 +127,31 @@ export const useModels = (
     setIsLoadingModels(false);
   }, [configReady, savedModelsFingerprint]);
 
-  // Provider/profile 变化时加载完整模型列表（用于模式导航与 provider 级模型池）。
+  // ✅ B-4: 合并 "all-models" 和 "mode-models" 两个 effect 为单个 effect,
+  // 一次 Promise.all 同时拉两份 payload,统一 setState,避免双请求 + 双 re-render。
   useEffect(() => {
     if (!configReady) {
       setAvailableModels([]);
       setModeCatalog([]);
+      setModeModels([]);
+      setModeDefaultModelId(null);
       setCurrentModelId('');
-      // ✅ configReady=false 时不更新 prev ref（保持 null），
+      setIsLoadingModels(false);
+      // configReady=false 时不更新 prev ref(保持 null),
       // 这样首次 configReady=true 时不会误判为"变更"
       return;
     }
 
-    // ✅ 首次 configReady=true：prev ref 为 null，这是"初始化"而非"变更"
+    // 首次 configReady=true: prev ref 为 null,这是"初始化"而非"变更"
     const isFirstActivation = prevProviderIdRef.current === null;
     const providerChanged = !isFirstActivation && prevProviderIdRef.current !== providerId;
     const profileChanged = !isFirstActivation && prevProfileCacheKeyRef.current !== profileCacheKey;
 
-    // 更新 prev ref
+    // 更新两组 prev ref(原本由两个 effect 各管一份,合并后一并更新)
     prevProviderIdRef.current = providerId;
     prevProfileCacheKeyRef.current = profileCacheKey;
+    prevModeProviderIdRef.current = providerId;
+    prevModeProfileCacheKeyRef.current = profileCacheKey;
 
     if (providerChanged) {
       userSelectedModelRef.current = false;
@@ -156,105 +162,73 @@ export const useModels = (
       llmService.clearModelCache();
     }
 
-    // ✅ 首次激活：如果 init 数据已提供完整模型列表和 modeCatalog，跳过 API 请求
+    // 首次激活快路径: init 数据已含 all-models + modeCatalog + chat-models → 跳过 fetch
     if (isFirstActivation) {
       const hasInitAllModels = normalizedSavedModels.length > 0;
       const hasInitModeCatalog = normalizedInitialModeCatalog.length > 0;
-      if (hasInitAllModels && hasInitModeCatalog) {
+      const hasInitChatModels = appMode === 'chat' && normalizedInitialChatModels.length > 0;
+      if (hasInitAllModels && hasInitModeCatalog && hasInitChatModels) {
+        setModeModels(normalizedInitialChatModels);
+        setModeDefaultModelId(initialDefaultModelId);
+        setIsLoadingModels(false);
         return;
       }
-      // init 数据不完整，回退到正常请求
+      // init 数据不完整,回退到正常请求
     }
 
     let cancelled = false;
-    const requestId = ++allRequestSeqRef.current;
+    const allRequestId = ++allRequestSeqRef.current;
+    const modeRequestId = ++modeRequestSeqRef.current;
 
-    const loadAllModels = async () => {
-      try {
-        const useCache = !(providerChanged || profileChanged);
-        const payload = await llmService.getAvailableModelsPayload(useCache);
-        const models = normalizeModels(payload.models);
-        if (cancelled || requestId !== allRequestSeqRef.current) return;
-        setAvailableModels(models);
-        setModeCatalog(normalizeModeCatalog(payload.modeCatalog));
-      } catch (error) {
-        if (!cancelled && requestId === allRequestSeqRef.current) {
-          setAvailableModels([]);
-          setModeCatalog([]);
-        }
-      }
-    };
-
-    loadAllModels();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [configReady, providerId, profileCacheKey]);
-
-  // 当前 mode 的模型列表完全由后端按 provider 模型集合 + mode 过滤返回。
-  useEffect(() => {
-    if (!configReady) {
-      setModeModels([]);
-      setModeDefaultModelId(null);
-      setIsLoadingModels(false);
-      // ✅ 同样不更新 prev ref
-      return;
-    }
-
-    // ✅ 首次 configReady=true：prev ref 为 null
-    const isFirstModeActivation = prevModeProviderIdRef.current === null;
-    const modeProviderChanged =
-      !isFirstModeActivation && prevModeProviderIdRef.current !== providerId;
-    const modeProfileChanged =
-      !isFirstModeActivation && prevModeProfileCacheKeyRef.current !== profileCacheKey;
-
-    prevModeProviderIdRef.current = providerId;
-    prevModeProfileCacheKeyRef.current = profileCacheKey;
-
-    // ✅ 首次激活 + chat 模式：如果 init 数据已提供 chatModels，直接使用
-    if (isFirstModeActivation && appMode === 'chat' && normalizedInitialChatModels.length > 0) {
-      setModeModels(normalizedInitialChatModels);
-      setModeDefaultModelId(initialDefaultModelId);
-      setIsLoadingModels(false);
-      return;
-    }
-
-    let cancelled = false;
-    const requestId = ++modeRequestSeqRef.current;
-
-    // 模式切换时立即清空旧模式模型，避免展示/使用陈旧模型。
+    // 模式切换时立即清空旧模式模型,避免展示/使用陈旧模型
     setIsLoadingModels(true);
     setModeModels([]);
     setModeDefaultModelId(null);
 
-    const loadModeModels = async () => {
+    const shouldBypassCache = providerChanged || profileChanged;
+
+    const loadModels = async () => {
       try {
-        // provider/profile 切换后的首轮模式请求绕过缓存，避免窗口期读到旧模型列表
-        const shouldBypassCache = modeProviderChanged || modeProfileChanged;
-        const payload = await llmService.getAvailableModelsPayload(!shouldBypassCache, appMode);
-        const models = normalizeModels(payload.models);
-        if (cancelled || requestId !== modeRequestSeqRef.current) return;
-        setModeModels(models);
-        setModeDefaultModelId(payload.defaultModelId || null);
+        const [allPayload, modePayload] = await Promise.all([
+          llmService.getAvailableModelsPayload(!shouldBypassCache),
+          llmService.getAvailableModelsPayload(!shouldBypassCache, appMode),
+        ]);
+        if (
+          cancelled ||
+          allRequestId !== allRequestSeqRef.current ||
+          modeRequestId !== modeRequestSeqRef.current
+        ) {
+          return;
+        }
+        // 一轮 batched setState
+        setAvailableModels(normalizeModels(allPayload.models));
+        setModeCatalog(normalizeModeCatalog(allPayload.modeCatalog));
+        setModeModels(normalizeModels(modePayload.models));
+        setModeDefaultModelId(modePayload.defaultModelId || null);
       } catch (error) {
-        if (!cancelled && requestId === modeRequestSeqRef.current) {
+        if (
+          !cancelled &&
+          allRequestId === allRequestSeqRef.current &&
+          modeRequestId === modeRequestSeqRef.current
+        ) {
+          setAvailableModels([]);
+          setModeCatalog([]);
           setModeModels([]);
           setModeDefaultModelId(null);
         }
       } finally {
-        if (!cancelled && requestId === modeRequestSeqRef.current) {
+        if (!cancelled && modeRequestId === modeRequestSeqRef.current) {
           setIsLoadingModels(false);
         }
       }
     };
 
-    loadModeModels();
+    loadModels();
 
     return () => {
       cancelled = true;
     };
-  }, [configReady, providerId, appMode, profileCacheKey, savedModelsFingerprint]);
+  }, [configReady, providerId, profileCacheKey, appMode]);
 
   // 当前模式模型（由后端按 mode 过滤返回）
   const visibleModels = useMemo(() => {

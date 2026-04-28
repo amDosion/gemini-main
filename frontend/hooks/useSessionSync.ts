@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useRef, Dispatch, SetStateAction } from 'react';
 import { ChatSession, Message, ModelConfig, AppMode } from '../types/types';
 import { llmService } from '../services/llmService';
@@ -16,7 +15,7 @@ interface UseSessionSyncProps {
 /**
  * 会话同步 Hook
  * 处理会话切换时的消息加载和模式恢复
- * 
+ *
  * ✅ 支持按需加载消息：如果 session.messages 为空，调用 /api/sessions/{session_id} 加载完整消息（不能分页）
  */
 export const useSessionSync = ({
@@ -24,7 +23,7 @@ export const useSessionSync = ({
   sessions,
   activeModelConfig,
   setMessages,
-  setAppMode
+  setAppMode,
 }: UseSessionSyncProps) => {
   const prevSessionIdRef = useRef<string | null>(null);
   const prevModelConfigRef = useRef<typeof activeModelConfig>(undefined);
@@ -35,6 +34,8 @@ export const useSessionSync = ({
   const loadingSessionIdRef = useRef<string | null>(null);
   const fetchRequestSeqRef = useRef(0);
   const fetchAbortControllerRef = useRef<AbortController | null>(null);
+  // ✅ B-9: 最后一次成功 fetch 过 messages 的 sessionId,避免首帧抖动重复 fetch
+  const lastFetchedSessionRef = useRef<string | null>(null);
 
   // Sync sessions to ref
   useEffect(() => {
@@ -73,7 +74,7 @@ export const useSessionSync = ({
   useEffect(() => {
     if (currentSessionId) {
       // Use sessionsRef.current instead of getSession to avoid unnecessary triggers
-      const session = sessionsRef.current.find(s => s.id === currentSessionId);
+      const session = sessionsRef.current.find((s) => s.id === currentSessionId);
       if (session) {
         // Only load messages when session actually switches
         const isSessionSwitch = prevSessionIdRef.current !== currentSessionId;
@@ -92,7 +93,7 @@ export const useSessionSync = ({
               if (storedMode) {
                 setAppMode(storedMode as AppMode);
               } else {
-                const lastMsg = [...session.messages].reverse().find(m => m.mode);
+                const lastMsg = [...session.messages].reverse().find((m) => m.mode);
                 const restoredMode = lastMsg?.mode || 'chat';
                 setAppMode(restoredMode as AppMode);
               }
@@ -106,6 +107,11 @@ export const useSessionSync = ({
             }
           } else {
             // ✅ 会话没有消息，按需加载（完整消息，不能分页）
+            // ✅ B-9: 同一 sessionId 已 fetch 过则跳过,避免首帧抖动重复请求
+            if (lastFetchedSessionRef.current === currentSessionId) {
+              prevSessionIdRef.current = currentSessionId;
+              return;
+            }
             if (!loadingMessagesRef.current.has(currentSessionId)) {
               fetchRequestSeqRef.current += 1;
               const requestSeq = fetchRequestSeqRef.current;
@@ -115,8 +121,11 @@ export const useSessionSync = ({
               loadingMessagesRef.current.add(currentSessionId);
               loadingSessionIdRef.current = currentSessionId;
 
-              apiClient.get<ChatSession>(`/api/sessions/${currentSessionId}`, { signal: abortController.signal })
-                .then(fullSession => {
+              apiClient
+                .get<ChatSession>(`/api/sessions/${currentSessionId}`, {
+                  signal: abortController.signal,
+                })
+                .then((fullSession) => {
                   const isStaleRequest =
                     requestSeq !== fetchRequestSeqRef.current ||
                     currentSessionIdRef.current !== currentSessionId;
@@ -125,18 +134,20 @@ export const useSessionSync = ({
                   }
 
                   // ✅ 更新 sessionsRef 中的会话数据
-                  const sessionIndex = sessionsRef.current.findIndex(s => s.id === currentSessionId);
+                  const sessionIndex = sessionsRef.current.findIndex(
+                    (s) => s.id === currentSessionId
+                  );
                   if (sessionIndex !== -1) {
                     // Immutable update instead of direct mutation
-        const updatedSessions = [...sessionsRef.current];
-        updatedSessions[sessionIndex] = fullSession;
-        sessionsRef.current = updatedSessions;
+                    const updatedSessions = [...sessionsRef.current];
+                    updatedSessions[sessionIndex] = fullSession;
+                    sessionsRef.current = updatedSessions;
                   }
-                  
+
                   // ✅ 设置消息和模式
                   const fullMessages = fullSession.messages || [];
                   setMessages(fullMessages);
-                  
+
                   // 检查是否跳过 mode 恢复
                   if (skipModeRestoreFlag.current) {
                     skipModeRestoreFlag.current = false;
@@ -145,7 +156,7 @@ export const useSessionSync = ({
                     if (storedMode) {
                       setAppMode(storedMode as AppMode);
                     } else {
-                      const lastMsg = [...fullMessages].reverse().find(m => m.mode);
+                      const lastMsg = [...fullMessages].reverse().find((m) => m.mode);
                       const restoredMode = lastMsg?.mode || 'chat';
                       setAppMode(restoredMode as AppMode);
                     }
@@ -157,11 +168,11 @@ export const useSessionSync = ({
                     llmService.startNewChat(fullMessages, latestModelConfig);
                     prevModelConfigRef.current = latestModelConfig;
                   }
+                  // ✅ B-9: 标记此 sessionId 已 fetch 过
+                  lastFetchedSessionRef.current = currentSessionId;
                 })
-                .catch(err => {
-                  const isAbortError =
-                    err?.name === 'AbortError' ||
-                    abortController.signal.aborted;
+                .catch((err) => {
+                  const isAbortError = err?.name === 'AbortError' || abortController.signal.aborted;
                   const isStaleRequest =
                     requestSeq !== fetchRequestSeqRef.current ||
                     currentSessionIdRef.current !== currentSessionId;
@@ -182,7 +193,7 @@ export const useSessionSync = ({
                 });
             }
           }
-          
+
           prevSessionIdRef.current = currentSessionId;
         }
 

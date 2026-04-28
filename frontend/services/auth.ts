@@ -1,7 +1,12 @@
 /**
  * 认证服务 - 处理用户认证相关的 API 调用
  */
-import { broadcastTokenRefresh, broadcastLogout, listenTokenRefresh, listenLogout } from './authSync';
+import {
+  broadcastTokenRefresh,
+  broadcastLogout,
+  listenTokenRefresh,
+  listenLogout,
+} from './authSync';
 import {
   getAccessToken,
   getRefreshToken,
@@ -36,7 +41,7 @@ export interface User {
   createdAt?: string;
   updatedAt?: string;
   lastLoginAt?: string;
-  hasActiveProfile?: boolean;  // ✅ 新增：是否有活跃的配置文件
+  hasActiveProfile?: boolean; // ✅ 新增：是否有活跃的配置文件
 }
 
 export interface LoginResponse {
@@ -45,7 +50,7 @@ export interface LoginResponse {
   refreshToken?: string;
   tokenType?: string;
   expiresIn: number;
-  hasActiveProfile?: boolean;  // ✅ 新增：是否有活跃的配置文件
+  hasActiveProfile?: boolean; // ✅ 新增：是否有活跃的配置文件
 }
 
 export interface RegisterData {
@@ -87,7 +92,6 @@ function isTokenExpired(token: string): boolean {
 function getHeaders(includeJson = true): HeadersInit {
   return withAuthorization(includeJson ? { 'Content-Type': 'application/json' } : {});
 }
-
 
 // ============================================
 // AuthService 类
@@ -261,13 +265,9 @@ class AuthService {
 
   /**
    * 用户登出
+   * ✅ C-9: 删除空 try/catch 死代码;cookie 清除由后端 clear_auth_cookies 处理
    */
   async logout(): Promise<void> {
-    try {
-      // ✅ 清除 Cookie
-    } catch (e) {
-      // 忽略 Cookie 清除错误
-    }
     try {
       const response = await fetchWithTimeout(`${this.baseUrl}/logout`, {
         method: 'POST',
@@ -326,60 +326,65 @@ class AuthService {
 
   /**
    * 刷新令牌（改进版 - 支持 Token 轮换和有效性检查）
+   * ✅ C-4: 区分语义
+   *   - return true  → 刷新成功
+   *   - return false → 服务器明确拒绝(401/403/422),refresh_token 已失效,caller 应清 token
+   *   - throw error  → 网络错误/超时/其它,caller 不清 token,允许后续重试
    */
   async refreshToken(): Promise<boolean> {
-    try {
-      const accessToken = getAccessToken();
-      const refreshToken = getRefreshToken();
-      
-      if (!refreshToken) {
-        return false;
-      }
-      
-      // ✅ 检查 access_token 是否真的需要刷新
-      if (accessToken && !isTokenExpired(accessToken)) {
-        return true;
-      }
+    const accessToken = getAccessToken();
+    const refreshToken = getRefreshToken();
 
-      // 发送 refresh_token
-      const response = await fetchWithTimeout(`${this.baseUrl}/refresh`, {
-        method: 'POST',
-        headers: withAuthorization(
-          {
-            'Content-Type': 'application/json',
-          },
-          { token: refreshToken }
-        ),
-      });
-      
-      if (response.ok) {
-        const result = await readJsonResponse<any>(response);
-
-        // ✅ 更新 access_token
-        if (result.accessToken) {
-          setAccessToken(result.accessToken);
-          // ✅ 同时更新 Cookie
-            }
-
-        // ✅ 更新 refresh_token（Token 轮换）
-        if (result.refreshToken) {
-          setRefreshToken(result.refreshToken);
-          // ✅ 广播给其他标签页
-          broadcastTokenRefresh(result.accessToken, result.refreshToken);
-        }
-
-        // ✅ 更新配置状态（优化：减少前端初始化请求）
-        if (result.hasActiveProfile !== undefined) {
-          localStorage.setItem('has_active_profile', String(result.hasActiveProfile));
-        }
-
-        return true;
-      }
-      
-      return false;
-    } catch {
+    if (!refreshToken) {
       return false;
     }
+
+    // ✅ 检查 access_token 是否真的需要刷新
+    if (accessToken && !isTokenExpired(accessToken)) {
+      return true;
+    }
+
+    // 发送 refresh_token —— 网络错误向上抛,由 caller 决定是否清 token
+    const response = await fetchWithTimeout(`${this.baseUrl}/refresh`, {
+      method: 'POST',
+      headers: withAuthorization(
+        {
+          'Content-Type': 'application/json',
+        },
+        { token: refreshToken }
+      ),
+    });
+
+    if (response.ok) {
+      const result = await readJsonResponse<any>(response);
+
+      // ✅ 更新 access_token
+      if (result.accessToken) {
+        setAccessToken(result.accessToken);
+      }
+
+      // ✅ 更新 refresh_token（Token 轮换）
+      if (result.refreshToken) {
+        setRefreshToken(result.refreshToken);
+        // ✅ 广播给其他标签页
+        broadcastTokenRefresh(result.accessToken, result.refreshToken);
+      }
+
+      // ✅ 更新配置状态（优化：减少前端初始化请求）
+      if (result.hasActiveProfile !== undefined) {
+        localStorage.setItem('has_active_profile', String(result.hasActiveProfile));
+      }
+
+      return true;
+    }
+
+    // 仅在服务器明确拒绝(401/403/422)时返回 false,其它状态码视为异常
+    if (response.status === 401 || response.status === 403 || response.status === 422) {
+      return false;
+    }
+
+    // 5xx 等错误抛出,允许 caller 重试而不清 token
+    throw new Error(`Refresh token request failed with status ${response.status}`);
   }
 
   /**
@@ -392,8 +397,8 @@ class AuthService {
       body: JSON.stringify({
         currentPassword: data.currentPassword,
         newPassword: data.newPassword,
-        confirmPassword: data.confirmPassword
-      })
+        confirmPassword: data.confirmPassword,
+      }),
     });
 
     if (!response.ok) {

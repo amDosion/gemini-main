@@ -1,4 +1,3 @@
-
 import { useEffect } from 'react';
 import { llmService } from '../services/llmService';
 import { ApiProtocol } from '../types/types';
@@ -12,26 +11,10 @@ interface InitData {
  * LLM Service 初始化 Hook
  * 管理 llmService 的配置更新
  */
-export const useLLMService = (
-  initData?: InitData,
-  activeProfile?: ConfigProfile | null
-) => {
-  // 从 initData 初始化 llmService
-  useEffect(() => {
-    if (initData?.activeProfile) {
-      llmService.setConfig(
-        initData.activeProfile.apiKey,
-        initData.activeProfile.baseUrl,
-        initData.activeProfile.protocol as ApiProtocol,
-        initData.activeProfile.providerId
-      );
-    } else if (initData && !initData.activeProfile) {
-      // 用户未配置，清空 llmService
-      llmService.setConfig('', '', null, '');
-    }
-  }, [initData]);
-
-  // 当 activeProfile 变化时更新 llmService
+export const useLLMService = (_initData?: InitData, activeProfile?: ConfigProfile | null) => {
+  // ✅ B-5: 删除原 [initData] effect,只以 activeProfile 为单一 source-of-truth。
+  // useSettings 已在 activeProfile 变化时同步 llmService.setConfig,这里仅保留一处。
+  // _initData 保留参数以维持调用方签名兼容(App.tsx 可不必同步改)。
   useEffect(() => {
     if (activeProfile) {
       llmService.setConfig(
@@ -40,6 +23,9 @@ export const useLLMService = (
         (activeProfile.protocol as ApiProtocol) || null,
         activeProfile.providerId || ''
       );
+    } else if (activeProfile === null) {
+      // 显式 null = 用户未配置,清空 llmService
+      llmService.setConfig('', '', null, '');
     }
   }, [activeProfile]);
 };

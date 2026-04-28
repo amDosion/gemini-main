@@ -2,12 +2,17 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { InitData } from '../types/types';
 import { apiClient } from '../services/apiClient';
 import { LLMFactory } from '../services/LLMFactory';
+import { reportError } from '../utils/globalErrorHandler';
 
 /**
  * Return interface for the useInitData hook.
  */
 interface UseInitDataReturn {
   initData: InitData | null;
+  // ✅ B-2: 暴露独立 critical / non-critical 切片,下游 hook 可仅订阅关心的部分,
+  // 避免合并 memo 引用变化触发整条 useSettings/usePersonas/useStorageConfigs effect 链。
+  criticalData: Partial<InitData> | null;
+  nonCriticalData: Partial<InitData> | null;
   isLoading: boolean;
   error: Error | null;
   isConfigReady: boolean; // true when data is loaded (even if empty or failed)
@@ -38,7 +43,7 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const retry = useCallback(() => {
-    setRetryTrigger(count => count + 1);
+    setRetryTrigger((count) => count + 1);
   }, []);
 
   useEffect(() => {
@@ -52,7 +57,7 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
       setNonCriticalData(null);
       setIsLoading(false);
       setError(null);
-      setIsConfigReady(true);  // ✅ 标记为已就绪（即使没有加载数据）
+      setIsConfigReady(true); // ✅ 标记为已就绪（即使没有加载数据）
       return;
     }
 
@@ -71,8 +76,10 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
 
         try {
           // ✅ 步骤 1：先加载关键数据（阻塞渲染）
-          const critical = await apiClient.get<Partial<InitData>>('/api/init/critical', { signal: abortControllerRef.current?.signal });
-          
+          const critical = await apiClient.get<Partial<InitData>>('/api/init/critical', {
+            signal: abortControllerRef.current?.signal,
+          });
+
           // Check if component is still mounted before updating state
           if (!isMountedRef.current) {
             return;
@@ -80,28 +87,36 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
 
           setCriticalData(critical);
           setError(null);
-          setIsConfigReady(true);  // ✅ 移到这里：关键数据加载成功后立即设置
-          
+          setIsConfigReady(true); // ✅ 移到这里：关键数据加载成功后立即设置
+
           // ✅ 步骤 2：关键数据加载完成后，立即渲染
           // Header 可以显示提供商和模型选择器
           // chat 模式可以正常工作
-          
+
           // ✅ 步骤 3：后台加载非关键数据（不阻塞渲染）
-          apiClient.get<Partial<InitData>>('/api/init/non-critical')
-            .then(nonCritical => {
+          // C-2 + B-6: 传递 abort signal,组件卸载后取消;失败 reportError 而非静默吞
+          apiClient
+            .get<Partial<InitData>>('/api/init/non-critical', {
+              signal: abortControllerRef.current?.signal,
+            })
+            .then((nonCritical) => {
               if (isMountedRef.current) {
                 setNonCriticalData(nonCritical);
               }
             })
-            .catch(err => {
-              // 非关键数据失败不影响主流程
+            .catch((err) => {
+              // AbortError 和组件卸载后的请求都正常忽略
+              if (err?.name === 'AbortError' || !isMountedRef.current) {
+                return;
+              }
+              reportError('useInitData.non-critical', err);
             });
-          
+
           // ✅ 步骤 4：后台异步初始化 LLMFactory（不阻塞渲染）
           LLMFactory.initialize();
-          
+
           // Data successfully fetched, exit the retry loop.
-          return; 
+          return;
         } catch (e) {
           // Check if component is still mounted
           if (!isMountedRef.current) {
@@ -110,20 +125,29 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
 
           const error = e as Error;
 
+          // ✅ C-7: 中止/取消错误直接退出,不进重试 loop
+          if (
+            error?.name === 'AbortError' ||
+            error?.message === 'Request cancelled by user' ||
+            error?.message === 'The operation was aborted.'
+          ) {
+            return;
+          }
+
           // Don't retry on authentication errors (401)
           if (error.message === 'Unauthorized') {
             setError(error);
-            setIsConfigReady(true);  // ✅ 错误情况下也设置为 true，让 UI 显示错误
+            setIsConfigReady(true); // ✅ 错误情况下也设置为 true，让 UI 显示错误
             return; // Exit without retry
           }
 
           // Retry on other errors
           if (attempt < MAX_RETRIES) {
             const delay = BASE_RETRY_DELAY * Math.pow(2, attempt);
-            await new Promise(resolve => setTimeout(resolve, delay));
+            await new Promise((resolve) => setTimeout(resolve, delay));
           } else {
             setError(error);
-            setIsConfigReady(true);  // ✅ 重试耗尽后设置为 true，让 UI 显示错误
+            setIsConfigReady(true); // ✅ 重试耗尽后设置为 true，让 UI 显示错误
           }
         }
       }
@@ -144,7 +168,7 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
         abortControllerRef.current.abort();
       }
     };
-  }, [shouldLoad, retryTrigger]);  // ✅ 修改依赖：shouldLoad 替代 isAuthenticated
+  }, [shouldLoad, retryTrigger]); // ✅ 修改依赖：shouldLoad 替代 isAuthenticated
 
   // ✅ 合并关键数据和非关键数据
   const initData = useMemo(() => {
@@ -159,9 +183,9 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
       activeStorageId: nonCriticalData?.activeStorageId || null,
       imagenConfig: nonCriticalData?.imagenConfig || null,
       sessionsTotal: nonCriticalData?.sessionsTotal || 0,
-      sessionsHasMore: nonCriticalData?.sessionsHasMore || false
+      sessionsHasMore: nonCriticalData?.sessionsHasMore || false,
     } as InitData;
   }, [criticalData, nonCriticalData]);
 
-  return { initData, isLoading, error, isConfigReady, retry };
+  return { initData, criticalData, nonCriticalData, isLoading, error, isConfigReady, retry };
 };

@@ -58,6 +58,8 @@ import {
 import { ToastProvider, useToastContext } from './contexts/ToastContext';
 import { startTelemetrySpan } from './services/frontendTelemetry';
 import { resolveModelForModeSend } from './utils/modeModelSelection';
+import { apiClient } from './services/apiClient';
+import { authService } from './services/auth';
 
 const AppContent: React.FC = () => {
   // --- Router Hooks ---
@@ -85,8 +87,11 @@ const AppContent: React.FC = () => {
   const shouldLoadInitData = isAuthenticated;
 
   // --- 统一初始化数据 ---
+  // ✅ B-2: 使用独立的 criticalData / nonCriticalData,避免合并 memo 引用变化触发下游
+  // useSettings / usePersonas / useStorageConfigs / useModels 整条 effect 链。
   const {
-    initData,
+    criticalData,
+    nonCriticalData,
     isLoading: isInitLoading,
     error: initError,
     isConfigReady,
@@ -108,6 +113,19 @@ const AppContent: React.FC = () => {
     setIsPersonaViewOpen(false);
   }, [appMode]);
 
+  // ✅ C-1: 挂载时一次性注册 onUnauthorized 回调,避免 token 失效后 UI 卡死
+  useEffect(() => {
+    apiClient.setOnUnauthorized(() => {
+      // 异步 logout (清 token + 广播);不 await,确保即便后端 logout 失败也能跳转
+      authService.logout().catch(() => {
+        // 忽略后端登出错误,本地清理已在 logout finally 中完成
+      });
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
+    });
+  }, []);
+
   // --- Domain Hooks ---
   const {
     config,
@@ -121,12 +139,12 @@ const AppContent: React.FC = () => {
     activateProfile: originalActivateProfile,
     hiddenModelIds,
   } = useSettings(
-    initData
+    criticalData
       ? {
-          profiles: initData.profiles || [], // ✅ 确保不为 undefined
-          activeProfileId: initData.activeProfileId || null, // ✅ 确保不为 undefined
-          activeProfile: initData.activeProfile || null, // ✅ 确保不为 undefined
-          dashscopeKey: initData.dashscopeKey || '', // ✅ 确保不为 undefined
+          profiles: criticalData.profiles || [], // ✅ 确保不为 undefined
+          activeProfileId: criticalData.activeProfileId || null, // ✅ 确保不为 undefined
+          activeProfile: criticalData.activeProfile || null, // ✅ 确保不为 undefined
+          dashscopeKey: criticalData.dashscopeKey || '', // ✅ 确保不为 undefined
         }
       : undefined
   );
@@ -163,9 +181,9 @@ const AppContent: React.FC = () => {
     deletePersona,
     refreshPersonas,
   } = usePersonas(
-    initData
+    nonCriticalData
       ? {
-          personas: initData.personas,
+          personas: nonCriticalData.personas || [],
         }
       : undefined
   );
@@ -178,10 +196,10 @@ const AppContent: React.FC = () => {
     handleDeleteStorage,
     handleActivateStorage,
   } = useStorageConfigs(
-    initData
+    nonCriticalData
       ? {
-          storageConfigs: initData.storageConfigs,
-          activeStorageId: initData.activeStorageId,
+          storageConfigs: nonCriticalData.storageConfigs || [],
+          activeStorageId: nonCriticalData.activeStorageId ?? null,
         }
       : undefined
   );
@@ -215,22 +233,22 @@ const AppContent: React.FC = () => {
       return fromActiveProfile.filter((model) => model && typeof model.id === 'string');
     }
 
-    const fromInitCache = Array.isArray(initData?.cachedModels) ? initData.cachedModels : [];
+    const fromInitCache = Array.isArray(criticalData?.cachedModels) ? criticalData.cachedModels : [];
     return fromInitCache.filter((model) => model && typeof model.id === 'string');
-  }, [activeProfile?.savedModels, initData?.cachedModels]);
+  }, [activeProfile?.savedModels, criticalData?.cachedModels]);
   const initialModeCatalog = useMemo(() => {
-    return Array.isArray(initData?.cachedModeCatalog) ? initData.cachedModeCatalog : [];
-  }, [initData?.cachedModeCatalog]);
+    return Array.isArray(criticalData?.cachedModeCatalog) ? criticalData.cachedModeCatalog : [];
+  }, [criticalData?.cachedModeCatalog]);
   const initialChatModels = useMemo(() => {
-    const models = Array.isArray(initData?.cachedChatModels) ? initData.cachedChatModels : [];
+    const models = Array.isArray(criticalData?.cachedChatModels) ? criticalData.cachedChatModels : [];
     return models.filter((model) => model && typeof model.id === 'string');
-  }, [initData?.cachedChatModels]);
+  }, [criticalData?.cachedChatModels]);
   const initialDefaultModelId = useMemo(() => {
-    return initData?.cachedDefaultModelId || null;
-  }, [initData?.cachedDefaultModelId]);
+    return criticalData?.cachedDefaultModelId || null;
+  }, [criticalData?.cachedDefaultModelId]);
 
   // --- LLM Service 初始化 ---
-  useLLMService(initData, activeProfile);
+  useLLMService(undefined, activeProfile);
 
   // PDF 模板会在 PdfExtractView 组件中按需加载，无需预加载
 
@@ -279,10 +297,10 @@ const AppContent: React.FC = () => {
     loadMoreSessions,
   } = useSessions(
     appMode,
-    initData
+    nonCriticalData
       ? {
-          sessions: initData.sessions,
-          sessionsHasMore: initData.sessionsHasMore,
+          sessions: nonCriticalData.sessions || [],
+          sessionsHasMore: nonCriticalData.sessionsHasMore,
         }
       : undefined
   );
@@ -327,37 +345,30 @@ const AppContent: React.FC = () => {
     [appMode, baseHandleModeSwitch]
   );
 
+  // ✅ B-7: 50ms debounce — 路由抖动期间(连续多次 location 变化)只创建一个 span。
   useEffect(() => {
-    const span = startTelemetrySpan(
-      'app.route.render',
-      { path: location.pathname, search: location.search },
-      { category: 'navigation' }
-    );
-    let finished = false;
-    const finalize = () => {
-      if (finished) return;
-      finished = true;
-      span.end('ok');
-    };
-
-    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-      const rafId = window.requestAnimationFrame(finalize);
-      return () => {
-        if (typeof window.cancelAnimationFrame === 'function') {
-          window.cancelAnimationFrame(rafId);
-        }
-        if (!finished) {
-          span.end('error', { aborted: true }, { reason: 'route-updated-before-paint' });
-        }
+    const debounceId = globalThis.setTimeout(() => {
+      const span = startTelemetrySpan(
+        'app.route.render',
+        { path: location.pathname, search: location.search },
+        { category: 'navigation' }
+      );
+      let finished = false;
+      const finalize = () => {
+        if (finished) return;
+        finished = true;
+        span.end('ok');
       };
-    }
 
-    const timeoutId = globalThis.setTimeout(finalize, 0);
-    return () => {
-      globalThis.clearTimeout(timeoutId);
-      if (!finished) {
-        span.end('error', { aborted: true }, { reason: 'route-updated-before-paint' });
+      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(finalize);
+      } else {
+        globalThis.setTimeout(finalize, 0);
       }
+    }, 50);
+
+    return () => {
+      globalThis.clearTimeout(debounceId);
     };
   }, [location.pathname, location.search]);
 

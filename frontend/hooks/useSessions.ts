@@ -78,6 +78,15 @@ export const useSessions = (
   const [hasMoreSessions, setHasMoreSessions] = useState(false); // ✅ 是否还有更多会话
   const [isLoadingMore, setIsLoadingMore] = useState(false); // ✅ 是否正在加载更多
 
+  // ✅ B-3 / C-3: per-mode in-memory cache + race-guard
+  // - modeCacheRef: 最近一次 fetch 结果 + 时间戳,refresh 命中且未 stale 直接复用
+  // - refreshSeqRef: 单调 token,setSessions 前比对避免旧 mode 的 resolve 覆盖新 mode 数据
+  const modeCacheRef = useRef<
+    Partial<Record<AppMode, { sessions: ChatSession[]; timestamp: number }>>
+  >({});
+  const refreshSeqRef = useRef(0);
+  const MODE_CACHE_TTL_MS = 5_000;
+
   // ✅ 使用 ref 标记是否已经从 initialData 初始化过，避免无限循环
   const isInitializedFromPropsRef = useRef(false);
 
@@ -143,11 +152,43 @@ export const useSessions = (
   }, [cacheStatus.updateStatus]);
 
   // 刷新会话列表（强制从后端获取，按当前 appMode 过滤）
+  // ✅ B-3 / C-3: race-guard + per-mode cache
   const refreshSessions = useCallback(async () => {
+    const requestedMode = appMode;
+    const now = Date.now();
+
+    // 命中近期缓存(<5s)且 mode 一致,直接复用,不发请求
+    const cached = modeCacheRef.current[requestedMode];
+    if (cached && now - cached.timestamp < MODE_CACHE_TTL_MS) {
+      setSessions(cached.sessions);
+      const currentId = cacheManager.get<string | null>(CACHE_DOMAINS.CURRENT_SESSION_ID);
+      if (cached.sessions.length > 0) {
+        if (currentId === null) {
+          setCurrentSessionId(cached.sessions[0].id);
+        }
+      } else {
+        setCurrentSessionId(null);
+      }
+      return;
+    }
+
+    // 单调 token: 旧 fetch resolve 时若 seq 不匹配则丢弃
+    const seq = ++refreshSeqRef.current;
+
     try {
       setIsLoading(true);
-      const result = await db.getSessions(appMode);
+      const result = await db.getSessions(requestedMode);
+
+      // race-guard: mode 已切换或有更新的 fetch,丢弃本次结果
+      if (seq !== refreshSeqRef.current || requestedMode !== appMode) {
+        return;
+      }
+
       const preparedSessions = prepareSessions(result);
+      modeCacheRef.current[requestedMode] = {
+        sessions: preparedSessions,
+        timestamp: Date.now(),
+      };
       setSessions(preparedSessions);
       // Use updater to read current value for conditional logic
       const currentId = cacheManager.get<string | null>(CACHE_DOMAINS.CURRENT_SESSION_ID);
@@ -159,8 +200,6 @@ export const useSessions = (
         setCurrentSessionId(null);
       }
       // ✅ 使用 ref 调用 updateStatus，避免依赖 cacheStatus
-      // db.getSessions() 在数组对象上额外挂了 cache 元数据（JS 允许 array.foo = bar），
-      // 但 TS 声明的返回类型只到 ChatSession[]——这里 cast 仅修复类型，不改运行时。
       const cacheMeta = result as ChatSession[] & {
         fromCache?: boolean;
         isStale?: boolean;
@@ -172,7 +211,10 @@ export const useSessions = (
         cacheMeta.timestamp
       );
     } finally {
-      setIsLoading(false);
+      // 仅当本次请求仍是最新时清 loading
+      if (seq === refreshSeqRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [appMode, prepareSessions, setSessions, setCurrentSessionId]); // ✅ 移除 cacheStatus 依赖
 
@@ -209,10 +251,11 @@ export const useSessions = (
         updateSessions((prev) => [...prev, ...preparedSessions]);
         setHasMoreSessions(result.hasMore);
       } else {
+        // ✅ 业务返回空数组 → 真没了
         setHasMoreSessions(false);
       }
     } catch (error) {
-      setHasMoreSessions(false);
+      // ✅ C-6: 网络错误不要永久关闭分页;保持 hasMore=true 允许重试
     } finally {
       isLoadingMoreRef.current = false;
       setIsLoadingMore(false);
