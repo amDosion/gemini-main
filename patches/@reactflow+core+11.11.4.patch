@@ -11,3 +11,16 @@ index 0000000..1111111 100644
                  store.getState().onError?.('002', errorMessages['error002']());
              }
              typesKeysRef.current = typeKeys;
+diff --git a/node_modules/@reactflow/core/dist/esm/index.mjs b/node_modules/@reactflow/core/dist/esm/index.mjs
+index 0000000..2222222 100644
+--- a/node_modules/@reactflow/core/dist/esm/index.mjs
++++ b/node_modules/@reactflow/core/dist/esm/index.mjs
+@@ -3738,7 +3738,7 @@ function useNodeOrEdgeTypes(nodeOrEdgeTypes, createTypes) {
+     const typesParsed = useMemo(() => {
+         if (process.env.NODE_ENV === 'development') {
+             const typeKeys = Object.keys(nodeOrEdgeTypes);
+-            if (shallow(typesKeysRef.current, typeKeys)) {
++            if (!shallow(typesKeysRef.current, typeKeys) && typesKeysRef.current !== null) {
+                 store.getState().onError?.('002', errorMessages['error002']());
+             }
+             typesKeysRef.current = typeKeys;
