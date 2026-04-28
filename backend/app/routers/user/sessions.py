@@ -477,15 +477,41 @@ async def create_or_update_session(
                 if existing_att and existing_att.url and is_http_url(existing_att.url):
                     authoritative_url = existing_att.url
             
-            # 处理前端发送的 URL
+            # 处理前端发送的 URL（Sprint 2 PR-1: 后端权威清洗）
             frontend_url = att.get("url", "")
-            if not frontend_url or is_blob_url(frontend_url) or is_base64_url(frontend_url):
-                # 前端 URL 是临时的，使用权威 URL
-                final_url = authoritative_url or frontend_url
+            frontend_url_is_temp = (
+                not frontend_url or is_blob_url(frontend_url) or is_base64_url(frontend_url)
+            )
+            if frontend_url_is_temp:
+                # 前端 URL 是临时的(blob:/data:);有 authoritative_url 用它,否则强制清空。
+                # 不能把 base64 字符串写入 url 字段——会污染 DB 且超长。
+                final_url = authoritative_url if authoritative_url else ""
             else:
-                # 前端发送的是永久 URL，直接使用
+                # 前端发送的是 HTTP URL,直接使用
                 final_url = frontend_url
-            
+
+            # upload_status 权威推导(覆盖前端可能传的 'completed' + blob 这类不一致):
+            # - final_url 是 http:// 且有 completed task → 'completed'
+            # - final_url 是 http:// 但无 task → 信任前端 status
+            # - 否则 → 'pending'
+            if (task and task.target_url) and final_url and is_http_url(final_url):
+                derived_upload_status = "completed"
+            elif final_url and is_http_url(final_url):
+                derived_upload_status = att.get("upload_status", "pending")
+            else:
+                derived_upload_status = "pending"
+
+            # temp_url 权威清洗:仅保留有效的非临时 HTTP URL
+            frontend_temp_url = att.get("temp_url") or None
+            if frontend_temp_url:
+                temp_is_invalid = (
+                    not is_http_url(frontend_temp_url)
+                    or "/temp/" in frontend_temp_url
+                    or "expires=" in frontend_temp_url
+                )
+                if temp_is_invalid:
+                    frontend_temp_url = None
+
             # upsert 附件表（从预加载字典查找）
             attachment = _preloaded_atts.get((msg_id, att_id))
             if not attachment:
@@ -497,9 +523,9 @@ async def create_or_update_session(
                     mime_type=att.get("mime_type"),
                     name=att.get("name"),
                     url=final_url,
-                    temp_url=att.get("temp_url"),
+                    temp_url=frontend_temp_url,
                     file_uri=att.get("file_uri"),
-                    upload_status=att.get("upload_status", "pending"),
+                    upload_status=derived_upload_status,
                     upload_task_id=task.id if task else None,
                     google_file_uri=att.get("google_file_uri"),
                     google_file_expiry=att.get("google_file_expiry"),
