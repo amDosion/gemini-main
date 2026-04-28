@@ -1562,8 +1562,17 @@ async def handle_mode(
                         prefix = "expanded"
                     else:
                         prefix = "edited"
+
+                    # Provider 已经创建过 attachment(如 conversational_image_edit
+                    # 在 service 层已 INSERT)→ 跳过避免重复 attachment_id
+                    if isinstance(img, dict) and (img.get("attachment_id") or img.get("attachmentId")):
+                        logger.info(f"[Modes] ✅ [步骤7] 第 {idx+1} 张图片跳过持久化: provider 已返回 attachment_id")
+                        processed_images.append(img)
+                        continue
+
                     logger.debug(f"[Modes]     - 调用 AttachmentService.process_ai_result()...")
-                    # Bug E 修复:每张图独立 try/except — 一张失败不应让整个批次响应 5xx
+                    # 单张失败不让整批 5xx —— 失败时降级返回 fallback dict,
+                    # 前端 processMediaResult 已处理无 attachmentId 的 graceful path
                     try:
                         processed = await attachment_service.process_ai_result(
                             ai_url=ai_url,
@@ -1576,30 +1585,30 @@ async def handle_mode(
                         )
 
                         logger.info(f"[Modes] ✅ [步骤7] 第 {idx+1} 张图片处理完成:")
-                        logger.debug(f"[Modes]     - attachment_id: {processed['attachment_id']}")  # ✅ 不截断 ID，显示完整 ID
+                        logger.debug(f"[Modes]     - attachment_id: {processed['attachment_id']}")
                         logger.debug(f"[Modes]     - status: {processed['status']}")
-                        logger.debug(f"[Modes]     - task_id: {processed.get('task_id') or 'None'}")  # ✅ 不截断 task_id，显示完整 ID
+                        logger.debug(f"[Modes]     - task_id: {processed.get('task_id') or 'None'}")
 
-                        # 构建响应格式（使用 snake_case，中间件会自动转换为 camelCase）
                         image_result = {
-                            "url": processed["display_url"],  # 显示URL（前端立即显示）
+                            "url": processed["display_url"],
                             "attachment_id": processed["attachment_id"],
                             "upload_status": processed["status"],
                             "task_id": processed["task_id"],
                             "mime_type": processed.get("mime_type") or mime_type,
                             "filename": processed.get("filename") or filename or f"{prefix}-{processed['attachment_id'][:8]}.png",
-                            # ✅ 新增：返回完整的元数据，供前端保存和后续 CONTINUITY LOGIC 使用
                             "session_id": processed.get("session_id") or session_id,
                             "message_id": processed.get("message_id") or message_id,
                             "user_id": processed.get("user_id") or user_id,
-                            "cloud_url": processed.get("cloud_url") or "",  # 云URL（空，待上传完成）
+                            "cloud_url": processed.get("cloud_url") or "",
                         }
                     except Exception as image_persist_err:
-                        logger.error(
-                            f"[Modes] ❌ [步骤7] 第 {idx+1} 张图片持久化失败,降级返回原始 img: {image_persist_err}",
-                            exc_info=True,
+                        # 不带 traceback —— N-image 批量失败时(如 storage 宕机)
+                        # 避免 N 份 ~30 行 traceback 淹没日志
+                        logger.warning(
+                            "[Modes] [步骤7] 第 %d 张图片持久化失败,降级 fallback: %s",
+                            idx + 1,
+                            image_persist_err,
                         )
-                        # 降级:返回原始 img(无 attachment_id),前端 Bug A fix(be5515f)已 graceful 处理
                         image_result = {
                             "url": ai_url,
                             "mime_type": mime_type,
@@ -1669,7 +1678,7 @@ async def handle_mode(
             if has_provider_attachment:
                 logger.info(f"[Modes] ✅ [步骤7] 跳过视频附件处理: Provider 已返回 attachment_id")
             elif session_id and message_id and attachment_source_url:
-                # Bug E 修复:try/except 隔离 — 200+ 秒视频生成不能因 DB/storage 临时故障 5xx
+                # 200+ 秒视频生成不能因 DB/storage 临时故障 5xx —— 失败降级保留原 result
                 try:
                     processed = await attachment_service.process_ai_result(
                         ai_url=attachment_source_url,
@@ -1720,7 +1729,7 @@ async def handle_mode(
                     sidecar_filename = str(sidecar.get("filename") or "").strip() or None
                     if not sidecar_url:
                         continue
-                    # Bug E 修复:每个 sidecar 独立 try/except — 一个 subtitle 失败不应让整个 video 响应 5xx
+                    # 每个 sidecar 独立隔离 —— 一个 subtitle 失败不让整个 video 响应 5xx
                     try:
                         processed_sidecar = await attachment_service.process_ai_result(
                             ai_url=sidecar_url,
@@ -1787,8 +1796,7 @@ async def handle_mode(
             if has_provider_attachment:
                 logger.info(f"[Modes] ✅ [步骤7] 跳过音频附件处理: Provider 已返回 attachment_id")
             elif session_id and message_id and ai_url:
-                # Bug E 修复:try/except 隔离 — process_ai_result 失败(DB/storage 临时故障)
-                # 不应让整个音频生成响应 5xx;降级返回原始 result,前端 Bug A fix 已能处理无 attachment_id
+                # 持久化失败降级返回原始 result —— 前端已处理无 attachment_id 的 graceful path
                 try:
                     processed = await attachment_service.process_ai_result(
                         ai_url=ai_url,
