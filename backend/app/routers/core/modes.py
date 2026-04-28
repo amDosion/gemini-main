@@ -17,9 +17,10 @@ from fastapi import APIRouter, HTTPException, Request, Depends, Query
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, Dict, Any, List, Tuple, TypedDict
 from sqlalchemy.orm import Session
+import asyncio
 import logging
 
-from ...core.database import get_db
+from ...core.database import get_db, SessionLocal
 from ...core.dependencies import require_current_user
 from ...core.credential_manager import get_provider_credentials
 from ...core.mode_method_mapper import get_service_method, is_streaming_mode, is_image_edit_mode
@@ -29,7 +30,12 @@ from ...core.provider_param_whitelist import (
     validate_mode_param_keys,
 )
 from ...services.common.provider_factory import ProviderFactory
-from ...services.common.attachment_service import AttachmentService, UploadStatus, safe_persist_ai_result
+from ...services.common.attachment_service import (
+    AttachmentService,
+    UploadStatus,
+    safe_persist_ai_result,
+    safe_persist_ai_result_concurrent,
+)
 from ...utils.attachment_handler import is_base64_url, is_blob_url, is_http_url
 from ...services.common.mode_controls_catalog import validate_params_with_catalog
 from ...services.common.model_capabilities import build_provider_mode_capabilities
@@ -98,6 +104,58 @@ async def _persist_ai_media_with_fallback(
         attachment_service,
         log_label=log_label,
         log_with_traceback=log_with_traceback,
+        ai_url=ai_url,
+        mime_type=mime_type,
+        session_id=session_id,
+        message_id=message_id,
+        user_id=user_id,
+        prefix=prefix,
+        filename=filename,
+        **persist_extra,
+    )
+    if processed is None:
+        return None
+    overlay: _PersistOverlayDict = {
+        "url": processed["display_url"],
+        "attachment_id": processed["attachment_id"],
+        "upload_status": processed["status"],
+        "task_id": processed["task_id"],
+        "mime_type": processed.get("mime_type") or mime_type,
+        "filename": processed.get("filename") or filename or f"{prefix}-{processed['attachment_id'][:8]}.{default_ext}",
+        "session_id": processed.get("session_id") or session_id,
+        "message_id": processed.get("message_id") or message_id,
+        "user_id": processed.get("user_id") or user_id,
+        "cloud_url": processed.get("cloud_url") or "",
+    }
+    if processed.get("file_uri"):
+        overlay["file_uri"] = processed["file_uri"]
+    return overlay
+
+
+async def _persist_ai_media_concurrent(
+    sessionmaker: Any,
+    *,
+    ai_url: str,
+    mime_type: str,
+    session_id: str,
+    message_id: str,
+    user_id: str,
+    prefix: str,
+    default_ext: str,
+    filename: Optional[str] = None,
+    log_label: str = "媒体",
+    **persist_extra: Any,
+) -> Optional[_PersistOverlayDict]:
+    """``_persist_ai_media_with_fallback`` 的并发版 —— 内部走
+    ``safe_persist_ai_result_concurrent``(每个调用 fresh ``Session``),
+    overlay 构造逻辑与单 session 版相同。
+
+    用于 ``asyncio.gather(...)`` 持久化 N 个 AI 媒体(image batch / video sidecars)。
+    """
+    processed = await safe_persist_ai_result_concurrent(
+        sessionmaker,
+        log_label=log_label,
+        log_with_traceback=False,
         ai_url=ai_url,
         mime_type=mime_type,
         session_id=session_id,
@@ -1603,37 +1661,44 @@ async def handle_mode(
                 images = result if isinstance(result, list) else result.get("images", []) if isinstance(result, dict) else []
                 logger.debug(f"[Modes]     - 需要处理的图片数量: {len(images)}")
                 
+                # E1: session-per-task gather — N image persists concurrent via fresh
+                # Sessions(每个 task 独立 SessionLocal()),N=4 batch ~800ms→~250ms。
+                # SQLAlchemy Session non-task-safe,共享 self.db 不能 gather。
+
+                # 第一遍:提取每张图片的字段,把需持久化的入 persist_tasks,短路 / skip
+                # 直接 append 到 processed_images(顺序由 entries[] 的 idx 重组)。
+                # entries[] = (idx, kind, payload):
+                #   kind="short_circuit" → payload 已是 final dict
+                #   kind="skip"          → payload=None(原 continue,不进 processed_images)
+                #   kind="persist"       → payload=(persist_kwargs, fallback_dict, extras_dict)
+                entries: List[Tuple[int, str, Any]] = []
                 for idx, img in enumerate(images):
-                    logger.info(f"[Modes] 🔄 [步骤7] 处理第 {idx+1}/{len(images)} 张图片...")
-                    
-                    # 提取图片URL和MIME类型
-                    # 支持多种格式：Dict 或 ImageGenerationResult
+                    logger.info(f"[Modes] 🔄 [步骤7] 准备第 {idx+1}/{len(images)} 张图片...")
+
                     if isinstance(img, dict):
                         ai_url = img.get("url") or img.get("image")
                         mime_type = img.get("mime_type", "image/png")
-                        filename = img.get("filename")  # ✅ 提取 filename（如果有）
-                        enhanced_prompt = img.get("enhanced_prompt")  # ✅ 提取增强后的提示词
-                        thoughts = img.get("thoughts")  # ✅ 修复断点1：提取思考过程
-                        text = img.get("text")  # ✅ 修复断点1：提取文本响应
+                        filename = img.get("filename")
+                        enhanced_prompt = img.get("enhanced_prompt")
+                        thoughts = img.get("thoughts")
+                        text = img.get("text")
                     else:
-                        # ImageGenerationResult 对象
                         ai_url = img.url if hasattr(img, "url") else None
                         mime_type = img.mime_type if hasattr(img, "mime_type") else "image/png"
                         filename = img.filename if hasattr(img, "filename") else None
                         enhanced_prompt = img.enhanced_prompt if hasattr(img, "enhanced_prompt") else None
-                        thoughts = getattr(img, "thoughts", None)  # ✅ 修复断点1：提取思考过程
-                        text = getattr(img, "text", None)  # ✅ 修复断点1：提取文本响应
-                    
+                        thoughts = getattr(img, "thoughts", None)
+                        text = getattr(img, "text", None)
+
                     if not ai_url:
                         logger.warning(f"[Modes] ⚠️ 第 {idx+1} 张图片缺少URL，跳过")
+                        entries.append((idx, "skip", None))
                         continue
-                    
+
                     url_type = "Base64" if is_base64_url(ai_url) else "HTTP" if is_http_url(ai_url) else "其他"
                     logger.debug(f"[Modes]     - 图片URL类型: {url_type}")
                     logger.debug(f"[Modes]     - mime_type: {mime_type}")
-                    
-                    # 使用 AttachmentService 处理AI返回的图片
-                    # 根据方法名确定前缀：generated（生成）, edited（编辑）, expanded（扩图）
+
                     if method_name == "generate_image":
                         prefix = "generated"
                     elif method_name == "expand_image":
@@ -1641,44 +1706,77 @@ async def handle_mode(
                     else:
                         prefix = "edited"
 
-                    # Provider 已经创建过 attachment(如 conversational_image_edit
-                    # 在 service 层已 INSERT)→ 跳过避免重复 attachment_id
+                    # Provider 已创建 attachment → 短路,绕过 gather 队列
                     if isinstance(img, dict) and (img.get("attachment_id") or img.get("attachmentId")):
                         logger.info(f"[Modes] ✅ [步骤7] 第 {idx+1} 张图片跳过持久化: provider 已返回 attachment_id")
-                        processed_images.append(img)
+                        entries.append((idx, "short_circuit", img))
                         continue
 
-                    overlay = await _persist_ai_media_with_fallback(
-                        attachment_service,
-                        ai_url=ai_url,
-                        mime_type=mime_type,
-                        session_id=session_id,
-                        message_id=message_id,
-                        user_id=user_id,
-                        prefix=prefix,
-                        default_ext="png",
-                        filename=filename,
-                        log_label=f"第 {idx+1} 张图片",
-                        log_with_traceback=False,
-                    )
-                    if overlay:
-                        logger.info(f"[Modes] ✅ [步骤7] 第 {idx+1} 张图片处理完成 (attachment_id={overlay['attachment_id']})")
-                        image_result = overlay
-                    else:
-                        # 降级:返回 ai_url 原文 + upload_status=failed
-                        image_result = {
-                            "url": ai_url,
-                            "mime_type": mime_type,
-                            "filename": filename or f"{prefix}-fallback.png",
-                            "upload_status": "failed",
-                        }
+                    persist_kwargs: Dict[str, Any] = {
+                        "ai_url": ai_url,
+                        "mime_type": mime_type,
+                        "session_id": session_id,
+                        "message_id": message_id,
+                        "user_id": user_id,
+                        "prefix": prefix,
+                        "default_ext": "png",
+                        "filename": filename,
+                        "log_label": f"第 {idx+1} 张图片",
+                    }
+                    fallback_dict: Dict[str, Any] = {
+                        "url": ai_url,
+                        "mime_type": mime_type,
+                        "filename": filename or f"{prefix}-fallback.png",
+                        "upload_status": "failed",
+                    }
+                    extras: Dict[str, Any] = {
+                        "enhanced_prompt": enhanced_prompt,
+                        "thoughts": thoughts,
+                        "text": text,
+                    }
+                    entries.append((idx, "persist", (persist_kwargs, fallback_dict, extras)))
 
-                    # 添加增强后的提示词（如果有）
+                # 第二遍:并发跑 persist tasks(每个 task fresh Session)
+                persist_entries = [e for e in entries if e[1] == "persist"]
+                gather_results: List[Any] = []
+                if persist_entries:
+                    gather_results = await asyncio.gather(
+                        *[
+                            _persist_ai_media_concurrent(SessionLocal, **e[2][0])
+                            for e in persist_entries
+                        ],
+                        return_exceptions=True,
+                    )
+
+                # 第三遍:按 entries 原始顺序装配 processed_images
+                persist_iter = iter(zip(persist_entries, gather_results))
+                for idx, kind, payload in entries:
+                    if kind == "skip":
+                        continue
+                    if kind == "short_circuit":
+                        processed_images.append(payload)
+                        continue
+                    # kind == "persist"
+                    _entry, result = next(persist_iter)
+                    persist_kwargs, fallback_dict, extras = payload
+                    if isinstance(result, Exception) or result is None:
+                        # helper 已 log;无 attachment_id 走前端 graceful fallback
+                        if isinstance(result, Exception):
+                            logger.warning(
+                                "[Modes] 第 %s 张图片持久化抛出异常: %s",
+                                idx + 1, result,
+                            )
+                        image_result: Dict[str, Any] = dict(fallback_dict)
+                    else:
+                        logger.info(f"[Modes] ✅ [步骤7] 第 {idx+1} 张图片处理完成 (attachment_id={result['attachment_id']})")
+                        image_result = dict(result)
+
+                    enhanced_prompt = extras.get("enhanced_prompt")
+                    thoughts = extras.get("thoughts")
+                    text = extras.get("text")
                     if enhanced_prompt:
                         image_result["enhanced_prompt"] = enhanced_prompt
                         logger.debug(f"[Modes]     - enhanced_prompt: {enhanced_prompt}")
-
-                    # ✅ 修复断点1：保留 thinking 数据（如果存在）
                     if thoughts:
                         image_result["thoughts"] = thoughts
                         logger.debug(f"[Modes]     - thoughts: {len(thoughts) if isinstance(thoughts, list) else 'N/A'} items")
@@ -1763,7 +1861,9 @@ async def handle_mode(
                 logger.warning(f"[Modes] ⚠️ [步骤7] 跳过视频附件处理: 缺少 session_id/message_id 或视频资产引用")
 
             if session_id and message_id and sidecar_files:
-                processed_sidecars = []
+                # E2: session-per-task gather — sidecars 并发持久化(每个 task fresh
+                # Session)。一个 sidecar 失败不让整个 video 响应 5xx,顺序保持。
+                sidecar_entries: List[Tuple[Dict[str, Any], Optional[Dict[str, Any]]]] = []
                 for sidecar in sidecar_files:
                     if not isinstance(sidecar, dict):
                         continue
@@ -1771,24 +1871,48 @@ async def handle_mode(
                     sidecar_mime_type = str(sidecar.get("mime_type") or sidecar.get("mimeType") or "text/vtt").strip()
                     sidecar_filename = str(sidecar.get("filename") or "").strip() or None
                     if not sidecar_url:
+                        # 与原 continue 行为一致:无 url 跳过,不进 processed_sidecars
+                        sidecar_entries.append((sidecar, None))
                         continue
-                    # 每个 sidecar 独立隔离 —— 一个 subtitle 失败不让整个 video 响应 5xx
-                    sidecar_overlay = await _persist_ai_media_with_fallback(
-                        attachment_service,
-                        ai_url=sidecar_url,
-                        mime_type=sidecar_mime_type,
-                        session_id=session_id,
-                        message_id=message_id,
-                        user_id=user_id,
-                        prefix="video-sidecar",
-                        default_ext="vtt",
-                        filename=sidecar_filename,
-                        log_label="sidecar",
+                    sidecar_entries.append((
+                        sidecar,
+                        {
+                            "ai_url": sidecar_url,
+                            "mime_type": sidecar_mime_type,
+                            "session_id": session_id,
+                            "message_id": message_id,
+                            "user_id": user_id,
+                            "prefix": "video-sidecar",
+                            "default_ext": "vtt",
+                            "filename": sidecar_filename,
+                            "log_label": "sidecar",
+                        },
+                    ))
+
+                persist_pairs = [(s, k) for s, k in sidecar_entries if k is not None]
+                gather_sidecar_results: List[Any] = []
+                if persist_pairs:
+                    gather_sidecar_results = await asyncio.gather(
+                        *[
+                            _persist_ai_media_concurrent(SessionLocal, **kw)
+                            for _s, kw in persist_pairs
+                        ],
+                        return_exceptions=True,
                     )
-                    if sidecar_overlay:
-                        processed_sidecars.append({**sidecar, **sidecar_overlay})
-                    else:
+
+                processed_sidecars = []
+                persist_iter = iter(zip(persist_pairs, gather_sidecar_results))
+                for sidecar, kw in sidecar_entries:
+                    if kw is None:
+                        # 原代码无 url 时 continue → 不 append
+                        continue
+                    _pair, result_obj = next(persist_iter)
+                    if isinstance(result_obj, Exception) or result_obj is None:
+                        if isinstance(result_obj, Exception):
+                            logger.warning("[Modes] sidecar 持久化抛出异常: %s", result_obj)
                         processed_sidecars.append(sidecar)
+                    else:
+                        processed_sidecars.append({**sidecar, **result_obj})
                 if processed_sidecars:
                     result = {
                         **(result if isinstance(result, dict) else {}),

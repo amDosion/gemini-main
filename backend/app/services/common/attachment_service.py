@@ -41,6 +41,38 @@ async def safe_persist_ai_result(
         return None
 
 
+async def safe_persist_ai_result_concurrent(
+    sessionmaker: Any,
+    *,
+    log_label: str = "媒体",
+    log_with_traceback: bool = False,
+    **kwargs: Any,
+) -> Optional["ProcessAIResultDict"]:
+    """并发安全版 —— 每次调用打开一个 *fresh* SQLAlchemy ``Session``,内部构造
+    临时 ``AttachmentService`` 实例,跑完即关。
+
+    用于 ``asyncio.gather(...)`` 同时持久化 N 个 AI 媒体 (image batch / video sidecars)。
+    SQLAlchemy ``Session`` non-task-safe — 共享实例并发会破坏 identity map / pending
+    changes / transaction boundary,本 wrapper 保证 session-per-task。
+
+    ``sessionmaker``:无参可调用对象(典型为 ``app.core.database.SessionLocal``),
+    ``with sessionmaker() as fresh_session:`` 自动 close。
+
+    成功:返回 ``ProcessAIResultDict``。失败:log 后返回 ``None``,caller 降级。
+    """
+    try:
+        with sessionmaker() as fresh_session:
+            # local import 避免顶层循环 import(AttachmentService 类定义在本模块下方)
+            service = AttachmentService(fresh_session)
+            return await service.process_ai_result(**kwargs)
+    except Exception as err:
+        if log_with_traceback:
+            logger.error(f"[Persist] {log_label} 失败: {err}", exc_info=True)
+        else:
+            logger.warning("[Persist] %s 失败: %s", log_label, err)
+        return None
+
+
 class ProcessAIResultDict(TypedDict, total=False):
     """``AttachmentService.process_ai_result(...)`` 的返回 shape。
 
