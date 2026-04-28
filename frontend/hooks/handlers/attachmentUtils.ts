@@ -178,18 +178,13 @@ export const uploadToCloudStorage = async (
  * 支持的输入类型：
  * - File 对象：直接返回
  * - Base64/Blob URL：通过 urlToFile 转换
- * - HTTP URL：使用降级策略下载
- *
- * HTTP URL 降级策略（按优先级）：
- * 1. 后端代理下载（解决 CORS 问题）
- * 2. 直接下载（绕过代理，适用于同源或允许 CORS 的资源）
- * 3. 使用 urlToFile（最后的备选方案）
+ * - HTTP URL：通过后端代理 /api/storage/download 下载（解决 CORS）
  *
  * @param source 图片来源（File 对象或 URL 字符串）
  * @param filename 目标文件名
  * @param mimeType 可选的 MIME 类型
  * @returns File 对象
- * @throws 如果所有策略都失败，抛出错误
+ * @throws 如果下载失败，抛出错误
  */
 export const sourceToFile = async (
   source: string | File,
@@ -208,54 +203,18 @@ export const sourceToFile = async (
     return await urlToFile(url, filename, mimeType);
   }
 
-  // HTTP URL 使用降级策略
-  const strategies = [
-    {
-      name: '后端代理下载',
-      execute: async () => {
-        const proxyUrl = `/api/storage/download?url=${encodeURIComponent(url)}`;
-        const response = await fetch(proxyUrl);
-        if (!response.ok) {
-          throw new Error(`Proxy failed: HTTP ${response.status}`);
-        }
-        const blob = await response.blob();
-        return new File([blob], filename, { type: mimeType || blob.type || 'image/png' });
-      },
-    },
-    {
-      name: '直接下载',
-      execute: async () => {
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`Direct download failed: HTTP ${response.status}`);
-        }
-        const blob = await response.blob();
-        return new File([blob], filename, { type: mimeType || blob.type || 'image/png' });
-      },
-    },
-    {
-      name: 'urlToFile 函数',
-      execute: async () => {
-        return await urlToFile(url, filename, mimeType);
-      },
-    },
-  ];
-
-  // 依次尝试每个策略
-  for (let i = 0; i < strategies.length; i++) {
-    try {
-      const file = await strategies[i].execute();
-      return file;
-    } catch (error) {
-      // 最后一个策略失败时，抛出错误
-      if (i === strategies.length - 1) {
-        throw new Error(`[sourceToFile] 所有下载策略都失败，URL: ${url.substring(0, 100)}...`);
-      }
-    }
+  // HTTP URL: 通过后端代理下载(Sprint 2 PR-4: 删除冗余的"直接下载"+"urlToFile"
+  // fallback——这两个 strategy 也是 fetch-based,被 CORS block 时与代理同样失败,
+  // 所以多层 fallback 提供不了实际韧性。后端代理是 AI provider URL 的唯一可靠路径)
+  const proxyUrl = `/api/storage/download?url=${encodeURIComponent(url)}`;
+  const response = await fetch(proxyUrl);
+  if (!response.ok) {
+    throw new Error(
+      `[sourceToFile] 后端代理下载失败: HTTP ${response.status}, URL: ${url.substring(0, 100)}...`
+    );
   }
-
-  // 理论上不会到达这里
-  throw new Error(`[sourceToFile] 未知错误`);
+  const blob = await response.blob();
+  return new File([blob], filename, { type: mimeType || blob.type || 'image/png' });
 };
 
 // tryFetchCloudUrl removed — Sprint 2 PR-3
