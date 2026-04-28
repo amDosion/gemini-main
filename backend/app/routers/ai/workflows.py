@@ -2147,20 +2147,31 @@ async def _persist_workflow_result_media(
         cached = processed_sources.get(source)
         if cached is not None:
             return cached
-        processed = await attachment_service.process_ai_result(
-            ai_url=source,
-            mime_type=str(entry.get("mime_type") or "").strip() or _guess_workflow_media_mime_type(source, normalized_kind),
-            session_id=execution_id,
-            message_id=execution_id,
-            user_id=user_id,
-            prefix=f"workflow-{normalized_kind}-result-{index:02d}",
-            storage_id=storage_id,
-            filename=str(entry.get("filename") or "").strip() or None,
-            file_uri=str(entry.get("file_uri") or "").strip() or None,
-            provider_file_name=str(entry.get("provider_file_name") or "").strip() or None,
-            provider_file_uri=str(entry.get("provider_file_uri") or "").strip() or None,
-            gcs_uri=str(entry.get("gcs_uri") or "").strip() or None,
-        )
+        # 单个媒体持久化失败不应让整个 workflow 标记 failed —— 与 modes.py 同策略,
+        # 捕获 + 返回 None 让上游 walker 保留原 source URL,workflow 整体 still 200。
+        try:
+            processed = await attachment_service.process_ai_result(
+                ai_url=source,
+                mime_type=str(entry.get("mime_type") or "").strip() or _guess_workflow_media_mime_type(source, normalized_kind),
+                session_id=execution_id,
+                message_id=execution_id,
+                user_id=user_id,
+                prefix=f"workflow-{normalized_kind}-result-{index:02d}",
+                storage_id=storage_id,
+                filename=str(entry.get("filename") or "").strip() or None,
+                file_uri=str(entry.get("file_uri") or "").strip() or None,
+                provider_file_name=str(entry.get("provider_file_name") or "").strip() or None,
+                provider_file_uri=str(entry.get("provider_file_uri") or "").strip() or None,
+                gcs_uri=str(entry.get("gcs_uri") or "").strip() or None,
+            )
+        except Exception as persist_err:
+            logger.warning(
+                "[Workflow] persist_source failed (kind=%s, source=%s...): %s",
+                normalized_kind,
+                source[:80],
+                persist_err,
+            )
+            return None
         processed_sources[source] = processed
         replacements[source] = str(processed.get("display_url") or "").strip() or source
         return processed
