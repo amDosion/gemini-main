@@ -16,7 +16,7 @@
 """Official Google GenAI SDK Compatible Client Implementation
 
 基于官方 google.genai.Client 的兼容层实现。
-使用官方的 google.genai.Client 或 vertexai.Client，而不是自定义的 _interactions 实现。
+使用官方的 google.genai.Client，而不是旧版 google-generativeai / Vertex AI 生成式模块。
 """
 
 import asyncio
@@ -32,13 +32,6 @@ try:
 except ImportError:
     GENAI_AVAILABLE = False
     genai = None
-
-try:
-    import vertexai
-    VERTEXAI_AVAILABLE = True
-except ImportError:
-    VERTEXAI_AVAILABLE = False
-    vertexai = None
 
 from .types import HttpOptions, HttpOptionsDict
 
@@ -285,25 +278,9 @@ class Client:
         
         if self._vertexai:
             client_kwargs['vertexai'] = True
-            # Vertex AI 模式：根据参考代码和错误信息，interactions API 需要：
-            # 1. project 和 location（用于构建路径）
-            # 2. OAuth2 credentials（不支持 API key）
-            # 3. 需要先调用 vertexai.init() 初始化 Vertex AI SDK
-            # 解决方案：使用 ADC（Application Default Credentials）或 service account credentials
+            # Vertex AI 模式：通过 google.genai.Client(vertexai=True, ...)
+            # 使用 project/location 和 OAuth2 credentials 或 ADC。
             if self._project and self._location:
-                # 初始化 Vertex AI SDK（参考 code_executor.py 和 memory_bank_service.py）
-                # 注意：vertexai.init() 需要在创建 google.genai.Client 之前调用
-                # 使用延迟导入，避免在模块级别导入失败
-                try:
-                    import vertexai as vertexai_module
-                    vertexai_module.init(project=self._project, location=self._location)
-                    logger.info(f"[Client] Initialized vertexai SDK: project={self._project}, location={self._location}")
-                except ImportError:
-                    logger.debug("[Client] vertexai module not available, skipping vertexai.init()")
-                except Exception as e:
-                    logger.warning(f"[Client] Failed to initialize vertexai SDK: {e}")
-                    # 继续执行，google.genai.Client 可能仍然可以工作
-                
                 # 使用 project 和 location（用于构建路径）
                 client_kwargs['project'] = self._project
                 client_kwargs['location'] = self._location

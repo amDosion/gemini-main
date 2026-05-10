@@ -70,6 +70,8 @@ queue/
 *.png
 *.xlsx
 *.svg
+!backend/app/services/gemini/agent/test_templates/video_first_frame_sample.jpg
+!backend/app/services/gemini/agent/test_templates/video_last_frame_sample.jpg
 
 # AI tool configs
 .claude/
@@ -105,6 +107,9 @@ docs/tasks.md
 
 # Root level doc duplicates
 /ANALYSIS_GENAI_SDK_INTEGRATION.md
+
+# Logs
+*.log
 
 # Misc
 star.txt

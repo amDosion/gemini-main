@@ -151,19 +151,6 @@ class GeminiClientPool:
                             'provide project and location arguments or set environment variables.'
                         )
 
-                    # Initialize the vertexai SDK (mirrors agent/client.py behaviour)
-                    try:
-                        import vertexai as vertexai_module
-                        vertexai_module.init(project=resolved_project, location=resolved_location)
-                        logger.info(
-                            "[GeminiClientPool] Initialized vertexai SDK: project=%s, location=%s",
-                            resolved_project, resolved_location,
-                        )
-                    except ImportError:
-                        logger.debug("[GeminiClientPool] vertexai module not available, skipping vertexai.init()")
-                    except Exception as e:
-                        logger.warning("[GeminiClientPool] Failed to initialize vertexai SDK: %s", e)
-
                     client_kwargs = {
                         "vertexai": True,
                         "project": resolved_project,
