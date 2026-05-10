@@ -54,10 +54,17 @@ from .adk_runner import ADKRunner
 from .adk_agent import ADKAgent
 from .interactions_service import VertexAiInteractionsService
 
-# Official Google GenAI SDK Compatibility Layer (从 official/ 目录合并)
-from .client import Client, AsyncClient, get_vertex_ai_credentials_from_db
-from . import types
-from .models import Models, AsyncModels
+# Vertex AI 凭证加载工具（保留：interactions_manager.py 等 4 处真在用）
+from .client import get_vertex_ai_credentials_from_db
+from . import types  # 仅为兼容：agent.types.HttpOptions 是真在用的（5 处）
+
+# 注意：Client / AsyncClient / Models / AsyncModels 已弃用，
+# 不再从 agent.__init__ 重新导出。如确需访问，必须显式：
+#     from app.services.gemini.agent.client import Client
+# 并会在实例化时触发 DeprecationWarning。
+# 推荐改用统一池：
+#     from app.services.gemini.client_pool import get_client_pool
+#     client = get_client_pool().get_client(api_key=..., vertexai=False)
 __all__ = [
     "PROVIDER_NEUTRAL_MULTI_AGENT_ENTRYPOINT",
     "LEGACY_GOOGLE_RUNTIME_ROUTE",
@@ -102,13 +109,13 @@ __all__ = [
     "ADKRunner",
     "ADKAgent",
     "VertexAiInteractionsService",
-    # Official Google GenAI SDK Compatibility Layer
-    "Client",
-    "AsyncClient",
-    "get_vertex_ai_credentials_from_db",  # 统一的 Vertex AI credentials 获取函数
+    # Vertex AI credentials helper（真实 4 处调用：interactions_manager.py）
+    "get_vertex_ai_credentials_from_db",
+    # agent.types：HttpOptions / HttpOptionsDict / HttpRetryOptions 仍被
+    # client_pool / google_service / coordinators / interactions_manager 等 5 处使用
     "types",
-    "Models",
-    "AsyncModels",
-    # InteractionsResource / AsyncInteractionsResource removed – callers now
-    # use the native google.genai.Client.interactions API directly.
+    # 已撤回（实例化时触发 DeprecationWarning）：
+    # - Client / AsyncClient（包装 google.genai.Client，应改走 client_pool.get_client_pool()）
+    # - Models / AsyncModels（其内部 self._api_client.request(...) 调用对当前 google-genai 版本已 broken）
+    # - InteractionsResource / AsyncInteractionsResource（早已被原生 client.aio.interactions 取代）
 ]

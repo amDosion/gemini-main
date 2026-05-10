@@ -22,9 +22,17 @@
 import asyncio
 import os
 import json
+import warnings
 from types import TracebackType
 from typing import Optional, Union, Tuple, Dict, Any
 import logging
+
+_WRAPPER_DEPRECATION_MSG = (
+    "app.services.gemini.agent.client.{cls} 已弃用。请改用 "
+    "`from app.services.gemini.client_pool import get_client_pool; "
+    "client = get_client_pool().get_client(api_key=..., vertexai=...)`。"
+    "包装类不走统一连接池，且其内部 Models 类对当前 google-genai SDK 已 broken。"
+)
 
 try:
     from google import genai
@@ -180,6 +188,11 @@ class AsyncClient:
         Args:
             client: The underlying google.genai.Client instance
         """
+        warnings.warn(
+            _WRAPPER_DEPRECATION_MSG.format(cls="AsyncClient"),
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._client = client
         self._models = AsyncModels(client)
 
@@ -239,12 +252,18 @@ class Client:
             debug_config: Debug configuration
             http_options: HTTP options (timeout, headers, etc.)
         """
+        warnings.warn(
+            _WRAPPER_DEPRECATION_MSG.format(cls="Client"),
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         if not GENAI_AVAILABLE:
             raise ImportError(
                 "google.genai package is not available. "
                 "Please install it with: pip install google-genai"
             )
-        
+
         # Store configuration
         self._vertexai = vertexai or False
         self._api_key = api_key or os.environ.get('GOOGLE_API_KEY')
