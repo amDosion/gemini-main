@@ -12,9 +12,9 @@ from datetime import datetime
 import numpy as np
 
 try:
-    from google import genai
+    from ..gemini.client_pool import get_client_pool
 except Exception:  # pragma: no cover - optional dependency
-    genai = None  # type: ignore
+    get_client_pool = None  # type: ignore
 
 
 # ============================================================================
@@ -173,11 +173,12 @@ def get_embedding(text: str, api_key: str, model: str = "text-embedding-004") ->
     Returns:
         List of floats representing the embedding vector
     """
-    if genai is None:
+    if get_client_pool is None:
         raise ImportError(
-            "google.genai is required for embedding operations. Install the Google GenAI SDK first."
+            "GeminiClientPool is required for embedding operations. "
+            "Install the Google GenAI SDK and ensure backend/app/services/gemini/client_pool.py is importable."
         )
-    client = genai.Client(api_key=api_key)
+    client = get_client_pool().get_client(api_key=api_key, vertexai=False)
     response = client.models.embed_content(model=model, contents=text)
     return response.embeddings[0].values
 

@@ -11,6 +11,7 @@ import os
 import mimetypes
 
 from ...middleware.case_conversion_middleware import case_conversion_options
+from ...services.gemini.client_pool import get_client_pool
 
 router = APIRouter(prefix="/api/file-search", tags=["file-search"])
 logger = logging.getLogger(__name__)
@@ -89,13 +90,11 @@ async def upload_to_file_search(
         )
     
     api_key = authorization.split(' ')[1]
-    
+
     try:
-        from google import genai
-        
-        # 初始化 GenAI 客户端
-        client = genai.Client(api_key=api_key)
-        
+        # 走统一池：复用 google.genai.Client 实例 + 共享 timeout/retry 默认值
+        client = get_client_pool().get_client(api_key=api_key, vertexai=False)
+
         # 1. 获取或创建 File Search Store
         if not store_name:
             # 使用默认 store 名称
@@ -201,12 +200,11 @@ async def list_file_search_stores(
         )
     
     api_key = authorization.split(' ')[1]
-    
+
     try:
-        from google import genai
-        
-        client = genai.Client(api_key=api_key)
-        
+        # 走统一池
+        client = get_client_pool().get_client(api_key=api_key, vertexai=False)
+
         stores = []
         for store in client.file_search_stores.list():
             stores.append({
