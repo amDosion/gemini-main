@@ -4,7 +4,18 @@
 Tech Debt / Reliability / Runtime Architecture
 
 ## 状态
-Ready for Implementation
+**Done** — 2026-05-10，落地于 `refactor/gemini-pool-unification` 分支 8 个 commit；
+后续生产 hardening 工作转移到 [`JIRA-gemini-pool-production-hardening.md`](./JIRA-gemini-pool-production-hardening.md)。
+
+落地 commit 序列（按时间）：
+- `1bc61c5` embedding_service + file_search 改走 GeminiClientPool（P0 核心）
+- `55827b2` [过渡] agent 包装层标 deprecated（被 39a31a7 撤回）
+- `6c3abbe` HttpOptions 抽到 services/gemini/http_options.py（解耦副产品）
+- `75b158a` get_vertex_ai_credentials_from_db 抽到 services/gemini/credentials.py（解耦副产品）
+- `39a31a7` agent 包装层底层走 GeminiClientPool；撤回 P1-1/P1-3 兼容补丁（**核心**，对应第 84 行）
+- `61e1113` /verify-vertex-ai 加 try/finally close + 边界注释（对应第 88-91 行）
+- `ea18320` geminiapi/main.py 标 STANDALONE（对应第 85-87 行）
+- `d64d128` 统一池治理测试（含静态 AST 扫描，对应第 154-158 行）
 
 ## 背景
 项目已经存在统一连接池 `GeminiClientPool`，用于缓存和复用 `google.genai.Client`，并区分 Gemini Developer API 与 Vertex AI 两条认证路径。但当前代码中仍有部分服务直接 `genai.Client(...)`，同时也有一些服务自己保存 `_client`。需要梳理并统一：主运行链路必须走统一池；确实需要一次性验证的配置接口可以保留直接 client，但要明确边界和生命周期。
@@ -115,15 +126,16 @@ Ready for Implementation
   - Recontext/Product Recontext only when产品定义要求走 Vertex Gemini image，并且配置明确
 
 ## 验收标准
-- 主运行链路中不再出现新增的直接 `genai.Client(...)`。
-- `embedding_service.get_embedding()` 通过 `GeminiClientPool` 获取 client。
-- `file_search.py` 通过 `GeminiClientPool` 获取 client。
-- `agent/client.py` 若仍在运行链路，则底层 client 通过 `GeminiClientPool` 获取。
-- `/verify-vertex-ai` 保留直接 client 时有明确注释和测试覆盖，证明它是一次性配置验证路径。
-- `image-chat-edit` 在 Vertex AI 配置开启时仍传 `use_vertex=False` 到 conversational image service。
-- 前端传入的 model ID 必须原样传到 Chat Edit 后端服务，不在后端替换。
-- `image-mask-edit` / `image-background-edit` 仍拒绝 Gemini image 模型，必须走 Vertex Imagen edit 模型。
-- 连接池统计可以在单元测试中证明相同配置复用同一 client，不同 Gemini API / Vertex 配置隔离。
+
+- [x] 主运行链路中不再出现新增的直接 `genai.Client(...)` — `d64d128` 引入 AST 静态扫描 `test_direct_genai_client_creation_is_allowlisted_only`，未来回归即被 CI 拦截
+- [x] `embedding_service.get_embedding()` 通过 `GeminiClientPool` 获取 client — `1bc61c5`
+- [x] `file_search.py` 通过 `GeminiClientPool` 获取 client — `1bc61c5`（`upload_to_file_search` + `list_file_search_stores` 两处）
+- [x] `agent/client.py` 若仍在运行链路，则底层 client 通过 `GeminiClientPool` 获取 — `39a31a7`（包装类 `Client.__init__` 改 `self._genai_client = get_client_pool().get_client(...)`）
+- [x] `/verify-vertex-ai` 保留直接 client 时有明确注释和测试覆盖 — `61e1113`（注释 + try/finally close）+ `d64d128`（白名单测试覆盖）
+- [ ] `image-chat-edit` 在 Vertex AI 配置开启时仍传 `use_vertex=False` 到 conversational image service — **非目标，本工单未处理；属于业务路由层**（`JIRA-gemini-pool-production-hardening.md` 也将其列为 Out of Scope）
+- [ ] 前端传入的 model ID 必须原样传到 Chat Edit 后端服务 — **非目标，同上**
+- [ ] `image-mask-edit` / `image-background-edit` 仍拒绝 Gemini image 模型 — **非目标，同上**（属于业务参数校验层）
+- [x] 连接池统计可以在单元测试中证明相同配置复用同一 client，不同 Gemini API / Vertex 配置隔离 — `d64d128`（`test_pool_reuses_same_client_for_same_config` + `test_pool_isolates_gemini_api_from_vertex_ai_for_same_string_key`）
 
 ## 建议实现步骤
 1. 新增测试：`embedding_service` 使用池而不是直接创建 client。

@@ -42,3 +42,25 @@ jobs:
           fi
 
           echo "✅ PR title format is correct: $PR_TITLE"
+
+  gemini-pool-gate:
+    # PR 阶段独立快速 gate：让"主链路新增 genai.Client(...)"或"包装类绕过统一池"
+    # 在 PR 反馈中就 fail，不等完整 CI 跑完。镜像 ci.yml 中同名 step。
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r backend/requirements.txt pytest
+
+      - name: Run targeted gemini-client-pool unification gate
+        run: cd backend && PYTHONPATH=. python3 -m pytest tests/test_gemini_client_pool_usage.py -v
