@@ -192,7 +192,9 @@ class GeminiClientPool:
                 self._clients[cache_key] = client
                 self._client_metadata[cache_key] = {
                     'created_at': datetime.now().isoformat(),
-                    'api_key_prefix': api_key[:8] if api_key else 'none',
+                    # 不再记录 api_key 前缀（即便是 8 字符也会泄漏 Google AI key
+                    # 同源项目共享前缀的熵）。诊断只需要"是否配置"语义。
+                    'api_key_configured': bool(api_key),
                     'vertexai': vertexai,
                     'project': project,
                     'location': location,
@@ -450,12 +452,19 @@ class GeminiClientPool:
             缓存键字符串
         """
         if credentials:
-            # 尽量使用 credentials 的稳定标识（service account email），并做哈希脱敏
+            # 必须能从 credentials 上拿到稳定的 service-account email 作为 fingerprint。
+            # 不再 fallback 到 repr(credentials)：默认 repr 含进程内存地址，进程重启即变；
+            # 且若未来 google-auth 给 Credentials 加自定义 __repr__，可能泄漏 token state。
             cred_identity = (
                 getattr(credentials, "service_account_email", None)
                 or getattr(credentials, "_service_account_email", None)
-                or repr(credentials)
             )
+            if not cred_identity:
+                raise ValueError(
+                    "Cannot derive stable cache identity from credentials object — "
+                    "service_account_email is required. Use "
+                    "google.oauth2.service_account.Credentials.from_service_account_info()."
+                )
             cred_fingerprint = hashlib.sha256(str(cred_identity).encode("utf-8")).hexdigest()[:16]
         else:
             key_source = api_key or "none"

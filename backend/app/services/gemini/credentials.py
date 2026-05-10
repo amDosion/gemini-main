@@ -100,10 +100,6 @@ def get_vertex_ai_credentials_from_db(
                     f"[get_vertex_ai_credentials_from_db] Failed to parse credentials JSON "
                     f"(user_id={user_id}): {e}"
                 )
-                logger.debug(
-                    f"[get_vertex_ai_credentials_from_db] Credentials JSON (first 100 chars): "
-                    f"{credentials_json[:100] if credentials_json else 'None'}"
-                )
             except Exception as e:
                 logger.warning(
                     f"[get_vertex_ai_credentials_from_db] Failed to load credentials from database "

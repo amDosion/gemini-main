@@ -61,6 +61,26 @@ def get_mime_type(filename: str, content_type: Optional[str]) -> str:
     return mime_map.get(ext, 'application/octet-stream')
 
 
+def _extract_bearer_api_key(authorization: Optional[str]) -> str:
+    """从 Authorization header 严格解析 Bearer token。
+
+    防止 ``"Bearer "`` (空 key)、``"Bearer  "`` (双空格)、``"Bearer\t"`` 等
+    格式异常被静默接受后透到下游 pool 触发 500。所有异常格式统一返回 401。
+    """
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing authorization header")
+
+    parts = authorization.split(' ', 1)
+    if len(parts) != 2 or parts[0] != 'Bearer':
+        raise HTTPException(status_code=401, detail="Invalid authorization header format")
+
+    api_key = parts[1].strip()
+    if not api_key:
+        raise HTTPException(status_code=401, detail="Empty bearer token")
+
+    return api_key
+
+
 @router.post("/upload")
 @case_conversion_options(skip_request_body=True)
 async def upload_to_file_search(
@@ -83,13 +103,7 @@ async def upload_to_file_search(
             "status": "active"
         }
     """
-    if not authorization or not authorization.startswith('Bearer '):
-        raise HTTPException(
-            status_code=401,
-            detail="Missing or invalid authorization header"
-        )
-    
-    api_key = authorization.split(' ')[1]
+    api_key = _extract_bearer_api_key(authorization)
 
     try:
         # 走统一池：复用 google.genai.Client 实例 + 共享 timeout/retry 默认值
@@ -180,11 +194,17 @@ async def upload_to_file_search(
             except Exception as cleanup_error:
                 logger.warning(f"Failed to delete temporary file: {cleanup_error}")
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Failed to upload file: {type(e).__name__}: {str(e)}")
+        # 服务端记录完整异常（含 stack）；客户端仅看到通用消息，避免回显 SDK 内部错误
+        logger.error(
+            f"Failed to upload file: {type(e).__name__}: {str(e)}",
+            exc_info=True,
+        )
         raise HTTPException(
             status_code=500,
-            detail=f"File upload failed: {str(e)}"
+            detail="File upload failed. Please try again or contact support."
         )
 
 
@@ -193,13 +213,7 @@ async def list_file_search_stores(
     authorization: str = Header(None),
 ):
     """列出所有 File Search Stores"""
-    if not authorization or not authorization.startswith('Bearer '):
-        raise HTTPException(
-            status_code=401,
-            detail="Missing or invalid authorization header"
-        )
-    
-    api_key = authorization.split(' ')[1]
+    api_key = _extract_bearer_api_key(authorization)
 
     try:
         # 走统一池
@@ -215,7 +229,12 @@ async def list_file_search_stores(
             })
         
         return {"stores": stores}
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Failed to list stores: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Failed to list stores: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to list file search stores. Please try again or contact support.",
+        )
