@@ -231,7 +231,7 @@ class InteractionsManager:
         # ✅ 如果使用 Gemini API 模式（vertexai=False），使用标准 API Key
         vertex_credentials = None
         if use_vertexai and self._db and user_id:
-            from ..gemini.agent.client import get_vertex_ai_credentials_from_db
+            from ..gemini.credentials import get_vertex_ai_credentials_from_db
             
             db_project, db_location, db_credentials = get_vertex_ai_credentials_from_db(
                 user_id=user_id,
@@ -535,7 +535,7 @@ class InteractionsManager:
         # 如果使用 Vertex AI 但缺少 project/location，尝试从数据库获取
         # 使用统一的辅助函数
         if use_vertexai and (not project or not location) and self._db and user_id:
-            from ..gemini.agent.client import get_vertex_ai_credentials_from_db
+            from ..gemini.credentials import get_vertex_ai_credentials_from_db
             
             db_project, db_location, db_credentials = get_vertex_ai_credentials_from_db(
                 user_id=user_id,
@@ -663,7 +663,7 @@ class InteractionsManager:
         # ✅ 如果使用 Gemini API 模式（vertexai=False），使用标准 API Key
         vertex_credentials = None
         if use_vertexai and self._db and user_id:
-            from ..gemini.agent.client import get_vertex_ai_credentials_from_db
+            from ..gemini.credentials import get_vertex_ai_credentials_from_db
             
             db_project, db_location, db_credentials = get_vertex_ai_credentials_from_db(
                 user_id=user_id,
@@ -980,7 +980,7 @@ class InteractionsManager:
         # 如果使用 Vertex AI 但缺少 project/location，尝试从数据库获取
         # 使用统一的辅助函数
         if use_vertexai and (not project or not location) and self._db and user_id:
-            from ..gemini.agent.client import get_vertex_ai_credentials_from_db
+            from ..gemini.credentials import get_vertex_ai_credentials_from_db
             
             db_project, db_location, db_credentials = get_vertex_ai_credentials_from_db(
                 user_id=user_id,

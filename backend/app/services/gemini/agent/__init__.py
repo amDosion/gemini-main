@@ -55,7 +55,8 @@ from .adk_agent import ADKAgent
 from .interactions_service import VertexAiInteractionsService
 
 # Vertex AI 凭证加载工具（保留：interactions_manager.py 等 4 处真在用）
-from .client import get_vertex_ai_credentials_from_db
+# 真实定义在 services.gemini.credentials；从 ..credentials 直接导入避免间接路径
+from ..credentials import get_vertex_ai_credentials_from_db
 from . import types  # 仅为兼容：agent.types.HttpOptions 是真在用的（5 处）
 
 # 注意：Client / AsyncClient / Models / AsyncModels 已弃用，
