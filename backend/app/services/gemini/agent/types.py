@@ -243,44 +243,21 @@ class GenerateContentResponse(CommonBaseModel):
 
 
 # ============================================================================
-# HTTP and Client Types
-# ============================================================================
-# 注意：HttpRetryOptions / HttpOptions 已迁出到 services.gemini.http_options。
-# 这里只做 re-export，确保依赖 `from ...agent.types import HttpOptions` 的
-# 旧路径（agent/client.py、agent/models.py 等已弃用文件）仍能 import。
-# 新代码请直接：
-#     from app.services.gemini.http_options import HttpOptions, HttpOptionsDict, HttpRetryOptions
-
-from ..http_options import (  # noqa: E402,F401  (re-export for backward-compat)
-    HttpRetryOptions,
-    HttpOptions,
-)
-
-
-# ============================================================================
 # TypedDict Versions
 # ============================================================================
+# 注意：HttpOptions / HttpOptionsDict / HttpRetryOptions 的 single source of truth
+# 已迁到 ``app.services.gemini.http_options``。本文件不再 re-export，避免造成
+# 同名异身（旧 wrapper 与新模块）的双源类型。新代码请直接从那里导入。
 
 class GenerateContentConfigDict(TypedDict, total=False):
     """Dictionary version of GenerateContentConfig."""
-    
+
     temperature: float
     top_p: float
     top_k: int
     max_output_tokens: int
     system_instruction: Union[str, Dict[str, Any]]
     tools: List[Dict[str, Any]]
-
-
-class HttpOptionsDict(TypedDict, total=False):
-    """Dictionary version of HttpOptions."""
-    
-    api_version: str
-    base_url: str
-    headers: Dict[str, str]
-    timeout: Optional[int]
-    retry_options: HttpRetryOptions
-    use_default_timeout: bool
 
 
 # Update forward references

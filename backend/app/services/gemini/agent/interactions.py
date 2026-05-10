@@ -21,17 +21,9 @@
 
 from typing import Optional, Dict, Any, Union, List
 import logging
-import warnings
 from .common import BaseModel
 
 logger = logging.getLogger(__name__)
-
-_INTERACTIONS_DEPRECATION_MSG = (
-    "app.services.gemini.agent.interactions.{cls} 已弃用。"
-    "请直接使用原生 `google.genai.Client.interactions` / `client.aio.interactions`，"
-    "client 来源统一走 `app.services.gemini.client_pool.get_client_pool().get_client(...)`。"
-    "项目里 interactions_service.py 已经走原生路径，本兼容层无运行时调用方。"
-)
 
 
 class Interaction(BaseModel):
@@ -148,12 +140,8 @@ class InteractionsResource:
 
         Args:
             client: Official google.genai.Client instance
+                （来自 GeminiClientPool；本类不持有生命周期）
         """
-        warnings.warn(
-            _INTERACTIONS_DEPRECATION_MSG.format(cls="InteractionsResource"),
-            DeprecationWarning,
-            stacklevel=2,
-        )
         self._client = client
     
     def create(
@@ -283,12 +271,8 @@ class AsyncInteractionsResource:
 
         Args:
             client: Official google.genai.Client instance
+                （来自 GeminiClientPool；本类不持有生命周期）
         """
-        warnings.warn(
-            _INTERACTIONS_DEPRECATION_MSG.format(cls="AsyncInteractionsResource"),
-            DeprecationWarning,
-            stacklevel=2,
-        )
         self._client = client
     
     async def create(

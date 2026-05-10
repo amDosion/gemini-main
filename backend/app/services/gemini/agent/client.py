@@ -22,17 +22,9 @@
 import asyncio
 import os
 import json
-import warnings
 from types import TracebackType
 from typing import Optional, Union, Tuple, Dict, Any
 import logging
-
-_WRAPPER_DEPRECATION_MSG = (
-    "app.services.gemini.agent.client.{cls} 已弃用。请改用 "
-    "`from app.services.gemini.client_pool import get_client_pool; "
-    "client = get_client_pool().get_client(api_key=..., vertexai=...)`。"
-    "包装类不走统一连接池，且其内部 Models 类对当前 google-genai SDK 已 broken。"
-)
 
 try:
     from google import genai
@@ -41,18 +33,10 @@ except ImportError:
     GENAI_AVAILABLE = False
     genai = None
 
-from .types import HttpOptions, HttpOptionsDict
-
-logger = logging.getLogger(__name__)
-
-
-# get_vertex_ai_credentials_from_db 已迁出到 services.gemini.credentials。
-# 这里只保留 re-export，让旧路径
-#     from app.services.gemini.agent.client import get_vertex_ai_credentials_from_db
-# 仍然可用。新代码请直接从 services.gemini.credentials 导入。
-from ..credentials import get_vertex_ai_credentials_from_db  # noqa: F401  (backward-compat re-export)
-
+from ..http_options import HttpOptions, HttpOptionsDict
+from ..client_pool import get_client_pool
 from .models import Models, AsyncModels
+
 logger = logging.getLogger('google_genai.client')
 
 
@@ -64,12 +48,8 @@ class AsyncClient:
 
         Args:
             client: The underlying google.genai.Client instance
+                （来自 GeminiClientPool；本类不持有生命周期）
         """
-        warnings.warn(
-            _WRAPPER_DEPRECATION_MSG.format(cls="AsyncClient"),
-            DeprecationWarning,
-            stacklevel=2,
-        )
         self._client = client
         self._models = AsyncModels(client)
 
@@ -83,10 +63,12 @@ class AsyncClient:
         return self._client.aio.interactions
 
     async def aclose(self) -> None:
-        """Closes the async client explicitly."""
-        # Official SDK may not have aclose, so we check
-        if hasattr(self._client, 'aclose'):
-            await self._client.aclose()
+        """No-op：底层 google.genai.Client 由 GeminiClientPool 管理生命周期。
+
+        包装类不持有底层 client 的关闭权——若此处 close，会把池里被其他调用方
+        共享的 client 一并关闭。pool.close_all() 是关闭整个池的统一入口。
+        """
+        return None
 
     async def __aenter__(self) -> 'AsyncClient':
         return self
@@ -129,12 +111,6 @@ class Client:
             debug_config: Debug configuration
             http_options: HTTP options (timeout, headers, etc.)
         """
-        warnings.warn(
-            _WRAPPER_DEPRECATION_MSG.format(cls="Client"),
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
         if not GENAI_AVAILABLE:
             raise ImportError(
                 "google.genai package is not available. "
@@ -169,74 +145,20 @@ class Client:
                     'or provide api_key for Vertex AI Express mode.'
                 )
         
-        # Create official google.genai.Client
-        client_kwargs = {}
-        
-        if self._vertexai:
-            client_kwargs['vertexai'] = True
-            # Vertex AI 模式：通过 google.genai.Client(vertexai=True, ...)
-            # 使用 project/location 和 OAuth2 credentials 或 ADC。
-            if self._project and self._location:
-                # 使用 project 和 location（用于构建路径）
-                client_kwargs['project'] = self._project
-                client_kwargs['location'] = self._location
-                
-                # 如果有 credentials（service account），使用它（推荐方式）
-                if self._credentials:
-                    client_kwargs['credentials'] = self._credentials
-                    logger.info("[Client] Using Vertex AI with project/location and service account credentials")
-                else:
-                    # 使用 ADC（Application Default Credentials）
-                    # 不传递 api_key，让 SDK 自动使用 ADC
-                    # 需要环境中有 GOOGLE_APPLICATION_CREDENTIALS 或运行 gcloud auth application-default login
-                    logger.info("[Client] Using Vertex AI ADC mode (project/location)")
-                    logger.info("[Client] Make sure GOOGLE_APPLICATION_CREDENTIALS is set or run 'gcloud auth application-default login'")
-            else:
-                raise ValueError(
-                    'For Vertex AI mode, project and location are required. '
-                    'Please provide both project and location, and ensure ADC is configured '
-                    '(GOOGLE_APPLICATION_CREDENTIALS environment variable or gcloud auth application-default login).'
-                )
-        else:
-            # Gemini API 模式：只需要 api_key
-            if self._api_key:
-                client_kwargs['api_key'] = self._api_key
-            else:
-                raise ValueError('api_key is required for Gemini API mode')
-        
-        # Add HTTP options if provided
-        if self._http_options:
-            # Convert our HttpOptions to google.genai.types.HttpOptions
-            try:
-                from google.genai import types as genai_types
-                retry_options = getattr(self._http_options, "retry_options", None)
-                genai_retry_options = None
-                if retry_options:
-                    genai_retry_options = genai_types.HttpRetryOptions(
-                        attempts=retry_options.attempts,
-                        initial_delay=retry_options.initial_delay,
-                        max_delay=retry_options.max_delay,
-                        exp_base=retry_options.exp_base,
-                        jitter=retry_options.jitter,
-                    )
+        # 底层 google.genai.Client 统一从 GeminiClientPool 获取——
+        # 同 (vertexai, api_key/project/location/credentials, http_options) 配置在
+        # 进程内复用同一原生 client，HttpOptions 的转换、ADC vs service account 的
+        # 分支、project/location 校验均在 pool 内部统一处理（见
+        # services/gemini/client_pool.py:get_client / _to_genai_http_options）。
+        self._genai_client = get_client_pool().get_client(
+            api_key=self._api_key,
+            vertexai=self._vertexai,
+            project=self._project,
+            location=self._location,
+            credentials=self._credentials,
+            http_options=self._http_options,
+        )
 
-                genai_http_options = genai_types.HttpOptions(
-                    api_version=getattr(self._http_options, "api_version", None),
-                    base_url=getattr(self._http_options, "base_url", None),
-                    headers=getattr(self._http_options, "headers", None),
-                    timeout=getattr(self._http_options, "timeout", None),
-                    retry_options=genai_retry_options,
-                )
-                client_kwargs['http_options'] = genai_http_options
-            except ImportError:
-                logger.warning("Could not import google.genai.types, http_options may not work correctly")
-        
-        # Create the official client
-        self._genai_client = genai.Client(**client_kwargs)
-        
-        # 注意：Vertex AI 模式使用 ADC 或 credentials，不需要覆盖 prepare_options
-        # 官方 SDK 会自动处理认证（使用 ADC 或传递的 credentials）
-        
         # Initialize modules (native SDK interactions, legacy model wrappers)
         self._aio = AsyncClient(self._genai_client)
         self._models = Models(self._genai_client)
@@ -262,9 +184,12 @@ class Client:
         return self._genai_client.interactions
 
     def close(self) -> None:
-        """Closes the synchronous client explicitly."""
-        if hasattr(self._genai_client, 'close'):
-            self._genai_client.close()
+        """No-op：底层 google.genai.Client 由 GeminiClientPool 管理生命周期。
+
+        与 AsyncClient.aclose() 同理——包装类不真关底层，避免破坏池中共享。
+        如需统一释放进程内全部 client，调 ``GeminiClientPool.close_all()``。
+        """
+        return None
 
     def __enter__(self) -> 'Client':
         return self

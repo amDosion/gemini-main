@@ -1,7 +1,7 @@
 from app.routers.models.models import filter_models_by_mode
 from app.services.gemini.coordinators.image_edit_coordinator import ImageEditCoordinator
 from app.services.gemini.google_service import GoogleService
-from app.services.gemini.agent.types import HttpOptions
+from app.services.gemini.http_options import HttpOptions
 from app.services.common.google_model_catalog import (
     DEPRECATED_GOOGLE_VERTEX_IMAGE_MODEL_MIGRATIONS,
     get_static_google_vertex_model_ids_for_mode,

@@ -21,7 +21,6 @@ from sqlalchemy.orm import Session
 # 延迟导入以避免循环导入
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from .client import Client, AsyncClient
     from ..http_options import HttpOptions, HttpOptionsDict
 from ...common.interactions_event_utils import build_interaction_stream_event
 from .memory_manager import MemoryManager
@@ -95,8 +94,7 @@ class VertexAiInteractionsService:
         """
         # 延迟导入以避免循环导入
         from ..client_pool import get_client_pool
-        from .client import Client
-        
+
         pool = get_client_pool()
         return pool.get_client(
             api_key=self.api_key,
@@ -111,10 +109,8 @@ class VertexAiInteractionsService:
         获取异步 Vertex AI 客户端（从统一池）
         
         Returns:
-            AsyncClient 实例（Vertex AI 模式）
+            原生 google.genai.Client.aio（异步入口）
         """
-        from .client import AsyncClient
-        
         client = self.get_client()
         return client.aio
     

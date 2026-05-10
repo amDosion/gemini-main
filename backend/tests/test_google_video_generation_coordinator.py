@@ -4,7 +4,7 @@ import pytest
 
 from app.services.common.video_mode_contract import apply_video_mode_runtime_overrides
 from app.services.common.mode_controls_catalog import resolve_mode_controls
-from app.services.gemini.agent.types import HttpOptions, HttpRetryOptions
+from app.services.gemini.http_options import HttpOptions, HttpRetryOptions
 from app.services.gemini.coordinators.video_generation_coordinator import VideoGenerationCoordinator
 from app.services.gemini.base.video_common import parse_data_url
 from app.services.gemini.geminiapi.video_generation_service import GeminiAPIVideoGenerationService

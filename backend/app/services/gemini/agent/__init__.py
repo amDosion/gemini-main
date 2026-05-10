@@ -11,10 +11,11 @@ Agent Engine Services - Agent Engine 高级功能服务模块
   - SmartTaskDecomposer: 智能任务分解器（使用 LLM 分解任务）
   - AgentMatcher: 代理匹配器（能力匹配、负载均衡）
 - ADK 集成服务
-- Official Google GenAI SDK Compatibility Layer (从 official/ 目录合并)
+- Official Google GenAI SDK Compatibility Layer
+  （Client / AsyncClient / Models / AsyncModels；底层 google.genai.Client 由
+   ``app.services.gemini.client_pool`` 统一管理，本层只提供包装接口）
 
 说明：
-- 本子包仍导出若干 legacy Google runtime orchestration helpers 以保持兼容。
 - provider-neutral 的 Multi-Agent 主入口应使用
   `POST /api/modes/{provider}/multi-agent`。
 """
@@ -54,18 +55,12 @@ from .adk_runner import ADKRunner
 from .adk_agent import ADKAgent
 from .interactions_service import VertexAiInteractionsService
 
-# Vertex AI 凭证加载工具（保留：interactions_manager.py 等 4 处真在用）
-# 真实定义在 services.gemini.credentials；从 ..credentials 直接导入避免间接路径
-from ..credentials import get_vertex_ai_credentials_from_db
-from . import types  # 仅为兼容：agent.types.HttpOptions 是真在用的（5 处）
+# Official Google GenAI SDK Compatibility Layer
+# 包装接口保留可用；底层 google.genai.Client 由 GeminiClientPool 提供并复用
+# （见 services/gemini/agent/client.py:Client.__init__）。
+from .client import Client, AsyncClient
+from .models import Models, AsyncModels
 
-# 注意：Client / AsyncClient / Models / AsyncModels 已弃用，
-# 不再从 agent.__init__ 重新导出。如确需访问，必须显式：
-#     from app.services.gemini.agent.client import Client
-# 并会在实例化时触发 DeprecationWarning。
-# 推荐改用统一池：
-#     from app.services.gemini.client_pool import get_client_pool
-#     client = get_client_pool().get_client(api_key=..., vertexai=False)
 __all__ = [
     "PROVIDER_NEUTRAL_MULTI_AGENT_ENTRYPOINT",
     "LEGACY_GOOGLE_RUNTIME_ROUTE",
@@ -110,13 +105,10 @@ __all__ = [
     "ADKRunner",
     "ADKAgent",
     "VertexAiInteractionsService",
-    # Vertex AI credentials helper（真实 4 处调用：interactions_manager.py）
-    "get_vertex_ai_credentials_from_db",
-    # agent.types：HttpOptions / HttpOptionsDict / HttpRetryOptions 仍被
-    # client_pool / google_service / coordinators / interactions_manager 等 5 处使用
-    "types",
-    # 已撤回（实例化时触发 DeprecationWarning）：
-    # - Client / AsyncClient（包装 google.genai.Client，应改走 client_pool.get_client_pool()）
-    # - Models / AsyncModels（其内部 self._api_client.request(...) 调用对当前 google-genai 版本已 broken）
-    # - InteractionsResource / AsyncInteractionsResource（早已被原生 client.aio.interactions 取代）
+    # Official Google GenAI SDK Compatibility Layer
+    # 包装类保留可用；底层 google.genai.Client 由 GeminiClientPool 统一提供
+    "Client",
+    "AsyncClient",
+    "Models",
+    "AsyncModels",
 ]

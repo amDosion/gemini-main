@@ -17,7 +17,6 @@
 
 import json
 import logging
-import warnings
 from typing import Any, AsyncIterator, Iterator, Optional, Union
 from urllib.parse import urlencode
 
@@ -29,17 +28,10 @@ from .types import (
     Content,
     Part,
     Candidate,
-    HttpOptions
 )
+from ..http_options import HttpOptions
 
 logger = logging.getLogger('google_genai.models')
-
-_MODELS_DEPRECATION_MSG = (
-    "app.services.gemini.agent.models.{cls} 已弃用。它依赖旧版 google-genai SDK 的私有 "
-    "`api_client.request(...)` 接口，对当前 SDK 版本已 broken。"
-    "请直接使用 `google.genai.Client.models` / `google.genai.Client.aio.models`，"
-    "client 来源统一走 `app.services.gemini.client_pool.get_client_pool().get_client(...)`。"
-)
 
 
 # Transformer functions for API compatibility
@@ -154,11 +146,6 @@ class Models:
     """Synchronous Models API."""
 
     def __init__(self, api_client):
-        warnings.warn(
-            _MODELS_DEPRECATION_MSG.format(cls="Models"),
-            DeprecationWarning,
-            stacklevel=2,
-        )
         self._api_client = api_client
     
     def generate_content(
@@ -377,11 +364,6 @@ class AsyncModels:
     """Asynchronous Models API."""
 
     def __init__(self, api_client):
-        warnings.warn(
-            _MODELS_DEPRECATION_MSG.format(cls="AsyncModels"),
-            DeprecationWarning,
-            stacklevel=2,
-        )
         self._api_client = api_client
     
     async def generate_content(
