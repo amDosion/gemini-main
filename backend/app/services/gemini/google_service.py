@@ -30,7 +30,7 @@ from .common.schema_handler import SchemaHandler
 from .common.token_handler import TokenHandler
 from .client_pool import get_client_pool
 from google.genai import types as genai_types
-from .agent.types import HttpOptions, HttpRetryOptions
+from .http_options import HttpOptions, HttpRetryOptions
 from .vertexai.expand_service import ExpandService
 from .vertexai.segmentation_service import SegmentationService
 from .vertexai.tryon_service import TryOnService

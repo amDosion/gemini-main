@@ -245,24 +245,16 @@ class GenerateContentResponse(CommonBaseModel):
 # ============================================================================
 # HTTP and Client Types
 # ============================================================================
+# 注意：HttpRetryOptions / HttpOptions 已迁出到 services.gemini.http_options。
+# 这里只做 re-export，确保依赖 `from ...agent.types import HttpOptions` 的
+# 旧路径（agent/client.py、agent/models.py 等已弃用文件）仍能 import。
+# 新代码请直接：
+#     from app.services.gemini.http_options import HttpOptions, HttpOptionsDict, HttpRetryOptions
 
-class HttpRetryOptions(CommonBaseModel):
-    """HTTP retry configuration."""
-    
-    attempts: Optional[int] = None
-    initial_delay: Optional[float] = None
-    max_delay: Optional[float] = None
-
-
-class HttpOptions(CommonBaseModel):
-    """HTTP client configuration."""
-    
-    api_version: Optional[str] = None
-    base_url: Optional[str] = None
-    headers: Optional[Dict[str, str]] = None
-    timeout: Optional[int] = None
-    retry_options: Optional[HttpRetryOptions] = None
-    use_default_timeout: bool = True
+from ..http_options import (  # noqa: E402,F401  (re-export for backward-compat)
+    HttpRetryOptions,
+    HttpOptions,
+)
 
 
 # ============================================================================

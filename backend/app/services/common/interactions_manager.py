@@ -18,7 +18,7 @@ import os
 import time
 from sqlalchemy.orm import Session
 
-from ..gemini.agent.types import HttpOptions, HttpOptionsDict
+from ..gemini.http_options import HttpOptions, HttpOptionsDict
 from ..mcp.mcp_manager import MCPManager, get_mcp_manager
 from ..gemini.client_pool import get_client_pool
 from .interactions_event_utils import (

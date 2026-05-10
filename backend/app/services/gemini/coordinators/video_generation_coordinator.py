@@ -38,7 +38,7 @@ from ..base.video_storyboard import (
     normalize_subtitle_mode,
     strip_audio_prompt_cues,
 )
-from ..agent.types import HttpOptions
+from ..http_options import HttpOptions
 from ..client_pool import get_client_pool
 from ...common.google_model_catalog import VEO_VIDEO_MODELS
 from ...common.model_capabilities import is_multimodal_understanding_model

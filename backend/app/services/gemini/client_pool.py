@@ -21,7 +21,7 @@ import os
 from typing import Dict, Optional, Any, Union
 from datetime import datetime
 
-from .agent.types import HttpOptions, HttpOptionsDict, HttpRetryOptions
+from .http_options import HttpOptions, HttpOptionsDict, HttpRetryOptions
 
 logger = logging.getLogger(__name__)
 

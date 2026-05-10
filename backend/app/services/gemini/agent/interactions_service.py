@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .client import Client, AsyncClient
-    from .types import HttpOptions, HttpOptionsDict
+    from ..http_options import HttpOptions, HttpOptionsDict
 from ...common.interactions_event_utils import build_interaction_stream_event
 from .memory_manager import MemoryManager
 from .code_executor import AgentEngineSandboxCodeExecutor
