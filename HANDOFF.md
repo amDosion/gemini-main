@@ -14,8 +14,16 @@
 2. **agent 禁止无用输出**。Agent 在每次工具调用之前的文字必须只包含：(a) 这一步要做什么、(b) 必要的事实声明（如 GateGuard facts）；不重复用户已知信息、不写宣言式总结、不写"现在我将…"句式。Token 用在改代码上。
 3. **精准修复**。一次只解决一个明确的问题；改动文件数与目标问题强相关；不附带"顺手清理"的无关动作（除非属于本次 commit 的同一主题）。
 4. **任何 bug 不分高/中/低都必须修**。reviewer agent 报告或人工评审里出现的 LOW / MEDIUM / HIGH 全部纳入清单逐条解决；要 defer 的必须明文写在工单 "Out of Scope" 节并说明原因。
+5. **新功能设计 / 大重构必须先进 plan 模式做完整分析**。任何跨 ≥3 个文件、或新增 router / 新增 service / 改动数据 schema / 改动外部 API 契约 / 影响生命周期与并发 / 涉及安全凭证的改动，**必须**：
+   - 第一步：进 plan 模式完整列出动机、影响面、改动文件清单、风险清单、验收标准、回滚路径，写成 JIRA-style 工单文档（参考 `JIRA-gemini-pool-production-hardening.md` 结构）
+   - 第二步：在 plan 文档批准后才进入实施
+   - **不允许**直接动手 + 边写边想 + commit 完了再补文档的顺序
+6. **大重构必须利用 agent teams 并行审查**。在实施前、实施中、实施后三个时点至少各启动一次多 agent 并行审：
+   - 实施前：`Explore` × 1 + `architect` × 1（动机与影响面交叉验证）
+   - 实施中：每完成一个 Step commit 后用相关语言的 reviewer (`typescript-reviewer` / `python-reviewer` / `security-reviewer` / `performance-optimizer` / `silent-failure-hunter` / `type-design-analyzer`) 至少 2 个并行 spot-check
+   - 实施后：上线前用 split-role agent teams（如本次 hardening 用的 5 + architect 共 6 个并行）做 ship-readiness 复审；任意 reviewer 给 NO-GO 都不允许 push origin
 
-违反这 4 条任一项的 PR 应直接 close + 重做，不接受"再补一个 commit 就好"的妥协。
+违反这 6 条任一项的 PR 应直接 close + 重做，不接受"再补一个 commit 就好"的妥协。
 
 ---
 
@@ -257,8 +265,9 @@ gemini-main/
 ├── JIRA-gemini-client-pool-unification.md        # 阶段 1 工单（Done，含 commit 序列）
 ├── JIRA-gemini-pool-production-hardening.md      # 阶段 2 工单（Done，含 27 项验收）
 ├── docs/
-│   ├── BE-GENAI-CLIENT-REFACTOR.md               # ⚠️ HISTORICAL（已加 banner）
-│   ├── ANALYSIS_GENAI_SDK_INTEGRATION.md         # ⚠️ HISTORICAL（已加 banner）
+│   ├── staging-validation/                       # 本工单 staging 真实流量验证证据
+│   │   ├── README.md
+│   │   └── 2026-05-10-veo-720p-4s.json
 │   ├── code-review-*.md                          # 与本主题无关
 │   └── execplans/PRODUCTION-READINESS-AUDIT.md   # 与本主题无关
 └── backend/app/services/gemini/docs/
