@@ -319,8 +319,8 @@ class GoogleService(BaseProviderService):
         )
 
     def _get_pool_kwargs_for_mode(self, mode: Optional[str]) -> dict:
-        """Get pool kwargs, with special http_options for image-chat-edit mode."""
-        if mode != "image-chat-edit":
+        """Get pool kwargs, with long-request http_options for Gemini image editing modes."""
+        if mode not in {"image-chat-edit", "image-recontext", "product-recontext"}:
             return self._pool_kwargs
         return dict(
             api_key=self.api_key,

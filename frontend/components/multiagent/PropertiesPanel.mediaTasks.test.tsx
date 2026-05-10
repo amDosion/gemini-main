@@ -118,13 +118,11 @@ describe('PropertiesPanel media task support', () => {
               param_options: {
                 seconds: ['4', '6', '8'],
                 video_extension_count: [0, 1, 2],
-                person_generation: ['dont_allow', 'allow_adult'],
                 subtitle_mode: ['none', 'vtt'],
                 subtitle_language: ['en-US', 'zh-CN'],
               },
               constraints: {
                 supports_generate_audio: true,
-                supports_person_generation: true,
                 supports_subtitle_sidecar: true,
                 enhance_prompt_mandatory: true,
                 video_extension_added_seconds: 7,
@@ -138,10 +136,6 @@ describe('PropertiesPanel media task support', () => {
                     effective_default: true,
                   },
                   generate_audio: {
-                    available: true,
-                    forced_value: null,
-                  },
-                  person_generation: {
                     available: true,
                     forced_value: null,
                   },

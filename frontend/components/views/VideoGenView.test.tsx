@@ -31,7 +31,6 @@ vi.mock('../../hooks/useModeControlsSchema', () => ({
         seconds: [{ value: '8', label: '8s' }],
         video_extension_count: [{ value: 0, label: '不延长' }, { value: 1, label: '延长 1 次' }],
         storyboard_shot_seconds: [{ value: 4, label: '4s / 镜头' }],
-        person_generation: [{ value: 'allow_adult', label: '允许成人' }],
         subtitle_mode: [{ value: 'none', label: '无字幕' }, { value: 'vtt', label: '字幕' }],
         subtitle_language: [{ value: 'en-US', label: 'English' }],
       },
@@ -42,7 +41,6 @@ vi.mock('../../hooks/useModeControlsSchema', () => ({
         video_extension_count: 0,
         storyboard_shot_seconds: 4,
         generate_audio: false,
-        person_generation: 'allow_adult',
         subtitle_mode: 'none',
         subtitle_language: 'en-US',
         subtitle_script: '',
@@ -110,12 +108,13 @@ describe('VideoGenView history list', () => {
     videoExtensionCount: 0,
     storyboardShotSeconds: 4,
     generateAudio: false,
-    personGeneration: 'allow_adult',
     subtitleMode: 'none',
     subtitleLanguage: 'en-US',
     subtitleScript: '',
     storyboardPrompt: '',
+    storyboardSegments: [],
     enhancePrompt: false,
+    enhancePromptModel: '',
     negativePrompt: '',
     seed: -1,
     setAspectRatio: vi.fn(),
@@ -124,12 +123,13 @@ describe('VideoGenView history list', () => {
     setVideoExtensionCount: vi.fn(),
     setStoryboardShotSeconds: vi.fn(),
     setGenerateAudio: vi.fn(),
-    setPersonGeneration: vi.fn(),
     setSubtitleMode: vi.fn(),
     setSubtitleLanguage: vi.fn(),
     setSubtitleScript: vi.fn(),
     setStoryboardPrompt: vi.fn(),
+    setStoryboardSegments: vi.fn(),
     setEnhancePrompt: vi.fn(),
+    setEnhancePromptModel: vi.fn(),
     setNegativePrompt: vi.fn(),
     setSeed: vi.fn(),
     ...overrides,
@@ -424,12 +424,12 @@ describe('VideoGenView history list', () => {
       videoExtensionCount: 1,
       storyboardShotSeconds: 6,
       generateAudio: true,
-      personGeneration: 'allow_all',
       subtitleMode: 'vtt',
       subtitleLanguage: 'zh-CN',
       subtitleScript: 'old subtitle',
       storyboardPrompt: 'old storyboard',
       enhancePrompt: false,
+      enhancePromptModel: 'gemini-2.5-flash',
       negativePrompt: 'old negative',
       seed: 999,
     });
@@ -457,13 +457,14 @@ describe('VideoGenView history list', () => {
     expect(controls.setVideoExtensionCount).toHaveBeenCalledWith(0);
     expect(controls.setStoryboardShotSeconds).toHaveBeenCalledWith(4);
     expect(controls.setGenerateAudio).toHaveBeenCalledWith(false);
-    expect(controls.setPersonGeneration).toHaveBeenCalledWith('allow_adult');
     expect(controls.setSubtitleMode).toHaveBeenCalledWith('none');
     expect(controls.setSubtitleLanguage).toHaveBeenCalledWith('en-US');
     expect(controls.setSubtitleScript).toHaveBeenCalledWith('');
     expect(controls.setStoryboardPrompt).toHaveBeenCalledWith('');
+    expect(controls.setStoryboardSegments).toHaveBeenCalledWith([]);
     expect(controls.setNegativePrompt).toHaveBeenCalledWith('');
     expect(controls.setSeed).toHaveBeenCalledWith(17);
     expect(controls.setEnhancePrompt).toHaveBeenCalledWith(true);
+    expect(controls.setEnhancePromptModel).toHaveBeenCalledWith('');
   });
 });

@@ -17,8 +17,10 @@ from ...utils.attachment_handler import is_base64_url
 VIDEO_MODE_CONTRACT_VERSION = "2026-03-17"
 _GOOGLE_VIDEO_PROVIDER = "google"
 _VIDEO_GEN_MODE = "video-gen"
+_IMAGE_GEN_MODE = "image-gen"
 _DEFAULT_RUNTIME_API_MODE = "gemini_api"
 _MASK_FALLBACK_MODE = "REMOVE"
+_OUTPUT_MIME_CONTROL_KEYS = ("output_mime_type", "output_compression_quality")
 
 
 def _attachment_value(attachment: Any, *keys: str) -> Any:
@@ -47,6 +49,21 @@ def _extract_option_values(options: Any) -> List[Any]:
         elif option is not None:
             values.append(option)
     return values
+
+
+def _remove_output_mime_controls(schema: Dict[str, Any]) -> None:
+    defaults = schema.get("defaults")
+    if isinstance(defaults, dict):
+        for key in _OUTPUT_MIME_CONTROL_KEYS:
+            defaults.pop(key, None)
+
+    param_options = schema.get("param_options")
+    if isinstance(param_options, dict):
+        param_options.pop("output_mime_type", None)
+
+    numeric_ranges = schema.get("numeric_ranges")
+    if isinstance(numeric_ranges, dict):
+        numeric_ranges.pop("output_compression_quality", None)
 
 
 def _coerce_positive_int(value: Any) -> Optional[int]:
@@ -272,6 +289,7 @@ def _build_extension_duration_matrix(
     seconds_options: List[Any],
     extension_counts: List[Any],
     extension_added_seconds: Optional[int],
+    max_source_video_seconds: Optional[int],
     max_output_video_seconds: Optional[int],
     max_video_extension_count: Optional[int],
 ) -> List[Dict[str, Any]]:
@@ -305,6 +323,10 @@ def _build_extension_duration_matrix(
             continue
         options: List[Dict[str, Any]] = []
         for count in normalized_counts:
+            if count > 0 and max_source_video_seconds is not None:
+                last_source_seconds = base_seconds + max(count - 1, 0) * extension_added_seconds
+                if last_source_seconds > max_source_video_seconds:
+                    continue
             total_seconds = base_seconds + count * extension_added_seconds
             if max_output_video_seconds is not None and total_seconds > max_output_video_seconds:
                 continue
@@ -353,6 +375,7 @@ def build_video_mode_contract(schema: Dict[str, Any]) -> Dict[str, Any]:
         seconds_options=_extract_option_values(param_options.get("seconds")),
         extension_counts=_extract_option_values(param_options.get("video_extension_count")),
         extension_added_seconds=_coerce_positive_int(constraints.get("video_extension_added_seconds")),
+        max_source_video_seconds=_coerce_positive_int(constraints.get("max_source_video_seconds")),
         max_output_video_seconds=_coerce_positive_int(constraints.get("max_output_video_seconds")),
         max_video_extension_count=_coerce_non_negative_int(constraints.get("max_video_extension_count")),
     )
@@ -459,7 +482,6 @@ def build_video_mode_contract(schema: Dict[str, Any]) -> Dict[str, Any]:
         "runtime_api_mode": str(schema.get("runtime_api_mode") or _DEFAULT_RUNTIME_API_MODE),
         "supports": {
             "generate_audio": constraints.get("supports_generate_audio") is True,
-            "person_generation": constraints.get("supports_person_generation") is True,
             "subtitle_sidecar": constraints.get("supports_subtitle_sidecar") is True,
             "storyboard_prompting": constraints.get("supports_storyboard_prompting") is True,
             "tracking_overlay_prompt": constraints.get("supports_tracking_overlay_prompt") is True,
@@ -479,10 +501,6 @@ def build_video_mode_contract(schema: Dict[str, Any]) -> Dict[str, Any]:
             "generate_audio": {
                 "available": constraints.get("supports_generate_audio") is True,
                 "forced_value": False if constraints.get("supports_generate_audio") is not True else None,
-            },
-            "person_generation": {
-                "available": constraints.get("supports_person_generation") is True,
-                "forced_value": None if constraints.get("supports_person_generation") is not True else None,
             },
             "subtitle_mode": {
                 "available": bool(subtitle_option_values),
@@ -604,14 +622,6 @@ def normalize_video_generation_request_params(
     if generate_audio_policy.get("available") is not True:
         normalized["generate_audio"] = False
 
-    person_generation_policy = (
-        field_policies.get("person_generation")
-        if isinstance(field_policies.get("person_generation"), dict)
-        else {}
-    )
-    if person_generation_policy.get("available") is not True:
-        normalized.pop("person_generation", None)
-
     subtitle_mode = str(normalized.get("subtitle_mode") or "none").strip().lower()
     subtitle_policy = (
         field_policies.get("subtitle_mode")
@@ -674,25 +684,42 @@ def apply_video_mode_runtime_overrides(
     runtime_api_mode: Optional[str] = None,
 ) -> Dict[str, Any]:
     resolved = deepcopy(schema)
+    api_mode = str(runtime_api_mode or resolved.get("runtime_api_mode") or _DEFAULT_RUNTIME_API_MODE).strip().lower()
+    if provider == _GOOGLE_VIDEO_PROVIDER and mode == _IMAGE_GEN_MODE:
+        resolved["runtime_api_mode"] = api_mode or _DEFAULT_RUNTIME_API_MODE
+        if resolved["runtime_api_mode"] != "vertex_ai":
+            _remove_output_mime_controls(resolved)
+        return resolved
+
     if provider != _GOOGLE_VIDEO_PROVIDER or mode != _VIDEO_GEN_MODE:
         return resolved
 
-    api_mode = str(runtime_api_mode or resolved.get("runtime_api_mode") or _DEFAULT_RUNTIME_API_MODE).strip().lower()
     resolved["runtime_api_mode"] = api_mode or _DEFAULT_RUNTIME_API_MODE
 
     if resolved["runtime_api_mode"] != "vertex_ai":
         param_options = resolved.get("param_options")
         if isinstance(param_options, dict):
             param_options.pop("generate_audio", None)
-            param_options.pop("person_generation", None)
         constraints = resolved.get("constraints")
         if isinstance(constraints, dict):
             constraints["supports_generate_audio"] = False
-            constraints["supports_person_generation"] = False
         defaults = resolved.get("defaults")
         if isinstance(defaults, dict):
             defaults["generate_audio"] = False
-            defaults["person_generation"] = None
+    else:
+        constraints = resolved.get("constraints")
+        if isinstance(constraints, dict):
+            resolution_values = [
+                str(option.get("value"))
+                for option in resolved.get("resolution_tiers", [])
+                if isinstance(option, dict) and str(option.get("value") or "").strip()
+            ]
+            constraints["video_extension_require_resolution_values"] = (
+                resolution_values or ["720p", "1080p", "4k"]
+            )
+            constraints["max_source_video_seconds"] = 30
+            constraints["max_output_video_seconds"] = 37
+            constraints["max_video_extension_count"] = 4
 
     resolved["video_contract"] = build_video_mode_contract(resolved)
     return resolved

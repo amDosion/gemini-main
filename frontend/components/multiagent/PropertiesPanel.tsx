@@ -1231,9 +1231,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           if (typeof nodeData.agentGenerateAudio !== 'boolean') {
             updates.agentGenerateAudio = workflowVideoControlContract.defaultGenerateAudio;
           }
-          if (!String(nodeData.agentPersonGeneration || '').trim() && workflowVideoControlContract.defaultPersonGeneration) {
-            updates.agentPersonGeneration = workflowVideoControlContract.defaultPersonGeneration;
-          }
           if (!String(nodeData.agentSubtitleMode || '').trim()) {
             updates.agentSubtitleMode = workflowVideoControlContract.defaultSubtitleMode;
           }
@@ -2037,10 +2034,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             const generateAudioValue = typeof generateAudioForcedValue === 'boolean'
               ? generateAudioForcedValue
               : Boolean(nodeData.agentGenerateAudio ?? workflowVideoControlContract.defaultGenerateAudio);
-            const personGenerationOptions = workflowVideoControlContract.validPersonGenerationValues;
-            const personGenerationValue = personGenerationOptions.includes(String(nodeData.agentPersonGeneration || '').trim())
-              ? String(nodeData.agentPersonGeneration || '').trim()
-              : workflowVideoControlContract.defaultPersonGeneration;
             const subtitleModeOptions = workflowVideoControlContract.validSubtitleModes.length > 0
               ? workflowVideoControlContract.validSubtitleModes
               : ['none'];
@@ -2075,14 +2068,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   <label className="block text-xs text-slate-500 mb-1">分辨率</label>
                   <select
                     value={videoResolution}
-                    onChange={(e) => updateNodeData({
-                      agentResolutionTier: e.target.value,
-                      ...(videoExtensionCount > 0
-                        && workflowVideoControlContract.extensionConstraints.requireResolutionValues.length > 0
-                        && !workflowVideoControlContract.extensionConstraints.requireResolutionValues.includes(e.target.value)
-                        ? { agentVideoExtensionCount: 0 }
-                        : {}),
-                    })}
+                    onChange={(e) => updateNodeData({ agentResolutionTier: e.target.value })}
                     data-field-key="agentResolutionTier"
                     className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none focus:border-fuchsia-500/50"
                   >
@@ -2123,7 +2109,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               {extensionOptions.length > 0 && (
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs text-slate-500 mb-1">官方延长次数</label>
+                    <label className="block text-xs text-slate-500 mb-1">延长次数</label>
                     <select
                       value={String(videoExtensionCount)}
                       onChange={(e) => updateNodeData({ agentVideoExtensionCount: Number(e.target.value) })}
@@ -2171,24 +2157,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   </label>
                 )}
               </div>
-              {personGenerationOptions.length > 0 && (
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">人物生成</label>
-                  <select
-                    value={personGenerationValue}
-                    onChange={(e) => updateNodeData({ agentPersonGeneration: e.target.value })}
-                    data-field-key="agentPersonGeneration"
-                    className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none focus:border-fuchsia-500/50"
-                  >
-                    <option value="">默认</option>
-                    {personGenerationOptions.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
               <div>
                 <label className="block text-xs text-slate-500 mb-1">分镜提示词（可选）</label>
                 <textarea
@@ -2304,9 +2272,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 直接续接会优先走 SDK 的视频扩展；尾帧桥接会提取上一段最后一帧，作为下一段视频的首帧输入。
               </div>
               <div className="text-[10px] text-slate-500">
-                {workflowVideoControlContract.extensionConstraints.requireResolutionValues.length > 0
-                  ? `官方延长当前要求分辨率：${workflowVideoControlContract.extensionConstraints.requireResolutionValues.join(', ')}`
-                  : '不填源视频时是文生视频；只填参考图时是图生视频。'}
+                720p 优先使用直接视频续写；1080p/4K 会自动使用末帧桥接并拼接最终视频。
               </div>
               <div>
                 <label className="block text-xs text-slate-500 mb-1">源视频 URL（可选）</label>
@@ -2610,9 +2576,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           }
           if (typeof nodeData.toolGenerateAudio !== 'boolean') {
             updates.toolGenerateAudio = workflowVideoControlContract.defaultGenerateAudio;
-          }
-          if (!String(nodeData.toolPersonGeneration || '').trim() && workflowVideoControlContract.defaultPersonGeneration) {
-            updates.toolPersonGeneration = workflowVideoControlContract.defaultPersonGeneration;
           }
           if (!String(nodeData.toolSubtitleMode || '').trim()) {
             updates.toolSubtitleMode = workflowVideoControlContract.defaultSubtitleMode;
@@ -3042,14 +3005,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                     <label className="block text-xs text-slate-500 mb-1">分辨率</label>
                     <select
                       value={resolution}
-                      onChange={(e) => updateNodeData({
-                        toolResolutionTier: e.target.value,
-                        ...(toolVideoExtensionCount > 0
-                          && workflowVideoControlContract.extensionConstraints.requireResolutionValues.length > 0
-                          && !workflowVideoControlContract.extensionConstraints.requireResolutionValues.includes(e.target.value)
-                          ? { toolVideoExtensionCount: 0 }
-                          : {}),
-                      })}
+                      onChange={(e) => updateNodeData({ toolResolutionTier: e.target.value })}
                       data-field-key="toolResolutionTier"
                       className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none focus:border-fuchsia-500/50"
                     >
@@ -3090,7 +3046,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 {extensionOptions.length > 0 && (
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-xs text-slate-500 mb-1">官方延长次数</label>
+                      <label className="block text-xs text-slate-500 mb-1">延长次数</label>
                       <select
                         value={String(toolVideoExtensionCount)}
                         onChange={(e) => updateNodeData({ toolVideoExtensionCount: Number(e.target.value) })}
@@ -3147,24 +3103,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                     placeholder="Shot 1: product hero... Shot 2: tracking close-up..."
                   />
                 </div>
-                {workflowVideoControlContract.validPersonGenerationValues.length > 0 && (
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">人物生成</label>
-                    <select
-                      value={String(nodeData.toolPersonGeneration || workflowVideoControlContract.defaultPersonGeneration || '')}
-                      onChange={(e) => updateNodeData({ toolPersonGeneration: e.target.value })}
-                      data-field-key="toolPersonGeneration"
-                      className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none focus:border-fuchsia-500/50"
-                    >
-                      <option value="">默认</option>
-                      {workflowVideoControlContract.validPersonGenerationValues.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
                 {workflowVideoControlContract.validSubtitleModes.length > 0 && (
                   <>
                     <div className="grid grid-cols-2 gap-2">

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --no-deprecation ./node_modules/concurrently/dist/bin/concurrently.js \"npm run server\" \"vite\"",
-    "server": "cd backend && PYTHONUNBUFFERED=1 .venv/bin/uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 21574 --log-level info",
+    "server": "cd backend && PYTHONUNBUFFERED=1 .venv/bin/python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 21574 --log-level info",
     "install:backend": "pip install -r backend/requirements.txt",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -16,7 +16,8 @@
     "test:backend:cov": "sh -c 'cd backend && PY=.venv/bin/python; if [ -x \"$PY\" ]; then \"$PY\" -m pytest tests --cov=app --cov-report=term-missing; else python3 -m pytest tests --cov=app --cov-report=term-missing; fi'",
     "test:ui-result-panel": "vitest run frontend/components/multiagent/MultiAgentWorkflowEditorReactFlow.resultPanel.test.tsx --environment jsdom",
     "test:ui-mcp-settings": "vitest run frontend/components/modals/settings/McpTab.ui.test.tsx --environment jsdom",
-    "e2e:agent": "node scripts/e2e/agent_workflow_e2e.mjs"
+    "e2e:agent": "node scripts/e2e/agent_workflow_e2e.mjs",
+    "e2e:video:real": "backend/.venv/bin/python scripts/e2e/google_video_ui_e2e.py"
   },
   "dependencies": {
     "@dagrejs/dagre": "^1.1.8",

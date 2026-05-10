@@ -1,16 +1,19 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
-import { Sparkles, AlertCircle, Layers, User, Bot, SlidersHorizontal, RotateCcw } from 'lucide-react';
+import { Sparkles, Layers, Bot, SlidersHorizontal, RotateCcw } from 'lucide-react';
 import { useImageCanvas } from '../../hooks/useImageCanvas';
 import { ImageCanvasControls } from '../common/ImageCanvasControls';
+import { ImageCarouselArrows, ImageCarouselThumbnails, type CarouselMediaItem } from '../common/ImageCarouselControls';
 import { ImageCompare } from '../common/ImageCompare';
 import { GenViewLayout } from '../common/GenViewLayout';
 import { ThinkingBlock } from '../message/ThinkingBlock';
 import { useToastContext } from '../../contexts/ToastContext';
 import { useControlsState } from '../../hooks/useControlsState';
+import { useImageCarousel } from '../../hooks/useImageCarousel';
 import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
 import ChatEditInputArea from '../chat/ChatEditInputArea';
+import { extractImageHistoryPrompts, useImageHistorySidebar } from '../common/ImageHistorySidebar';
 
 interface ImageRecontextViewProps {
     messages: Message[];
@@ -27,6 +30,7 @@ interface ImageRecontextViewProps {
     onExpandImage?: (url: string) => void;
     providerId?: string;
     sessionId?: string | null;
+    onDeleteMessage?: (messageId: string) => void;
 }
 
 // 复用 ImageEditView 的比较函数
@@ -61,6 +65,11 @@ type ImageEditMainCanvasProps = {
     onFullscreen?: () => void;
     onExpand?: () => void;
     onToggleCompare?: () => void;
+    carouselIndex: number;
+    onCarouselPrev: () => void;
+    onCarouselNext: () => void;
+    onCarouselSelect: (index: number) => void;
+    getStableUrl: (att: Attachment) => string | null;
 };
 
 const ImageEditMainCanvas = memo(({
@@ -82,9 +91,30 @@ const ImageEditMainCanvas = memo(({
     onFullscreen,
     onExpand,
     onToggleCompare,
+    carouselIndex,
+    onCarouselPrev,
+    onCarouselNext,
+    onCarouselSelect,
+    getStableUrl,
 }: ImageEditMainCanvasProps) => {
     const cursor =
         isCompareMode ? 'default' : isDragging ? 'grabbing' : activeImageUrl ? 'grab' : 'default';
+    const isMultiImageMode = activeAttachments.length > 1;
+    const currentDisplayUrl = isMultiImageMode && activeAttachments[carouselIndex]
+        ? (activeAttachments[carouselIndex].url || activeAttachments[carouselIndex].tempUrl || getStableUrl(activeAttachments[carouselIndex]))
+        : activeImageUrl;
+    const carouselItems = useMemo<CarouselMediaItem[]>(
+        () => activeAttachments.map((att, idx) => {
+            const thumbUrl = att.url || att.tempUrl || getStableUrl(att);
+            return {
+                id: att.id || `${idx}`,
+                url: thumbUrl,
+                thumbUrl,
+                alt: `重上下文结果 ${idx + 1}`
+            };
+        }),
+        [activeAttachments, getStableUrl]
+    );
 
     return (
         <div
@@ -117,6 +147,8 @@ const ImageEditMainCanvas = memo(({
                     <Sparkles size={12} className="text-yellow-400" />
                     {isCompareMode
                         ? '对比模式'
+                        : isMultiImageMode
+                            ? `重上下文结果 (${carouselIndex + 1}/${activeAttachments.length})`
                         : activeAttachments.length > 0 && activeImageUrl === activeAttachments[0].url
                             ? 'Source Preview'
                             : 'Recontext Editor'}
@@ -145,11 +177,11 @@ const ImageEditMainCanvas = memo(({
                             <p className="text-slate-400 animate-pulse">{statusText}</p>
                         </div>
                     );
-                })() : isCompareMode && originalImageUrl && activeImageUrl ? (
+                })() : isCompareMode && originalImageUrl && currentDisplayUrl ? (
                     <div className="relative shadow-2xl transition-transform duration-75 ease-out" style={canvasStyle}>
                         <ImageCompare
                             beforeImage={originalImageUrl}
-                            afterImage={activeImageUrl}
+                            afterImage={currentDisplayUrl}
                             beforeLabel="原图"
                             afterLabel="重上下文结果"
                             accentColor="orange"
@@ -157,18 +189,25 @@ const ImageEditMainCanvas = memo(({
                             style={{ maxHeight: '80vh', maxWidth: '80vw' }}
                         />
                     </div>
-                ) : activeImageUrl ? (
-                    <div
-                        className="relative shadow-2xl group transition-transform duration-75 ease-out"
-                        style={canvasStyle}
-                    >
-                        <img
-                            src={activeImageUrl}
-                            className="max-w-none rounded-lg border border-slate-800 pointer-events-none"
-                            style={{ maxHeight: '80vh', maxWidth: '80vw' }}
-                            alt="Main Canvas"
+                ) : currentDisplayUrl ? (
+                    <>
+                        <ImageCarouselArrows
+                            itemCount={activeAttachments.length}
+                            onPrev={onCarouselPrev}
+                            onNext={onCarouselNext}
                         />
-                    </div>
+                        <div
+                            className="relative shadow-2xl group transition-transform duration-75 ease-out"
+                            style={canvasStyle}
+                        >
+                            <img
+                                src={currentDisplayUrl}
+                                className="max-w-none rounded-lg border border-slate-800 pointer-events-none"
+                                style={{ maxHeight: '70vh', maxWidth: '70vw' }}
+                                alt="Main Canvas"
+                            />
+                        </div>
+                    </>
                 ) : (
                     <div className="text-center text-slate-600 pointer-events-none flex flex-col items-center gap-4 max-w-md">
                         <Sparkles size={48} className="opacity-20" />
@@ -182,8 +221,22 @@ const ImageEditMainCanvas = memo(({
                 )}
             </div>
 
+            {isMultiImageMode && loadingState === 'idle' && (
+                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 bg-slate-950/85 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl">
+                    <ImageCarouselThumbnails
+                        items={carouselItems}
+                        currentIndex={carouselIndex}
+                        onSelect={onCarouselSelect}
+                        accentTone="orange"
+                        thumbnailSize={52}
+                        panelClassName="flex items-center gap-2 py-2 px-3"
+                        counterClassName="ml-1 text-xs text-slate-400 font-mono"
+                    />
+                </div>
+            )}
+
             {/* Floating Controls */}
-            {activeImageUrl && (
+            {currentDisplayUrl && (
                 <div className="absolute bottom-6 right-6 z-20">
                     <ImageCanvasControls
                         zoom={zoom}
@@ -191,7 +244,7 @@ const ImageEditMainCanvas = memo(({
                         onZoomOut={onZoomOut}
                         onReset={onReset}
                         onFullscreen={onFullscreen}
-                        downloadUrl={activeImageUrl}
+                        downloadUrl={currentDisplayUrl}
                         onExpand={onExpand}
                         onToggleCompare={onToggleCompare}
                         isCompareMode={isCompareMode}
@@ -219,13 +272,16 @@ export const ImageRecontextView = memo(({
     initialAttachments,
     onExpandImage,
     providerId,
-    sessionId: currentSessionId
+    sessionId: currentSessionId,
+    onDeleteMessage
 }: ImageRecontextViewProps) => {
     const { showError } = useToastContext();
-    const scrollRef = useRef<HTMLDivElement>(null);
+    const [selectedHistoryMsgId, setSelectedHistoryMsgId] = useState<string | null>(null);
 
     // State for reference image
     const [activeAttachments, setActiveAttachments] = useState<Attachment[]>([]);
+    const [canvasAttachments, setCanvasAttachments] = useState<Attachment[]>([]);
+    const [carouselInitialIndex, setCarouselInitialIndex] = useState(0);
     const [activeImageUrl, setActiveImageUrl] = useState<string | null>(null);
     
     // 固定使用 image-recontext 模式
@@ -245,6 +301,7 @@ export const ImageRecontextView = memo(({
     // State for thinking block
     const [isThinkingOpen, setIsThinkingOpen] = useState(true);
     const [displayedThinkingContent, setDisplayedThinkingContent] = useState('');
+    const [isMobileHistoryOpen, setIsMobileHistoryOpen] = useState(false);
 
     // Stable canvas URL
     const canvasObjectUrlRef = useRef<string | null>(null);
@@ -276,6 +333,43 @@ export const ImageRecontextView = memo(({
     const [lastProcessedMsgId, setLastProcessedMsgId] = useState<string | null>(null);
     const [isCompareMode, setIsCompareMode] = useState(false);
     const canvas = useImageCanvas({ minZoom: 0.1, maxZoom: 5, zoomStep: 0.2 });
+    const getDisplayableImageAttachments = useCallback((attachments?: Attachment[]) => {
+        return (attachments ?? []).filter((att) => Boolean(att.url || att.tempUrl || att.file));
+    }, []);
+
+    const historyMessages = useMemo(() => {
+        return messages.filter((msg) => {
+            const isPlaceholder = !msg.content && (!msg.attachments || msg.attachments.length === 0) && !msg.isError;
+            return !isPlaceholder;
+        });
+    }, [messages]);
+
+    const canvasCarouselResetKey = useMemo(
+        () => canvasAttachments.map((att) => att.id || att.url || att.tempUrl || att.name).join('|'),
+        [canvasAttachments]
+    );
+    const {
+        index: carouselIndex,
+        goPrev: handleCarouselPrev,
+        goNext: handleCarouselNext,
+        select: handleCarouselSelect
+    } = useImageCarousel({
+        itemCount: canvasAttachments.length,
+        initialIndex: carouselInitialIndex,
+        resetKey: canvasCarouselResetKey,
+        keyboardEnabled: true,
+        onNavigate: canvas.resetView
+    });
+
+    useEffect(() => {
+        const currentAttachment = canvasAttachments[carouselIndex];
+        if (!currentAttachment) return;
+
+        const currentUrl = currentAttachment.url || currentAttachment.tempUrl || getStableCanvasUrlFromAttachment(currentAttachment);
+        if (currentUrl && currentUrl !== activeImageUrl) {
+            setActiveImageUrl(currentUrl);
+        }
+    }, [activeImageUrl, canvasAttachments, carouselIndex, getStableCanvasUrlFromAttachment]);
 
     useEffect(() => {
         canvas.resetView();
@@ -291,33 +385,50 @@ export const ImageRecontextView = memo(({
     }, [activeImageUrl]);
 
     const originalImageUrl = useMemo(() => {
+        if (selectedHistoryMsgId) {
+            const selectedMessageIndex = messages.findIndex((msg) => msg.id === selectedHistoryMsgId);
+            const selectedMessage = selectedMessageIndex >= 0 ? messages[selectedMessageIndex] : null;
+            if (selectedMessage?.role === Role.MODEL) {
+                for (let i = selectedMessageIndex - 1; i >= 0; i -= 1) {
+                    const candidate = messages[i];
+                    if (candidate.role !== Role.USER || !candidate.attachments?.length) {
+                        continue;
+                    }
+
+                    const sourceAttachment = getDisplayableImageAttachments(candidate.attachments)[0];
+                    if (!sourceAttachment) {
+                        continue;
+                    }
+                    return sourceAttachment.url || sourceAttachment.tempUrl || getStableCanvasUrlFromAttachment(sourceAttachment);
+                }
+            }
+        }
+
         const lastUserMsg = [...messages].reverse().find(m => m.role === Role.USER && m.attachments?.length);
-        return lastUserMsg?.attachments?.[0]?.url || null;
-    }, [messages]);
+        const sourceAttachment = getDisplayableImageAttachments(lastUserMsg?.attachments)[0];
+        return sourceAttachment
+            ? sourceAttachment.url || sourceAttachment.tempUrl || getStableCanvasUrlFromAttachment(sourceAttachment)
+            : null;
+    }, [getDisplayableImageAttachments, getStableCanvasUrlFromAttachment, messages, selectedHistoryMsgId]);
 
     useEffect(() => {
         if (initialAttachments && initialAttachments.length > 0) {
+            const displayAttachments = getDisplayableImageAttachments(initialAttachments);
             setActiveAttachments(initialAttachments);
-            setActiveImageUrl(getStableCanvasUrlFromAttachment(initialAttachments[0]));
+            setCarouselInitialIndex(0);
+            setCanvasAttachments(displayAttachments);
+            setActiveImageUrl(getStableCanvasUrlFromAttachment(displayAttachments[0] ?? initialAttachments[0]));
         }
-    }, [initialAttachments, getStableCanvasUrlFromAttachment]);
+    }, [initialAttachments, getDisplayableImageAttachments, getStableCanvasUrlFromAttachment]);
 
     useEffect(() => {
         if (activeAttachments.length > 0) {
-            setActiveImageUrl(getStableCanvasUrlFromAttachment(activeAttachments[0]));
+            const displayAttachments = getDisplayableImageAttachments(activeAttachments);
+            setCarouselInitialIndex(0);
+            setCanvasAttachments(displayAttachments);
+            setActiveImageUrl(getStableCanvasUrlFromAttachment(displayAttachments[0] ?? activeAttachments[0]));
         }
-    }, [activeAttachments, getStableCanvasUrlFromAttachment]);
-
-    useEffect(() => {
-        const container = scrollRef.current;
-        if (!container) return;
-        requestAnimationFrame(() => {
-            container.scrollTo({
-                top: container.scrollHeight,
-                behavior: 'smooth'
-            });
-        });
-    }, [messages, activeAttachments]);
+    }, [activeAttachments, getDisplayableImageAttachments, getStableCanvasUrlFromAttachment]);
 
     useEffect(() => {
         const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
@@ -366,135 +477,136 @@ export const ImageRecontextView = memo(({
         } else if (fullContent !== displayedThinkingContent) {
             setDisplayedThinkingContent(fullContent);
         }
-    }, [messages, loadingState]);
-    
+    }, [messages, loadingState, displayedThinkingContent]);
+
     useEffect(() => {
         if (activeAttachments.length === 0 && !activeImageUrl) {
-            const lastUserMsg = [...messages].reverse().find(m => m.role === Role.USER && m.attachments?.length);
-            if (lastUserMsg && lastUserMsg.attachments?.[0]?.url) {
-                setActiveImageUrl(lastUserMsg.attachments[0].url);
-            } else {
-                const lastModelMsg = [...messages].reverse().find(m => m.role === Role.MODEL && m.attachments?.length);
-                if (lastModelMsg && lastModelMsg.attachments?.[0]?.url) {
-                    setActiveImageUrl(lastModelMsg.attachments[0].url);
-                }
+            const lastImageMsg = [...messages]
+                .reverse()
+                .find((m) => getDisplayableImageAttachments(m.attachments).length > 0);
+            const displayAttachments = getDisplayableImageAttachments(lastImageMsg?.attachments);
+            if (displayAttachments.length > 0) {
+                setCarouselInitialIndex(0);
+                setCanvasAttachments(displayAttachments);
+                setActiveImageUrl(getStableCanvasUrlFromAttachment(displayAttachments[0]));
             }
         }
 
         if (loadingState === 'idle' && messages.length > 0) {
             const lastMsg = messages[messages.length - 1];
             if (lastMsg.id !== lastProcessedMsgId) {
-                if (lastMsg.role === Role.MODEL && lastMsg.attachments && lastMsg.attachments.length > 0 && lastMsg.attachments[0].url) {
-                    setActiveImageUrl(lastMsg.attachments[0].url);
+                const displayAttachments = getDisplayableImageAttachments(lastMsg.attachments);
+                if (lastMsg.role === Role.MODEL && displayAttachments.length > 0) {
+                    setCarouselInitialIndex(0);
+                    setCanvasAttachments(displayAttachments);
+                    setActiveImageUrl(getStableCanvasUrlFromAttachment(displayAttachments[0]));
                     setLastProcessedMsgId(lastMsg.id);
                 } else if (lastMsg.isError) {
                     setLastProcessedMsgId(lastMsg.id);
                 }
             }
         }
-    }, [messages, activeAttachments.length, loadingState, lastProcessedMsgId, activeImageUrl]);
+    }, [
+        messages,
+        activeAttachments.length,
+        loadingState,
+        lastProcessedMsgId,
+        activeImageUrl,
+        getDisplayableImageAttachments,
+        getStableCanvasUrlFromAttachment
+    ]);
 
     // ✅ ChatEditInputArea 已经处理了附件和参数，这里只需要直接转发
     const handleSend = useCallback((text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => {
         onSend(text, options, attachments, editMode);
     }, [onSend, editMode]);
 
-    const [isMobileHistoryOpen, setIsMobileHistoryOpen] = useState(false);
+    const loadingHistoryContent = useMemo(() => {
+        if (loadingState === 'idle') return null;
 
-    const sidebarContent = useMemo(() => (
-        <div ref={scrollRef} className="flex-1 p-4 space-y-6 overflow-y-auto custom-scrollbar">
-            {messages.map((msg) => {
-                const isPlaceholder = !msg.content && (!msg.attachments || msg.attachments.length === 0) && !msg.isError;
-                if (isPlaceholder) return null;
+        let statusText = 'Processing request...';
+        let statusIcon = <Bot size={16} className="text-slate-500" />;
 
-                return (
-                    <div key={msg.id} className={`flex flex-col gap-2 ${msg.role === Role.USER ? 'items-end' : 'items-start'}`}>
-                        <div className="flex items-center gap-2 text-xs text-slate-500 px-1">
-                            {msg.role === Role.USER ? <User size={12} /> : <Bot size={12} />}
-                            <span>{msg.role === Role.USER ? 'You' : (activeModelConfig?.name || 'AI')}</span>
-                        </div>
-                        <div className={`p-3 rounded-2xl max-w-full text-sm shadow-sm ${msg.role === Role.USER
-                            ? 'bg-slate-800 text-slate-200 rounded-tr-sm'
-                            : 'bg-slate-800/50 text-slate-300 border border-slate-700/50 rounded-tl-sm'
-                            }`}>
-                            {msg.content && <p className="mb-2">{msg.content}</p>}
-                            {msg.attachments?.filter(att => att.url && att.url.length > 0).map((att, idx) => (
-                                <div
-                                    key={idx}
-                                    onClick={() => setActiveImageUrl(att.url || null)}
-                                    className={`relative group mt-1 rounded-lg overflow-hidden border cursor-pointer transition-all ${activeImageUrl === att.url ? 'ring-2 ring-yellow-500 border-transparent' : 'border-slate-700 hover:border-slate-500'
-                                        }`}
-                                >
-                                    <img src={att.url} className="w-full h-32 object-cover bg-slate-900" alt="thumbnail" />
-                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                                        {activeImageUrl === att.url && <div className="bg-yellow-500 w-2 h-2 rounded-full absolute top-2 right-2 shadow-sm" />}
-                                    </div>
-                                </div>
-                            ))}
-                            {msg.isError && (
-                                <div className="flex items-center gap-2 text-red-400 text-xs mt-1">
-                                    <AlertCircle size={12} /> Error generating
-                                </div>
-                            )}
-                        </div>
+        if (loadingState === 'uploading') {
+            statusText = '上传图片中...';
+            statusIcon = <Layers size={16} className="text-blue-400" />;
+        } else if (loadingState === 'loading') {
+            statusText = '重新上下文处理中，正在调整图片上下文...';
+            statusIcon = <Sparkles size={16} className="text-yellow-400" />;
+        } else if (loadingState === 'streaming') {
+            statusText = '流式处理中...';
+            statusIcon = <Sparkles size={16} className="text-yellow-400 animate-pulse" />;
+        }
+
+        const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+        const thoughts = lastMessage?.thoughts || [];
+        const textResponse = lastMessage?.textResponse;
+        const hasTextContent = lastMessage?.content && lastMessage.content.trim().length > 0;
+
+        return (
+            <div className="flex items-start gap-2">
+                <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center flex-shrink-0">
+                    {statusIcon}
+                </div>
+                <div className="bg-slate-800/50 rounded-xl p-3 text-xs text-slate-400 flex-1">
+                    <div className="font-medium mb-1 animate-pulse">
+                        {statusText}
                     </div>
-                );
-            })}
-            {loadingState !== 'idle' && (() => {
-                let statusText = 'Processing request...';
-                let statusIcon = <Bot size={16} className="text-slate-500" />;
-                
-                if (loadingState === 'uploading') {
-                    statusText = '上传图片中...';
-                    statusIcon = <Layers size={16} className="text-blue-400" />;
-                } else if (loadingState === 'loading') {
-                    statusText = '重新上下文处理中，正在调整图片上下文...';
-                    statusIcon = <Sparkles size={16} className="text-yellow-400" />;
-                } else if (loadingState === 'streaming') {
-                    statusText = '流式处理中...';
-                    statusIcon = <Sparkles size={16} className="text-yellow-400 animate-pulse" />;
-                }
-                
-                const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-                const thoughts = lastMessage?.thoughts || [];
-                const textResponse = lastMessage?.textResponse;
-                const hasTextContent = lastMessage?.content && lastMessage.content.trim().length > 0;
-                const isThinkingComplete = loadingState === 'idle';
-                
-                return (
-                    <div className="flex items-start gap-2">
-                        <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center flex-shrink-0">
-                            {statusIcon}
+
+                    {displayedThinkingContent && (
+                        <div className="mt-2">
+                            <ThinkingBlock
+                                content={displayedThinkingContent}
+                                isOpen={isThinkingOpen}
+                                onToggle={() => setIsThinkingOpen(!isThinkingOpen)}
+                                isComplete={false}
+                            />
                         </div>
-                        <div className="bg-slate-800/50 rounded-xl p-3 text-xs text-slate-400 flex-1">
-                            <div className={`font-medium mb-1 ${loadingState !== 'idle' ? 'animate-pulse' : ''}`}>
-                                {statusText}
-                            </div>
-                            
-                            {displayedThinkingContent && (
-                                <div className="mt-2">
-                                    <ThinkingBlock
-                                        content={displayedThinkingContent}
-                                        isOpen={isThinkingOpen}
-                                        onToggle={() => setIsThinkingOpen(!isThinkingOpen)}
-                                        isComplete={isThinkingComplete}
-                                    />
-                                </div>
-                            )}
-                            
-                            {hasTextContent && !thoughts.length && !textResponse && (
-                                <div className="mt-2 pt-2 border-t border-slate-700/50 text-slate-500 italic">
-                                    {lastMessage.content.substring(0, 100)}
-                                    {lastMessage.content.length > 100 ? '...' : ''}
-                                </div>
-                            )}
+                    )}
+
+                    {hasTextContent && !thoughts.length && !textResponse && (
+                        <div className="mt-2 pt-2 border-t border-slate-700/50 text-slate-500 italic">
+                            {lastMessage.content.substring(0, 100)}
+                            {lastMessage.content.length > 100 ? '...' : ''}
                         </div>
-                    </div>
-                );
-            })()}
-            <div />
-        </div>
-    ), [messages, loadingState, activeModelConfig?.name, activeImageUrl, activeAttachments, displayedThinkingContent, isThinkingOpen]);
+                    )}
+                </div>
+            </div>
+        );
+    }, [displayedThinkingContent, isThinkingOpen, loadingState, messages]);
+
+    const { sidebarExtraHeader, sidebarContent } = useImageHistorySidebar({
+        items: historyMessages,
+        sessionId: currentSessionId,
+        onDeleteMessage,
+        activeImageUrl,
+        selectedMessageId: selectedHistoryMsgId,
+        onSelectedMessageIdChange: setSelectedHistoryMsgId,
+        onMobileHistoryOpenChange: setIsMobileHistoryOpen,
+        modelLabel: activeModelConfig?.name || 'AI',
+        accent: 'orange',
+        emptyText: 'No recontext history yet.',
+        getDisplayAttachments: getDisplayableImageAttachments,
+        getAttachmentUrl: getStableCanvasUrlFromAttachment,
+        extractPrompts: extractImageHistoryPrompts,
+        loadingContent: loadingHistoryContent,
+        onSelectItem: ({ message, displayAttachments, firstImage }) => {
+            setSelectedHistoryMsgId(message.id);
+            if (firstImage) {
+                setCarouselInitialIndex(0);
+                setCanvasAttachments(displayAttachments);
+                handleCarouselSelect(0);
+                setActiveImageUrl(firstImage);
+            }
+        },
+        onSelectPreviewAttachment: ({ message, displayAttachments, attachment, index }) => {
+            setSelectedHistoryMsgId(message.id);
+            setCarouselInitialIndex(index);
+            setCanvasAttachments(displayAttachments);
+            handleCarouselSelect(index);
+            setActiveImageUrl(attachment.url);
+        },
+    });
 
     const toggleCompare = useCallback(() => setIsCompareMode(prev => !prev), []);
     const handleFullscreen = useCallback(() => {
@@ -511,7 +623,7 @@ export const ImageRecontextView = memo(({
             <ImageEditMainCanvas
                 loadingState={loadingState}
                 isCompareMode={isCompareMode}
-                activeAttachments={activeAttachments}
+                activeAttachments={canvasAttachments}
                 activeImageUrl={activeImageUrl}
                 originalImageUrl={originalImageUrl}
                 zoom={canvas.zoom}
@@ -527,6 +639,11 @@ export const ImageRecontextView = memo(({
                 onFullscreen={activeImageUrl ? handleFullscreen : undefined}
                 onExpand={onExpandImage && activeImageUrl ? handleExpand : undefined}
                 onToggleCompare={originalImageUrl ? toggleCompare : undefined}
+                carouselIndex={carouselIndex}
+                onCarouselPrev={handleCarouselPrev}
+                onCarouselNext={handleCarouselNext}
+                onCarouselSelect={handleCarouselSelect}
+                getStableUrl={getStableCanvasUrlFromAttachment}
             />
 
             {/* ========== 右侧：参数面板 ========== */}
@@ -574,7 +691,34 @@ export const ImageRecontextView = memo(({
                 />
             </div>
         </div>
-    ), [loadingState, isCompareMode, activeAttachments, activeImageUrl, originalImageUrl, canvas, handleFullscreen, handleExpand, toggleCompare, onExpandImage, controls, providerId, resetParams, editMode, activeModelConfig, onStop, messages, currentSessionId, initialPrompt, initialAttachments, handleSend]);
+    ), [
+        loadingState,
+        isCompareMode,
+        canvasAttachments,
+        activeAttachments,
+        activeImageUrl,
+        originalImageUrl,
+        canvas,
+        handleFullscreen,
+        handleExpand,
+        toggleCompare,
+        onExpandImage,
+        controls,
+        providerId,
+        resetParams,
+        editMode,
+        onStop,
+        messages,
+        currentSessionId,
+        initialPrompt,
+        initialAttachments,
+        handleSend,
+        carouselIndex,
+        handleCarouselPrev,
+        handleCarouselNext,
+        handleCarouselSelect,
+        getStableCanvasUrlFromAttachment
+    ]);
 
     return (
         <GenViewLayout
@@ -582,6 +726,7 @@ export const ImageRecontextView = memo(({
             setIsMobileHistoryOpen={setIsMobileHistoryOpen}
             sidebarTitle="History"
             sidebarHeaderIcon={<Layers size={14} />}
+            sidebarExtraHeader={sidebarExtraHeader}
             sidebar={sidebarContent}
             main={mainContent}
         />

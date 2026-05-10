@@ -225,7 +225,6 @@ export interface HandlerResult {
   readonly continuedFromVideo?: boolean; // 是否基于上一段视频继续生成
   readonly storyboardShotSeconds?: number;
   readonly generateAudio?: boolean;
-  readonly personGeneration?: string;
   readonly subtitleMode?: string;
   readonly subtitleLanguage?: string;
   readonly subtitleAttachmentIds?: ReadonlyArray<string>;

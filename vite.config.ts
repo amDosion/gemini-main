@@ -134,7 +134,9 @@ export default defineConfig({
     sourcemap: true, // 生成 source map，方便调试
     rollupOptions: {
       output: {
-        // 手动分包，优化首屏加载与缓存命中
+        // 手动分包，优化首屏加载与缓存命中。
+        // 只固定边界清晰的依赖组；未显式分组的包交给 Rollup 自动归属，
+        // 避免把子依赖强塞进 vendor 后形成跨 chunk 循环依赖。
         manualChunks: (id: string) => {
           const pkg = resolvePackageName(id);
           if (!pkg) {
@@ -147,7 +149,7 @@ export default defineConfig({
             }
           }
 
-          return 'vendor';
+          return undefined;
         },
       },
     },

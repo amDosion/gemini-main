@@ -211,7 +211,7 @@ await manager.close_all()
 ### Gemini 集成
 
 ```python
-import google.generativeai as genai
+from google import genai
 
 manager = MCPManager()
 await manager.create_session("tools", config)
@@ -219,14 +219,14 @@ await manager.create_session("tools", config)
 # 获取 Gemini 工具
 gemini_tools = await manager.get_gemini_tools("tools")
 
-# 配置模型
-model = genai.GenerativeModel(
-    model_name="gemini-2.0-flash-exp",
-    tools=gemini_tools
-)
+client = genai.Client(api_key="GEMINI_API_KEY")
 
 # 使用
-response = model.generate_content("What's the weather in Beijing?")
+response = client.models.generate_content(
+    model="gemini-2.0-flash",
+    contents="What's the weather in Beijing?",
+    config={"tools": gemini_tools},
+)
 
 # 处理函数调用
 for part in response.candidates[0].content.parts:

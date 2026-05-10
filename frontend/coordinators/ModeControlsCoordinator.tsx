@@ -84,6 +84,7 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
       return (
         <Controls.ImageEditControls
           providerId={providerId}
+          mode={mode}
           controls={controls}
           availableModels={availableModels}
           maxImageCount={maxImageCount}

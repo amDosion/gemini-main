@@ -10,7 +10,7 @@
             "number_of_images": 1,
             "style": "None",
             "output_mime_type": "image/png",
-            "output_compression_quality": 80,
+            "output_compression_quality": 100,
             "enhance_prompt": false,
             "seed": -1,
             "negative_prompt": ""
@@ -606,7 +606,7 @@
             "resolution": "1K",
             "number_of_images": 1,
             "output_mime_type": "image/png",
-            "output_compression_quality": 80,
+            "output_compression_quality": 100,
             "enhance_prompt": false,
             "seed": -1,
             "negative_prompt": "",
@@ -789,7 +789,7 @@
             "outpaint_mode": "ratio",
             "number_of_images": 1,
             "output_mime_type": "image/png",
-            "output_compression_quality": 80,
+            "output_compression_quality": 100,
             "seed": -1,
             "negative_prompt": "",
             "x_scale": 1.5,
@@ -993,7 +993,7 @@
             "guidance_scale": 15.0,
             "number_of_images": 1,
             "output_mime_type": "image/png",
-            "output_compression_quality": 80,
+            "output_compression_quality": 100,
             "negative_prompt": ""
           },
           "constraints": {
@@ -1008,14 +1008,6 @@
               {
                 "value": "EDIT_MODE_INPAINT_REMOVAL",
                 "label": "移除内容"
-              },
-              {
-                "value": "EDIT_MODE_OUTPAINT",
-                "label": "扩展图像"
-              },
-              {
-                "value": "EDIT_MODE_BGSWAP",
-                "label": "背景替换"
               }
             ],
             "number_of_images": [
@@ -1070,9 +1062,8 @@
             "aspect_ratio": "16:9",
             "resolution": "720p",
             "seconds": "8",
-            "enhance_prompt": false,
-            "generate_audio": false,
-            "person_generation": "allow_adult",
+            "enhance_prompt": true,
+            "generate_audio": true,
             "subtitle_mode": "none",
             "subtitle_language": "zh-CN",
             "storyboard_shot_seconds": 4,
@@ -1131,26 +1122,12 @@
             ],
             "generate_audio": [
               {
-                "label": "无配音",
+                "label": "无音频",
                 "value": false
               },
               {
-                "label": "生成音频",
+                "label": "生成音频和口播",
                 "value": true
-              }
-            ],
-            "person_generation": [
-              {
-                "label": "允许成人",
-                "value": "allow_adult"
-              },
-              {
-                "label": "允许所有人",
-                "value": "allow_all"
-              },
-              {
-                "label": "不允许人物",
-                "value": "dont_allow"
               }
             ],
             "subtitle_mode": [
@@ -1341,7 +1318,6 @@
                 "max_reference_image_count": 3,
                 "enhance_prompt_mandatory": true,
                 "supports_generate_audio": true,
-                "supports_person_generation": true,
                 "supports_subtitle_sidecar": true,
                 "supports_tracking_overlay_prompt": true,
                 "supports_storyboard_prompting": true,
@@ -2230,7 +2206,7 @@
             "guidance_scale": 15.0,
             "number_of_images": 1,
             "output_mime_type": "image/png",
-            "output_compression_quality": 80,
+            "output_compression_quality": 100,
             "negative_prompt": ""
           },
           "constraints": {
@@ -2245,14 +2221,6 @@
               {
                 "value": "EDIT_MODE_INPAINT_REMOVAL",
                 "label": "移除内容"
-              },
-              {
-                "value": "EDIT_MODE_OUTPAINT",
-                "label": "扩展图像"
-              },
-              {
-                "value": "EDIT_MODE_BGSWAP",
-                "label": "背景替换"
               }
             ],
             "number_of_images": [
@@ -2345,7 +2313,7 @@
             "resolution": "1K",
             "number_of_images": 1,
             "output_mime_type": "image/png",
-            "output_compression_quality": 80,
+            "output_compression_quality": 100,
             "seed": -1,
             "negative_prompt": ""
           },
@@ -2526,7 +2494,7 @@
             "outpaint_mode": "ratio",
             "number_of_images": 1,
             "output_mime_type": "image/png",
-            "output_compression_quality": 80,
+            "output_compression_quality": 100,
             "seed": -1,
             "negative_prompt": "",
             "x_scale": 1.5,
@@ -2897,7 +2865,7 @@
             "guidance_scale": 15.0,
             "number_of_images": 1,
             "output_mime_type": "image/png",
-            "output_compression_quality": 80,
+            "output_compression_quality": 100,
             "negative_prompt": ""
           },
           "constraints": {
@@ -2912,14 +2880,6 @@
               {
                 "value": "EDIT_MODE_INPAINT_REMOVAL",
                 "label": "移除内容"
-              },
-              {
-                "value": "EDIT_MODE_OUTPAINT",
-                "label": "扩展图像"
-              },
-              {
-                "value": "EDIT_MODE_BGSWAP",
-                "label": "背景替换"
               }
             ],
             "number_of_images": [

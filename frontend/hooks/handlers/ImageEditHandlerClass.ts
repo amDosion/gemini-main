@@ -36,7 +36,12 @@ export class ImageEditHandler extends BaseHandler {
         referenceImages.raw = rawAttachment;
 
         if (context.attachments.length > 1) {
-          referenceImages.mask = context.attachments[1];
+          referenceImages.mask = {
+            ...context.attachments[1],
+            role: 'mask',
+            name: context.attachments[1].name || 'mask.png',
+            mimeType: context.attachments[1].mimeType || 'image/png',
+          };
         }
       }
       // ✅ image-chat-edit 模式：支持多图编辑

@@ -20,6 +20,25 @@ from ...common.google_model_catalog import VEO_VIDEO_MODELS
 from ....utils.url_security import get_with_redirect_guard, validate_outbound_http_url
 from ....utils.attachment_handler import is_base64_url
 
+
+def first_present_option(mapping: Dict[str, Any], *keys: str, default: Any = None) -> Any:
+    for key in keys:
+        if key in mapping:
+            return mapping.get(key)
+    return default
+
+
+def is_transient_timeout_error(exc: BaseException) -> bool:
+    class_name = exc.__class__.__name__.lower()
+    message = str(exc).lower()
+    return (
+        isinstance(exc, TimeoutError)
+        or "timeout" in class_name
+        or "timed out" in message
+        or "read timeout" in message
+    )
+
+
 DEFAULT_VIDEO_MODEL = "veo-3.1-generate-preview"
 DEFAULT_ASPECT_RATIO = "16:9"
 DEFAULT_RESOLUTION = "720p"

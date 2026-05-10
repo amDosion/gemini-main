@@ -364,13 +364,9 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
         number_of_images = min(max(number_of_images, 1), 4)
         
         aspect_ratio = kwargs.get('image_aspect_ratio') or kwargs.get('aspect_ratio', '1:1')
-        # Default to PNG format for best quality (no compression)
-        output_mime_type = kwargs.get('output_mime_type', 'image/png')
-        
         config_kwargs = {
             "number_of_images": number_of_images,
             "aspect_ratio": aspect_ratio,
-            "output_mime_type": output_mime_type,
         }
         
         # Add optional parameters
@@ -400,10 +396,14 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
                 config_kwargs["image_size"] = image_size
                 logger.info(f"[GeminiAPIImageGenerator] Using image_size={image_size} for model={model}")
         
-        # Add compression quality for JPEG (default 100 = no compression)
-        if output_mime_type == 'image/jpeg':
-            compression_quality = kwargs.get('output_compression_quality', 100)
-            config_kwargs["output_compression_quality"] = compression_quality
+        unsupported_output_keys = [
+            key for key in ('output_mime_type', 'output_compression_quality')
+            if kwargs.get(key) is not None
+        ]
+        if unsupported_output_keys:
+            raise ValueError(
+                f"{', '.join(unsupported_output_keys)} parameter is not supported in Gemini API"
+            )
         
         logger.info(f"[GeminiAPIImageGenerator] Config: {config_kwargs}")
         

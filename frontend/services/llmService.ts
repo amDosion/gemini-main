@@ -451,24 +451,13 @@ export class LLMService {
         ...options,  // ✅ Handler 传入的 options 优先（包含 sessionId、messageId）
       };
 
-      // ✅ 根据 outpaintMode 选择正确的模型
-      // - upscale 模式：必须使用 imagen-4.0-upscale-preview
-      // - ratio/scale/offset 模式：使用 imagen-3.0-capability-001 或 imagen-4.0-ingredients-preview
       const outpaintMode = (mergedOptions as any).outpaintMode || 'ratio';
-      let selectedModelId = mergedOptions.modelId;
-      
-      if (outpaintMode === 'upscale') {
-          // ✅ upscale 模式必须使用放大专用模型
-          if (!selectedModelId || !selectedModelId.toLowerCase().includes('upscale')) {
-              selectedModelId = 'imagen-4.0-upscale-preview';
-              this.debugLog('[outPaintImage] ✅ upscale 模式：自动切换到放大模型', selectedModelId);
-          }
-      } else {
-          // ✅ ratio/scale/offset 模式使用编辑模型
-          if (!selectedModelId || selectedModelId.toLowerCase().includes('upscale')) {
-              selectedModelId = 'imagen-3.0-capability-001';
-              this.debugLog('[outPaintImage] ✅ 扩图模式：自动切换到编辑模型', selectedModelId);
-          }
+      const selectedModelId = String(
+          mergedOptions.modelId || this._cachedModelConfig?.id || ''
+      ).trim();
+
+      if (!selectedModelId) {
+          throw new Error('No model selected for outpainting.');
       }
 
       // ✅ 详细日志：记录 image-outpainting 模式下传递的参数
@@ -489,7 +478,7 @@ export class LLMService {
 
           const result = await unifiedProvider.executeMode(
               'image-outpainting',
-              selectedModelId,  // ✅ 使用根据 outpaintMode 选择的模型
+              selectedModelId,
               prompt,
               [referenceImage],
               mergedOptions,  // ✅ 使用合并后的 options（包含 sessionId、message_id、outPainting）

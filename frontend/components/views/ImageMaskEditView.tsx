@@ -52,6 +52,31 @@ type MaskMode =
     | 'MASK_MODE_FOREGROUND'     // 自动检测前景
     | 'MASK_MODE_SEMANTIC';      // 语义分割（人物等）
 
+const SEMANTIC_PERSON_CLASS_ID = 125;
+
+const getMaskModeDisplayLabel = (mode: MaskMode): string => {
+    switch (mode) {
+        case 'MASK_MODE_BACKGROUND':
+            return '自动背景';
+        case 'MASK_MODE_FOREGROUND':
+            return '自动前景';
+        case 'MASK_MODE_SEMANTIC':
+            return '人物分割';
+        case 'MASK_MODE_USER_PROVIDED':
+        default:
+            return '手动 Mask';
+    }
+};
+
+const isMaskPreviewAccessDenied = (message: string): boolean => {
+    return /image-segmentation-001/i.test(message)
+        && /model access denied|request access|404/i.test(message);
+};
+
+const getMaskPreviewUnavailableMessage = (mode: MaskMode): string => {
+    return `${getMaskModeDisplayLabel(mode)} Mask 预览模型未开通；生成请求会直接使用官方 Mask 编辑，不依赖该预览模型`;
+};
+
 // 选区矩形类型
 interface SelectionRect {
     startX: number;
@@ -103,6 +128,8 @@ type ImageEditMainCanvasProps = {
     onSelectionEnd: () => void;
     onDeleteSelection: (index: number) => void;
     maskPreviewUrl: string | null;
+    maskPreviewNotice: string | null;
+    maskPreviewError: string | null;
     imageRef: React.RefObject<HTMLImageElement>;
     // ✅ 画笔/橡皮擦绑定支持
     onBrushStart: (e: React.MouseEvent) => void;
@@ -162,6 +189,8 @@ const ImageEditMainCanvas = memo(({
     onSelectionEnd,
     onDeleteSelection,
     maskPreviewUrl,
+    maskPreviewNotice,
+    maskPreviewError,
     imageRef,
     // ✅ 画笔/橡皮擦
     onBrushStart,
@@ -196,6 +225,8 @@ const ImageEditMainCanvas = memo(({
 
     // Extract mask 下拉菜单状态
     const [isExtractMenuOpen, setIsExtractMenuOpen] = useState(false);
+    const isAutoMaskMode = maskMode !== 'MASK_MODE_USER_PROVIDED';
+    const maskModeLabel = getMaskModeDisplayLabel(maskMode);
 
     return (
         <div
@@ -280,6 +311,48 @@ const ImageEditMainCanvas = memo(({
                             style={{ maxHeight: '80vh', maxWidth: '80vw' }}
                             alt="Main Canvas"
                         />
+                        {/* ✅ 自动 Mask 主画布反馈层 - 自动背景/前景/人物分割结果直接叠加到主图 */}
+                        {isAutoMaskMode && maskPreviewUrl && (
+                            <div className="absolute inset-0 rounded-lg pointer-events-none overflow-hidden">
+                                <img
+                                    src={maskPreviewUrl}
+                                    alt={`${maskModeLabel} Mask 覆盖层`}
+                                    className="absolute inset-0 w-full h-full object-fill opacity-60"
+                                    style={{
+                                        mixBlendMode: 'screen',
+                                        filter: 'sepia(1) saturate(5) hue-rotate(190deg) contrast(1.2)',
+                                    }}
+                                />
+                                <div className="absolute top-3 right-3 rounded-full border border-purple-400/40 bg-purple-950/85 px-2.5 py-1 text-[11px] font-medium text-purple-100 shadow-lg">
+                                    {maskModeLabel} Mask 已应用
+                                </div>
+                            </div>
+                        )}
+                        {isAutoMaskMode && isPreviewingMask && (
+                            <div className="absolute inset-0 rounded-lg pointer-events-none overflow-hidden">
+                                <div className="absolute inset-0 bg-purple-500/10 animate-pulse" />
+                                <div className="absolute top-3 right-3 flex items-center gap-1.5 rounded-full border border-purple-400/40 bg-purple-950/85 px-2.5 py-1 text-[11px] font-medium text-purple-100 shadow-lg">
+                                    <Loader2 size={12} className="animate-spin" />
+                                    正在提取 {maskModeLabel} Mask
+                                </div>
+                            </div>
+                        )}
+                        {isAutoMaskMode && maskPreviewError && !isPreviewingMask && !maskPreviewUrl && (
+                            <div className="absolute top-3 right-3 max-w-[260px] rounded-lg border border-rose-500/40 bg-rose-950/90 px-3 py-2 text-[11px] text-rose-100 shadow-lg">
+                                <div className="flex items-start gap-2">
+                                    <AlertCircle size={13} className="mt-0.5 flex-shrink-0 text-rose-300" />
+                                    <span>{maskPreviewError}</span>
+                                </div>
+                            </div>
+                        )}
+                        {isAutoMaskMode && maskPreviewNotice && !isPreviewingMask && !maskPreviewUrl && !maskPreviewError && (
+                            <div className="absolute top-3 right-3 max-w-[300px] rounded-lg border border-purple-400/40 bg-purple-950/90 px-3 py-2 text-[11px] text-purple-100 shadow-lg">
+                                <div className="flex items-start gap-2">
+                                    <Wand2 size={13} className="mt-0.5 flex-shrink-0 text-purple-300" />
+                                    <span>{maskPreviewNotice}</span>
+                                </div>
+                            </div>
+                        )}
                         {/* ✅ Mask 可视化层 - 支持矩形选区和画笔绘制 */}
                         {(selectionRects.length > 0 || maskCanvasUrl) && (
                             <div className="absolute inset-0 rounded-lg pointer-events-none overflow-hidden">
@@ -679,7 +752,9 @@ const ImageEditMainCanvas = memo(({
                 {maskPreviewUrl && (
                     <div className="absolute bottom-20 right-4 z-20">
                         <div className="bg-slate-800/95 backdrop-blur-md rounded-xl border border-slate-700/50 shadow-xl p-3">
-                            <div className="text-xs text-slate-400 mb-2 font-medium">Mask Preview</div>
+                            <div className="text-xs text-slate-400 mb-2 font-medium">
+                                {isAutoMaskMode ? `${maskModeLabel} Mask` : 'Mask Preview'}
+                            </div>
                             <div className="relative w-24 h-24 rounded-lg overflow-hidden border border-slate-600 bg-black">
                                 <img
                                     src={maskPreviewUrl}
@@ -688,7 +763,7 @@ const ImageEditMainCanvas = memo(({
                                 />
                             </div>
                             <div className="text-[10px] text-slate-500 mt-2">
-                                {selectionRects.length} 个选区
+                                {isAutoMaskMode ? '已同步到主画布' : `${selectionRects.length} 个选区`}
                             </div>
                         </div>
                     </div>
@@ -755,7 +830,7 @@ export const ImageMaskEditView = memo(({
         controls.setNumberOfImages(1);
         controls.setNegativePrompt('');
         controls.setOutputMimeType('image/png');
-        controls.setOutputCompressionQuality(95);
+        controls.setOutputCompressionQuality(100);
     }, [controls]);
     
     // State for thinking block
@@ -805,6 +880,9 @@ export const ImageMaskEditView = memo(({
     const [currentSelectionRect, setCurrentSelectionRect] = useState<SelectionRect | null>(null);
     const [isSelecting, setIsSelecting] = useState(false);
     const [maskPreviewUrl, setMaskPreviewUrl] = useState<string | null>(null);
+    const [maskPreviewNotice, setMaskPreviewNotice] = useState<string | null>(null);
+    const [maskPreviewError, setMaskPreviewError] = useState<string | null>(null);
+    const [maskRequestDataUrl, setMaskRequestDataUrl] = useState<string | null>(null);
     const imageRef = useRef<HTMLImageElement>(null);
 
     // ✅ 画笔/橡皮擦状态
@@ -1095,6 +1173,9 @@ export const ImageMaskEditView = memo(({
 
     const handleMaskModeChange = useCallback(async (mode: MaskMode) => {
         controls.setMaskMode(mode);
+        setMaskRequestDataUrl(null);
+        setMaskPreviewNotice(null);
+        setMaskPreviewError(null);
 
         // 当切换到自动模式时，清除手动绘制的选区并获取自动 mask 预览
         if (mode !== 'MASK_MODE_USER_PROVIDED') {
@@ -1144,32 +1225,110 @@ export const ImageMaskEditView = memo(({
                         // 显示第一个 mask 预览
                         const maskUrl = maskData.masks[0].url;
                         setMaskPreviewUrl(maskUrl);
+                        setMaskPreviewNotice(null);
+                        setMaskPreviewError(null);
                     } else {
                         const errorMsg = maskData?.error || result?.error || 'Unknown error';
                         setMaskPreviewUrl(null);
+                        if (isMaskPreviewAccessDenied(errorMsg)) {
+                            setMaskPreviewNotice(getMaskPreviewUnavailableMessage(mode));
+                            setMaskPreviewError(null);
+                        } else {
+                            const message = `未能提取 ${getMaskModeDisplayLabel(mode)} Mask：${errorMsg}`;
+                            setMaskPreviewError(message);
+                            showError(message);
+                        }
                     }
                 } catch (error) {
                     setMaskPreviewUrl(null);
+                    const errorText = error instanceof Error ? error.message : String(error || '');
+                    if (isMaskPreviewAccessDenied(errorText)) {
+                        setMaskPreviewNotice(getMaskPreviewUnavailableMessage(mode));
+                        setMaskPreviewError(null);
+                    } else {
+                        const message = `未能提取 ${getMaskModeDisplayLabel(mode)} Mask，请重试`;
+                        setMaskPreviewError(message);
+                        showError(message);
+                    }
                 } finally {
                     setIsPreviewingMask(false);
                 }
             } else {
                 setMaskPreviewUrl(null);
+                setMaskPreviewNotice(null);
+                setMaskPreviewError('请先上传或选择一张图片');
             }
         } else {
             // 切换回手动模式时，清除自动 mask 预览
             setMaskPreviewUrl(null);
+            setMaskRequestDataUrl(null);
+            setMaskPreviewNotice(null);
+            setMaskPreviewError(null);
         }
-    }, [controls, activeImageUrl, providerId]);
+    }, [controls, activeImageUrl, providerId, showError]);
 
     const handleImportMask = useCallback(() => {
-        // TODO: 实现蒙版导入功能
-    }, []);
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/png,image/jpeg,image/webp,image/*';
+        input.onchange = () => {
+            const file = input.files?.[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const dataUrl = String(reader.result || '');
+                if (!dataUrl) {
+                    showError('Mask 导入失败，请重新选择图片');
+                    return;
+                }
+
+                const applyImportedMask = (normalizedMaskUrl: string) => {
+                    controls.setMaskMode('MASK_MODE_USER_PROVIDED');
+                    setSelectionRects([]);
+                    setCurrentSelectionRect(null);
+                    setMaskPreviewUrl(normalizedMaskUrl);
+                    setMaskPreviewNotice(null);
+                    setMaskPreviewError(null);
+                    setMaskRequestDataUrl(normalizedMaskUrl);
+                };
+
+                const rawImage = imageRef.current;
+                if (!rawImage?.naturalWidth || !rawImage?.naturalHeight) {
+                    applyImportedMask(dataUrl);
+                    return;
+                }
+
+                const importedMask = new Image();
+                importedMask.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = rawImage.naturalWidth;
+                    canvas.height = rawImage.naturalHeight;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) {
+                        applyImportedMask(dataUrl);
+                        return;
+                    }
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(importedMask, 0, 0, canvas.width, canvas.height);
+                    applyImportedMask(canvas.toDataURL('image/png'));
+                };
+                importedMask.onerror = () => showError('Mask 导入失败，请重新选择图片');
+                importedMask.src = dataUrl;
+            };
+            reader.onerror = () => showError('Mask 导入失败，请重新选择图片');
+            reader.readAsDataURL(file);
+        };
+        input.click();
+    }, [controls, showError]);
 
     const handleClearMask = useCallback(() => {
         setSelectionRects([]);
         setCurrentSelectionRect(null);
         setMaskPreviewUrl(null);
+        setMaskPreviewNotice(null);
+        setMaskPreviewError(null);
+        setMaskRequestDataUrl(null);
         // 清除画笔绘制的 mask
         if (maskCanvasRef.current) {
             const ctx = maskCanvasRef.current.getContext('2d', { willReadFrequently: true });
@@ -1207,6 +1366,7 @@ export const ImageMaskEditView = memo(({
         // 如果既没有矩形也没有画笔数据，清除 mask
         if ((!img || rects.length === 0) && !hasBrushMask) {
             setMaskPreviewUrl(null);
+            setMaskRequestDataUrl(null);
             return;
         }
 
@@ -1302,6 +1462,15 @@ export const ImageMaskEditView = memo(({
                 const url = URL.createObjectURL(blob);
                 maskPreviewUrlRef.current = url;
                 setMaskPreviewUrl(url);
+
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    setMaskRequestDataUrl(String(reader.result || ''));
+                };
+                reader.onerror = () => {
+                    setMaskRequestDataUrl(null);
+                };
+                reader.readAsDataURL(blob);
             }
         }, 'image/png');
 
@@ -1387,6 +1556,9 @@ export const ImageMaskEditView = memo(({
                 maskPreviewUrlRef.current = null;
             }
             setMaskPreviewUrl(null);
+            setMaskPreviewNotice(null);
+            setMaskPreviewError(null);
+            setMaskRequestDataUrl(null);
         }
         // 自动 mask 模式下，保留 API 返回的 maskPreviewUrl
     }, [isMaskInverted, selectionRects, generateMaskFromSelections, maskCanvasUrl, controls.maskMode]);
@@ -1419,6 +1591,7 @@ export const ImageMaskEditView = memo(({
     useEffect(() => {
         canvas.resetView();
         setIsCompareMode(false);
+        handleClearMask();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeImageUrl]); // canvas.resetView 是稳定的函数，不需要作为依赖
 
@@ -1535,10 +1708,37 @@ export const ImageMaskEditView = memo(({
         }
     }, [messages, activeAttachments.length, loadingState, lastProcessedMsgId, activeImageUrl]);
 
-    // ✅ ChatEditInputArea 已经处理了附件和参数，这里只需要直接转发
+    // ✅ ChatEditInputArea 已处理 raw 附件；Mask 模式在这里追加官方 SDK 需要的 mask reference。
     const handleSend = useCallback((text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => {
-        onSend(text, options, attachments, editMode);
-    }, [onSend, editMode]);
+        const nextOptions: ChatOptions = { ...options };
+        let nextAttachments = attachments;
+
+        if (controls.maskMode === 'MASK_MODE_USER_PROVIDED') {
+            if (!maskRequestDataUrl) {
+                showError('请先绘制、导入或选择自动 Mask');
+                return;
+            }
+
+            const maskAttachment: Attachment = {
+                id: `mask-${Date.now()}`,
+                name: 'mask.png',
+                mimeType: 'image/png',
+                url: maskRequestDataUrl,
+                tempUrl: maskRequestDataUrl,
+                role: 'mask',
+                uploadStatus: 'pending',
+            };
+            nextOptions.maskMode = 'MASK_MODE_USER_PROVIDED';
+            nextAttachments = [
+                ...attachments.filter((attachment) => attachment.role !== 'mask'),
+                maskAttachment,
+            ];
+        } else if (controls.maskMode === 'MASK_MODE_SEMANTIC') {
+            nextOptions.segmentationClasses = [SEMANTIC_PERSON_CLASS_ID];
+        }
+
+        onSend(text, nextOptions, nextAttachments, editMode);
+    }, [controls.maskMode, editMode, maskRequestDataUrl, onSend, showError]);
 
     const [isMobileHistoryOpen, setIsMobileHistoryOpen] = useState(false);
 
@@ -1644,6 +1844,12 @@ export const ImageMaskEditView = memo(({
     const handleExpand = useCallback(() => {
         if (activeImageUrl && onExpandImage) onExpandImage(activeImageUrl);
     }, [activeImageUrl, onExpandImage]);
+    const maskInputDisabledReason = useMemo(() => {
+        if (!activeImageUrl) return null;
+        if (controls.maskMode !== 'MASK_MODE_USER_PROVIDED') return null;
+        if (maskRequestDataUrl) return null;
+        return '请先绘制或导入 Mask，或选择自动前景/背景/人物分割';
+    }, [activeImageUrl, controls.maskMode, maskRequestDataUrl]);
 
     // ✅ 主区域：两栏布局（画布 + 参数面板）
     const mainContent = useMemo(() => (
@@ -1691,6 +1897,8 @@ export const ImageMaskEditView = memo(({
                 onSelectionEnd={handleSelectionEnd}
                 onDeleteSelection={handleDeleteSelection}
                 maskPreviewUrl={maskPreviewUrl}
+                maskPreviewNotice={maskPreviewNotice}
+                maskPreviewError={maskPreviewError}
                 imageRef={imageRef}
                 // ✅ 画笔/橡皮擦
                 onBrushStart={handleBrushStart}
@@ -1746,10 +1954,12 @@ export const ImageMaskEditView = memo(({
                     initialAttachments={initialAttachments}
                     providerId={providerId}
                     controls={controls}
+                    externalDisabled={Boolean(maskInputDisabledReason)}
+                    externalDisabledReason={maskInputDisabledReason}
                 />
             </div>
         </div>
-    ), [loadingState, isCompareMode, activeAttachments, activeImageUrl, originalImageUrl, canvas, handleFullscreen, handleExpand, toggleCompare, onExpandImage, controls, providerId, resetParams, editMode, activeModelConfig, onStop, messages, currentSessionId, initialPrompt, initialAttachments, handleSend, activeMaskTool, handleMaskToolChange, brushSize, handleBrushSizeChange, handleMaskModeChange, handleImportMask, handleClearMask, isMaskInverted, handleToggleMaskInvert, selectionRects, currentSelectionRect, isSelecting, handleSelectionStart, handleSelectionMove, handleSelectionEnd, handleDeleteSelection, maskPreviewUrl, handleBrushStart, handleBrushMove, handleBrushEnd, isPainting, maskCanvasUrl, handleBrushCursorMove]);
+    ), [loadingState, isCompareMode, activeAttachments, activeImageUrl, originalImageUrl, canvas, handleFullscreen, handleExpand, toggleCompare, onExpandImage, controls, providerId, resetParams, editMode, activeModelConfig, onStop, messages, currentSessionId, initialPrompt, initialAttachments, handleSend, activeMaskTool, handleMaskToolChange, brushSize, handleBrushSizeChange, handleMaskModeChange, handleImportMask, handleClearMask, isMaskInverted, handleToggleMaskInvert, selectionRects, currentSelectionRect, isSelecting, handleSelectionStart, handleSelectionMove, handleSelectionEnd, handleDeleteSelection, maskPreviewUrl, maskPreviewNotice, maskPreviewError, handleBrushStart, handleBrushMove, handleBrushEnd, isPainting, maskCanvasUrl, handleBrushCursorMove, maskInputDisabledReason]);
 
     return (
         <GenViewLayout

@@ -118,6 +118,7 @@ export interface ImageGenControlsProps {
 
 export interface ImageEditControlsProps {
   providerId: string;
+  mode?: AppMode | 'image-edit';
   /** 传递 controls 状态对象 */
   controls?: ControlsState;
   /** 可用模型列表（用于增强提示词模型选择） */
@@ -205,8 +206,6 @@ export interface VideoGenControlsProps {
   setStoryboardShotSeconds?: (v: number) => void;
   generateAudio?: boolean;
   setGenerateAudio?: (v: boolean) => void;
-  personGeneration?: string;
-  setPersonGeneration?: (v: string) => void;
   subtitleMode?: string;
   setSubtitleMode?: (v: string) => void;
   subtitleLanguage?: string;
@@ -215,6 +214,8 @@ export interface VideoGenControlsProps {
   setSubtitleScript?: (v: string) => void;
   storyboardPrompt?: string;
   setStoryboardPrompt?: (v: string) => void;
+  storyboardSegments?: string[];
+  setStoryboardSegments?: (v: string[]) => void;
   showAdvanced?: boolean;
   setShowAdvanced?: (v: boolean) => void;
   negativePrompt?: string;
@@ -223,6 +224,8 @@ export interface VideoGenControlsProps {
   setSeed?: (v: number) => void;
   enhancePrompt?: boolean;
   setEnhancePrompt?: (v: boolean) => void;
+  enhancePromptModel?: string;
+  setEnhancePromptModel?: (v: string) => void;
 }
 
 export interface AudioGenControlsProps {
@@ -319,8 +322,6 @@ export interface ControlsState {
   setStoryboardShotSeconds: (v: number) => void;
   generateAudio: boolean;
   setGenerateAudio: (v: boolean) => void;
-  personGeneration: string;
-  setPersonGeneration: (v: string) => void;
   subtitleMode: string;
   setSubtitleMode: (v: string) => void;
   subtitleLanguage: string;
@@ -329,6 +330,8 @@ export interface ControlsState {
   setSubtitleScript: (v: string) => void;
   storyboardPrompt: string;
   setStoryboardPrompt: (v: string) => void;
+  storyboardSegments: string[];
+  setStoryboardSegments: (v: string[]) => void;
   numberOfImages: number;
   setNumberOfImages: (v: number) => void;
   style: string;
@@ -346,7 +349,6 @@ export interface ControlsState {
 
   // Imagen advanced parameters
   // guidanceScale removed - not officially documented by Google Imagen
-  // personGeneration removed - API uses default (allow_adult)
   outputMimeType: string;
   setOutputMimeType: (v: string) => void;
   outputCompressionQuality: number;

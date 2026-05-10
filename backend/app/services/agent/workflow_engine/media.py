@@ -97,14 +97,6 @@ def build_video_generate_kwargs(engine: Any, tool_args: Dict[str, Any]) -> Dict[
     if generate_audio is not None:
         kwargs["generate_audio"] = engine._to_bool(generate_audio)
 
-    person_generation = engine._get_tool_arg(
-        tool_args,
-        "person_generation",
-        "personGeneration",
-    )
-    if person_generation is not None and str(person_generation).strip():
-        kwargs["person_generation"] = str(person_generation).strip()
-
     subtitle_mode = engine._get_tool_arg(tool_args, "subtitle_mode", "subtitleMode")
     if subtitle_mode is not None and str(subtitle_mode).strip():
         kwargs["subtitle_mode"] = str(subtitle_mode).strip()

@@ -103,7 +103,7 @@ describe('skybridgeToolService', () => {
           arguments: { keyword: 'abc' },
         },
       }),
-      '*'
+      window.location.origin
     );
     expect(result.result).toBe('hello from mcp');
     expect(result.structuredContent).toEqual({ ok: true });

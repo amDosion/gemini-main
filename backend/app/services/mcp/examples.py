@@ -110,10 +110,13 @@ async def example_gemini_integration():
         import json
         print(json.dumps(gemini_tools, indent=2, ensure_ascii=False))
 
-        # 在 Gemini API 中使用
-        # model = genai.GenerativeModel(
-        #     model_name="gemini-2.0-flash-exp",
-        #     tools=gemini_tools
+        # 在新版 Google GenAI SDK 中使用
+        # from google import genai
+        # client = genai.Client(api_key="GEMINI_API_KEY")
+        # response = client.models.generate_content(
+        #     model="gemini-2.0-flash",
+        #     contents="What's the weather in Beijing?",
+        #     config={"tools": gemini_tools},
         # )
 
     finally:

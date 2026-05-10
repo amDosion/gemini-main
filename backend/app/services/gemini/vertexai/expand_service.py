@@ -21,6 +21,7 @@ import aiohttp
 
 from ..client_pool import get_client_pool
 from ..common.parameter_validation import ImageServiceValidator
+from ...common.google_model_catalog import get_google_vertex_static_model_entries
 from ....utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
@@ -76,23 +77,28 @@ class ExpandService:
         # 模型配置
         # ========================================
 
-        # Outpaint/Edit 专用模型 (官方 SDK: imagen-3.0-capability-001)
+        outpaint_entries = [
+            entry
+            for entry in get_google_vertex_static_model_entries()
+            if "image-outpainting" in (entry.get("modes") or [])
+        ]
+
+        # Outpaint/Edit 专用模型由静态 JSON 提供，避免后端硬编码。
         self.edit_models = {
-            'imagen-3.0-capability-001',  # ✅ 官方编辑模型（推荐）
-        }
+            str(entry["id"])
+            for entry in outpaint_entries
+            if "imagen_edit" in (entry.get("families") or [])
+        } or {'imagen-3.0-capability-001'}
 
-        # Upscale 专用模型
+        # Upscale 专用模型同样由静态 JSON 提供。
         self.upscale_models = {
-            'imagen-4.0-upscale-preview',  # ✅ 官方放大模型
-        }
+            str(entry["id"])
+            for entry in outpaint_entries
+            if "image_upscale" in (entry.get("families") or [])
+        } or {'imagen-4.0-upscale-preview'}
 
-        # 生成模型（兼容旧代码，但不推荐用于 outpaint）
-        self.expand_models = {
-            'imagen-3.0-capability-001',  # ✅ 推荐用于 outpaint
-            'imagen-4.0-generate-001',  # 生成模型（可能不支持 outpaint）
-            'imagen-4.0-ultra-generate-001',
-            'imagen-4.0-fast-generate-001',
-        }
+        # Expand 模式允许的模型集合：后端只校验，不替换前端选择的模型
+        self.expand_models = self.edit_models | self.upscale_models
 
         # Upscale 配置
         self.VALID_UPSCALE_FACTORS = ['x2', 'x3', 'x4']
@@ -210,6 +216,46 @@ class ExpandService:
 
         return self._vertex_client
 
+    def _validate_model_for_mode(self, model: str, mode: str) -> None:
+        """Validate that the frontend-selected model matches the expand submode."""
+        if mode in {"ratio", "scale", "offset"}:
+            if model not in self.edit_models:
+                raise ValueError(
+                    f"模型 '{model}' 不支持图像扩展操作。"
+                    "请在前端选择支持 outpaint 的编辑模型，例如 'imagen-3.0-capability-001'。"
+                )
+            return
+
+        if mode == "upscale":
+            if model not in self.upscale_models:
+                raise ValueError(
+                    f"模型 '{model}' 不支持图片放大操作。"
+                    "请在前端选择放大模型，例如 'imagen-4.0-upscale-preview'。"
+                )
+
+    def _build_outpaint_config(self, **kwargs):
+        """Build EditImageConfig for Vertex AI outpaint without injecting safety/person settings."""
+        output_mime_type = kwargs.get('output_mime_type', 'image/png')
+        config_kwargs = dict(
+            edit_mode="EDIT_MODE_OUTPAINT",
+            number_of_images=kwargs.get('number_of_images', 1),
+            include_rai_reason=kwargs.get('include_rai_reason', True),
+            output_mime_type=output_mime_type,
+        )
+
+        if kwargs.get('negative_prompt'):
+            config_kwargs['negative_prompt'] = kwargs['negative_prompt']
+        if kwargs.get('seed') and kwargs['seed'] != -1:
+            config_kwargs['seed'] = kwargs['seed']
+        if kwargs.get('base_steps') is not None:
+            config_kwargs['base_steps'] = kwargs['base_steps']
+        if kwargs.get('guidance_scale') is not None:
+            config_kwargs['guidance_scale'] = kwargs['guidance_scale']
+        if output_mime_type == 'image/jpeg':
+            config_kwargs['output_compression_quality'] = kwargs.get('output_compression_quality', 95)
+
+        return genai_types.EditImageConfig(**config_kwargs)
+
     def _extract_image_path(self, reference_images: Optional[Dict[str, Any]], **kwargs) -> str:
         """
         从 reference_images 或 kwargs 中提取图片路径
@@ -310,7 +356,7 @@ class ExpandService:
     async def expand_image(
         self,
         prompt: str,
-        model: str,
+        model: Optional[str] = None,
         reference_images: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> List[Dict[str, Any]]:
@@ -402,10 +448,6 @@ class ExpandService:
             if not GENAI_TYPES_AVAILABLE:
                 raise RuntimeError("google.genai.types not available")
             
-            # Check if model supports expansion
-            if model not in self.expand_models:
-                logger.warning(f"[Expand Service] Model {model} may not support expansion, trying anyway")
-            
             # Build expansion configuration based on mode
             if mode == "scale":
                 return await self._expand_by_scale(image_path, expand_prompt, model, **kwargs)
@@ -418,31 +460,10 @@ class ExpandService:
                 # ✅ 提取参数并从 kwargs 中移除，避免重复传递
                 upscale_factor = kwargs.pop('upscale_factor', 'x2')
 
-                # ✅ 直接使用前端传递的模型，不做硬编码切换
-                # 优先使用 kwargs 中的 upscale_model，如果没有则使用 model 参数
-                upscale_model = kwargs.pop('upscale_model', None) or model
-
-                # ✅ 验证模型是否为放大模型（提供清晰的错误提示）
-                if upscale_model and 'upscale' not in upscale_model.lower():
-                    raise ValueError(
-                        f"模型 '{upscale_model}' 不支持图片放大操作。"
-                        f"请在前端选择放大模型，例如 'imagen-4.0-upscale-preview'。"
-                    )
-
-                if not upscale_model:
-                    raise ValueError(
-                        "未指定放大模型。请在前端选择一个支持放大的模型，"
-                        "例如 'imagen-4.0-upscale-preview'。"
-                    )
-
-                logger.info(
-                    f"[Expand Service] Using upscale model from frontend: {upscale_model}"
-                )
-
                 return await self.upscale_image(
                     image_path=image_path,
                     upscale_factor=upscale_factor,
-                    model=upscale_model,
+                    model=model,
                     **kwargs
                 )
             else:
@@ -456,7 +477,7 @@ class ExpandService:
         self,
         image_path: str,
         expand_prompt: str,
-        model: str,
+        model: Optional[str] = None,
         **kwargs
     ) -> List[Dict[str, Any]]:
         """
@@ -488,23 +509,7 @@ class ExpandService:
 
         logger.info(f"[Expand Service] Scale target: {orig_width}x{orig_height} -> {target_width}x{target_height}")
 
-        # ✅ 直接使用前端传递的模型，不做硬编码切换
         edit_model = model
-
-        # ✅ 验证模型是否为编辑模型（提供清晰的错误提示）
-        if edit_model and edit_model not in self.edit_models:
-            # 检查是否是放大模型
-            if 'upscale' in edit_model.lower():
-                raise ValueError(
-                    f"模型 '{edit_model}' 是放大模型，不支持图像扩展操作。"
-                    f"请在前端选择编辑模型，例如 'imagen-3.0-capability-001' 或 'imagen-4.0-ingredients-preview'。"
-                )
-            # 其他不支持的模型
-            logger.warning(
-                f"[Expand Service] Model '{edit_model}' is not in known edit models list, "
-                f"attempting to use it anyway."
-            )
-
         logger.info(f"[Expand Service] Using edit model from frontend: {edit_model}")
 
         # ✅ 将图片字节转换为 data: 格式，供 _pad_image_for_outpaint 使用
@@ -516,33 +521,18 @@ class ExpandService:
             image_data_url, target_width, target_height
         )
 
-        # 构建配置
         output_mime_type = kwargs.get('output_mime_type', 'image/png')
-        config_kwargs = dict(
-            edit_mode="EDIT_MODE_OUTPAINT",
-            number_of_images=kwargs.get('number_of_images', 1),
-            include_rai_reason=kwargs.get('include_rai_reason', True),
-            output_mime_type=output_mime_type,
-        )
-
-        if kwargs.get('negative_prompt'):
-            config_kwargs['negative_prompt'] = kwargs['negative_prompt']
-        if kwargs.get('seed') and kwargs['seed'] != -1:
-            config_kwargs['seed'] = kwargs['seed']
-        if output_mime_type == 'image/jpeg':
-            config_kwargs['output_compression_quality'] = kwargs.get('output_compression_quality', 95)
-
-        config = genai_types.EditImageConfig(**config_kwargs)
+        config = self._build_outpaint_config(**kwargs)
 
         # 创建 reference images
         raw_ref_image = genai_types.RawReferenceImage(
             reference_id=1,
-            reference_image=genai_types.Image(image_bytes=padded_bytes)
+            reference_image=genai_types.Image(image_bytes=padded_bytes, mime_type='image/png')
         )
 
         mask_ref_image = genai_types.MaskReferenceImage(
             reference_id=2,
-            reference_image=genai_types.Image(image_bytes=mask_bytes),
+            reference_image=genai_types.Image(image_bytes=mask_bytes, mime_type='image/png'),
             config=genai_types.MaskReferenceConfig(
                 mask_mode="MASK_MODE_USER_PROVIDED",
                 mask_dilation=kwargs.get('mask_dilation', 0.03),
@@ -560,6 +550,7 @@ class ExpandService:
 
         return await self._process_expansion_results(
             response, "scale",
+            output_mime_type=output_mime_type,
             x_scale=x_scale,
             y_scale=y_scale,
             original_size=(orig_width, orig_height),
@@ -611,23 +602,7 @@ class ExpandService:
 
         logger.info(f"[Expand Service] Offset target: {orig_width}x{orig_height} -> {target_width}x{target_height}")
 
-        # ✅ 直接使用前端传递的模型，不做硬编码切换
         edit_model = model
-
-        # ✅ 验证模型是否为编辑模型（提供清晰的错误提示）
-        if edit_model and edit_model not in self.edit_models:
-            # 检查是否是放大模型
-            if 'upscale' in edit_model.lower():
-                raise ValueError(
-                    f"模型 '{edit_model}' 是放大模型，不支持图像扩展操作。"
-                    f"请在前端选择编辑模型，例如 'imagen-3.0-capability-001' 或 'imagen-4.0-ingredients-preview'。"
-                )
-            # 其他不支持的模型
-            logger.warning(
-                f"[Expand Service] Model '{edit_model}' is not in known edit models list, "
-                f"attempting to use it anyway."
-            )
-
         logger.info(f"[Expand Service] Using edit model from frontend: {edit_model}")
 
         # ✅ 将图片字节转换为 data: 格式，供 _pad_image_with_offset 使用
@@ -640,33 +615,18 @@ class ExpandService:
             left_offset, right_offset, top_offset, bottom_offset
         )
 
-        # 构建配置
         output_mime_type = kwargs.get('output_mime_type', 'image/png')
-        config_kwargs = dict(
-            edit_mode="EDIT_MODE_OUTPAINT",
-            number_of_images=kwargs.get('number_of_images', 1),
-            include_rai_reason=kwargs.get('include_rai_reason', True),
-            output_mime_type=output_mime_type,
-        )
-
-        if kwargs.get('negative_prompt'):
-            config_kwargs['negative_prompt'] = kwargs['negative_prompt']
-        if kwargs.get('seed') and kwargs['seed'] != -1:
-            config_kwargs['seed'] = kwargs['seed']
-        if output_mime_type == 'image/jpeg':
-            config_kwargs['output_compression_quality'] = kwargs.get('output_compression_quality', 95)
-
-        config = genai_types.EditImageConfig(**config_kwargs)
+        config = self._build_outpaint_config(**kwargs)
 
         # 创建 reference images
         raw_ref_image = genai_types.RawReferenceImage(
             reference_id=1,
-            reference_image=genai_types.Image(image_bytes=padded_bytes)
+            reference_image=genai_types.Image(image_bytes=padded_bytes, mime_type='image/png')
         )
 
         mask_ref_image = genai_types.MaskReferenceImage(
             reference_id=2,
-            reference_image=genai_types.Image(image_bytes=mask_bytes),
+            reference_image=genai_types.Image(image_bytes=mask_bytes, mime_type='image/png'),
             config=genai_types.MaskReferenceConfig(
                 mask_mode="MASK_MODE_USER_PROVIDED",
                 mask_dilation=kwargs.get('mask_dilation', 0.03),
@@ -684,6 +644,7 @@ class ExpandService:
 
         return await self._process_expansion_results(
             response, "offset",
+            output_mime_type=output_mime_type,
             left_offset=left_offset,
             right_offset=right_offset,
             top_offset=top_offset,
@@ -708,23 +669,7 @@ class ExpandService:
 
         logger.info(f"[Expand Service] Ratio expansion: ratio={output_ratio}")
 
-        # ✅ 直接使用前端传递的模型，不做硬编码切换
         edit_model = model
-
-        # ✅ 验证模型是否为编辑模型（提供清晰的错误提示）
-        if edit_model and edit_model not in self.edit_models:
-            # 检查是否是放大模型
-            if 'upscale' in edit_model.lower():
-                raise ValueError(
-                    f"模型 '{edit_model}' 是放大模型，不支持图像扩展操作。"
-                    f"请在前端选择编辑模型，例如 'imagen-3.0-capability-001' 或 'imagen-4.0-ingredients-preview'。"
-                )
-            # 其他不支持的模型
-            logger.warning(
-                f"[Expand Service] Model '{edit_model}' is not in known edit models list, "
-                f"attempting to use it anyway."
-            )
-
         logger.info(f"[Expand Service] Using edit model from frontend: {edit_model}")
 
         # 调用改进的 outpaint_with_ratio 方法
@@ -740,6 +685,7 @@ class ExpandService:
         self,
         response,
         mode: str,
+        output_mime_type: str = "image/png",
         **metadata
     ) -> List[Dict[str, Any]]:
         """Process expansion results."""
@@ -755,54 +701,60 @@ class ExpandService:
                 if not generated_image.image:
                     continue
                 
-                # Check if image_bytes is actually present
-                if not hasattr(generated_image.image, 'image_bytes') or generated_image.image.image_bytes is None:
+                image_obj = generated_image.image
+                image_bytes = getattr(image_obj, 'image_bytes', None)
+                mime_type = getattr(image_obj, 'mime_type', None) or output_mime_type
+
+                if image_bytes is None:
+                    suffix = '.jpg' if mime_type == 'image/jpeg' else '.png'
+                    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                        tmp_path = tmp.name
+
+                    try:
+                        image_obj.save(tmp_path)
+                        with open(tmp_path, 'rb') as f:
+                            image_bytes = f.read()
+                    finally:
+                        if os.path.exists(tmp_path):
+                            os.unlink(tmp_path)
+
+                if not image_bytes:
                     logger.warning(f"[Expand Service] Image {idx} has no image_bytes, skipping")
                     continue
-                
-                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                    tmp_path = tmp.name
-                
-                try:
-                    generated_image.image.save(tmp_path)
-                    with open(tmp_path, 'rb') as f:
-                        image_bytes = f.read()
-                    b64_data = base64.b64encode(image_bytes).decode('utf-8')
-                    
-                    result = {
-                        "url": f"data:image/png;base64,{b64_data}",
-                        "mime_type": "image/png",
-                        "index": idx,
-                        "expansion_mode": mode,
-                        "size": len(image_bytes)
-                    }
-                    
-                    # Add mode-specific metadata
-                    result.update(metadata)
-                    
-                    # Add safety attributes if available
-                    if hasattr(generated_image, 'safety_attributes') and generated_image.safety_attributes:
-                        safety_attrs = {}
-                        # content_type (内部使用)
-                        if hasattr(generated_image.safety_attributes, 'content_type'):
-                            safety_attrs["content_type"] = generated_image.safety_attributes.content_type
-                        # categories (RAI 类别列表)
-                        if hasattr(generated_image.safety_attributes, 'categories'):
-                            safety_attrs["categories"] = generated_image.safety_attributes.categories
-                        # scores (每个类别的分数列表)
-                        if hasattr(generated_image.safety_attributes, 'scores'):
-                            safety_attrs["scores"] = generated_image.safety_attributes.scores
-                        if safety_attrs:
-                            result["safety_attributes"] = safety_attrs
-                    
-                    # Add RAI reason if available
-                    if hasattr(generated_image, 'rai_reason') and generated_image.rai_reason:
-                        result["rai_reason"] = generated_image.rai_reason
-                    
-                    results.append(result)
-                finally:
-                    if os.path.exists(tmp_path):
-                        os.unlink(tmp_path)
+
+                b64_data = base64.b64encode(image_bytes).decode('utf-8')
+
+                result = {
+                    "url": f"data:{mime_type};base64,{b64_data}",
+                    "mime_type": mime_type,
+                    "index": idx,
+                    "expansion_mode": mode,
+                    "size": len(image_bytes)
+                }
+
+                # Add mode-specific metadata
+                result.update(metadata)
+
+                # Add safety attributes if available
+                if hasattr(generated_image, 'safety_attributes') and generated_image.safety_attributes:
+                    safety_attrs = {}
+                    # content_type (内部使用)
+                    if hasattr(generated_image.safety_attributes, 'content_type'):
+                        safety_attrs["content_type"] = generated_image.safety_attributes.content_type
+                    # categories (RAI 类别列表)
+                    if hasattr(generated_image.safety_attributes, 'categories'):
+                        safety_attrs["categories"] = generated_image.safety_attributes.categories
+                    # scores (每个类别的分数列表)
+                    if hasattr(generated_image.safety_attributes, 'scores'):
+                        safety_attrs["scores"] = generated_image.safety_attributes.scores
+                    if safety_attrs:
+                        result["safety_attributes"] = safety_attrs
+
+                # Add RAI reason if available
+                if hasattr(generated_image, 'rai_reason') and generated_image.rai_reason:
+                    result["rai_reason"] = generated_image.rai_reason
+
+                results.append(result)
         
         return results
     
@@ -840,8 +792,9 @@ class ExpandService:
                 suggestion="Shorten the prompt to 2000 characters or less",
                 service=self.validator.service_name
             )
-        self.validator.validate_model(model, list(self.expand_models))
+        self.validator.validate_required_string('model', model)
         self.validator.validate_choice('mode', mode, self.validator.EXPANSION_MODES)
+        self._validate_model_for_mode(model, mode)
         
         # Validate mode-specific parameters
         if mode == "scale":
@@ -852,7 +805,7 @@ class ExpandService:
             self._validate_ratio_parameters(**kwargs)
         
         # Validate common parameters
-        self._validate_common_parameters(**kwargs)
+        self._validate_common_parameters(mode=mode, **kwargs)
         
         logger.info(f"[Expand Service] Parameter validation passed for mode: {mode}")
     
@@ -919,28 +872,28 @@ class ExpandService:
         if not isinstance(angle, (int, float)) or angle < 0 or angle >= 360:
             raise ValueError(f"Invalid angle: {angle}. Must be a number between 0 and 359")
     
-    def _validate_common_parameters(self, **kwargs) -> None:
+    def _validate_common_parameters(self, mode: str, **kwargs) -> None:
         """Validate common parameters for all modes."""
         # Validate number_of_images
         number_of_images = kwargs.get('number_of_images', 1)
         if not isinstance(number_of_images, int) or number_of_images < 1 or number_of_images > 4:
             raise ValueError(f"Invalid number_of_images: {number_of_images}. Must be an integer between 1 and 4")
+        if mode == "upscale" and number_of_images != 1:
+            raise ValueError("number_of_images is not supported for upscale mode. Use 1.")
         
         # Validate guidance_scale
         guidance_scale = kwargs.get('guidance_scale', 7.5)
         if not isinstance(guidance_scale, (int, float)) or guidance_scale < 1.0 or guidance_scale > 20.0:
             raise ValueError(f"Invalid guidance_scale: {guidance_scale}. Must be a number between 1.0 and 20.0")
         
-        # Validate person_generation
-        person_generation = kwargs.get('person_generation', 'ALLOW_ADULT')
-        valid_person_settings = ['ALLOW_ADULT', 'ALLOW_MINOR', 'BLOCK_ALL']
-        if person_generation not in valid_person_settings:
-            raise ValueError(f"Invalid person_generation: {person_generation}. Must be one of {valid_person_settings}")
+        base_steps = kwargs.get('base_steps')
+        if base_steps is not None and (not isinstance(base_steps, int) or base_steps < 1 or base_steps > 100):
+            raise ValueError(f"Invalid base_steps: {base_steps}. Must be an integer between 1 and 100")
         
         # Validate output_compression_quality
         quality = kwargs.get('output_compression_quality', 95)
-        if not isinstance(quality, int) or quality < 1 or quality > 100:
-            raise ValueError(f"Invalid output_compression_quality: {quality}. Must be an integer between 1 and 100")
+        if not isinstance(quality, int) or quality < 0 or quality > 100:
+            raise ValueError(f"Invalid output_compression_quality: {quality}. Must be an integer between 0 and 100")
     
     def get_supported_models(self) -> List[str]:
         """Get list of supported models for image expansion."""
@@ -982,7 +935,7 @@ class ExpandService:
         self,
         image_path: str,
         upscale_factor: str = "x2",
-        model: str = "imagen-4.0-upscale-preview",
+        model: Optional[str] = None,
         output_mime_type: str = "image/png",
         output_compression_quality: int = 95,
         **kwargs
@@ -1008,14 +961,15 @@ class ExpandService:
             if upscale_factor not in self.VALID_UPSCALE_FACTORS:
                 raise ValueError(f"Invalid upscale factor: {upscale_factor}. Must be one of {self.VALID_UPSCALE_FACTORS}")
 
-            if model not in self.upscale_models:
-                logger.warning(f"[Expand Service] Model {model} may not support upscaling")
+            if not model:
+                raise ValueError("model is required for upscale mode")
+            self._validate_model_for_mode(model, "upscale")
 
             logger.info(f"[Expand Service] Upscale: factor={upscale_factor}, model={model}")
 
             # ✅ 使用统一的图片加载方法（支持 data:, http://, 本地文件）
-            image_bytes, _ = await self._load_image_from_path(image_path)
-            image = genai_types.Image(image_bytes=image_bytes)
+            image_bytes, mime_type = await self._load_image_from_path(image_path)
+            image = genai_types.Image(image_bytes=image_bytes, mime_type=mime_type)
 
             # 检查分辨率限制（传入已加载的 image_bytes）
             original_size, new_size, error = self._check_upscale_resolution(image_bytes, upscale_factor)
@@ -1024,19 +978,8 @@ class ExpandService:
 
             logger.info(f"[Expand Service] Upscale: {original_size} -> {new_size}")
 
-            # 构建配置
             config_kwargs = dict(
                 include_rai_reason=kwargs.get('include_rai_reason', True),
-                person_generation=getattr(
-                    genai_types.PersonGeneration,
-                    kwargs.get('person_generation', 'ALLOW_ADULT'),
-                    genai_types.PersonGeneration.ALLOW_ADULT
-                ),
-                safety_filter_level=getattr(
-                    genai_types.SafetyFilterLevel,
-                    kwargs.get('safety_filter_level', 'BLOCK_LOW_AND_ABOVE'),
-                    genai_types.SafetyFilterLevel.BLOCK_LOW_AND_ABOVE
-                ),
                 output_mime_type=output_mime_type,
                 enhance_input_image=kwargs.get('enhance_input_image', True),
                 image_preservation_factor=kwargs.get('image_preservation_factor', 0.6),
@@ -1071,6 +1014,7 @@ class ExpandService:
                             "upscale_factor": upscale_factor,
                             "original_size": original_size,
                             "upscaled_size": new_size,
+                            "size": len(generated_image.image.image_bytes),
                         })
 
             if not results:
@@ -1275,7 +1219,7 @@ class ExpandService:
         image_path: str,
         target_ratio: str,
         prompt: str = "",
-        model: str = "imagen-3.0-capability-001",
+        model: Optional[str] = None,
         **kwargs
     ) -> List[Dict[str, Any]]:
         """
@@ -1294,6 +1238,10 @@ class ExpandService:
         try:
             if not PIL_AVAILABLE:
                 raise RuntimeError("PIL is required for outpaint")
+
+            if not model:
+                raise ValueError("model is required for ratio outpaint mode")
+            self._validate_model_for_mode(model, "ratio")
 
             logger.info(f"[Expand Service] Outpaint with ratio: {target_ratio}, model={model}")
 
@@ -1341,33 +1289,18 @@ class ExpandService:
                 image_data_url, target_width, target_height, h_offset, v_offset
             )
 
-            # 构建配置
             output_mime_type = kwargs.get('output_mime_type', 'image/png')
-            config_kwargs = dict(
-                edit_mode="EDIT_MODE_OUTPAINT",
-                number_of_images=kwargs.get('number_of_images', 1),
-                include_rai_reason=kwargs.get('include_rai_reason', True),
-                output_mime_type=output_mime_type,
-            )
-
-            if kwargs.get('negative_prompt'):
-                config_kwargs['negative_prompt'] = kwargs['negative_prompt']
-            if kwargs.get('seed') and kwargs['seed'] != -1:
-                config_kwargs['seed'] = kwargs['seed']
-            if output_mime_type == 'image/jpeg':
-                config_kwargs['output_compression_quality'] = kwargs.get('output_compression_quality', 95)
-
-            config = genai_types.EditImageConfig(**config_kwargs)
+            config = self._build_outpaint_config(**kwargs)
 
             # 创建 reference images
             raw_ref_image = genai_types.RawReferenceImage(
                 reference_id=1,
-                reference_image=genai_types.Image(image_bytes=padded_bytes)
+                reference_image=genai_types.Image(image_bytes=padded_bytes, mime_type='image/png')
             )
 
             mask_ref_image = genai_types.MaskReferenceImage(
                 reference_id=2,
-                reference_image=genai_types.Image(image_bytes=mask_bytes),
+                reference_image=genai_types.Image(image_bytes=mask_bytes, mime_type='image/png'),
                 config=genai_types.MaskReferenceConfig(
                     mask_mode="MASK_MODE_USER_PROVIDED",
                     mask_dilation=kwargs.get('mask_dilation', 0.03),
@@ -1385,6 +1318,7 @@ class ExpandService:
 
             return await self._process_expansion_results(
                 response, "outpaint_ratio",
+                output_mime_type=output_mime_type,
                 target_ratio=target_ratio,
                 original_size=(orig_width, orig_height),
                 target_size=(target_width, target_height)

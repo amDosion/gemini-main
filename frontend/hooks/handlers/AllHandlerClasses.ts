@@ -206,7 +206,6 @@ export class VideoGenHandler extends BaseHandler {
       ...(result.continuedFromVideo ? { continuedFromVideo: true } : {}),
       ...(typeof result.storyboardShotSeconds === 'number' ? { storyboardShotSeconds: result.storyboardShotSeconds } : {}),
       ...(typeof result.generateAudio === 'boolean' ? { generateAudio: result.generateAudio } : {}),
-      ...(result.personGeneration ? { personGeneration: result.personGeneration } : {}),
       ...(result.subtitleMode ? { subtitleMode: result.subtitleMode } : {}),
       ...(result.subtitleLanguage ? { subtitleLanguage: result.subtitleLanguage } : {}),
       ...(result.trackedFeature ? { trackedFeature: result.trackedFeature } : {}),

@@ -280,6 +280,17 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
       );
 
 
+      const effectiveNumberOfImages =
+        mode === 'image-outpainting' && controls.outpaintMode === 'upscale'
+          ? 1
+          : controls.numberOfImages;
+      const supportsOutputMimeOptions = ![
+        'image-recontext',
+        'product-recontext',
+        'video-gen',
+        'audio-gen',
+      ].includes(mode);
+
       // 构建 ChatOptions
       const options: ChatOptions = {
         enableSearch: false,
@@ -293,22 +304,34 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
               videoExtensionCount: controls.videoExtensionCount > 0 ? controls.videoExtensionCount : undefined,
               storyboardShotSeconds: controls.storyboardShotSeconds,
               generateAudio: controls.generateAudio,
-              personGeneration: controls.personGeneration || undefined,
               subtitleMode: controls.subtitleMode || undefined,
               subtitleLanguage: controls.subtitleLanguage || undefined,
-              subtitleScript: controls.subtitleScript.trim() || undefined,
+              subtitleScript:
+                !controls.generateAudio && controls.subtitleMode !== 'none'
+                  ? controls.subtitleScript.trim() || undefined
+                  : undefined,
               storyboardPrompt: controls.storyboardPrompt.trim() || undefined,
+              storyboardSegments: controls.storyboardSegments
+                .slice(0, Math.max(0, controls.videoExtensionCount))
+                .map((segment) => segment.trim())
+                .filter(Boolean),
             }
           : {
               imageAspectRatio: controls.aspectRatio,
               imageResolution: controls.resolution,
             }),
-        numberOfImages: controls.numberOfImages,
+        numberOfImages: effectiveNumberOfImages,
         negativePrompt: controls.negativePrompt || undefined,
         seed: controls.seed !== -1 ? controls.seed : undefined,
-        outputMimeType: controls.outputMimeType,
-        // PNG 是无损格式，不需要压缩质量参数，仅 JPEG 时传递
-        ...(controls.outputMimeType === 'image/jpeg' ? { outputCompressionQuality: controls.outputCompressionQuality } : {}),
+        ...(supportsOutputMimeOptions
+          ? {
+              outputMimeType: controls.outputMimeType,
+              // PNG 是无损格式，不需要压缩质量参数，仅 JPEG 时传递
+              ...(controls.outputMimeType === 'image/jpeg'
+                ? { outputCompressionQuality: controls.outputCompressionQuality }
+                : {}),
+            }
+          : {}),
         enhancePrompt: controls.enhancePrompt,
         enhancePromptModel: controls.enhancePromptModel || undefined,
       };

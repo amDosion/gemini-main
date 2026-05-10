@@ -69,7 +69,6 @@ def test_build_video_generate_kwargs_preserves_official_video_controls() -> None
             "negative_prompt": "no blur",
             "prompt_extend": True,
             "generate_audio": False,
-            "person_generation": "allow_adult",
             "subtitle_mode": "vtt",
             "subtitle_language": "en-US",
             "subtitle_script": "Intro line",
@@ -82,7 +81,6 @@ def test_build_video_generate_kwargs_preserves_official_video_controls() -> None
     assert kwargs["duration_seconds"] == 8
     assert kwargs["video_extension_count"] == 3
     assert kwargs["generate_audio"] is False
-    assert kwargs["person_generation"] == "allow_adult"
     assert kwargs["subtitle_mode"] == "vtt"
     assert kwargs["subtitle_language"] == "en-US"
     assert kwargs["subtitle_script"] == "Intro line"

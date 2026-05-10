@@ -4,6 +4,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
+const enhancePromptModelsMock = vi.hoisted(() => [
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+  { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash Preview' },
+]);
+
+vi.mock('../../../hooks/useEnhancePromptModels', () => ({
+  useEnhancePromptModels: () => enhancePromptModelsMock,
+}));
+
 import { VideoGenControls } from './VideoGenControls';
 
 describe('Google VideoGenControls', () => {
@@ -14,11 +23,11 @@ describe('Google VideoGenControls', () => {
     const setVideoExtensionCount = vi.fn();
     const setStoryboardShotSeconds = vi.fn();
     const setGenerateAudio = vi.fn();
-    const setPersonGeneration = vi.fn();
     const setSubtitleMode = vi.fn();
     const setSubtitleLanguage = vi.fn();
     const setSubtitleScript = vi.fn();
     const setStoryboardPrompt = vi.fn();
+    const setStoryboardSegments = vi.fn();
     const setShowAdvanced = vi.fn();
     const setNegativePrompt = vi.fn();
     const setSeed = vi.fn();
@@ -39,8 +48,6 @@ describe('Google VideoGenControls', () => {
         setStoryboardShotSeconds={setStoryboardShotSeconds}
         generateAudio={false}
         setGenerateAudio={setGenerateAudio}
-        personGeneration="allow_adult"
-        setPersonGeneration={setPersonGeneration}
         subtitleMode="none"
         setSubtitleMode={setSubtitleMode}
         subtitleLanguage="zh-CN"
@@ -49,6 +56,8 @@ describe('Google VideoGenControls', () => {
         setSubtitleScript={setSubtitleScript}
         storyboardPrompt=""
         setStoryboardPrompt={setStoryboardPrompt}
+        storyboardSegments={[]}
+        setStoryboardSegments={setStoryboardSegments}
         showAdvanced={false}
         setShowAdvanced={setShowAdvanced}
         negativePrompt=""
@@ -64,7 +73,6 @@ describe('Google VideoGenControls', () => {
             seconds: '8',
             enhance_prompt: false,
             generate_audio: false,
-            person_generation: 'allow_adult',
             subtitle_mode: 'none',
             subtitle_language: 'zh-CN',
             subtitle_script: '',
@@ -82,7 +90,6 @@ describe('Google VideoGenControls', () => {
               { label: '延长 2 次', value: 2 },
             ],
             generate_audio: [{ label: '无配音', value: false }, { label: '生成音频', value: true }],
-            person_generation: [{ label: '允许成人', value: 'allow_adult' }, { label: '允许所有人', value: 'allow_all' }],
             subtitle_mode: [{ label: '无字幕', value: 'none' }, { label: '字幕', value: 'vtt' }],
             subtitle_language: [{ label: '中文', value: 'zh-CN' }, { label: 'English', value: 'en-US' }],
             storyboard_shot_seconds: [{ label: '4s / 镜头', value: 4 }, { label: '6s / 镜头', value: 6 }],
@@ -153,8 +160,6 @@ describe('Google VideoGenControls', () => {
         setStoryboardShotSeconds={setStoryboardShotSeconds}
         generateAudio={false}
         setGenerateAudio={setGenerateAudio}
-        personGeneration="allow_adult"
-        setPersonGeneration={setPersonGeneration}
         subtitleMode="none"
         setSubtitleMode={setSubtitleMode}
         subtitleLanguage="zh-CN"
@@ -163,6 +168,8 @@ describe('Google VideoGenControls', () => {
         setSubtitleScript={setSubtitleScript}
         storyboardPrompt=""
         setStoryboardPrompt={setStoryboardPrompt}
+        storyboardSegments={[]}
+        setStoryboardSegments={setStoryboardSegments}
         showAdvanced={true}
         setShowAdvanced={setShowAdvanced}
         negativePrompt=""
@@ -178,7 +185,6 @@ describe('Google VideoGenControls', () => {
             seconds: '8',
             enhance_prompt: false,
             generate_audio: false,
-            person_generation: 'allow_adult',
             subtitle_mode: 'none',
             subtitle_language: 'zh-CN',
             subtitle_script: '',
@@ -196,7 +202,6 @@ describe('Google VideoGenControls', () => {
               { label: '延长 2 次', value: 2 },
             ],
             generate_audio: [{ label: '无配音', value: false }, { label: '生成音频', value: true }],
-            person_generation: [{ label: '允许成人', value: 'allow_adult' }, { label: '允许所有人', value: 'allow_all' }],
             subtitle_mode: [{ label: '无字幕', value: 'none' }, { label: '字幕', value: 'vtt' }],
             subtitle_language: [{ label: '中文', value: 'zh-CN' }, { label: 'English', value: 'en-US' }],
             storyboard_shot_seconds: [{ label: '4s / 镜头', value: 4 }, { label: '6s / 镜头', value: 6 }],
@@ -269,11 +274,7 @@ describe('Google VideoGenControls', () => {
       target: { value: 'true' },
     });
     expect(setGenerateAudio).toHaveBeenCalledWith(true);
-
-    fireEvent.change(screen.getByLabelText('人物生成'), {
-      target: { value: 'allow_all' },
-    });
-    expect(setPersonGeneration).toHaveBeenCalledWith('allow_all');
+    expect(screen.queryByLabelText('人物生成')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('switch', { name: '字幕' }));
     expect(setSubtitleMode).toHaveBeenCalledWith('vtt');
@@ -283,9 +284,160 @@ describe('Google VideoGenControls', () => {
     });
     expect(setStoryboardShotSeconds).toHaveBeenCalledWith(6);
 
-    fireEvent.change(screen.getByLabelText('分镜提示词'), {
-      target: { value: 'Shot 1: Hero reveal with text Double-Layer Lace' },
+    rerender(
+      <VideoGenControls
+        providerId="google"
+        aspectRatio="16:9"
+        setAspectRatio={setAspectRatio}
+        resolution="720p"
+        setResolution={setResolution}
+        videoSeconds="8"
+        setVideoSeconds={setVideoSeconds}
+        videoExtensionCount={2}
+        setVideoExtensionCount={setVideoExtensionCount}
+        storyboardShotSeconds={4}
+        setStoryboardShotSeconds={setStoryboardShotSeconds}
+        generateAudio={true}
+        setGenerateAudio={setGenerateAudio}
+        subtitleMode="none"
+        setSubtitleMode={setSubtitleMode}
+        subtitleLanguage="zh-CN"
+        setSubtitleLanguage={setSubtitleLanguage}
+        subtitleScript=""
+        setSubtitleScript={setSubtitleScript}
+        storyboardPrompt=""
+        setStoryboardPrompt={setStoryboardPrompt}
+        storyboardSegments={[]}
+        setStoryboardSegments={setStoryboardSegments}
+        showAdvanced={true}
+        setShowAdvanced={setShowAdvanced}
+        negativePrompt=""
+        setNegativePrompt={setNegativePrompt}
+        seed={-1}
+        setSeed={setSeed}
+        enhancePrompt={false}
+        setEnhancePrompt={setEnhancePrompt}
+        controlsSchema={{
+          defaults: {
+            aspect_ratio: '16:9',
+            resolution: '720p',
+            seconds: '8',
+            enhance_prompt: false,
+            generate_audio: true,
+            subtitle_mode: 'none',
+            subtitle_language: 'zh-CN',
+            subtitle_script: '',
+            storyboard_shot_seconds: 4,
+            seed: -1,
+            negative_prompt: '',
+          },
+          aspectRatios: [{ label: '16:9 Landscape', value: '16:9' }],
+          resolutionTiers: [{ label: '720p HD', value: '720p', baseResolution: '1280×720' }],
+          paramOptions: {
+            seconds: [{ label: '8s', value: '8' }],
+            generate_audio: [{ label: '无音频', value: false }, { label: '生成音频和口播', value: true }],
+            subtitle_mode: [{ label: '无字幕', value: 'none' }, { label: '字幕', value: 'vtt' }],
+            subtitle_language: [{ label: '中文', value: 'zh-CN' }, { label: 'English', value: 'en-US' }],
+            storyboard_shot_seconds: [{ label: '4s / 镜头', value: 4 }, { label: '6s / 镜头', value: 6 }],
+          },
+          videoContract: {
+            fieldPolicies: {
+              enhancePrompt: {
+                mandatory: true,
+                lockedWhenMandatory: true,
+                effectiveDefault: true,
+              },
+              generateAudio: {
+                available: true,
+                forcedValue: null,
+              },
+              storyboardPrompt: {
+                preferred: true,
+              },
+            },
+            extensionDurationMatrix: [
+              {
+                baseSeconds: '8',
+                options: [
+                  { count: 0, label: '8s (base)', totalSeconds: 8 },
+                  { count: 1, label: '15s (+1 extensions)', totalSeconds: 15 },
+                  { count: 2, label: '22s (+2 extensions)', totalSeconds: 22 },
+                ],
+              },
+            ],
+            extensionConstraints: {
+              addedSeconds: 7,
+              maxOutputVideoSeconds: 141,
+            },
+          },
+          numericRanges: {
+            seed: { min: -1, max: 2147483647, step: 1 },
+          },
+        } as any}
+        controlsSchemaLoading={false}
+        controlsSchemaError={null}
+      />
+    );
+
+    expect(screen.queryByLabelText('口播脚本')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('分镜提示词')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('延长 1 分镜提示词'), {
+      target: { value: 'Macro product close-up continuation' },
     });
-    expect(setStoryboardPrompt).toHaveBeenCalledWith('Shot 1: Hero reveal with text Double-Layer Lace');
+    expect(setStoryboardSegments).toHaveBeenCalledWith(['Macro product close-up continuation']);
+    expect(setStoryboardPrompt).not.toHaveBeenCalled();
+  });
+
+  it('lets video prompt enhancement choose the same extra model pool as chat-edit', () => {
+    const setEnhancePromptModel = vi.fn();
+
+    render(
+      <VideoGenControls
+        providerId="google"
+        showAdvanced={true}
+        setShowAdvanced={vi.fn()}
+        enhancePrompt={true}
+        setEnhancePrompt={vi.fn()}
+        enhancePromptModel=""
+        setEnhancePromptModel={setEnhancePromptModel}
+        controlsSchema={{
+          defaults: {
+            aspect_ratio: '16:9',
+            resolution: '720p',
+            seconds: '8',
+            enhance_prompt: false,
+          },
+          aspectRatios: [{ label: '16:9 Landscape', value: '16:9' }],
+          resolutionTiers: [{ label: '720p HD', value: '720p', baseResolution: '1280×720' }],
+          paramOptions: {
+            seconds: [{ label: '8s', value: '8' }],
+          },
+          videoContract: {
+            fieldPolicies: {
+              enhancePrompt: {
+                mandatory: false,
+                lockedWhenMandatory: false,
+                effectiveDefault: false,
+              },
+              storyboardPrompt: {
+                preferred: false,
+              },
+            },
+            extensionDurationMatrix: [],
+            extensionConstraints: {},
+          },
+        } as any}
+        controlsSchemaLoading={false}
+        controlsSchemaError={null}
+      />
+    );
+
+    expect(screen.getByRole('option', { name: 'Gemini 2.5 Flash' })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('增强提示词模型'), {
+      target: { value: 'gemini-3-flash-preview' },
+    });
+    expect(setEnhancePromptModel).toHaveBeenCalledWith('gemini-3-flash-preview');
   });
 });

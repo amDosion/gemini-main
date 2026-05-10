@@ -43,10 +43,6 @@ export interface ImageGenerationCapabilities {
   aspectRatios: string[];
   /** Supported image sizes */
   imageSizes: string[];
-  /** Deprecated: personGeneration parameter removed - API uses default (allow_adult) */
-  // personGeneration: string[];
-  /** Deprecated: supportsAllowAll removed with personGeneration parameter */
-  // supportsAllowAll: boolean;
 }
 
 import { ModelConfig } from './types';

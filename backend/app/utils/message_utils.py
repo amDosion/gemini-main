@@ -140,7 +140,6 @@ def extract_metadata(msg: Dict[str, Any]) -> Dict[str, Any]:
         'continued_from_video',
         'storyboard_shot_seconds',
         'generate_audio',
-        'person_generation',
         'subtitle_mode',
         'subtitle_language',
         'subtitle_attachment_ids',

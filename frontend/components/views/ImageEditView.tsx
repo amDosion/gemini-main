@@ -1,22 +1,18 @@
-
-import { safeCopyToClipboard } from '../../utils/safeOps';
 import React, { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
-import { createPortal } from 'react-dom';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
-import { Crop, Wand2, AlertCircle, Layers, User, Bot, Sparkles, Palette, PenTool, MessageSquare, SlidersHorizontal, RotateCcw, Image as ImageIcon, Copy, Check, Star, FolderOpen, Trash2 } from 'lucide-react';
+import { Crop, Wand2, Layers, Bot, Sparkles, Palette, PenTool, MessageSquare, SlidersHorizontal, RotateCcw } from 'lucide-react';
 import { useImageCanvas } from '../../hooks/useImageCanvas';
 import { ImageCanvasControls } from '../common/ImageCanvasControls';
 import { ImageCarouselArrows, ImageCarouselThumbnails, type CarouselMediaItem } from '../common/ImageCarouselControls';
 import { ImageCompare } from '../common/ImageCompare';
 import { GenViewLayout } from '../common/GenViewLayout';
-import { getUrlType } from '../../hooks/handlers/attachmentUtils';
 import { ThinkingBlock } from '../message/ThinkingBlock';
 import { useToastContext } from '../../contexts/ToastContext';
 import { useControlsState } from '../../hooks/useControlsState';
 import { useImageCarousel } from '../../hooks/useImageCarousel';
 import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
 import ChatEditInputArea from '../chat/ChatEditInputArea';
-import { useHistoryListActions } from '../../hooks/useHistoryListActions';
+import { extractImageHistoryPrompts, useImageHistorySidebar } from '../common/ImageHistorySidebar';
 
 interface ImageEditViewProps {
     messages: Message[];
@@ -56,63 +52,6 @@ const arePropsEqual = (prevProps: ImageEditViewProps, nextProps: ImageEditViewPr
     // If all critical props are equal, do not re-render
     return true;
 };
-
-const extractEditHistoryPrompts = (msg: Message): { originalPrompt: string; enhancedPrompt: string } => {
-    const rawContent = (msg.content || '').trim();
-    let originalPrompt = rawContent;
-    let enhancedPrompt = msg.enhancedPrompt?.trim() || '';
-
-    const promptPairMatch = rawContent.match(/^📝\s*([\s\S]*?)(?:\n✨\s*([\s\S]*))?$/);
-    if (promptPairMatch) {
-        originalPrompt = (promptPairMatch[1] || '').trim();
-        if (!enhancedPrompt && promptPairMatch[2]) {
-            enhancedPrompt = promptPairMatch[2].trim();
-        }
-    }
-
-    return {
-        originalPrompt: originalPrompt || (msg.role === Role.USER ? '用户消息' : '模型响应'),
-        enhancedPrompt
-    };
-};
-
-interface EditHoverPreviewAttachment {
-    id: string;
-    url: string;
-}
-
-interface EditHoverPreview {
-    messageId: string;
-    role: Role;
-    authorLabel: string;
-    anchorX: number;
-    anchorY: number;
-    originalPrompt: string;
-    enhancedPrompt: string;
-    attachments: EditHoverPreviewAttachment[];
-}
-
-interface EditHoverPreviewSize {
-    width: number;
-    height: number;
-}
-
-interface EditHoverPreviewPosition {
-    top: number;
-    left: number;
-    arrowOffsetY: number;
-}
-
-interface EditActionMenuAnchor {
-    messageId: string;
-    anchorX: number;
-    anchorY: number;
-}
-
-interface EditActionMenuPosition {
-    top: number;
-    left: number;
-}
 
 type ImageEditMainCanvasProps = {
     loadingState: string;
@@ -372,17 +311,14 @@ export const ImageEditView = memo(({
     onDeleteMessage
 }: ImageEditViewProps) => {
     const { showError } = useToastContext();
-    const scrollRef = useRef<HTMLDivElement>(null);
-    const historyItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
-    const actionMenuPanelRef = useRef<HTMLDivElement | null>(null);
-    const [openActionMenu, setOpenActionMenu] = useState<EditActionMenuAnchor | null>(null);
-    const [actionMenuPosition, setActionMenuPosition] = useState<EditActionMenuPosition | null>(null);
 
     // State for reference image
     const [activeAttachments, setActiveAttachments] = useState<Attachment[]>([]);
     const [activeImageUrl, setActiveImageUrl] = useState<string | null>(null);
     // ✅ 新增：存储当前画布图片对应的完整附件对象（包含元数据）
     const [activeCanvasAttachment, setActiveCanvasAttachment] = useState<Attachment | null>(null);
+    const [selectedHistoryMsgId, setSelectedHistoryMsgId] = useState<string | null>(null);
+    const [carouselInitialIndex, setCarouselInitialIndex] = useState(0);
 
     // ✅ 包装 setActiveAttachments 以添加调试日志
     const handleAttachmentsChange = useCallback((newAtts: Attachment[]) => {
@@ -459,11 +395,41 @@ export const ImageEditView = memo(({
         controls.setNegativePrompt('');
         controls.setSeed(-1);
         controls.setOutputMimeType('image/png');
-        controls.setOutputCompressionQuality(80);
+        controls.setOutputCompressionQuality(100);
     }, [controls]);
 
     // Pan & Zoom Hook（替代原有的手动状态管理）
     const canvas = useImageCanvas({ minZoom: 0.1, maxZoom: 5, zoomStep: 0.2 });
+
+    const selectedCanvasMessage = useMemo(() => {
+        if (activeAttachments.length > 0) return null;
+        if (selectedHistoryMsgId) {
+            return messages.find((msg) => msg.id === selectedHistoryMsgId) || null;
+        }
+        return [...messages].reverse().find((msg) =>
+            (msg.attachments || []).some((att) => {
+                const stableUrl = getStableCanvasUrlFromAttachment(att);
+                return Boolean(att.url || att.tempUrl || stableUrl);
+            })
+        ) || null;
+    }, [activeAttachments.length, getStableCanvasUrlFromAttachment, messages, selectedHistoryMsgId]);
+
+    const canvasDisplayAttachments = useMemo(() => {
+        if (activeAttachments.length > 0) {
+            return activeAttachments;
+        }
+        return (selectedCanvasMessage?.attachments || []).filter((att) => {
+            const stableUrl = getStableCanvasUrlFromAttachment(att);
+            return Boolean(att.url || att.tempUrl || stableUrl);
+        });
+    }, [activeAttachments, getStableCanvasUrlFromAttachment, selectedCanvasMessage?.attachments]);
+
+    const canvasCarouselResetKey = useMemo(() => {
+        if (activeAttachments.length > 0) {
+            return activeAttachments.map((att) => att.id || att.url || att.tempUrl || att.name).join('|');
+        }
+        return selectedCanvasMessage?.id || null;
+    }, [activeAttachments, selectedCanvasMessage?.id]);
 
     const {
         index: carouselIndex,
@@ -471,10 +437,33 @@ export const ImageEditView = memo(({
         goNext: handleCarouselNext,
         select: handleCarouselSelect
     } = useImageCarousel({
-        itemCount: activeAttachments.length,
+        itemCount: canvasDisplayAttachments.length,
+        initialIndex: carouselInitialIndex,
+        resetKey: canvasCarouselResetKey,
         keyboardEnabled: true,
         onNavigate: canvas.resetView
     });
+
+    useEffect(() => {
+        const currentAttachment = canvasDisplayAttachments[carouselIndex];
+        if (!currentAttachment) return;
+
+        const currentUrl = currentAttachment.url || currentAttachment.tempUrl || getStableCanvasUrlFromAttachment(currentAttachment);
+        if (!currentUrl) return;
+
+        if (currentUrl !== activeImageUrl) {
+            setActiveImageUrl(currentUrl);
+        }
+        if (activeCanvasAttachment?.id !== currentAttachment.id) {
+            setActiveCanvasAttachment(currentAttachment);
+        }
+    }, [
+        activeCanvasAttachment?.id,
+        activeImageUrl,
+        canvasDisplayAttachments,
+        carouselIndex,
+        getStableCanvasUrlFromAttachment
+    ]);
 
     // Reset View when image changes
     useEffect(() => {
@@ -484,16 +473,39 @@ export const ImageEditView = memo(({
 
     // 注意：Blob URL 清理现在由 canvasObjectUrlMapRef 的 useEffect 统一管理
 
-    // 获取原图 URL（用于对比）
-    const originalImageUrl = useMemo(() => {
-        const lastUserMsg = [...messages].reverse().find(m => m.role === Role.USER && m.attachments?.length);
-        return lastUserMsg?.attachments?.[0]?.url || null;
-    }, [messages]);
+    // 获取当前 AI 结果对应的用户上传原图（用于对比）
+    const compareSourceImageUrl = useMemo(() => {
+        if (!selectedCanvasMessage || selectedCanvasMessage.role !== Role.MODEL || canvasDisplayAttachments.length === 0) {
+            return null;
+        }
+
+        const selectedMessageIndex = messages.findIndex((msg) => msg.id === selectedCanvasMessage.id);
+        if (selectedMessageIndex <= 0) {
+            return null;
+        }
+
+        for (let i = selectedMessageIndex - 1; i >= 0; i -= 1) {
+            const candidate = messages[i];
+            if (candidate.role !== Role.USER || !candidate.attachments?.length) {
+                continue;
+            }
+
+            for (const attachment of candidate.attachments) {
+                const sourceUrl = getStableCanvasUrlFromAttachment(attachment);
+                if (sourceUrl) {
+                    return sourceUrl;
+                }
+            }
+        }
+
+        return null;
+    }, [canvasDisplayAttachments.length, getStableCanvasUrlFromAttachment, messages, selectedCanvasMessage]);
 
     // Sync initial attachments
     useEffect(() => {
         if (initialAttachments && initialAttachments.length > 0) {
             setActiveAttachments(initialAttachments);
+            setCarouselInitialIndex(0);
             setActiveImageUrl(getStableCanvasUrlFromAttachment(initialAttachments[0]));
             // ✅ 同时保存完整的附件对象（包含元数据）
             setActiveCanvasAttachment(initialAttachments[0]);
@@ -509,25 +521,12 @@ export const ImageEditView = memo(({
     useEffect(() => {
         if (activeAttachments.length > 0) {
             const stableUrl = getStableCanvasUrlFromAttachment(activeAttachments[0]);
+            setCarouselInitialIndex(0);
             setActiveImageUrl(stableUrl);
             // ✅ 同时保存完整的附件对象（包含元数据）
             setActiveCanvasAttachment(activeAttachments[0]);
         }
     }, [activeAttachments, getStableCanvasUrlFromAttachment]);
-
-    // Auto-scroll history
-    useEffect(() => {
-        const container = scrollRef.current;
-        if (!container) return;
-
-        // 使用 requestAnimationFrame 确保 DOM 更新后再滚动
-        requestAnimationFrame(() => {
-            container.scrollTo({
-                top: container.scrollHeight,
-                behavior: 'smooth'
-            });
-        });
-    }, [messages, activeAttachments]);
 
     // 流式输出思考过程（打字效果）
     useEffect(() => {
@@ -592,16 +591,7 @@ export const ImageEditView = memo(({
             // 优先查找用户消息中的图片（对话式编辑的原始图片）
             const lastUserMsg = [...messages].reverse().find(m => m.role === Role.USER && m.attachments?.length);
             if (lastUserMsg && lastUserMsg.attachments?.[0]?.url) {
-                const att = lastUserMsg.attachments[0];
-                const urlType = getUrlType(att.url, att.uploadStatus);
-                // 对于BASE64 URL，只输出类型和长度，不输出实际内容
-                const formatUrlForLog = (url: string | undefined): string => {
-                    if (!url) return 'N/A';
-                    if (url.startsWith('data:')) {
-                        return `Base64 Data URL (长度: ${url.length} 字符)`;
-                    }
-                    return url.length > 60 ? url.substring(0, 60) + '...' : url;
-                };
+                setCarouselInitialIndex(0);
                 setActiveImageUrl(lastUserMsg.attachments[0].url);
                 // ✅ 同时保存完整的附件对象（包含元数据）
                 setActiveCanvasAttachment(lastUserMsg.attachments[0]);
@@ -609,16 +599,7 @@ export const ImageEditView = memo(({
                 // 如果没有用户消息，从模型消息中获取（编辑后的图片）
                 const lastModelMsg = [...messages].reverse().find(m => m.role === Role.MODEL && m.attachments?.length);
                 if (lastModelMsg && lastModelMsg.attachments?.[0]?.url) {
-                    const att = lastModelMsg.attachments[0];
-                    const urlType = getUrlType(att.url, att.uploadStatus);
-                    // 对于BASE64 URL，只输出类型和长度，不输出实际内容
-                    const formatUrlForLog = (url: string | undefined): string => {
-                        if (!url) return 'N/A';
-                        if (url.startsWith('data:')) {
-                            return `Base64 Data URL (长度: ${url.length} 字符)`;
-                        }
-                        return url.length > 60 ? url.substring(0, 60) + '...' : url;
-                    };
+                    setCarouselInitialIndex(0);
                     setActiveImageUrl(lastModelMsg.attachments[0].url);
                     // ✅ 同时保存完整的附件对象（包含元数据）
                     setActiveCanvasAttachment(lastModelMsg.attachments[0]);
@@ -633,19 +614,7 @@ export const ImageEditView = memo(({
             if (lastMsg.id !== lastProcessedMsgId) {
                 // If it's a model response with an image
                 if (lastMsg.role === Role.MODEL && lastMsg.attachments && lastMsg.attachments.length > 0 && lastMsg.attachments[0].url) {
-                    const att = lastMsg.attachments[0];
-                    const urlType = getUrlType(att.url, att.uploadStatus);
-                    
-                    // 对于BASE64 URL，只输出类型和长度，不输出实际内容
-                    const formatUrlForLog = (url: string | undefined): string => {
-                        if (!url) return 'N/A';
-                        if (url.startsWith('data:')) {
-                            return `Base64 Data URL (长度: ${url.length} 字符)`;
-                        }
-                        return url.length > 80 ? url.substring(0, 80) + '...' : url;
-                    };
-                    
-
+                    setCarouselInitialIndex(0);
                     setActiveImageUrl(lastMsg.attachments[0].url);
                     // ✅ 同时保存完整的附件对象（包含元数据）
                     setActiveCanvasAttachment(lastMsg.attachments[0]);
@@ -670,86 +639,17 @@ export const ImageEditView = memo(({
 
     // Mobile History Toggle
     const [isMobileHistoryOpen, setIsMobileHistoryOpen] = useState(false);
-    const [selectedHistoryMsgId, setSelectedHistoryMsgId] = useState<string | null>(null);
-    const [hoverPreview, setHoverPreview] = useState<EditHoverPreview | null>(null);
-    const [hoverPreviewPosition, setHoverPreviewPosition] = useState<EditHoverPreviewPosition | null>(null);
-    const [hoverPreviewSize, setHoverPreviewSize] = useState<EditHoverPreviewSize | null>(null);
-    const [isResizingPreview, setIsResizingPreview] = useState(false);
-    const [copiedPreviewMessageId, setCopiedPreviewMessageId] = useState<string | null>(null);
-    const hidePreviewTimerRef = useRef<number | null>(null);
-    const copiedResetTimerRef = useRef<number | null>(null);
-    const hoverPreviewPanelRef = useRef<HTMLDivElement | null>(null);
-    const previewResizeHandlersRef = useRef<{
-        onMouseMove?: (event: MouseEvent) => void;
-        onMouseUp?: () => void;
-    }>({});
 
-    const clearHidePreviewTimer = useCallback(() => {
-        if (hidePreviewTimerRef.current !== null) {
-            window.clearTimeout(hidePreviewTimerRef.current);
-            hidePreviewTimerRef.current = null;
-        }
-    }, []);
-
-    const clearCopiedResetTimer = useCallback(() => {
-        if (copiedResetTimerRef.current !== null) {
-            window.clearTimeout(copiedResetTimerRef.current);
-            copiedResetTimerRef.current = null;
-        }
-    }, []);
-
-    const stopPreviewResize = useCallback(() => {
-        const handlers = previewResizeHandlersRef.current;
-        if (handlers.onMouseMove) {
-            window.removeEventListener('mousemove', handlers.onMouseMove);
-        }
-        if (handlers.onMouseUp) {
-            window.removeEventListener('mouseup', handlers.onMouseUp);
-        }
-        previewResizeHandlersRef.current = {};
-        setIsResizingPreview(false);
-    }, []);
-
-    const closeHoverPreview = useCallback(() => {
-        clearHidePreviewTimer();
-        stopPreviewResize();
-        setOpenActionMenu(null);
-        setActionMenuPosition(null);
-        setHoverPreview(null);
-        setHoverPreviewPosition(null);
-        setHoverPreviewSize(null);
-        setCopiedPreviewMessageId(null);
-    }, [clearHidePreviewTimer, stopPreviewResize]);
-
-    const scheduleHideHoverPreview = useCallback(() => {
-        if (isResizingPreview) return;
-        clearHidePreviewTimer();
-        hidePreviewTimerRef.current = window.setTimeout(() => {
-            setHoverPreview(null);
-            setHoverPreviewPosition(null);
-            setHoverPreviewSize(null);
-            setCopiedPreviewMessageId(null);
-            hidePreviewTimerRef.current = null;
-        }, 180);
-    }, [clearHidePreviewTimer, isResizingPreview]);
-
-    const getMessageDisplayAttachments = useCallback((msg: Message): EditHoverPreviewAttachment[] => {
-        return (msg.attachments || [])
-            .map((att, idx) => {
-                const stableUrl = getStableCanvasUrlFromAttachment(att);
-                const displayUrl = (att.url && att.url.length > 0)
-                    ? att.url
-                    : (att.tempUrl && att.tempUrl.length > 0)
-                        ? att.tempUrl
-                        : (stableUrl || '');
-
-                return {
-                    id: att.id || `${msg.id}-${idx}`,
-                    url: displayUrl
-                };
-            })
-            .filter((item) => item.url.length > 0);
+    const getHistoryAttachmentUrl = useCallback((attachment: Attachment) => {
+        const stableUrl = getStableCanvasUrlFromAttachment(attachment);
+        if (attachment.url && attachment.url.length > 0) return attachment.url;
+        if (attachment.tempUrl && attachment.tempUrl.length > 0) return attachment.tempUrl;
+        return stableUrl;
     }, [getStableCanvasUrlFromAttachment]);
+
+    const getMessageDisplayAttachments = useCallback((attachments?: Attachment[]) => {
+        return (attachments || []).filter((attachment) => Boolean(getHistoryAttachmentUrl(attachment)));
+    }, [getHistoryAttachmentUrl]);
 
     const historyMessages = useMemo(() => {
         return messages.filter((msg) => {
@@ -758,804 +658,93 @@ export const ImageEditView = memo(({
         });
     }, [messages]);
 
-    const {
-        showFavoritesOnly,
-        setShowFavoritesOnly,
-        filteredItems: filteredHistoryMessages,
-        favoriteCount,
-        isFavorite,
-        isFavoritePending,
-        toggleFavorite,
-        deleteItem
-    } = useHistoryListActions({
-        sessionId: currentSessionId,
-        items: historyMessages,
-        onDeleteItem: onDeleteMessage
-    });
+    const loadingHistoryContent = useMemo(() => {
+        if (loadingState === 'idle') return null;
 
-    const computeHoverPreviewPosition = useCallback((
-        anchorX: number,
-        anchorY: number,
-        panelWidth: number,
-        panelHeight: number
-    ): EditHoverPreviewPosition => {
-        const gap = 12;
-        const viewportPadding = 8;
-        const left = Math.max(
-            viewportPadding,
-            Math.min(anchorX + gap, window.innerWidth - panelWidth - viewportPadding)
-        );
-        const top = Math.max(
-            viewportPadding,
-            Math.min(anchorY - panelHeight / 2, window.innerHeight - panelHeight - viewportPadding)
-        );
-        const arrowOffsetY = Math.max(12, Math.min(panelHeight - 12, anchorY - top));
-        return { left, top, arrowOffsetY };
-    }, []);
+        let statusText = 'Processing request...';
+        let statusIcon = <Bot size={16} className="text-slate-500" />;
 
-    const showHoverPreview = useCallback((
-        e: React.MouseEvent<HTMLDivElement>,
-        msg: Message,
-        originalPrompt: string,
-        enhancedPrompt: string,
-        attachments: EditHoverPreviewAttachment[]
-    ) => {
-        if (window.innerWidth < 768) return;
-        clearHidePreviewTimer();
-        setOpenActionMenu(null);
-        setActionMenuPosition(null);
-
-        const rect = e.currentTarget.getBoundingClientRect();
-        const anchorX = rect.right;
-        const anchorY = rect.top + rect.height / 2;
-        const shouldResetSize = hoverPreview?.messageId !== msg.id;
-        if (shouldResetSize) {
-            setHoverPreviewSize(null);
-        }
-        const estimatedPanelWidth = shouldResetSize ? 380 : (hoverPreviewSize?.width ?? 380);
-        const estimatedPanelHeight = shouldResetSize ? 280 : (hoverPreviewSize?.height ?? 280);
-
-        setHoverPreview({
-            messageId: msg.id,
-            role: msg.role,
-            authorLabel: msg.role === Role.USER ? 'You' : (activeModelConfig?.name || 'AI'),
-            anchorX,
-            anchorY,
-            originalPrompt,
-            enhancedPrompt,
-            attachments
-        });
-        setHoverPreviewPosition(
-            computeHoverPreviewPosition(anchorX, anchorY, estimatedPanelWidth, estimatedPanelHeight)
-        );
-    }, [activeModelConfig?.name, clearHidePreviewTimer, computeHoverPreviewPosition, hoverPreview?.messageId, hoverPreviewSize?.height, hoverPreviewSize?.width]);
-
-    const handlePreviewResizeMouseDown = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
-        if (!hoverPreview) return;
-
-        event.preventDefault();
-        event.stopPropagation();
-        clearHidePreviewTimer();
-        stopPreviewResize();
-        setIsResizingPreview(true);
-
-        const startX = event.clientX;
-        const startY = event.clientY;
-        const previewRect = hoverPreviewPanelRef.current?.getBoundingClientRect();
-        const startWidth = previewRect?.width ?? hoverPreviewSize?.width ?? 380;
-        const startHeight = previewRect?.height ?? hoverPreviewSize?.height ?? 320;
-        const anchorLeft = hoverPreviewPosition?.left ?? 8;
-        const anchorTop = hoverPreviewPosition?.top ?? 8;
-        const minWidth = 300;
-        const minHeight = 220;
-        const viewportPadding = 8;
-
-        setHoverPreviewSize({ width: startWidth, height: startHeight });
-
-        const onMouseMove = (moveEvent: MouseEvent) => {
-            const deltaX = moveEvent.clientX - startX;
-            const deltaY = moveEvent.clientY - startY;
-
-            const maxWidth = Math.max(minWidth, window.innerWidth - anchorLeft - viewportPadding);
-            const maxHeight = Math.max(minHeight, window.innerHeight - anchorTop - viewportPadding);
-
-            const nextWidth = Math.max(minWidth, Math.min(maxWidth, startWidth + deltaX));
-            const nextHeight = Math.max(minHeight, Math.min(maxHeight, startHeight + deltaY));
-
-            setHoverPreviewSize({ width: nextWidth, height: nextHeight });
-        };
-
-        const onMouseUp = () => {
-            stopPreviewResize();
-        };
-
-        previewResizeHandlersRef.current = { onMouseMove, onMouseUp };
-        window.addEventListener('mousemove', onMouseMove);
-        window.addEventListener('mouseup', onMouseUp);
-    }, [hoverPreview, hoverPreviewPosition?.left, hoverPreviewPosition?.top, hoverPreviewSize?.width, hoverPreviewSize?.height, clearHidePreviewTimer, stopPreviewResize]);
-
-    const handleCopyEnhancedPrompt = useCallback(async () => {
-        if (!hoverPreview?.enhancedPrompt) return;
-
-        const textToCopy = hoverPreview.enhancedPrompt;
-
-        await safeCopyToClipboard(textToCopy);
-        setCopiedPreviewMessageId(hoverPreview.messageId);
-        clearCopiedResetTimer();
-        copiedResetTimerRef.current = window.setTimeout(() => {
-            setCopiedPreviewMessageId(null);
-            copiedResetTimerRef.current = null;
-        }, 1500);
-    }, [hoverPreview, clearCopiedResetTimer]);
-
-    useEffect(() => {
-        if (!hoverPreview || !hoverPreviewPanelRef.current) return;
-
-        const syncPosition = () => {
-            if (!hoverPreviewPanelRef.current) return;
-            const panelRect = hoverPreviewPanelRef.current.getBoundingClientRect();
-            const panelWidth = hoverPreviewSize?.width ?? panelRect.width;
-            const panelHeight = hoverPreviewSize?.height ?? panelRect.height;
-            const next = computeHoverPreviewPosition(
-                hoverPreview.anchorX,
-                hoverPreview.anchorY,
-                panelWidth,
-                panelHeight
-            );
-            setHoverPreviewPosition((prev) => {
-                if (
-                    prev &&
-                    Math.abs(prev.left - next.left) < 0.5 &&
-                    Math.abs(prev.top - next.top) < 0.5 &&
-                    Math.abs(prev.arrowOffsetY - next.arrowOffsetY) < 0.5
-                ) {
-                    return prev;
-                }
-                return next;
-            });
-        };
-
-        const rafId = window.requestAnimationFrame(syncPosition);
-        return () => {
-            window.cancelAnimationFrame(rafId);
-        };
-    }, [hoverPreview, hoverPreviewSize, computeHoverPreviewPosition]);
-
-    useEffect(() => {
-        if (!hoverPreview) return;
-
-        const clearPreview = () => closeHoverPreview();
-        const handleWindowScroll = (event: Event) => {
-            const target = event.target;
-            if (
-                target instanceof Node &&
-                hoverPreviewPanelRef.current &&
-                hoverPreviewPanelRef.current.contains(target)
-            ) {
-                return;
-            }
-            closeHoverPreview();
-        };
-
-        window.addEventListener('resize', clearPreview);
-        window.addEventListener('scroll', handleWindowScroll, true);
-
-        return () => {
-            window.removeEventListener('resize', clearPreview);
-            window.removeEventListener('scroll', handleWindowScroll, true);
-        };
-    }, [hoverPreview, closeHoverPreview]);
-
-    useEffect(() => {
-        if (filteredHistoryMessages.length === 0) return;
-
-        const handleHistoryNavigation = (e: KeyboardEvent) => {
-            if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-
-            const target = e.target as HTMLElement | null;
-            if (target) {
-                const tagName = target.tagName;
-                const isFormInput = tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
-                const isEditable = target.isContentEditable || Boolean(target.closest('[contenteditable="true"]'));
-                if (isFormInput || isEditable) {
-                    return;
-                }
-            }
-
-            e.preventDefault();
-            closeHoverPreview();
-
-            setSelectedHistoryMsgId((prevId) => {
-                const currentIndex = prevId
-                    ? filteredHistoryMessages.findIndex((m) => m.id === prevId)
-                    : filteredHistoryMessages.length - 1;
-                const safeCurrentIndex = currentIndex >= 0 ? currentIndex : filteredHistoryMessages.length - 1;
-                const delta = e.key === 'ArrowUp' ? -1 : 1;
-                const nextIndex = Math.max(0, Math.min(filteredHistoryMessages.length - 1, safeCurrentIndex + delta));
-                const nextMessage = filteredHistoryMessages[nextIndex];
-
-                if (nextMessage) {
-                    const nextAttachments = getMessageDisplayAttachments(nextMessage);
-                    if (nextAttachments.length > 0) {
-                        setActiveImageUrl(nextAttachments[0].url);
-                    }
-                }
-
-                return nextMessage?.id || prevId;
-            });
-        };
-
-        window.addEventListener('keydown', handleHistoryNavigation);
-        return () => {
-            window.removeEventListener('keydown', handleHistoryNavigation);
-        };
-    }, [filteredHistoryMessages, closeHoverPreview, getMessageDisplayAttachments]);
-
-    useEffect(() => {
-        if (filteredHistoryMessages.length === 0) {
-            setSelectedHistoryMsgId(null);
-            return;
+        if (loadingState === 'uploading') {
+            statusText = '上传图片中...';
+            statusIcon = <Layers size={16} className="text-blue-400" />;
+        } else if (loadingState === 'loading') {
+            statusText = '对话式编辑中，AI 正在理解您的需求并生成图片...';
+            statusIcon = <MessageSquare size={16} className="text-pink-400" />;
+        } else if (loadingState === 'streaming') {
+            statusText = '流式处理中...';
+            statusIcon = <Sparkles size={16} className="text-pink-400 animate-pulse" />;
         }
 
-        if (selectedHistoryMsgId && filteredHistoryMessages.some((msg) => msg.id === selectedHistoryMsgId)) {
-            return;
-        }
+        const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+        const thoughts = lastMessage?.thoughts || [];
+        const textResponse = lastMessage?.textResponse;
+        const hasTextContent = lastMessage?.content && lastMessage.content.trim().length > 0;
+        const isThinkingComplete = loadingState === 'idle';
 
-        const fallback = filteredHistoryMessages[filteredHistoryMessages.length - 1];
-        if (fallback) {
-            setSelectedHistoryMsgId(fallback.id);
-            const fallbackAttachments = getMessageDisplayAttachments(fallback);
-            if (fallbackAttachments.length > 0) {
-                setActiveImageUrl(fallbackAttachments[0].url);
-            }
-        }
-    }, [filteredHistoryMessages, getMessageDisplayAttachments, selectedHistoryMsgId]);
-
-    useEffect(() => {
-        if (!selectedHistoryMsgId) return;
-        const itemEl = historyItemRefs.current[selectedHistoryMsgId];
-        if (!itemEl) return;
-
-        requestAnimationFrame(() => {
-            itemEl.scrollIntoView({
-                block: 'nearest',
-                behavior: 'smooth'
-            });
-        });
-    }, [selectedHistoryMsgId]);
-
-    useEffect(() => {
-        if (!openActionMenu) return;
-
-        const handleOutsideClick = (event: MouseEvent) => {
-            const target = event.target as Node | null;
-            if (!target) return;
-            if (
-                actionMenuPanelRef.current &&
-                actionMenuPanelRef.current.contains(target)
-            ) {
-                return;
-            }
-            if (
-                target instanceof Element &&
-                target.closest('[data-history-action-trigger]')
-            ) {
-                return;
-            }
-            setOpenActionMenu(null);
-            setActionMenuPosition(null);
-        };
-
-        window.addEventListener('mousedown', handleOutsideClick);
-        return () => {
-            window.removeEventListener('mousedown', handleOutsideClick);
-        };
-    }, [openActionMenu]);
-
-    useEffect(() => {
-        if (!openActionMenu) return;
-
-        const syncActionMenuPosition = () => {
-            const panelRect = actionMenuPanelRef.current?.getBoundingClientRect();
-            const panelWidth = panelRect?.width ?? 110;
-            const panelHeight = panelRect?.height ?? 76;
-            const viewportPadding = 8;
-            const gap = 8;
-
-            let left = openActionMenu.anchorX + gap;
-            if (left + panelWidth + viewportPadding > window.innerWidth) {
-                left = openActionMenu.anchorX - panelWidth - gap;
-            }
-            left = Math.max(viewportPadding, Math.min(left, window.innerWidth - panelWidth - viewportPadding));
-
-            let top = openActionMenu.anchorY + gap;
-            if (top + panelHeight + viewportPadding > window.innerHeight) {
-                top = openActionMenu.anchorY - panelHeight - gap;
-            }
-            top = Math.max(viewportPadding, Math.min(top, window.innerHeight - panelHeight - viewportPadding));
-
-            setActionMenuPosition((prev) => {
-                if (
-                    prev &&
-                    Math.abs(prev.left - left) < 0.5 &&
-                    Math.abs(prev.top - top) < 0.5
-                ) {
-                    return prev;
-                }
-                return { left, top };
-            });
-        };
-
-        const rafId = window.requestAnimationFrame(syncActionMenuPosition);
-        window.addEventListener('resize', syncActionMenuPosition);
-        return () => {
-            window.cancelAnimationFrame(rafId);
-            window.removeEventListener('resize', syncActionMenuPosition);
-        };
-    }, [openActionMenu]);
-
-    useEffect(() => {
-        if (!openActionMenu) return;
-
-        const handleWindowScroll = () => {
-            setOpenActionMenu(null);
-            setActionMenuPosition(null);
-        };
-
-        window.addEventListener('scroll', handleWindowScroll, true);
-        return () => {
-            window.removeEventListener('scroll', handleWindowScroll, true);
-        };
-    }, [openActionMenu]);
-
-    useEffect(() => {
-        return () => {
-            clearHidePreviewTimer();
-            clearCopiedResetTimer();
-            stopPreviewResize();
-        };
-    }, [clearHidePreviewTimer, clearCopiedResetTimer, stopPreviewResize]);
-
-    const sidebarExtraHeader = useMemo(() => (
-        <div className="flex items-center gap-2">
-            <label className="inline-flex items-center gap-1 text-[10px] text-slate-400 cursor-pointer select-none">
-                <input
-                    type="checkbox"
-                    className="h-3 w-3 rounded border-slate-600 bg-slate-800 text-amber-400 focus:ring-0"
-                    checked={showFavoritesOnly}
-                    onChange={(event) => setShowFavoritesOnly(event.target.checked)}
-                />
-                <span>仅收藏</span>
-            </label>
-            <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-500">
-                {filteredHistoryMessages.length}/{historyMessages.length}
-            </span>
-            <span className="inline-flex items-center gap-1 text-[10px] rounded bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 text-amber-300">
-                <Star size={9} className="fill-amber-300 text-amber-300" />
-                {favoriteCount}
-            </span>
-        </div>
-    ), [favoriteCount, filteredHistoryMessages.length, historyMessages.length, setShowFavoritesOnly, showFavoritesOnly]);
-
-    // 使用 useMemo 缓存 sidebarContent，防止不必要的重新渲染
-    const sidebarContent = useMemo(() => (
-        <div ref={scrollRef} className="flex-1 p-3 space-y-2.5 overflow-y-auto custom-scrollbar">
-            {filteredHistoryMessages.map((msg) => {
-                const displayAttachments = getMessageDisplayAttachments(msg);
-                const firstImage = displayAttachments[0]?.url;
-                const count = displayAttachments.length;
-                const isUserMessage = msg.role === Role.USER;
-                const { originalPrompt, enhancedPrompt } = extractEditHistoryPrompts(msg);
-                const favorited = isFavorite(msg.id);
-                const isActionMenuOpen = openActionMenu?.messageId === msg.id;
-
-                const isSelected = selectedHistoryMsgId
-                    ? selectedHistoryMsgId === msg.id
-                    : Boolean(activeImageUrl && displayAttachments.some((att) => att.url === activeImageUrl));
-
-                const itemToneClass = isUserMessage
-                    ? (isSelected
-                        ? 'ring-1 ring-blue-400/80 border-transparent bg-blue-500/10'
-                        : 'border-blue-500/20 bg-blue-500/5 hover:border-blue-400/40')
-                    : (isSelected
-                        ? 'ring-1 ring-pink-400/80 border-transparent bg-pink-500/10'
-                        : 'border-pink-500/20 bg-pink-500/5 hover:border-pink-400/40');
-
-                return (
-                    <div
-                        key={msg.id}
-                        ref={(el) => {
-                            historyItemRefs.current[msg.id] = el;
-                        }}
-                        className="group relative"
-                    >
-                        <div
-                            className={`relative rounded-xl border cursor-pointer transition-all flex items-center gap-3 p-2 ${itemToneClass}`}
-                            onMouseEnter={(e) => showHoverPreview(e, msg, originalPrompt, enhancedPrompt, displayAttachments)}
-                            onMouseLeave={scheduleHideHoverPreview}
-                            onClick={() => {
-                                setSelectedHistoryMsgId(msg.id);
-                                if (firstImage) {
-                                    setActiveImageUrl(firstImage);
-                                }
-                                if (window.innerWidth < 768) {
-                                    setIsMobileHistoryOpen(false);
-                                }
-                                closeHoverPreview();
-                            }}
-                        >
-                            {favorited && (
-                                <span className="absolute right-2 top-2 inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-400/20 border border-amber-300/50 z-10">
-                                    <Star size={11} className="fill-amber-300 text-amber-300" />
-                                </span>
-                            )}
-
-                            <div className="h-14 w-20 flex-shrink-0 rounded-lg overflow-hidden bg-slate-900 relative">
-                                <span className={`absolute top-1 left-1 z-10 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-medium border ${
-                                    isUserMessage
-                                        ? 'bg-blue-950/85 text-blue-200 border-blue-400/30'
-                                        : 'bg-pink-950/85 text-pink-200 border-pink-400/30'
-                                }`}>
-                                    {isUserMessage ? <User size={9} /> : <Bot size={9} />}
-                                    {isUserMessage ? 'USER' : 'AI'}
-                                </span>
-
-                                {msg.isError ? (
-                                    <div className="w-full h-full flex items-center justify-center text-red-400 bg-red-900/10">
-                                        <AlertCircle size={18} />
-                                    </div>
-                                ) : firstImage ? (
-                                    <>
-                                        <img src={firstImage} className="w-full h-full object-cover transition-transform group-hover:scale-105" loading="lazy" alt="Edit history preview" />
-                                        {count > 1 && (
-                                            <div className="absolute top-1 right-1 bg-black/60 backdrop-blur-sm text-white text-[10px] px-1.5 py-0.5 rounded-md flex items-center gap-1 font-medium border border-white/10">
-                                                <Layers size={10} /> {count}
-                                            </div>
-                                        )}
-                                    </>
-                                ) : (
-                                    <div className="w-full h-full flex items-center justify-center text-slate-600">
-                                        <ImageIcon size={16} className="opacity-50" />
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="min-w-0 flex-1">
-                                <div className="flex items-center justify-between gap-2">
-                                    <span className={`text-[10px] font-medium ${
-                                        isUserMessage ? 'text-blue-300' : 'text-pink-300'
-                                    }`}>
-                                        {isUserMessage ? 'You' : (activeModelConfig?.name || 'AI')}
-                                    </span>
-                                    <span className="text-[10px] text-slate-500">
-                                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </span>
-                                </div>
-                                <p className="mt-1 text-[11px] text-slate-200 leading-relaxed font-medium line-clamp-2 break-words">
-                                    {originalPrompt}
-                                </p>
-                                <div className="mt-1.5 flex items-center gap-2 text-[10px] text-slate-500">
-                                    {isUserMessage ? (
-                                        <span className="inline-flex items-center gap-1 rounded-full border border-blue-500/25 bg-blue-500/10 px-1.5 py-0.5 text-blue-300">
-                                            用户输入
-                                        </span>
-                                    ) : (
-                                        <span className="inline-flex items-center gap-1 rounded-full border border-pink-500/25 bg-pink-500/10 px-1.5 py-0.5 text-pink-300">
-                                            AI 响应
-                                        </span>
-                                    )}
-                                    {!isUserMessage && enhancedPrompt && (
-                                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-emerald-300">
-                                            <Sparkles size={10} />
-                                            含增强提示词
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div
-                                className="absolute right-2 bottom-2 z-20"
-                                onClick={(event) => {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                }}
-                            >
-                                <button
-                                    type="button"
-                                    className={`transition-opacity rounded-md border border-slate-600/70 bg-slate-900/90 p-1 text-slate-300 hover:text-white hover:border-slate-400 ${
-                                        isActionMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                                    }`}
-                                    title="历史项操作"
-                                    data-history-action-trigger={msg.id}
-                                    onClick={(event) => {
-                                        event.preventDefault();
-                                        event.stopPropagation();
-                                        const rect = event.currentTarget.getBoundingClientRect();
-                                        setOpenActionMenu((prev) => (
-                                            prev?.messageId === msg.id
-                                                ? null
-                                                : {
-                                                    messageId: msg.id,
-                                                    anchorX: rect.right,
-                                                    anchorY: rect.bottom
-                                                }
-                                        ));
-                                        setActionMenuPosition(null);
-                                    }}
-                                >
-                                    <FolderOpen size={12} />
-                                </button>
-                            </div>
-                        </div>
+        return (
+            <div className="rounded-xl border border-slate-700/50 bg-slate-900/60 p-3">
+                <div className="flex items-start gap-2">
+                    <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center flex-shrink-0">
+                        {statusIcon}
                     </div>
-                );
-            })}
-
-            {filteredHistoryMessages.length === 0 && (
-                <div className="text-center py-10 text-slate-600 text-xs italic">
-                    {showFavoritesOnly ? '暂无收藏记录。' : 'No edit history yet.'}
-                </div>
-            )}
-
-            {openActionMenu && typeof document !== 'undefined' && (
-                createPortal(
-                    <div
-                        ref={actionMenuPanelRef}
-                        className="fixed z-[90] inline-flex flex-col gap-1 rounded-lg border border-slate-700 bg-slate-950/95 shadow-2xl backdrop-blur-md p-1"
-                        style={{
-                            top: actionMenuPosition?.top ?? openActionMenu.anchorY,
-                            left: actionMenuPosition?.left ?? openActionMenu.anchorX
-                        }}
-                    >
-                        <button
-                            type="button"
-                            className="whitespace-nowrap px-2.5 py-1.5 rounded text-left text-[11px] text-slate-200 hover:bg-slate-800 flex items-center gap-1.5 disabled:opacity-50"
-                            disabled={openActionMenu.messageId ? isFavoritePending(openActionMenu.messageId) : false}
-                            onClick={async () => {
-                                await toggleFavorite(openActionMenu.messageId);
-                                setOpenActionMenu(null);
-                                setActionMenuPosition(null);
-                            }}
-                        >
-                            <Star
-                                size={11}
-                                className={
-                                    openActionMenu.messageId && isFavorite(openActionMenu.messageId)
-                                        ? 'fill-amber-300 text-amber-300'
-                                        : 'text-amber-300'
-                                }
-                            />
-                            {openActionMenu.messageId && isFavorite(openActionMenu.messageId) ? '取消收藏' : '收藏'}
-                        </button>
-                        <button
-                            type="button"
-                            className="whitespace-nowrap px-2.5 py-1.5 rounded text-left text-[11px] text-red-300 hover:bg-red-950/50 flex items-center gap-1.5"
-                            onClick={() => {
-                                deleteItem(openActionMenu.messageId);
-                                if (hoverPreview?.messageId === openActionMenu.messageId) {
-                                    closeHoverPreview();
-                                }
-                                setOpenActionMenu(null);
-                                setActionMenuPosition(null);
-                            }}
-                        >
-                            <Trash2 size={11} />
-                            删除
-                        </button>
-                    </div>,
-                    document.body
-                )
-            )}
-
-            {loadingState !== 'idle' && (() => {
-                        // 根据 loadingState 和 editMode 显示不同的过程信息
-                        let statusText = 'Processing request...';
-                        let statusIcon = <Bot size={16} className="text-slate-500" />;
-                        
-                        if (loadingState === 'uploading') {
-                            statusText = '上传图片中...';
-                            statusIcon = <Layers size={16} className="text-blue-400" />;
-                        } else if (loadingState === 'loading') {
-                            // 对话式编辑模式的状态消息
-                            statusText = '对话式编辑中，AI 正在理解您的需求并生成图片...';
-                            statusIcon = <MessageSquare size={16} className="text-pink-400" />;
-                        } else if (loadingState === 'streaming') {
-                            statusText = '流式处理中...';
-                            statusIcon = <Sparkles size={16} className="text-pink-400 animate-pulse" />;
-                        }
-                        
-                        // 检查最新的消息是否有 thoughts 或文本内容
-                        const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-                        const thoughts = lastMessage?.thoughts || [];
-                        const textResponse = lastMessage?.textResponse;
-                        const hasTextContent = lastMessage?.content && lastMessage.content.trim().length > 0;
-                        
-                        // 判断思考过程是否完成（loadingState 为 idle 时完成）
-                        const isThinkingComplete = loadingState === 'idle';
-                        
-                        return (
-                            <div className="rounded-xl border border-slate-700/50 bg-slate-900/60 p-3">
-                                <div className="flex items-start gap-2">
-                                    <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center flex-shrink-0">
-                                        {statusIcon}
-                                    </div>
-                                    <div className="rounded-xl text-xs text-slate-400 flex-1">
-                                        <div className={`font-medium mb-1 ${loadingState !== 'idle' ? 'animate-pulse' : ''}`}>
-                                            {statusText}
-                                        </div>
-
-                                        {/* 使用 ThinkingBlock 显示思考过程（包含 thoughts 和 textResponse） */}
-                                        {displayedThinkingContent && (
-                                            <div className="mt-2">
-                                                <ThinkingBlock
-                                                    content={displayedThinkingContent}
-                                                    isOpen={isThinkingOpen}
-                                                    onToggle={() => setIsThinkingOpen(!isThinkingOpen)}
-                                                    isComplete={isThinkingComplete}
-                                                />
-                                            </div>
-                                        )}
-
-                                        {/* 显示内容（如果有，且没有 thoughts 和 textResponse） */}
-                                        {hasTextContent && !thoughts.length && !textResponse && (
-                                            <div className="mt-2 pt-2 border-t border-slate-700/50 text-slate-500 italic">
-                                                {lastMessage.content.substring(0, 100)}
-                                                {lastMessage.content.length > 100 ? '...' : ''}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    })()}
-
-            {hoverPreview && typeof document !== 'undefined' && createPortal(
-                <div
-                    ref={hoverPreviewPanelRef}
-                    className="fixed hidden md:block"
-                    style={{
-                        top: hoverPreviewPosition?.top ?? hoverPreview.anchorY,
-                        left: hoverPreviewPosition?.left ?? hoverPreview.anchorX,
-                        ...(hoverPreviewSize
-                            ? { width: hoverPreviewSize.width, height: hoverPreviewSize.height }
-                            : {})
-                    }}
-                    onMouseEnter={clearHidePreviewTimer}
-                    onMouseLeave={scheduleHideHoverPreview}
-                >
-                    <div className={`group relative rounded-xl border border-slate-700/80 bg-slate-950/95 backdrop-blur-lg p-3 shadow-2xl ${
-                        hoverPreviewSize
-                            ? 'h-full'
-                            : 'inline-block w-fit max-w-[min(75vw,640px)]'
-                    }`}>
-                        <div
-                            className="absolute right-full -translate-y-1/2 h-2.5 w-2.5 rotate-45 border-b border-l border-slate-700/80 bg-slate-950/95"
-                            style={{ top: hoverPreviewPosition?.arrowOffsetY ?? '50%' }}
-                        />
-
-                        <div className={`pr-2 pb-5 custom-scrollbar ${
-                            hoverPreviewSize
-                                ? 'h-full overflow-y-auto'
-                                : 'max-h-[72vh] overflow-y-auto'
-                        }`}>
-                            <div className="mb-3 flex items-center gap-2">
-                                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium border ${
-                                    hoverPreview.role === Role.USER
-                                        ? 'bg-blue-950/85 text-blue-200 border-blue-400/30'
-                                        : 'bg-pink-950/85 text-pink-200 border-pink-400/30'
-                                }`}>
-                                    {hoverPreview.role === Role.USER ? <User size={10} /> : <Bot size={10} />}
-                                    {hoverPreview.authorLabel}
-                                </span>
-                            </div>
-
-                            <div className="mb-3">
-                                <p className="text-[10px] uppercase tracking-wider text-slate-500">原始提示词</p>
-                                <p className="mt-1 text-xs text-slate-200 whitespace-pre-wrap break-words">
-                                    {hoverPreview.originalPrompt}
-                                </p>
-                            </div>
-
-                            {hoverPreview.role === Role.MODEL && (
-                                <div className="mb-3">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <p className="text-[10px] uppercase tracking-wider text-emerald-400">增强提示词</p>
-                                        {hoverPreview.enhancedPrompt && (
-                                            <button
-                                                type="button"
-                                                onClick={handleCopyEnhancedPrompt}
-                                                className="pointer-events-auto inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-200 hover:bg-emerald-500/20 transition-colors"
-                                                title="复制增强提示词"
-                                            >
-                                                {copiedPreviewMessageId === hoverPreview.messageId ? <Check size={11} /> : <Copy size={11} />}
-                                                {copiedPreviewMessageId === hoverPreview.messageId ? '已复制' : '复制'}
-                                            </button>
-                                        )}
-                                    </div>
-                                    {hoverPreview.enhancedPrompt ? (
-                                        <p className="mt-1 text-xs text-emerald-100 whitespace-pre-wrap break-words">
-                                            {hoverPreview.enhancedPrompt}
-                                        </p>
-                                    ) : (
-                                        <p className="mt-1 text-xs text-slate-500 italic">未返回增强提示词</p>
-                                    )}
-                                </div>
-                            )}
-
-                            {hoverPreview.attachments.length > 0 && (
-                                <div>
-                                    <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">附图</p>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {hoverPreview.attachments.map((att) => (
-                                            <button
-                                                key={att.id}
-                                                type="button"
-                                                className={`relative rounded-md overflow-hidden border transition-colors ${
-                                                    activeImageUrl === att.url
-                                                        ? 'border-pink-400 ring-1 ring-pink-400/70'
-                                                        : 'border-slate-700 hover:border-slate-500'
-                                                }`}
-                                                onClick={() => {
-                                                    setActiveImageUrl(att.url);
-                                                    setSelectedHistoryMsgId(hoverPreview.messageId);
-                                                }}
-                                                title="在画布中查看该图片"
-                                            >
-                                                <img src={att.url} className="w-full h-14 object-cover bg-slate-900" alt="History attachment" />
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
+                    <div className="rounded-xl text-xs text-slate-400 flex-1">
+                        <div className={`font-medium mb-1 ${loadingState !== 'idle' ? 'animate-pulse' : ''}`}>
+                            {statusText}
                         </div>
 
-                        <button
-                            type="button"
-                            aria-label="拖动调整提示词预览大小"
-                            className="absolute bottom-0 right-0 h-5 w-5 cursor-se-resize bg-transparent"
-                            onMouseDown={handlePreviewResizeMouseDown}
-                        />
-                        {isResizingPreview && (
-                            <div className="pointer-events-none absolute bottom-1 left-3 text-[10px] text-slate-500">
-                                {Math.round(hoverPreviewSize?.width || 0)} × {Math.round(hoverPreviewSize?.height || 0)}
+                        {displayedThinkingContent && (
+                            <div className="mt-2">
+                                <ThinkingBlock
+                                    content={displayedThinkingContent}
+                                    isOpen={isThinkingOpen}
+                                    onToggle={() => setIsThinkingOpen(!isThinkingOpen)}
+                                    isComplete={isThinkingComplete}
+                                />
+                            </div>
+                        )}
+
+                        {hasTextContent && !thoughts.length && !textResponse && (
+                            <div className="mt-2 pt-2 border-t border-slate-700/50 text-slate-500 italic">
+                                {lastMessage.content.substring(0, 100)}
+                                {lastMessage.content.length > 100 ? '...' : ''}
                             </div>
                         )}
                     </div>
-                </div>,
-                document.body
-            )}
-        </div>
-    ), [
-        historyMessages,
-        filteredHistoryMessages,
-        showFavoritesOnly,
-        favoriteCount,
-        setShowFavoritesOnly,
-        openActionMenu,
-        actionMenuPosition,
-        loadingState,
-        activeModelConfig?.name,
+                </div>
+            </div>
+        );
+    }, [displayedThinkingContent, isThinkingOpen, loadingState, messages]);
+
+    const { sidebarExtraHeader, sidebarContent } = useImageHistorySidebar({
+        items: historyMessages,
+        sessionId: currentSessionId,
+        onDeleteMessage,
         activeImageUrl,
-        selectedHistoryMsgId,
-        isThinkingOpen,
-        displayedThinkingContent,
-        hoverPreview,
-        hoverPreviewPosition,
-        hoverPreviewSize,
-        isResizingPreview,
-        copiedPreviewMessageId,
-        getMessageDisplayAttachments,
-        showHoverPreview,
-        scheduleHideHoverPreview,
-        closeHoverPreview,
-        clearHidePreviewTimer,
-        handleCopyEnhancedPrompt,
-        handlePreviewResizeMouseDown,
-        isFavorite,
-        isFavoritePending,
-        toggleFavorite,
-        deleteItem
-    ]);
+        selectedMessageId: selectedHistoryMsgId,
+        onSelectedMessageIdChange: setSelectedHistoryMsgId,
+        onMobileHistoryOpenChange: setIsMobileHistoryOpen,
+        modelLabel: activeModelConfig?.name || 'AI',
+        accent: 'pink',
+        emptyText: 'No edit history yet.',
+        getDisplayAttachments: getMessageDisplayAttachments,
+        getAttachmentUrl: getHistoryAttachmentUrl,
+        extractPrompts: extractImageHistoryPrompts,
+        loadingContent: loadingHistoryContent,
+        onSelectItem: ({ message, firstImage }) => {
+            setSelectedHistoryMsgId(message.id);
+            setCarouselInitialIndex(0);
+            handleCarouselSelect(0);
+            if (firstImage) {
+                setActiveImageUrl(firstImage);
+            }
+        },
+        onSelectPreviewAttachment: ({ message, attachment, index }) => {
+            setSelectedHistoryMsgId(message.id);
+            setCarouselInitialIndex(index);
+            handleCarouselSelect(index);
+            setActiveImageUrl(attachment.url);
+        },
+    });
 
     const toggleCompare = useCallback(() => setIsCompareMode(prev => !prev), []);
     const handleFullscreen = useCallback(() => {
@@ -1564,6 +753,12 @@ export const ImageEditView = memo(({
     const handleExpand = useCallback(() => {
         if (activeImageUrl && onExpandImage) onExpandImage(activeImageUrl);
     }, [activeImageUrl, onExpandImage]);
+    const canCompareWithSource = Boolean(
+        compareSourceImageUrl &&
+        activeImageUrl &&
+        compareSourceImageUrl !== activeImageUrl &&
+        selectedCanvasMessage?.role === Role.MODEL
+    );
 
     // ✅ 主区域：两栏布局（画布 + 参数面板）
     const mainContent = useMemo(() => (
@@ -1572,9 +767,9 @@ export const ImageEditView = memo(({
             <ImageEditMainCanvas
                 loadingState={loadingState}
                 isCompareMode={isCompareMode}
-                activeAttachments={activeAttachments}
+                activeAttachments={canvasDisplayAttachments}
                 activeImageUrl={activeImageUrl}
-                originalImageUrl={originalImageUrl}
+                originalImageUrl={compareSourceImageUrl}
                 zoom={canvas.zoom}
                 isDragging={canvas.isDragging}
                 canvasStyle={canvas.canvasStyle}
@@ -1587,7 +782,7 @@ export const ImageEditView = memo(({
                 onReset={canvas.handleReset}
                 onFullscreen={activeImageUrl ? handleFullscreen : undefined}
                 onExpand={onExpandImage && activeImageUrl ? handleExpand : undefined}
-                onToggleCompare={originalImageUrl ? toggleCompare : undefined}
+                onToggleCompare={canCompareWithSource ? toggleCompare : undefined}
                 // ✅ 旋转木马支持
                 carouselIndex={carouselIndex}
                 onCarouselPrev={handleCarouselPrev}
@@ -1646,7 +841,7 @@ export const ImageEditView = memo(({
                 />
             </div>
         </div>
-    ), [loadingState, isCompareMode, activeAttachments, activeImageUrl, activeCanvasAttachment, originalImageUrl, canvas, handleFullscreen, handleExpand, toggleCompare, onExpandImage, handleSend, editMode, onStop, messages, currentSessionId, initialPrompt, initialAttachments, providerId, resetParams, carouselIndex, handleCarouselPrev, handleCarouselNext, handleCarouselSelect, getStableCanvasUrlFromAttachment, controls]);
+    ), [loadingState, isCompareMode, activeAttachments, canvasDisplayAttachments, activeImageUrl, activeCanvasAttachment, compareSourceImageUrl, canCompareWithSource, canvas, handleFullscreen, handleExpand, toggleCompare, onExpandImage, handleSend, editMode, onStop, messages, currentSessionId, initialPrompt, initialAttachments, providerId, resetParams, carouselIndex, handleCarouselPrev, handleCarouselNext, handleCarouselSelect, getStableCanvasUrlFromAttachment, controls]);
 
     return (
         <GenViewLayout

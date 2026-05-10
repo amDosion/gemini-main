@@ -11,9 +11,10 @@ import { getPixelResolutionFromSchema, useModeControlsSchema } from '../../../ho
 
 export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   providerId = 'google',
+  mode = 'image-edit',
   controls,
   availableModels = [],
-  maxImageCount = 4,
+  maxImageCount: propMaxImageCount,
   // 单独 props（向后兼容）
   numberOfImages: propNumberOfImages,
   setNumberOfImages: propSetNumberOfImages,
@@ -24,7 +25,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   showAdvanced: propShowAdvanced,
   setShowAdvanced: propSetShowAdvanced,
 }) => {
-  const { schema, loading, error } = useModeControlsSchema(providerId, 'image-edit');
+  const { schema, loading, error } = useModeControlsSchema(providerId, mode);
   const defaults = schema?.defaults ?? {};
   const imageCountOptions = useMemo(
     () =>
@@ -37,6 +38,10 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
     () => (schema?.paramOptions?.output_mime_type ?? []).filter((option) => typeof option.value === 'string'),
     [schema]
   );
+  const schemaMaxImageCountValue = schema?.constraints?.['max_image_count'] ?? schema?.constraints?.['maxImageCount'];
+  const schemaMaxImageCount =
+    typeof schemaMaxImageCountValue === 'number' ? schemaMaxImageCountValue : undefined;
+  const maxImageCount = schemaMaxImageCount ?? propMaxImageCount ?? 4;
   const seedRange = schema?.numericRanges?.seed;
   const compressionRange = schema?.numericRanges?.output_compression_quality;
   const defaultImageCount =
@@ -45,6 +50,14 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
     1;
   const defaultAspectRatio = typeof defaults.aspect_ratio === 'string' ? defaults.aspect_ratio : '1:1';
   const defaultResolution = typeof defaults.resolution === 'string' ? defaults.resolution : '1K';
+  const validImageCountOptions = useMemo(
+    () => imageCountOptions.filter((n) => n <= maxImageCount),
+    [imageCountOptions, maxImageCount]
+  );
+  const minImageCount = validImageCountOptions[0] ?? 1;
+  const maxSelectableImageCount = validImageCountOptions[validImageCountOptions.length - 1] ?? maxImageCount;
+  const showRecontextCountHint = mode === 'image-recontext' || mode === 'product-recontext';
+  const supportsOutputMimeControls = !showRecontextCountHint;
 
   // 优先使用 controls 对象，fallback 到单独 props
   const numberOfImages = controls?.numberOfImages ?? propNumberOfImages ?? defaultImageCount;
@@ -86,10 +99,10 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   }, [availableResolutionTiers, resolution, setResolution]);
 
   useEffect(() => {
-    if (imageCountOptions.length > 0 && !imageCountOptions.includes(numberOfImages)) {
-      setNumberOfImages(imageCountOptions[0]);
+    if (validImageCountOptions.length > 0 && !validImageCountOptions.includes(numberOfImages)) {
+      setNumberOfImages(validImageCountOptions[0]);
     }
-  }, [numberOfImages, imageCountOptions, setNumberOfImages]);
+  }, [numberOfImages, validImageCountOptions, setNumberOfImages]);
 
   useEffect(() => {
     if (!controls?.setOutputMimeType) {
@@ -185,24 +198,28 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
       {/* 生成数量 */}
       {maxImageCount > 1 && (
         <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Layers size={12} className="text-blue-400" />
-            <span className="text-xs text-slate-300">生成数量</span>
-        </div>
-        <div className="flex gap-2">
-            {imageCountOptions.filter((n) => n <= maxImageCount).map((num) => (
-              <button
-                key={num}
-                onClick={() => setNumberOfImages(num)}
-                className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                  numberOfImages === num
-                    ? 'bg-pink-600 text-white'
-                    : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
-                }`}
-              >
-                {num}
-              </button>
-            ))}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <Layers size={12} className="text-blue-400 flex-shrink-0" />
+              <span className="text-xs text-slate-300 flex-shrink-0">生成数量</span>
+              {showRecontextCountHint && (
+                <span className="text-[10px] text-slate-500 truncate">模型可能不会返回需求数量的图片</span>
+              )}
+            </div>
+            <span className="text-xs text-blue-400 font-mono font-bold">{numberOfImages}</span>
+          </div>
+          <input
+            type="range"
+            min={minImageCount}
+            max={maxSelectableImageCount}
+            step={1}
+            value={numberOfImages}
+            onChange={(e) => setNumberOfImages(parseInt(e.target.value))}
+            className="w-full h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer accent-blue-500"
+          />
+          <div className="flex justify-between text-[10px] text-slate-500 px-0.5">
+            <span>{minImageCount}</span>
+            <span>{maxSelectableImageCount}</span>
           </div>
         </div>
       )}
@@ -221,30 +238,32 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
           {showAdvanced && (
             <div className="mt-4 space-y-4">
               {/* 输出格式 */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <FileImage size={12} className="text-cyan-400" />
-                  <span className="text-xs text-slate-300">输出格式</span>
+              {supportsOutputMimeControls && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <FileImage size={12} className="text-cyan-400" />
+                    <span className="text-xs text-slate-300">输出格式</span>
+                  </div>
+                  <div className="flex gap-2">
+                    {outputMimeOptions.map((opt) => (
+                      <button
+                        key={String(opt.value)}
+                        onClick={() => typeof opt.value === 'string' && controls.setOutputMimeType(opt.value)}
+                        className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                          controls.outputMimeType === opt.value
+                            ? 'bg-cyan-600 text-white'
+                            : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  {outputMimeOptions.map((opt) => (
-                    <button
-                      key={String(opt.value)}
-                      onClick={() => typeof opt.value === 'string' && controls.setOutputMimeType(opt.value)}
-                      className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                        controls.outputMimeType === opt.value
-                          ? 'bg-cyan-600 text-white'
-                          : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              )}
 
               {/* JPEG 压缩质量 */}
-              {controls.outputMimeType === 'image/jpeg' && (
+              {supportsOutputMimeControls && controls.outputMimeType === 'image/jpeg' && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-slate-300">压缩质量</span>

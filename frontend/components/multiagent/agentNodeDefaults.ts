@@ -25,7 +25,6 @@ const AGENT_NODE_FIELD_LABELS: Record<string, string> = {
   agentContinueFromPreviousVideo: '续接上一段视频',
   agentContinueFromPreviousLastFrame: '上一段尾帧作为首帧',
   agentGenerateAudio: '生成音频',
-  agentPersonGeneration: '人物生成',
   agentSubtitleMode: '字幕模式',
   agentSubtitleLanguage: '字幕语言',
   agentSubtitleScript: '字幕脚本',
@@ -156,7 +155,6 @@ export const buildAgentNodeDefaultsFromAgent = (agent?: AgentDef | null): Partia
       updates.agentContinueFromPreviousLastFrame = videoGeneration.continueFromPreviousLastFrame;
     }
     if (typeof videoGeneration.generateAudio === 'boolean') updates.agentGenerateAudio = videoGeneration.generateAudio;
-    if (typeof videoGeneration.personGeneration === 'string') updates.agentPersonGeneration = videoGeneration.personGeneration;
     if (typeof videoGeneration.subtitleMode === 'string') updates.agentSubtitleMode = videoGeneration.subtitleMode;
     if (typeof videoGeneration.subtitleLanguage === 'string') updates.agentSubtitleLanguage = videoGeneration.subtitleLanguage;
     if (typeof videoGeneration.subtitleScript === 'string') updates.agentSubtitleScript = videoGeneration.subtitleScript;

@@ -6,8 +6,8 @@ Conversational Image Edit Service - 对话式图片编辑服务
 """
 
 import logging
+import asyncio
 import uuid
-import time
 import base64
 import re
 import json
@@ -73,6 +73,7 @@ class ConversationalImageEditService:
         use_vertex: bool = False,
         project: str = None,
         location: str = None,
+        credentials: Any = None,
         http_options=None,
     ):
         """
@@ -91,6 +92,7 @@ class ConversationalImageEditService:
         self._use_vertex = use_vertex
         self._project = project
         self._location = location
+        self._credentials = credentials
         self._http_options = http_options
         self.chat_session_manager = chat_session_manager
         self.file_handler = file_handler
@@ -102,6 +104,7 @@ class ConversationalImageEditService:
             vertexai=self._use_vertex,
             project=self._project,
             location=self._location,
+            credentials=self._credentials,
             http_options=self._http_options,
         )
 
@@ -120,6 +123,29 @@ class ConversationalImageEditService:
         if not model_name:
             return False
         return 'gemini-3' in model_name.lower()
+
+    def _coerce_number_of_images(self, value: Any, default: int = 1) -> int:
+        try:
+            count = int(value)
+        except (TypeError, ValueError):
+            count = default
+        return max(1, min(4, count))
+
+    def _requested_number_of_images(self, config: Optional[Dict[str, Any]]) -> int:
+        if not config:
+            return 1
+        return self._coerce_number_of_images(
+            config.get('number_of_images') or config.get('numberOfImages')
+        )
+
+    def _is_multiple_candidates_not_enabled_error(self, error: Exception) -> bool:
+        return 'Multiple candidates is not enabled' in str(error)
+
+    def _single_image_config(self, config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        single_config = dict(config or {})
+        single_config['number_of_images'] = 1
+        single_config.pop('numberOfImages', None)
+        return single_config
 
     def _is_multimodal_enhance_model(self, model_name: str) -> bool:
         """
@@ -472,11 +498,11 @@ class ConversationalImageEditService:
             prompt: 编辑提示词
             reference_images: 参考图片列表（可选）
             config: 可选的配置覆盖（例如更新图片尺寸、宽高比等）
-            user_id: 用户 ID（用于生成附件元数据）
-            frontend_session_id: 前端会话 ID（用于生成附件元数据）
+            user_id: 用户 ID（用于校验会话上下文）
+            frontend_session_id: 前端会话 ID（用于校验会话上下文）
         
         Returns:
-            编辑后的图片列表（包含完整的附件元数据）
+            编辑后的图片列表。附件持久化由外层模式路由统一处理。
         """
         client = self._get_client()
         
@@ -493,6 +519,28 @@ class ConversationalImageEditService:
         # 这是因为缓存的 chat 对象可能包含有问题的历史（function_call/function_response）
         max_retries = 2
         last_error = None
+        requested_number_of_images = self._requested_number_of_images(config)
+
+        if requested_number_of_images > 1:
+            logger.info(
+                "[ConversationalImageEdit] Gemini image chat uses candidate_count=1; "
+                "running %s single-image requests for number_of_images=%s",
+                requested_number_of_images,
+                requested_number_of_images,
+            )
+            return await self._send_repeated_single_candidate_messages(
+                chat_id=chat_id,
+                prompt=prompt,
+                reference_images=reference_images,
+                config=self._single_image_config(config),
+                chat_session=chat_session,
+                model_name=model_name,
+                should_include_image=should_include_image,
+                client=client,
+                repeat_count=requested_number_of_images,
+                user_id=user_id,
+                frontend_session_id=frontend_session_id,
+            )
         
         for attempt in range(max_retries):
             try:
@@ -509,8 +557,32 @@ class ConversationalImageEditService:
                     user_id=user_id,
                     frontend_session_id=frontend_session_id
                 )
-            except ValueError as e:
+            except Exception as e:
                 error_msg = str(e)
+                if (
+                    requested_number_of_images > 1
+                    and self._is_multiple_candidates_not_enabled_error(e)
+                ):
+                    logger.warning(
+                        "[ConversationalImageEdit] Model does not support candidate_count=%s; "
+                        "falling back to %s single-image requests",
+                        requested_number_of_images,
+                        requested_number_of_images,
+                    )
+                    return await self._send_repeated_single_candidate_messages(
+                        chat_id=chat_id,
+                        prompt=prompt,
+                        reference_images=reference_images,
+                        config=self._single_image_config(config),
+                        chat_session=chat_session,
+                        model_name=model_name,
+                        should_include_image=should_include_image,
+                        client=client,
+                        repeat_count=requested_number_of_images,
+                        user_id=user_id,
+                        frontend_session_id=frontend_session_id,
+                    )
+
                 if 'MALFORMED_FUNCTION_CALL' in error_msg and attempt < max_retries - 1:
                     # 遇到 MALFORMED_FUNCTION_CALL 错误，清除缓存并重试
                     logger.warning(
@@ -529,6 +601,70 @@ class ConversationalImageEditService:
         if last_error:
             raise last_error
 
+    async def _send_repeated_single_candidate_messages(
+        self,
+        chat_id: str,
+        prompt: str,
+        reference_images: Optional[List[Dict[str, Any]]],
+        config: Dict[str, Any],
+        chat_session,
+        model_name: Optional[str],
+        should_include_image: bool,
+        client,
+        repeat_count: int,
+        user_id: Optional[str] = None,
+        frontend_session_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        images: List[Dict[str, Any]] = []
+        thoughts: List[Dict[str, Any]] = []
+        text_responses: List[str] = []
+        enhanced_prompt = None
+
+        concurrency = max(1, min(4, repeat_count))
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def _send_one(index: int) -> Any:
+            logger.info(
+                "[ConversationalImageEdit] Parallel single-candidate request %s/%s",
+                index + 1,
+                repeat_count,
+            )
+            async with semaphore:
+                return await self._send_edit_message_internal(
+                    chat_id=chat_id,
+                    prompt=prompt,
+                    reference_images=reference_images,
+                    config=config,
+                    chat_session=chat_session,
+                    model_name=model_name,
+                    should_include_image=should_include_image,
+                    client=client,
+                    skip_cache=True,
+                    cache_chat_object=False,
+                    user_id=user_id,
+                    frontend_session_id=frontend_session_id,
+                )
+
+        results = await asyncio.gather(*[_send_one(index) for index in range(repeat_count)])
+
+        for result in results:
+            if isinstance(result, dict):
+                images.extend(result.get('images') or [])
+                thoughts.extend(result.get('thoughts') or [])
+                if result.get('text'):
+                    text_responses.append(str(result['text']))
+                if enhanced_prompt is None and result.get('enhanced_prompt'):
+                    enhanced_prompt = result.get('enhanced_prompt')
+            elif isinstance(result, list):
+                images.extend(result)
+
+        return {
+            'images': images,
+            'text': "\n\n".join(text_responses) if text_responses else None,
+            'thoughts': thoughts,
+            'enhanced_prompt': enhanced_prompt,
+        }
+
     async def _send_edit_message_internal(
         self,
         chat_id: str,
@@ -540,6 +676,7 @@ class ConversationalImageEditService:
         should_include_image: bool,
         client,
         skip_cache: bool = False,
+        cache_chat_object: bool = True,
         user_id: Optional[str] = None,
         frontend_session_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
@@ -548,8 +685,8 @@ class ConversationalImageEditService:
         
         Args:
             skip_cache: 如果为 True，跳过缓存并重建 chat 对象（不带历史）
-            user_id: 用户 ID（用于生成附件元数据）
-            frontend_session_id: 前端会话 ID（用于生成附件元数据）
+            user_id: 用户 ID（用于校验会话上下文）
+            frontend_session_id: 前端会话 ID（用于校验会话上下文）
         """
         # 获取 Chat 对象（从缓存）
         # 注意：Chat 对象会自动维护历史记录，不需要手动重建
@@ -557,8 +694,7 @@ class ConversationalImageEditService:
         
         if skip_cache:
             logger.info(
-                f"[ConversationalImageEdit] Skipping cache due to previous MALFORMED_FUNCTION_CALL error, "
-                f"will create fresh chat object without history"
+                "[ConversationalImageEdit] Skipping chat cache; will create a fresh chat object without history"
             )
 
         if not chat:
@@ -711,8 +847,10 @@ class ConversationalImageEditService:
             logger.debug(f"[ConversationalImageEdit] Created fresh chat object (no history) for chat_id={chat_id}")
             
             # 缓存 Chat 对象
-            if chat:
+            if chat and cache_chat_object:
                 self.chat_session_manager.cache_chat_object(chat_id, chat)
+            elif chat:
+                logger.debug(f"[ConversationalImageEdit] Created uncached fresh chat object for chat_id={chat_id}")
             else:
                 raise ValueError(f"Failed to create chat object for chat_id={chat_id}")
         else:
@@ -924,11 +1062,16 @@ class ConversationalImageEditService:
                 # ✅ 始终创建 send_config 以确保 safety_settings 被应用
                 # 如果提供了配置覆盖，构建完整的配置（不能只传 image_config，否则会丢失其他配置）
                 image_config_dict = {}
+                candidate_count = 1
                 if config:
                     if config.get('image_aspect_ratio'):
                         image_config_dict['aspect_ratio'] = config['image_aspect_ratio']
                     if config.get('image_resolution'):
                         image_config_dict['image_size'] = config['image_resolution']
+                    # Gemini image chat uses generate_content(). Official model
+                    # specs list candidateCount as 1, while multi-image output is
+                    # requested in the prompt or by repeated single-image calls.
+                    candidate_count = 1
 
                 # ✅ 获取模型名以判断是否支持 thinking
                 model_name = chat_session.model_name if chat_session else ''
@@ -942,6 +1085,7 @@ class ConversationalImageEditService:
                 ]
                 send_config = genai_types.GenerateContentConfig(
                     response_modalities=[genai_types.Modality.TEXT, genai_types.Modality.IMAGE],
+                    candidate_count=candidate_count,
                     thinking_config=thinking_cfg,
                     image_config=genai_types.ImageConfig(**image_config_dict) if image_config_dict else None,
                     safety_settings=safety_settings,
@@ -949,7 +1093,7 @@ class ConversationalImageEditService:
                     # ✅ 禁用自动函数调用，避免 MALFORMED_FUNCTION_CALL 错误
                     automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(disable=True)
                 )
-                logger.debug(f"[DEBUG] send_config 创建成功: response_modalities=[TEXT, IMAGE], image_config={image_config_dict if image_config_dict else 'None'}, safety_settings=已禁用")
+                logger.debug(f"[DEBUG] send_config 创建成功: response_modalities=[TEXT, IMAGE], candidate_count={candidate_count}, image_config={image_config_dict if image_config_dict else 'None'}, safety_settings=已禁用")
 
             # 调用 chat.send_message()（非流式）
             # 注意：Chat 对象会自动维护历史记录，所以直接调用即可
@@ -975,19 +1119,19 @@ class ConversationalImageEditService:
             # 检查 finish_reason（参考官方示例 Cell 17）
             # 如果 finish_reason 不是 STOP，说明可能有错误
             if hasattr(response, 'candidates') and response.candidates and len(response.candidates) > 0:
-                candidate = response.candidates[0]
-                if hasattr(candidate, 'finish_reason'):
-                    try:
-                        from google.genai import types as genai_types
-                        if hasattr(genai_types, 'FinishReason'):
-                            if candidate.finish_reason != genai_types.FinishReason.STOP:
-                                reason = candidate.finish_reason
-                                error_msg = f"Prompt Content Error: {reason}"
-                                logger.error(f"[ConversationalImageEdit] {error_msg}")
-                                raise ValueError(error_msg)
-                    except (ImportError, AttributeError):
-                        # 如果无法导入 FinishReason，跳过检查
-                        pass
+                for candidate in response.candidates:
+                    if hasattr(candidate, 'finish_reason'):
+                        try:
+                            from google.genai import types as genai_types
+                            if hasattr(genai_types, 'FinishReason'):
+                                if candidate.finish_reason != genai_types.FinishReason.STOP:
+                                    reason = candidate.finish_reason
+                                    error_msg = f"Prompt Content Error: {reason}"
+                                    logger.error(f"[ConversationalImageEdit] {error_msg}")
+                                    raise ValueError(error_msg)
+                        except (ImportError, AttributeError):
+                            # 如果无法导入 FinishReason，跳过检查
+                            pass
             
             # 提取编辑后的图片、文本和思考过程
             results = []
@@ -1099,10 +1243,10 @@ class ConversationalImageEditService:
             
             # 按照官方示例的模式：
             # - Cell 19, 23: 使用 response.parts 来获取 thoughts（包含所有 parts）
-            # - Cell 17, 25, 29, 31, 33, 37: 使用 response.candidates[0].content.parts 来获取最终内容（不包括 thoughts）
+            # - Cell 17, 25, 29, 31, 33, 37: 使用 response.candidates[*].content.parts 来获取最终内容（不包括 thoughts）
             # 我们需要同时使用两者：
             # 1. response.parts 用于获取 thoughts
-            # 2. response.candidates[0].content.parts 用于获取最终的图片和文本
+            # 2. response.candidates[*].content.parts 用于获取最终的图片和文本
             
             # 首先从 response.parts 获取 thoughts（参考官方示例 Cell 19, 23）
             all_parts = None
@@ -1110,20 +1254,21 @@ class ConversationalImageEditService:
                 all_parts = response.parts
                 logger.info(f"[ConversationalImageEdit] Using response.parts for all content, count={len(all_parts)}")
             
-            # 然后从 response.candidates[0].content.parts 获取最终内容（参考官方示例 Cell 17, 25, 29, 31, 33, 37）
-            content_parts = None
+            # 然后从 response.candidates[*].content.parts 获取最终内容（参考官方示例 Cell 17, 25, 29, 31, 33, 37）
+            content_part_groups = []
             if hasattr(response, 'candidates') and response.candidates and len(response.candidates) > 0:
-                candidate = response.candidates[0]
-                logger.debug(f"[ConversationalImageEdit] Candidate structure: has_content={hasattr(candidate, 'content')}, has_parts={hasattr(candidate.content, 'parts') if hasattr(candidate, 'content') else False}")
-                
-                if hasattr(candidate, 'content') and candidate.content:
-                    content_parts = getattr(candidate.content, 'parts', None)
-                    if content_parts:
-                        logger.info(f"[ConversationalImageEdit] Using response.candidates[0].content.parts for final content, count={len(content_parts)}")
+                for candidate_index, candidate in enumerate(response.candidates):
+                    logger.debug(f"[ConversationalImageEdit] Candidate[{candidate_index}] structure: has_content={hasattr(candidate, 'content')}, has_parts={hasattr(candidate.content, 'parts') if hasattr(candidate, 'content') else False}")
+
+                    if hasattr(candidate, 'content') and candidate.content:
+                        candidate_parts = getattr(candidate.content, 'parts', None)
+                        if candidate_parts:
+                            content_part_groups.append((candidate_index, candidate_parts))
+                            logger.info(f"[ConversationalImageEdit] Using response.candidates[{candidate_index}].content.parts for final content, count={len(candidate_parts)}")
             
             # 如果没有 content_parts，回退到 all_parts
-            if not content_parts and all_parts:
-                content_parts = all_parts
+            if not content_part_groups and all_parts:
+                content_part_groups = [(0, all_parts)]
                 logger.info(f"[ConversationalImageEdit] Falling back to response.parts for final content")
             
             # 步骤1: 从 response.parts 收集 thoughts（参考官方示例 Cell 19, 23）
@@ -1173,92 +1318,60 @@ class ConversationalImageEditService:
                 # ✅ 添加思考处理总结日志
                 logger.info(f"[ConversationalImageEdit] Thought processing complete: collected {len(thoughts)} thoughts, last_thought_image={'Yes' if last_thought_image else 'No'}")
             
-            # 步骤2: 从 response.parts 提取最终的图片和文本（参考官方示例）
-            # 官方示例: for part in response.parts: if part.text is not None: ... elif part.inline_data is not None: image = part.as_image() ...
-            if content_parts:
-                logger.debug(f"[DEBUG] 响应包含 {len(content_parts)} 个 parts")
-                for idx, part in enumerate(content_parts):
-                    # ✅ 使用 getattr 获取属性值（官方 SDK 模式）
-                    thought_value = getattr(part, 'thought', None)
-                    inline_data_value = getattr(part, 'inline_data', None)
-                    text_value = getattr(part, 'text', None)
-                    
-                    logger.debug(f"[DEBUG] Part {idx} 结构分析: thought={thought_value}, has_inline_data={inline_data_value is not None}, has_text={text_value is not None}")
+            # 步骤2: 从 candidates 提取最终的图片和文本（参考官方示例）
+            if content_part_groups:
+                total_parts = sum(len(parts) for _, parts in content_part_groups)
+                logger.debug(f"[DEBUG] 响应包含 {len(content_part_groups)} 个 candidate groups, {total_parts} 个 parts")
+                for candidate_index, content_parts in content_part_groups:
+                    for idx, part in enumerate(content_parts):
+                        # ✅ 使用 getattr 获取属性值（官方 SDK 模式）
+                        thought_value = getattr(part, 'thought', None)
+                        inline_data_value = getattr(part, 'inline_data', None)
+                        text_value = getattr(part, 'text', None)
 
-                    # 跳过 thoughts（参考官方示例 Cell 17）
-                    if thought_value:
-                        logger.debug(f"[ConversationalImageEdit] Skipping thought part {idx} (already collected from response.parts)")
-                        continue
+                        logger.debug(f"[DEBUG] Candidate {candidate_index} Part {idx} 结构分析: thought={thought_value}, has_inline_data={inline_data_value is not None}, has_text={text_value is not None}")
 
-                    # 跳过 function_call 和 function_response（避免处理工具调用）
-                    if getattr(part, 'function_call', None) is not None or getattr(part, 'function_response', None) is not None:
-                        logger.debug(f"[ConversationalImageEdit] Skipping function_call/function_response part {idx}")
-                        continue
-                    
-                    # ✅ 按照官方 SDK 模式：先检查 inline_data，再检查 text
-                    # 官方示例: if part.inline_data is not None: image = part.as_image()
-                    if inline_data_value is not None:
-                        image_result = _extract_image_from_part(part)
-                        if image_result:
-                            # ✅ 为图片添加完整的附件元数据
-                            attachment_id = str(uuid.uuid4())
-                            message_id = str(uuid.uuid4())  # AI 响应消息 ID
-                            timestamp = int(time.time() * 1000)
-                            
-                            # 生成文件名
-                            mime_type = image_result.get('mime_type', 'image/png')
-                            ext = 'png' if 'png' in mime_type else 'jpeg' if 'jpeg' in mime_type or 'jpg' in mime_type else 'png'
-                            filename = f"edited-{attachment_id[:8]}.{ext}"
-                            
-                            # 添加完整元数据
-                            image_result['attachment_id'] = attachment_id
-                            image_result['message_id'] = message_id
-                            image_result['session_id'] = frontend_session_id
-                            image_result['user_id'] = user_id
-                            image_result['filename'] = filename
-                            image_result['upload_status'] = 'pending'  # AI 生成的图片初始状态为 pending
-                            image_result['upload_task_id'] = None  # 尚未提交上传任务
-                            image_result['cloud_url'] = None  # 尚未上传到云存储
-                            image_result['created_at'] = timestamp
-                            
-                            logger.info(f"[ConversationalImageEdit] ✅ Part {idx} extracted as final image with metadata: "
-                                        f"attachment_id={attachment_id}, filename={filename}, size={image_result.get('size', 'N/A')} bytes")
-                            
-                            results.append(image_result)
+                        # 跳过 thoughts（参考官方示例 Cell 17）
+                        if thought_value:
+                            logger.debug(f"[ConversationalImageEdit] Skipping candidate {candidate_index} thought part {idx} (already collected from response.parts)")
                             continue
 
-                    # 如果没有图片数据，处理文本响应
-                    # 官方示例: if part.text is not None: print(part.text)
-                    if text_value is not None:
-                        text_responses.append(text_value)
-                        logger.info(f"[ConversationalImageEdit] Part {idx} contains text: {text_value[:100] if text_value else ''}...")
+                        # 跳过 function_call 和 function_response（避免处理工具调用）
+                        if getattr(part, 'function_call', None) is not None or getattr(part, 'function_response', None) is not None:
+                            logger.debug(f"[ConversationalImageEdit] Skipping candidate {candidate_index} function_call/function_response part {idx}")
+                            continue
+
+                        # ✅ 按照官方 SDK 模式：先检查 inline_data，再检查 text
+                        # 官方示例: if part.inline_data is not None: image = part.as_image()
+                        if inline_data_value is not None:
+                            image_result = _extract_image_from_part(part)
+                            if image_result:
+                                logger.info(
+                                    "[ConversationalImageEdit] ✅ Candidate %s Part %s extracted as final image; "
+                                    "attachment persistence is handled by AttachmentService (size=%s bytes)",
+                                    candidate_index,
+                                    idx,
+                                    image_result.get('size', 'N/A'),
+                                )
+
+                                results.append(image_result)
+                                continue
+
+                        # 如果没有图片数据，处理文本响应
+                        # 官方示例: if part.text is not None: print(part.text)
+                        if text_value is not None:
+                            text_responses.append(text_value)
+                            logger.info(f"[ConversationalImageEdit] Candidate {candidate_index} Part {idx} contains text: {text_value[:100] if text_value else ''}...")
             
             # ✅ 如果没有从非 thought parts 中提取到图片，使用最后一个 thought 图片
             # 根据官方文档："The last image within Thinking is also the final rendered image."
             if not results and last_thought_image:
                 logger.info(f"[ConversationalImageEdit] No non-thought images found, using last thought image as final result")
-                
-                # ✅ 为 thought 图片也添加完整的附件元数据
-                attachment_id = str(uuid.uuid4())
-                message_id = str(uuid.uuid4())
-                timestamp = int(time.time() * 1000)
-                
-                mime_type = last_thought_image.get('mime_type', 'image/png')
-                ext = 'png' if 'png' in mime_type else 'jpeg' if 'jpeg' in mime_type or 'jpg' in mime_type else 'png'
-                filename = f"edited-{attachment_id[:8]}.{ext}"
-                
-                last_thought_image['attachment_id'] = attachment_id
-                last_thought_image['message_id'] = message_id
-                last_thought_image['session_id'] = frontend_session_id
-                last_thought_image['user_id'] = user_id
-                last_thought_image['filename'] = filename
-                last_thought_image['upload_status'] = 'pending'
-                last_thought_image['upload_task_id'] = None
-                last_thought_image['cloud_url'] = None
-                last_thought_image['created_at'] = timestamp
-                
-                logger.info(f"[ConversationalImageEdit] ✅ Using thought image with metadata: "
-                            f"attachment_id={attachment_id}, filename={filename}, size={last_thought_image.get('size', 'N/A')} bytes")
+                logger.info(
+                    "[ConversationalImageEdit] ✅ Using thought image as final image; "
+                    "attachment persistence is handled by AttachmentService (size=%s bytes)",
+                    last_thought_image.get('size', 'N/A'),
+                )
                 
                 results.append(last_thought_image)
             
@@ -1269,8 +1382,8 @@ class ConversationalImageEditService:
                 # 检查是否有文本响应
                 if text_responses:
                     error_msg += f"Model returned text instead of image: {text_responses[0][:200]}... "
-                elif content_parts:
-                    error_msg += f"Model returned {len(content_parts)} parts, but none contained images. "
+                elif content_part_groups:
+                    error_msg += f"Model returned {sum(len(parts) for _, parts in content_part_groups)} parts, but none contained images. "
                 else:
                     error_msg += "Model returned no parts. "
                 
@@ -1590,6 +1703,10 @@ class ConversationalImageEditService:
             edit_config['enhance_prompt_model'] = kwargs['enhance_prompt_model']
         if 'enable_thinking' in kwargs:
             edit_config['enable_thinking'] = kwargs['enable_thinking']
+        number_of_images = self._coerce_number_of_images(
+            kwargs.get('number_of_images') or kwargs.get('numberOfImages')
+        )
+        edit_config['number_of_images'] = number_of_images
         
         # 发送编辑消息
         results = await self.send_edit_message(

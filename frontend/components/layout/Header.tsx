@@ -7,6 +7,7 @@ import { ConfigProfile } from '../../services/db';
 import type { User as AuthUser, ChangePasswordData } from '../../services/auth';
 import { useToastContext } from '../../contexts/ToastContext';
 import { isMultimodalUnderstandingModel } from '../../utils/modelSuitability';
+import { getModelUsage } from '../../utils/modelUsage';
 import type { SystemConfigPayload, SystemStatusPayload } from '../../services/systemAdmin';
 import { systemAdminService } from '../../services/systemAdmin';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
@@ -565,6 +566,7 @@ export const Header: React.FC<HeaderProps> = ({
                                     {filteredModels.map((model) => {
                                         const Icon = getModelIcon(model);
                                         const isSelected = currentModelId === model.id;
+                                        const usage = getModelUsage(model);
                                         return (
                                             <button
                                                 key={model.id}
@@ -592,25 +594,9 @@ export const Header: React.FC<HeaderProps> = ({
                                                         </div>
                                                         {isSelected && <Check size={14} className="text-indigo-400 shrink-0 ml-2" />}
                                                     </div>
-                                                    {/* ✅ 显示描述（如果存在且与ID不同，且不包含ID的主要部分） */}
-                                                    {(() => {
-                                                        if (!model.description || model.description === model.id) {
-                                                            return null;
-                                                        }
-                                                        // 检查描述是否包含ID的主要关键词（避免重复显示）
-                                                        const idWords = model.id.toLowerCase().split(/[-_\s]+/).filter(w => w.length > 2);
-                                                        const descLower = model.description.toLowerCase();
-                                                        const hasMajorOverlap = idWords.some(word => descLower.includes(word));
-                                                        // 如果描述包含ID的主要部分，则不显示描述
-                                                        if (hasMajorOverlap && idWords.length > 2) {
-                                                            return null;
-                                                        }
-                                                        return (
-                                                            <div className="text-xs text-slate-500 leading-tight truncate" title={model.description}>
-                                                                {model.description}
-                                                            </div>
-                                                        );
-                                                    })()}
+                                                    <div className="text-xs text-slate-500 leading-tight truncate" title={usage}>
+                                                        {usage}
+                                                    </div>
                                                 </div>
                                             </button>
                                         );

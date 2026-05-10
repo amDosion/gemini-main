@@ -25,12 +25,12 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
   const [videoSeconds, setVideoSeconds] = useState('');
   const [videoExtensionCount, setVideoExtensionCount] = useState(0);
   const [storyboardShotSeconds, setStoryboardShotSeconds] = useState(0);
-  const [generateAudio, setGenerateAudio] = useState(false);
-  const [personGeneration, setPersonGeneration] = useState('');
+  const [generateAudio, setGenerateAudio] = useState(true);
   const [subtitleMode, setSubtitleMode] = useState('none');
   const [subtitleLanguage, setSubtitleLanguage] = useState('');
   const [subtitleScript, setSubtitleScript] = useState('');
   const [storyboardPrompt, setStoryboardPrompt] = useState('');
+  const [storyboardSegments, setStoryboardSegments] = useState<string[]>([]);
   const [numberOfImages, setNumberOfImages] = useState(1);
   const [style, setStyle] = useState('None');
 
@@ -42,10 +42,9 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
 
   // Google Imagen Advanced Parameters
   // guidanceScale removed - not officially documented by Google Imagen
-  // personGeneration parameter removed - API uses default (allow_adult)
   const [outputMimeType, setOutputMimeType] = useState('image/png');
-  const [outputCompressionQuality, setOutputCompressionQuality] = useState(80);
-  const [enhancePrompt, setEnhancePrompt] = useState(false);
+  const [outputCompressionQuality, setOutputCompressionQuality] = useState(100);
+  const [enhancePrompt, setEnhancePrompt] = useState(true);
   const [enhancePromptModel, setEnhancePromptModel] = useState('');
 
   // TongYi Specific Parameters
@@ -121,11 +120,11 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
     videoExtensionCount, setVideoExtensionCount,
     storyboardShotSeconds, setStoryboardShotSeconds,
     generateAudio, setGenerateAudio,
-    personGeneration, setPersonGeneration,
     subtitleMode, setSubtitleMode,
     subtitleLanguage, setSubtitleLanguage,
     subtitleScript, setSubtitleScript,
     storyboardPrompt, setStoryboardPrompt,
+    storyboardSegments, setStoryboardSegments,
     numberOfImages, setNumberOfImages,
     style, setStyle,
 
@@ -138,7 +137,6 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
 
     // Google Imagen Advanced Parameters
     // guidanceScale removed - not officially documented by Google Imagen
-    // personGeneration removed - API uses default (allow_adult)
     outputMimeType, setOutputMimeType,
     outputCompressionQuality, setOutputCompressionQuality,
     enhancePrompt, setEnhancePrompt,

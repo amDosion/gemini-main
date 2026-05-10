@@ -69,7 +69,6 @@ export interface WorkflowNodeData {
   agentVideoMaskImageUrl?: string; // 视频编辑掩码图 URL
   agentVideoMaskMode?: string; // 视频编辑掩码模式
   agentGenerateAudio?: boolean; // 生成视频原生音频
-  agentPersonGeneration?: string; // 人物生成策略
   agentSubtitleMode?: string; // 字幕模式
   agentSubtitleLanguage?: string; // 字幕语言
   agentSubtitleScript?: string; // 字幕脚本
@@ -114,7 +113,6 @@ export interface WorkflowNodeData {
   toolVideoMaskImageUrl?: string;
   toolVideoMaskMode?: string;
   toolGenerateAudio?: boolean;
-  toolPersonGeneration?: string;
   toolSubtitleMode?: string;
   toolSubtitleLanguage?: string;
   toolSubtitleScript?: string;

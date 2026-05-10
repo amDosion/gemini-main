@@ -19,10 +19,12 @@ class BackgroundEditService(VertexAIEditBase):
     """
     背景编辑服务
 
-    继承 VertexAIEditBase，预设 edit_mode 为 'background_edit'（EDIT_MODE_BGSWAP）。
+    继承 VertexAIEditBase，预设 edit_mode 为 'background_edit'（EDIT_MODE_BGSWAP），
+    并在没有用户掩码时使用自动背景掩码（MASK_MODE_BACKGROUND）。
 
     构造函数: __init__(project_id, location, credentials_json)
     接口: edit_image(prompt, reference_images, config) -> List[Dict[str, Any]]
     """
 
     DEFAULT_EDIT_MODE = 'background_edit'
+    DEFAULT_MASK_MODE = 'MASK_MODE_BACKGROUND'

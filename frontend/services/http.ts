@@ -48,6 +48,15 @@ function resolveTimeoutMessage(
   return `Request timeout after ${timeoutMs}ms`;
 }
 
+function isAbortError(error: unknown): boolean {
+  return (
+    !!error &&
+    typeof error === 'object' &&
+    'name' in error &&
+    (error as { name?: unknown }).name === 'AbortError'
+  );
+}
+
 function extractErrorMessageFromPayload(payload: Record<string, unknown>): string | null {
   if (!payload || typeof payload !== 'object') {
     return null;
@@ -174,7 +183,7 @@ export async function fetchWithTimeout(
       signal: controller.signal,
     });
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
+    if (isAbortError(error)) {
       if (timedOut && shouldSetTimeout) {
         throw new Error(resolveTimeoutMessage(timeoutMessage, timeoutMs, requestUrl));
       }

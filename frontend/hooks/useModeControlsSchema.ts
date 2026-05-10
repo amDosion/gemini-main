@@ -55,7 +55,6 @@ export interface VideoContractStoryboardPromptPolicy {
 export interface VideoContractFieldPolicies {
   enhancePrompt?: VideoContractEnhancePromptPolicy;
   generateAudio?: VideoContractTogglePolicy;
-  personGeneration?: VideoContractTogglePolicy;
   subtitleMode?: VideoContractSubtitlePolicy;
   storyboardPrompt?: VideoContractStoryboardPromptPolicy;
 }
@@ -345,7 +344,6 @@ function normalizeVideoContract(raw: unknown): VideoContract | undefined {
   const fieldPoliciesRaw = (obj.fieldPolicies ?? obj.field_policies) as Record<string, unknown> | undefined;
   const _fpEnhance = (fieldPoliciesRaw?.enhancePrompt ?? fieldPoliciesRaw?.enhance_prompt) as Record<string, unknown> | undefined;
   const _fpAudio = (fieldPoliciesRaw?.generateAudio ?? fieldPoliciesRaw?.generate_audio) as Record<string, unknown> | undefined;
-  const _fpPerson = (fieldPoliciesRaw?.personGeneration ?? fieldPoliciesRaw?.person_generation) as Record<string, unknown> | undefined;
   const _fpSubtitle = (fieldPoliciesRaw?.subtitleMode ?? fieldPoliciesRaw?.subtitle_mode) as Record<string, unknown> | undefined;
   const _fpStoryboard = (fieldPoliciesRaw?.storyboardPrompt ?? fieldPoliciesRaw?.storyboard_prompt) as Record<string, unknown> | undefined;
   const fieldPolicies: VideoContractFieldPolicies | undefined =
@@ -407,26 +405,6 @@ function normalizeVideoContract(raw: unknown): VideoContract | undefined {
                           .forcedValue as OptionValue ?? null
                       : 'forced_value' in _fpAudio
                         ? _fpAudio
-                            .forced_value as OptionValue ?? null
-                        : undefined,
-                }
-              : undefined,
-          personGeneration:
-            _fpPerson
-              ? {
-                  available:
-                    typeof _fpPerson
-                      ?.available === 'boolean'
-                      ? Boolean(
-                          _fpPerson.available
-                        )
-                      : undefined,
-                  forcedValue:
-                    'forcedValue' in _fpPerson
-                      ? _fpPerson
-                          .forcedValue as OptionValue ?? null
-                      : 'forced_value' in _fpPerson
-                        ? _fpPerson
                             .forced_value as OptionValue ?? null
                         : undefined,
                 }

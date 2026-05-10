@@ -28,7 +28,10 @@ def test_google_video_contract_exposes_extension_duration_matrix_and_slots() -> 
     }
     assert "8" in matrix
     assert matrix["8"][0]["total_seconds"] == 8
-    assert matrix["8"][-1]["total_seconds"] == 148
+    assert matrix["8"][-1]["total_seconds"] == 36
+    assert contract["extension_constraints"]["max_source_video_seconds"] == 30
+    assert contract["extension_constraints"]["max_output_video_seconds"] == 37
+    assert contract["extension_constraints"]["max_extension_count"] == 4
 
     slot_map = {slot["name"]: slot for slot in contract["attachment_slots"]}
     assert slot_map["source_image"]["enabled"] is True
@@ -57,11 +60,12 @@ def test_google_video_runtime_contract_strips_vertex_only_options_for_gemini_api
     assert "generate_audio" not in runtime_schema["param_options"]
     assert "person_generation" not in runtime_schema["param_options"]
     assert runtime_schema["constraints"]["supports_generate_audio"] is False
-    assert runtime_schema["constraints"]["supports_person_generation"] is False
+    assert "supports_person_generation" not in runtime_schema["constraints"]
     assert runtime_schema["defaults"]["generate_audio"] is False
-    assert runtime_schema["defaults"]["person_generation"] is None
+    assert "person_generation" not in runtime_schema["defaults"]
     assert runtime_schema["video_contract"]["supports"]["generate_audio"] is False
-    assert runtime_schema["video_contract"]["supports"]["person_generation"] is False
+    assert "person_generation" not in runtime_schema["video_contract"]["supports"]
+    assert "person_generation" not in runtime_schema["video_contract"]["field_policies"]
 
 
 def test_runtime_schema_wrapper_returns_contract_for_google_video() -> None:

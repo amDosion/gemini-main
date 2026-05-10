@@ -389,7 +389,6 @@ const AppContent: React.FC = () => {
   const handleNewChat = () => {
     createNewSession(activePersonaId);
     if (activeModelConfig) llmService.startNewChat([], activeModelConfig);
-    handleModeSwitch('chat');
     setInitialAttachments(undefined);
     setInitialPrompt(undefined);
   };

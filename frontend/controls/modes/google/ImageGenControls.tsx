@@ -57,6 +57,7 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
       ),
     [schema]
   );
+  const supportsOutputMimeControls = outputMimeOptions.length > 0;
   const seedRange = schema?.numericRanges?.seed;
   const compressionRange = schema?.numericRanges?.output_compression_quality;
 
@@ -76,7 +77,7 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
     (typeof outputMimeOptions[0]?.value === 'string' ? outputMimeOptions[0].value : undefined) ??
     'image/png';
   const defaultCompressionQuality =
-    typeof defaults.output_compression_quality === 'number' ? defaults.output_compression_quality : 80;
+    typeof defaults.output_compression_quality === 'number' ? defaults.output_compression_quality : 100;
   const defaultEnhancePrompt = typeof defaults.enhance_prompt === 'boolean' ? defaults.enhance_prompt : false;
   const defaultNegativePrompt = typeof defaults.negative_prompt === 'string' ? defaults.negative_prompt : '';
 
@@ -146,13 +147,14 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
   }, [numberOfImages, maxImageCount, setNumberOfImages]);
 
   useEffect(() => {
+    if (!supportsOutputMimeControls) return;
     const validMimeTypes = outputMimeOptions
       .map((option) => option.value)
       .filter((value): value is string => typeof value === 'string');
     if (validMimeTypes.length > 0 && !validMimeTypes.includes(outputMimeType)) {
       setOutputMimeType(validMimeTypes[0]);
     }
-  }, [outputMimeType, outputMimeOptions, setOutputMimeType]);
+  }, [outputMimeType, outputMimeOptions, setOutputMimeType, supportsOutputMimeControls]);
 
   // 计算当前像素分辨率
   const currentPixelResolution = useMemo(() => {
@@ -279,46 +281,50 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
 
         {showAdvanced && (
           <div className="mt-4 space-y-4">
-            {/* 输出格式 */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <FileImage size={12} className="text-cyan-400" />
-                <span className="text-xs text-slate-300">输出格式</span>
-              </div>
-              <div className="flex gap-2">
-                {outputMimeOptions.map((opt) => (
-                  <button
-                    key={String(opt.value)}
-                    onClick={() => typeof opt.value === 'string' && setOutputMimeType(opt.value)}
-                    className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                      outputMimeType === opt.value
-                        ? 'bg-cyan-600 text-white'
-                        : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* JPEG 压缩质量 */}
-            {outputMimeType === 'image/jpeg' && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-300">压缩质量</span>
-                  <span className="text-xs text-indigo-400 font-mono">{outputCompressionQuality}%</span>
+            {supportsOutputMimeControls && (
+              <>
+                {/* 输出格式 */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <FileImage size={12} className="text-cyan-400" />
+                    <span className="text-xs text-slate-300">输出格式</span>
+                  </div>
+                  <div className="flex gap-2">
+                    {outputMimeOptions.map((opt) => (
+                      <button
+                        key={String(opt.value)}
+                        onClick={() => typeof opt.value === 'string' && setOutputMimeType(opt.value)}
+                        className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                          outputMimeType === opt.value
+                            ? 'bg-cyan-600 text-white'
+                            : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <input
-                  type="range"
-                  min={compressionRange?.min ?? 1}
-                  max={compressionRange?.max ?? 100}
-                  step={compressionRange?.step ?? 1}
-                  value={outputCompressionQuality}
-                  onChange={(e) => setOutputCompressionQuality(parseInt(e.target.value))}
-                  className="w-full h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer accent-indigo-500"
-                />
-              </div>
+
+                {/* JPEG 压缩质量 */}
+                {outputMimeType === 'image/jpeg' && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-300">压缩质量</span>
+                      <span className="text-xs text-indigo-400 font-mono">{outputCompressionQuality}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={compressionRange?.min ?? 1}
+                      max={compressionRange?.max ?? 100}
+                      step={compressionRange?.step ?? 1}
+                      value={outputCompressionQuality}
+                      onChange={(e) => setOutputCompressionQuality(parseInt(e.target.value))}
+                      className="w-full h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer accent-indigo-500"
+                    />
+                  </div>
+                )}
+              </>
             )}
 
             {/* Seed */}

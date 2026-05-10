@@ -15,6 +15,8 @@ from ..base.video_common import (
     build_resolution_map,
     extract_provider_video_asset_ref,
     extract_source_video_uri_ref,
+    first_present_option,
+    is_transient_timeout_error,
     load_mask_image,
     load_reference_images,
     load_source_image,
@@ -30,7 +32,7 @@ from ..base.video_common import (
     validate_generation_constraints,
 )
 from ..base.video_frame_bridge import extract_last_frame_image
-from ..base.video_storyboard import normalize_generate_audio, normalize_person_generation
+from ..base.video_storyboard import normalize_generate_audio
 from ..client_pool import get_client_pool
 
 logger = logging.getLogger(__name__)
@@ -48,6 +50,7 @@ DEFAULT_POLL_INTERVAL_SECONDS = 10.0
 DEFAULT_POLL_TIMEOUT_SECONDS = 900.0
 DEFAULT_FILE_READY_POLL_INTERVAL_SECONDS = 5.0
 DEFAULT_FILE_READY_TIMEOUT_SECONDS = 300.0
+DEFAULT_OPERATION_POLL_HTTP_TIMEOUT_MS = 300000
 
 
 class GeminiAPIVideoGenerationService:
@@ -106,10 +109,7 @@ class GeminiAPIVideoGenerationService:
         duration_seconds = normalize_duration_seconds(kwargs.get("seconds"), kwargs.get("duration_seconds"))
         negative_prompt = str(kwargs.get("negative_prompt") or "").strip() or None
         enhance_prompt = kwargs.get("enhance_prompt")
-        generate_audio = normalize_generate_audio(kwargs.get("generate_audio") or kwargs.get("generateAudio"))
-        person_generation = normalize_person_generation(
-            kwargs.get("person_generation") or kwargs.get("personGeneration")
-        )
+        generate_audio = normalize_generate_audio(first_present_option(kwargs, "generate_audio", "generateAudio"))
         seed = kwargs.get("seed")
         last_frame_bridge = bool(
             kwargs.get("use_last_frame_bridge")
@@ -220,9 +220,11 @@ class GeminiAPIVideoGenerationService:
         if enhance_prompt is not None and (bool(enhance_prompt) or not normalized_model.startswith("veo-3")):
             config_kwargs["enhance_prompt"] = bool(enhance_prompt)
         if generate_audio is not None:
-            config_kwargs["generate_audio"] = bool(generate_audio)
-        if person_generation:
-            config_kwargs["person_generation"] = getattr(genai_types.PersonGeneration, person_generation, person_generation)
+            logger.debug(
+                "[GeminiAPIVideoGenerationService] generate_audio=%s kept as local intent only; "
+                "Gemini Developer API rejects this field in GenerateVideosConfig.",
+                generate_audio,
+            )
         if isinstance(seed, int) and seed >= 0:
             config_kwargs["seed"] = seed
         if last_frame_image:
@@ -296,7 +298,6 @@ class GeminiAPIVideoGenerationService:
             "provider_file_uri": asset_ref.provider_file_uri,
             "gcs_uri": asset_ref.gcs_uri,
             "generate_audio": generate_audio,
-            "person_generation": person_generation.lower() if person_generation else None,
             "continuation_strategy": (
                 "last_frame_bridge"
                 if bridged_from_last_frame
@@ -403,12 +404,33 @@ class GeminiAPIVideoGenerationService:
             if asyncio.get_running_loop().time() - start > self.poll_timeout_seconds:
                 raise TimeoutError("Timed out waiting for Gemini video generation to finish.")
             await asyncio.sleep(self.poll_interval_seconds)
-            current = await asyncio.to_thread(self._client.operations.get, current)
+            try:
+                current = await asyncio.to_thread(
+                    self._client.operations.get,
+                    current,
+                    config=self._operation_get_config(),
+                )
+            except Exception as exc:
+                if (
+                    is_transient_timeout_error(exc)
+                    and asyncio.get_running_loop().time() - start <= self.poll_timeout_seconds
+                ):
+                    logger.warning(
+                        "[GeminiAPIVideoGenerationService] Transient timeout while polling video operation %s; continuing.",
+                        getattr(current, "name", None),
+                    )
+                    continue
+                raise
 
         error = getattr(current, "error", None)
         if error:
             raise RuntimeError(f"Gemini video generation failed: {error}")
         return current
+
+    def _operation_get_config(self) -> Any:
+        return genai_types.GetOperationConfig(
+            http_options=genai_types.HttpOptions(timeout=DEFAULT_OPERATION_POLL_HTTP_TIMEOUT_MS)
+        )
 
     def _extract_generated_video(self, response: Any) -> Any:
         if isinstance(response, dict):
@@ -426,6 +448,12 @@ class GeminiAPIVideoGenerationService:
                 or []
             )
         if not generated_videos:
+            rai_message = self._format_rai_filtered_message(response)
+            if rai_message:
+                raise RuntimeError(
+                    "Gemini video generation did not return any generated videos. "
+                    f"{rai_message}"
+                )
             raise RuntimeError("Gemini video generation did not return any generated videos.")
         generated = generated_videos[0]
         if isinstance(generated, dict) and generated.get("video") is not None:
@@ -437,6 +465,32 @@ class GeminiAPIVideoGenerationService:
         if not getattr(generated, "video", None):
             raise RuntimeError("Gemini video generation response is missing the generated video payload.")
         return generated
+
+    def _format_rai_filtered_message(self, response: Any) -> Optional[str]:
+        if response is None:
+            return None
+        if isinstance(response, dict):
+            raw_reasons = (
+                response.get("rai_media_filtered_reasons")
+                or response.get("raiMediaFilteredReasons")
+                or []
+            )
+            raw_count = response.get("rai_media_filtered_count") or response.get("raiMediaFilteredCount")
+        else:
+            raw_reasons = (
+                getattr(response, "rai_media_filtered_reasons", None)
+                or getattr(response, "raiMediaFilteredReasons", None)
+                or []
+            )
+            raw_count = (
+                getattr(response, "rai_media_filtered_count", None)
+                or getattr(response, "raiMediaFilteredCount", None)
+            )
+        reasons = [str(item).strip() for item in raw_reasons if str(item).strip()]
+        if not reasons:
+            return None
+        count_suffix = f" ({raw_count} filtered)" if raw_count else ""
+        return f"Provider RAI filtering returned no video{count_suffix}: {'; '.join(reasons)}"
 
     async def _download_video_bytes(self, generated_video: Any) -> bytes:
         video = generated_video.video

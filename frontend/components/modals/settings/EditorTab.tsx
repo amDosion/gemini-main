@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Save, Key, Shield, RefreshCw, CheckCircle2, AlertTriangle, Check, Loader2, X } from 'lucide-react';
+import { Save, Key, Shield, RefreshCw, AlertTriangle, Loader2, X } from 'lucide-react';
 import { ConfigProfile, db } from '../../../services/db';
 import { ModelConfig, ApiProtocol } from '../../../types/types';
 import { getProviderTemplates, AIProviderConfig } from '../../../services/providers';
@@ -9,6 +9,7 @@ import { LLMFactory } from '../../../services/LLMFactory';
 import { v4 as uuidv4 } from 'uuid';
 import { OllamaModelManager } from './OllamaModelManager';
 import { useToastContext } from '../../../contexts/ToastContext';
+import { ModelSelectionPanel } from './ModelSelectionPanel';
 
 interface EditorTabProps {
     initialData?: ConfigProfile | null;
@@ -280,6 +281,12 @@ export const EditorTab: React.FC<EditorTabProps> = ({
         );
     }
 
+    const selectedEditorModelIds = new Set(
+        verifiedModels
+            .filter(model => !formData.hiddenModels.includes(model.id))
+            .map(model => model.id)
+    );
+
     return (
         <>
             <div className="absolute inset-0 flex flex-col p-3 md:p-4 space-y-2 md:space-y-3 animate-[fadeIn_0.3s_ease-out]">
@@ -473,78 +480,15 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                                     </div>
                                 </div>
                             ) : (
-                                <div className="bg-slate-900/30 rounded-xl border border-slate-800 flex flex-col mt-2">
-                                    <div className="p-2 bg-slate-900/50 border-b border-slate-800 flex items-center justify-between shrink-0">
-                                        <div className="flex items-center gap-2 text-green-400 px-1">
-                                            <CheckCircle2 size={14} />
-                                            <span className="text-xs font-medium">Verified</span>
-                                        </div>
-                                        <div className="flex items-center gap-2 md:gap-1.5 flex-wrap">
-                                            <button
-                                                onClick={() => setFormData(prev => prev ? ({ ...prev, hiddenModels: [] }) : null)}
-                                                className="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-1.5 md:px-2 md:py-0.5 rounded text-slate-300 transition-colors border border-slate-700"
-                                            >
-                                                Select All
-                                            </button>
-                                            <button
-                                                onClick={() => setFormData(prev => prev ? ({ ...prev, hiddenModels: verifiedModels.map(m => m.id) }) : null)}
-                                                className="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-1.5 md:px-2 md:py-0.5 rounded text-slate-300 transition-colors border border-slate-700"
-                                            >
-                                                Select None
-                                            </button>
-                                            <span className="text-xs text-slate-500 ml-1 border-l border-slate-700 pl-2">{verifiedModels.length} Models</span>
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-slate-950/30 p-2 text-xs text-slate-500 border-b border-slate-800/50 shrink-0">
-                                        Check models to include in the dropdown.
-                                    </div>
-
-                                    <div className="w-full p-3 md:p-2">
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 md:gap-1 w-full">
-                                            {verifiedModels.map(model => {
-                                                const isHidden = formData.hiddenModels.includes(model.id);
-                                                return (
-                                                    <div
-                                                        key={model.id}
-                                                        onClick={() => toggleEditorModelVisibility(model.id)}
-                                                        className={`flex items-center gap-2 p-2 md:p-1.5 rounded-md cursor-pointer transition-colors border ${!isHidden ? 'bg-slate-800/60 border-slate-700/50 hover:bg-slate-800' : 'opacity-60 border-transparent hover:bg-slate-800/20'}`}
-                                                    >
-                                                        <div
-                                                            className={`w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center transition-colors shrink-0 ${!isHidden ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-600 bg-transparent'}`}
-                                                        >
-                                                            {!isHidden && <Check size={10} />}
-                                                        </div>
-                                                        <div className="min-w-0 flex-1 overflow-hidden">
-                                                            <div className={`text-xs md:text-[11px] font-medium truncate leading-tight ${!isHidden ? 'text-slate-200' : 'text-slate-500'}`}>
-                                                                {model.id}
-                                                            </div>
-                                                            {/* ✅ 显示描述（如果存在且与ID不同，且不包含ID的主要部分） */}
-                                                            {(() => {
-                                                                if (!model.description || model.description === model.id) {
-                                                                    return null;
-                                                                }
-                                                                // 检查描述是否包含ID的主要关键词（避免重复显示）
-                                                                const idWords = model.id.toLowerCase().split(/[-_\s]+/).filter(w => w.length > 2);
-                                                                const descLower = model.description.toLowerCase();
-                                                                const hasMajorOverlap = idWords.some(word => descLower.includes(word));
-                                                                // 如果描述包含ID的主要部分，则不显示描述
-                                                                if (hasMajorOverlap && idWords.length > 2) {
-                                                                    return null;
-                                                                }
-                                                                return (
-                                                                    <div className="text-[10px] text-slate-500 truncate leading-tight mt-0.5 opacity-80">
-                                                                        {model.description}
-                                                                    </div>
-                                                                );
-                                                            })()}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                </div>
+                                <ModelSelectionPanel
+                                    models={verifiedModels}
+                                    selectedModelIds={selectedEditorModelIds}
+                                    onToggleModel={toggleEditorModelVisibility}
+                                    onSelectAll={() => setFormData(prev => prev ? ({ ...prev, hiddenModels: [] }) : null)}
+                                    onSelectNone={() => setFormData(prev => prev ? ({ ...prev, hiddenModels: verifiedModels.map(m => m.id) }) : null)}
+                                    helperText="Check models to include in the dropdown."
+                                    testIdPrefix="editor-model"
+                                />
                             )}
                         </div>
                     )}

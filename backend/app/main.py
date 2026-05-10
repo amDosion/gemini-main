@@ -62,7 +62,7 @@ pdf_result = safe_import(
         'get_available_templates': create_fallback_function("PDF extraction module not available")
     },
     warning_message="Could not import PDF extraction module",
-    info_message="Install PDF extraction dependencies with: pip install google-generativeai PyPDF2"
+    info_message="Install PDF extraction dependencies with: pip install google-genai pypdf"
 )
 extract_structured_data_from_pdf = pdf_result['extract_structured_data_from_pdf']
 get_available_templates = pdf_result['get_available_templates']
@@ -76,7 +76,7 @@ embedding_result = safe_import(
         'rag_service': create_fallback_class("Embedding service not available")()
     },
     warning_message="Could not import embedding service",
-    info_message="Install embedding dependencies with: pip install chromadb google-generativeai"
+    info_message="Install embedding dependencies with: pip install chromadb google-genai"
 )
 rag_service = embedding_result['rag_service']
 EMBEDDING_AVAILABLE = embedding_result.success

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UnifiedProviderClient } from './UnifiedProviderClient';
-import type { ChatOptions } from '../../types/types';
+import type { Attachment, ChatOptions } from '../../types/types';
 
 const successResponse = () =>
   new Response(JSON.stringify({ success: true, data: {} }), {
@@ -114,6 +114,83 @@ describe('UnifiedProviderClient mode payload sanitization', () => {
       baseSteps: 32,
       sessionId: 'session-2',
       messageId: 'message-2',
+    });
+  });
+
+  it('marks mask reference attachments with role=mask when using image-mask-edit', async () => {
+    const fetchMock = vi.fn(async () => successResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const rawAttachment: Attachment = {
+      id: 'raw-1',
+      name: 'raw.png',
+      mimeType: 'image/png',
+      url: 'data:image/png;base64,raw',
+    };
+    const maskAttachment: Attachment = {
+      id: 'mask-1',
+      name: 'mask.png',
+      mimeType: 'image/png',
+      url: 'data:image/png;base64,mask',
+    };
+
+    const client = new UnifiedProviderClient('google');
+    await client.editImage(
+      'imagen-3.0-capability-001',
+      'insert a product detail in the masked area',
+      {
+        raw: rawAttachment,
+        mask: maskAttachment,
+      },
+      {
+        enableSearch: false,
+        enableThinking: false,
+        enableCodeExecution: false,
+        maskMode: 'MASK_MODE_USER_PROVIDED',
+      },
+      '',
+      'image-mask-edit'
+    );
+
+    const body = getPostedBody(fetchMock);
+
+    expect(body.attachments).toHaveLength(2);
+    expect(body.attachments[0]).toMatchObject({
+      id: 'raw-1',
+      url: 'data:image/png;base64,raw',
+    });
+    expect(body.attachments[1]).toMatchObject({
+      id: 'mask-1',
+      url: 'data:image/png;base64,mask',
+      role: 'mask',
+    });
+  });
+
+  it('keeps semantic mask class ids for image-mask-edit People mode', async () => {
+    const fetchMock = vi.fn(async () => successResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new UnifiedProviderClient('google');
+    await client.executeMode(
+      'image-mask-edit',
+      'imagen-3.0-capability-001',
+      'replace the person outfit',
+      [],
+      {
+        enableSearch: false,
+        enableThinking: false,
+        enableCodeExecution: false,
+        maskMode: 'MASK_MODE_SEMANTIC',
+        segmentationClasses: [125],
+      } as ChatOptions,
+      {}
+    );
+
+    const body = getPostedBody(fetchMock);
+
+    expect(body.options).toMatchObject({
+      maskMode: 'MASK_MODE_SEMANTIC',
+      segmentationClasses: [125],
     });
   });
 

@@ -4,7 +4,7 @@ Virtual Try-On 服务（独立版）
 - 仅提供 recontext_image 虚拟试穿：人物图 + 服装图 → 结果图
 - 与 GEN/Edit 统一：接收解密的 Vertex 配置（project_id, location, credentials_json），
   用 credentials 创建 Client；未传入时回退到 env / client_pool（兼容旧调用）
-- 模型：virtual-try-on-001 / virtual-try-on-preview-08-04
+- 模型：virtual-try-on-001
 
 掩码 / 编辑等已迁移至 mask_edit_service、expand_service、segmentation_service；
 本模块不再保留兼容接口与掩码回退。
@@ -42,7 +42,6 @@ class TryOnService:
 
     SUPPORTED_MODELS = {
         "virtual-try-on-001",
-        "virtual-try-on-preview-08-04",
     }
 
     def __init__(self):

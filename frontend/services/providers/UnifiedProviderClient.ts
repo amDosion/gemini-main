@@ -47,11 +47,11 @@ const MODE_OPTION_KEYS = new Set([
   'videoExtensionCount',
   'storyboardShotSeconds',
   'generateAudio',
-  'personGeneration',
   'subtitleMode',
   'subtitleLanguage',
   'subtitleScript',
   'storyboardPrompt',
+  'storyboardSegments',
   'trackedFeature',
   'trackingOverlayText',
   'numberOfImages',
@@ -98,6 +98,7 @@ const MODE_OPTION_KEYS = new Set([
   'blurRadius',
   'baseSteps',
   'maskMode',
+  'segmentationClasses',
 ]);
 
 const MODE_EXTRA_KEYS = new Set([
@@ -134,14 +135,15 @@ const MODE_EXTRA_KEYS = new Set([
   'voice',
   'baseSteps',
   'maskMode',
+  'segmentationClasses',
   'videoExtensionCount',
   'storyboardShotSeconds',
   'generateAudio',
-  'personGeneration',
   'subtitleMode',
   'subtitleLanguage',
   'subtitleScript',
   'storyboardPrompt',
+  'storyboardSegments',
   'trackedFeature',
   'trackingOverlayText',
 ]);
@@ -149,6 +151,15 @@ const MODE_EXTRA_KEYS = new Set([
 function pruneUndefinedEntries(source: Record<string, any>): Record<string, any> {
   return Object.fromEntries(
     Object.entries(source).filter(([, value]) => value !== undefined && value !== null)
+  );
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    !!error &&
+    typeof error === 'object' &&
+    'name' in error &&
+    (error as { name?: unknown }).name === 'AbortError'
   );
 }
 
@@ -531,7 +542,7 @@ export class UnifiedProviderClient implements ILLMProvider {
           }
         }
       } catch (error: unknown) {
-        if (error instanceof Error && error.name === 'AbortError') {
+        if (isAbortError(error)) {
           if (abortSignal?.aborted || controller.signal.aborted) {
             return;
           }
@@ -727,7 +738,16 @@ export class UnifiedProviderClient implements ILLMProvider {
 
       // 如果 value 已经是 Attachment 对象，直接使用（保留所有字段）
       if (typeof value === 'object' && 'id' in value && 'mimeType' in value) {
-        return value as Attachment;
+        const attachment = value as Attachment;
+        if (key === 'mask') {
+          return {
+            ...attachment,
+            role: 'mask',
+            name: attachment.name || 'mask.png',
+            mimeType: attachment.mimeType || 'image/png',
+          };
+        }
+        return attachment;
       }
 
       // 构建新的 Attachment 对象（用于字符串类型的值）
@@ -750,6 +770,11 @@ export class UnifiedProviderClient implements ILLMProvider {
         if (valObj.uploadStatus) attachment.uploadStatus = String(valObj.uploadStatus) as "completed" | "failed" | "pending" | "uploading";  // ✅ 保留上传状态
         if (valObj.uploadTaskId) attachment.uploadTaskId = String(valObj.uploadTaskId);  // ✅ 保留任务 ID
         if (valObj.name) attachment.name = String(valObj.name);  // ✅ 保留文件名
+        if (valObj.role) attachment.role = String(valObj.role);
+      }
+
+      if (key === 'mask') {
+        attachment.role = 'mask';
       }
 
       return attachment;

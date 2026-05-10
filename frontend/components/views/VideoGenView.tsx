@@ -30,6 +30,7 @@ import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordina
 import ChatEditInputArea from '../chat/ChatEditInputArea';
 import { buildVideoControlContract, isVideoControlSelectionValid } from '../../utils/videoControlSchema';
 import { useHistoryListActions } from '../../hooks/useHistoryListActions';
+import { isHistoryActionSurface } from '../../utils/historyActionSurface';
 
 interface VideoGenViewProps {
     messages: Message[];
@@ -104,6 +105,8 @@ const extractVideoHistoryMeta = (msg: Message): {
     let strategyLabel: string | null = null;
     if (continuationStrategy === 'video_extension_chain') {
         strategyLabel = '官方延长';
+    } else if (continuationStrategy === 'last_frame_bridge_chain') {
+        strategyLabel = '末帧桥接延长';
     } else if (continuationStrategy === 'video_extension') {
         strategyLabel = '视频续接';
     } else if (continuationStrategy === 'last_frame_bridge') {
@@ -295,13 +298,6 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
             controls.setStoryboardShotSeconds(videoControlContract.defaultStoryboardShotSeconds);
         }
         if (
-            videoControlContract.validPersonGenerationValues.length > 0 &&
-            controls.personGeneration &&
-            !videoControlContract.validPersonGenerationValues.includes(controls.personGeneration)
-        ) {
-            controls.setPersonGeneration(videoControlContract.defaultPersonGeneration);
-        }
-        if (
             videoControlContract.validSubtitleModes.length > 0 &&
             controls.subtitleMode &&
             !videoControlContract.validSubtitleModes.includes(controls.subtitleMode)
@@ -325,7 +321,6 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
         controls.aspectRatio,
         controls.enhancePrompt,
         controls.generateAudio,
-        controls.personGeneration,
         controls.resolution,
         controls.storyboardShotSeconds,
         controls.subtitleLanguage,
@@ -335,7 +330,6 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
         controls.setAspectRatio,
         controls.setEnhancePrompt,
         controls.setGenerateAudio,
-        controls.setPersonGeneration,
         controls.setResolution,
         controls.setStoryboardShotSeconds,
         controls.setSubtitleLanguage,
@@ -345,7 +339,6 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
         videoControlContract.defaultAspectRatio,
         videoControlContract.defaultEnhancePrompt,
         videoControlContract.defaultGenerateAudio,
-        videoControlContract.defaultPersonGeneration,
         videoControlContract.defaultResolution,
         videoControlContract.defaultStoryboardShotSeconds,
         videoControlContract.defaultSubtitleLanguage,
@@ -356,7 +349,6 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
         videoControlContract.fieldPolicies.generateAudioAvailable,
         videoControlContract.schemaReady,
         videoControlContract.validAspectRatios,
-        videoControlContract.validPersonGenerationValues,
         videoControlContract.validResolutionTiers,
         videoControlContract.validStoryboardShotSeconds,
         videoControlContract.validSeconds,
@@ -373,21 +365,21 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
         controls.setVideoExtensionCount(videoControlContract.defaultVideoExtensionCount);
         controls.setStoryboardShotSeconds(videoControlContract.defaultStoryboardShotSeconds);
         controls.setGenerateAudio(videoControlContract.defaultGenerateAudio);
-        controls.setPersonGeneration(videoControlContract.defaultPersonGeneration);
         controls.setSubtitleMode(videoControlContract.defaultSubtitleMode);
         controls.setSubtitleLanguage(videoControlContract.defaultSubtitleLanguage);
         controls.setSubtitleScript(videoControlContract.defaultSubtitleScript);
         controls.setStoryboardPrompt(videoControlContract.defaultStoryboardPrompt);
+        controls.setStoryboardSegments([]);
         controls.setNegativePrompt(videoControlContract.defaultNegativePrompt);
         controls.setSeed(videoControlContract.defaultSeed);
         controls.setEnhancePrompt(videoControlContract.defaultEnhancePrompt);
+        controls.setEnhancePromptModel('');
     }, [
         controls,
         videoControlContract.defaultAspectRatio,
         videoControlContract.defaultEnhancePrompt,
         videoControlContract.defaultGenerateAudio,
         videoControlContract.defaultNegativePrompt,
-        videoControlContract.defaultPersonGeneration,
         videoControlContract.defaultResolution,
         videoControlContract.defaultSeed,
         videoControlContract.defaultStoryboardPrompt,
@@ -549,7 +541,7 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
             if (actionMenuPanelRef.current && actionMenuPanelRef.current.contains(target)) {
                 return;
             }
-            if (target instanceof Element && target.closest('[data-history-action-trigger]')) {
+            if (isHistoryActionSurface(target)) {
                 return;
             }
             setOpenActionMenu(null);
@@ -652,6 +644,7 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
         }
     ) => {
         if (window.innerWidth < 768) return;
+        if (isHistoryActionSurface(event.target)) return;
         clearHidePreviewTimer();
         setOpenActionMenu(null);
         setActionMenuPosition(null);
@@ -1234,9 +1227,14 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
                                     }`}
                                     title="历史项操作"
                                     data-history-action-trigger={msg.id}
+                                    onMouseEnter={(event) => {
+                                        event.stopPropagation();
+                                        closeHoverPreview();
+                                    }}
                                     onClick={(event) => {
                                         event.preventDefault();
                                         event.stopPropagation();
+                                        closeHoverPreview();
                                         const rect = event.currentTarget.getBoundingClientRect();
                                         setOpenActionMenu((prev) => (
                                             prev?.messageId === msg.id
@@ -1267,7 +1265,9 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
             {openActionMenu && typeof document !== 'undefined' && createPortal(
                 <div
                     ref={actionMenuPanelRef}
+                    data-history-action-menu
                     className="fixed z-[130] inline-flex flex-col gap-1 rounded-lg border border-slate-700 bg-slate-950/95 shadow-2xl backdrop-blur-md p-1"
+                    onMouseEnter={closeHoverPreview}
                     style={{
                         top: actionMenuPosition?.top ?? openActionMenu.anchorY,
                         left: actionMenuPosition?.left ?? openActionMenu.anchorX

@@ -26,7 +26,10 @@ from ...core.encryption import encrypt_data, decrypt_data, is_encrypted
 from ...models.db_models import VertexAIConfig, ConfigProfile, UserSettings
 from ...services.common.provider_factory import ProviderFactory
 from ...services.gemini.base.imagen_common import ConfigurationError
-from ...services.common.google_model_catalog import get_static_google_vertex_models
+from ...services.common.google_model_catalog import (
+    get_static_google_vertex_models,
+    is_deprecated_google_vertex_image_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -226,7 +229,7 @@ async def get_vertex_ai_config(
             "supported_models": ["imagen-3.0-generate-001"],
             "max_images": 8,
             "supported_aspect_ratios": ["1:1", "3:4", "4:3", "9:16", "16:9"],
-            "person_generation_modes": ["dont_allow", "allow_adult"]
+            "person_generation_modes": ["dont_allow", "allow_adult", "allow_all"]
         }
 
         if not user_config:
@@ -601,7 +604,7 @@ async def update_vertex_ai_config(
             "supported_models": ["imagen-3.0-generate-001"],
             "max_images": 8,
             "supported_aspect_ratios": ["1:1", "3:4", "4:3", "9:16", "16:9"],
-            "person_generation_modes": ["dont_allow", "allow_adult"]
+            "person_generation_modes": ["dont_allow", "allow_adult", "allow_all"]
         }
         
         capabilities = default_capabilities
@@ -869,6 +872,9 @@ async def verify_vertex_ai_connection(
             # Extract short model ID for capability lookup
             # e.g., "publishers/google/models/gemini-3-pro-image-preview" -> "gemini-3-pro-image-preview"
             short_model_id = model_name.split('/')[-1] if '/' in model_name else model_name
+
+            if is_deprecated_google_vertex_image_model(short_model_id):
+                continue
 
             # 跳过已存在的模型
             if short_model_id in seen_model_ids:

@@ -43,6 +43,9 @@ const warnSkippedHistoryPreviewImages = (
   if (skippedCount <= 0) {
     return;
   }
+  console.warn(
+    `[WorkflowHistoryPreview] Preview images skipped: execution=${executionId}, count=${count}, skipped=${skippedCount}`
+  );
 };
 
 const warnSkippedHistoryPreviewMedia = (
@@ -54,6 +57,9 @@ const warnSkippedHistoryPreviewMedia = (
   if (skippedCount <= 0) {
     return;
   }
+  console.warn(
+    `[WorkflowHistoryPreview] Preview media skipped: execution=${executionId}, kind=${mediaKind}, count=${count}, skipped=${skippedCount}`
+  );
 };
 
 interface UseWorkflowHistoryPreviewStateParams {

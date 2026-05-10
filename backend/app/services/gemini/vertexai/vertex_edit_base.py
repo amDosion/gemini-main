@@ -68,6 +68,7 @@ class VertexAIEditBase(BaseImageEditor):
 
     # 子类可覆盖此属性以设置默认编辑模式
     DEFAULT_EDIT_MODE = None
+    DEFAULT_MASK_MODE = None
 
     def __init__(
         self,
@@ -153,11 +154,7 @@ class VertexAIEditBase(BaseImageEditor):
         logger.info(f"[{self.__class__.__name__}] Editing image: prompt={prompt[:50]}...")
 
         # Config from middleware is already in snake_case
-        effective_config = config or {}
-
-        # Merge default edit_mode if not provided
-        if self.DEFAULT_EDIT_MODE and 'edit_mode' not in effective_config:
-            effective_config['edit_mode'] = self.DEFAULT_EDIT_MODE
+        effective_config = self._apply_service_defaults(config or {})
 
         # Build configuration
         edit_config = self._build_config(effective_config)
@@ -200,6 +197,17 @@ class VertexAIEditBase(BaseImageEditor):
                 raise RuntimeError("This feature requires Vertex AI mode. Please configure GCP credentials.")
             else:
                 raise RuntimeError(f"Image editing failed: {error_msg}")
+
+    def _apply_service_defaults(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Merge mode-specific defaults without mutating caller-owned config."""
+        effective_config = dict(config or {})
+
+        if self.DEFAULT_EDIT_MODE and 'edit_mode' not in effective_config:
+            effective_config['edit_mode'] = self.DEFAULT_EDIT_MODE
+        if self.DEFAULT_MASK_MODE and 'mask_mode' not in effective_config and 'mask' not in effective_config:
+            effective_config['mask_mode'] = self.DEFAULT_MASK_MODE
+
+        return effective_config
 
     def _build_config(self, config: Dict[str, Any]) -> 'genai_types.EditImageConfig':
         """Build Vertex AI EditImageConfig from parameters.
@@ -524,6 +532,5 @@ class VertexAIEditBase(BaseImageEditor):
     def get_supported_models(self) -> List[str]:
         """Get supported Imagen models for editing."""
         return [
-            'imagen-3.0-capability-001',
-            'imagen-4.0-ingredients-preview'
+            'imagen-3.0-capability-001'
         ]

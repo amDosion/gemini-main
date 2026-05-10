@@ -11,6 +11,7 @@ Also handles mode routing to different edit services:
 """
 
 import logging
+import json
 import os
 from typing import Dict, Any, Optional, List
 from sqlalchemy.orm import Session
@@ -23,6 +24,7 @@ from ..vertexai.mask_edit_service import MaskEditService
 from ..vertexai.inpainting_service import InpaintingService
 from ..vertexai.background_edit_service import BackgroundEditService
 from ..vertexai.recontext_service import RecontextService
+from ...common.google_model_catalog import get_static_google_vertex_model_ids_for_family
 
 logger = logging.getLogger(__name__)
 
@@ -397,6 +399,77 @@ class ImageEditCoordinator:
 
         return project_id, location, credentials_json
 
+    def _build_vertex_credentials_object(self):
+        """Build google-auth service account credentials for google-genai Vertex clients."""
+        _, _, credentials_json = self._get_vertex_credentials()
+        try:
+            from google.oauth2 import service_account
+        except ImportError as exc:
+            raise RuntimeError(
+                "google-auth is required for Vertex AI service account credentials"
+            ) from exc
+
+        if isinstance(credentials_json, str):
+            credentials_info = json.loads(credentials_json)
+        elif isinstance(credentials_json, dict):
+            credentials_info = credentials_json
+        else:
+            raise ValueError("GOOGLE_APPLICATION_CREDENTIALS_JSON must be a JSON object string")
+
+        return service_account.Credentials.from_service_account_info(
+            credentials_info,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
+
+    def _build_gemini_image_pool_kwargs(
+        self,
+        incoming_pool_kwargs: Optional[Dict[str, Any]],
+        mode: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Resolve pool kwargs for Gemini native image services from the active API mode.
+
+        Chat Edit is a Gemini Developer API feature in this app and must not be
+        switched to Vertex merely because Vertex AI is configured for other
+        modes. Recontext/Product Recontext can still follow the active Vertex
+        configuration because those modes intentionally use Gemini image through
+        the user's configured Google Cloud project when available.
+        """
+        incoming = dict(incoming_pool_kwargs or {})
+
+        if mode == 'image-chat-edit':
+            api_key = incoming.get('api_key') or self._config.get('gemini_api_key')
+            if not api_key:
+                raise ValueError("GEMINI_API_KEY is required for image-chat-edit")
+            return {
+                'api_key': api_key,
+                'use_vertex': False,
+                'http_options': incoming.get('http_options'),
+            }
+
+        if self.get_current_api_mode() == 'vertex_ai':
+            project_id, location, _ = self._get_vertex_credentials()
+            return {
+                'api_key': incoming.get('api_key') or self._config.get('gemini_api_key'),
+                'use_vertex': True,
+                'project': project_id,
+                'location': location,
+                'credentials': self._build_vertex_credentials_object(),
+                'http_options': incoming.get('http_options'),
+            }
+
+        if incoming:
+            incoming['use_vertex'] = bool(incoming.get('use_vertex', False))
+            return incoming
+
+        api_key = self._config.get('gemini_api_key')
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY is required for Gemini image editing modes")
+        return {
+            'api_key': api_key,
+            'use_vertex': False,
+        }
+
     def _get_cached_service(self, cache_key: str, service_class):
         """获取或创建缓存的 Vertex AI 编辑服务（统一模式）"""
         if cache_key in self._editor_cache:
@@ -432,13 +505,100 @@ class ImageEditCoordinator:
     # ==================== 统一模型验证 ====================
 
     @staticmethod
-    def _validate_edit_model(model: str) -> str:
-        """验证并返回有效的编辑模型"""
-        IMAGEN_EDIT_MODELS = {'imagen-3.0-capability-001', 'imagen-4.0-ingredients-preview'}
-        if model in IMAGEN_EDIT_MODELS:
-            return model
-        logger.info(f"[ImageEditCoordinator] Model '{model}' is not an Imagen edit model, using default: imagen-3.0-capability-001")
-        return 'imagen-3.0-capability-001'
+    def _short_model_id(model: str) -> str:
+        return str(model or '').split('/')[-1]
+
+    @classmethod
+    def _validate_edit_model(cls, model: str) -> str:
+        """Validate and return a model that is compatible with Vertex Imagen edit_image."""
+        imagen_edit_models = set(get_static_google_vertex_model_ids_for_family("imagen_edit")) or {'imagen-3.0-capability-001'}
+        short_model = cls._short_model_id(model)
+        if short_model in imagen_edit_models:
+            return short_model
+        if not short_model:
+            default_model = sorted(imagen_edit_models)[0]
+            logger.info(f"[ImageEditCoordinator] No Imagen edit model selected, using default: {default_model}")
+            return default_model
+        raise ValueError(
+            f"Model '{model}' is not compatible with Vertex Imagen edit_image API. "
+            f"Select one of: {', '.join(sorted(imagen_edit_models))}"
+        )
+
+    @classmethod
+    def _is_gemini_image_model(cls, model: str) -> bool:
+        short_model = cls._short_model_id(model)
+        if short_model in set(get_static_google_vertex_model_ids_for_family("gemini_image")):
+            return True
+        lower = (model or '').lower()
+        return lower.startswith('gemini-') and 'image' in lower
+
+    async def _edit_with_conversational_image_service(
+        self,
+        *,
+        prompt: str,
+        model: str,
+        reference_images: Dict[str, Any],
+        pool_kwargs: Optional[Dict[str, Any]],
+        chat_session_manager: Optional[Any],
+        file_handler: Optional[Any],
+        user_id: Optional[str],
+        **kwargs
+    ) -> List[Dict[str, Any]]:
+        if not chat_session_manager:
+            raise ValueError("ChatSessionManager is required for Gemini image editing modes")
+        if not pool_kwargs:
+            raise ValueError("pool_kwargs is required for Gemini image editing modes")
+        if not file_handler:
+            raise ValueError("FileHandler is required for Gemini image editing modes")
+
+        from ..geminiapi.conversational_image_edit_service import ConversationalImageEditService
+        conversational_service = ConversationalImageEditService(
+            chat_session_manager=chat_session_manager,
+            file_handler=file_handler,
+            **pool_kwargs,
+        )
+
+        return await conversational_service.edit_image(
+            prompt=prompt,
+            model=model,
+            reference_images=reference_images,
+            user_id=user_id,
+            **kwargs
+        )
+
+    async def _edit_with_gemini_recontext_service(
+        self,
+        *,
+        prompt: str,
+        model: str,
+        reference_images: Dict[str, Any],
+        pool_kwargs: Optional[Dict[str, Any]],
+        chat_session_manager: Optional[Any],
+        file_handler: Optional[Any],
+        user_id: Optional[str],
+        **kwargs
+    ) -> List[Dict[str, Any]]:
+        if not chat_session_manager:
+            raise ValueError("ChatSessionManager is required for Gemini recontext modes")
+        if not pool_kwargs:
+            raise ValueError("pool_kwargs is required for Gemini recontext modes")
+        if not file_handler:
+            raise ValueError("FileHandler is required for Gemini recontext modes")
+
+        from ..geminiapi.recontext_image_service import GeminiRecontextImageService
+        recontext_service = GeminiRecontextImageService(
+            chat_session_manager=chat_session_manager,
+            file_handler=file_handler,
+            **pool_kwargs,
+        )
+
+        return await recontext_service.edit_image(
+            prompt=prompt,
+            model=model,
+            reference_images=reference_images,
+            user_id=user_id,
+            **kwargs
+        )
 
     # ==================== 主路由方法 ====================
 
@@ -458,60 +618,20 @@ class ImageEditCoordinator:
         智能路由图片编辑请求到对应的子服务
 
         路由逻辑（按优先级）：
-        1. mode='image-chat-edit' → ConversationalImageEditService（对话式编辑）
-        2. mode='image-mask-edit' → MaskEditService（掩码编辑）
-        3. mode='image-inpainting' → InpaintingService（图片修复）
-        4. mode='image-background-edit' → BackgroundEditService（背景编辑）
-        5. mode='image-recontext' → RecontextService（重新上下文）
-        6. 有 mask → MaskEditService（掩码编辑，自动检测）
-        7. 无 mask → MaskEditService（自动掩码）
+        1. mode='image-background-edit' → BackgroundEditService（Vertex Imagen BGSWAP）
+        2. Recontext + Gemini image 模型 → GeminiRecontextImageService（Gemini native recontext）
+        3. 其它 Gemini image 模型 → ConversationalImageEditService（官方 generate_content/chat 图片编辑）
+        4. mode='image-chat-edit' → ConversationalImageEditService（对话式编辑）
+        5. mode='image-mask-edit' → MaskEditService（掩码编辑）
+        6. mode='image-inpainting' → InpaintingService（图片修复）
+        7. 有 mask → MaskEditService（掩码编辑，自动检测）
+        8. 无 mask → MaskEditService（自动掩码）
 
-        路由 2-5 使用统一模式：get_xxx_editor() → editor.edit_image(prompt, reference_images, config)
+        Vertex Imagen edit 路径使用统一模式：get_xxx_editor() → editor.edit_image(prompt, reference_images, config)
         """
         logger.info(f"[ImageEditCoordinator] Image editing request: model={model}, mode={mode}, prompt='{prompt[:50]}...'")
         logger.info(f"[ImageEditCoordinator] Reference images: {list(reference_images.keys())}, additional parameters: {list(kwargs.keys())}")
 
-        # 路由 1: 对话式编辑模式
-        if mode == 'image-chat-edit':
-            if not chat_session_manager:
-                raise ValueError("ChatSessionManager is required for image-chat-edit mode")
-            if not pool_kwargs:
-                raise ValueError("pool_kwargs is required for image-chat-edit mode")
-            if not file_handler:
-                raise ValueError("FileHandler is required for image-chat-edit mode")
-
-            from ..geminiapi.conversational_image_edit_service import ConversationalImageEditService
-            conversational_service = ConversationalImageEditService(
-                chat_session_manager=chat_session_manager,
-                file_handler=file_handler,
-                **pool_kwargs,
-            )
-
-            return await conversational_service.edit_image(
-                prompt=prompt,
-                model=model,
-                reference_images=reference_images,
-                user_id=user_id,
-                **kwargs
-            )
-
-        # 路由 2: 掩码编辑模式 → MaskEditService（统一接口）
-        if mode == 'image-mask-edit':
-            self._require_vertex_ai(mode)
-            kwargs['model'] = self._validate_edit_model(model)
-            logger.info(f"[ImageEditCoordinator] → MaskEditService.edit_image(): model={kwargs['model']}")
-            editor = self.get_mask_editor()
-            return editor.edit_image(prompt=prompt, reference_images=reference_images, config=kwargs)
-
-        # 路由 3: 图片修复模式 → InpaintingService
-        if mode == 'image-inpainting':
-            self._require_vertex_ai(mode)
-            kwargs['model'] = self._validate_edit_model(model)
-            logger.info(f"[ImageEditCoordinator] → InpaintingService.edit_image(): model={kwargs['model']}")
-            editor = self.get_inpainting_editor()
-            return editor.edit_image(prompt=prompt, reference_images=reference_images, config=kwargs)
-
-        # 路由 4: 背景编辑模式 → BackgroundEditService
         if mode == 'image-background-edit':
             self._require_vertex_ai(mode)
             kwargs['model'] = self._validate_edit_model(model)
@@ -519,12 +639,73 @@ class ImageEditCoordinator:
             editor = self.get_background_editor()
             return editor.edit_image(prompt=prompt, reference_images=reference_images, config=kwargs)
 
-        # 路由 5: 重新上下文模式 → RecontextService
-        if mode == 'image-recontext':
+        # Mask edit is an official Vertex Imagen edit_image flow. It must not
+        # fall through to Gemini image conversational editing, because that path
+        # cannot preserve MaskReferenceImage semantics.
+        if mode == 'image-mask-edit':
             self._require_vertex_ai(mode)
             kwargs['model'] = self._validate_edit_model(model)
-            logger.info(f"[ImageEditCoordinator] → RecontextService.edit_image(): model={kwargs['model']}")
-            editor = self.get_recontext_editor()
+            logger.info(f"[ImageEditCoordinator] → MaskEditService.edit_image(): model={kwargs['model']}")
+            editor = self.get_mask_editor()
+            return editor.edit_image(prompt=prompt, reference_images=reference_images, config=kwargs)
+
+        if mode in {'image-recontext', 'product-recontext'} and self._is_gemini_image_model(model):
+            logger.info(f"[ImageEditCoordinator] → GeminiRecontextImageService.edit_image(): model={model}, mode={mode}")
+            gemini_pool_kwargs = self._build_gemini_image_pool_kwargs(pool_kwargs, mode=mode)
+            return await self._edit_with_gemini_recontext_service(
+                prompt=prompt,
+                model=model,
+                reference_images=reference_images,
+                pool_kwargs=gemini_pool_kwargs,
+                chat_session_manager=chat_session_manager,
+                file_handler=file_handler,
+                user_id=user_id,
+                **kwargs
+            )
+
+        if mode in {'image-recontext', 'product-recontext'}:
+            raise ValueError(
+                f"{mode} requires a Gemini image model such as gemini-2.5-flash-image. "
+                f"Received incompatible model: {model}"
+            )
+
+        # Gemini image models use the official Gemini native image editing API
+        # (generate_content/chat), independent of the UI edit mode.
+        if self._is_gemini_image_model(model):
+            logger.info(f"[ImageEditCoordinator] → ConversationalImageEditService.edit_image(): model={model}, mode={mode}")
+            gemini_pool_kwargs = self._build_gemini_image_pool_kwargs(pool_kwargs, mode=mode)
+            return await self._edit_with_conversational_image_service(
+                prompt=prompt,
+                model=model,
+                reference_images=reference_images,
+                pool_kwargs=gemini_pool_kwargs,
+                chat_session_manager=chat_session_manager,
+                file_handler=file_handler,
+                user_id=user_id,
+                **kwargs
+            )
+
+        # 路由 2: 对话式编辑模式
+        if mode == 'image-chat-edit':
+            logger.info(f"[ImageEditCoordinator] → ConversationalImageEditService.edit_image(): model={model}, mode={mode}")
+            gemini_pool_kwargs = self._build_gemini_image_pool_kwargs(pool_kwargs, mode=mode)
+            return await self._edit_with_conversational_image_service(
+                prompt=prompt,
+                model=model,
+                reference_images=reference_images,
+                pool_kwargs=gemini_pool_kwargs,
+                chat_session_manager=chat_session_manager,
+                file_handler=file_handler,
+                user_id=user_id,
+                **kwargs
+            )
+
+        # 路由 3: 图片修复模式 → InpaintingService
+        if mode == 'image-inpainting':
+            self._require_vertex_ai(mode)
+            kwargs['model'] = self._validate_edit_model(model)
+            logger.info(f"[ImageEditCoordinator] → InpaintingService.edit_image(): model={kwargs['model']}")
+            editor = self.get_inpainting_editor()
             return editor.edit_image(prompt=prompt, reference_images=reference_images, config=kwargs)
 
         # 路由 6 & 7: 根据是否有 mask 自动选择（未指定模式或向后兼容）

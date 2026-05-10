@@ -17,11 +17,14 @@ from fastapi import APIRouter, HTTPException, Request, Depends, Query
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, Dict, Any, List, Tuple, TypedDict
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 import asyncio
+import json
 import logging
+import time
 
 from ...core.database import get_db, SessionLocal
-from ...core.dependencies import require_current_user
+from ...core.dependencies import require_current_user, get_cache
 from ...core.credential_manager import get_provider_credentials
 from ...core.mode_method_mapper import get_service_method, is_streaming_mode, is_image_edit_mode
 from ...core.mode_method_mapper import get_mode_catalog
@@ -46,6 +49,8 @@ from ...services.common.video_mode_contract import (
 )
 from ...utils.sse import build_safe_error_chunk, create_sse_response, encode_sse_data
 from ...utils.error_handler import classify_provider_error_code
+from ...utils.message_utils import get_message_table_class_by_name, get_table_name_for_mode
+from ...models.db_models import ChatSession as DBChatSession, MessageIndex
 
 # Get logger - it will propagate to root logger which has handler configured
 logger = logging.getLogger(__name__)
@@ -54,6 +59,204 @@ logger.setLevel(logging.INFO)
 logger.propagate = True
 
 router = APIRouter(prefix="/api/modes", tags=["modes"])
+
+_MEDIA_METADATA_KEYS = (
+    "enhanced_prompt",
+    "thoughts",
+    "text_response",
+    "continuation_strategy",
+    "video_extension_count",
+    "video_extension_applied",
+    "total_duration_seconds",
+    "continued_from_video",
+    "storyboard_shot_seconds",
+    "generate_audio",
+    "subtitle_mode",
+    "subtitle_language",
+    "subtitle_attachment_ids",
+    "tracked_feature",
+    "tracking_overlay_text",
+)
+
+
+def _mode_message_content(prompt: str, payload: Dict[str, Any]) -> str:
+    enhanced_prompt = str(payload.get("enhanced_prompt") or payload.get("enhancedPrompt") or "").strip()
+    if enhanced_prompt:
+        return f"📝 {prompt}\n✨ {enhanced_prompt}"
+    return prompt
+
+
+def _media_metadata_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    metadata: Dict[str, Any] = {}
+    for key in _MEDIA_METADATA_KEYS:
+        if key in payload and payload[key] is not None:
+            metadata[key] = payload[key]
+    return metadata
+
+
+async def _invalidate_sessions_cache(cache: Any, user_id: str) -> None:
+    if cache is None:
+        return
+    try:
+        cache_pattern = cache._make_key("sessions", user_id, "*")
+        await cache.delete(cache_pattern)
+    except Exception as exc:
+        logger.warning("[Modes] 清除 session 缓存失败: %s", exc)
+
+
+async def _persist_generated_media_message(
+    db: Session,
+    cache: Any,
+    *,
+    user_id: str,
+    session_id: str,
+    message_id: str,
+    mode: str,
+    prompt: str,
+    model_id: Optional[str],
+    payload: Dict[str, Any],
+) -> bool:
+    """Persist the model message immediately after backend media attachment write.
+
+    The frontend also saves the full session, but that write is intentionally async.
+    A refresh/close between media render and the async session save can otherwise
+    leave a durable attachment with no message_index parent, making it disappear
+    after reload.
+    """
+    if not session_id or not message_id:
+        return False
+
+    now_ms = int(time.time() * 1000)
+    try:
+        session = (
+            db.query(DBChatSession)
+            .filter(DBChatSession.id == session_id, DBChatSession.user_id == user_id)
+            .first()
+        )
+        if session is None:
+            title = (prompt or "新对话").strip()
+            session = DBChatSession(
+                id=session_id,
+                user_id=user_id,
+                title=title[:30] + ("..." if len(title) > 30 else ""),
+                created_at=now_ms,
+                persona_id=None,
+                mode=mode,
+            )
+            db.add(session)
+        elif session.mode and session.mode != mode:
+            logger.warning(
+                "[Modes] 跳过媒体消息落库: session.mode=%s 与 mode=%s 不一致 (session_id=%s, message_id=%s)",
+                session.mode,
+                mode,
+                session_id,
+                message_id,
+            )
+            return False
+
+        table_name = get_table_name_for_mode(mode)
+        table_class = get_message_table_class_by_name(table_name)
+        existing_index = (
+            db.query(MessageIndex)
+            .filter(MessageIndex.id == message_id, MessageIndex.user_id == user_id)
+            .first()
+        )
+        if existing_index and existing_index.session_id != session_id:
+            logger.warning(
+                "[Modes] 跳过媒体消息落库: message_id 已属于其他 session (message_id=%s)",
+                message_id,
+            )
+            return False
+
+        if existing_index is None:
+            max_seq = (
+                db.query(func.max(MessageIndex.seq))
+                .filter(MessageIndex.session_id == session_id, MessageIndex.user_id == user_id)
+                .scalar()
+            )
+            parent = (
+                db.query(MessageIndex)
+                .filter(
+                    MessageIndex.session_id == session_id,
+                    MessageIndex.user_id == user_id,
+                    MessageIndex.mode == mode,
+                )
+                .order_by(MessageIndex.seq.desc())
+                .first()
+            )
+            existing_index = MessageIndex(
+                id=message_id,
+                user_id=user_id,
+                session_id=session_id,
+                mode=mode,
+                table_name=table_name,
+                seq=(int(max_seq) + 1) if max_seq is not None else 0,
+                timestamp=now_ms,
+                parent_id=parent.id if parent else None,
+            )
+            db.add(existing_index)
+        else:
+            existing_index.mode = mode
+            existing_index.table_name = table_name
+            existing_index.timestamp = existing_index.timestamp or now_ms
+
+        metadata = _media_metadata_from_payload(payload)
+        message = (
+            db.query(table_class)
+            .filter(table_class.id == message_id, table_class.user_id == user_id)
+            .first()
+        )
+        content = _mode_message_content(prompt, payload)
+        metadata_json = json.dumps(metadata, ensure_ascii=False) if metadata else None
+        if message is None:
+            message = table_class(
+                id=message_id,
+                user_id=user_id,
+                session_id=session_id,
+                role="model",
+                content=content,
+                timestamp=now_ms,
+                is_error=False,
+                metadata_json=metadata_json,
+            )
+            db.add(message)
+        else:
+            message.content = content
+            message.is_error = False
+            message.metadata_json = metadata_json
+
+        if hasattr(message, "model_name") and model_id:
+            message.model_name = model_id
+        if hasattr(message, "video_duration"):
+            duration = payload.get("total_duration_seconds") or payload.get("duration_seconds")
+            if isinstance(duration, (int, float)):
+                message.video_duration = int(duration)
+        if hasattr(message, "video_resolution"):
+            resolution = payload.get("video_size") or payload.get("resolution")
+            if resolution:
+                message.video_resolution = str(resolution)
+
+        db.commit()
+        await _invalidate_sessions_cache(cache, user_id)
+        logger.info(
+            "[Modes] ✅ 媒体模型消息已落库: mode=%s session_id=%s message_id=%s table=%s",
+            mode,
+            session_id,
+            message_id,
+            table_name,
+        )
+        return True
+    except Exception as exc:
+        db.rollback()
+        logger.error(
+            "[Modes] ❌ 媒体模型消息落库失败: mode=%s session_id=%s message_id=%s error=%s",
+            mode,
+            session_id,
+            message_id,
+            exc,
+            exc_info=True,
+        )
+        return False
 
 
 class _PersistOverlayDict(TypedDict, total=False):
@@ -222,15 +425,16 @@ class ModeOptions(BaseModel):
     voice: Optional[str] = None
     base_steps: Optional[int] = None
     mask_mode: Optional[str] = None
+    segmentation_classes: Optional[List[int]] = None
     duration_seconds: Optional[int] = None
     video_extension_count: Optional[int] = None
     storyboard_shot_seconds: Optional[int] = None
     generate_audio: Optional[bool] = None
-    person_generation: Optional[str] = None
     subtitle_mode: Optional[str] = None
     subtitle_language: Optional[str] = None
     subtitle_script: Optional[str] = None
     storyboard_prompt: Optional[str] = None
+    storyboard_segments: Optional[List[str]] = None
     tracked_feature: Optional[str] = None
     tracking_overlay_text: Optional[str] = None
     source_video: Optional[Any] = None
@@ -1099,7 +1303,8 @@ async def handle_mode(
     request_body: ModeRequest,
     request: Request,
     user_id: str = Depends(require_current_user),  # ✅ 自动注入 user_id
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    cache = Depends(get_cache),
 ):
     """
     统一的模式处理端点
@@ -1670,7 +1875,7 @@ async def handle_mode(
                 # entries[] = (idx, kind, payload):
                 #   kind="short_circuit" → payload 已是 final dict
                 #   kind="skip"          → payload=None(原 continue,不进 processed_images)
-                #   kind="persist"       → payload=(persist_kwargs, fallback_dict, extras_dict)
+                #   kind="persist"       → payload=(persist_kwargs, extras_dict)
                 entries: List[Tuple[int, str, Any]] = []
                 for idx, img in enumerate(images):
                     logger.info(f"[Modes] 🔄 [步骤7] 准备第 {idx+1}/{len(images)} 张图片...")
@@ -1723,18 +1928,12 @@ async def handle_mode(
                         "filename": filename,
                         "log_label": f"第 {idx+1} 张图片",
                     }
-                    fallback_dict: Dict[str, Any] = {
-                        "url": ai_url,
-                        "mime_type": mime_type,
-                        "filename": filename or f"{prefix}-fallback.png",
-                        "upload_status": "failed",
-                    }
                     extras: Dict[str, Any] = {
                         "enhanced_prompt": enhanced_prompt,
                         "thoughts": thoughts,
                         "text": text,
                     }
-                    entries.append((idx, "persist", (persist_kwargs, fallback_dict, extras)))
+                    entries.append((idx, "persist", (persist_kwargs, extras)))
 
                 # 第二遍:并发跑 persist tasks(每个 task fresh Session)
                 persist_entries = [e for e in entries if e[1] == "persist"]
@@ -1758,15 +1957,29 @@ async def handle_mode(
                         continue
                     # kind == "persist"
                     _entry, result = next(persist_iter)
-                    persist_kwargs, fallback_dict, extras = payload
+                    _persist_kwargs, extras = payload
                     if isinstance(result, Exception) or result is None:
-                        # helper 已 log;无 attachment_id 走前端 graceful fallback
                         if isinstance(result, Exception):
-                            logger.warning(
+                            logger.error(
                                 "[Modes] 第 %s 张图片持久化抛出异常: %s",
                                 idx + 1, result,
                             )
-                        image_result: Dict[str, Any] = dict(fallback_dict)
+                        else:
+                            logger.error("[Modes] 第 %s 张图片持久化失败", idx + 1)
+                        raise HTTPException(
+                            status_code=500,
+                            detail=_build_mode_error_detail(
+                                code="attachment_persistence_failed",
+                                message="AI generated image was not saved. Refusing to return a non-persistent image result.",
+                                details={
+                                    "provider": provider,
+                                    "mode": mode,
+                                    "service_method": method_name,
+                                    "image_index": idx,
+                                },
+                                retryable=True,
+                            ),
+                        )
                     else:
                         logger.info(f"[Modes] ✅ [步骤7] 第 {idx+1} 张图片处理完成 (attachment_id={result['attachment_id']})")
                         image_result = dict(result)
@@ -1793,6 +2006,33 @@ async def handle_mode(
                     result = processed_images
                 
                 logger.info(f"[Modes] ✅ [步骤7] 所有图片处理完成: {len(processed_images)} 张")
+                persisted = await _persist_generated_media_message(
+                    db,
+                    cache,
+                    user_id=user_id,
+                    session_id=session_id,
+                    message_id=message_id,
+                    mode=mode,
+                    prompt=request_body.prompt,
+                    model_id=request_body.model_id,
+                    payload=result if isinstance(result, dict) else {},
+                )
+                if not persisted:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=_build_mode_error_detail(
+                            code="message_persistence_failed",
+                            message="AI generated image was saved as an attachment but the model message was not persisted.",
+                            details={
+                                "provider": provider,
+                                "mode": mode,
+                                "service_method": method_name,
+                                "session_id": session_id,
+                                "message_id": message_id,
+                            },
+                            retryable=True,
+                        ),
+                    )
             else:
                 logger.warning(f"[Modes] ⚠️ [步骤7] 跳过附件处理: 缺少 session_id 或 message_id")
         elif method_name == "generate_video":
@@ -1919,6 +2159,35 @@ async def handle_mode(
                         "sidecar_files": processed_sidecars,
                     }
 
+            if session_id and message_id and isinstance(result, dict) and (result.get("attachment_id") or result.get("attachmentId") or result.get("url")):
+                persisted = await _persist_generated_media_message(
+                    db,
+                    cache,
+                    user_id=user_id,
+                    session_id=session_id,
+                    message_id=message_id,
+                    mode=mode,
+                    prompt=request_body.prompt,
+                    model_id=request_body.model_id,
+                    payload=result,
+                )
+                if not persisted:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=_build_mode_error_detail(
+                            code="message_persistence_failed",
+                            message="AI generated video was saved as an attachment but the model message was not persisted.",
+                            details={
+                                "provider": provider,
+                                "mode": mode,
+                                "service_method": method_name,
+                                "session_id": session_id,
+                                "message_id": message_id,
+                            },
+                            retryable=True,
+                        ),
+                    )
+
         # Sprint 2 PR-5: audio mode 自动持久化（与 video block 对称）
         # generate_speech 返回 {url: dataURL, mime_type, ...} — 在响应前
         # 创建 MessageAttachment 行 + 触发上传任务，让前端走 fast-path
@@ -1966,6 +2235,35 @@ async def handle_mode(
                 # else: result 保持原样(无 attachment_id);前端 graceful 处理
             else:
                 logger.warning(f"[Modes] ⚠️ [步骤7] 跳过音频附件处理: 缺少 session_id/message_id 或 url")
+
+            if session_id and message_id and isinstance(result, dict) and (result.get("attachment_id") or result.get("attachmentId") or result.get("url")):
+                persisted = await _persist_generated_media_message(
+                    db,
+                    cache,
+                    user_id=user_id,
+                    session_id=session_id,
+                    message_id=message_id,
+                    mode=mode,
+                    prompt=request_body.prompt,
+                    model_id=request_body.model_id,
+                    payload=result,
+                )
+                if not persisted:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=_build_mode_error_detail(
+                            code="message_persistence_failed",
+                            message="AI generated audio was saved as an attachment but the model message was not persisted.",
+                            details={
+                                "provider": provider,
+                                "mode": mode,
+                                "service_method": method_name,
+                                "session_id": session_id,
+                                "message_id": message_id,
+                            },
+                            retryable=True,
+                        ),
+                    )
 
         # ✅ 8. 返回响应
         total_time = (time.time() - request_start_time) * 1000

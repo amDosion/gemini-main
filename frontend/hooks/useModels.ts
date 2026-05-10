@@ -32,6 +32,50 @@ const normalizeModeCatalog = (catalog: unknown): ModeCatalogItem[] => {
   });
 };
 
+const deprecatedGoogleImageModels = new Set([
+  'gemini-2.0-flash-image-generation-preview',
+  'gemini-2.5-flash-image-generation-preview',
+  'imagen-4.0-generate-preview',
+  'imagen-4.0-generate-preview-05-20',
+  'imagen-4.0-generate-preview-06-06',
+  'imagen-4.0-ultra-generate-preview',
+  'imagen-4.0-ultra-generate-preview-05-20',
+  'imagen-4.0-ultra-generate-preview-06-06',
+  'imagen-4.0-fast-generate-preview-05-20',
+  'imagen-product-recontext-preview-06-30',
+  'imagen-2.0-edit-preview-0627',
+  'virtual-try-on-preview-08-04',
+  'imagen-4.0-ingredients-preview',
+]);
+
+const isGeminiImageModel = (model: ModelConfig): boolean => {
+  const id = model.id.toLowerCase();
+  return id.startsWith('gemini-') && id.includes('image');
+};
+
+const isImagenEditModel = (model: ModelConfig): boolean => {
+  const id = model.id.toLowerCase();
+  return id === 'imagen-3.0-capability-001';
+};
+
+const filterModelsForMode = (models: ModelConfig[], mode?: AppMode): ModelConfig[] => {
+  const activeModels = models.filter((model) => !deprecatedGoogleImageModels.has(model.id.toLowerCase()));
+
+  if (mode === 'image-recontext' || mode === 'product-recontext') {
+    return activeModels.filter(isGeminiImageModel);
+  }
+
+  if (mode === 'image-background-edit') {
+    return activeModels.filter(isImagenEditModel);
+  }
+
+  if (mode === 'image-mask-edit') {
+    return activeModels.filter(isImagenEditModel);
+  }
+
+  return activeModels;
+};
+
 export const useModels = (
   configReady: boolean,
   providerId: string,
@@ -123,7 +167,7 @@ export const useModels = (
     }
 
     userSelectedModelRef.current = false;
-    setAvailableModels(savedModels);
+    setAvailableModels(filterModelsForMode(savedModels));
     setIsLoadingModels(false);
   }, [configReady, savedModelsFingerprint]);
 
@@ -201,9 +245,9 @@ export const useModels = (
           return;
         }
         // 一轮 batched setState
-        setAvailableModels(normalizeModels(allPayload.models));
+        setAvailableModels(filterModelsForMode(normalizeModels(allPayload.models)));
         setModeCatalog(normalizeModeCatalog(allPayload.modeCatalog));
-        setModeModels(normalizeModels(modePayload.models));
+        setModeModels(filterModelsForMode(normalizeModels(modePayload.models), appMode));
         setModeDefaultModelId(modePayload.defaultModelId || null);
       } catch (error) {
         if (
@@ -277,9 +321,9 @@ export const useModels = (
         llmService.getAvailableModelsPayload(false),
         llmService.getAvailableModelsPayload(false, appMode),
       ]);
-      setAvailableModels(normalizeModels(allPayload.models));
+      setAvailableModels(filterModelsForMode(normalizeModels(allPayload.models)));
       setModeCatalog(normalizeModeCatalog(allPayload.modeCatalog));
-      setModeModels(normalizeModels(filteredPayload.models));
+      setModeModels(filterModelsForMode(normalizeModels(filteredPayload.models), appMode));
       setModeDefaultModelId(filteredPayload.defaultModelId || null);
     } catch (error) {
       setAvailableModels([]);

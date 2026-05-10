@@ -31,6 +31,24 @@ _MODE_ALIASES: Dict[str, str] = {
     "image-background-edit": "image-edit",
     "image-recontext": "image-edit",
 }
+_GOOGLE_GEMINI_IMAGE_RECONTEXT_MODES = {"image-recontext", "product-recontext"}
+_GOOGLE_OUTPUT_MIME_CONTROL_KEYS = ("output_mime_type", "output_compression_quality")
+_GOOGLE_GEMINI_IMAGE_ASPECT_RATIOS = [
+    {"label": "1:1 Square", "value": "1:1"},
+    {"label": "3:2 Landscape", "value": "3:2"},
+    {"label": "2:3 Portrait", "value": "2:3"},
+    {"label": "3:4 Portrait", "value": "3:4"},
+    {"label": "4:3 Landscape", "value": "4:3"},
+    {"label": "4:5 Portrait", "value": "4:5"},
+    {"label": "5:4 Landscape", "value": "5:4"},
+    {"label": "9:16 Portrait", "value": "9:16"},
+    {"label": "16:9 Landscape", "value": "16:9"},
+    {"label": "21:9 Ultrawide", "value": "21:9"},
+]
+_GOOGLE_GEMINI_IMAGE_COUNT_OPTIONS = [
+    {"label": str(value), "value": value}
+    for value in range(1, 11)
+]
 _GOOGLE_VIDEO_RESOLUTION_ALIASES: Dict[str, str] = {
     "1K": "720p",
     "720P": "720p",
@@ -54,6 +72,12 @@ _GOOGLE_VIDEO_RESOLUTION_ALIASES: Dict[str, str] = {
     "3840*2160": "4k",
     "2160X3840": "4k",
     "2160*3840": "4k",
+}
+_EXTRA_VALID_PARAM_VALUES: Dict[tuple[str, str, str], set[Any]] = {
+    ("google", "image-mask-edit", "edit_mode"): {
+        "EDIT_MODE_OUTPAINT",
+        "EDIT_MODE_BGSWAP",
+    },
 }
 
 
@@ -196,6 +220,69 @@ def _extract_values(options: Any) -> List[Any]:
     return values
 
 
+def _extra_valid_param_values(provider: str, mode: str, key: str) -> set[Any]:
+    return _EXTRA_VALID_PARAM_VALUES.get((provider, mode, key), set())
+
+
+def _is_google_native_gemini_image_model(model_id: Optional[str]) -> bool:
+    if not model_id:
+        return False
+    model = str(model_id).lower()
+    return ("gemini" in model and "image" in model) or "nano-banana" in model
+
+
+def _uses_google_native_gemini_image_controls(
+    provider: str,
+    resolved_mode: str,
+    requested_mode: str,
+    model_id: Optional[str],
+) -> bool:
+    if provider != "google" or not _is_google_native_gemini_image_model(model_id):
+        return False
+    return resolved_mode == "image-gen" or requested_mode in _GOOGLE_GEMINI_IMAGE_RECONTEXT_MODES
+
+
+def _remove_output_mime_controls(resolved: Dict[str, Any]) -> None:
+    defaults = resolved.get("defaults")
+    if isinstance(defaults, dict):
+        for key in _GOOGLE_OUTPUT_MIME_CONTROL_KEYS:
+            defaults.pop(key, None)
+
+    param_options = resolved.get("param_options")
+    if isinstance(param_options, dict):
+        param_options.pop("output_mime_type", None)
+
+    numeric_ranges = resolved.get("numeric_ranges")
+    if isinstance(numeric_ranges, dict):
+        numeric_ranges.pop("output_compression_quality", None)
+
+
+def _apply_google_gemini_recontext_controls(resolved: Dict[str, Any]) -> None:
+    """Patch shared image-edit controls to Gemini 2.5 Flash Image recontext limits."""
+    resolved.setdefault("constraints", {})["max_image_count"] = 10
+    resolved["aspect_ratios"] = deepcopy(_GOOGLE_GEMINI_IMAGE_ASPECT_RATIOS)
+    _remove_output_mime_controls(resolved)
+
+    param_options = resolved.setdefault("param_options", {})
+    if isinstance(param_options, dict):
+        param_options["number_of_images"] = deepcopy(_GOOGLE_GEMINI_IMAGE_COUNT_OPTIONS)
+
+    resolution_map = resolved.get("resolution_map")
+    if isinstance(resolution_map, dict):
+        allowed_aspects = {
+            item["value"]
+            for item in _GOOGLE_GEMINI_IMAGE_ASPECT_RATIOS
+        }
+        for tier, aspect_map in list(resolution_map.items()):
+            if not isinstance(aspect_map, dict):
+                continue
+            resolution_map[tier] = {
+                aspect: value
+                for aspect, value in aspect_map.items()
+                if aspect in allowed_aspects
+            }
+
+
 def _validate_numeric_range(
     key: str,
     value: Any,
@@ -240,6 +327,10 @@ def resolve_mode_controls(
     model_id: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     resolved_provider = _PROVIDER_ALIASES.get(provider, provider)
+    is_google_gemini_recontext = (
+        resolved_provider == "google"
+        and mode in _GOOGLE_GEMINI_IMAGE_RECONTEXT_MODES
+    )
     resolved_mode = _MODE_ALIASES.get(mode, mode)
     catalog = load_catalog()
     providers = catalog.get("providers", {})
@@ -266,10 +357,20 @@ def resolve_mode_controls(
                 resolved = _deep_merge(resolved, override)
                 break
 
+    if is_google_gemini_recontext:
+        _apply_google_gemini_recontext_controls(resolved)
+    elif _uses_google_native_gemini_image_controls(
+        resolved_provider,
+        resolved_mode,
+        mode,
+        model_id,
+    ):
+        _remove_output_mime_controls(resolved)
+
     resolved["schema_version"] = str(catalog.get("version", "unknown"))
     resolved["provider"] = resolved_provider
     resolved["requested_provider"] = provider
-    resolved["mode"] = resolved_mode
+    resolved["mode"] = mode if is_google_gemini_recontext else resolved_mode
     resolved["requested_mode"] = mode
     if model_id:
         resolved["model_id"] = model_id
@@ -289,6 +390,22 @@ def validate_params_with_catalog(
     schema = resolve_mode_controls(provider, mode, model_id)
     if not schema:
         return params
+
+    if _uses_google_native_gemini_image_controls(
+        schema.get("provider", ""),
+        str(schema.get("mode", _MODE_ALIASES.get(mode, mode))),
+        mode,
+        model_id,
+    ):
+        unsupported = [
+            key for key in _GOOGLE_OUTPUT_MIME_CONTROL_KEYS
+            if params.get(key) is not None
+        ]
+        if unsupported:
+            raise ValueError(
+                f"{', '.join(unsupported)} not supported for {provider}/{mode} "
+                f"with model {model_id or 'unknown'}"
+            )
 
     allowed_aspects = _extract_values(schema.get("aspect_ratios"))
     allowed_tiers = _extract_values(schema.get("resolution_tiers"))
@@ -322,9 +439,15 @@ def validate_params_with_catalog(
                 continue
             allowed_values = _extract_values(option_list)
             if allowed_values and value not in allowed_values:
-                raise ValueError(
-                    f"Invalid {key}: {value}. Allowed values for {provider}/{mode}: {allowed_values}"
+                extra_values = _extra_valid_param_values(
+                    str(schema.get("provider", provider)),
+                    str(schema.get("mode", _MODE_ALIASES.get(mode, mode))),
+                    key,
                 )
+                if value not in extra_values:
+                    raise ValueError(
+                        f"Invalid {key}: {value}. Allowed values for {provider}/{mode}: {allowed_values}"
+                    )
 
     if isinstance(numeric_ranges, dict):
         for key, range_cfg in numeric_ranges.items():

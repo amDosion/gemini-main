@@ -1,0 +1,115 @@
+{
+  "models": [
+    {
+      "id": "imagen-3.0-generate-001",
+      "families": ["imagen_generate"],
+      "modes": ["image-gen"]
+    },
+    {
+      "id": "imagen-3.0-generate-002",
+      "families": ["imagen_generate"],
+      "modes": ["image-gen"]
+    },
+    {
+      "id": "imagen-3.0-fast-generate-001",
+      "families": ["imagen_generate"],
+      "modes": ["image-gen"]
+    },
+    {
+      "id": "imagen-4.0-generate-001",
+      "families": ["imagen_generate"],
+      "modes": ["image-gen"]
+    },
+    {
+      "id": "imagen-4.0-ultra-generate-001",
+      "families": ["imagen_generate"],
+      "modes": ["image-gen"]
+    },
+    {
+      "id": "imagen-4.0-fast-generate-001",
+      "families": ["imagen_generate"],
+      "modes": ["image-gen"]
+    },
+    {
+      "id": "imagen-3.0-capability-001",
+      "families": ["imagen_edit"],
+      "modes": [
+        "image-chat-edit",
+        "image-mask-edit",
+        "image-inpainting",
+        "image-background-edit",
+        "image-outpainting"
+      ]
+    },
+    {
+      "id": "gemini-2.5-flash-image",
+      "families": ["gemini_image"],
+      "modes": [
+        "image-gen",
+        "image-chat-edit",
+        "image-recontext",
+        "product-recontext"
+      ]
+    },
+    {
+      "id": "imagen-4.0-upscale-preview",
+      "families": ["image_upscale"],
+      "modes": ["image-outpainting", "image-upscale"]
+    },
+    {
+      "id": "image-segmentation-001",
+      "families": ["image_segmentation"],
+      "modes": ["image-segmentation"]
+    },
+    {
+      "id": "virtual-try-on-001",
+      "families": ["virtual_try_on"],
+      "modes": ["virtual-try-on"]
+    },
+    {
+      "id": "veo-2.0-generate-001",
+      "families": ["veo_video"],
+      "modes": ["video-gen"]
+    },
+    {
+      "id": "veo-3.0-generate-preview",
+      "families": ["veo_video"],
+      "modes": ["video-gen"]
+    },
+    {
+      "id": "veo-3.0-fast-generate-preview",
+      "families": ["veo_video"],
+      "modes": ["video-gen"]
+    },
+    {
+      "id": "veo-3.0-generate-001",
+      "families": ["veo_video"],
+      "modes": ["video-gen"]
+    },
+    {
+      "id": "veo-3.0-fast-generate-001",
+      "families": ["veo_video"],
+      "modes": ["video-gen"]
+    },
+    {
+      "id": "veo-3.1-generate-preview",
+      "families": ["veo_video"],
+      "modes": ["video-gen"]
+    },
+    {
+      "id": "veo-3.1-fast-generate-preview",
+      "families": ["veo_video"],
+      "modes": ["video-gen"]
+    },
+    {
+      "id": "veo-3.1-generate-001",
+      "families": ["veo_video"],
+      "modes": ["video-gen"]
+    },
+    {
+      "id": "veo-3.1-fast-generate-001",
+      "families": ["veo_video"],
+      "modes": ["video-gen"]
+    }
+  ]
+}

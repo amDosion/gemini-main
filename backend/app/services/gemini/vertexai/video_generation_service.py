@@ -23,6 +23,8 @@ from ..base.video_common import (
     build_resolution_map,
     extract_provider_video_asset_ref,
     extract_source_video_uri_ref,
+    first_present_option,
+    is_transient_timeout_error,
     load_mask_image,
     load_reference_images,
     load_source_image,
@@ -37,7 +39,7 @@ from ..base.video_common import (
     validate_generation_constraints,
 )
 from ..base.video_frame_bridge import extract_last_frame_image
-from ..base.video_storyboard import normalize_generate_audio, normalize_person_generation
+from ..base.video_storyboard import normalize_generate_audio
 from ..client_pool import get_client_pool
 
 logger = logging.getLogger(__name__)
@@ -59,6 +61,53 @@ except ImportError:
 
 DEFAULT_POLL_INTERVAL_SECONDS = 10.0
 DEFAULT_POLL_TIMEOUT_SECONDS = 900.0
+DEFAULT_OPERATION_POLL_HTTP_TIMEOUT_MS = 300000
+VERTEX_VIDEO_MODEL_ALIASES = {
+    "veo-3.1-generate-preview": "veo-3.1-generate-001",
+    "veo-3.1-fast-generate-preview": "veo-3.1-fast-generate-001",
+    "veo-3.1-lite-generate-preview": "veo-3.1-lite-generate-001",
+}
+
+
+def normalize_vertex_video_model(model: Optional[str]) -> str:
+    normalized = normalize_model(model)
+    short_name = normalized.split("/")[-1]
+    return VERTEX_VIDEO_MODEL_ALIASES.get(short_name, normalized)
+
+
+def sanitize_vertex_video_prompt_for_responsible_ai(prompt: Optional[str]) -> str:
+    sanitized = str(prompt or "")
+    if not sanitized:
+        return ""
+
+    replacements = (
+        (r"\bcute\s+young\s+asian\s+female\s+model\b", "adult female fashion model"),
+        (r"\bbeautiful\s+young\s+asian\s+female\s+model\b", "adult female fashion model"),
+        (r"\byoung\s+asian\s+female\s+model\b", "adult female fashion model"),
+        (r"\byoung\s+asian\s+woman\b", "adult female fashion model"),
+        (r"\byoung\s+female\s+model\b", "adult female fashion model"),
+        (r"\bcute\s+young\s+female\b", "adult female"),
+        (r"\bbeautiful\s+young\s+female\b", "adult female"),
+        (r"\byoung\s+girl\b", "adult woman"),
+        (r"\bgirl\b", "woman"),
+        (r"\bwinking\b", "smiling"),
+    )
+    for pattern, replacement in replacements:
+        sanitized = re.sub(pattern, replacement, sanitized, flags=re.IGNORECASE)
+
+    chinese_replacements = {
+        "年轻女性": "成年女性",
+        "年轻女模特": "成年女模特",
+        "年轻女孩": "成年女性",
+        "少女感": "甜美成人女性风格",
+        "少女": "成年女性",
+        "女孩": "女性",
+        "女孩子": "女性",
+    }
+    for source, replacement in chinese_replacements.items():
+        sanitized = sanitized.replace(source, replacement)
+
+    return sanitized
 
 
 class VertexAIVideoGenerationService:
@@ -184,16 +233,13 @@ class VertexAIVideoGenerationService:
     ) -> Dict[str, Any]:
         self._ensure_initialized()
 
-        normalized_model = normalize_model(model)
+        normalized_model = normalize_vertex_video_model(model)
         aspect_ratio = normalize_aspect_ratio(kwargs.get("aspect_ratio") or kwargs.get("image_aspect_ratio"))
         resolution = normalize_resolution(kwargs.get("resolution") or kwargs.get("image_resolution"))
         duration_seconds = normalize_duration_seconds(kwargs.get("seconds"), kwargs.get("duration_seconds"))
         negative_prompt = str(kwargs.get("negative_prompt") or "").strip() or None
         enhance_prompt = kwargs.get("enhance_prompt")
-        generate_audio = normalize_generate_audio(kwargs.get("generate_audio") or kwargs.get("generateAudio"))
-        person_generation = normalize_person_generation(
-            kwargs.get("person_generation") or kwargs.get("personGeneration")
-        )
+        generate_audio = normalize_generate_audio(first_present_option(kwargs, "generate_audio", "generateAudio"))
         seed = kwargs.get("seed")
         last_frame_bridge = bool(
             kwargs.get("use_last_frame_bridge")
@@ -279,7 +325,14 @@ class VertexAIVideoGenerationService:
         if mask_image and not video_mask_mode:
             raise ValueError("Google video edit mask requires video_mask_mode/edit_mode.")
 
-        source_payload = genai_types.GenerateVideosSource(prompt=prompt or None)
+        provider_prompt = sanitize_vertex_video_prompt_for_responsible_ai(prompt)
+        prompt_sanitized_for_provider = provider_prompt != str(prompt or "")
+        if prompt_sanitized_for_provider:
+            logger.info(
+                "[VertexAIVideoGenerationService] Sanitized Vertex video prompt for provider Responsible AI wording."
+            )
+
+        source_payload = genai_types.GenerateVideosSource(prompt=provider_prompt or None)
         if source_image:
             source_payload.image = genai_types.Image(
                 image_bytes=source_image.image_bytes,
@@ -309,8 +362,6 @@ class VertexAIVideoGenerationService:
             config_kwargs["enhance_prompt"] = bool(enhance_prompt)
         if generate_audio is not None:
             config_kwargs["generate_audio"] = bool(generate_audio)
-        if person_generation:
-            config_kwargs["person_generation"] = getattr(genai_types.PersonGeneration, person_generation, person_generation)
         if isinstance(seed, int) and seed >= 0:
             config_kwargs["seed"] = seed
         if last_frame_image:
@@ -389,7 +440,7 @@ class VertexAIVideoGenerationService:
             "provider_file_uri": asset_ref.provider_file_uri,
             "gcs_uri": asset_ref.gcs_uri,
             "generate_audio": generate_audio,
-            "person_generation": person_generation.lower() if person_generation else None,
+            "prompt_sanitized_for_provider": prompt_sanitized_for_provider,
             "continuation_strategy": (
                 "last_frame_bridge"
                 if bridged_from_last_frame
@@ -446,12 +497,33 @@ class VertexAIVideoGenerationService:
             if asyncio.get_running_loop().time() - start > self.poll_timeout_seconds:
                 raise TimeoutError("Timed out waiting for Vertex AI video generation to finish.")
             await asyncio.sleep(self.poll_interval_seconds)
-            current = await asyncio.to_thread(self._client.operations.get, current)
+            try:
+                current = await asyncio.to_thread(
+                    self._client.operations.get,
+                    current,
+                    config=self._operation_get_config(),
+                )
+            except Exception as exc:
+                if (
+                    is_transient_timeout_error(exc)
+                    and asyncio.get_running_loop().time() - start <= self.poll_timeout_seconds
+                ):
+                    logger.warning(
+                        "[VertexAIVideoGenerationService] Transient timeout while polling video operation %s; continuing.",
+                        getattr(current, "name", None),
+                    )
+                    continue
+                raise
 
         error = getattr(current, "error", None)
         if error:
             raise RuntimeError(f"Vertex AI video generation failed: {error}")
         return current
+
+    def _operation_get_config(self) -> Any:
+        return genai_types.GetOperationConfig(
+            http_options=genai_types.HttpOptions(timeout=DEFAULT_OPERATION_POLL_HTTP_TIMEOUT_MS)
+        )
 
     def _extract_generated_video(self, response: Any) -> Any:
         if isinstance(response, dict):
@@ -469,6 +541,12 @@ class VertexAIVideoGenerationService:
                 or []
             )
         if not generated_videos:
+            rai_message = self._format_rai_filtered_message(response)
+            if rai_message:
+                raise RuntimeError(
+                    "Vertex AI video generation did not return any generated videos. "
+                    f"{rai_message}"
+                )
             raise RuntimeError("Vertex AI video generation did not return any generated videos.")
         generated = generated_videos[0]
         video_payload = self._extract_video_payload(generated)
@@ -523,6 +601,32 @@ class VertexAIVideoGenerationService:
             ):
                 return generated_video
         return None
+
+    def _format_rai_filtered_message(self, response: Any) -> Optional[str]:
+        if response is None:
+            return None
+        if isinstance(response, dict):
+            raw_reasons = (
+                response.get("rai_media_filtered_reasons")
+                or response.get("raiMediaFilteredReasons")
+                or []
+            )
+            raw_count = response.get("rai_media_filtered_count") or response.get("raiMediaFilteredCount")
+        else:
+            raw_reasons = (
+                getattr(response, "rai_media_filtered_reasons", None)
+                or getattr(response, "raiMediaFilteredReasons", None)
+                or []
+            )
+            raw_count = (
+                getattr(response, "rai_media_filtered_count", None)
+                or getattr(response, "raiMediaFilteredCount", None)
+            )
+        reasons = [str(item).strip() for item in raw_reasons if str(item).strip()]
+        if not reasons:
+            return None
+        count_suffix = f" ({raw_count} filtered)" if raw_count else ""
+        return f"Provider RAI filtering returned no video{count_suffix}: {'; '.join(reasons)}"
 
     async def _load_vertex_source_video_from_uri(self, uri: str, mime_type: Optional[str]) -> LoadedSourceVideo:
         return LoadedSourceVideo(

@@ -18,6 +18,7 @@ import { useImageCarousel } from '../../hooks/useImageCarousel';
 import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
 import { useHistoryListActions } from '../../hooks/useHistoryListActions';
 import ChatEditInputArea from '../chat/ChatEditInputArea';
+import { isHistoryActionSurface } from '../../utils/historyActionSurface';
 
 
 const extractHistoryPrompts = (msg: Message): { originalPrompt: string; optimizedPrompt: string } => {
@@ -328,7 +329,7 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
             const target = event.target as Node | null;
             if (!target) return;
             if (actionMenuPanelRef.current?.contains(target)) return;
-            if (target instanceof Element && target.closest('[data-history-action-trigger]')) return;
+            if (isHistoryActionSurface(target)) return;
             setOpenActionMenu(null);
             setActionMenuPosition(null);
         };
@@ -394,6 +395,7 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
         e: React.MouseEvent<HTMLDivElement>, messageId: string, originalPrompt: string, optimizedPrompt: string
     ) => {
         if (window.innerWidth < 768) return;
+        if (isHistoryActionSurface(e.target)) return;
         clearHidePreviewTimer();
         setOpenActionMenu(null);
         setActionMenuPosition(null);
@@ -692,9 +694,14 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
                                     }`}
                                     title="历史项操作"
                                     data-history-action-trigger={msg.id}
+                                    onMouseEnter={(event) => {
+                                        event.stopPropagation();
+                                        closeHoverPreview();
+                                    }}
                                     onClick={(event) => {
                                         event.preventDefault();
                                         event.stopPropagation();
+                                        closeHoverPreview();
                                         const rect = event.currentTarget.getBoundingClientRect();
                                         setOpenActionMenu((prev) => (
                                             prev?.messageId === msg.id
@@ -722,7 +729,9 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
                 createPortal(
                     <div
                         ref={actionMenuPanelRef}
+                        data-history-action-menu
                         className="fixed z-[90] inline-flex flex-col gap-1 rounded-lg border border-slate-700 bg-slate-950/95 shadow-2xl backdrop-blur-md p-1"
+                        onMouseEnter={closeHoverPreview}
                         style={{
                             top: actionMenuPosition?.top ?? openActionMenu.anchorY,
                             left: actionMenuPosition?.left ?? openActionMenu.anchorX

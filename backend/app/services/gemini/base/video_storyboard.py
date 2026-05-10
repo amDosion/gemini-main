@@ -18,14 +18,6 @@ from typing import Any, Dict, List, Optional, Sequence
 DEFAULT_STORYBOARD_SHOT_SECONDS = 4
 SUPPORTED_STORYBOARD_SHOT_SECONDS = {4, 6, 8}
 SUPPORTED_SUBTITLE_MODES = {"none", "vtt"}
-PERSON_GENERATION_ALIASES = {
-    "dont_allow": "DONT_ALLOW",
-    "allow_adult": "ALLOW_ADULT",
-    "allow_all": "ALLOW_ALL",
-    "DONT_ALLOW": "DONT_ALLOW",
-    "ALLOW_ADULT": "ALLOW_ADULT",
-    "ALLOW_ALL": "ALLOW_ALL",
-}
 
 
 @dataclass(frozen=True)
@@ -63,15 +55,6 @@ def normalize_subtitle_language(value: Optional[Any]) -> str:
     return candidate or "zh-CN"
 
 
-def normalize_person_generation(value: Optional[Any]) -> Optional[str]:
-    if value is None:
-        return None
-    candidate = str(value).strip()
-    if not candidate:
-        return None
-    return PERSON_GENERATION_ALIASES.get(candidate, PERSON_GENERATION_ALIASES.get(candidate.lower()))
-
-
 def normalize_generate_audio(value: Optional[Any]) -> Optional[bool]:
     if value is None:
         return None
@@ -83,6 +66,50 @@ def normalize_generate_audio(value: Optional[Any]) -> Optional[bool]:
     if candidate in {"0", "false", "no", "off"}:
         return False
     return None
+
+
+_AUDIO_CUE_LINE_RE = re.compile(
+    r"^\s*(?:[-*]\s*)?(?:\*\*)?\s*"
+    r"(?:voiceover|voice-over|narration|spoken\s*/\s*subtitle\s*cue|spoken\s*cue|dialogue|dialog|"
+    r"audio|bgm|background\s+music|music|sfx|sound\s+effects?|"
+    r"口播讲解|口播|旁白|配音|台词|对白|解说词|音频|音效|背景音乐|音乐)"
+    r"\s*(?:\*\*)?\s*[:：].*$",
+    re.IGNORECASE,
+)
+_AUDIO_CUE_INLINE_RE = re.compile(
+    r"(?:\b(?:voiceover|voice-over|narration|spoken\s*/\s*subtitle\s*cue|spoken\s*cue|dialogue|dialog|"
+    r"audio|bgm|background\s+music|music|sfx|sound\s+effects?)\b|"
+    r"(?:口播讲解|口播|旁白|配音|台词|对白|解说词|音频|音效|背景音乐|音乐))"
+    r"\s*(?:\*\*)?\s*[:：][^\n]*",
+    re.IGNORECASE,
+)
+_AUDIO_CUE_PHRASE_RE = re.compile(
+    r"(?:以及)?(?:配套的)?(?:口播讲解词|口播词|旁白脚本|配音文案|解说词|"
+    r"voiceover script|narration script|spoken script)",
+    re.IGNORECASE,
+)
+
+
+def strip_audio_prompt_cues(text: Optional[str]) -> str:
+    raw = str(text or "")
+    if not raw.strip():
+        return ""
+
+    cleaned_lines: List[str] = []
+    for line in raw.splitlines():
+        if _AUDIO_CUE_LINE_RE.match(line):
+            continue
+        cleaned = _AUDIO_CUE_INLINE_RE.sub("", line)
+        cleaned = _AUDIO_CUE_PHRASE_RE.sub("", cleaned)
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+        cleaned = re.sub(r"\s+([。.,;；])", r"\1", cleaned)
+        cleaned = cleaned.strip("；;，, ")
+        if cleaned:
+            cleaned_lines.append(cleaned)
+
+    cleaned_text = "\n".join(cleaned_lines)
+    cleaned_text = re.sub(r"\n{3,}", "\n\n", cleaned_text)
+    return cleaned_text.strip()
 
 
 def estimate_storyboard_total_duration(
@@ -113,6 +140,11 @@ def build_storyboard_prompt(
         return base_prompt
 
     explicit_storyboard_prompt = str(storyboard_prompt or "").strip()
+    effective_subtitle_script = subtitle_script
+    if generate_audio is False:
+        base_prompt = strip_audio_prompt_cues(base_prompt)
+        explicit_storyboard_prompt = strip_audio_prompt_cues(explicit_storyboard_prompt)
+        effective_subtitle_script = None
     effective_tracked_feature = tracked_feature
     effective_tracking_overlay_text = tracking_overlay_text
     if explicit_storyboard_prompt:
@@ -122,7 +154,7 @@ def build_storyboard_prompt(
         prompt=base_prompt,
         total_duration_seconds=total_duration_seconds,
         shot_duration_seconds=shot_duration_seconds,
-        subtitle_script=subtitle_script,
+        subtitle_script=effective_subtitle_script,
         tracked_feature=effective_tracked_feature,
         tracking_overlay_text=effective_tracking_overlay_text,
     )
@@ -152,12 +184,13 @@ def build_storyboard_prompt(
     audio_instruction = ""
     if generate_audio is True:
         audio_instruction = (
-            "Generate synchronized production audio and/or narration that matches the storyboard cues. "
-            "Keep speech concise, clean, and commercially polished."
+            "Generate synchronized production audio with presenter-style product narration, like an e-commerce livestream host. "
+            "Derive the spoken explanation from the main prompt and each storyboard segment, matching the visual timing instead of reading a separate script. "
+            "Keep the voice warm, confident, concise, clean, and commercially polished."
         )
-    elif generate_audio is False and subtitle_script:
+    elif generate_audio is False:
         audio_instruction = (
-            "Do not rely on visible captions alone. Stage the visuals so the subtitle cues still map cleanly to the cuts."
+            "Visual-only product showcase; express the introduction through product shots, camera movement, and composition."
         )
 
     instructions = [

@@ -78,10 +78,10 @@ export interface VideoGenerationResult {
   enhancedPrompt?: string;
   storyboardShotSeconds?: number;
   generateAudio?: boolean;
-  personGeneration?: string;
   subtitleMode?: string;
   subtitleLanguage?: string;
   storyboardPrompt?: string;
+  storyboardSegments?: string[];
   trackedFeature?: string;
   trackingOverlayText?: string;
   sidecarFiles?: Array<{

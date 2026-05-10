@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { useModels } from './useModels';
 
@@ -34,6 +34,30 @@ const IMAGE_MODEL = {
   capabilities: {
     vision: true,
     search: false,
+    reasoning: false,
+    coding: false,
+  },
+};
+
+const LEGACY_RECONTEXT_MODEL = {
+  id: 'imagen-3.0-capability-001',
+  name: 'Imagen Capability',
+  description: 'legacy edit model',
+  capabilities: {
+    vision: true,
+    search: false,
+    reasoning: false,
+    coding: false,
+  },
+};
+
+const GEMINI_IMAGE_MODEL = {
+  id: 'gemini-2.5-flash-image',
+  name: 'Gemini 2.5 Flash Image',
+  description: 'image generation and editing',
+  capabilities: {
+    vision: true,
+    search: true,
     reasoning: false,
     coding: false,
   },
@@ -168,6 +192,105 @@ describe('useModels cache invalidation', () => {
     await waitFor(() => {
       expect(result.current.isLoadingModels).toBe(false);
       expect(result.current.visibleModels.map((m) => m.id)).toEqual([IMAGE_MODEL.id]);
+    });
+  });
+
+  it('filters recontext mode to Gemini image models and selects the replacement model', async () => {
+    getAvailableModelsPayloadMock.mockImplementation(async (_useCache: boolean, mode?: string) => {
+      if (!mode) {
+        return {
+          models: [LEGACY_RECONTEXT_MODEL, GEMINI_IMAGE_MODEL],
+          defaultModelId: DEFAULT_MODEL.id,
+          modeCatalog: [
+            { id: 'image-recontext', label: 'Recontext', hasModels: true, availableModelCount: 2 },
+          ],
+          filteredByMode: null,
+        };
+      }
+
+      return {
+        models: [LEGACY_RECONTEXT_MODEL, GEMINI_IMAGE_MODEL],
+        defaultModelId: LEGACY_RECONTEXT_MODEL.id,
+        modeCatalog: [
+          { id: 'image-recontext', label: 'Recontext', hasModels: true, availableModelCount: 2 },
+        ],
+        filteredByMode: 'image-recontext',
+      };
+    });
+
+    const { result } = renderHook(() =>
+      useModels(true, 'google', 'image-recontext', 'profile-a:1')
+    );
+
+    await waitFor(() => {
+      expect(result.current.visibleModels.map((m) => m.id)).toEqual([GEMINI_IMAGE_MODEL.id]);
+      expect(result.current.currentModelId).toBe(GEMINI_IMAGE_MODEL.id);
+    });
+  });
+
+  it('keeps recontext model filtering when models are manually refreshed', async () => {
+    getAvailableModelsPayloadMock.mockImplementation(async (_useCache: boolean, mode?: string) => ({
+      models: [LEGACY_RECONTEXT_MODEL, GEMINI_IMAGE_MODEL],
+      defaultModelId: LEGACY_RECONTEXT_MODEL.id,
+      modeCatalog: [
+        { id: 'image-recontext', label: 'Recontext', hasModels: true, availableModelCount: 2 },
+      ],
+      filteredByMode: mode || null,
+    }));
+
+    const { result } = renderHook(() =>
+      useModels(true, 'google', 'image-recontext', 'profile-a:1')
+    );
+
+    await waitFor(() => {
+      expect(result.current.visibleModels.map((m) => m.id)).toEqual([GEMINI_IMAGE_MODEL.id]);
+    });
+
+    await act(async () => {
+      await result.current.refreshModels();
+    });
+
+    expect(result.current.visibleModels.map((m) => m.id)).toEqual([GEMINI_IMAGE_MODEL.id]);
+    expect(result.current.currentModelId).toBe(GEMINI_IMAGE_MODEL.id);
+  });
+
+  it('filters background edit mode to Imagen edit models and excludes Gemini image recontext models', async () => {
+    getAvailableModelsPayloadMock.mockImplementation(async (_useCache: boolean, mode?: string) => ({
+      models: [LEGACY_RECONTEXT_MODEL, GEMINI_IMAGE_MODEL, DEFAULT_MODEL],
+      defaultModelId: GEMINI_IMAGE_MODEL.id,
+      modeCatalog: [
+        { id: 'image-background-edit', label: 'Background', hasModels: true, availableModelCount: 3 },
+      ],
+      filteredByMode: mode || null,
+    }));
+
+    const { result } = renderHook(() =>
+      useModels(true, 'google', 'image-background-edit', 'profile-a:1')
+    );
+
+    await waitFor(() => {
+      expect(result.current.visibleModels.map((m) => m.id)).toEqual([LEGACY_RECONTEXT_MODEL.id]);
+      expect(result.current.currentModelId).toBe(LEGACY_RECONTEXT_MODEL.id);
+    });
+  });
+
+  it('filters mask edit mode to Imagen edit models and excludes Gemini image models', async () => {
+    getAvailableModelsPayloadMock.mockImplementation(async (_useCache: boolean, mode?: string) => ({
+      models: [LEGACY_RECONTEXT_MODEL, GEMINI_IMAGE_MODEL, DEFAULT_MODEL],
+      defaultModelId: GEMINI_IMAGE_MODEL.id,
+      modeCatalog: [
+        { id: 'image-mask-edit', label: 'Mask', hasModels: true, availableModelCount: 3 },
+      ],
+      filteredByMode: mode || null,
+    }));
+
+    const { result } = renderHook(() =>
+      useModels(true, 'google', 'image-mask-edit', 'profile-a:1')
+    );
+
+    await waitFor(() => {
+      expect(result.current.visibleModels.map((m) => m.id)).toEqual([LEGACY_RECONTEXT_MODEL.id]);
+      expect(result.current.currentModelId).toBe(LEGACY_RECONTEXT_MODEL.id);
     });
   });
 });

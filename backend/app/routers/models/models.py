@@ -30,6 +30,8 @@ from ...services.common.google_model_catalog import (
     VIRTUAL_TRY_ON_MODELS,
     PRODUCT_RECONTEXT_MODELS,
     get_static_google_vertex_models,
+    get_static_google_vertex_model_ids_for_mode,
+    is_deprecated_google_vertex_image_model,
 )
 from ...core.mode_method_mapper import get_mode_catalog
 from ..system.admin import require_admin_user
@@ -69,6 +71,11 @@ def _matches_model_list(model_id: str, model_list: list) -> bool:
     return False
 
 
+def _is_gemini_image_model_id(model_id: str) -> bool:
+    lower_id = model_id.lower()
+    return lower_id.startswith("gemini-") and "image" in lower_id
+
+
 def filter_models_by_mode(models: List[ModelConfig], mode: str) -> List[ModelConfig]:
     """
     根据 App Mode 过滤模型列表（后端过滤逻辑）
@@ -81,10 +88,14 @@ def filter_models_by_mode(models: List[ModelConfig], mode: str) -> List[ModelCon
         过滤后的模型列表
     """
     filtered = []
+    mode_static_model_ids = set(get_static_google_vertex_model_ids_for_mode(mode)) if mode else set()
 
     for model in models:
         model_id = model.id.lower()
         caps = model.capabilities
+
+        if is_deprecated_google_vertex_image_model(model.id):
+            continue
 
         # 根据不同模式应用过滤规则
         should_include = False
@@ -137,51 +148,47 @@ def filter_models_by_mode(models: List[ModelConfig], mode: str) -> List[ModelCon
             should_include = _matches_model_list(model.id, IMAGE_SEGMENTATION_MODELS) or 'segmentation' in model_id
 
         elif mode == 'product-recontext':
-            # 产品重构模式
-            should_include = _matches_model_list(model.id, PRODUCT_RECONTEXT_MODELS) or 'recontext' in model_id
+            # 产品重构已从 deprecated product-recontext endpoint 迁移到 Gemini image。
+            should_include = (
+                model.id in mode_static_model_ids or
+                _is_gemini_image_model_id(model.id)
+            )
 
         elif mode == 'image-outpainting':
-            # 图像扩展模式：支持编辑模型（扩图）+ 放大模型（upscale 子模式）
-            # ✅ 包含编辑模型（用于 ratio, scale, offset 子模式）
-            if _matches_model_list(model.id, IMAGEN_EDIT_MODELS):
-                should_include = True
-            # ✅ 包含放大模型（用于 upscale 子模式）
-            elif _matches_model_list(model.id, IMAGE_UPSCALE_MODELS):
-                should_include = True
-            # ✅ 包含分割模型
-            elif _matches_model_list(model.id, IMAGE_SEGMENTATION_MODELS):
-                should_include = True
-            elif 'veo' in model_id or not caps.vision:
-                should_include = False
-            else:
-                # 排除纯文生图模型（但不排除放大模型）
-                is_text_to_image_only = any([
-                    'wanx' in model_id, '-t2i' in model_id, 'z-image-turbo' in model_id,
-                    'dall' in model_id, 'flux' in model_id, 'midjourney' in model_id,
-                    _matches_model_list(model.id, IMAGEN_GENERATE_MODELS),
-                ])
-                should_include = not is_text_to_image_only
+            # 图像扩展模式由静态 JSON 显式声明，避免把普通 vision/segmentation 模型混入。
+            should_include = model.id in mode_static_model_ids
 
-        elif mode in ['image-edit', 'image-chat-edit', 'image-mask-edit',
-                      'image-inpainting', 'image-background-edit', 'image-recontext']:
+        elif mode == 'image-recontext':
+            # Recontext 不能继续暴露 Imagen edit/capability 模型；它会走 inpaint 并要求 mask。
+            # 官方迁移目标为 gemini-2.5-flash-image。
+            should_include = (
+                model.id in mode_static_model_ids or
+                _is_gemini_image_model_id(model.id)
+            )
+
+        elif mode == 'image-background-edit':
+            # Background Edit maps to the official Vertex Imagen background-swap
+            # path (EDIT_MODE_BGSWAP + automatic background mask). Do not expose
+            # Gemini image models here; those belong to chat-edit/recontext.
+            should_include = (
+                model.id in mode_static_model_ids or
+                _matches_model_list(model.id, IMAGEN_EDIT_MODELS)
+            )
+
+        elif mode == 'image-mask-edit':
+            # Mask Edit must use the official Vertex Imagen edit_image API with
+            # RawReferenceImage + MaskReferenceImage. Gemini image models route
+            # through chat/generate_content and cannot preserve mask semantics.
+            should_include = (
+                model.id in mode_static_model_ids or
+                _matches_model_list(model.id, IMAGEN_EDIT_MODELS)
+            )
+
+        elif mode in ['image-edit', 'image-chat-edit', 'image-inpainting']:
             # 图像编辑模式：支持 Imagen 编辑模型 + Gemini 视觉模型
             # ✅ 优先包含 Imagen 编辑专用模型
             if _matches_model_list(model.id, IMAGEN_EDIT_MODELS):
                 should_include = True
-            # ✅ 背景编辑模式包含产品重构模型
-            elif mode in ['image-background-edit', 'image-recontext']:
-                if _matches_model_list(model.id, PRODUCT_RECONTEXT_MODELS):
-                    should_include = True
-                elif 'veo' in model_id or not caps.vision:
-                    should_include = False
-                else:
-                    is_text_to_image_only = any([
-                        'wanx' in model_id, '-t2i' in model_id, 'z-image-turbo' in model_id,
-                        'dall' in model_id, 'flux' in model_id, 'midjourney' in model_id,
-                        _matches_model_list(model.id, IMAGEN_GENERATE_MODELS),
-                        _matches_model_list(model.id, IMAGE_UPSCALE_MODELS),
-                    ])
-                    should_include = not is_text_to_image_only
             elif 'veo' in model_id or not caps.vision:
                 should_include = False
             else:

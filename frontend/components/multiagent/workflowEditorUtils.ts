@@ -120,7 +120,6 @@ export const getDefaultNodeConfig = (type: NodeType): Partial<WorkflowNodeData> 
       agentVideoMaskImageUrl: '',
       agentVideoMaskMode: '',
       agentGenerateAudio: false,
-      agentPersonGeneration: '',
       agentSubtitleMode: '',
       agentSubtitleLanguage: '',
       agentSubtitleScript: '',
@@ -185,7 +184,6 @@ export const getDefaultNodeConfig = (type: NodeType): Partial<WorkflowNodeData> 
       toolVideoMaskImageUrl: '',
       toolVideoMaskMode: '',
       toolGenerateAudio: false,
-      toolPersonGeneration: '',
       toolSubtitleMode: '',
       toolSubtitleLanguage: '',
       toolSubtitleScript: '',
@@ -578,12 +576,6 @@ const WORKFLOW_ALLOWED_VIDEO_ASPECT_RATIOS = new Set(['16:9', '9:16']);
 const WORKFLOW_ALLOWED_VIDEO_RESOLUTIONS = new Set(['720p', '1080p', '4k']);
 
 const WORKFLOW_ALLOWED_VIDEO_SUBTITLE_MODES = new Set(['none', 'vtt', 'srt', 'both']);
-
-const WORKFLOW_ALLOWED_VIDEO_PERSON_GENERATION = new Set([
-  'dont_allow',
-  'allow_adult',
-  'allow_all',
-]);
 
 const WORKFLOW_ALLOWED_OUTPUT_FORMATS = new Set(['text', 'json', 'markdown']);
 
@@ -992,19 +984,6 @@ export const normalizeWorkflowNodeDataForExecute = (
       data[fieldName] = Boolean(data[fieldName]);
     }
 
-    for (const fieldName of ['agentPersonGeneration', 'agent_person_generation']) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalChoice(
-        data[fieldName],
-        WORKFLOW_ALLOWED_VIDEO_PERSON_GENERATION
-      );
-      if (!normalized) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
-
     for (const fieldName of ['agentSubtitleMode', 'agent_subtitle_mode']) {
       if (data[fieldName] === undefined) continue;
       const normalized = normalizeOptionalChoice(
@@ -1131,19 +1110,6 @@ export const normalizeWorkflowNodeDataForExecute = (
     for (const fieldName of ['toolGenerateAudio', 'tool_generate_audio']) {
       if (data[fieldName] === undefined) continue;
       data[fieldName] = Boolean(data[fieldName]);
-    }
-
-    for (const fieldName of ['toolPersonGeneration', 'tool_person_generation']) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalChoice(
-        data[fieldName],
-        WORKFLOW_ALLOWED_VIDEO_PERSON_GENERATION
-      );
-      if (!normalized) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
     }
 
     for (const fieldName of ['toolSubtitleMode', 'tool_subtitle_mode']) {

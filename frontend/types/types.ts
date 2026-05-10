@@ -106,6 +106,7 @@ export interface Attachment {
   mimeType: string;
   name: string;
   url?: string; 
+  role?: 'raw' | 'mask' | string;
   kind?: string;
   language?: string;
   file?: File;
@@ -151,7 +152,6 @@ export interface Message {
   continuedFromVideo?: boolean; // 是否基于上一段视频继续生成
   storyboardShotSeconds?: number;
   generateAudio?: boolean;
-  personGeneration?: string;
   subtitleMode?: string;
   subtitleLanguage?: string;
   subtitleAttachmentIds?: string[];
@@ -195,7 +195,7 @@ export interface ModelConfig {
 }
 
 export interface OutPaintingOptions {
-    mode: 'scale' | 'offset' | 'ratio'; // Expanded to support 'ratio'
+    mode: 'scale' | 'offset' | 'ratio' | 'upscale';
     xScale?: number;
     yScale?: number;
     leftOffset?: number;
@@ -204,6 +204,7 @@ export interface OutPaintingOptions {
     bottomOffset?: number;
     angle?: number;        // For ratio mode
     outputRatio?: string;  // For ratio mode (e.g., "16:9")
+    upscaleFactor?: 'x2' | 'x3' | 'x4';
     aspectRatio?: string;   // Aspect ratio for outpainting
     platform?: string;     // Platform identifier (e.g., 'gemini', 'vertex_ai')
     bestQuality: boolean;
@@ -227,11 +228,11 @@ export interface ChatOptions {
   videoExtensionCount?: number;
   storyboardShotSeconds?: number;
   generateAudio?: boolean;
-  personGeneration?: string;
   subtitleMode?: string;
   subtitleLanguage?: string;
   subtitleScript?: string;
   storyboardPrompt?: string;
+  storyboardSegments?: string[];
   trackedFeature?: string;
   trackingOverlayText?: string;
   enableGrounding?: boolean; // Added for Google Grounding
@@ -269,7 +270,6 @@ export interface ChatOptions {
   baseUrl?: string; // Custom base URL for API requests
   // Imagen-specific advanced parameters
   // guidanceScale removed - not officially documented by Google Imagen (但用于 mask 编辑)
-  // personGeneration parameter removed - API uses default (allow_adult)
   outputMimeType?: string; // Output format (image/jpeg, image/png)
   outputCompressionQuality?: number; // JPEG compression quality (1-100)
   language?: string; // Prompt language
@@ -281,6 +281,7 @@ export interface ChatOptions {
   maskDilation?: number; // 掩码膨胀系数 (0.0-1.0)
   guidanceScale?: number; // 引导比例 (1.0-20.0)，仅用于 mask 编辑
   maskMode?: 'MASK_MODE_USER_PROVIDED' | 'MASK_MODE_BACKGROUND' | 'MASK_MODE_FOREGROUND' | 'MASK_MODE_SEMANTIC'; // 掩码模式 (Vertex AI MaskReferenceConfig)
+  segmentationClasses?: number[]; // MASK_MODE_SEMANTIC 的官方 mask class IDs
   // TongYi 专用参数
   promptExtend?: boolean; // AI 增强提示词 (TongYi)
   addMagicSuffix?: boolean; // 魔法词组 (TongYi)

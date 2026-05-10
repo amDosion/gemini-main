@@ -7,27 +7,41 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any, Dict, Optional
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
 from ..base.video_common import (
+    LoadedSourceVideo,
     VEO31_EXTENSION_OUTPUT_ADDED_SECONDS,
+    build_resolution_map,
+    first_present_option,
+    load_binary_bytes,
     normalize_gemini_file_name,
     normalize_model,
+    normalize_resolution,
+    parse_data_url,
+    to_data_url,
 )
+from ..base.video_frame_bridge import extract_last_frame_image
 from ..base.video_storyboard import (
     build_storyboard_prompt,
     build_subtitle_artifacts,
     estimate_storyboard_total_duration,
     normalize_generate_audio,
-    normalize_person_generation,
     normalize_storyboard_shot_seconds,
     normalize_subtitle_language,
     normalize_subtitle_mode,
+    strip_audio_prompt_cues,
 )
+from ..agent.types import HttpOptions
 from ..client_pool import get_client_pool
 from ...common.google_model_catalog import VEO_VIDEO_MODELS
+from ...common.model_capabilities import is_multimodal_understanding_model
 from ..geminiapi.video_generation_service import GeminiAPIVideoGenerationService
 from ..vertexai.video_generation_service import VertexAIVideoGenerationService
 from ....utils.attachment_handler import is_base64_url
@@ -35,7 +49,9 @@ from ....utils.attachment_handler import is_base64_url
 logger = logging.getLogger(__name__)
 
 _LOCAL_ENHANCE_PROMPT_FALLBACK_MODEL = "gemini-2.5-pro"
-_LOCAL_ENHANCE_MODEL_BLOCKLIST = ("veo", "imagen", "tts", "embedding", "transcribe")
+_LAST_FRAME_BRIDGE_CONTINUATION_TRIM_SECONDS = 1.0
+_VIDEO_GENERATION_HTTP_TIMEOUT_MS = 300000
+_VIDEO_GENERATION_TRANSIENT_MAX_RETRIES = 3
 
 
 class VideoGenerationCoordinator:
@@ -92,6 +108,65 @@ class VideoGenerationCoordinator:
             raise ValueError(f"Unsupported Google video extension count: {raw_value}")
         return candidate
 
+    def _request_resolution(self, kwargs: Dict[str, Any]) -> str:
+        return normalize_resolution(kwargs.get("resolution") or kwargs.get("image_resolution"))
+
+    def _should_use_last_frame_bridge_extension_chain(
+        self,
+        kwargs: Dict[str, Any],
+        *,
+        selected_api_mode: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> bool:
+        if self._request_uses_last_frame_bridge(kwargs):
+            return True
+        if self._request_resolution(kwargs) == "720p":
+            return False
+        if (
+            selected_api_mode == "vertex_ai"
+            and self._vertex_runtime_ready()
+            and self._vertex_supports_video_extension(model)
+        ):
+            return False
+        return True
+
+    def _normalize_storyboard_segments(self, kwargs: Dict[str, Any]) -> List[str]:
+        raw_value = kwargs.get("storyboard_segments")
+        if raw_value is None:
+            raw_value = kwargs.get("storyboardSegments")
+        if raw_value is None:
+            return []
+
+        if isinstance(raw_value, str):
+            candidate = raw_value.strip()
+            return [candidate] if candidate else []
+
+        if not isinstance(raw_value, list):
+            return []
+
+        segments: List[str] = []
+        for item in raw_value:
+            if isinstance(item, str):
+                segments.append(item.strip())
+                continue
+            if isinstance(item, dict):
+                text = (
+                    item.get("prompt")
+                    or item.get("text")
+                    or item.get("storyboard_prompt")
+                    or item.get("storyboardPrompt")
+                    or ""
+                )
+                segments.append(str(text).strip())
+        return segments
+
+    def _base_duration_seconds(self, kwargs: Dict[str, Any]) -> int:
+        try:
+            candidate = int(str(kwargs.get("seconds") or kwargs.get("duration_seconds") or 8))
+        except (TypeError, ValueError):
+            return 8
+        return candidate if candidate > 0 else 8
+
     def _normalized_storyboard_options(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
         subtitle_mode = normalize_subtitle_mode(kwargs.get("subtitle_mode") or kwargs.get("subtitleMode"))
         subtitle_language = normalize_subtitle_language(
@@ -104,6 +179,7 @@ class VideoGenerationCoordinator:
             "storyboard_prompt": str(
                 kwargs.get("storyboard_prompt") or kwargs.get("storyboardPrompt") or ""
             ).strip() or None,
+            "storyboard_segments": self._normalize_storyboard_segments(kwargs),
             "subtitle_mode": subtitle_mode,
             "subtitle_language": subtitle_language,
             "subtitle_script": str(kwargs.get("subtitle_script") or kwargs.get("subtitleScript") or "").strip() or None,
@@ -111,9 +187,8 @@ class VideoGenerationCoordinator:
             "tracking_overlay_text": str(
                 kwargs.get("tracking_overlay_text") or kwargs.get("trackingOverlayText") or ""
             ).strip() or None,
-            "generate_audio": normalize_generate_audio(kwargs.get("generate_audio") or kwargs.get("generateAudio")),
-            "person_generation": normalize_person_generation(
-                kwargs.get("person_generation") or kwargs.get("personGeneration")
+            "generate_audio": normalize_generate_audio(
+                first_present_option(kwargs, "generate_audio", "generateAudio")
             ),
         }
 
@@ -126,7 +201,7 @@ class VideoGenerationCoordinator:
     ) -> str:
         storyboard = self._normalized_storyboard_options(request_kwargs)
         total_duration_seconds = estimate_storyboard_total_duration(
-            base_duration_seconds=int(str(request_kwargs.get("seconds") or request_kwargs.get("duration_seconds") or 8)),
+            base_duration_seconds=self._base_duration_seconds(request_kwargs),
             extension_count=extension_count,
             extension_added_seconds=VEO31_EXTENSION_OUTPUT_ADDED_SECONDS,
         )
@@ -141,11 +216,115 @@ class VideoGenerationCoordinator:
             tracking_overlay_text=storyboard["tracking_overlay_text"],
         )
 
+    def _build_extension_segment_prompts(
+        self,
+        *,
+        prompt: str,
+        request_kwargs: Dict[str, Any],
+        extension_count: int,
+    ) -> List[str]:
+        raw_segments = self._normalize_storyboard_segments(request_kwargs)
+        segments = raw_segments[:extension_count]
+        if extension_count > 0 and len(raw_segments) > extension_count and segments:
+            segments[-1] = "\n".join(raw_segments[extension_count - 1 :]).strip()
+        if not any(segment.strip() for segment in segments):
+            return []
+
+        storyboard = self._normalized_storyboard_options(request_kwargs)
+        audio_disabled = storyboard["generate_audio"] is False
+        base_prompt = str(prompt or "").strip()
+        if audio_disabled:
+            base_prompt = strip_audio_prompt_cues(base_prompt)
+        base_duration_seconds = self._base_duration_seconds(request_kwargs)
+        extension_seconds = VEO31_EXTENSION_OUTPUT_ADDED_SECONDS
+        prompts: List[str] = []
+        for index in range(extension_count):
+            segment_prompt = segments[index].strip() if index < len(segments) else ""
+            if audio_disabled:
+                segment_prompt = strip_audio_prompt_cues(segment_prompt)
+            start_seconds = base_duration_seconds + index * extension_seconds
+            end_seconds = start_seconds + extension_seconds
+            parts = [
+                base_prompt,
+                "",
+                "Continuation segment requirements:",
+                f"- Continue seamlessly from the previous segment's final frame.",
+                f"- This is extension segment {index + 1} of {extension_count}, targeting the combined timeline around {start_seconds}-{end_seconds}s.",
+                "- Generate only this continuation segment; do not restart the video from the beginning.",
+                "- Preserve identity, wardrobe, environment continuity, camera direction, and lighting continuity.",
+            ]
+            if audio_disabled:
+                parts.append(
+                    "- Visual-only product continuation; express the introduction through product shots, camera movement, and composition."
+                )
+            else:
+                parts.append(
+                    "- Include presenter-style product narration that follows this segment's visual action, like an e-commerce livestream host explaining the product naturally."
+                )
+            if segment_prompt:
+                parts.extend(
+                    [
+                        "",
+                        "Strict storyboard prompt for this continuation segment:",
+                        segment_prompt,
+                    ]
+                )
+            prompts.append("\n".join(parts).strip())
+        return prompts
+
+    def _build_prompt_enhance_http_options(self) -> HttpOptions:
+        """
+        Match image-chat-edit prompt enhancement behavior: keep retry/options,
+        but disable the client pool's default 30s timeout for long Gemini rewrites.
+        """
+        base_options = self._http_options or HttpOptions()
+        if isinstance(base_options, dict):
+            base_options = HttpOptions(**base_options)
+        headers = getattr(base_options, "headers", None)
+        return HttpOptions(
+            api_version=getattr(base_options, "api_version", None),
+            base_url=getattr(base_options, "base_url", None),
+            headers=dict(headers) if headers else None,
+            timeout=None,
+            retry_options=getattr(base_options, "retry_options", None),
+            use_default_timeout=False,
+        )
+
+    def _build_video_generation_http_options(self) -> HttpOptions:
+        base_options = self._http_options or HttpOptions()
+        if isinstance(base_options, dict):
+            base_options = HttpOptions(**base_options)
+        headers = getattr(base_options, "headers", None)
+        base_timeout = getattr(base_options, "timeout", None)
+        timeout = (
+            max(int(base_timeout), _VIDEO_GENERATION_HTTP_TIMEOUT_MS)
+            if isinstance(base_timeout, int) and base_timeout > 0
+            else _VIDEO_GENERATION_HTTP_TIMEOUT_MS
+        )
+        return HttpOptions(
+            api_version=getattr(base_options, "api_version", None),
+            base_url=getattr(base_options, "base_url", None),
+            headers=dict(headers) if headers else None,
+            timeout=timeout,
+            retry_options=getattr(base_options, "retry_options", None),
+            use_default_timeout=False,
+        )
+
     def _resolve_local_enhance_prompt_model(self, model_hint: Optional[str]) -> str:
+        """
+        Use the same model suitability rule as chat-edit enhancement:
+        user-selected Gemini multimodal-understanding models are allowed;
+        media generation models such as Veo/Imagen fall back to the default.
+        """
         candidate = str(model_hint or "").strip()
-        lowered = candidate.lower()
-        if candidate and "gemini" in lowered and not any(token in lowered for token in _LOCAL_ENHANCE_MODEL_BLOCKLIST):
+        if candidate and is_multimodal_understanding_model("google", candidate):
             return candidate
+        if candidate:
+            logger.info(
+                "[VideoGenerationCoordinator] Enhance model '%s' is not multimodal-friendly, fallback to %s",
+                candidate,
+                _LOCAL_ENHANCE_PROMPT_FALLBACK_MODEL,
+            )
         return _LOCAL_ENHANCE_PROMPT_FALLBACK_MODEL
 
     async def _enhance_prompt_locally(
@@ -174,7 +353,7 @@ class VideoGenerationCoordinator:
             pooled_client = pool.get_client(
                 api_key=api_key,
                 vertexai=False,
-                http_options=self._http_options,
+                http_options=self._build_prompt_enhance_http_options(),
             )
             client = pooled_client
             response = client.models.generate_content(
@@ -182,6 +361,12 @@ class VideoGenerationCoordinator:
                 contents=f"{system_prompt}\n\n{user_prompt}",
             )
             enhanced = str(getattr(response, "text", "") or "").strip()
+            if not enhanced and getattr(response, "parts", None):
+                for part in response.parts:
+                    text = str(getattr(part, "text", "") or "").strip()
+                    if text:
+                        enhanced = text
+                        break
             if enhanced:
                 logger.info(
                     "[VideoGenerationCoordinator] Generated local enhanced video prompt with model=%s (len=%s)",
@@ -204,11 +389,14 @@ class VideoGenerationCoordinator:
         request_kwargs: Dict[str, Any],
         extension_count: int,
         selected_api_mode: str,
-    ) -> Dict[str, Optional[str]]:
+    ) -> Dict[str, Any]:
+        has_segmented_storyboard = any(
+            segment.strip() for segment in self._normalize_storyboard_segments(request_kwargs)[:extension_count]
+        )
         storyboard_prompt = self._build_storyboard_prompt(
             prompt=prompt,
             request_kwargs=request_kwargs,
-            extension_count=extension_count,
+            extension_count=0 if has_segmented_storyboard else extension_count,
         )
         enhance_requested = bool(request_kwargs.get("enhance_prompt") or request_kwargs.get("enhancePrompt"))
         enhanced_prompt: Optional[str] = None
@@ -221,11 +409,18 @@ class VideoGenerationCoordinator:
                     prompt=storyboard_prompt,
                     model_hint=request_kwargs.get("enhance_prompt_model") or request_kwargs.get("enhancePromptModel"),
                 )
+                if enhanced_prompt and self._normalized_storyboard_options(request_kwargs)["generate_audio"] is False:
+                    enhanced_prompt = strip_audio_prompt_cues(enhanced_prompt)
 
         return {
             "storyboard_prompt": storyboard_prompt,
             "effective_prompt": enhanced_prompt or storyboard_prompt,
             "enhanced_prompt": enhanced_prompt,
+            "extension_prompts": self._build_extension_segment_prompts(
+                prompt=prompt,
+                request_kwargs=request_kwargs,
+                extension_count=extension_count,
+            ),
         }
 
     def _apply_storyboard_metadata(
@@ -262,8 +457,6 @@ class VideoGenerationCoordinator:
         result["tracked_feature"] = storyboard["tracked_feature"]
         result["tracking_overlay_text"] = storyboard["tracking_overlay_text"]
         result["generate_audio"] = storyboard["generate_audio"]
-        if storyboard["person_generation"]:
-            result["person_generation"] = storyboard["person_generation"].lower()
         if subtitle_artifacts:
             result["sidecar_files"] = subtitle_artifacts
             result["subtitle_attachment_formats"] = [artifact["format"] for artifact in subtitle_artifacts]
@@ -415,6 +608,215 @@ class VideoGenerationCoordinator:
         next_kwargs.pop("videoExtensionCount", None)
         return next_kwargs
 
+    def _build_last_frame_bridge_continuation_kwargs(
+        self,
+        base_kwargs: Dict[str, Any],
+        source_image: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        next_kwargs = dict(base_kwargs)
+        next_kwargs["source_image"] = source_image
+        next_kwargs.pop("sourceImage", None)
+        next_kwargs.pop("start_frame_image", None)
+        next_kwargs.pop("startFrameImage", None)
+        next_kwargs.pop("source_video", None)
+        next_kwargs.pop("sourceVideo", None)
+        next_kwargs.pop("continuation_video", None)
+        next_kwargs.pop("continuationVideo", None)
+        next_kwargs.pop("last_frame_image", None)
+        next_kwargs.pop("lastFrameImage", None)
+        next_kwargs.pop("video_mask_image", None)
+        next_kwargs.pop("videoMaskImage", None)
+        next_kwargs.pop("mask_image", None)
+        next_kwargs.pop("maskImage", None)
+        next_kwargs.pop("use_last_frame_bridge", None)
+        next_kwargs.pop("continue_from_last_frame", None)
+        next_kwargs.pop("continueFromLastFrame", None)
+        next_kwargs.pop("video_extension_count", None)
+        next_kwargs.pop("videoExtensionCount", None)
+        return next_kwargs
+
+    async def _download_result_video_bytes(self, result: Dict[str, Any]) -> Tuple[bytes, str]:
+        if not isinstance(result, dict):
+            raise ValueError("Google video segment download requires a generation result payload.")
+
+        url = str(result.get("url") or "").strip()
+        if url and is_base64_url(url):
+            return parse_data_url(url)
+
+        mime_type = str(result.get("mime_type") or result.get("mimeType") or "video/mp4").strip() or "video/mp4"
+        provider_file_uri = str(
+            result.get("provider_file_uri")
+            or result.get("providerFileUri")
+            or ""
+        ).strip()
+        provider_file_name = str(
+            result.get("provider_file_name")
+            or result.get("providerFileName")
+            or ""
+        ).strip()
+        gcs_uri = str(result.get("gcs_uri") or result.get("gcsUri") or "").strip()
+        if provider_file_name or provider_file_uri or gcs_uri:
+            await self._wait_for_gemini_video_asset_ready(result)
+            payload = await self.download_video_asset(
+                provider_file_name=provider_file_name or None,
+                provider_file_uri=provider_file_uri or provider_file_name or None,
+                gcs_uri=gcs_uri or None,
+                mime_type=mime_type,
+            )
+            binary = payload.get("video_bytes") if isinstance(payload, dict) else None
+            if not isinstance(binary, (bytes, bytearray)):
+                raise RuntimeError("Google video segment download returned an unsupported payload.")
+            return bytes(binary), str(payload.get("mime_type") or mime_type or "video/mp4")
+
+        if url:
+            return await load_binary_bytes(
+                url,
+                fallback_mime_type=mime_type,
+                default_mime_type="video/mp4",
+            )
+
+        raise ValueError("Google video segment result does not contain a downloadable video asset.")
+
+    async def _build_last_frame_source_image_from_video_bytes(
+        self,
+        video_bytes: bytes,
+        mime_type: str,
+    ) -> Dict[str, Any]:
+        source_image = await asyncio.to_thread(
+            extract_last_frame_image,
+            LoadedSourceVideo(video_bytes=video_bytes, mime_type=mime_type),
+        )
+        return {
+            "url": to_data_url(source_image.image_bytes, source_image.mime_type),
+            "mime_type": source_image.mime_type,
+        }
+
+    async def _concatenate_video_segments(
+        self,
+        segments: List[Tuple[bytes, str]],
+        *,
+        continuation_trim_seconds: float,
+    ) -> bytes:
+        return await asyncio.to_thread(
+            self._concatenate_video_segments_sync,
+            segments,
+            continuation_trim_seconds,
+        )
+
+    @staticmethod
+    def _concat_list_line(path: Path) -> str:
+        # Temporary paths are generated by tempfile and do not contain quotes.
+        return f"file '{path}'\n"
+
+    def _concatenate_video_segments_sync(
+        self,
+        segments: List[Tuple[bytes, str]],
+        continuation_trim_seconds: float,
+    ) -> bytes:
+        if not segments:
+            raise ValueError("Google video last-frame extension requires at least one segment.")
+        if len(segments) == 1:
+            return segments[0][0]
+
+        ffmpeg_path = shutil.which("ffmpeg")
+        if not ffmpeg_path:
+            raise RuntimeError("ffmpeg is required to assemble Google high-resolution last-frame extension segments.")
+
+        with tempfile.TemporaryDirectory(prefix="google-video-bridge-") as tmp_dir:
+            tmp_root = Path(tmp_dir)
+            prepared_paths: List[Path] = []
+            for index, (segment_bytes, _mime_type) in enumerate(segments):
+                segment_path = tmp_root / f"segment-{index:03d}.mp4"
+                segment_path.write_bytes(segment_bytes)
+                if index == 0 or continuation_trim_seconds <= 0:
+                    prepared_paths.append(segment_path)
+                    continue
+
+                trimmed_path = tmp_root / f"segment-{index:03d}-trimmed.mp4"
+                subprocess.run(
+                    [
+                        ffmpeg_path,
+                        "-y",
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-ss",
+                        f"{continuation_trim_seconds:.3f}",
+                        "-i",
+                        str(segment_path),
+                        "-map",
+                        "0",
+                        "-c:v",
+                        "libx264",
+                        "-preset",
+                        "veryfast",
+                        "-crf",
+                        "18",
+                        "-c:a",
+                        "aac",
+                        "-movflags",
+                        "+faststart",
+                        str(trimmed_path),
+                    ],
+                    check=True,
+                    capture_output=True,
+                )
+                prepared_paths.append(trimmed_path)
+
+            concat_list_path = tmp_root / "segments.txt"
+            concat_list_path.write_text("".join(self._concat_list_line(path) for path in prepared_paths), encoding="utf-8")
+            output_path = tmp_root / "joined.mp4"
+            concat_cmd = [
+                ffmpeg_path,
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                str(concat_list_path),
+                "-c",
+                "copy",
+                "-movflags",
+                "+faststart",
+                str(output_path),
+            ]
+            try:
+                subprocess.run(concat_cmd, check=True, capture_output=True)
+            except subprocess.CalledProcessError:
+                subprocess.run(
+                    [
+                        ffmpeg_path,
+                        "-y",
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-f",
+                        "concat",
+                        "-safe",
+                        "0",
+                        "-i",
+                        str(concat_list_path),
+                        "-c:v",
+                        "libx264",
+                        "-preset",
+                        "veryfast",
+                        "-crf",
+                        "18",
+                        "-c:a",
+                        "aac",
+                        "-movflags",
+                        "+faststart",
+                        str(output_path),
+                    ],
+                    check=True,
+                    capture_output=True,
+                )
+            return output_path.read_bytes()
+
     def _source_video_is_vertex_native(self, kwargs: Dict[str, Any]) -> bool:
         uri = self._extract_source_video_uri(kwargs)
         return uri.startswith("gs://")
@@ -558,9 +960,14 @@ class VideoGenerationCoordinator:
     def _should_retry_transient_generation_error(self, exc: Exception) -> bool:
         message = str(exc or "").lower()
         markers = (
+            "code': 8",
+            '"code": 8',
             "code': 13",
             '"code": 13',
+            "high load",
+            "cannot process your request",
             "internal server issue",
+            "internal error",
             "please try again in a few minutes",
             "503 service unavailable",
             "service unavailable",
@@ -646,7 +1053,7 @@ class VideoGenerationCoordinator:
             project_id=project_id,
             location=location,
             credentials_json=credentials_json,
-            http_options=self._http_options,
+            http_options=self._build_video_generation_http_options(),
         )
 
     def _create_gemini_api_service(self) -> GeminiAPIVideoGenerationService:
@@ -655,7 +1062,7 @@ class VideoGenerationCoordinator:
             raise ValueError("Gemini API video generation requires a Google API key.")
         return GeminiAPIVideoGenerationService(
             api_key=api_key,
-            http_options=self._http_options,
+            http_options=self._build_video_generation_http_options(),
         )
 
     def get_service(self, api_mode_override: Optional[str] = None) -> Any:
@@ -727,14 +1134,20 @@ class VideoGenerationCoordinator:
                 break
             except Exception as exc:
                 last_error = exc
-                if transient_attempt < 1 and self._should_retry_transient_generation_error(exc):
+                if (
+                    transient_attempt < _VIDEO_GENERATION_TRANSIENT_MAX_RETRIES
+                    and self._should_retry_transient_generation_error(exc)
+                ):
                     transient_attempt += 1
+                    delay_seconds = min(15.0 * transient_attempt, 45.0)
                     logger.warning(
-                        "[VideoGenerationCoordinator] Retrying transient Google video generation failure (%s/1): %s",
+                        "[VideoGenerationCoordinator] Retrying transient Google video generation failure (%s/%s) after %.0fs: %s",
                         transient_attempt,
+                        _VIDEO_GENERATION_TRANSIENT_MAX_RETRIES,
+                        delay_seconds,
                         exc,
                     )
-                    await asyncio.sleep(2.0)
+                    await asyncio.sleep(delay_seconds)
                     continue
             if (
                 selected_api_mode == "vertex_ai"
@@ -784,6 +1197,17 @@ class VideoGenerationCoordinator:
         request_kwargs = dict(kwargs)
         extension_count = self._normalize_video_extension_count(request_kwargs)
         selected_api_mode = self._select_api_mode_for_request(model, request_kwargs)
+        if (
+            extension_count > 0
+            and self._request_has_source_video(request_kwargs)
+            and self._should_use_last_frame_bridge_extension_chain(
+                request_kwargs,
+                selected_api_mode=selected_api_mode,
+                model=model,
+            )
+        ):
+            request_kwargs["use_last_frame_bridge"] = True
+            selected_api_mode = self._select_api_mode_for_request(model, request_kwargs)
         prepared_prompt_payload = await self._prepare_prompt_for_runtime(
             prompt=prompt,
             model=model,
@@ -794,12 +1218,27 @@ class VideoGenerationCoordinator:
         prepared_prompt = str(prepared_prompt_payload.get("effective_prompt") or prompt)
         enhanced_prompt = prepared_prompt_payload.get("enhanced_prompt")
         storyboard_prompt = str(prepared_prompt_payload.get("storyboard_prompt") or prepared_prompt)
-        result = await self._generate_single_video(
-            prepared_prompt,
-            model,
-            request_kwargs,
-            selected_api_mode=selected_api_mode,
-        )
+        extension_prompts_raw = prepared_prompt_payload.get("extension_prompts")
+        extension_prompts = extension_prompts_raw if isinstance(extension_prompts_raw, list) else []
+
+        def extension_prompt_for(index: int) -> str:
+            if index < len(extension_prompts):
+                candidate = str(extension_prompts[index] or "").strip()
+                if candidate:
+                    return candidate
+            return prepared_prompt
+
+        try:
+            result = await self._generate_single_video(
+                prepared_prompt,
+                model,
+                request_kwargs,
+                selected_api_mode=selected_api_mode,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                f"Google video base segment failed: {exc}"
+            ) from exc
         if extension_count <= 0:
             if isinstance(result, dict):
                 result.setdefault("prompt", prompt)
@@ -818,16 +1257,108 @@ class VideoGenerationCoordinator:
         generated_job_ids = [result.get("job_id")] if isinstance(result, dict) and result.get("job_id") else []
         base_duration_seconds = int(result.get("duration_seconds") or request_kwargs.get("seconds") or 0)
 
-        for _ in range(extension_count):
+        if self._should_use_last_frame_bridge_extension_chain(
+            request_kwargs,
+            selected_api_mode=selected_api_mode,
+            model=model,
+        ):
+            segment_payloads: List[Tuple[bytes, str]] = []
+            current_video_bytes, current_mime_type = await self._download_result_video_bytes(current_result)
+            segment_payloads.append((current_video_bytes, current_mime_type))
+
+            for extension_index in range(extension_count):
+                source_image = await self._build_last_frame_source_image_from_video_bytes(
+                    current_video_bytes,
+                    current_mime_type,
+                )
+                continuation_kwargs = self._build_last_frame_bridge_continuation_kwargs(
+                    request_kwargs,
+                    source_image,
+                )
+                segment_prompt = extension_prompt_for(extension_index)
+                try:
+                    current_result = await self._generate_single_video(
+                        segment_prompt,
+                        model,
+                        continuation_kwargs,
+                        selected_api_mode=selected_api_mode,
+                    )
+                except Exception as exc:
+                    prompt_excerpt = " ".join(str(segment_prompt or "").split())[:700]
+                    raise RuntimeError(
+                        "Google video extension segment "
+                        f"{extension_index + 1}/{extension_count} failed: {exc}. "
+                        f"Segment prompt: {prompt_excerpt}"
+                    ) from exc
+                job_id = current_result.get("job_id") if isinstance(current_result, dict) else None
+                if job_id:
+                    generated_job_ids.append(job_id)
+                current_video_bytes, current_mime_type = await self._download_result_video_bytes(current_result)
+                segment_payloads.append((current_video_bytes, current_mime_type))
+
+            joined_video_bytes = await self._concatenate_video_segments(
+                segment_payloads,
+                continuation_trim_seconds=_LAST_FRAME_BRIDGE_CONTINUATION_TRIM_SECONDS,
+            )
+            if isinstance(current_result, dict):
+                resolution = self._request_resolution(request_kwargs)
+                aspect_ratio = str(request_kwargs.get("aspect_ratio") or request_kwargs.get("image_aspect_ratio") or "16:9")
+                current_result = dict(current_result)
+                current_result["url"] = to_data_url(joined_video_bytes, "video/mp4")
+                current_result["mime_type"] = "video/mp4"
+                current_result["video_size"] = build_resolution_map(resolution, aspect_ratio)
+                current_result["video_extension_count"] = extension_count
+                current_result["video_extension_applied"] = extension_count
+                current_result["segment_count"] = len(segment_payloads)
+                current_result["segment_join_strategy"] = "ffmpeg_concat_trimmed_bridge"
+                current_result.pop("provider_file_name", None)
+                current_result.pop("providerFileName", None)
+                current_result.pop("provider_file_uri", None)
+                current_result.pop("providerFileUri", None)
+                current_result.pop("gcs_uri", None)
+                current_result.pop("gcsUri", None)
+                current_result.pop("file_uri", None)
+                current_result.pop("fileUri", None)
+                if base_duration_seconds > 0:
+                    current_result["total_duration_seconds"] = (
+                        base_duration_seconds + extension_count * VEO31_EXTENSION_OUTPUT_ADDED_SECONDS
+                    )
+                if generated_job_ids:
+                    current_result["extension_job_ids"] = generated_job_ids
+                if extension_prompts:
+                    current_result["storyboard_segments"] = self._normalize_storyboard_segments(request_kwargs)[:extension_count]
+                current_result["continuation_strategy"] = "last_frame_bridge_chain"
+                current_result.setdefault("prompt", prompt)
+                current_result.setdefault("storyboard_prompt", storyboard_prompt)
+                if enhanced_prompt:
+                    current_result["enhanced_prompt"] = enhanced_prompt
+                    current_result.setdefault("prompt_enhancement_strategy", "local_llm")
+                return self._apply_storyboard_metadata(
+                    current_result,
+                    request_kwargs=request_kwargs,
+                    extension_count=extension_count,
+                )
+            return current_result
+
+        for extension_index in range(extension_count):
             if isinstance(current_result, dict):
                 await self._wait_for_gemini_video_asset_ready(current_result)
             continuation_kwargs = self._build_continuation_kwargs(request_kwargs, current_result)
-            current_result = await self._generate_single_video(
-                prepared_prompt,
-                model,
-                continuation_kwargs,
-                selected_api_mode=selected_api_mode,
-            )
+            segment_prompt = extension_prompt_for(extension_index)
+            try:
+                current_result = await self._generate_single_video(
+                    segment_prompt,
+                    model,
+                    continuation_kwargs,
+                    selected_api_mode=selected_api_mode,
+                )
+            except Exception as exc:
+                prompt_excerpt = " ".join(str(segment_prompt or "").split())[:700]
+                raise RuntimeError(
+                    "Google video extension segment "
+                    f"{extension_index + 1}/{extension_count} failed: {exc}. "
+                    f"Segment prompt: {prompt_excerpt}"
+                ) from exc
             job_id = current_result.get("job_id") if isinstance(current_result, dict) else None
             if job_id:
                 generated_job_ids.append(job_id)
@@ -841,6 +1372,8 @@ class VideoGenerationCoordinator:
                 )
             if generated_job_ids:
                 current_result["extension_job_ids"] = generated_job_ids
+            if extension_prompts:
+                current_result["storyboard_segments"] = self._normalize_storyboard_segments(request_kwargs)[:extension_count]
             current_result["continuation_strategy"] = "video_extension_chain"
             current_result.setdefault("prompt", prompt)
             current_result.setdefault("storyboard_prompt", storyboard_prompt)

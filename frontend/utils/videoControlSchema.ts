@@ -10,8 +10,6 @@ export interface VideoControlFieldPolicies {
   enhancePromptEffectiveDefault: boolean;
   generateAudioAvailable: boolean;
   generateAudioForcedValue: boolean | null;
-  personGenerationAvailable: boolean;
-  personGenerationForcedValue: string | number | boolean | null;
   subtitleModeAvailable: boolean;
   subtitleModeSingleSidecarFormat: boolean;
   subtitleModeDefaultEnabled: string | null;
@@ -36,7 +34,6 @@ export interface VideoControlContract {
   defaultVideoExtensionCount: number;
   defaultStoryboardShotSeconds: number;
   defaultGenerateAudio: boolean;
-  defaultPersonGeneration: string;
   defaultSubtitleMode: string;
   defaultSubtitleLanguage: string;
   defaultSubtitleScript: string;
@@ -49,7 +46,6 @@ export interface VideoControlContract {
   validSeconds: string[];
   validVideoExtensionCounts: number[];
   validStoryboardShotSeconds: number[];
-  validPersonGenerationValues: string[];
   validSubtitleModes: string[];
   validSubtitleLanguages: string[];
   validVideoExtensionCountsBySeconds: Record<string, number[]>;
@@ -72,8 +68,6 @@ const EMPTY_FIELD_POLICIES: VideoControlFieldPolicies = {
   enhancePromptEffectiveDefault: false,
   generateAudioAvailable: true,
   generateAudioForcedValue: null,
-  personGenerationAvailable: true,
-  personGenerationForcedValue: null,
   subtitleModeAvailable: false,
   subtitleModeSingleSidecarFormat: false,
   subtitleModeDefaultEnabled: null,
@@ -120,14 +114,6 @@ function normalizeFieldPolicies(
     generateAudioForcedValue:
       typeof fieldPolicies?.generateAudio?.forcedValue === 'boolean'
         ? fieldPolicies.generateAudio.forcedValue
-        : null,
-    personGenerationAvailable:
-      fieldPolicies?.personGeneration?.available ??
-      (constraints.supports_person_generation === true ||
-        (schema?.paramOptions?.person_generation?.length ?? 0) > 0),
-    personGenerationForcedValue:
-      fieldPolicies?.personGeneration?.forcedValue !== undefined
-        ? fieldPolicies.personGeneration.forcedValue ?? null
         : null,
     subtitleModeAvailable:
       fieldPolicies?.subtitleMode?.available ?? subtitleModeSupportedValues.length > 0,
@@ -228,9 +214,6 @@ export function buildVideoControlContract(
   const validStoryboardShotSeconds = (schema?.paramOptions?.storyboard_shot_seconds ?? [])
     .map((option) => Number(option.value))
     .filter((value): value is number => Number.isFinite(value) && value > 0);
-  const validPersonGenerationValues = (schema?.paramOptions?.person_generation ?? [])
-    .map((option) => String(option.value))
-    .filter((value): value is string => value.length > 0);
   const validSubtitleModes = Array.from(
     new Set([
       ...(schema?.paramOptions?.subtitle_mode ?? [])
@@ -296,11 +279,6 @@ export function buildVideoControlContract(
       : typeof fieldPolicies.generateAudioForcedValue === 'boolean'
         ? fieldPolicies.generateAudioForcedValue
         : false;
-  const defaultPersonGeneration =
-    typeof defaults.person_generation === 'string' &&
-    (validPersonGenerationValues.length === 0 || validPersonGenerationValues.includes(defaults.person_generation))
-      ? defaults.person_generation
-      : validPersonGenerationValues[0] ?? '';
   const defaultSubtitleMode =
     typeof defaults.subtitle_mode === 'string' &&
     (validSubtitleModes.length === 0 || validSubtitleModes.includes(defaults.subtitle_mode))
@@ -333,7 +311,6 @@ export function buildVideoControlContract(
     defaultVideoExtensionCount,
     defaultStoryboardShotSeconds,
     defaultGenerateAudio,
-    defaultPersonGeneration,
     defaultSubtitleMode,
     defaultSubtitleLanguage,
     defaultSubtitleScript,
@@ -346,7 +323,6 @@ export function buildVideoControlContract(
     validSeconds,
     validVideoExtensionCounts,
     validStoryboardShotSeconds,
-    validPersonGenerationValues,
     validSubtitleModes,
     validSubtitleLanguages,
     validVideoExtensionCountsBySeconds,

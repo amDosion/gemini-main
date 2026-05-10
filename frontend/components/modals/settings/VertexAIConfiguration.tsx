@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Save, Loader2, X, Image as ImageIcon, RefreshCw, CheckCircle2, AlertTriangle, Check, Eye, Search, Brain, Code } from 'lucide-react';
+import { Save, Loader2, X, Image as ImageIcon, RefreshCw, AlertTriangle } from 'lucide-react';
 import { db } from '../../../services/db';
 import { 
     ImagenAPISettings, 
@@ -8,13 +8,14 @@ import {
 } from '../../../types/imagen-config';
 import { ModelConfig } from '../../../types/types';
 import { useToastContext } from '../../../contexts/ToastContext';
+import { ModelSelectionPanel, SelectableModel, getModelUsage } from './ModelSelectionPanel';
 
 interface VertexAIConfigurationProps {
     footerNode?: HTMLDivElement | null;
     onClose: () => void;
 }
 
-interface VertexAIModel {
+interface VertexAIModel extends SelectableModel {
     id: string;
     name: string;
     displayName?: string;
@@ -248,7 +249,7 @@ export const VertexAIConfiguration: React.FC<VertexAIConfigurationProps> = ({
                 .map(m => ({
                     id: m.id,
                     name: m.displayName || m.name || m.id,
-                    description: m.description || m.displayName || m.name || m.id,  // ✅ 优先使用后端返回的描述
+                    description: getModelUsage(m),
                     capabilities: m.capabilities || {
                         vision: false,
                         search: false,
@@ -408,118 +409,15 @@ export const VertexAIConfiguration: React.FC<VertexAIConfigurationProps> = ({
                                     </div>
                                 </div>
                             ) : (
-                                <div className="bg-slate-900/30 rounded-xl border border-slate-800 flex flex-col mt-2">
-                                    <div className="p-2 bg-slate-900/50 border-b border-slate-800 flex items-center justify-between shrink-0">
-                                        <div className="flex items-center gap-2 text-green-400 px-1">
-                                            <CheckCircle2 size={14} />
-                                            <span className="text-xs font-medium">Verified</span>
-                                        </div>
-                                        <div className="flex items-center gap-2 md:gap-1.5 flex-wrap">
-                                            <button
-                                                onClick={() => setSelectedModels(new Set(verifiedModels.map(m => m.id)))}
-                                                className="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-1.5 md:px-2 md:py-0.5 rounded text-slate-300 transition-colors border border-slate-700"
-                                            >
-                                                Select All
-                                            </button>
-                                            <button
-                                                onClick={() => setSelectedModels(new Set())}
-                                                className="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-1.5 md:px-2 md:py-0.5 rounded text-slate-300 transition-colors border border-slate-700"
-                                            >
-                                                Select None
-                                            </button>
-                                            <span className="text-xs text-slate-500 ml-1 border-l border-slate-700 pl-2">{verifiedModels.length} Models</span>
-                                        </div>
-                                    </div>
-
-                                    <div className="w-full p-3 md:p-2 overflow-y-auto">
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 md:gap-1 w-full">
-                                            {verifiedModels.map(model => {
-                                                const isSelected = selectedModels.has(model.id);
-                                                const isImageModel = model.id.toLowerCase().includes('image') || 
-                                                                     model.id.toLowerCase().includes('imagen') ||
-                                                                     model.id.toLowerCase().includes('veo');
-                                                
-                                                return (
-                                                    <div
-                                                        key={model.id}
-                                                        onClick={() => toggleModelSelection(model.id)}
-                                                        className={`flex items-center gap-2 p-2 md:p-1.5 rounded-md cursor-pointer transition-colors border ${
-                                                            isSelected 
-                                                                ? 'bg-slate-800/60 border-slate-700/50 hover:bg-slate-800' 
-                                                                : 'opacity-60 border-transparent hover:bg-slate-800/20'
-                                                        }`}
-                                                    >
-                                                        <div
-                                                            className={`w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center transition-colors shrink-0 ${
-                                                                isSelected 
-                                                                    ? 'bg-indigo-600 border-indigo-600 text-white' 
-                                                                    : 'border-slate-600 bg-transparent'
-                                                            }`}
-                                                        >
-                                                            {isSelected && <Check size={10} />}
-                                                        </div>
-                                                        <div className="min-w-0 flex-1 overflow-hidden">
-                                                            <div className={`text-xs md:text-[11px] font-medium truncate leading-tight flex items-center gap-1 ${
-                                                                isSelected ? 'text-slate-200' : 'text-slate-500'
-                                                            }`}>
-                                                                {model.id}
-                                                                {isImageModel && (
-                                                                    <ImageIcon size={10} className="text-indigo-400 shrink-0" />
-                                                                )}
-                                                            </div>
-                                                            {/* ✅ 显示描述（如果存在且与ID不同，且不包含ID的主要部分） */}
-                                                            {(() => {
-                                                                if (!model.description || model.description === model.id) {
-                                                                    return null;
-                                                                }
-                                                                // 检查描述是否包含ID的主要关键词（避免重复显示）
-                                                                const idWords = model.id.toLowerCase().split(/[-_\s]+/).filter(w => w.length > 2);
-                                                                const descLower = model.description.toLowerCase();
-                                                                const hasMajorOverlap = idWords.some(word => descLower.includes(word));
-                                                                // 如果描述包含ID的主要部分，则不显示描述
-                                                                if (hasMajorOverlap && idWords.length > 2) {
-                                                                    return null;
-                                                                }
-                                                                return (
-                                                                    <div className="text-[10px] text-slate-500 truncate leading-tight mt-0.5 opacity-80">
-                                                                        {model.description}
-                                                                    </div>
-                                                                );
-                                                            })()}
-                                                            <div className="flex items-center gap-1.5 mt-0.5">
-                                                                {/* 能力图标 */}
-                                                                {model.capabilities && (
-                                                                    <div className="flex items-center gap-1 shrink-0">
-                                                                        {model.capabilities.vision && (
-                                                                            <div title="Vision">
-                                                                                <Eye size={9} className="text-blue-400" />
-                                                                            </div>
-                                                                        )}
-                                                                        {model.capabilities.search && (
-                                                                            <div title="Search">
-                                                                                <Search size={9} className="text-green-400" />
-                                                                            </div>
-                                                                        )}
-                                                                        {model.capabilities.reasoning && (
-                                                                            <div title="Reasoning">
-                                                                                <Brain size={9} className="text-purple-400" />
-                                                                            </div>
-                                                                        )}
-                                                                        {model.capabilities.coding && (
-                                                                            <div title="Coding">
-                                                                                <Code size={9} className="text-orange-400" />
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                </div>
+                                <ModelSelectionPanel
+                                    models={verifiedModels}
+                                    selectedModelIds={selectedModels}
+                                    onToggleModel={toggleModelSelection}
+                                    onSelectAll={() => setSelectedModels(new Set(verifiedModels.map(m => m.id)))}
+                                    onSelectNone={() => setSelectedModels(new Set())}
+                                    helperText="选择要在 Vertex AI 模式中启用的模型。"
+                                    testIdPrefix="vertex-model"
+                                />
                             )}
                         </div>
                     )}

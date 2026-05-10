@@ -68,7 +68,7 @@ def test_delete_video_extracts_provider_asset_references_from_attachment() -> No
     assert params["gcs_uri"] == "gs://bucket/demo.mp4"
 
 
-def test_video_request_normalization_forces_enhance_prompt_and_strips_runtime_unsupported_fields() -> None:
+def test_video_request_normalization_forces_enhance_prompt_and_audio_policy() -> None:
     params, meta = normalize_video_generation_request_params(
         provider="google",
         mode="video-gen",
@@ -78,13 +78,11 @@ def test_video_request_normalization_forces_enhance_prompt_and_strips_runtime_un
             "resolution": "720p",
             "enhance_prompt": False,
             "generate_audio": True,
-            "person_generation": "allow_adult",
         },
     )
 
     assert params["enhance_prompt"] is True
     assert params["generate_audio"] is False
-    assert "person_generation" not in params
     assert meta["runtime_api_mode"] == "gemini_api"
 
 

@@ -116,7 +116,7 @@ export const ImageOutpaintControls: React.FC<ImageOutpaintControlsProps> = ({
     (typeof outputMimeOptions[0]?.value === 'string' ? outputMimeOptions[0].value : undefined) ??
     'image/png';
   const defaultCompressionQuality =
-    typeof defaults.output_compression_quality === 'number' ? defaults.output_compression_quality : 80;
+    typeof defaults.output_compression_quality === 'number' ? defaults.output_compression_quality : 100;
   const defaultSeed = typeof defaults.seed === 'number' ? defaults.seed : -1;
 
   // 优先使用 controls 对象，fallback 到单独 props

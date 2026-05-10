@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { render, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import App from './App';
 
@@ -54,7 +54,19 @@ vi.mock('./components', async () => {
   };
 
   return {
-    AppLayout: ({ children }: { children: React.ReactNode }) => ReactModule.createElement('div', null, children),
+    AppLayout: ({
+      children,
+      onNewChat,
+    }: {
+      children: React.ReactNode;
+      onNewChat: () => void;
+    }) =>
+      ReactModule.createElement(
+        'div',
+        null,
+        ReactModule.createElement('button', { onClick: onNewChat, 'data-testid': 'new-session' }, 'new session'),
+        children
+      ),
     ChatView,
     SettingsModal: () => null,
     ImageModal: () => null,
@@ -213,6 +225,10 @@ vi.mock('./hooks', () => {
 });
 
 describe('App welcome prompt quick send model selection', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     sendMessageMock.mockReset();
     setCurrentModelIdMock.mockReset();
@@ -253,5 +269,25 @@ describe('App welcome prompt quick send model selection', () => {
     expect(sentModel?.id).toBe('model-target');
     expect(sentModel?.id).not.toBe('model-old');
     expect(sentSessionId).toBe('session-new');
+  });
+
+  it('starts a new session without forcing chat mode', async () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(sendMessageMock).toHaveBeenCalled();
+    });
+
+    createNewSessionMock.mockClear();
+    handleModeSwitchMock.mockClear();
+
+    fireEvent.click(screen.getByTestId('new-session'));
+
+    expect(createNewSessionMock).toHaveBeenCalledTimes(1);
+    expect(handleModeSwitchMock).not.toHaveBeenCalledWith('chat');
   });
 });

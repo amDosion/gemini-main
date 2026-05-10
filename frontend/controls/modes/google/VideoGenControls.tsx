@@ -7,6 +7,7 @@ import React, { useEffect, useMemo } from 'react';
 import { ChevronDown, ChevronUp, Clapperboard, Dices, Film, Maximize2, Sparkles } from 'lucide-react';
 import { VideoGenControlsProps } from '../../types';
 import { useModeControlsSchema } from '../../../hooks/useModeControlsSchema';
+import { useEnhancePromptModels } from '../../../hooks/useEnhancePromptModels';
 import { buildVideoControlContract, getVideoExtensionOptions } from '../../../utils/videoControlSchema';
 
 type VideoGenControlsBodyProps = VideoGenControlsProps & {
@@ -25,15 +26,16 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
   videoExtensionCount: propVideoExtensionCount, setVideoExtensionCount: propSetVideoExtensionCount,
   storyboardShotSeconds: propStoryboardShotSeconds, setStoryboardShotSeconds: propSetStoryboardShotSeconds,
   generateAudio: propGenerateAudio, setGenerateAudio: propSetGenerateAudio,
-  personGeneration: propPersonGeneration, setPersonGeneration: propSetPersonGeneration,
   subtitleMode: propSubtitleMode, setSubtitleMode: propSetSubtitleMode,
   subtitleLanguage: propSubtitleLanguage, setSubtitleLanguage: propSetSubtitleLanguage,
   subtitleScript: propSubtitleScript, setSubtitleScript: propSetSubtitleScript,
   storyboardPrompt: propStoryboardPrompt, setStoryboardPrompt: propSetStoryboardPrompt,
+  storyboardSegments: propStoryboardSegments, setStoryboardSegments: propSetStoryboardSegments,
   showAdvanced: propShowAdvanced, setShowAdvanced: propSetShowAdvanced,
   negativePrompt: propNegativePrompt, setNegativePrompt: propSetNegativePrompt,
   seed: propSeed, setSeed: propSetSeed,
   enhancePrompt: propEnhancePrompt, setEnhancePrompt: propSetEnhancePrompt,
+  enhancePromptModel: propEnhancePromptModel, setEnhancePromptModel: propSetEnhancePromptModel,
 }) => {
   const schema = controlsSchema;
   const videoControlContract = useMemo(() => buildVideoControlContract(schema), [schema]);
@@ -42,7 +44,6 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
   const availableSeconds = useMemo(() => schema?.paramOptions?.seconds ?? [], [schema]);
   const availableStoryboardShotSeconds = useMemo(() => schema?.paramOptions?.storyboard_shot_seconds ?? [], [schema]);
   const availableGenerateAudioOptions = useMemo(() => schema?.paramOptions?.generate_audio ?? [], [schema]);
-  const availablePersonGenerationOptions = useMemo(() => schema?.paramOptions?.person_generation ?? [], [schema]);
   const availableSubtitleModes = useMemo(() => schema?.paramOptions?.subtitle_mode ?? [], [schema]);
   const availableSubtitleLanguages = useMemo(() => schema?.paramOptions?.subtitle_language ?? [], [schema]);
   const defaults = schema?.defaults ?? {};
@@ -85,7 +86,6 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
       : videoControlContract.defaultVideoExtensionCount;
   const defaultStoryboardShotSeconds = videoControlContract.defaultStoryboardShotSeconds;
   const defaultGenerateAudio = videoControlContract.defaultGenerateAudio;
-  const defaultPersonGeneration = videoControlContract.defaultPersonGeneration;
   const defaultSubtitleMode = videoControlContract.defaultSubtitleMode;
   const defaultSubtitleLanguage = videoControlContract.defaultSubtitleLanguage;
   const defaultSubtitleScript = videoControlContract.defaultSubtitleScript;
@@ -98,8 +98,6 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
   const setStoryboardShotSeconds = controls?.setStoryboardShotSeconds ?? propSetStoryboardShotSeconds ?? (() => {});
   const generateAudio = controls?.generateAudio ?? propGenerateAudio ?? defaultGenerateAudio;
   const setGenerateAudio = controls?.setGenerateAudio ?? propSetGenerateAudio ?? (() => {});
-  const personGeneration = controls?.personGeneration ?? propPersonGeneration ?? defaultPersonGeneration;
-  const setPersonGeneration = controls?.setPersonGeneration ?? propSetPersonGeneration ?? (() => {});
   const subtitleMode = controls?.subtitleMode ?? propSubtitleMode ?? defaultSubtitleMode;
   const setSubtitleMode = controls?.setSubtitleMode ?? propSetSubtitleMode ?? (() => {});
   const subtitleLanguage = controls?.subtitleLanguage ?? propSubtitleLanguage ?? defaultSubtitleLanguage;
@@ -108,6 +106,8 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
   const setSubtitleScript = controls?.setSubtitleScript ?? propSetSubtitleScript ?? (() => {});
   const storyboardPrompt = controls?.storyboardPrompt ?? propStoryboardPrompt ?? defaultStoryboardPrompt;
   const setStoryboardPrompt = controls?.setStoryboardPrompt ?? propSetStoryboardPrompt ?? (() => {});
+  const storyboardSegments = controls?.storyboardSegments ?? propStoryboardSegments ?? [];
+  const setStoryboardSegments = controls?.setStoryboardSegments ?? propSetStoryboardSegments ?? (() => {});
   const subtitlesEnabled = subtitleMode !== 'none';
   const showAdvanced = controls?.showAdvanced ?? propShowAdvanced ?? defaultShowAdvanced;
   const setShowAdvanced = controls?.setShowAdvanced ?? propSetShowAdvanced ?? (() => {});
@@ -117,12 +117,25 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
   const setSeed = controls?.setSeed ?? propSetSeed ?? (() => {});
   const enhancePrompt = controls?.enhancePrompt ?? propEnhancePrompt ?? defaultEnhancePrompt;
   const setEnhancePrompt = controls?.setEnhancePrompt ?? propSetEnhancePrompt ?? (() => {});
+  const enhancePromptModels = useEnhancePromptModels();
+  const enhancePromptModel = controls?.enhancePromptModel ?? propEnhancePromptModel ?? '';
+  const setEnhancePromptModel = controls?.setEnhancePromptModel ?? propSetEnhancePromptModel ?? (() => {});
 
   useEffect(() => {
     if (enhancePromptMandatory && !enhancePrompt) {
       setEnhancePrompt(true);
     }
   }, [enhancePrompt, enhancePromptMandatory, setEnhancePrompt]);
+
+  useEffect(() => {
+    if (!enhancePromptModel || enhancePromptModels.length === 0) {
+      return;
+    }
+    const stillAvailable = enhancePromptModels.some((model) => model.id === enhancePromptModel);
+    if (!stillAvailable) {
+      setEnhancePromptModel('');
+    }
+  }, [enhancePromptModel, enhancePromptModels, setEnhancePromptModel]);
 
   useEffect(() => {
     const validRatios = availableRatios.map((r) => r.value);
@@ -170,6 +183,34 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
       setVideoExtensionCount(validCounts[0]);
     }
   }, [derivedExtensionOptions, setVideoExtensionCount, videoExtensionCount]);
+
+  const baseDurationSeconds = useMemo(() => {
+    const parsed = parseInt(String(videoSeconds || ''), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 8;
+  }, [videoSeconds]);
+
+  const extensionStoryboardInputs = useMemo(() => {
+    return Array.from({ length: Math.max(0, videoExtensionCount) }, (_, index) => {
+      const start = baseDurationSeconds + index * extensionAddedSeconds;
+      const end = start + extensionAddedSeconds;
+      return {
+        index,
+        label: `延长 ${index + 1} 分镜`,
+        ariaLabel: `延长 ${index + 1} 分镜提示词`,
+        range: extensionAddedSeconds > 0 ? `${start}-${end}s` : '',
+        value: storyboardSegments[index] ?? '',
+      };
+    });
+  }, [baseDurationSeconds, extensionAddedSeconds, storyboardSegments, videoExtensionCount]);
+
+  const updateStoryboardSegment = (index: number, value: string) => {
+    const next = [...storyboardSegments];
+    while (next.length <= index) {
+      next.push('');
+    }
+    next[index] = value;
+    setStoryboardSegments(next);
+  };
 
   return (
     <div className="space-y-4">
@@ -383,6 +424,25 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
               <p className="text-[10px] text-pink-300">当前 Veo 3.1 模型必须启用 AI 增强提示词。</p>
             )}
 
+            {enhancePrompt && (
+              <div className="space-y-2">
+                <span className="text-xs text-slate-300">增强提示词模型</span>
+                <select
+                  aria-label="增强提示词模型"
+                  value={enhancePromptModel}
+                  onChange={(event) => setEnhancePromptModel(event.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-pink-500/50"
+                >
+                  <option value="">自动选择</option>
+                  {enhancePromptModels.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name || model.id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {availableGenerateAudioOptions.length > 0 && (
               <label className="space-y-1">
                 <span className="text-xs text-slate-300">音频</span>
@@ -393,24 +453,6 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
                   className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
                 >
                   {availableGenerateAudioOptions.map((option) => (
-                    <option key={String(option.value)} value={String(option.value)}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
-            {availablePersonGenerationOptions.length > 0 && (
-              <label className="space-y-1">
-                <span className="text-xs text-slate-300">人物生成</span>
-                <select
-                  aria-label="人物生成"
-                  value={personGeneration}
-                  onChange={(event) => setPersonGeneration(event.target.value)}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
-                >
-                  {availablePersonGenerationOptions.map((option) => (
                     <option key={String(option.value)} value={String(option.value)}>
                       {option.label}
                     </option>
@@ -437,16 +479,26 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
               </label>
             )}
 
-            {storyboardPromptPreferred && (
+            {storyboardPromptPreferred && extensionStoryboardInputs.length > 0 && (
               <div className="space-y-2">
-                <span className="text-xs text-slate-300">分镜提示词</span>
-                <textarea
-                  aria-label="分镜提示词"
-                  value={storyboardPrompt}
-                  onChange={(event) => setStoryboardPrompt(event.target.value)}
-                  placeholder="按镜头写出卖点、镜头动作、画面重点和每个镜头不同的动态文字。系统会把它当作严格 storyboard prompt。"
-                  className="w-full h-28 bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-300 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500"
-                />
+                <span className="text-xs text-slate-300">延长分镜</span>
+                <div className="space-y-2 pt-1">
+                  {extensionStoryboardInputs.map((segment) => (
+                    <label key={segment.index} className="block space-y-1">
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-slate-400">{segment.label}</span>
+                        {segment.range && <span className="text-[10px] text-cyan-300">{segment.range}</span>}
+                      </span>
+                      <textarea
+                        aria-label={segment.ariaLabel}
+                        value={segment.value}
+                        onChange={(event) => updateStoryboardSegment(segment.index, event.target.value)}
+                        placeholder="描述这一段如何从上一段尾帧继续，包括动作、镜头、构图、口播和情绪变化。"
+                        className="w-full h-20 bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-300 placeholder-slate-500 resize-none focus:outline-none focus:border-cyan-500"
+                      />
+                    </label>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -492,7 +544,7 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
                     ))}
                   </select>
                 </label>
-                <div className="space-y-2">
+                {!generateAudio && <div className="space-y-2">
                   <span className="text-xs text-slate-300">字幕脚本</span>
                   <textarea
                     aria-label="字幕脚本"
@@ -501,7 +553,7 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
                     placeholder="每行一句，或使用 | 分隔。不会再从提示词自动生成字幕。"
                     className="w-full h-24 bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-300 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500"
                   />
-                </div>
+                </div>}
               </>
             )}
           </div>

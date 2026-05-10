@@ -9,7 +9,7 @@ Mask Edit Service (掩码编辑服务)
 - 自动掩码编辑 (前景/背景)
 - 背景替换
 
-模型：imagen-3.0-capability-001, imagen-4.0-ingredients-preview (仅 Vertex AI)
+模型：imagen-3.0-capability-001 (仅 Vertex AI)
 
 路由：
 - image-mask-edit → ImageEditCoordinator → MaskEditService.edit_image()
@@ -49,9 +49,7 @@ class MaskEditService(VertexAIEditBase):
     本服务仅设置掩码编辑的默认参数，然后委托给基类的 edit_image()：
     - guidance_scale: 15.0
     - output_mime_type: image/png
-    - output_compression_quality: 95
-    - safety_filter_level: BLOCK_MEDIUM_AND_ABOVE
-    - person_generation: ALLOW_ADULT
+    - output_compression_quality: 100
     - 无用户掩码时自动使用 MASK_MODE_FOREGROUND
 
     支持的编辑模式 (types.EditMode):
@@ -73,7 +71,6 @@ class MaskEditService(VertexAIEditBase):
     # 支持的模型
     SUPPORTED_MODELS = {
         'imagen-3.0-capability-001',
-        'imagen-4.0-ingredients-preview',
     }
 
     # 编辑模式列表
@@ -119,9 +116,7 @@ class MaskEditService(VertexAIEditBase):
                 - negative_prompt: 负面提示词
                 - guidance_scale: 引导比例 (默认 15.0)
                 - output_mime_type: 输出格式 (默认 image/png)
-                - output_compression_quality: 压缩质量 (默认 95)
-                - safety_filter_level: 安全过滤级别 (默认 BLOCK_MEDIUM_AND_ABOVE)
-                - person_generation: 人物生成设置 (默认 ALLOW_ADULT)
+                - output_compression_quality: 压缩质量 (默认 100)
 
         Returns:
             List[Dict[str, Any]] — 与所有服务统一的返回格式
@@ -137,9 +132,7 @@ class MaskEditService(VertexAIEditBase):
         # ── Step 2: Mask-edit specific defaults (only applied if not set by frontend) ──
         effective_config.setdefault('guidance_scale', 15.0)
         effective_config.setdefault('output_mime_type', 'image/png')
-        effective_config.setdefault('output_compression_quality', 95)
-        effective_config.setdefault('safety_filter_level', 'block_some')
-        effective_config.setdefault('person_generation', 'allow_adult')
+        effective_config.setdefault('output_compression_quality', 100)
 
         # Auto-mask: if no user mask provided and no mask_mode specified, default to FOREGROUND
         has_mask = 'mask' in reference_images and reference_images.get('mask')

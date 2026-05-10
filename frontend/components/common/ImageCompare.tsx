@@ -39,18 +39,26 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({
   accentColor = 'pink',
 }) => {
   const [sliderPosition, setSliderPosition] = useState(initialPosition);
+  const [beforeOpacity, setBeforeOpacity] = useState(100);
   const [isDragging, setIsDragging] = useState(false);
   const [imageDimensions, setImageDimensions] = useState<{
     before: { width: number; height: number } | null;
     after: { width: number; height: number } | null;
   }>({ before: null, after: null });
   const containerRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
 
   const accentColors = {
     pink: 'bg-pink-500',
     orange: 'bg-orange-500',
     emerald: 'bg-emerald-500',
     indigo: 'bg-indigo-500',
+  };
+  const accentHexColors = {
+    pink: '#ec4899',
+    orange: '#f97316',
+    emerald: '#10b981',
+    indigo: '#6366f1',
   };
 
   // 加载图片尺寸
@@ -92,32 +100,57 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({
     setSliderPosition(percentage);
   }, []);
 
-  // 鼠标事件
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-    updateSliderPosition(e.clientX);
-  }, [updateSliderPosition]);
-
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDragging) return;
-    updateSliderPosition(e.clientX);
-  }, [isDragging, updateSliderPosition]);
-
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false);
+  const setDraggingState = useCallback((nextDragging: boolean) => {
+    draggingRef.current = nextDragging;
+    setIsDragging(nextDragging);
   }, []);
 
-  // 触摸事件
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    setIsDragging(true);
-    updateSliderPosition(e.touches[0].clientX);
+  const releasePointerCapture = useCallback((target: HTMLDivElement, pointerId: number) => {
+    if (typeof target.releasePointerCapture !== 'function') return;
+    try {
+      target.releasePointerCapture(pointerId);
+    } catch {
+      // Pointer capture may already be released by the browser.
+    }
+  }, []);
+
+  // 指针事件：统一支持鼠标、触摸、触控笔，并在拖动时捕获指针。
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof e.currentTarget.setPointerCapture === 'function') {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+    setDraggingState(true);
+    updateSliderPosition(e.clientX);
+  }, [setDraggingState, updateSliderPosition]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    updateSliderPosition(e.clientX);
   }, [updateSliderPosition]);
 
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (!isDragging) return;
-    updateSliderPosition(e.touches[0].clientX);
-  }, [isDragging, updateSliderPosition]);
+  const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    releasePointerCapture(e.currentTarget, e.pointerId);
+    setDraggingState(false);
+  }, [releasePointerCapture, setDraggingState]);
+
+  const handlePointerCancel = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    releasePointerCapture(e.currentTarget, e.pointerId);
+    setDraggingState(false);
+  }, [releasePointerCapture, setDraggingState]);
+
+  const handleOpacityChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setBeforeOpacity(Number(e.target.value));
+  }, []);
+
+  const stopControlPropagation = useCallback((e: React.SyntheticEvent) => {
+    e.stopPropagation();
+  }, []);
 
   // 检查比例是否一致（允许 5% 误差）
   const aspectRatioMismatch = useCallback(() => {
@@ -133,20 +166,35 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({
   return (
     <div
       ref={containerRef}
-      className={`relative overflow-hidden select-none ${className}`}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleMouseUp}
+      className={`relative inline-block overflow-hidden select-none ${className}`}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      onLostPointerCapture={() => setDraggingState(false)}
       style={{ 
         cursor: isDragging ? 'ew-resize' : 'col-resize',
+        touchAction: 'none',
+        lineHeight: 0,
         aspectRatio: aspectRatio > 0 ? `${aspectRatio}` : undefined,
         ...style 
       }}
     >
+      <img
+        src={afterImage}
+        alt=""
+        aria-hidden="true"
+        data-testid="image-compare-sizer"
+        className="block opacity-0 pointer-events-none select-none"
+        style={{
+          maxWidth: 'inherit',
+          maxHeight: 'inherit',
+          width: 'auto',
+          height: 'auto',
+        }}
+        draggable={false}
+      />
+
       {/* 比例不一致提示 */}
       {aspectRatioMismatch() && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 bg-yellow-500/90 backdrop-blur-sm px-4 py-2 rounded-lg text-xs text-black font-medium shadow-lg">
@@ -164,8 +212,9 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({
 
       {/* 原图（上层，裁剪显示） */}
       <div
+        data-testid="image-compare-before-layer"
         className="absolute inset-0 overflow-hidden pointer-events-none"
-        style={{ width: `${sliderPosition}%` }}
+        style={{ width: `${sliderPosition}%`, opacity: beforeOpacity / 100 }}
       >
         <img
           src={beforeImage}
@@ -204,6 +253,28 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({
       </div>
       <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-sm px-3 py-1 rounded-full text-xs text-white font-medium border border-white/10">
         {afterLabel}
+      </div>
+
+      <div
+        className="absolute bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/10 bg-black/65 px-3 py-2 text-white shadow-lg backdrop-blur-md"
+        onPointerDown={stopControlPropagation}
+        onPointerMove={stopControlPropagation}
+        onPointerUp={stopControlPropagation}
+        onClick={stopControlPropagation}
+      >
+        <span className="text-[10px] font-medium text-slate-200 whitespace-nowrap">原图</span>
+        <input
+          aria-label="原图透明度"
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          value={beforeOpacity}
+          onChange={handleOpacityChange}
+          className="h-1.5 w-28 cursor-pointer"
+          style={{ accentColor: accentHexColors[accentColor] }}
+        />
+        <span className="w-8 text-right font-mono text-[10px] text-slate-300">{beforeOpacity}%</span>
       </div>
     </div>
   );

@@ -37,9 +37,10 @@ export const ImageMaskEditControls: React.FC<ImageMaskEditControlsProps> = ({
   const defaults = schema?.defaults ?? {};
   const editModeOptions = useMemo(
     () =>
-      (schema?.paramOptions?.edit_mode ?? []).filter(
-        (option): option is { label: string; value: string } => typeof option.value === 'string'
-      ),
+      (schema?.paramOptions?.edit_mode ?? [])
+        .filter(
+          (option): option is { label: string; value: string } => typeof option.value === 'string'
+        ),
     [schema]
   );
   const imageCountOptions = useMemo(
@@ -78,7 +79,7 @@ export const ImageMaskEditControls: React.FC<ImageMaskEditControlsProps> = ({
     (typeof outputMimeOptions[0]?.value === 'string' ? outputMimeOptions[0].value : undefined) ??
     'image/png';
   const defaultCompressionQuality =
-    typeof defaults.output_compression_quality === 'number' ? defaults.output_compression_quality : 80;
+    typeof defaults.output_compression_quality === 'number' ? defaults.output_compression_quality : 100;
   const defaultNegativePrompt = typeof defaults.negative_prompt === 'string' ? defaults.negative_prompt : '';
 
   // 优先使用 controls 对象，fallback 到单独 props
