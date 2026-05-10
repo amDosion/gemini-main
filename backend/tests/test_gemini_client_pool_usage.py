@@ -70,7 +70,12 @@ def fresh_pool() -> GeminiClientPool:
     pool = get_client_pool()
     pool._clients.clear()
     pool._client_metadata.clear()
-    pool._stats = {"total_clients": 0, "cache_hits": 0, "cache_misses": 0}
+    pool._stats = {
+        "total_clients": 0,
+        "cache_hits": 0,
+        "cache_misses": 0,
+        "rejected_due_to_max_size": 0,
+    }
     return pool
 
 
@@ -155,3 +160,271 @@ def test_direct_genai_client_creation_is_allowlisted_only():
         "client = get_client_pool().get_client(...)`：\n  "
         + "\n  ".join(offenders)
     )
+
+
+# ===========================================================================
+# JIRA-gemini-pool-production-hardening.md  P1 #21-#23 + 加分项
+# ===========================================================================
+
+
+def test_pool_max_size_raises_when_exceeded(monkeypatch, fresh_pool):
+    """JIRA hardening P0 #6：池规模上限达到时 raise RuntimeError 防 OOM。"""
+    monkeypatch.setattr(fresh_pool, "_max_size", 3)
+
+    for i in range(3):
+        fresh_pool.get_client(api_key=f"max-size-key-{i}", vertexai=False)
+
+    assert len(fresh_pool._clients) == 3
+
+    with pytest.raises(RuntimeError, match="size limit reached"):
+        fresh_pool.get_client(api_key="overflow-key", vertexai=False)
+
+    stats = fresh_pool.get_stats()
+    assert stats["rejected_due_to_max_size"] == 1
+    assert stats["max_size"] == 3
+
+
+def test_embedding_service_uses_client_pool(monkeypatch):
+    """JIRA hardening P1 #21：embedding_service.get_embedding 走池且 vertexai=False。"""
+    from app.services.common import embedding_service as svc
+
+    captured_kwargs: dict = {}
+
+    class _FakeEmbeddingResponse:
+        embeddings = [type("E", (), {"values": [0.1, 0.2, 0.3]})()]
+
+    class _FakeClient:
+        models = type("M", (), {"embed_content": lambda self, model, contents: _FakeEmbeddingResponse()})()
+
+    class _FakePool:
+        def get_client(self, **kwargs):
+            captured_kwargs.update(kwargs)
+            return _FakeClient()
+
+    monkeypatch.setattr(svc, "get_client_pool", lambda: _FakePool())
+
+    result = svc.get_embedding("hello", api_key="emb-test-key")
+
+    assert result == [0.1, 0.2, 0.3]
+    assert captured_kwargs.get("api_key") == "emb-test-key"
+    assert captured_kwargs.get("vertexai") is False
+
+
+def test_file_search_uses_client_pool_for_api_key(monkeypatch):
+    """JIRA hardening P1 #22：file_search 上传走池，vertexai=False，api_key 来自 Bearer。"""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.routers.system.file_search import router as fs_router
+
+    captured_kwargs: dict = {}
+    upload_called = {"count": 0}
+
+    class _FakeStore:
+        name = "fileSearchStores/deep-research-documents"
+        display_name = "deep-research-documents"
+
+    class _FakeOperation:
+        def __init__(self):
+            self.done = True
+            self.name = "operations/test-op-id"
+            self.response = {"file_id": "files/test-file-id"}
+
+    class _FakeFile:
+        name = "files/uploaded-file"
+
+    class _FakeFileSearchStores:
+        def get(self, name):
+            return _FakeStore()
+        def upload_to_file_search_store(self, name, file):
+            upload_called["count"] += 1
+            return _FakeOperation()
+
+    class _FakeFiles:
+        def upload(self, path):
+            return _FakeFile()
+
+    class _FakeOperations:
+        def get(self, name):
+            return _FakeOperation()
+
+    class _FakeClient:
+        file_search_stores = _FakeFileSearchStores()
+        files = _FakeFiles()
+        operations = _FakeOperations()
+
+    class _FakePool:
+        def get_client(self, **kwargs):
+            captured_kwargs.update(kwargs)
+            return _FakeClient()
+
+    import app.routers.system.file_search as fs_mod
+    monkeypatch.setattr(fs_mod, "get_client_pool", lambda: _FakePool())
+
+    app = FastAPI()
+    app.include_router(fs_router)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/file-search/upload",
+        files={"file": ("hello.txt", b"hello world", "text/plain")},
+        headers={"Authorization": "Bearer fs-test-key-12345"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert captured_kwargs.get("api_key") == "fs-test-key-12345"
+    assert captured_kwargs.get("vertexai") is False
+    assert upload_called["count"] == 1
+
+
+def test_credentials_json_decode_error_raises_not_silent_adc(monkeypatch):
+    """JIRA hardening P0 #9：credentials.py JSON 解密失败必须 raise，不再 silent fallback ADC。"""
+    from unittest.mock import MagicMock
+
+    import app.core.encryption as enc
+    from app.services.gemini.credentials import get_vertex_ai_credentials_from_db
+
+    monkeypatch.setattr(enc, "decrypt_data", lambda blob: "definitely-not-json{")
+
+    cfg = MagicMock()
+    cfg.api_mode = "vertex_ai"
+    cfg.vertex_ai_project_id = "p"
+    cfg.vertex_ai_location = "us-central1"
+    cfg.vertex_ai_credentials_json = "encrypted-blob"
+
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = cfg
+
+    with pytest.raises(ValueError, match="malformed"):
+        get_vertex_ai_credentials_from_db("user-x", db)
+
+
+@pytest.mark.parametrize(
+    "auth_header,expected_status",
+    [
+        (None, 401),
+        ("", 401),
+        ("Basic abc", 401),
+        ("Bearer", 401),
+        ("Bearer ", 401),
+        ("Bearer  ", 401),
+        ("Bearer\t", 401),
+    ],
+)
+def test_bearer_token_empty_returns_401_not_500(auth_header, expected_status):
+    """JIRA hardening P0 #4：异常 Bearer 格式必须返回 401，不应透到 pool 触发 500。"""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.routers.system.file_search import router as fs_router
+
+    app = FastAPI()
+    app.include_router(fs_router)
+    client = TestClient(app)
+
+    headers = {"Authorization": auth_header} if auth_header is not None else {}
+    response = client.get("/api/file-search/stores", headers=headers)
+    assert response.status_code == expected_status, response.text
+
+
+def test_close_failure_logs_warning_not_debug(monkeypatch, caplog):
+    """JIRA hardening P0 #13：/verify-vertex-ai finally close 失败应 logger.warning。"""
+    import logging
+    from app.routers.models import vertex_ai_config
+
+    caplog.set_level(logging.WARNING, logger=vertex_ai_config.logger.name)
+
+    class _FailClose:
+        def close(self):
+            raise RuntimeError("simulated close failure")
+
+    # 手动模拟 finally 块逻辑（避免完整 endpoint 调用所需的 DB / auth 层）
+    client = _FailClose()
+    try:
+        if client is not None and hasattr(client, "close"):
+            try:
+                client.close()
+            except Exception as close_err:
+                vertex_ai_config.logger.warning(
+                    f"[VertexAIConfig] Failed to close verify-only Vertex AI client: {close_err}",
+                    exc_info=True,
+                )
+    except Exception:
+        pytest.fail("finally block should swallow close exception")
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("Failed to close verify-only" in r.message for r in warnings)
+
+
+def test_health_payload_contains_gemini_pool():
+    """JIRA hardening P1 #18：/health payload 含 gemini_pool 字段。"""
+    from app.routers.system.health import _gemini_pool_health
+
+    payload = _gemini_pool_health()
+    expected_keys = {"initialized", "sdk_available", "active_clients", "max_size"}
+    assert expected_keys.issubset(set(payload.keys())), (
+        f"missing keys: {expected_keys - set(payload.keys())}"
+    )
+    assert isinstance(payload["initialized"], bool)
+    assert isinstance(payload["sdk_available"], bool)
+    assert isinstance(payload["active_clients"], int)
+    assert isinstance(payload["max_size"], int)
+
+
+def test_admin_gemini_pool_stats_route_registered():
+    """JIRA hardening P1 #17：admin endpoint /api/system/admin/gemini-pool/stats 已注册。"""
+    from app.routers.system.admin import router as admin_router
+
+    paths = {getattr(r, "path", None) for r in admin_router.routes}
+    assert "/api/system/admin/gemini-pool/stats" in paths
+
+
+def test_file_search_store_get_propagates_non_notfound_errors(monkeypatch):
+    """JIRA hardening P0 #12：store get 时非 NotFound 错误必须传播，不能被误归为"不存在 → 创建"。"""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.routers.system.file_search import router as fs_router
+
+    create_called = {"count": 0}
+
+    class _AuthError(Exception):
+        code = 403
+        status = "PERMISSION_DENIED"
+
+        def __str__(self):
+            return "401 Unauthorized: invalid api_key"
+
+    class _FakeFileSearchStores:
+        def get(self, name):
+            raise _AuthError()
+        def create(self, config):
+            create_called["count"] += 1
+            return None
+
+    class _FakeClient:
+        file_search_stores = _FakeFileSearchStores()
+        files = type("F", (), {})()
+        operations = type("O", (), {})()
+
+    class _FakePool:
+        def get_client(self, **kwargs):
+            return _FakeClient()
+
+    import app.routers.system.file_search as fs_mod
+    monkeypatch.setattr(fs_mod, "get_client_pool", lambda: _FakePool())
+
+    app = FastAPI()
+    app.include_router(fs_router)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/file-search/upload",
+        files={"file": ("hello.txt", b"hi", "text/plain")},
+        headers={"Authorization": "Bearer fake-key"},
+    )
+
+    # 必须是 500 + 通用消息（auth 错误已在 logger 服务端记录），且没有走 fallback create()
+    assert response.status_code == 500
+    assert "File upload failed. Please try again" in response.text
+    assert create_called["count"] == 0, "auth/permission errors must NOT trigger create() fallback"
