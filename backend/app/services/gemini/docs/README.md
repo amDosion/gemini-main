@@ -57,7 +57,7 @@ gemini/                                         # 共 121 个 Python 文件
 ├── # ═══════════════════════════════════════════════════════════════════════
 ├── common/
 │   ├── __init__.py
-│   ├── sdk_initializer.py                      # [Hybrid] SDK 初始化 - 支持 Gemini API 和 Vertex AI
+│   # sdk_initializer.py 已迁至 _deprecated/（请改用 client_pool.get_client_pool()）
 │   ├── model_manager.py                        # [Common] 模型列表管理
 │   ├── message_converter.py                    # [Common] 消息格式转换
 │   ├── response_parser.py                      # [Common] 响应解析
@@ -73,7 +73,7 @@ gemini/                                         # 共 121 个 Python 文件
 │   ├── browser.py                              # [Common] 浏览器工具
 │   ├── mode_registry.py                        # [Common] Google 模式注册表
 │   ├── mode_initialization.py                  # [Common] 模式初始化
-│   ├── official_sdk_adapter.py                 # [Hybrid] 官方 SDK 适配器 - 支持 use_vertex 标志
+│   # official_sdk_adapter.py 已迁至 _deprecated/（请改用 client_pool.get_client_pool()）
 │   └── pdf_extractor.py                        # [Common] PDF 结构化提取
 │
 ├── # ═══════════════════════════════════════════════════════════════════════
@@ -277,16 +277,18 @@ gemini/                                         # 共 121 个 Python 文件
 | 文件 | 类名 | 说明 |
 |------|------|------|
 | `google_service.py` | `GoogleService` | 主协调器，统一入口；`multi_agent()` 仅保留为 Google runtime 兼容适配器 |
-| `sdk_initializer.py` | `SDKInitializer` | 支持两种 API 的 SDK 初始化 |
-| `client_pool.py` | `GeminiClientPool` | 统一客户端池管理 |
+| `client_pool.py` | `GeminiClientPool` | **统一客户端池管理 — 唯一合法的 google.genai.Client 创建源** |
+| `http_options.py` | `HttpOptions / HttpOptionsDict / HttpRetryOptions` | 池层共享的 HTTP 配置类型 |
+| `credentials.py` | `get_vertex_ai_credentials_from_db` | VertexAIConfig 表查询 + service-account JSON 解密 |
 | `imagen_coordinator.py` | `ImagenCoordinator` | Factory 模式选择 API 实现 |
 | `video_generation_coordinator.py` | `VideoGenerationCoordinator` | 复用 GEN 模式配置加载，选择 Gemini API 或 Vertex AI 的 Veo 服务 |
 | `image_edit_coordinator.py` | `ImageEditCoordinator` | 智能路由编辑请求 |
 | `image_generator.py` | `ImageGenerator` | 使用 ImagenCoordinator 的包装器 |
 | `tryon_service.py` | `TryOnService` | Vertex AI 优先，Gemini API 降级 |
-| `official_sdk_adapter.py` | `OfficialSDKAdapter` | 支持 `use_vertex` 标志 |
-| `agent/client.py` | `Client` | Official SDK 兼容客户端 |
-| `agent/models.py` | `Models` | Models API 包装器 |
+| `agent/client.py` | `Client` | Official SDK 兼容包装层；底层 client 由 GeminiClientPool 提供 |
+| `agent/models.py` | `Models` | Models API 包装器（保留用于 wrapper Client.models 属性） |
+| ~~`sdk_initializer.py`~~ | ~~`SDKInitializer`~~ | **已迁至 `_deprecated/`，请改用 `client_pool.get_client_pool()`** |
+| ~~`official_sdk_adapter.py`~~ | ~~`OfficialSDKAdapter`~~ | **已迁至 `_deprecated/`，请改用 `client_pool.get_client_pool()`** |
 
 ## 核心组件
 
@@ -562,7 +564,78 @@ except ProviderError as e:
     pass
 ```
 
+## GeminiClientPool — 统一客户端池
+
+### 何时使用
+
+**所有运行链路**新建的 `google.genai.Client` 必须走这里。直接 `genai.Client(...)`
+仅在以下白名单允许（见 `tests/test_gemini_client_pool_usage.py:test_direct_genai_client_creation_is_allowlisted_only`）：
+
+- `services/gemini/client_pool.py` — 池内部唯一合法的创建点
+- `routers/models/vertex_ai_config.py` 的 `/verify-vertex-ai` —— 用户尚未保存的临时凭证一次性验证
+- `services/gemini/geminiapi/main.py` —— STANDALONE 独立 FastAPI app
+
+任何其它地方新增 `genai.Client(` 都会被 CI 静态扫描 fail。
+
+### 如何使用
+
+```python
+from app.services.gemini.client_pool import get_client_pool
+
+# Gemini API（用 api_key）
+client = get_client_pool().get_client(api_key=user_api_key, vertexai=False)
+
+# Vertex AI（用 service-account credentials）
+client = get_client_pool().get_client(
+    vertexai=True,
+    project="my-gcp-project",
+    location="us-central1",
+    credentials=service_account_credentials,
+)
+
+# 自定义 timeout / retry
+from app.services.gemini.http_options import HttpOptions, HttpRetryOptions
+
+client = get_client_pool().get_client(
+    api_key=user_api_key,
+    vertexai=False,
+    http_options=HttpOptions(
+        timeout=600000,  # 10 分钟，视频生成等长任务
+        retry_options=HttpRetryOptions(attempts=5, initial_delay=2.0),
+    ),
+)
+```
+
+### 不要做
+
+- **不要**写 `with Client(...) as c: ...`：`agent.Client.close()` 是 no-op，因为底层 client 由池管生命周期；这是 with 契约的语义陷阱
+- **不要**自己持有 `client` 引用做"关闭"：调 `pool.close_all()` 或让 shutdown 流程处理
+- **不要**给同一 (api_key, vertexai, http_options) 反复构造大量 `agent.Client(...)` 实例：构造开销小但仍是负担——直接调 `pool.get_client(...)` 拿原生
+
+### 多 worker 部署语义
+
+- pool 是**进程内单例**。`uvicorn --workers N` 模式下每个 worker 进程**独立池**
+- `GET /api/system/admin/gemini-pool/stats`、`/health` 中 `gemini_pool` 字段都只反映**当前 worker** 的视图
+- 监控聚合：`active_clients` 总数 = sum across workers；`hit_rate` 是 **per-worker** 的（不要平均，要按 worker 视图分别看）
+- 告警阈值需要乘 worker 数（如 4 worker × 200 max_size = 全局上限 800 客户端）
+
+### 调优旋钮
+
+| Env var | Default | 说明 |
+|---|---|---|
+| `GEMINI_POOL_MAX_SIZE` | 200 | 池规模上限。超出 raise RuntimeError 防 OOM |
+| `GEMINI_TIMEOUT` | 30000 | 单次 HTTP 请求超时（毫秒） |
+| `GEMINI_RETRY_ATTEMPTS` | 3 | 瞬时故障重试次数 |
+| `GEMINI_RETRY_INITIAL_DELAY` | 1.0 | 首次重试间隔（秒） |
+| `GEMINI_RETRY_MAX_DELAY` | 60.0 | 重试间隔上限（秒） |
+| `GEMINI_RETRY_EXP_BASE` | 2.0 | 退避指数底数 |
+| `GEMINI_RETRY_JITTER` | true | 是否启用抖动 |
+
+完整说明参见 [`backend/.env.example`](../../.env.example) 中"Gemini 连接池调优"章节。
+
 ## 相关文档
 
 - [路由与逻辑分离架构设计文档](../../../docs/路由与逻辑分离架构设计文档.md)
 - [官方 Google GenAI SDK](https://googleapis.github.io/python-genai/)
+- [JIRA-gemini-client-pool-unification](../../../../../JIRA-gemini-client-pool-unification.md) — 前置统一池治理工单
+- [JIRA-gemini-pool-production-hardening](../../../../../JIRA-gemini-pool-production-hardening.md) — 上线前 hardening 工单
