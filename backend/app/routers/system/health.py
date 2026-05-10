@@ -188,8 +188,40 @@ async def build_health_payload(*, include_internal_errors: bool = False) -> Dict
         "pdf_extraction": PDF_EXTRACTION_AVAILABLE,
         "embedding": EMBEDDING_AVAILABLE,
         "upload_worker_pool": WORKER_POOL_AVAILABLE,
+        "gemini_pool": _gemini_pool_health(),
         "version": "1.0.0",
     }
+
+
+def _gemini_pool_health() -> Dict[str, Any]:
+    """汇总 GeminiClientPool 健康状态用于 /health payload。
+
+    仅暴露 4 个 boolean / int 字段（initialized / sdk_available / active_clients
+    / max_size），不返回 cache_key、api_key_configured 等诊断字段——那些只在
+    /api/system/admin/gemini-pool/stats 受 admin guard 保护后暴露。
+    """
+    try:
+        from ...services.gemini.client_pool import (
+            GOOGLE_GENAI_AVAILABLE,
+            get_client_pool,
+        )
+
+        pool = get_client_pool()
+        return {
+            "initialized": getattr(pool, "_initialized", False),
+            "sdk_available": bool(GOOGLE_GENAI_AVAILABLE),
+            "active_clients": len(pool._clients),
+            "max_size": pool._max_size,
+        }
+    except Exception as err:
+        logger.warning("[Health] gemini_pool health check failed: %s", err, exc_info=True)
+        return {
+            "initialized": False,
+            "sdk_available": False,
+            "active_clients": 0,
+            "max_size": 0,
+            "error": "pool unavailable",
+        }
 
 
 @router.get("/")

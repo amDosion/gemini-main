@@ -391,6 +391,27 @@ async def get_admin_health_details(_: str = Depends(require_admin_user)):
     return await health_module.build_health_payload(include_internal_errors=True)
 
 
+@router.get("/gemini-pool/stats")
+async def get_gemini_pool_stats(_: str = Depends(require_admin_user)):
+    """GeminiClientPool 运行时统计（admin only）。
+
+    返回字段：
+      - total_clients: 累计创建的 client 数（含已被 close 的）
+      - active_clients: 当前池中持有的 client 数
+      - max_size: 池上限（GEMINI_POOL_MAX_SIZE 控制，默认 200）
+      - cache_hits / cache_misses / hit_rate: 复用率指标
+      - rejected_due_to_max_size: 因 OOM 防护拒绝的次数
+      - clients: 每个 client 的元数据（已脱敏，仅含 api_key_configured / vertexai /
+        project / location / 创建时间 / timeout / retry）
+
+    注意：进程内为单例，多 worker 部署下本端点只反映**当前 worker** 视角。
+    告警阈值需要乘以 worker 数（参见 services/gemini/docs/README.md 多 worker 说明）。
+    """
+    from ...services.gemini.client_pool import get_client_pool
+
+    return get_client_pool().get_stats()
+
+
 @router.post("/cleanup")
 async def cleanup_system(
     _: str = Depends(require_admin_user),
