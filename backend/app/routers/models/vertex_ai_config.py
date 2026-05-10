@@ -816,14 +816,20 @@ async def verify_vertex_ai_connection(
     Returns:
         List of available models with their details
     """
+    # 一次性验证路径的 client 句柄；finally 块用它 close。
+    # 此端点接收用户尚未保存的临时凭证，按 JIRA-gemini-client-pool-unification.md 第 88-91 行
+    # 明确"不得作为业务生成路径复用"——不进 GeminiClientPool，请求结束即关闭，避免长生命周期
+    # 持有临时凭证 client。业务路径请走 services.gemini.client_pool.get_client_pool()。
+    client = None
+
     try:
         # user_id 已通过依赖注入自动获取
-        
+
         logger.info(
             f"[VertexAIConfig] Verifying Vertex AI connection: "
             f"project={request_body.project_id}, location={request_body.location}"
         )
-        
+
         # Import Google GenAI SDK
         try:
             from google import genai
@@ -970,3 +976,12 @@ async def verify_vertex_ai_connection(
                 "message": f"Verification failed: {str(e)}",
             },
         ) from e
+    finally:
+        # 一次性验证：用完即关，避免长生命周期持有临时凭证 client。
+        if client is not None and hasattr(client, "close"):
+            try:
+                client.close()
+            except Exception as close_err:  # pragma: no cover - defensive
+                logger.debug(
+                    f"[VertexAIConfig] Failed to close verify-only Vertex AI client: {close_err}"
+                )
