@@ -1,6 +1,15 @@
 # main.py
 """
-Layered Design API (Vertex AI + Qwen-Layered)
+Layered Design API (Vertex AI + Qwen-Layered) — STANDALONE FastAPI app
+
+⚠️ 重要：此模块是**独立 FastAPI app**，与主 backend (app/main.py) 完全独立。
+   - 主 backend 的 routers/registry.py 不挂载此 app；CI / 部署也不启动它。
+   - 此处 startup() 内 ``genai.Client(...)`` 直接创建是 standalone 行为，**不在
+     services/gemini/client_pool.GeminiClientPool 治理范围内**。这是 JIRA
+     gemini-client-pool-unification.md 第 85-87 行明确的"standalone / legacy"边界。
+   - 若未来要把本 app 挂回主服务，必须先把 startup 中的 ``genai.Client(...)`` 改走
+     ``app.services.gemini.client_pool.get_client_pool().get_client(...)``，
+     避免出现第二个进程内 client 创建源。
 
 完整修改版 v2.0.0
 - 修复 Pydantic Union 类型歧义
