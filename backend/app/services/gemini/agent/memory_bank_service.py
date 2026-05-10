@@ -314,8 +314,9 @@ class VertexAiMemoryBankService(BaseMemoryService):
             self._Content = Content
             self._Part = Part
 
-            if self.project:
-                vertexai.init(project=self.project, location=self.location)
+            # 不调 vertexai.init()：它会修改进程级全局 project/location 默认值。
+            # 后续 _get_or_create_adk_service 中 ADKMemoryBankService(project=self.project,
+            # location=self.location, ...) 显式传参，不需要全局状态。
         except Exception:
             self._vertexai_available = False
             logger.warning("[VertexAiMemoryBankService] Vertex/ADK memory SDK not available", exc_info=True)

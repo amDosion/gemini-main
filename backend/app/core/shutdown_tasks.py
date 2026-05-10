@@ -92,6 +92,27 @@ async def close_redis_pool(log_prefixes: Dict[str, str]):
         logger.error(f"{log_prefixes['error']} Error closing global Redis connection pool: {e}")
 
 
+def close_gemini_client_pool(log_prefixes: Dict[str, str]) -> None:
+    """关闭 GeminiClientPool 中所有 google.genai.Client。
+
+    每个 client 内部持有 httpx 连接池（含 keep-alive 套接字），不显式关闭依赖
+    GC + ``__del__`` 兜底回收，在 graceful shutdown 路径上不可靠。本函数由
+    FastAPI shutdown 链路调用，与 worker_pool / redis_pool 平级。
+    """
+    try:
+        from ..services.gemini.client_pool import get_client_pool
+
+        closed = get_client_pool().close_all()
+        logger.info(
+            f"{log_prefixes['success']} Gemini client pool closed ({closed} clients released)"
+        )
+    except Exception as e:
+        logger.error(
+            f"{log_prefixes['error']} Error closing Gemini client pool: {e}",
+            exc_info=True,
+        )
+
+
 async def run_all_shutdown_tasks(
     worker_pool: Any,
     worker_pool_available: bool,
@@ -130,5 +151,8 @@ async def run_all_shutdown_tasks(
 
     # 3. 关闭 Redis 连接池
     await close_redis_pool(log_prefixes)
+
+    # 4. 关闭 Gemini Client Pool（释放 httpx 连接池 / keep-alive 套接字）
+    close_gemini_client_pool(log_prefixes)
 
     logger.info(f"{log_prefixes['success']} Shutdown sequence completed")

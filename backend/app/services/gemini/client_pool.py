@@ -69,15 +69,23 @@ class GeminiClientPool:
         self._stats = {
             'total_clients': 0,
             'cache_hits': 0,
-            'cache_misses': 0
+            'cache_misses': 0,
+            'rejected_due_to_max_size': 0,
         }
         self._default_http_options = self._build_default_http_options()
+        # 防 OOM：池规模上限。每个 google.genai.Client 含 httpx + httpcore
+        # 连接池 ≈ 2.4 MB RSS；不限上限时 1K 独立 api_key 即 ~2.3 GB。
+        # 默认 200 适用于"少量稳定 api_key + 少量 Vertex 项目"场景；
+        # 多租户 / per-user-key 场景应通过 GEMINI_POOL_MAX_SIZE 主动调高
+        # 并配合监控 hit_rate 评估。
+        self._max_size = self._read_env_int("GEMINI_POOL_MAX_SIZE", default=200)
         self._initialized = True
 
         logger.info(
             "[GeminiClientPool] Client pool initialized with HTTP defaults: "
             f"timeout={self._default_http_options.timeout}, "
-            f"retry_attempts={getattr(self._default_http_options.retry_options, 'attempts', None)}"
+            f"retry_attempts={getattr(self._default_http_options.retry_options, 'attempts', None)}, "
+            f"max_size={self._max_size}"
         )
 
     def get_client(
@@ -130,6 +138,16 @@ class GeminiClientPool:
                     extra={'cache_key': cache_key, 'total_hits': self._stats['cache_hits']}
                 )
                 return self._clients[cache_key]
+
+            # OOM 防护：池规模上限检查（lock 内执行，与 cache hit 路径互斥）
+            if len(self._clients) >= self._max_size:
+                self._stats['rejected_due_to_max_size'] += 1
+                raise RuntimeError(
+                    f"GeminiClientPool size limit reached "
+                    f"(max_size={self._max_size}, active={len(self._clients)}). "
+                    f"Tune via GEMINI_POOL_MAX_SIZE env var, or check whether "
+                    f"per-user api_key explosion is expected for this deployment."
+                )
 
             # 创建新客户端（根据 vertexai 标志选择不同的实现）
             try:
@@ -418,8 +436,10 @@ class GeminiClientPool:
         return {
             'total_clients': self._stats['total_clients'],
             'active_clients': len(self._clients),
+            'max_size': self._max_size,
             'cache_hits': self._stats['cache_hits'],
             'cache_misses': self._stats['cache_misses'],
+            'rejected_due_to_max_size': self._stats.get('rejected_due_to_max_size', 0),
             'total_requests': total_requests,
             'hit_rate': round(hit_rate, 4),
             'clients': self.list_clients()

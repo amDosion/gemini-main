@@ -263,7 +263,9 @@ class AgentEngineSandboxCodeExecutor(BaseCodeExecutor):
             self._adk_executor = None
             
             if project:
-                vertexai.init(project=project, location=self.location)
+                # 不调 vertexai.init()：它会修改进程级全局 project/location 默认值，
+                # 多用户并发场景下"后一个请求覆盖前一个"。后续 vertexai.Client(project, location)
+                # 显式接收参数，不需要全局状态。
                 self._vertexai_client = vertexai.Client(project=project, location=self.location)
                 
                 if agent_engine_id:
