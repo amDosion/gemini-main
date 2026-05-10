@@ -8,12 +8,23 @@ using Google Gemini embeddings.
 from typing import List, Dict, Any, Optional
 import json
 import hashlib
+import logging
 from datetime import datetime
 import numpy as np
 
+logger = logging.getLogger(__name__)
+
 try:
     from ..gemini.client_pool import get_client_pool
-except Exception:  # pragma: no cover - optional dependency
+except Exception as _import_err:  # pragma: no cover - optional dependency
+    # 不再静默 swallow：import 失败时把真实 traceback 写入 WARNING 日志，
+    # 让"启动期 SDK 缺失 / 循环导入"在启动日志里就可定位，而非等到第一次
+    # 调用 get_embedding 才报误导性 ImportError。
+    logger.warning(
+        "[embedding_service] Failed to import GeminiClientPool: %s",
+        _import_err,
+        exc_info=True,
+    )
     get_client_pool = None  # type: ignore
 
 

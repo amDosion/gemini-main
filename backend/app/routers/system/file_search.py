@@ -113,14 +113,25 @@ async def upload_to_file_search(
         if not store_name:
             # 使用默认 store 名称
             default_store_name = "deep-research-documents"
-            
+
             try:
                 # 尝试获取现有 store
                 file_search_store = client.file_search_stores.get(
                     name=f"fileSearchStores/{default_store_name}"
                 )
                 logger.info(f"Using existing store: {file_search_store.name}")
-            except Exception:
+            except Exception as get_err:
+                # 仅在"store 不存在"时 fallback 到 create()。
+                # 其他错误（auth 失败 / quota 耗尽 / 网络问题 / 权限拒绝）必须传播，
+                # 否则会被误归为 "store not found"，再次失败时根因消失。
+                is_not_found = (
+                    getattr(get_err, "code", None) == 404
+                    or getattr(get_err, "status", None) == "NOT_FOUND"
+                    or "not found" in str(get_err).lower()
+                )
+                if not is_not_found:
+                    raise
+
                 # Store 不存在，创建新的
                 file_search_store = client.file_search_stores.create(
                     config={'display_name': default_store_name}

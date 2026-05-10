@@ -551,13 +551,21 @@ async def update_vertex_ai_config(
                                 if not model_data.get('description') or model_data.get('description') == model_data.get('name', model_id):
                                     try:
                                         model_data['description'] = get_model_description('google', model_id)
-                                    except:
+                                    except Exception as desc_err:
+                                        logger.warning(
+                                            f"[VertexAIConfig] get_model_description failed for {model_id}: {desc_err}",
+                                            exc_info=True,
+                                        )
                                         model_data['description'] = f'Google AI model: {model_id}'
                                 enriched_saved_models.append(model_data)
                             else:
                                 try:
                                     desc = get_model_description('google', model_id)
-                                except:
+                                except Exception as desc_err:
+                                    logger.warning(
+                                        f"[VertexAIConfig] get_model_description failed for {model_id}: {desc_err}",
+                                        exc_info=True,
+                                    )
                                     desc = f'Google AI model: {model_id}'
                                 enriched_saved_models.append({
                                     'id': model_id,
@@ -981,7 +989,11 @@ async def verify_vertex_ai_connection(
         if client is not None and hasattr(client, "close"):
             try:
                 client.close()
-            except Exception as close_err:  # pragma: no cover - defensive
-                logger.debug(
-                    f"[VertexAIConfig] Failed to close verify-only Vertex AI client: {close_err}"
+            except Exception as close_err:
+                # close 失败提升为 WARNING（DEBUG 级别在生产被压制 = 永久失明）：
+                # close 失败意味着临时凭证 client 的连接资源没有被释放，
+                # 在大量验证请求并发时可能耗尽 fd。
+                logger.warning(
+                    f"[VertexAIConfig] Failed to close verify-only Vertex AI client: {close_err}",
+                    exc_info=True,
                 )

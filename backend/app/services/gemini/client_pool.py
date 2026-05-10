@@ -268,8 +268,18 @@ class GeminiClientPool:
             return default
         try:
             value = int(raw)
-            return value if value > 0 else default
+            if value > 0:
+                return value
+            logger.warning(
+                "[GeminiClientPool] Invalid value for %s=%r (must be >0), using default=%d",
+                name, raw, default,
+            )
+            return default
         except (TypeError, ValueError):
+            logger.warning(
+                "[GeminiClientPool] Cannot parse %s=%r as int, using default=%d",
+                name, raw, default,
+            )
             return default
 
     @staticmethod
@@ -279,8 +289,18 @@ class GeminiClientPool:
             return default
         try:
             value = float(raw)
-            return value if value > 0 else default
+            if value > 0:
+                return value
+            logger.warning(
+                "[GeminiClientPool] Invalid value for %s=%r (must be >0), using default=%g",
+                name, raw, default,
+            )
+            return default
         except (TypeError, ValueError):
+            logger.warning(
+                "[GeminiClientPool] Cannot parse %s=%r as float, using default=%g",
+                name, raw, default,
+            )
             return default
 
     @staticmethod
@@ -323,7 +343,13 @@ class GeminiClientPool:
         if not options:
             return None
         if not GOOGLE_GENAI_AVAILABLE:
-            return None
+            # 之前 silent return None 会让 timeout / retry 配置静默丢失。
+            # get_client() 已在 line 142 / 180 raise 同样错误，这里保持一致：
+            # 任何路径触达此方法时 SDK 不可用都必须 fail-fast。
+            raise RuntimeError(
+                "google-genai SDK is not available; cannot convert HttpOptions. "
+                "Please install: pip install google-genai>=1.55.0"
+            )
 
         retry_options = None
         if options.retry_options:

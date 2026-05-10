@@ -96,12 +96,20 @@ def get_vertex_ai_credentials_from_db(
                     f"[get_vertex_ai_credentials_from_db] Credentials type: {type(credentials).__name__}"
                 )
             except json.JSONDecodeError as e:
+                # JSON 解密失败必须 fail-fast：用户配的是 service account 但解密结果不是合法 JSON，
+                # 静默 fallback ADC 会让请求以"错误身份"成功进入 GCP，是更危险的失败模式。
                 logger.error(
                     f"[get_vertex_ai_credentials_from_db] Failed to parse credentials JSON "
                     f"(user_id={user_id}): {e}"
                 )
+                raise ValueError(
+                    f"Vertex AI credentials JSON for user_id={user_id} is malformed; "
+                    f"refusing to silently fallback to ADC. Please re-upload service-account JSON."
+                ) from e
             except Exception as e:
-                logger.warning(
+                # 真实 SDK / 加密层异常：保留 swallow 行为（DB 短暂不可达不应直接 500），
+                # 但提升日志级别到 ERROR 以便监控可见。
+                logger.error(
                     f"[get_vertex_ai_credentials_from_db] Failed to load credentials from database "
                     f"(user_id={user_id}): {e}",
                     exc_info=True,
@@ -120,8 +128,14 @@ def get_vertex_ai_credentials_from_db(
 
         return resolved_project, resolved_location, credentials
 
+    except ValueError:
+        # JSONDecodeError 转的 ValueError 必须传播给 caller（HTTP 500）。
+        raise
     except Exception as e:
-        logger.warning(
+        # 其他外层异常（DB 不可达 / import 失败等）：升级为 ERROR 级别，
+        # 但仍返回 (None, None, None) —— 调用方按"无配置"处理（走 ADC 或拒绝），
+        # 避免 DB 短暂故障直接打挂业务。
+        logger.error(
             f"[get_vertex_ai_credentials_from_db] Failed to get Vertex AI config from database "
             f"(user_id={user_id}): {e}",
             exc_info=True,
