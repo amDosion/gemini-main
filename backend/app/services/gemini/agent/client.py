@@ -19,11 +19,9 @@
 使用官方的 google.genai.Client，而不是旧版 google-generativeai / Vertex AI 生成式模块。
 """
 
-import asyncio
 import os
-import json
 from types import TracebackType
-from typing import Optional, Union, Tuple, Dict, Any
+from typing import Optional, Union
 import logging
 
 try:

@@ -203,7 +203,11 @@ async def upload_to_file_search(
                     os.remove(temp_file_path)
                     logger.debug(f"Temporary file deleted: {temp_file_path}")
             except Exception as cleanup_error:
-                logger.warning(f"Failed to delete temporary file: {cleanup_error}")
+                # 必须记录 temp_file_path：清理失败的累积可能耗尽磁盘，运维需要定位
+                logger.warning(
+                    f"Failed to delete temporary file {temp_file_path!r}: {cleanup_error}",
+                    exc_info=True,
+                )
 
     except HTTPException:
         raise
