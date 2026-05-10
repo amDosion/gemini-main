@@ -1,11 +1,21 @@
 # BE-GENAI-CLIENT-REFACTOR
 
+> ⚠️ **HISTORICAL — DONE on 2026-05-10**
+>
+> 本规划已通过 [`JIRA-gemini-client-pool-unification.md`](../JIRA-gemini-client-pool-unification.md)
+> 与 [`JIRA-gemini-pool-production-hardening.md`](../JIRA-gemini-pool-production-hardening.md)
+> 实施完成。
+>
+> - 落地 commit 序列：见 JIRA close-out 章节（`1bc61c5` ... `6364b0c`，共 16 个 commit）
+> - 当前权威使用文档：`backend/app/services/gemini/docs/README.md` 中 "GeminiClientPool — 统一客户端池" 章节
+> - 本文件保留作为重构动机与历史背景，**不再作为现状描述**
+
 ## GenAI SDK Client 包装层架构修复计划
 
-> 状态：待执行
+> 状态：~~待执行~~ → **DONE 2026-05-10**
 > 优先级：高（影响可维护性和 SDK 升级安全性）
 > 约束：仅重构内部架构，不改变任何外部 API 行为
-> 最后更新：2026-03-24
+> 最后更新：2026-05-10（添加 close-out banner）
 
 ---
 

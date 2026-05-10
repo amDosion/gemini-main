@@ -1,5 +1,15 @@
 # GenAI SDK 集成度分析与客户端管理优化方案
 
+> ⚠️ **HISTORICAL ANALYSIS — issues resolved 2026-05-10**
+>
+> 本文档是统一池治理**前**的现状分析（包括"双调用路径并存"、"22 个自建类型与官方 SDK 重复"、"agent/client.py 包装层增加间接性"）。这些问题已通过：
+> - [`JIRA-gemini-client-pool-unification.md`](../JIRA-gemini-client-pool-unification.md) — 主治理工单（Done）
+> - [`JIRA-gemini-pool-production-hardening.md`](../JIRA-gemini-pool-production-hardening.md) — 生产 hardening（Done）
+>
+> 实施完成（共 16 个 commit）。
+>
+> **当前架构现状**请直接看 `backend/app/services/gemini/docs/README.md` 中的 "GeminiClientPool — 统一客户端池" 章节；本文件保留作为重构动机背景。
+
 > 基于代码分析，评估本项目对 Google GenAI SDK / Vertex AI SDK / Google ADK 的集成深度，
 > 并提出以 ProviderFactory 为中心的统一客户端池管理方案。
 
