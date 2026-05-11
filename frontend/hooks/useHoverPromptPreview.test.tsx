@@ -157,8 +157,9 @@ describe('useHoverPromptPreview', () => {
     });
     const secondTop = result.current.position!.top;
 
-    // 验证：两次 top 不同（260 vs 280 panel 高度导致 anchorY - panelH/2 偏移 10px）
-    expect(secondTop).not.toBe(firstTop);
+    // panelH 越大 → anchorY - panelH/2 越小 → top 越小（在 clamp 上界外的中间区段）
+    // 第一次 panelH=ESTIMATED_PANEL_HEIGHT=260 → top=270；第二次 panelH=280 → top=260
+    expect(secondTop).toBeLessThan(firstTop);
     expect(result.current.size).not.toBeNull(); // size 在同 msg 重开时不被重置
   });
 

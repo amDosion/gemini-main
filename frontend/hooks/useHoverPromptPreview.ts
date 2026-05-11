@@ -96,13 +96,11 @@ export function useHoverPromptPreview<
     onMouseUp?: () => void;
   }>({});
   const isResizingRef = useRef(false);
-  // size / 前一帧 messageId 镜像：openPreview 同步读取，避免 setPreview functional updater 的
-  // strict-mode 双调用副作用（与 ImageExpandView.tsx:407-410 行为对齐）
+  // size / 前一帧 messageId 镜像：openPreview 同步读取。
+  // 注意：sizeRef.current 与 setSize 必须**同步写**才能避免一帧延迟（同事件中 setSize → 立即
+  // sameMsg openPreview 会读到 stale 值），所以下面所有 setSize 调用处都成对同步写 sizeRef.current。
   const sizeRef = useRef<HoverPromptPreviewSize | null>(null);
   const prevMessageIdRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    sizeRef.current = size;
-  }, [size]);
 
   const clearHideTimer = useCallback(() => {
     if (hideTimerRef.current !== null) {
@@ -183,7 +181,9 @@ export function useHoverPromptPreview<
       const anchorLeft = position?.left ?? VIEWPORT_PADDING;
       const anchorTop = position?.top ?? VIEWPORT_PADDING;
 
-      setSize({ width: startWidth, height: startHeight });
+      const initialSize = { width: startWidth, height: startHeight };
+      setSize(initialSize);
+      sizeRef.current = initialSize;
 
       const onMouseMove = (moveEvent: MouseEvent) => {
         const deltaX = moveEvent.clientX - startX;
@@ -196,10 +196,12 @@ export function useHoverPromptPreview<
           MIN_PANEL_HEIGHT,
           window.innerHeight - anchorTop - VIEWPORT_PADDING
         );
-        setSize({
+        const next = {
           width: Math.max(MIN_PANEL_WIDTH, Math.min(maxWidth, startWidth + deltaX)),
           height: Math.max(MIN_PANEL_HEIGHT, Math.min(maxHeight, startHeight + deltaY)),
-        });
+        };
+        setSize(next);
+        sizeRef.current = next;
       };
       const onMouseUp = () => {
         detachResizeListeners();

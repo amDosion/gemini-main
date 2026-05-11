@@ -48,6 +48,7 @@ export function useAsyncState<T, Args extends unknown[] = []>(
   const asyncFnRef = useRef(asyncFn);
   const onSuccessRef = useRef(options?.onSuccess);
   const onErrorRef = useRef(options?.onError);
+  // intentional: no deps — 每次渲染都把最新回调写入 ref，保证 execute 闭包看到最新版本
   useEffect(() => {
     asyncFnRef.current = asyncFn;
     onSuccessRef.current = options?.onSuccess;
