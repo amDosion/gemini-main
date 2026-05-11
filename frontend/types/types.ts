@@ -1,5 +1,5 @@
-import type { ConfigProfile } from "../services/db";
-import type { StorageConfig } from "./storage";
+import type { ConfigProfile } from '../services/db';
+import type { StorageConfig } from './storage';
 
 export interface ToolCall {
   type: string;
@@ -34,7 +34,23 @@ export enum Role {
 
 export type ApiProtocol = 'google' | 'openai';
 
-export type AppMode = 'chat' | 'image-gen' | 'image-chat-edit' | 'image-mask-edit' | 'image-inpainting' | 'image-background-edit' | 'image-recontext' | 'video-gen' | 'audio-gen' | 'image-outpainting' | 'pdf-extract' | 'virtual-try-on' | 'multi-agent' | 'image-upscale' | 'image-segmentation' | 'product-recontext';
+export type AppMode =
+  | 'chat'
+  | 'image-gen'
+  | 'image-chat-edit'
+  | 'image-mask-edit'
+  | 'image-inpainting'
+  | 'image-background-edit'
+  | 'image-recontext'
+  | 'video-gen'
+  | 'audio-gen'
+  | 'image-outpainting'
+  | 'pdf-extract'
+  | 'virtual-try-on'
+  | 'multi-agent'
+  | 'image-upscale'
+  | 'image-segmentation'
+  | 'product-recontext';
 
 export interface ModeCatalogItem {
   id: string;
@@ -86,7 +102,14 @@ export interface UrlContextMetadata {
 export type ResponseKind = 'chat' | 'deep-research';
 
 export interface ResearchStatus {
-  status: 'starting' | 'in_progress' | 'reconnecting' | 'awaiting_action' | 'completed' | 'failed' | 'cancelled';
+  status:
+    | 'starting'
+    | 'in_progress'
+    | 'reconnecting'
+    | 'awaiting_action'
+    | 'completed'
+    | 'failed'
+    | 'cancelled';
   progress?: string;
   elapsedTime?: number;
 }
@@ -102,10 +125,10 @@ export interface ResearchRequiredAction {
 
 export interface Attachment {
   id: string;
-  fileUri?: string; 
+  fileUri?: string;
   mimeType: string;
   name: string;
-  url?: string; 
+  url?: string;
   role?: 'raw' | 'mask' | string;
   kind?: string;
   language?: string;
@@ -133,7 +156,7 @@ export interface Message {
   id: string;
   role: Role;
   content: string;
-  attachments?: Attachment[]; 
+  attachments?: Attachment[];
   groundingMetadata?: GroundingMetadata;
   urlContextMetadata?: UrlContextMetadata; // Added URL Context Metadata
   browserOperationId?: string; // Added: Track browser tool execution ID
@@ -182,7 +205,7 @@ export interface ModelConfig {
   capabilities: {
     vision: boolean;
     search: boolean;
-    reasoning: boolean; 
+    reasoning: boolean;
     coding: boolean;
   };
   baseModelId?: string;
@@ -195,25 +218,25 @@ export interface ModelConfig {
 }
 
 export interface OutPaintingOptions {
-    mode: 'scale' | 'offset' | 'ratio' | 'upscale';
-    xScale?: number;
-    yScale?: number;
-    leftOffset?: number;
-    rightOffset?: number;
-    topOffset?: number;
-    bottomOffset?: number;
-    angle?: number;        // For ratio mode
-    outputRatio?: string;  // For ratio mode (e.g., "16:9")
-    upscaleFactor?: 'x2' | 'x3' | 'x4';
-    aspectRatio?: string;   // Aspect ratio for outpainting
-    platform?: string;     // Platform identifier (e.g., 'gemini', 'vertex_ai')
-    bestQuality: boolean;
-    limitImageSize: boolean;
+  mode: 'scale' | 'offset' | 'ratio' | 'upscale';
+  xScale?: number;
+  yScale?: number;
+  leftOffset?: number;
+  rightOffset?: number;
+  topOffset?: number;
+  bottomOffset?: number;
+  angle?: number; // For ratio mode
+  outputRatio?: string; // For ratio mode (e.g., "16:9")
+  upscaleFactor?: 'x2' | 'x3' | 'x4';
+  aspectRatio?: string; // Aspect ratio for outpainting
+  platform?: string; // Platform identifier (e.g., 'gemini', 'vertex_ai')
+  bestQuality: boolean;
+  limitImageSize: boolean;
 }
 
 export interface LoraConfig {
-    image?: string; // URL of the LoRA reference image
-    alpha?: number; // Weight (0.0 to 1.0)
+  image?: string; // URL of the LoRA reference image
+  alpha?: number; // Weight (0.0 to 1.0)
 }
 
 export interface ChatOptions {
@@ -280,7 +303,11 @@ export interface ChatOptions {
   editMode?: string; // 编辑模式 (EDIT_MODE_INPAINT_INSERTION, EDIT_MODE_INPAINT_REMOVAL, etc.)
   maskDilation?: number; // 掩码膨胀系数 (0.0-1.0)
   guidanceScale?: number; // 引导比例 (1.0-20.0)，仅用于 mask 编辑
-  maskMode?: 'MASK_MODE_USER_PROVIDED' | 'MASK_MODE_BACKGROUND' | 'MASK_MODE_FOREGROUND' | 'MASK_MODE_SEMANTIC'; // 掩码模式 (Vertex AI MaskReferenceConfig)
+  maskMode?:
+    | 'MASK_MODE_USER_PROVIDED'
+    | 'MASK_MODE_BACKGROUND'
+    | 'MASK_MODE_FOREGROUND'
+    | 'MASK_MODE_SEMANTIC'; // 掩码模式 (Vertex AI MaskReferenceConfig)
   segmentationClasses?: number[]; // MASK_MODE_SEMANTIC 的官方 mask class IDs
   // TongYi 专用参数
   promptExtend?: boolean; // AI 增强提示词 (TongYi)
@@ -360,19 +387,19 @@ export interface InitData {
   activeProfileId: string | null;
   activeProfile: ConfigProfile | null;
   dashscopeKey: string;
-  
+
   // Cloud storage related
   storageConfigs: StorageConfig[];
   activeStorageId: string | null;
-  
+
   // Session related
   sessions: ChatSession[];
-  sessionsTotal?: number;  // ✅ 总会话数量（用于分页）
-  sessionsHasMore?: boolean;  // ✅ 是否还有更多会话（用于滚动加载）
-  
+  sessionsTotal?: number; // ✅ 总会话数量（用于分页）
+  sessionsHasMore?: boolean; // ✅ 是否还有更多会话（用于滚动加载）
+
   // Persona related
   personas: Persona[];
-  
+
   // Imagen configuration
   imagenConfig?: {
     apiMode: string;
@@ -380,13 +407,13 @@ export interface InitData {
     vertexAiLocation: string;
     vertexAiCredentialsJson: string | null;
   } | null;
-  
+
   // Optional: cached model list
   cachedModels?: ModelConfig[] | null;
   cachedModeCatalog?: ModeCatalogItem[] | null;
   cachedChatModels?: ModelConfig[] | null;
   cachedDefaultModelId?: string | null;
-  
+
   // Metadata
   _metadata?: {
     timestamp: number;
@@ -395,24 +422,24 @@ export interface InitData {
 }
 
 export interface BaseViewProps {
-    messages: Message[];
-    isLoadingModels: boolean;
-    visibleModels: ModelConfig[];
-    allVisibleModels?: ModelConfig[];
-    apiKey: string;
-    protocol: string | null;
-    onPromptSelect: (text: string, mode: AppMode, modelId: string, requiredCap: string) => void;
-    onOpenSettings: () => void;
-    onImageClick: (url: string) => void;
-    onEditImage: (url: string) => void;
-    loadingState: string;
-    onSend: (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => void;
-    onStop: () => void;
-    onSubmitResearchAction?: (messageId: string, selectedInput: unknown) => Promise<void>;
-    activeModelConfig?: ModelConfig;
-    appMode: AppMode;
-    providerId?: string;
-    personas?: Persona[];
-    activePersonaId?: string;
-    onSelectPersona?: (id: string) => void;
+  messages: Message[];
+  isLoadingModels: boolean;
+  visibleModels: ModelConfig[];
+  allVisibleModels?: ModelConfig[];
+  apiKey: string;
+  protocol: string | null;
+  onPromptSelect: (text: string, mode: AppMode, modelId: string, requiredCap: string) => void;
+  onOpenSettings: () => void;
+  onImageClick: (url: string) => void;
+  onEditImage: (url: string) => void;
+  loadingState: string;
+  onSend: (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => void;
+  onStop: () => void;
+  onSubmitResearchAction?: (messageId: string, selectedInput: unknown) => Promise<void>;
+  activeModelConfig?: ModelConfig;
+  appMode: AppMode;
+  providerId?: string;
+  personas?: Persona[];
+  activePersonaId?: string;
+  onSelectPersona?: (id: string) => void;
 }

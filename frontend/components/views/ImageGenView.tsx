@@ -131,7 +131,9 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
   const { schema: genSchema } = useModeControlsSchema(
     providerId,
     'image-gen',
-    activeModelConfig?.id
+    activeModelConfig?.id,
+    // 等 activeModelConfig 就绪才 fetch，避免 mount 时 modelId 未定义的浪费请求
+    { enabled: !!activeModelConfig?.id }
   );
   const schemaMaxCount = (genSchema?.constraints as Record<string, unknown>)?.max_image_count;
   const maxImageCount = isOpenAI ? 1 : typeof schemaMaxCount === 'number' ? schemaMaxCount : 4;

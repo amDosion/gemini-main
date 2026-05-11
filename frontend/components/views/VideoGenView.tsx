@@ -227,7 +227,10 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
     schema: videoControlsSchema,
     loading: isLoadingVideoControlsSchema,
     error: videoControlsSchemaError,
-  } = useModeControlsSchema(resolvedProviderId, videoMode, activeModelConfig?.id);
+  } = useModeControlsSchema(resolvedProviderId, videoMode, activeModelConfig?.id, {
+    // 等 activeModelConfig 就绪才 fetch，避免初次 mount 浪费一次 model_id=undefined 请求
+    enabled: !!activeModelConfig?.id,
+  });
   const videoControlContract = useMemo(
     () => buildVideoControlContract(videoControlsSchema),
     [videoControlsSchema]

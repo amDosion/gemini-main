@@ -116,6 +116,9 @@ type ControlsApiResponse = {
 };
 
 const schemaCache = new Map<string, ModeControlsSchema>();
+// In-flight 请求去重：多个组件同 mount 时共享同一 Promise，避免并发重复 fetch
+// （修复用户反馈：image-gen/controls 同 model_id 重复 2 次）
+const inFlightSchemaRequests = new Map<string, Promise<ModeControlsSchema>>();
 
 const FALLBACK_VIDEO_RESOLUTION_MAP: ResolutionMap = {
   '720p': {
@@ -207,10 +210,17 @@ function normalizeParamOptions(raw: unknown): ParamOptionsMap | undefined {
       ) {
         const v = (item as Record<string, unknown>).value as OptionValue;
         options.push({
-          label: typeof (item as Record<string, unknown>).label === 'string' ? (item as Record<string, unknown>).label as string : String(v),
+          label:
+            typeof (item as Record<string, unknown>).label === 'string'
+              ? ((item as Record<string, unknown>).label as string)
+              : String(v),
           value: v,
         });
-      } else if (typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean') {
+      } else if (
+        typeof item === 'string' ||
+        typeof item === 'number' ||
+        typeof item === 'boolean'
+      ) {
         options.push({ label: String(item), value: item });
       }
     }
@@ -244,7 +254,9 @@ function normalizeStringArray(raw: unknown): string[] | undefined {
   return result.length > 0 ? result : undefined;
 }
 
-function normalizeVideoContractAttachmentSlots(raw: unknown): VideoContractAttachmentSlot[] | undefined {
+function normalizeVideoContractAttachmentSlots(
+  raw: unknown
+): VideoContractAttachmentSlot[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const result: VideoContractAttachmentSlot[] = [];
   for (const item of raw) {
@@ -268,7 +280,9 @@ function normalizeVideoContractAttachmentSlots(raw: unknown): VideoContractAttac
   return result.length > 0 ? result : undefined;
 }
 
-function normalizeVideoContractInputStrategies(raw: unknown): VideoContractInputStrategy[] | undefined {
+function normalizeVideoContractInputStrategies(
+  raw: unknown
+): VideoContractInputStrategy[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const result: VideoContractInputStrategy[] = [];
   for (const item of raw) {
@@ -341,136 +355,98 @@ function normalizeVideoContract(raw: unknown): VideoContract | undefined {
         ) as VideoContractSupports)
       : undefined;
 
-  const fieldPoliciesRaw = (obj.fieldPolicies ?? obj.field_policies) as Record<string, unknown> | undefined;
-  const _fpEnhance = (fieldPoliciesRaw?.enhancePrompt ?? fieldPoliciesRaw?.enhance_prompt) as Record<string, unknown> | undefined;
-  const _fpAudio = (fieldPoliciesRaw?.generateAudio ?? fieldPoliciesRaw?.generate_audio) as Record<string, unknown> | undefined;
-  const _fpSubtitle = (fieldPoliciesRaw?.subtitleMode ?? fieldPoliciesRaw?.subtitle_mode) as Record<string, unknown> | undefined;
-  const _fpStoryboard = (fieldPoliciesRaw?.storyboardPrompt ?? fieldPoliciesRaw?.storyboard_prompt) as Record<string, unknown> | undefined;
+  const fieldPoliciesRaw = (obj.fieldPolicies ?? obj.field_policies) as
+    | Record<string, unknown>
+    | undefined;
+  const _fpEnhance = (fieldPoliciesRaw?.enhancePrompt ?? fieldPoliciesRaw?.enhance_prompt) as
+    | Record<string, unknown>
+    | undefined;
+  const _fpAudio = (fieldPoliciesRaw?.generateAudio ?? fieldPoliciesRaw?.generate_audio) as
+    | Record<string, unknown>
+    | undefined;
+  const _fpSubtitle = (fieldPoliciesRaw?.subtitleMode ?? fieldPoliciesRaw?.subtitle_mode) as
+    | Record<string, unknown>
+    | undefined;
+  const _fpStoryboard = (fieldPoliciesRaw?.storyboardPrompt ??
+    fieldPoliciesRaw?.storyboard_prompt) as Record<string, unknown> | undefined;
   const fieldPolicies: VideoContractFieldPolicies | undefined =
     fieldPoliciesRaw && typeof fieldPoliciesRaw === 'object'
       ? {
-          enhancePrompt:
-            _fpEnhance
-              ? {
-                  mandatory:
-                    typeof _fpEnhance
-                      ?.mandatory === 'boolean'
-                      ? Boolean(
-                          _fpEnhance.mandatory
-                        )
+          enhancePrompt: _fpEnhance
+            ? {
+                mandatory:
+                  typeof _fpEnhance?.mandatory === 'boolean'
+                    ? Boolean(_fpEnhance.mandatory)
+                    : undefined,
+                lockedWhenMandatory:
+                  typeof _fpEnhance?.lockedWhenMandatory === 'boolean'
+                    ? Boolean(_fpEnhance.lockedWhenMandatory)
+                    : typeof _fpEnhance?.locked_when_mandatory === 'boolean'
+                      ? Boolean(_fpEnhance.locked_when_mandatory)
                       : undefined,
-                  lockedWhenMandatory:
-                    typeof _fpEnhance
-                      ?.lockedWhenMandatory === 'boolean'
-                      ? Boolean(
-                          _fpEnhance
-                            .lockedWhenMandatory
-                        )
-                      : typeof _fpEnhance
-                            ?.locked_when_mandatory === 'boolean'
-                        ? Boolean(
-                            _fpEnhance
-                              .locked_when_mandatory
-                          )
-                        : undefined,
-                  effectiveDefault:
-                    typeof _fpEnhance
-                      ?.effectiveDefault === 'boolean'
-                      ? Boolean(
-                          _fpEnhance
-                            .effectiveDefault
-                        )
-                      : typeof _fpEnhance
-                            ?.effective_default === 'boolean'
-                        ? Boolean(
-                            _fpEnhance
-                              .effective_default
-                          )
-                        : undefined,
-                }
-              : undefined,
-          generateAudio:
-            _fpAudio
-              ? {
-                  available:
-                    typeof _fpAudio
-                      ?.available === 'boolean'
-                      ? Boolean(
-                          _fpAudio.available
-                        )
+                effectiveDefault:
+                  typeof _fpEnhance?.effectiveDefault === 'boolean'
+                    ? Boolean(_fpEnhance.effectiveDefault)
+                    : typeof _fpEnhance?.effective_default === 'boolean'
+                      ? Boolean(_fpEnhance.effective_default)
                       : undefined,
-                  forcedValue:
-                    'forcedValue' in _fpAudio
-                      ? _fpAudio
-                          .forcedValue as OptionValue ?? null
-                      : 'forced_value' in _fpAudio
-                        ? _fpAudio
-                            .forced_value as OptionValue ?? null
-                        : undefined,
-                }
-              : undefined,
-          subtitleMode:
-            _fpSubtitle
-              ? {
-                  available:
-                    typeof _fpSubtitle
-                      ?.available === 'boolean'
-                      ? Boolean(
-                          _fpSubtitle.available
-                        )
+              }
+            : undefined,
+          generateAudio: _fpAudio
+            ? {
+                available:
+                  typeof _fpAudio?.available === 'boolean'
+                    ? Boolean(_fpAudio.available)
+                    : undefined,
+                forcedValue:
+                  'forcedValue' in _fpAudio
+                    ? ((_fpAudio.forcedValue as OptionValue) ?? null)
+                    : 'forced_value' in _fpAudio
+                      ? ((_fpAudio.forced_value as OptionValue) ?? null)
                       : undefined,
-                  singleSidecarFormat:
-                    typeof _fpSubtitle
-                      ?.singleSidecarFormat === 'boolean'
-                      ? Boolean(
-                          _fpSubtitle
-                            .singleSidecarFormat
-                        )
-                      : typeof _fpSubtitle
-                            ?.single_sidecar_format === 'boolean'
-                        ? Boolean(
-                            _fpSubtitle
-                              .single_sidecar_format
-                          )
-                        : undefined,
-                  defaultEnabledMode:
-                    typeof _fpSubtitle
-                      ?.defaultEnabledMode === 'string'
-                      ? _fpSubtitle
-                          .defaultEnabledMode
-                      : typeof _fpSubtitle
-                            ?.default_enabled_mode === 'string'
-                        ? _fpSubtitle
-                            .default_enabled_mode
-                        : undefined,
-                  supportedValues: normalizeStringArray(
-                    _fpSubtitle?.supportedValues ??
-                      _fpSubtitle?.supported_values
-                  ),
-                }
-              : undefined,
-          storyboardPrompt:
-            _fpStoryboard
-              ? {
-                  preferred:
-                    typeof _fpStoryboard
-                      ?.preferred === 'boolean'
-                      ? Boolean(
-                          _fpStoryboard.preferred
-                        )
+              }
+            : undefined,
+          subtitleMode: _fpSubtitle
+            ? {
+                available:
+                  typeof _fpSubtitle?.available === 'boolean'
+                    ? Boolean(_fpSubtitle.available)
+                    : undefined,
+                singleSidecarFormat:
+                  typeof _fpSubtitle?.singleSidecarFormat === 'boolean'
+                    ? Boolean(_fpSubtitle.singleSidecarFormat)
+                    : typeof _fpSubtitle?.single_sidecar_format === 'boolean'
+                      ? Boolean(_fpSubtitle.single_sidecar_format)
                       : undefined,
-                  deprecatedCompanionFields: normalizeStringArray(
-                    _fpStoryboard
-                      ?.deprecatedCompanionFields ??
-                      _fpStoryboard
-                        ?.deprecated_companion_fields
-                  ),
-                }
-              : undefined,
+                defaultEnabledMode:
+                  typeof _fpSubtitle?.defaultEnabledMode === 'string'
+                    ? _fpSubtitle.defaultEnabledMode
+                    : typeof _fpSubtitle?.default_enabled_mode === 'string'
+                      ? _fpSubtitle.default_enabled_mode
+                      : undefined,
+                supportedValues: normalizeStringArray(
+                  _fpSubtitle?.supportedValues ?? _fpSubtitle?.supported_values
+                ),
+              }
+            : undefined,
+          storyboardPrompt: _fpStoryboard
+            ? {
+                preferred:
+                  typeof _fpStoryboard?.preferred === 'boolean'
+                    ? Boolean(_fpStoryboard.preferred)
+                    : undefined,
+                deprecatedCompanionFields: normalizeStringArray(
+                  _fpStoryboard?.deprecatedCompanionFields ??
+                    _fpStoryboard?.deprecated_companion_fields
+                ),
+              }
+            : undefined,
         }
       : undefined;
 
-  const extensionConstraintsRaw = (obj.extensionConstraints ?? obj.extension_constraints) as Record<string, unknown> | undefined;
+  const extensionConstraintsRaw = (obj.extensionConstraints ?? obj.extension_constraints) as
+    | Record<string, unknown>
+    | undefined;
   const extensionConstraints: VideoContractExtensionConstraints | undefined =
     extensionConstraintsRaw && typeof extensionConstraintsRaw === 'object'
       ? {
@@ -499,10 +475,12 @@ function normalizeVideoContract(raw: unknown): VideoContract | undefined {
                 ? extensionConstraintsRaw.max_output_video_seconds
                 : undefined,
           requireDurationSeconds: normalizeStringArray(
-            extensionConstraintsRaw.requireDurationSeconds ?? extensionConstraintsRaw.require_duration_seconds
+            extensionConstraintsRaw.requireDurationSeconds ??
+              extensionConstraintsRaw.require_duration_seconds
           ),
           requireResolutionValues: normalizeStringArray(
-            extensionConstraintsRaw.requireResolutionValues ?? extensionConstraintsRaw.require_resolution_values
+            extensionConstraintsRaw.requireResolutionValues ??
+              extensionConstraintsRaw.require_resolution_values
           ),
         }
       : undefined;
@@ -516,8 +494,12 @@ function normalizeVideoContract(raw: unknown): VideoContract | undefined {
           ? obj.runtime_api_mode
           : undefined,
     supports,
-    attachmentSlots: normalizeVideoContractAttachmentSlots(obj.attachmentSlots ?? obj.attachment_slots),
-    inputStrategies: normalizeVideoContractInputStrategies(obj.inputStrategies ?? obj.input_strategies),
+    attachmentSlots: normalizeVideoContractAttachmentSlots(
+      obj.attachmentSlots ?? obj.attachment_slots
+    ),
+    inputStrategies: normalizeVideoContractInputStrategies(
+      obj.inputStrategies ?? obj.input_strategies
+    ),
     fieldPolicies,
     normalizationRules: normalizeStringArray(obj.normalizationRules ?? obj.normalization_rules),
     extensionDurationMatrix: normalizeVideoContractExtensionMatrix(
@@ -554,8 +536,14 @@ function normalizeSchema(raw: Record<string, unknown> | undefined): ModeControls
         : typeof raw.model_id === 'string'
           ? raw.model_id
           : undefined,
-    defaults: raw.defaults && typeof raw.defaults === 'object' ? raw.defaults as Record<string, unknown> : undefined,
-    constraints: raw.constraints && typeof raw.constraints === 'object' ? raw.constraints as Record<string, unknown> : undefined,
+    defaults:
+      raw.defaults && typeof raw.defaults === 'object'
+        ? (raw.defaults as Record<string, unknown>)
+        : undefined,
+    constraints:
+      raw.constraints && typeof raw.constraints === 'object'
+        ? (raw.constraints as Record<string, unknown>)
+        : undefined,
     aspectRatios: normalizeAspectRatios(raw.aspectRatios ?? raw.aspect_ratios),
     resolutionTiers: normalizeResolutionTiers(raw.resolutionTiers ?? raw.resolution_tiers),
     resolutionMap: normalizeResolutionMap(raw.resolutionMap ?? raw.resolution_map),
@@ -581,27 +569,41 @@ export function getPixelResolutionFromSchema(
   return tierMap[aspectRatio] || tierMap['1:1'] || null;
 }
 
+export interface UseModeControlsSchemaOptions {
+  /**
+   * 是否启用 fetch。默认 true。调用方可传 `enabled: !!activeModelConfig` 让 mount 初期
+   * modelId 还未就绪时跳过 fetch，避免"先 fetch 不带 model_id → 然后 model 就绪再 fetch
+   * 带 model_id"的双请求（用户反馈：video-gen/controls 一次不带 model_id 一次带）。
+   */
+  enabled?: boolean;
+}
+
 export function useModeControlsSchema(
   providerId: string | undefined,
   mode: string,
-  modelId?: string
+  modelId?: string,
+  options?: UseModeControlsSchemaOptions
 ) {
+  const enabled = options?.enabled ?? true;
   const cacheKey = useMemo(
     () => buildCacheKey(providerId || '', mode, modelId),
     [providerId, mode, modelId]
   );
 
   const [schema, setSchema] = useState<ModeControlsSchema | null>(
-    providerId ? (schemaCache.get(cacheKey) || null) : null
+    providerId ? schemaCache.get(cacheKey) || null : null
   );
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!providerId) {
-      setSchema(null);
-      setLoading(false);
-      setError(null);
+    if (!providerId || !enabled) {
+      // 未配置 provider 或 调用方明确禁用 → 跳过 fetch（保留已 cache 的 schema 不变）
+      if (!providerId) {
+        setSchema(null);
+        setLoading(false);
+        setError(null);
+      }
       return;
     }
 
@@ -613,51 +615,64 @@ export function useModeControlsSchema(
       return;
     }
 
-    const controller = new AbortController();
     let active = true;
     setLoading(true);
 
-    const params = new URLSearchParams();
-    if (modelId) {
-      params.set('model_id', modelId);
+    // In-flight 去重：若同 cacheKey 已有 Promise，复用而不再 fetch
+    // 注意：不能用 AbortController 取消共享 Promise（其他 consumer 会受影响）
+    // 改为本地 `active` flag 控制 setState（保留原 cleanup 语义）
+    let fetchPromise = inFlightSchemaRequests.get(cacheKey);
+    if (!fetchPromise) {
+      const params = new URLSearchParams();
+      if (modelId) {
+        params.set('model_id', modelId);
+      }
+      const query = params.toString();
+      const requestUrl = `/api/modes/${providerId}/${mode}/controls${query ? `?${query}` : ''}`;
+
+      fetchPromise = requestJson<ControlsApiResponse>(requestUrl, {
+        method: 'GET',
+        withAuth: true,
+        timeoutMs: 0,
+        errorMessage: 'Failed to fetch controls schema',
+      })
+        .then((data) => {
+          const normalized = normalizeSchema(data.schema);
+          if (!normalized) {
+            throw new Error('Invalid controls schema payload');
+          }
+          schemaCache.set(cacheKey, normalized);
+          return normalized;
+        })
+        .finally(() => {
+          // 完成后从 in-flight 移除；下一次未命中 cache 才会重新发起
+          inFlightSchemaRequests.delete(cacheKey);
+        });
+      inFlightSchemaRequests.set(cacheKey, fetchPromise);
     }
 
-    const query = params.toString();
-    const requestUrl = `/api/modes/${providerId}/${mode}/controls${query ? `?${query}` : ''}`;
-
-    void requestJson<ControlsApiResponse>(requestUrl, {
-      method: 'GET',
-      withAuth: true,
-      signal: controller.signal,
-      timeoutMs: 0,
-      errorMessage: 'Failed to fetch controls schema',
-    })
-      .then((data) => {
-        if (!active || controller.signal.aborted) return;
-        const normalized = normalizeSchema(data.schema);
-        if (!normalized) {
-          throw new Error('Invalid controls schema payload');
-        }
-        schemaCache.set(cacheKey, normalized);
+    fetchPromise
+      .then((normalized) => {
+        if (!active) return;
         setSchema(normalized);
         setError(null);
       })
       .catch((err: unknown) => {
-        if (!active || controller.signal.aborted || isAbortRequestError(err)) return;
+        if (!active || isAbortRequestError(err)) return;
         const message = err instanceof Error ? err.message : 'Failed to fetch controls schema';
         setError(message || 'Failed to fetch controls schema');
         setSchema(null);
       })
       .finally(() => {
-        if (!active || controller.signal.aborted) return;
+        if (!active) return;
         setLoading(false);
       });
 
     return () => {
       active = false;
-      controller.abort();
+      // 不 abort 共享 Promise（其他 consumer 还在等）；仅本地停止 setState
     };
-  }, [providerId, mode, modelId, cacheKey]);
+  }, [providerId, mode, modelId, cacheKey, enabled]);
 
   return { schema, loading, error };
 }

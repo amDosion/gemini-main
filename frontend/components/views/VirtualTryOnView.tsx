@@ -92,7 +92,9 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
   const { schema: tryOnSchema } = useModeControlsSchema(
     resolvedProviderId,
     'virtual-try-on',
-    activeModelConfig?.id
+    activeModelConfig?.id,
+    // 等 activeModelConfig 就绪才 fetch
+    { enabled: !!activeModelConfig?.id }
   );
   const tryOnDefaults = tryOnSchema?.defaults ?? {};
   const baseStepsRange = tryOnSchema?.numericRanges?.base_steps;
