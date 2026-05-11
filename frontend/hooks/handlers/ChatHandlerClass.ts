@@ -1,6 +1,12 @@
 import { BaseHandler } from './BaseHandler';
 import { ExecutionContext, HandlerResult } from './types';
-import { Attachment, ToolCall, ToolResult, GroundingMetadata, UrlContextMetadata } from '../../types/types';
+import {
+  Attachment,
+  ToolCall,
+  ToolResult,
+  GroundingMetadata,
+  UrlContextMetadata,
+} from '../../types/types';
 import { llmService } from '../../services/llmService';
 import { addCitations } from '../../utils/groundingUtils';
 import { storageUpload } from '../../services/storage/storageUpload';
@@ -8,19 +14,19 @@ import { v4 as uuidv4 } from 'uuid';
 
 // 打字效果配置
 const TYPING_CONFIG = {
-  CHAR_BATCH_SIZE: 5,      // 每批字符数
-  ANIMATION_DELAY: 16,     // 动画间隔（约 60fps）
-  CHUNK_THRESHOLD: 20,     // 触发分批的文本长度阈值
+  CHAR_BATCH_SIZE: 5, // 每批字符数
+  ANIMATION_DELAY: 16, // 动画间隔（约 60fps）
+  CHUNK_THRESHOLD: 20, // 触发分批的文本长度阈值
 };
 
 // 延迟函数
-const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export class ChatHandler extends BaseHandler {
   protected async doExecute(context: ExecutionContext): Promise<HandlerResult> {
     // 增强检索的搜索增强逻辑已经在 useChat 中处理：
     // enableEnhancedRetrieval=true 时强制 enableSearch=true。
-    
+
     const stream = llmService.sendMessageStream(context.text, context.attachments);
 
     let accumulatedText = '';
@@ -67,12 +73,13 @@ export class ChatHandler extends BaseHandler {
 
       // 处理 Browser 工具调用 (tool_call)
       if (chunk.toolCall) {
-        const callId = chunk.toolCall.id || `tool_call_${Date.now()}_${accumulatedToolCalls.length + 1}`;
+        const callId =
+          chunk.toolCall.id || `tool_call_${Date.now()}_${accumulatedToolCalls.length + 1}`;
         const normalizedCall: ToolCall = {
           id: callId,
           type: chunk.toolCall.type || 'function_call',
           name: chunk.toolCall.name,
-          arguments: chunk.toolCall.arguments || {}
+          arguments: chunk.toolCall.arguments || {},
         };
         const existingIndex = accumulatedToolCalls.findIndex((call) => call.id === callId);
         if (existingIndex >= 0) {
@@ -92,7 +99,8 @@ export class ChatHandler extends BaseHandler {
             if (call.name !== chunk.toolResult?.name) return false;
             return !accumulatedToolResults.some((result) => result.callId === call.id);
           });
-          callId = unresolved?.id || `tool_result_${Date.now()}_${accumulatedToolResults.length + 1}`;
+          callId =
+            unresolved?.id || `tool_result_${Date.now()}_${accumulatedToolResults.length + 1}`;
         }
 
         const normalizedResult: ToolResult = {
@@ -104,7 +112,9 @@ export class ChatHandler extends BaseHandler {
           screenshotUrl: chunk.toolResult.screenshotUrl || undefined,
         };
 
-        const existingResultIndex = accumulatedToolResults.findIndex((result) => result.callId === callId);
+        const existingResultIndex = accumulatedToolResults.findIndex(
+          (result) => result.callId === callId
+        );
         if (existingResultIndex >= 0) {
           accumulatedToolResults[existingResultIndex] = normalizedResult;
         } else {
@@ -132,7 +142,12 @@ export class ChatHandler extends BaseHandler {
           accumulatedText += text;
           sendUpdate();
         }
-      } else if (chunk.attachments || chunk.groundingMetadata || chunk.urlContextMetadata || chunk.browserOperationId) {
+      } else if (
+        chunk.attachments ||
+        chunk.groundingMetadata ||
+        chunk.urlContextMetadata ||
+        chunk.browserOperationId
+      ) {
         // 非文本更新也需要触发 UI 刷新
         sendUpdate();
       }
@@ -144,7 +159,7 @@ export class ChatHandler extends BaseHandler {
     }
 
     // 检查用户附件是否有 File 对象需要上传到云存储
-    const userAttachmentsWithFile = context.attachments.filter(att => att.file);
+    const userAttachmentsWithFile = context.attachments.filter((att) => att.file);
 
     if (userAttachmentsWithFile.length > 0) {
       // 有用户附件需要上传到云存储（与 ImageEditHandler 模式一致）
@@ -166,12 +181,11 @@ export class ChatHandler extends BaseHandler {
                   storageId: context.storageId,
                 });
 
-
                 return {
                   ...att,
                   id: result.attachmentId || att.id,
                   file: undefined, // 移除 File 对象（不可序列化到数据库）
-                  uploadStatus: result.taskId ? 'pending' as const : 'failed' as const,
+                  uploadStatus: result.taskId ? ('pending' as const) : ('failed' as const),
                   uploadTaskId: result.taskId || undefined,
                 } as Attachment;
               } catch (error) {
@@ -187,13 +201,13 @@ export class ChatHandler extends BaseHandler {
         // 启动后台轮询，上传完成后更新本地数据库中的云 URL
         // （与 BaseHandler.startUploadPolling 一致）
         this.startUploadPolling(
-          dbUserAttachments.filter(att => att.uploadTaskId),
+          dbUserAttachments.filter((att) => att.uploadTaskId),
           context
         );
 
         return {
           dbAttachments: accumulatedAttachments, // AI 返回的附件（chat 模式通常为空）
-          dbUserAttachments
+          dbUserAttachments,
         };
       };
 
@@ -205,7 +219,7 @@ export class ChatHandler extends BaseHandler {
         browserOperationId: lastBrowserOperationId,
         toolCalls: accumulatedToolCalls,
         toolResults: accumulatedToolResults,
-        uploadTask: uploadTask()
+        uploadTask: uploadTask(),
       };
     }
 

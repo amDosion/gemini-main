@@ -1581,7 +1581,14 @@ export const ImageMaskEditView = memo(
 
             fileToBase64(blob)
               .then((dataUrl) => setMaskRequestDataUrl(dataUrl))
-              .catch(() => setMaskRequestDataUrl(null));
+              .catch(() => {
+                // 修 silent-failure-hunter MEDIUM-1：fileToBase64 失败（OOM / 损坏 blob）时
+                // 之前只 setMaskRequestDataUrl(null)，下游 send guard 误显示"请绘制 mask"。
+                // 此处显式向用户暴露真实失败。
+                setMaskRequestDataUrl(null);
+                setMaskPreviewError('Mask 转换失败，请重试');
+                showError('Mask 数据转换失败，请重试');
+              });
           }
         }, 'image/png');
       },

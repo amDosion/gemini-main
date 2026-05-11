@@ -121,7 +121,8 @@ const pickFirstValue = (record: UnknownRecord, keys: string[]): unknown => {
 const parseJsonValue = (value: string): unknown => {
   const raw = String(value || '').trim();
   if (!raw) return null;
-  const parsed = safeJsonParse<unknown>(raw, null);
+  // safeJsonParse 重载 2（不带 guard）签名为 (text, fallback) => unknown
+  const parsed = safeJsonParse(raw, null);
   // 保留原 startsWith({|[) 行为：拒绝 string/number/boolean/null 字面量，仅接受 object 或 array
   if (parsed === null || typeof parsed !== 'object') return null;
   return parsed;

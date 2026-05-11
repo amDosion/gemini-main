@@ -1,6 +1,6 @@
 /**
  * Workflow Utility Functions
- * 
+ *
  * Helper functions for workflow operations:
  * - Validation
  * - Node/Edge manipulation
@@ -43,19 +43,29 @@ const AUTO_INLINE_MODEL_TOKENS = new Set([
   'current-profile',
 ]);
 
-const isActiveInlineProviderToken = (value: unknown): boolean => (
-  ACTIVE_INLINE_PROVIDER_TOKENS.has(String(value || '').trim().toLowerCase())
-);
+const isActiveInlineProviderToken = (value: unknown): boolean =>
+  ACTIVE_INLINE_PROVIDER_TOKENS.has(
+    String(value || '')
+      .trim()
+      .toLowerCase()
+  );
 
-const isAutoInlineModelToken = (value: unknown): boolean => (
-  AUTO_INLINE_MODEL_TOKENS.has(String(value || '').trim().toLowerCase())
-);
+const isAutoInlineModelToken = (value: unknown): boolean =>
+  AUTO_INLINE_MODEL_TOKENS.has(
+    String(value || '')
+      .trim()
+      .toLowerCase()
+  );
 
 const toBooleanFlag = (value: unknown): boolean => {
   if (typeof value === 'boolean') {
     return value;
   }
-  return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+  return ['1', 'true', 'yes', 'on'].includes(
+    String(value || '')
+      .trim()
+      .toLowerCase()
+  );
 };
 
 /**
@@ -78,7 +88,7 @@ export const validateWorkflow = (
   });
 
   // Check for start node
-  const startNodes = nodes.filter(n => n.data.type === 'start');
+  const startNodes = nodes.filter((n) => n.data.type === 'start');
   if (startNodes.length === 0) {
     globalErrors.push('工作流必须包含一个开始节点');
   } else if (startNodes.length > 1) {
@@ -86,7 +96,7 @@ export const validateWorkflow = (
   }
 
   // Check for end node
-  const endNodes = nodes.filter(n => n.data.type === 'end');
+  const endNodes = nodes.filter((n) => n.data.type === 'end');
   if (endNodes.length === 0) {
     globalErrors.push('工作流必须包含一个结束节点');
   } else if (endNodes.length > 1) {
@@ -94,7 +104,7 @@ export const validateWorkflow = (
   }
 
   // Validate each node
-  nodes.forEach(node => {
+  nodes.forEach((node) => {
     const errors: string[] = [];
     const nodeType = node.data.type;
 
@@ -105,24 +115,45 @@ export const validateWorkflow = (
 
     // Agent 节点必须绑定用户 Agent，或使用内联运行时配置
     if (nodeType === 'agent') {
-      const hasAgentId = typeof node.data.agentId === 'string' && node.data.agentId.trim().length > 0;
-      const hasAgentName = typeof node.data.agentName === 'string' && node.data.agentName.trim().length > 0;
+      const hasAgentId =
+        typeof node.data.agentId === 'string' && node.data.agentId.trim().length > 0;
+      const hasAgentName =
+        typeof node.data.agentName === 'string' && node.data.agentName.trim().length > 0;
       const inlineProviderId = String(node.data.inlineProviderId || '').trim();
       const inlineModelId = String(node.data.inlineModelId || '').trim();
       const hasExplicitInlineBinding = inlineProviderId.length > 0 && inlineModelId.length > 0;
-      const hasActiveInlineBinding = isActiveInlineProviderToken(inlineProviderId) && isAutoInlineModelToken(inlineModelId);
+      const hasActiveInlineBinding =
+        isActiveInlineProviderToken(inlineProviderId) && isAutoInlineModelToken(inlineModelId);
       const useActiveProfileInline = toBooleanFlag(node.data.inlineUseActiveProfile);
 
-      if (!hasAgentId && !hasAgentName && !hasExplicitInlineBinding && !hasActiveInlineBinding && !useActiveProfileInline) {
-        errors.push('智能体节点必须配置智能体（agentId / agentName），或配置 inlineProviderId + inlineModelId，或启用 inlineUseActiveProfile');
+      if (
+        !hasAgentId &&
+        !hasAgentName &&
+        !hasExplicitInlineBinding &&
+        !hasActiveInlineBinding &&
+        !useActiveProfileInline
+      ) {
+        errors.push(
+          '智能体节点必须配置智能体（agentId / agentName），或配置 inlineProviderId + inlineModelId，或启用 inlineUseActiveProfile'
+        );
       }
 
-      const normalizedTaskType = String(node.data.agentTaskType || 'chat').trim().toLowerCase().replace(/_/g, '-');
-      const hasReferenceImage = typeof node.data.agentReferenceImageUrl === 'string'
-        && node.data.agentReferenceImageUrl.trim().length > 0;
+      const normalizedTaskType = String(node.data.agentTaskType || 'chat')
+        .trim()
+        .toLowerCase()
+        .replace(/_/g, '-');
+      const hasReferenceImage =
+        typeof node.data.agentReferenceImageUrl === 'string' &&
+        node.data.agentReferenceImageUrl.trim().length > 0;
       if (
-        hasReferenceImage
-        && !['vision-understand', 'image-understand', 'vision-analyze', 'image-analyze', 'image-edit'].includes(normalizedTaskType)
+        hasReferenceImage &&
+        ![
+          'vision-understand',
+          'image-understand',
+          'vision-analyze',
+          'image-analyze',
+          'image-edit',
+        ].includes(normalizedTaskType)
       ) {
         errors.push('节点配置了参考图时，任务类型必须是 vision-understand 或 image-edit');
       }
@@ -150,9 +181,9 @@ export const validateWorkflow = (
   });
 
   // Validate edges
-  edges.forEach(edge => {
-    const sourceNode = nodes.find(n => n.id === edge.source);
-    const targetNode = nodes.find(n => n.id === edge.target);
+  edges.forEach((edge) => {
+    const sourceNode = nodes.find((n) => n.id === edge.source);
+    const targetNode = nodes.find((n) => n.id === edge.target);
 
     if (!sourceNode) {
       edgeErrors.push(`连接 ${edge.id} 的源节点不存在`);
@@ -168,9 +199,9 @@ export const validateWorkflow = (
     incomingByNode.get(edge.target)?.push(edge);
   });
 
-  nodes.forEach(node => {
+  nodes.forEach((node) => {
     if (node.data.type === 'condition') {
-      const outgoingCount = edges.filter(e => e.source === node.id).length;
+      const outgoingCount = edges.filter((e) => e.source === node.id).length;
       if (outgoingCount < 2) {
         if (!nodeErrors[node.id]) {
           nodeErrors[node.id] = [];
@@ -219,9 +250,10 @@ export const validateWorkflow = (
         continue;
       }
       visited.add(current);
-      const linkedEdges = direction === 'forward'
-        ? (outgoingByNode.get(current) || [])
-        : (incomingByNode.get(current) || []);
+      const linkedEdges =
+        direction === 'forward'
+          ? outgoingByNode.get(current) || []
+          : incomingByNode.get(current) || [];
       linkedEdges.forEach((edge) => {
         const next = direction === 'forward' ? edge.target : edge.source;
         if (!visited.has(next)) {
@@ -253,7 +285,7 @@ export const validateWorkflow = (
   }
 
   // Keep isolated-node detection to surface obvious wiring misses.
-  nodes.forEach(node => {
+  nodes.forEach((node) => {
     if (node.data.type === 'start' || node.data.type === 'end') {
       return;
     }
@@ -264,10 +296,8 @@ export const validateWorkflow = (
     }
   });
 
-  const isValid = 
-    globalErrors.length === 0 &&
-    Object.keys(nodeErrors).length === 0 &&
-    edgeErrors.length === 0;
+  const isValid =
+    globalErrors.length === 0 && Object.keys(nodeErrors).length === 0 && edgeErrors.length === 0;
 
   return {
     isValid,
@@ -286,28 +316,26 @@ export const calculateWorkflowStatistics = (
 ): WorkflowStatistics => {
   const nodesByType: Record<string, number> = {};
 
-  nodes.forEach(node => {
+  nodes.forEach((node) => {
     const type = node.data.type ?? '';
     nodesByType[type] = (nodesByType[type] || 0) + 1;
   });
 
   // Calculate execution time if available
   let executionTime: number | undefined;
-  const executedNodes = nodes.filter(n => n.data.startTime && n.data.endTime);
+  const executedNodes = nodes.filter((n) => n.data.startTime && n.data.endTime);
   if (executedNodes.length > 0) {
-    const times = executedNodes.map(n => 
-      (n.data.endTime! - n.data.startTime!) / 1000
-    );
+    const times = executedNodes.map((n) => (n.data.endTime! - n.data.startTime!) / 1000);
     executionTime = times.reduce((sum, time) => sum + time, 0);
   }
 
   // Calculate success rate
   let successRate: number | undefined;
-  const completedNodes = nodes.filter(n => 
-    n.data.status === 'completed' || n.data.status === 'failed'
+  const completedNodes = nodes.filter(
+    (n) => n.data.status === 'completed' || n.data.status === 'failed'
   );
   if (completedNodes.length > 0) {
-    const successfulNodes = completedNodes.filter(n => n.data.status === 'completed');
+    const successfulNodes = completedNodes.filter((n) => n.data.status === 'completed');
     successRate = (successfulNodes.length / completedNodes.length) * 100;
   }
 
@@ -337,7 +365,7 @@ export const exportWorkflow = (
     name: metadata?.name || 'Untitled Workflow',
     description: metadata?.description || '',
     createdAt: Date.now(),
-    nodes: nodes.map(node => ({
+    nodes: nodes.map((node) => ({
       id: node.id,
       type: node.type,
       position: node.position,
@@ -352,7 +380,7 @@ export const exportWorkflow = (
         endTime: undefined,
       },
     })),
-    edges: edges.map(edge => ({
+    edges: edges.map((edge) => ({
       id: edge.id,
       source: edge.source,
       target: edge.target,
@@ -368,7 +396,9 @@ export const exportWorkflow = (
 /**
  * Import workflow from JSON
  */
-export const importWorkflow = (jsonString: string): {
+export const importWorkflow = (
+  jsonString: string
+): {
   nodes: Node<CustomNodeData>[];
   edges: Edge[];
   metadata: {
@@ -423,8 +453,8 @@ export const findPath = (
 
     visited.add(currentNode);
 
-    const outgoingEdges = edges.filter(e => e.source === currentNode);
-    outgoingEdges.forEach(edge => {
+    const outgoingEdges = edges.filter((e) => e.source === currentNode);
+    outgoingEdges.forEach((edge) => {
       queue.push([...path, edge.target]);
     });
   }
@@ -435,10 +465,7 @@ export const findPath = (
 /**
  * Detect cycles in workflow
  */
-export const detectCycles = (
-  nodes: Node<CustomNodeData>[],
-  edges: Edge[]
-): string[][] => {
+export const detectCycles = (nodes: Node<CustomNodeData>[], edges: Edge[]): string[][] => {
   const cycles: string[][] = [];
   const visited = new Set<string>();
   const recursionStack = new Set<string>();
@@ -448,11 +475,11 @@ export const detectCycles = (
     recursionStack.add(nodeId);
     path.push(nodeId);
 
-    const outgoingEdges = edges.filter(e => e.source === nodeId);
-    
+    const outgoingEdges = edges.filter((e) => e.source === nodeId);
+
     for (const edge of outgoingEdges) {
       const targetId = edge.target;
-      
+
       if (!visited.has(targetId)) {
         dfs(targetId, [...path]);
       } else if (recursionStack.has(targetId)) {
@@ -465,7 +492,7 @@ export const detectCycles = (
     recursionStack.delete(nodeId);
   };
 
-  nodes.forEach(node => {
+  nodes.forEach((node) => {
     if (!visited.has(node.id)) {
       dfs(node.id, []);
     }
@@ -485,13 +512,13 @@ export const getExecutionOrder = (
   const adjList = new Map<string, string[]>();
 
   // Initialize
-  nodes.forEach(node => {
+  nodes.forEach((node) => {
     inDegree.set(node.id, 0);
     adjList.set(node.id, []);
   });
 
   // Build graph
-  edges.forEach(edge => {
+  edges.forEach((edge) => {
     adjList.get(edge.source)?.push(edge.target);
     inDegree.set(edge.target, (inDegree.get(edge.target) || 0) + 1);
   });
@@ -510,10 +537,10 @@ export const getExecutionOrder = (
     const nodeId = queue.shift()!;
     result.push(nodeId);
 
-    adjList.get(nodeId)?.forEach(neighbor => {
+    adjList.get(nodeId)?.forEach((neighbor) => {
       const newDegree = (inDegree.get(neighbor) || 0) - 1;
       inDegree.set(neighbor, newDegree);
-      
+
       if (newDegree === 0) {
         queue.push(neighbor);
       }
@@ -556,7 +583,8 @@ const estimateNodeHeight = (node: Node<CustomNodeData>): number => {
   }
 
   const styleHeight = (node as any)?.style?.height;
-  const parsedStyleHeight = typeof styleHeight === 'string' ? Number.parseFloat(styleHeight) : Number(styleHeight);
+  const parsedStyleHeight =
+    typeof styleHeight === 'string' ? Number.parseFloat(styleHeight) : Number(styleHeight);
   if (Number.isFinite(parsedStyleHeight)) {
     return Math.max(120, Math.min(DEFAULT_MANUAL_NODE_MAX_HEIGHT, parsedStyleHeight));
   }
@@ -599,12 +627,16 @@ const estimateNodeHeight = (node: Node<CustomNodeData>): number => {
   const resultVideo = extractVideoUrls(data.result)
     .filter((videoUrl) => isDirectlyRenderableVideoUrl(videoUrl))
     .slice(0, 3);
-  if (resultImages.length > 0 || resultAudio.length > 0 || resultVideo.length > 0 || resultText.length > 0) {
+  if (
+    resultImages.length > 0 ||
+    resultAudio.length > 0 ||
+    resultVideo.length > 0 ||
+    resultText.length > 0
+  ) {
     let resultPreviewHeight = 28; // preview card title + paddings
     if (resultImages.length > 0) {
-      const visibleRows = resultImages.length > 1
-        ? Math.min(2, Math.ceil(resultImages.length / 2))
-        : 1;
+      const visibleRows =
+        resultImages.length > 1 ? Math.min(2, Math.ceil(resultImages.length / 2)) : 1;
       resultPreviewHeight += visibleRows * 68;
     }
     if (resultVideo.length > 0) {
@@ -630,7 +662,10 @@ const estimateNodeWidth = (node: Node<CustomNodeData>): number => {
   const data = node.data || ({} as CustomNodeData);
   const runtimeNodeWidth = Number((node as any)?.width);
   if (Number.isFinite(runtimeNodeWidth)) {
-    return Math.max(DEFAULT_NODE_MIN_WIDTH, Math.min(DEFAULT_MANUAL_NODE_MAX_WIDTH, runtimeNodeWidth));
+    return Math.max(
+      DEFAULT_NODE_MIN_WIDTH,
+      Math.min(DEFAULT_MANUAL_NODE_MAX_WIDTH, runtimeNodeWidth)
+    );
   }
 
   const dataWidth = Number((data as any).nodeWidth);
@@ -639,13 +674,20 @@ const estimateNodeWidth = (node: Node<CustomNodeData>): number => {
   }
 
   const styleWidth = (node as any)?.style?.width;
-  const parsedStyleWidth = typeof styleWidth === 'string' ? Number.parseFloat(styleWidth) : Number(styleWidth);
+  const parsedStyleWidth =
+    typeof styleWidth === 'string' ? Number.parseFloat(styleWidth) : Number(styleWidth);
   if (Number.isFinite(parsedStyleWidth)) {
-    return Math.max(DEFAULT_NODE_MIN_WIDTH, Math.min(DEFAULT_MANUAL_NODE_MAX_WIDTH, parsedStyleWidth));
+    return Math.max(
+      DEFAULT_NODE_MIN_WIDTH,
+      Math.min(DEFAULT_MANUAL_NODE_MAX_WIDTH, parsedStyleWidth)
+    );
   }
 
   const chips = buildNodeParamChips(data);
-  const longestChipText = chips.reduce((longest, chip) => Math.max(longest, String(chip || '').length), 0);
+  const longestChipText = chips.reduce(
+    (longest, chip) => Math.max(longest, String(chip || '').length),
+    0
+  );
   const titleLength = String(data.label || '').length;
   const descriptionLength = String(data.description || '').length;
   const longest = Math.max(titleLength, descriptionLength, longestChipText);
@@ -680,15 +722,9 @@ const normalizeNodeForAutoLayout = (node: Node<CustomNodeData>): Node<CustomNode
 const getLayoutedElements = (
   nodes: Node<CustomNodeData>[],
   edges: Edge[],
-  options: AutoLayoutOptions = {},
+  options: AutoLayoutOptions = {}
 ): { nodes: Node<CustomNodeData>[]; edges: Edge[] } => {
-  const {
-    startX = 80,
-    startY = 80,
-    columnGap = 120,
-    rowGap = 36,
-    direction = 'LR',
-  } = options;
+  const { startX = 80, startY = 80, columnGap = 120, rowGap = 36, direction = 'LR' } = options;
   const isHorizontal = direction === 'LR';
   const normalizedNodes = nodes.map((node) => normalizeNodeForAutoLayout(node));
 
@@ -722,7 +758,11 @@ const getLayoutedElements = (
   const layoutedNodes = normalizedNodes.map((node) => {
     const nodeId = String(node.id);
     const nodeWithPosition = dagreGraph.node(nodeId);
-    if (!nodeWithPosition || !Number.isFinite(nodeWithPosition.x) || !Number.isFinite(nodeWithPosition.y)) {
+    if (
+      !nodeWithPosition ||
+      !Number.isFinite(nodeWithPosition.x) ||
+      !Number.isFinite(nodeWithPosition.y)
+    ) {
       return node;
     }
 

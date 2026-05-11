@@ -60,14 +60,14 @@ const TASK_ALIASES: Record<string, AgentTaskType> = {
 };
 
 const toTaskType = (value: unknown): AgentTaskType | null => {
-  const token = String(value || '').trim().toLowerCase();
+  const token = String(value || '')
+    .trim()
+    .toLowerCase();
   if (!token) return null;
   const hyphenatedToken = token.replace(/_/g, '-');
-  const normalized = (
-    TASK_ALIASES[token]
-    || TASK_ALIASES[token.replace(/-/g, '_')]
-    || hyphenatedToken
-  ) as AgentTaskType;
+  const normalized = (TASK_ALIASES[token] ||
+    TASK_ALIASES[token.replace(/-/g, '_')] ||
+    hyphenatedToken) as AgentTaskType;
   return SUPPORTED_TASKS.has(normalized) ? normalized : null;
 };
 
@@ -87,7 +87,9 @@ const normalizeModelEntry = (rawModel: Record<string, unknown>): ModelOption | n
   const id = String(rawModel?.id || '').trim();
   if (!id) return null;
   const name = String(rawModel?.name || id).trim() || id;
-  const supportedTasks = normalizeSupportedTasks(rawModel?.supportedTasks ?? rawModel?.supported_tasks);
+  const supportedTasks = normalizeSupportedTasks(
+    rawModel?.supportedTasks ?? rawModel?.supported_tasks
+  );
   return {
     id,
     name,
@@ -143,7 +145,9 @@ const normalizeModelArray = (rawModels: unknown): ModelOption[] => {
   return dedupeModelsById(normalized);
 };
 
-const normalizeDefaultModelsByTask = (rawValue: unknown): Partial<Record<AgentTaskType, string>> => {
+const normalizeDefaultModelsByTask = (
+  rawValue: unknown
+): Partial<Record<AgentTaskType, string>> => {
   if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
     return {};
   }
@@ -159,7 +163,7 @@ const normalizeDefaultModelsByTask = (rawValue: unknown): Partial<Record<AgentTa
 
 export const normalizeProviderModels = (payload: unknown): ProviderModels[] => {
   const providers: unknown[] = Array.isArray((payload as Record<string, unknown>)?.providers)
-    ? (payload as Record<string, unknown>).providers as unknown[]
+    ? ((payload as Record<string, unknown>).providers as unknown[])
     : Array.isArray(payload)
       ? payload
       : [];
@@ -169,7 +173,8 @@ export const normalizeProviderModels = (payload: unknown): ProviderModels[] => {
       const providerId = readProviderString(provider, 'providerId', 'provider_id');
       if (!providerId) return null;
 
-      const providerName = readProviderString(provider, 'providerName', 'provider_name') || providerId;
+      const providerName =
+        readProviderString(provider, 'providerName', 'provider_name') || providerId;
       const chatModels = normalizeModelArray(readProviderArray(provider, 'models'));
       const allModels = normalizeModelArray([
         ...readProviderArray(provider, 'allModels', 'all_models'),
@@ -206,7 +211,10 @@ export const formatModelTaskHint = (tasks: AgentTaskType[]): string => {
   return labels.join('/');
 };
 
-export const modelSupportsTask = (model: ModelOption | undefined, taskType: AgentTaskType): boolean => {
+export const modelSupportsTask = (
+  model: ModelOption | undefined,
+  taskType: AgentTaskType
+): boolean => {
   if (!model) return false;
   return Array.isArray(model.supportedTasks) && model.supportedTasks.includes(taskType);
 };

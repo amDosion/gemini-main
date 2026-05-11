@@ -1,6 +1,6 @@
 /**
  * Workflow Advanced Features
- * 
+ *
  * Provides advanced workflow management features:
  * - Import/Export workflows
  * - Undo/Redo functionality
@@ -59,46 +59,47 @@ export const WorkflowAdvancedFeatures: React.FC<WorkflowAdvancedFeaturesProps> =
   }, [nodes, edges]);
 
   // Import workflow from JSON file
-  const handleImport = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const handleImport = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const json = e.target?.result as string;
-        const imported = importWorkflow(json);
-        if (!imported) throw new Error('Invalid workflow format');
-        const { nodes: importedNodes, edges: importedEdges } = imported;
-        
-        // Validate imported workflow
-        const validation = validateWorkflow(importedNodes, importedEdges);
-        if (!validation.isValid) {
-          const allErrors = [
-            ...validation.globalErrors,
-            ...validation.edgeErrors,
-            ...Object.values(validation.nodeErrors).flat(),
-          ];
-          const proceed = confirm(
-            `工作流存在问题：\n${allErrors.join('\n')}\n\n是否继续导入？`
-          );
-          if (!proceed) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const json = e.target?.result as string;
+          const imported = importWorkflow(json);
+          if (!imported) throw new Error('Invalid workflow format');
+          const { nodes: importedNodes, edges: importedEdges } = imported;
+
+          // Validate imported workflow
+          const validation = validateWorkflow(importedNodes, importedEdges);
+          if (!validation.isValid) {
+            const allErrors = [
+              ...validation.globalErrors,
+              ...validation.edgeErrors,
+              ...Object.values(validation.nodeErrors).flat(),
+            ];
+            const proceed = confirm(`工作流存在问题：\n${allErrors.join('\n')}\n\n是否继续导入？`);
+            if (!proceed) return;
+          }
+
+          onNodesChange(importedNodes);
+          onEdgesChange(importedEdges);
+          showSuccess('工作流导入成功！');
+        } catch (error) {
+          showError('导入失败：' + (error as Error).message);
         }
+      };
+      reader.readAsText(file);
 
-        onNodesChange(importedNodes);
-        onEdgesChange(importedEdges);
-        showSuccess('工作流导入成功！');
-      } catch (error) {
-        showError('导入失败：' + (error as Error).message);
+      // Reset input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
       }
-    };
-    reader.readAsText(file);
-
-    // Reset input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  }, [onNodesChange, onEdgesChange]);
+    },
+    [onNodesChange, onEdgesChange]
+  );
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -108,7 +109,7 @@ export const WorkflowAdvancedFeatures: React.FC<WorkflowAdvancedFeaturesProps> =
         event.preventDefault();
         onUndo?.();
       }
-      
+
       // Ctrl/Cmd + Shift + Z or Ctrl/Cmd + Y: Redo
       if (
         ((event.ctrlKey || event.metaKey) && event.key === 'z' && event.shiftKey) ||
@@ -273,9 +274,7 @@ export const WorkflowAdvancedFeatures: React.FC<WorkflowAdvancedFeaturesProps> =
             </div>
 
             <div className="mt-4 pt-4 border-t border-gray-200">
-              <p className="text-xs text-gray-500">
-                💡 提示：在 Mac 上使用 Cmd 代替 Ctrl
-              </p>
+              <p className="text-xs text-gray-500">💡 提示：在 Mac 上使用 Cmd 代替 Ctrl</p>
             </div>
           </div>
         </div>
@@ -285,10 +284,7 @@ export const WorkflowAdvancedFeatures: React.FC<WorkflowAdvancedFeaturesProps> =
 };
 
 // Shortcut item component
-const ShortcutItem: React.FC<{ keys: string[]; description: string }> = ({
-  keys,
-  description,
-}) => (
+const ShortcutItem: React.FC<{ keys: string[]; description: string }> = ({ keys, description }) => (
   <div className="flex items-center justify-between">
     <span className="text-sm text-gray-700">{description}</span>
     <div className="flex items-center gap-1">

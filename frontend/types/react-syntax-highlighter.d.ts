@@ -12,7 +12,13 @@
 declare module 'react-syntax-highlighter' {
   import type { ComponentType, CSSProperties, ReactNode } from 'react';
 
-  export interface SyntaxHighlighterProps {
+  /**
+   * Named props for react-syntax-highlighter — 严格类型，typo 会触发错误。
+   * 修 type-design-analyzer NEEDS-IMPROVEMENT：原 `SyntaxHighlighterProps` 含
+   * `[key: string]: unknown` index signature 让任意 prop 通过，与命名 props
+   * 分离后 typo 现在能被编译器捕获。
+   */
+  export interface SyntaxHighlighterNamedProps {
     language?: string;
     style?: { [key: string]: CSSProperties };
     customStyle?: CSSProperties;
@@ -30,8 +36,18 @@ declare module 'react-syntax-highlighter' {
     CodeTag?: ComponentType<Record<string, unknown>> | keyof JSX.IntrinsicElements;
     className?: string;
     children?: ReactNode;
+  }
+
+  /**
+   * Passthrough props 显式 opt-in：调用方需要透传未知 prop（如 data-* / aria-*
+   * 或第三方扩展）时，使用 intersection `SyntaxHighlighterNamedProps & PassthroughProps`。
+   */
+  export interface SyntaxHighlighterPassthroughProps {
     [key: string]: unknown;
   }
+
+  /** Default export type：命名 props（严格）；调用方可显式 intersect Passthrough。 */
+  export type SyntaxHighlighterProps = SyntaxHighlighterNamedProps;
 
   type Highlighter = ComponentType<SyntaxHighlighterProps> & {
     registerLanguage: (name: string, language: unknown) => void;

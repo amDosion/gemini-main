@@ -60,13 +60,10 @@ describe('DeepResearchHandler', () => {
       const url = String(input);
 
       if (url === '/api/research/stream/start') {
-        return new Response(
-          JSON.stringify({ interactionId: 'interaction_new_123' }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }
-        );
+        return new Response(JSON.stringify({ interactionId: 'interaction_new_123' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
       }
 
       if (url === '/api/research/stream/cancel/interaction_new_123') {
@@ -137,7 +134,9 @@ describe('DeepResearchHandler', () => {
       expect.objectContaining({ method: 'POST' })
     );
 
-    const startCall = fetchMock.mock.calls.find((call) => String(call[0]) === '/api/research/stream/start');
+    const startCall = fetchMock.mock.calls.find(
+      (call) => String(call[0]) === '/api/research/stream/start'
+    );
     const startRequestBody = JSON.parse((startCall?.[1]?.body as string) || '{}');
     expect(startRequestBody.agent).toBe('deep-research-pro-preview-12-2025');
     expect(startRequestBody.previous_interaction_id).toBe('interaction_prev_456');
@@ -155,7 +154,9 @@ describe('DeepResearchHandler', () => {
     expect(result.researchInteractionId).toBe('interaction_new_123');
     expect(result.researchStatus?.status).toBe('cancelled');
 
-    const startUpdate = updates.find((item) => item.researchInteractionId === 'interaction_new_123');
+    const startUpdate = updates.find(
+      (item) => item.researchInteractionId === 'interaction_new_123'
+    );
     expect(startUpdate).toBeTruthy();
   });
 
@@ -163,13 +164,10 @@ describe('DeepResearchHandler', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url === '/api/research/stream/start') {
-        return new Response(
-          JSON.stringify({ interactionId: 'interaction_tool_001' }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }
-        );
+        return new Response(JSON.stringify({ interactionId: 'interaction_tool_001' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
       }
       throw new Error(`Unexpected fetch URL: ${url}`);
     });
@@ -289,13 +287,10 @@ describe('DeepResearchHandler', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === '/api/research/stream/start') {
-        return new Response(
-          JSON.stringify({ interactionId: 'interaction_action_1' }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }
-        );
+        return new Response(JSON.stringify({ interactionId: 'interaction_action_1' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
       }
 
       if (url === '/api/research/stream/action') {
@@ -305,13 +300,10 @@ describe('DeepResearchHandler', () => {
         expect(body.call_id).toBe('call_scope_1');
         expect(body.result).toBe('最近30天');
 
-        return new Response(
-          JSON.stringify({ interactionId: 'interaction_action_2' }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }
-        );
+        return new Response(JSON.stringify({ interactionId: 'interaction_action_2' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
       }
 
       throw new Error(`Unexpected fetch URL: ${url}`);
@@ -427,7 +419,9 @@ describe('DeepResearchHandler', () => {
       expect.objectContaining({ method: 'POST' })
     );
 
-    const resumedUpdate = updates.find((item) => item.researchInteractionId === 'interaction_action_2');
+    const resumedUpdate = updates.find(
+      (item) => item.researchInteractionId === 'interaction_action_2'
+    );
     expect(resumedUpdate).toBeTruthy();
   });
 
@@ -435,13 +429,10 @@ describe('DeepResearchHandler', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url === '/api/research/stream/start') {
-        return new Response(
-          JSON.stringify({ interactionId: 'interaction_status_done' }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }
-        );
+        return new Response(JSON.stringify({ interactionId: 'interaction_status_done' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
       }
 
       if (url === '/api/research/stream/status/interaction_status_done') {
@@ -518,13 +509,10 @@ describe('DeepResearchHandler', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url === '/api/research/stream/start') {
-        return new Response(
-          JSON.stringify({ interactionId: 'interaction_resume_1' }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }
-        );
+        return new Response(JSON.stringify({ interactionId: 'interaction_resume_1' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
       }
 
       if (url === '/api/research/stream/status/interaction_resume_1') {
@@ -600,7 +588,9 @@ describe('DeepResearchHandler', () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     const secondSse = MockEventSource.instances[1];
     expect(secondSse).toBeTruthy();
-    expect(secondSse.url).toBe('/api/research/stream/interaction_resume_1?last_event_id=evt_resume_1');
+    expect(secondSse.url).toBe(
+      '/api/research/stream/interaction_resume_1?last_event_id=evt_resume_1'
+    );
 
     emitSse(secondSse, {
       eventType: 'interaction.complete',

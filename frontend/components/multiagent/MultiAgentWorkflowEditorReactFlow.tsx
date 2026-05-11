@@ -1,6 +1,6 @@
 /**
  * Multi-Agent Workflow Editor - React Flow Implementation (Redesigned)
- * 
+ *
  * Dark-themed visual workflow editor with:
  * - Start/End entry buttons in flow-control nodes
  * - Drag-and-drop node composition
@@ -34,7 +34,13 @@ import { WorkflowEditorCanvasPane } from './WorkflowEditorCanvasPane';
 import { useExecutionLogs } from './WorkflowExecutionHooks';
 import { useUndoRedo } from './useUndoRedo';
 import { autoLayoutWorkflow, validateWorkflow } from './workflowUtils';
-import type { AgentDef, ExecutionStatus, WorkflowNode, WorkflowEdge, WorkflowNodeData } from './types';
+import type {
+  AgentDef,
+  ExecutionStatus,
+  WorkflowNode,
+  WorkflowEdge,
+  WorkflowNodeData,
+} from './types';
 import {
   extractAudioUrls,
   extractImageUrls,
@@ -147,23 +153,25 @@ const ensureTempImageNoRedirect = (rawUrl: string): string => {
 };
 
 const isNonResultWorkflowOutputNode = (nodeId: string, nodeType: string): boolean => {
-  const normalizedNodeType = String(nodeType || '').trim().toLowerCase();
+  const normalizedNodeType = String(nodeType || '')
+    .trim()
+    .toLowerCase();
   if (NON_RESULT_WORKFLOW_NODE_TYPES.has(normalizedNodeType)) {
     return true;
   }
-  const normalizedNodeId = String(nodeId || '').trim().toLowerCase();
+  const normalizedNodeId = String(nodeId || '')
+    .trim()
+    .toLowerCase();
   return (
-    normalizedNodeId.startsWith('start')
-    || normalizedNodeId.startsWith('input-')
-    || normalizedNodeId.startsWith('input_')
+    normalizedNodeId.startsWith('start') ||
+    normalizedNodeId.startsWith('input-') ||
+    normalizedNodeId.startsWith('input_')
   );
 };
 
 const normalizeStringList = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => String(item || '').trim())
-    .filter(Boolean);
+  return value.map((item) => String(item || '').trim()).filter(Boolean);
 };
 
 const mergeUniqueStringList = (...sources: string[][]): string[] => {
@@ -186,25 +194,30 @@ const waitForClonedImages = async (container: HTMLElement, timeoutMs = 10000): P
     return;
   }
 
-  await Promise.all(images.map((img) => new Promise<void>((resolve) => {
-    if (img.complete) {
-      resolve();
-      return;
-    }
+  await Promise.all(
+    images.map(
+      (img) =>
+        new Promise<void>((resolve) => {
+          if (img.complete) {
+            resolve();
+            return;
+          }
 
-    const cleanup = () => {
-      window.clearTimeout(timer);
-      img.removeEventListener('load', onComplete);
-      img.removeEventListener('error', onComplete);
-    };
-    const onComplete = () => {
-      cleanup();
-      resolve();
-    };
-    const timer = window.setTimeout(onComplete, timeoutMs);
-    img.addEventListener('load', onComplete);
-    img.addEventListener('error', onComplete);
-  })));
+          const cleanup = () => {
+            window.clearTimeout(timer);
+            img.removeEventListener('load', onComplete);
+            img.removeEventListener('error', onComplete);
+          };
+          const onComplete = () => {
+            cleanup();
+            resolve();
+          };
+          const timer = window.setTimeout(onComplete, timeoutMs);
+          img.addEventListener('load', onComplete);
+          img.addEventListener('error', onComplete);
+        })
+    )
+  );
 };
 
 interface MultiAgentWorkflowEditorReactFlowProps {
@@ -232,7 +245,6 @@ interface MultiAgentWorkflowEditorReactFlowProps {
   onExit?: () => void;
 }
 
-
 const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorReactFlowProps> = ({
   onExecute,
   onSave,
@@ -254,7 +266,9 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
   // UI state
   const [showLogs, setShowLogs] = useState(false);
   const [showResultPanel, setShowResultPanel] = useState(() => {
-    const initialFinalStatus = String(executionStatus?.finalStatus || '').trim().toLowerCase();
+    const initialFinalStatus = String(executionStatus?.finalStatus || '')
+      .trim()
+      .toLowerCase();
     return isTerminalExecutionStatus(initialFinalStatus);
   });
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
@@ -271,7 +285,8 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
   const [finalCompletedAt, setFinalCompletedAt] = useState<number | null>(null);
   const [finalRuntime, setFinalRuntime] = useState<string>('');
   const [finalRuntimeHints, setFinalRuntimeHints] = useState<string[]>([]);
-  const [pendingNodeFieldFocusRequest, setPendingNodeFieldFocusRequest] = useState<WorkflowNodeFieldFocusRequest | null>(null);
+  const [pendingNodeFieldFocusRequest, setPendingNodeFieldFocusRequest] =
+    useState<WorkflowNodeFieldFocusRequest | null>(null);
   const [isMainWorkspaceFullscreen, setIsMainWorkspaceFullscreen] = useState(false);
   const [isExportingWorkflowImage, setIsExportingWorkflowImage] = useState(false);
 
@@ -287,32 +302,39 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     return selected ? String(selected.id) : null;
   }, [edges]);
 
-  const hydrateAgentBindingsFromRegistry = useCallback(async (
-    inputNodes: Node<WorkflowNodeData>[]
-  ): Promise<Node<WorkflowNodeData>[]> => {
-    if (!Array.isArray(inputNodes) || inputNodes.length === 0) {
-      return inputNodes;
-    }
-
-    try {
-      if (registryAgents.length > 0) {
-        return applyAgentBindingsToNodes(inputNodes, registryAgents);
+  const hydrateAgentBindingsFromRegistry = useCallback(
+    async (inputNodes: Node<WorkflowNodeData>[]): Promise<Node<WorkflowNodeData>[]> => {
+      if (!Array.isArray(inputNodes) || inputNodes.length === 0) {
+        return inputNodes;
       }
-      const fetchedAgents = await refreshAgents();
-      return applyAgentBindingsToNodes(inputNodes, fetchedAgents);
-    } catch {
-      return inputNodes;
-    }
-  }, [registryAgents, refreshAgents]);
+
+      try {
+        if (registryAgents.length > 0) {
+          return applyAgentBindingsToNodes(inputNodes, registryAgents);
+        }
+        const fetchedAgents = await refreshAgents();
+        return applyAgentBindingsToNodes(inputNodes, fetchedAgents);
+      } catch {
+        return inputNodes;
+      }
+    },
+    [registryAgents, refreshAgents]
+  );
 
   const handleUndo = useCallback(() => {
     const state = undo();
-    if (state) { setNodes(state.nodes); setEdges(state.edges); }
+    if (state) {
+      setNodes(state.nodes);
+      setEdges(state.edges);
+    }
   }, [undo, setNodes, setEdges]);
 
   const handleRedo = useCallback(() => {
     const state = redo();
-    if (state) { setNodes(state.nodes); setEdges(state.edges); }
+    if (state) {
+      setNodes(state.nodes);
+      setEdges(state.edges);
+    }
   }, [redo, setNodes, setEdges]);
 
   const handleToggleMainWorkspaceFullscreen = useCallback(async () => {
@@ -357,37 +379,54 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     };
   }, []);
 
-  const isValidConnection = useCallback((connection: Connection) => {
-    const { source, target } = connection;
-    if (!source || !target || source === target) return false;
-    const sourceNode = nodes.find(n => n.id === source);
-    const targetNode = nodes.find(n => n.id === target);
-    if (!sourceNode || !targetNode) return false;
-    if (targetNode.data.type === 'start') return false;
-    if (sourceNode.data.type === 'end') return false;
-    if (edges.find(e => e.source === source && e.target === target)) return false;
-    return true;
-  }, [nodes, edges]);
+  const isValidConnection = useCallback(
+    (connection: Connection) => {
+      const { source, target } = connection;
+      if (!source || !target || source === target) return false;
+      const sourceNode = nodes.find((n) => n.id === source);
+      const targetNode = nodes.find((n) => n.id === target);
+      if (!sourceNode || !targetNode) return false;
+      if (targetNode.data.type === 'start') return false;
+      if (sourceNode.data.type === 'end') return false;
+      if (edges.find((e) => e.source === source && e.target === target)) return false;
+      return true;
+    },
+    [nodes, edges]
+  );
 
-  const onConnect = useCallback((params: Connection) => {
-    takeSnapshot(nodes, edges);
-    setEdges((eds) => addEdge({
-      ...params,
-      type: DEFAULT_WORKFLOW_EDGE_TYPE,
-      animated: true,
-      style: { stroke: '#14b8a6', strokeWidth: 2 },
-    }, eds));
-  }, [setEdges, takeSnapshot, nodes, edges]);
+  const onConnect = useCallback(
+    (params: Connection) => {
+      takeSnapshot(nodes, edges);
+      setEdges((eds) =>
+        addEdge(
+          {
+            ...params,
+            type: DEFAULT_WORKFLOW_EDGE_TYPE,
+            animated: true,
+            style: { stroke: '#14b8a6', strokeWidth: 2 },
+          },
+          eds
+        )
+      );
+    },
+    [setEdges, takeSnapshot, nodes, edges]
+  );
 
-  const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
-    setNodes((nds) => applySingleNodeSelection(nds as Node<WorkflowNodeData>[], node.id));
-    setEdges((eds) => applySingleEdgeSelection(eds, null));
-  }, [setEdges, setNodes]);
+  const onNodeClick = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      setNodes((nds) => applySingleNodeSelection(nds as Node<WorkflowNodeData>[], node.id));
+      setEdges((eds) => applySingleEdgeSelection(eds, null));
+    },
+    [setEdges, setNodes]
+  );
 
-  const onEdgeClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
-    setEdges((eds) => applySingleEdgeSelection(eds, edge.id));
-    setNodes((nds) => applySingleNodeSelection(nds as Node<WorkflowNodeData>[], null));
-  }, [setEdges, setNodes]);
+  const onEdgeClick = useCallback(
+    (_event: React.MouseEvent, edge: Edge) => {
+      setEdges((eds) => applySingleEdgeSelection(eds, edge.id));
+      setNodes((nds) => applySingleNodeSelection(nds as Node<WorkflowNodeData>[], null));
+    },
+    [setEdges, setNodes]
+  );
 
   const onPaneClick = useCallback(() => {
     setNodes((nds) => applySingleNodeSelection(nds as Node<WorkflowNodeData>[], null));
@@ -407,49 +446,58 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     addLog('system', '系统', 'info', '已断开 1 条连接');
   }, [selectedEdgeId, takeSnapshot, nodes, edges, setEdges, addLog]);
 
-  const handleRemoveEdgeById = useCallback((edgeId: string) => {
-    const normalizedId = String(edgeId || '').trim();
-    if (!normalizedId || !edges.some((edge) => edge.id === normalizedId)) {
-      return;
-    }
-    takeSnapshot(nodes, edges);
-    setEdges((eds) => eds.filter((edge) => edge.id !== normalizedId));
-    addLog('system', '系统', 'info', '已移除连接线');
-  }, [edges, takeSnapshot, nodes, setEdges, addLog]);
-
-  const handleDisconnectByHandle = useCallback((detail: DisconnectHandleEventDetail) => {
-    const normalizeHandleId = (value?: string | null) => value ?? '__default__';
-
-    const matchedEdges = edges.filter((edge) => {
-      if (detail.direction === 'source') {
-        if (edge.source !== detail.nodeId) return false;
-        return normalizeHandleId(edge.sourceHandle) === normalizeHandleId(detail.handleId);
+  const handleRemoveEdgeById = useCallback(
+    (edgeId: string) => {
+      const normalizedId = String(edgeId || '').trim();
+      if (!normalizedId || !edges.some((edge) => edge.id === normalizedId)) {
+        return;
       }
-      if (edge.target !== detail.nodeId) return false;
-      return normalizeHandleId(edge.targetHandle) === normalizeHandleId(detail.handleId);
-    });
+      takeSnapshot(nodes, edges);
+      setEdges((eds) => eds.filter((edge) => edge.id !== normalizedId));
+      addLog('system', '系统', 'info', '已移除连接线');
+    },
+    [edges, takeSnapshot, nodes, setEdges, addLog]
+  );
 
-    if (matchedEdges.length === 0) {
-      addLog('system', '系统', 'warn', '该端口当前没有连接可断开');
-      return;
-    }
+  const handleDisconnectByHandle = useCallback(
+    (detail: DisconnectHandleEventDetail) => {
+      const normalizeHandleId = (value?: string | null) => value ?? '__default__';
 
-    const matchedIds = new Set(matchedEdges.map((edge) => edge.id));
-    takeSnapshot(nodes, edges);
-    setEdges((eds) => eds.filter((edge) => !matchedIds.has(edge.id)));
-    addLog('system', '系统', 'info', `端口已断开 ${matchedEdges.length} 条连接`);
-  }, [edges, addLog, takeSnapshot, nodes, setEdges]);
+      const matchedEdges = edges.filter((edge) => {
+        if (detail.direction === 'source') {
+          if (edge.source !== detail.nodeId) return false;
+          return normalizeHandleId(edge.sourceHandle) === normalizeHandleId(detail.handleId);
+        }
+        if (edge.target !== detail.nodeId) return false;
+        return normalizeHandleId(edge.targetHandle) === normalizeHandleId(detail.handleId);
+      });
 
-  const handleRemoveNodeById = useCallback((nodeId: string) => {
-    const node = nodes.find((item) => item.id === nodeId);
-    if (!node) {
-      return;
-    }
-    takeSnapshot(nodes, edges);
-    setNodes((nds) => nds.filter((item) => item.id !== nodeId));
-    setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
-    addLog('system', '系统', 'info', `已移除节点：${node.data.label}`);
-  }, [nodes, edges, takeSnapshot, setNodes, setEdges, addLog]);
+      if (matchedEdges.length === 0) {
+        addLog('system', '系统', 'warn', '该端口当前没有连接可断开');
+        return;
+      }
+
+      const matchedIds = new Set(matchedEdges.map((edge) => edge.id));
+      takeSnapshot(nodes, edges);
+      setEdges((eds) => eds.filter((edge) => !matchedIds.has(edge.id)));
+      addLog('system', '系统', 'info', `端口已断开 ${matchedEdges.length} 条连接`);
+    },
+    [edges, addLog, takeSnapshot, nodes, setEdges]
+  );
+
+  const handleRemoveNodeById = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((item) => item.id === nodeId);
+      if (!node) {
+        return;
+      }
+      takeSnapshot(nodes, edges);
+      setNodes((nds) => nds.filter((item) => item.id !== nodeId));
+      setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+      addLog('system', '系统', 'info', `已移除节点：${node.data.label}`);
+    },
+    [nodes, edges, takeSnapshot, setNodes, setEdges, addLog]
+  );
 
   const handleRemoveSelectedNode = useCallback(() => {
     if (!selectedNode) {
@@ -463,7 +511,9 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
       return;
     }
     takeSnapshot(nodes, edges);
-    setNodes(autoLayoutWorkflow(nodes as Node<WorkflowNodeData>[], edges) as Node<WorkflowNodeData>[]);
+    setNodes(
+      autoLayoutWorkflow(nodes as Node<WorkflowNodeData>[], edges) as Node<WorkflowNodeData>[]
+    );
     requestAnimationFrame(() => {
       reactFlowInstance?.fitView({ padding: 0.25, duration: 450 });
     });
@@ -488,7 +538,9 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
       return;
     }
 
-    const flowElement = reactFlowWrapper.current?.querySelector('.react-flow') as HTMLElement | null;
+    const flowElement = reactFlowWrapper.current?.querySelector(
+      '.react-flow'
+    ) as HTMLElement | null;
     if (!flowElement) {
       addLog('system', '系统', 'warn', '未找到 React Flow 根容器，下载失败');
       setExecuteErrorBanner('下载失败：未找到画布容器。');
@@ -506,11 +558,10 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     const imageWidth = Math.max(Math.ceil(expandedBounds.width), EXPORT_MIN_WIDTH);
     const imageHeight = Math.max(Math.ceil(expandedBounds.height), EXPORT_MIN_HEIGHT);
     const exportArea = imageWidth * imageHeight;
-    const shouldExportAsSvg = (
-      imageWidth > EXPORT_PNG_MAX_SIDE
-      || imageHeight > EXPORT_PNG_MAX_SIDE
-      || exportArea > EXPORT_PNG_MAX_PIXELS
-    );
+    const shouldExportAsSvg =
+      imageWidth > EXPORT_PNG_MAX_SIDE ||
+      imageHeight > EXPORT_PNG_MAX_SIDE ||
+      exportArea > EXPORT_PNG_MAX_PIXELS;
     const exportPixelRatio = clampNumber(
       Math.sqrt(EXPORT_PNG_TARGET_PIXELS / Math.max(1, exportArea)),
       1.35,
@@ -532,7 +583,10 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     flowClone.style.background = '#0f172a';
     flowClone.style.overflow = 'hidden';
 
-    flowClone.querySelectorAll('.react-flow__controls, .react-flow__minimap, .react-flow__attribution, .react-flow__panel')
+    flowClone
+      .querySelectorAll(
+        '.react-flow__controls, .react-flow__minimap, .react-flow__attribution, .react-flow__panel'
+      )
       .forEach((element) => element.remove());
 
     const viewportClone = flowClone.querySelector('.react-flow__viewport') as HTMLElement | null;
@@ -607,7 +661,8 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
                 const source = String(domNode.getAttribute('src') || domNode.src || '').trim();
                 if (!source) return false;
                 if (source.startsWith('data:') || source.startsWith('blob:')) return true;
-                if (source.startsWith('/') || source.startsWith(window.location.origin)) return true;
+                if (source.startsWith('/') || source.startsWith(window.location.origin))
+                  return true;
                 return false;
               }
               return true;
@@ -630,7 +685,8 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
                 const source = String(domNode.getAttribute('src') || domNode.src || '').trim();
                 if (!source) return false;
                 if (source.startsWith('data:') || source.startsWith('blob:')) return true;
-                if (source.startsWith('/') || source.startsWith(window.location.origin)) return true;
+                if (source.startsWith('/') || source.startsWith(window.location.origin))
+                  return true;
                 return false;
               }
               return true;
@@ -648,19 +704,23 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
-      addLog('system', '系统', 'info', `已下载工作流画布图片（${fileExtension.toUpperCase()}，${imageWidth}×${imageHeight}${fileExtension === 'png' ? `，倍率 ${exportPixelRatio.toFixed(2)}` : ''}）`);
+      addLog(
+        'system',
+        '系统',
+        'info',
+        `已下载工作流画布图片（${fileExtension.toUpperCase()}，${imageWidth}×${imageHeight}${fileExtension === 'png' ? `，倍率 ${exportPixelRatio.toFixed(2)}` : ''}）`
+      );
     } catch (error) {
       const rawMessage = formatWorkflowExportError(error);
       const lower = rawMessage.toLowerCase();
-      const message = (
-        lower.includes('tainted')
-        || lower.includes('cross')
-        || lower.includes('cors')
-        || lower.includes('security')
-        || lower.includes('failed to fetch')
-      )
-        ? '下载失败：检测到跨域图片资源无法导出，请确认图片可经 /api/temp-images/*?no_redirect=1 访问。'
-        : `下载失败：${rawMessage}`;
+      const message =
+        lower.includes('tainted') ||
+        lower.includes('cross') ||
+        lower.includes('cors') ||
+        lower.includes('security') ||
+        lower.includes('failed to fetch')
+          ? '下载失败：检测到跨域图片资源无法导出，请确认图片可经 /api/temp-images/*?no_redirect=1 访问。'
+          : `下载失败：${rawMessage}`;
       addLog('system', '系统', 'error', `下载工作流图片失败: ${rawMessage}`);
       setExecuteErrorBanner(message);
     } finally {
@@ -671,47 +731,59 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     }
   }, [addLog, isExportingWorkflowImage, reactFlowInstance]);
 
-  const handleUpdateNode = useCallback((nodeId: string, updates: Partial<WorkflowNodeData>) => {
-    const includesPortLayoutUpdate = Object.prototype.hasOwnProperty.call(updates, 'portLayout');
-    const mergeNodeData = (node: Node<WorkflowNodeData>): Node<WorkflowNodeData> => {
-      if (node.id !== nodeId) {
-        return node;
-      }
-      const nodeType = node.data?.type || node.type || 'agent';
-      const nextData: WorkflowNodeData = {
-        ...node.data,
-        ...updates,
-      };
-      if (includesPortLayoutUpdate) {
-        nextData.portLayout = resolveNodePortLayout(nodeType, updates.portLayout ?? node.data?.portLayout);
-      }
-      return {
-        ...node,
-        data: nextData,
-      };
-    };
-
-    if (includesPortLayoutUpdate) {
-      takeSnapshot(nodes, edges);
-    }
-
-    setNodes((nds) => nds.map((node) => mergeNodeData(node as Node<WorkflowNodeData>)));
-
-    if (includesPortLayoutUpdate) {
-      setEdges((eds) => {
-        // Read latest nodes from setNodes updater to avoid stale closure
-        let currentNodes: Node<WorkflowNodeData>[] = [];
-        setNodes((nds) => { currentNodes = nds.map((n) => mergeNodeData(n as Node<WorkflowNodeData>)); return nds; });
-        const updatedNodes = currentNodes.length > 0 ? currentNodes : nodes.map((node) => mergeNodeData(node as Node<WorkflowNodeData>));
-        const filteredEdges = filterEdgesByNodePortLayouts(updatedNodes, eds);
-        const removedCount = eds.length - filteredEdges.length;
-        if (removedCount > 0) {
-          addLog('system', '系统', 'warn', `端口配置变更后，已移除 ${removedCount} 条不匹配连接`);
+  const handleUpdateNode = useCallback(
+    (nodeId: string, updates: Partial<WorkflowNodeData>) => {
+      const includesPortLayoutUpdate = Object.prototype.hasOwnProperty.call(updates, 'portLayout');
+      const mergeNodeData = (node: Node<WorkflowNodeData>): Node<WorkflowNodeData> => {
+        if (node.id !== nodeId) {
+          return node;
         }
-        return filteredEdges;
-      });
-    }
-  }, [addLog, edges, nodes, setEdges, setNodes, takeSnapshot]);
+        const nodeType = node.data?.type || node.type || 'agent';
+        const nextData: WorkflowNodeData = {
+          ...node.data,
+          ...updates,
+        };
+        if (includesPortLayoutUpdate) {
+          nextData.portLayout = resolveNodePortLayout(
+            nodeType,
+            updates.portLayout ?? node.data?.portLayout
+          );
+        }
+        return {
+          ...node,
+          data: nextData,
+        };
+      };
+
+      if (includesPortLayoutUpdate) {
+        takeSnapshot(nodes, edges);
+      }
+
+      setNodes((nds) => nds.map((node) => mergeNodeData(node as Node<WorkflowNodeData>)));
+
+      if (includesPortLayoutUpdate) {
+        setEdges((eds) => {
+          // Read latest nodes from setNodes updater to avoid stale closure
+          let currentNodes: Node<WorkflowNodeData>[] = [];
+          setNodes((nds) => {
+            currentNodes = nds.map((n) => mergeNodeData(n as Node<WorkflowNodeData>));
+            return nds;
+          });
+          const updatedNodes =
+            currentNodes.length > 0
+              ? currentNodes
+              : nodes.map((node) => mergeNodeData(node as Node<WorkflowNodeData>));
+          const filteredEdges = filterEdgesByNodePortLayouts(updatedNodes, eds);
+          const removedCount = eds.length - filteredEdges.length;
+          if (removedCount > 0) {
+            addLog('system', '系统', 'warn', `端口配置变更后，已移除 ${removedCount} 条不匹配连接`);
+          }
+          return filteredEdges;
+        });
+      }
+    },
+    [addLog, edges, nodes, setEdges, setNodes, takeSnapshot]
+  );
 
   useEffect(() => {
     if (!executionStatus) {
@@ -733,28 +805,49 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
       if (normalizedNodeType !== 'end') {
         return rawResult;
       }
-      const mergedFinalResult = finalResult !== undefined && finalResult !== null
-        ? mergePreviewImagesIntoResult(finalResult, extractImageUrls(rawResult))
-        : rawResult;
+      const mergedFinalResult =
+        finalResult !== undefined && finalResult !== null
+          ? mergePreviewImagesIntoResult(finalResult, extractImageUrls(rawResult))
+          : rawResult;
       let mergedWithPreview = mergePreviewImagesIntoResult(mergedFinalResult, previewImages);
       if (previewAudioUrls.length > 0) {
-        mergedWithPreview = mergePreviewMediaIntoResult(mergedWithPreview, 'audio', previewAudioUrls);
+        mergedWithPreview = mergePreviewMediaIntoResult(
+          mergedWithPreview,
+          'audio',
+          previewAudioUrls
+        );
       }
       if (previewVideoUrls.length > 0) {
-        mergedWithPreview = mergePreviewMediaIntoResult(mergedWithPreview, 'video', previewVideoUrls);
+        mergedWithPreview = mergePreviewMediaIntoResult(
+          mergedWithPreview,
+          'video',
+          previewVideoUrls
+        );
       }
       const existingImages = extractImageUrls(existingResult);
       const existingAudioUrls = extractAudioUrls(existingResult);
       const existingVideoUrls = extractVideoUrls(existingResult);
-      if (existingImages.length === 0 && existingAudioUrls.length === 0 && existingVideoUrls.length === 0) {
+      if (
+        existingImages.length === 0 &&
+        existingAudioUrls.length === 0 &&
+        existingVideoUrls.length === 0
+      ) {
         return mergedWithPreview;
       }
       let mergedExistingResult = mergePreviewImagesIntoResult(mergedWithPreview, existingImages);
       if (existingAudioUrls.length > 0) {
-        mergedExistingResult = mergePreviewMediaIntoResult(mergedExistingResult, 'audio', existingAudioUrls);
+        mergedExistingResult = mergePreviewMediaIntoResult(
+          mergedExistingResult,
+          'audio',
+          existingAudioUrls
+        );
       }
       if (existingVideoUrls.length > 0) {
-        mergedExistingResult = mergePreviewMediaIntoResult(mergedExistingResult, 'video', existingVideoUrls);
+        mergedExistingResult = mergePreviewMediaIntoResult(
+          mergedExistingResult,
+          'video',
+          existingVideoUrls
+        );
       }
       return mergedExistingResult;
     };
@@ -765,7 +858,9 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
         if (!status) {
           return node;
         }
-        const nodeType = String(node?.data?.type || node?.type || '').trim().toLowerCase();
+        const nodeType = String(node?.data?.type || node?.type || '')
+          .trim()
+          .toLowerCase();
         const rawResult = executionStatus.nodeResults[node.id] ?? node.data.result;
         return {
           ...node,
@@ -800,16 +895,17 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
 
     const nodeNameMap = new Map(nodes.map((node) => [node.id, node.data.label]));
     for (const log of pendingLogs) {
-      const nodeName = log.nodeId === 'system'
-        ? '系统'
-        : nodeNameMap.get(log.nodeId) || log.nodeId || '节点';
+      const nodeName =
+        log.nodeId === 'system' ? '系统' : nodeNameMap.get(log.nodeId) || log.nodeId || '节点';
       addLog(log.nodeId || 'system', nodeName, log.level, log.message, log.timestamp);
     }
     importedExecutionLogCountRef.current = sourceLogs.length;
   }, [executionStatus?.logs, nodes, addLog]);
 
   useEffect(() => {
-    const status = String(executionStatus?.finalStatus || '').trim().toLowerCase();
+    const status = String(executionStatus?.finalStatus || '')
+      .trim()
+      .toLowerCase();
     if (status === 'running' || status === 'pending') {
       setExecuteErrorBanner(null);
       setFinalResult(null);
@@ -830,20 +926,37 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     lastResultSignatureRef.current = signature;
 
     const statusPreviewImages = Array.isArray(executionStatus?.resultPreviewImageUrls)
-      ? executionStatus.resultPreviewImageUrls.map((item) => String(item || '').trim()).filter(Boolean)
+      ? executionStatus.resultPreviewImageUrls
+          .map((item) => String(item || '').trim())
+          .filter(Boolean)
       : [];
     const statusPreviewAudioUrls = Array.isArray(executionStatus?.resultPreviewAudioUrls)
-      ? executionStatus.resultPreviewAudioUrls.map((item) => String(item || '').trim()).filter(Boolean)
+      ? executionStatus.resultPreviewAudioUrls
+          .map((item) => String(item || '').trim())
+          .filter(Boolean)
       : [];
     const statusPreviewVideoUrls = Array.isArray(executionStatus?.resultPreviewVideoUrls)
-      ? executionStatus.resultPreviewVideoUrls.map((item) => String(item || '').trim()).filter(Boolean)
+      ? executionStatus.resultPreviewVideoUrls
+          .map((item) => String(item || '').trim())
+          .filter(Boolean)
       : [];
-    let mergedFinalResult = mergePreviewImagesIntoResult(executionStatus?.finalResult ?? null, statusPreviewImages);
+    let mergedFinalResult = mergePreviewImagesIntoResult(
+      executionStatus?.finalResult ?? null,
+      statusPreviewImages
+    );
     if (statusPreviewAudioUrls.length > 0) {
-      mergedFinalResult = mergePreviewMediaIntoResult(mergedFinalResult, 'audio', statusPreviewAudioUrls);
+      mergedFinalResult = mergePreviewMediaIntoResult(
+        mergedFinalResult,
+        'audio',
+        statusPreviewAudioUrls
+      );
     }
     if (statusPreviewVideoUrls.length > 0) {
-      mergedFinalResult = mergePreviewMediaIntoResult(mergedFinalResult, 'video', statusPreviewVideoUrls);
+      mergedFinalResult = mergePreviewMediaIntoResult(
+        mergedFinalResult,
+        'video',
+        statusPreviewVideoUrls
+      );
     }
     setFinalResult(mergedFinalResult);
     setFinalError(executionStatus?.finalError || null);
@@ -873,7 +986,9 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
       return;
     }
 
-    const normalizedNodes = (loadedWorkflow.nodes || []).map((node, index) => normalizeLoadedNode(node, index));
+    const normalizedNodes = (loadedWorkflow.nodes || []).map((node, index) =>
+      normalizeLoadedNode(node, index)
+    );
     const nodeIdSet = new Set(normalizedNodes.map((node) => node.id));
     const normalizedEdges = (loadedWorkflow.edges || [])
       .map((edge: Record<string, unknown>, index: number) => ({
@@ -881,28 +996,34 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
         id: String(edge?.id || `edge-loaded-${index}-${Date.now()}`),
         type: String(edge?.type || DEFAULT_WORKFLOW_EDGE_TYPE),
       }))
-      .filter((edge: Record<string, unknown>) => nodeIdSet.has(String(edge?.source || '')) && nodeIdSet.has(String(edge?.target || '')));
+      .filter(
+        (edge: Record<string, unknown>) =>
+          nodeIdSet.has(String(edge?.source || '')) && nodeIdSet.has(String(edge?.target || ''))
+      );
     const normalizedNodesWithPortLayout = hydrateNodePortLayoutsFromEdges(
       normalizedNodes as Node<WorkflowNodeData>[],
-      normalizedEdges as Edge[],
+      normalizedEdges as Edge[]
     );
 
-    const loadedInput = loadedWorkflow.input && typeof loadedWorkflow.input === 'object' && !Array.isArray(loadedWorkflow.input)
-      ? loadedWorkflow.input
-      : {};
+    const loadedInput =
+      loadedWorkflow.input &&
+      typeof loadedWorkflow.input === 'object' &&
+      !Array.isArray(loadedWorkflow.input)
+        ? loadedWorkflow.input
+        : {};
     const loadedPrompt = String(
       loadedInput.task || loadedInput.prompt || loadedInput.text || loadedWorkflow.prompt || ''
     );
     const loadedImageUrls = mergeUniqueStringList(
       normalizeStringList(loadedInput.imageUrls),
       normalizeStringList(loadedInput.image_urls),
-      typeof loadedInput.imageUrl === 'string' ? [loadedInput.imageUrl.trim()] : [],
+      typeof loadedInput.imageUrl === 'string' ? [loadedInput.imageUrl.trim()] : []
     );
     const loadedImageUrl = loadedImageUrls[0] || '';
     const loadedFileUrls = mergeUniqueStringList(
       normalizeStringList(loadedInput.fileUrls),
       normalizeStringList(loadedInput.file_urls),
-      typeof loadedInput.fileUrl === 'string' ? [loadedInput.fileUrl.trim()] : [],
+      typeof loadedInput.fileUrl === 'string' ? [loadedInput.fileUrl.trim()] : []
     );
     const loadedFileUrl = loadedFileUrls[0] || '';
     const hydratedNodes = normalizedNodesWithPortLayout.map((node) => {
@@ -918,7 +1039,7 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
         const nodeImageUrls = mergeUniqueStringList(
           normalizeStringList(node.data?.startImageUrls),
           node.data?.startImageUrl ? [String(node.data.startImageUrl).trim()] : [],
-          loadedImageUrls,
+          loadedImageUrls
         );
         nextData.startImageUrl = nodeImageUrls[0] || '';
         nextData.startImageUrls = nodeImageUrls;
@@ -927,7 +1048,7 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
         const nodeFileUrls = mergeUniqueStringList(
           normalizeStringList(node.data?.startFileUrls),
           node.data?.startFileUrl ? [String(node.data.startFileUrl).trim()] : [],
-          loadedFileUrls,
+          loadedFileUrls
         );
         nextData.startFileUrl = nodeFileUrls[0] || '';
         nextData.startFileUrls = nodeFileUrls;
@@ -940,7 +1061,9 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
 
     let cancelled = false;
     void (async () => {
-      const nodesWithAgentBinding = await hydrateAgentBindingsFromRegistry(hydratedNodes as Node<WorkflowNodeData>[]);
+      const nodesWithAgentBinding = await hydrateAgentBindingsFromRegistry(
+        hydratedNodes as Node<WorkflowNodeData>[]
+      );
       if (cancelled) return;
       setNodes(applySingleNodeSelection(nodesWithAgentBinding as Node<WorkflowNodeData>[], null));
       setEdges(applySingleEdgeSelection(normalizedEdges as Edge[], null));
@@ -950,13 +1073,29 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
       setActiveTemplateMeta(null);
       setActiveTemplateFingerprint(null);
       pendingFitTokenRef.current = loadedWorkflow.token;
-      addLog('system', '系统', 'info', `已加载工作流${loadedWorkflow.name ? `：${loadedWorkflow.name}` : ''}`);
+      addLog(
+        'system',
+        '系统',
+        'info',
+        `已加载工作流${loadedWorkflow.name ? `：${loadedWorkflow.name}` : ''}`
+      );
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [loadedWorkflow?.token, loadedWorkflow?.name, loadedWorkflow?.prompt, loadedWorkflow?.input, loadedWorkflow?.nodes, loadedWorkflow?.edges, setNodes, setEdges, addLog, hydrateAgentBindingsFromRegistry]);
+  }, [
+    loadedWorkflow?.token,
+    loadedWorkflow?.name,
+    loadedWorkflow?.prompt,
+    loadedWorkflow?.input,
+    loadedWorkflow?.nodes,
+    loadedWorkflow?.edges,
+    setNodes,
+    setEdges,
+    addLog,
+    hydrateAgentBindingsFromRegistry,
+  ]);
 
   useEffect(() => {
     if (!reactFlowInstance) {
@@ -986,7 +1125,11 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     };
 
     window.addEventListener('workflow:disconnect-handle', onDisconnectByHandle as EventListener);
-    return () => window.removeEventListener('workflow:disconnect-handle', onDisconnectByHandle as EventListener);
+    return () =>
+      window.removeEventListener(
+        'workflow:disconnect-handle',
+        onDisconnectByHandle as EventListener
+      );
   }, [editorScopeId, handleDisconnectByHandle]);
 
   useEffect(() => {
@@ -1003,7 +1146,11 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     };
 
     window.addEventListener('workflow:remove-edge-request', onRemoveEdgeRequest as EventListener);
-    return () => window.removeEventListener('workflow:remove-edge-request', onRemoveEdgeRequest as EventListener);
+    return () =>
+      window.removeEventListener(
+        'workflow:remove-edge-request',
+        onRemoveEdgeRequest as EventListener
+      );
   }, [editorScopeId, handleRemoveEdgeById]);
 
   useEffect(() => {
@@ -1032,7 +1179,8 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     };
 
     window.addEventListener('workflow:focus-node-field', onFocusNodeField as EventListener);
-    return () => window.removeEventListener('workflow:focus-node-field', onFocusNodeField as EventListener);
+    return () =>
+      window.removeEventListener('workflow:focus-node-field', onFocusNodeField as EventListener);
   }, [editorScopeId, nodes]);
 
   useEffect(() => {
@@ -1088,16 +1236,17 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
           ...(validation.edgeErrors || []),
           ...nodeErrorDetails,
         ].filter(Boolean);
-        const message = details.length > 0
-          ? `工作流结构校验失败：${details.join(' | ')}`
-          : '工作流结构校验失败，请检查开始/结束节点及连线';
+        const message =
+          details.length > 0
+            ? `工作流结构校验失败：${details.join(' | ')}`
+            : '工作流结构校验失败，请检查开始/结束节点及连线';
         throw new Error(message);
       }
 
       setIsExecuting(true);
       addLog('system', '系统', 'info', '开始执行工作流...');
       const pickFirstNodeValue = (candidateTypes: string[], key: keyof WorkflowNodeData) => {
-        for (const node of (nodes as WorkflowNode[])) {
+        for (const node of nodes as WorkflowNode[]) {
           const nodeType = String(node?.data?.type || node?.type || '').toLowerCase();
           if (!candidateTypes.includes(nodeType)) {
             continue;
@@ -1113,9 +1262,9 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
       const pickFirstNodeList = (
         candidateTypes: string[],
         listKey: keyof WorkflowNodeData,
-        singleKey: keyof WorkflowNodeData,
+        singleKey: keyof WorkflowNodeData
       ): string[] => {
-        for (const node of (nodes as WorkflowNode[])) {
+        for (const node of nodes as WorkflowNode[]) {
           const nodeType = String(node?.data?.type || node?.type || '').toLowerCase();
           if (!candidateTypes.includes(nodeType)) {
             continue;
@@ -1124,7 +1273,7 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
             normalizeStringList(node?.data?.[listKey]),
             typeof node?.data?.[singleKey] === 'string'
               ? [String(node.data[singleKey] || '').trim()]
-              : [],
+              : []
           );
           if (listValue.length > 0) {
             return listValue;
@@ -1140,14 +1289,18 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
       const startTask = String(startNode?.data?.startTask || '').trim();
       const startImageInputs = mergeUniqueStringList(
         normalizeStringList(startNode?.data?.startImageUrls),
-        startNode?.data?.startImageUrl ? [String(startNode.data.startImageUrl).trim()] : [],
+        startNode?.data?.startImageUrl ? [String(startNode.data.startImageUrl).trim()] : []
       );
       const startFileInputs = mergeUniqueStringList(
         normalizeStringList(startNode?.data?.startFileUrls),
-        startNode?.data?.startFileUrl ? [String(startNode.data.startFileUrl).trim()] : [],
+        startNode?.data?.startFileUrl ? [String(startNode.data.startFileUrl).trim()] : []
       );
       const inputTextNodeTask = pickFirstNodeValue(['input_text'], 'startTask');
-      const inputImageNodeUrls = pickFirstNodeList(['input_image'], 'startImageUrls', 'startImageUrl');
+      const inputImageNodeUrls = pickFirstNodeList(
+        ['input_image'],
+        'startImageUrls',
+        'startImageUrl'
+      );
       const inputFileNodeUrls = pickFirstNodeList(['input_file'], 'startFileUrls', 'startFileUrl');
 
       const effectivePrompt = String(startTask || inputTextNodeTask || workflowPrompt || '').trim();
@@ -1170,17 +1323,18 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
       const promptImageInputs = mergeUniqueStringList(
         normalizeStringList(workflowInput.imageUrls),
         normalizeStringList((workflowInput as any).image_urls),
-        typeof workflowInput.imageUrl === 'string' ? [workflowInput.imageUrl.trim()] : [],
+        typeof workflowInput.imageUrl === 'string' ? [workflowInput.imageUrl.trim()] : []
       );
-      const preferredImageInputs = (
+      const preferredImageInputs =
         inputImageNodeUrls.length > 0
           ? inputImageNodeUrls
           : startImageInputs.length > 0
             ? startImageInputs
             : promptImageInputs.length > 0
               ? promptImageInputs
-              : (workflowInputImageUrl.trim() ? [workflowInputImageUrl.trim()] : [])
-      );
+              : workflowInputImageUrl.trim()
+                ? [workflowInputImageUrl.trim()]
+                : [];
       const usableImageInputs = preferredImageInputs.filter((value) => hasUsableImageInput(value));
       if (usableImageInputs.length > 0) {
         workflowInput.imageUrl = usableImageInputs[0];
@@ -1199,17 +1353,18 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
       const promptFileInputs = mergeUniqueStringList(
         normalizeStringList(workflowInput.fileUrls),
         normalizeStringList((workflowInput as any).file_urls),
-        typeof workflowInput.fileUrl === 'string' ? [workflowInput.fileUrl.trim()] : [],
+        typeof workflowInput.fileUrl === 'string' ? [workflowInput.fileUrl.trim()] : []
       );
-      const preferredFileInputs = (
+      const preferredFileInputs =
         inputFileNodeUrls.length > 0
           ? inputFileNodeUrls
           : startFileInputs.length > 0
             ? startFileInputs
             : promptFileInputs.length > 0
               ? promptFileInputs
-              : (workflowInputFileUrl.trim() ? [workflowInputFileUrl.trim()] : [])
-      );
+              : workflowInputFileUrl.trim()
+                ? [workflowInputFileUrl.trim()]
+                : [];
       const usableFileInputs = preferredFileInputs.filter(isUsableFileInput);
       if (usableFileInputs.length > 0) {
         workflowInput.fileUrl = usableFileInputs[0];
@@ -1219,46 +1374,60 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
         delete workflowInput.fileUrls;
       }
 
-      const hasGlobalImageInput = Array.isArray(workflowInput.imageUrls) && workflowInput.imageUrls.length > 0;
+      const hasGlobalImageInput =
+        Array.isArray(workflowInput.imageUrls) && workflowInput.imageUrls.length > 0;
       const hasInvalidAgentImageTask = (nodes as WorkflowNode[]).some((node) => {
         const nodeType = (node?.data?.type || node?.type || '').toLowerCase();
         if (nodeType !== 'agent') return false;
         const hasNodeImage = Boolean(String(node?.data?.agentReferenceImageUrl || '').trim());
         if (!hasNodeImage) return false;
-        const taskType = String(node?.data?.agentTaskType || 'chat').toLowerCase().replace(/_/g, '-');
+        const taskType = String(node?.data?.agentTaskType || 'chat')
+          .toLowerCase()
+          .replace(/_/g, '-');
         return !(
-          taskType === 'vision-understand'
-          || taskType === 'image-understand'
-          || taskType === 'vision-analyze'
-          || taskType === 'image-analyze'
-          || taskType === 'image-edit'
+          taskType === 'vision-understand' ||
+          taskType === 'image-understand' ||
+          taskType === 'vision-analyze' ||
+          taskType === 'image-analyze' ||
+          taskType === 'image-edit'
         );
       });
       if (hasInvalidAgentImageTask) {
-        throw new Error('存在智能体节点已配置参考图，但任务类型不是 vision-understand 或 image-edit。请先修正节点配置。');
+        throw new Error(
+          '存在智能体节点已配置参考图，但任务类型不是 vision-understand 或 image-edit。请先修正节点配置。'
+        );
       }
       const requiresImageInput = (nodes as WorkflowNode[]).some((node) => {
         const nodeType = (node?.data?.type || node?.type || '').toLowerCase();
         if (nodeType === 'agent') {
           const taskType = String(node?.data?.agentTaskType || '').toLowerCase();
           if (
-            taskType === 'image-edit'
-            || taskType === 'image_edit'
-            || taskType === 'vision-understand'
-            || taskType === 'vision_understand'
-            || taskType === 'image-understand'
-            || taskType === 'image_understand'
+            taskType === 'image-edit' ||
+            taskType === 'image_edit' ||
+            taskType === 'vision-understand' ||
+            taskType === 'vision_understand' ||
+            taskType === 'image-understand' ||
+            taskType === 'image_understand'
           ) {
             const hasNodeImage = Boolean(String(node?.data?.agentReferenceImageUrl || '').trim());
             return !hasNodeImage;
           }
         }
         if (nodeType === 'tool') {
-          const toolName = String(node?.data?.toolName || '').toLowerCase().replace(/-/g, '_');
+          const toolName = String(node?.data?.toolName || '')
+            .toLowerCase()
+            .replace(/-/g, '_');
           const editTools = new Set([
-            'image_edit', 'edit_image', 'image_chat_edit', 'image_mask_edit',
-            'image_inpainting', 'image_background_edit', 'image_recontext',
-            'image_outpaint', 'image_outpainting', 'expand_image',
+            'image_edit',
+            'edit_image',
+            'image_chat_edit',
+            'image_mask_edit',
+            'image_inpainting',
+            'image_background_edit',
+            'image_recontext',
+            'image_outpaint',
+            'image_outpainting',
+            'expand_image',
           ]);
           if (editTools.has(toolName)) {
             const hasNodeImage = Boolean(String(node?.data?.toolReferenceImageUrl || '').trim());
@@ -1268,17 +1437,19 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
         return false;
       });
       if (requiresImageInput && !hasGlobalImageInput) {
-        throw new Error('当前工作流包含图像编辑节点，请提供有效参考图片（上传图片或填写真实 input.imageUrl）');
+        throw new Error(
+          '当前工作流包含图像编辑节点，请提供有效参考图片（上传图片或填写真实 input.imageUrl）'
+        );
       }
 
       const currentFingerprint = buildWorkflowStructureFingerprint(
         nodes as Node<WorkflowNodeData>[],
-        edges as Edge[],
+        edges as Edge[]
       );
       const canSyncTemplateResult = Boolean(
-        activeTemplateMeta?.templateId
-        && activeTemplateFingerprint
-        && activeTemplateFingerprint === currentFingerprint,
+        activeTemplateMeta?.templateId &&
+        activeTemplateFingerprint &&
+        activeTemplateFingerprint === currentFingerprint
       );
 
       await onExecute({
@@ -1288,10 +1459,10 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
         input: workflowInput,
         meta: canSyncTemplateResult
           ? {
-            source: 'template',
-            templateId: activeTemplateMeta?.templateId,
-            templateName: activeTemplateMeta?.templateName || '',
-          }
+              source: 'template',
+              templateId: activeTemplateMeta?.templateId,
+              templateName: activeTemplateMeta?.templateName || '',
+            }
           : { source: 'editor' },
       });
       setExecuteErrorBanner(null);
@@ -1304,7 +1475,18 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     } finally {
       setIsExecuting(false);
     }
-  }, [addLog, onExecute, nodes, edges, workflowPrompt, workflowInputImageUrl, workflowInputFileUrl, activeTemplateMeta, activeTemplateFingerprint, isExecuting]);
+  }, [
+    addLog,
+    onExecute,
+    nodes,
+    edges,
+    workflowPrompt,
+    workflowInputImageUrl,
+    workflowInputFileUrl,
+    activeTemplateMeta,
+    activeTemplateFingerprint,
+    isExecuting,
+  ]);
 
   useEffect(() => {
     const onExecuteRequest = (event: Event) => {
@@ -1338,7 +1520,9 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
       if (nodeType !== 'end') {
         return;
       }
-      const finalStatus = String(executionStatus?.finalStatus || '').trim().toLowerCase();
+      const finalStatus = String(executionStatus?.finalStatus || '')
+        .trim()
+        .toLowerCase();
       if (finalResult === null && !finalError && !isTerminalExecutionStatus(finalStatus)) {
         addLog('system', '系统', 'warn', '结束节点暂无结果，请先从开始节点执行工作流');
         return;
@@ -1352,7 +1536,15 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
       window.removeEventListener('workflow:execute-request', onExecuteRequest as EventListener);
       window.removeEventListener('workflow:end-request', onEndRequest as EventListener);
     };
-  }, [addLog, editorScopeId, executionStatus?.finalStatus, finalError, finalResult, handleExecute, nodes]);
+  }, [
+    addLog,
+    editorScopeId,
+    executionStatus?.finalStatus,
+    finalError,
+    finalResult,
+    handleExecute,
+    nodes,
+  ]);
 
   const handleCopyFinalResult = useCallback(async () => {
     const payload = finalError
@@ -1398,7 +1590,9 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     const nodeTypeById = new Map(
       (nodes as WorkflowNode[]).map((node) => [
         String(node?.id || '').trim(),
-        String(node?.data?.type || node?.type || '').trim().toLowerCase(),
+        String(node?.data?.type || node?.type || '')
+          .trim()
+          .toLowerCase(),
       ])
     );
 
@@ -1416,14 +1610,29 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
         ...extractUrlContent(payload),
       ];
       const urls = Array.from(new Set(mergedUrls));
-      if (!text && imageUrls.length === 0 && audioUrls.length === 0 && videoUrls.length === 0 && thoughtItems.length === 0 && urls.length === 0) {
+      if (
+        !text &&
+        imageUrls.length === 0 &&
+        audioUrls.length === 0 &&
+        videoUrls.length === 0 &&
+        thoughtItems.length === 0 &&
+        urls.length === 0
+      ) {
         return;
       }
       const hasUniqueImage = imageUrls.some((imageUrl) => !seenImageUrls.has(imageUrl));
       const hasUniqueAudio = audioUrls.some((audioUrl) => !seenAudioUrls.has(audioUrl));
       const hasUniqueVideo = videoUrls.some((videoUrl) => !seenVideoUrls.has(videoUrl));
       const hasUniqueUrl = urls.some((url) => !seenUrls.has(url));
-      if (!prefer && !hasUniqueImage && !hasUniqueAudio && !hasUniqueVideo && !hasUniqueUrl && thoughtItems.length === 0 && text.length < 30) {
+      if (
+        !prefer &&
+        !hasUniqueImage &&
+        !hasUniqueAudio &&
+        !hasUniqueVideo &&
+        !hasUniqueUrl &&
+        thoughtItems.length === 0 &&
+        text.length < 30
+      ) {
         return;
       }
       const normalizedText = text.replace(/\s+/g, ' ').trim().slice(0, 400);
@@ -1431,7 +1640,9 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
       const normalizedAudio = audioUrls.map((audioUrl) => audioUrl.trim()).sort();
       const normalizedVideo = videoUrls.map((videoUrl) => videoUrl.trim()).sort();
       const normalizedUrls = urls.map((url) => url.trim()).sort();
-      const normalizedThoughts = thoughtItems.map((item) => item.replace(/\s+/g, ' ').trim().slice(0, 240)).sort();
+      const normalizedThoughts = thoughtItems
+        .map((item) => item.replace(/\s+/g, ' ').trim().slice(0, 240))
+        .sort();
       const signature = `${normalizedText}::${normalizedImages.join('|')}::${normalizedAudio.join('|')}::${normalizedVideo.join('|')}::${normalizedUrls.join('|')}::${normalizedThoughts.join('|')}`;
       if (seenSignatures.has(signature)) {
         return;
@@ -1453,9 +1664,7 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
       });
     };
 
-    const finalOutput = isPlainObject(finalResult)
-      ? finalResult.finalOutput
-      : undefined;
+    const finalOutput = isPlainObject(finalResult) ? finalResult.finalOutput : undefined;
     if (finalOutput !== undefined) {
       pushItem('final-output', '最终输出', finalOutput, true);
     } else {
@@ -1463,7 +1672,7 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     }
 
     const outputs = isPlainObject(finalResult)
-      ? (finalResult.outputs || finalResult.outputsMap || null)
+      ? finalResult.outputs || finalResult.outputsMap || null
       : null;
     if (isPlainObject(outputs)) {
       Object.entries(outputs).forEach(([nodeId, output]) => {
@@ -1471,9 +1680,10 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
         if (isNonResultWorkflowOutputNode(nodeId, nodeType)) {
           return;
         }
-        const title = isPlainObject(output) && typeof output.agentName === 'string' && output.agentName
-          ? `${output.agentName} (${nodeId})`
-          : `节点 ${nodeId}`;
+        const title =
+          isPlainObject(output) && typeof output.agentName === 'string' && output.agentName
+            ? `${output.agentName} (${nodeId})`
+            : `节点 ${nodeId}`;
         pushItem(`node-${nodeId}`, title, output);
       });
     }
@@ -1489,7 +1699,9 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     const fromInputNode = normalizeImageValue(
       mergeUniqueStringList(
         normalizeStringList(inputImageNode?.data?.startImageUrls),
-        inputImageNode?.data?.startImageUrl ? [String(inputImageNode.data.startImageUrl).trim()] : [],
+        inputImageNode?.data?.startImageUrl
+          ? [String(inputImageNode.data.startImageUrl).trim()]
+          : []
       )[0] || ''
     );
     if (fromInputNode) {
@@ -1503,7 +1715,7 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     const fromStartNode = normalizeImageValue(
       mergeUniqueStringList(
         normalizeStringList(startNode?.data?.startImageUrls),
-        startNode?.data?.startImageUrl ? [String(startNode.data.startImageUrl).trim()] : [],
+        startNode?.data?.startImageUrl ? [String(startNode.data.startImageUrl).trim()] : []
       )[0] || ''
     );
     if (fromStartNode) {
@@ -1586,19 +1798,22 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     return sourceInputPreviewUrl;
   }, [sourceInputPreviewUrl]);
 
-  const triggerWorkflowMediaDownload = useCallback((mediaKind: 'images' | 'audio' | 'video', successMessage: string) => {
-    if (!executionId) {
-      addLog('system', '系统', 'warn', '当前结果没有可用的执行记录，无法下载媒体');
-      return;
-    }
-    const anchor = document.createElement('a');
-    anchor.href = `/api/workflows/history/${encodeURIComponent(executionId)}/${mediaKind}/download`;
-    anchor.rel = 'noreferrer';
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    addLog('system', '系统', 'info', successMessage);
-  }, [addLog, executionId]);
+  const triggerWorkflowMediaDownload = useCallback(
+    (mediaKind: 'images' | 'audio' | 'video', successMessage: string) => {
+      if (!executionId) {
+        addLog('system', '系统', 'warn', '当前结果没有可用的执行记录，无法下载媒体');
+        return;
+      }
+      const anchor = document.createElement('a');
+      anchor.href = `/api/workflows/history/${encodeURIComponent(executionId)}/${mediaKind}/download`;
+      anchor.rel = 'noreferrer';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      addLog('system', '系统', 'info', successMessage);
+    },
+    [addLog, executionId]
+  );
 
   const handleBatchDownloadImages = useCallback(() => {
     if (finalOutputImageUrls.length === 0) {
@@ -1624,99 +1839,107 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     triggerWorkflowMediaDownload('video', `已开始下载 ${finalOutputVideoUrls.length} 条结果视频`);
   }, [addLog, finalOutputVideoUrls.length, triggerWorkflowMediaDownload]);
 
-  const handleLoadTemplate = useCallback((template: WorkflowTemplate) => {
-    void loadTemplateIntoEditor({
-      template: template as unknown as Record<string, unknown>,
-      setWorkflowPrompt,
-      setWorkflowInputImageUrl,
-      setWorkflowInputFileUrl,
-      setNodes,
-      setEdges,
-      setActiveTemplateMeta,
-      setActiveTemplateFingerprint,
-      setFinalResult,
-      setFinalError,
-      setFinalCompletedAt,
-      setFinalRuntime,
-      setFinalRuntimeHints,
-      setShowTemplateSelector,
-      setPendingFitToken: (token: string) => {
-        pendingFitTokenRef.current = token;
-      },
+  const handleLoadTemplate = useCallback(
+    (template: WorkflowTemplate) => {
+      void loadTemplateIntoEditor({
+        template: template as unknown as Record<string, unknown>,
+        setWorkflowPrompt,
+        setWorkflowInputImageUrl,
+        setWorkflowInputFileUrl,
+        setNodes,
+        setEdges,
+        setActiveTemplateMeta,
+        setActiveTemplateFingerprint,
+        setFinalResult,
+        setFinalError,
+        setFinalCompletedAt,
+        setFinalRuntime,
+        setFinalRuntimeHints,
+        setShowTemplateSelector,
+        setPendingFitToken: (token: string) => {
+          pendingFitTokenRef.current = token;
+        },
+        addLog,
+        hydrateAgentBindingsFromRegistry,
+      });
+    },
+    [
       addLog,
       hydrateAgentBindingsFromRegistry,
-    });
-  }, [
-    addLog,
-    hydrateAgentBindingsFromRegistry,
-    setActiveTemplateFingerprint,
-    setActiveTemplateMeta,
-    setEdges,
-    setFinalCompletedAt,
-    setFinalError,
-    setFinalResult,
-    setFinalRuntime,
-    setFinalRuntimeHints,
-    setNodes,
-    setShowTemplateSelector,
-    setWorkflowInputFileUrl,
-    setWorkflowInputImageUrl,
-    setWorkflowPrompt,
-  ]);
+      setActiveTemplateFingerprint,
+      setActiveTemplateMeta,
+      setEdges,
+      setFinalCompletedAt,
+      setFinalError,
+      setFinalResult,
+      setFinalRuntime,
+      setFinalRuntimeHints,
+      setNodes,
+      setShowTemplateSelector,
+      setWorkflowInputFileUrl,
+      setWorkflowInputImageUrl,
+      setWorkflowPrompt,
+    ]
+  );
 
-  const handleTemplateSaved = useCallback((template: WorkflowTemplate, meta?: { mode: 'create' | 'update' }) => {
-    const normalizedTemplateId = String(template?.id || '').trim();
-    if (normalizedTemplateId) {
-      setActiveTemplateMeta({
-        templateId: normalizedTemplateId,
-        id: normalizedTemplateId,
-        templateName: String(template?.name || '').trim(),
-        name: String(template?.name || '').trim(),
-        description: String(template?.description || '').trim(),
-        category: String(template?.category || '').trim(),
-        tags: Array.isArray(template?.tags) ? template.tags.filter((item: unknown) => typeof item === 'string') : [],
-        isEditable: template?.isEditable !== false,
-        isLocked: false,
-      });
-      setActiveTemplateFingerprint(buildWorkflowStructureFingerprint(
-        nodes as Node<WorkflowNodeData>[],
-        edges as Edge[],
-      ));
-    }
-    setShowTemplateSave(false);
-    addLog(
-      'system',
-      '系统',
-      'info',
-      `${meta?.mode === 'update' ? '已更新模板' : '已保存模板'}: ${template.name}`,
-    );
-    onSave?.({ nodes: nodes as WorkflowNode[], edges: edges as WorkflowEdge[] });
-  }, [addLog, onSave, nodes, edges]);
+  const handleTemplateSaved = useCallback(
+    (template: WorkflowTemplate, meta?: { mode: 'create' | 'update' }) => {
+      const normalizedTemplateId = String(template?.id || '').trim();
+      if (normalizedTemplateId) {
+        setActiveTemplateMeta({
+          templateId: normalizedTemplateId,
+          id: normalizedTemplateId,
+          templateName: String(template?.name || '').trim(),
+          name: String(template?.name || '').trim(),
+          description: String(template?.description || '').trim(),
+          category: String(template?.category || '').trim(),
+          tags: Array.isArray(template?.tags)
+            ? template.tags.filter((item: unknown) => typeof item === 'string')
+            : [],
+          isEditable: template?.isEditable !== false,
+          isLocked: false,
+        });
+        setActiveTemplateFingerprint(
+          buildWorkflowStructureFingerprint(nodes as Node<WorkflowNodeData>[], edges as Edge[])
+        );
+      }
+      setShowTemplateSave(false);
+      addLog(
+        'system',
+        '系统',
+        'info',
+        `${meta?.mode === 'update' ? '已更新模板' : '已保存模板'}: ${template.name}`
+      );
+      onSave?.({ nodes: nodes as WorkflowNode[], edges: edges as WorkflowEdge[] });
+    },
+    [addLog, onSave, nodes, edges]
+  );
 
-  const canClearCanvas = useMemo(() => (
-    !isExecuting && (
-      nodes.length > 0
-      || edges.length > 0
-      || Boolean(String(workflowPrompt || '').trim())
-      || Boolean(String(workflowInputImageUrl || '').trim())
-      || Boolean(String(workflowInputFileUrl || '').trim())
-      || Boolean(activeTemplateMeta?.templateId)
-      || finalResult !== null
-      || Boolean(finalError)
-      || showResultPanel
-    )
-  ), [
-    activeTemplateMeta?.templateId,
-    edges.length,
-    finalError,
-    finalResult,
-    isExecuting,
-    nodes.length,
-    showResultPanel,
-    workflowInputFileUrl,
-    workflowInputImageUrl,
-    workflowPrompt,
-  ]);
+  const canClearCanvas = useMemo(
+    () =>
+      !isExecuting &&
+      (nodes.length > 0 ||
+        edges.length > 0 ||
+        Boolean(String(workflowPrompt || '').trim()) ||
+        Boolean(String(workflowInputImageUrl || '').trim()) ||
+        Boolean(String(workflowInputFileUrl || '').trim()) ||
+        Boolean(activeTemplateMeta?.templateId) ||
+        finalResult !== null ||
+        Boolean(finalError) ||
+        showResultPanel),
+    [
+      activeTemplateMeta?.templateId,
+      edges.length,
+      finalError,
+      finalResult,
+      isExecuting,
+      nodes.length,
+      showResultPanel,
+      workflowInputFileUrl,
+      workflowInputImageUrl,
+      workflowPrompt,
+    ]
+  );
 
   const handleClearCanvas = useCallback(() => {
     if (!canClearCanvas) {
@@ -1741,82 +1964,82 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     setExecuteErrorBanner(null);
     setShowResultPanel(false);
     addLog('system', '系统', 'info', '已清除画布');
-  }, [
-    addLog,
-    canClearCanvas,
-    edges,
-    nodes,
-    takeSnapshot,
-  ]);
+  }, [addLog, canClearCanvas, edges, nodes, takeSnapshot]);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
-  const onDrop = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    const type = event.dataTransfer.getData('application/reactflow') as NodeType;
-    if (!type || !reactFlowInstance) return;
-    const rawNodePayload = event.dataTransfer.getData('application/reactflow-node-payload');
-    let parsedNodePayload: Record<string, unknown> | null = null;
-    if (rawNodePayload) {
-      try {
-        parsedNodePayload = JSON.parse(rawNodePayload);
-      } catch {
-        parsedNodePayload = null;
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      const type = event.dataTransfer.getData('application/reactflow') as NodeType;
+      if (!type || !reactFlowInstance) return;
+      const rawNodePayload = event.dataTransfer.getData('application/reactflow-node-payload');
+      let parsedNodePayload: Record<string, unknown> | null = null;
+      if (rawNodePayload) {
+        try {
+          parsedNodePayload = JSON.parse(rawNodePayload);
+        } catch {
+          parsedNodePayload = null;
+        }
       }
-    }
 
-    const droppedAgent = (
-      type === 'agent'
-      && parsedNodePayload?.kind === 'agentPreset'
-      && parsedNodePayload?.agent
-    ) ? (parsedNodePayload.agent as AgentDef) : undefined;
+      const droppedAgent =
+        type === 'agent' && parsedNodePayload?.kind === 'agentPreset' && parsedNodePayload?.agent
+          ? (parsedNodePayload.agent as AgentDef)
+          : undefined;
 
-    const droppedAgentName = String(droppedAgent?.name || '').trim();
-    const droppedAgentProvider = String(droppedAgent?.providerId || '').trim();
-    const droppedAgentModel = String(droppedAgent?.modelId || '').trim();
-    const agentPresetUpdates: Partial<WorkflowNodeData> = droppedAgent ? {
-      agentId: String(droppedAgent.id || '').trim(),
-      agentName: droppedAgentName,
-      agentProviderId: droppedAgentProvider,
-      agentModelId: droppedAgentModel,
-      ...buildAgentNodeDefaultsFromAgent(droppedAgent),
-    } : {};
+      const droppedAgentName = String(droppedAgent?.name || '').trim();
+      const droppedAgentProvider = String(droppedAgent?.providerId || '').trim();
+      const droppedAgentModel = String(droppedAgent?.modelId || '').trim();
+      const agentPresetUpdates: Partial<WorkflowNodeData> = droppedAgent
+        ? {
+            agentId: String(droppedAgent.id || '').trim(),
+            agentName: droppedAgentName,
+            agentProviderId: droppedAgentProvider,
+            agentModelId: droppedAgentModel,
+            ...buildAgentNodeDefaultsFromAgent(droppedAgent),
+          }
+        : {};
 
-    const position = reactFlowInstance.screenToFlowPosition({ x: event.clientX, y: event.clientY });
-    const config = nodeTypeConfigs[type];
-    if (!config) return;
-    const newNode: Node<WorkflowNodeData> = {
-      id: `node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      type: config.type,
-      position,
-      data: {
-        label: droppedAgentName || config.label,
-        description: String(droppedAgent?.description || '').trim() || config.description,
-        icon: config.icon,
-        iconColor: config.iconColor,
-        type: config.type,
-        ...getDefaultNodeConfig(type),
-        ...agentPresetUpdates,
-      },
-    };
-    takeSnapshot(nodes, edges);
-    setNodes((nds) => applySingleNodeSelection(
-      nds.concat(newNode) as Node<WorkflowNodeData>[],
-      newNode.id,
-    ));
-    setEdges((eds) => applySingleEdgeSelection(eds, null));
-    const defaultFocusField = NODE_DEFAULT_FOCUS_FIELD_BY_TYPE[type];
-    if (defaultFocusField) {
-      setPendingNodeFieldFocusRequest({
-        nodeId: String(newNode.id),
-        fieldKey: defaultFocusField,
-        token: `${newNode.id}-${defaultFocusField}-${Date.now()}`,
+      const position = reactFlowInstance.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
       });
-    }
-  }, [reactFlowInstance, setEdges, setNodes, takeSnapshot, nodes, edges]);
+      const config = nodeTypeConfigs[type];
+      if (!config) return;
+      const newNode: Node<WorkflowNodeData> = {
+        id: `node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        type: config.type,
+        position,
+        data: {
+          label: droppedAgentName || config.label,
+          description: String(droppedAgent?.description || '').trim() || config.description,
+          icon: config.icon,
+          iconColor: config.iconColor,
+          type: config.type,
+          ...getDefaultNodeConfig(type),
+          ...agentPresetUpdates,
+        },
+      };
+      takeSnapshot(nodes, edges);
+      setNodes((nds) =>
+        applySingleNodeSelection(nds.concat(newNode) as Node<WorkflowNodeData>[], newNode.id)
+      );
+      setEdges((eds) => applySingleEdgeSelection(eds, null));
+      const defaultFocusField = NODE_DEFAULT_FOCUS_FIELD_BY_TYPE[type];
+      if (defaultFocusField) {
+        setPendingNodeFieldFocusRequest({
+          nodeId: String(newNode.id),
+          fieldKey: defaultFocusField,
+          token: `${newNode.id}-${defaultFocusField}-${Date.now()}`,
+        });
+      }
+    },
+    [reactFlowInstance, setEdges, setNodes, takeSnapshot, nodes, edges]
+  );
 
   return (
     <div
@@ -1829,7 +2052,11 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
         edgesCount={edges.length}
         selectedNodeLabel={selectedNode ? selectedNode.data.label : null}
         activeTemplateName={activeTemplateMeta?.templateName || activeTemplateMeta?.name || null}
-        templateSaveLabel={activeTemplateMeta?.templateId && activeTemplateMeta?.isEditable !== false ? '覆盖' : '保存'}
+        templateSaveLabel={
+          activeTemplateMeta?.templateId && activeTemplateMeta?.isEditable !== false
+            ? '覆盖'
+            : '保存'
+        }
         templateSaveTitle={
           activeTemplateMeta?.templateId && activeTemplateMeta?.isEditable !== false
             ? `覆盖模板：${activeTemplateMeta.templateName || activeTemplateMeta.name || '未命名模板'}`
@@ -1849,7 +2076,11 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
         onAutoLayout={handleAutoLayout}
         canAutoLayout={nodes.length > 0}
         onToggleResultPanel={() => setShowResultPanel((prev) => !prev)}
-        canToggleResultPanel={finalResult !== null || Boolean(finalError) || isTerminalExecutionStatus(executionFinalStatus)}
+        canToggleResultPanel={
+          finalResult !== null ||
+          Boolean(finalError) ||
+          isTerminalExecutionStatus(executionFinalStatus)
+        }
         showResultPanel={showResultPanel}
         onExportImage={() => {
           void handleDownloadWorkflowImage();
@@ -1917,28 +2148,38 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
       />
 
       {/* Template Dialogs */}
-      <WorkflowTemplateSelector isOpen={showTemplateSelector} onClose={() => setShowTemplateSelector(false)} onLoadTemplate={handleLoadTemplate} />
+      <WorkflowTemplateSelector
+        isOpen={showTemplateSelector}
+        onClose={() => setShowTemplateSelector(false)}
+        onLoadTemplate={handleLoadTemplate}
+      />
       <WorkflowTemplateSaveDialog
         isOpen={showTemplateSave}
         onClose={() => setShowTemplateSave(false)}
         nodes={nodes}
         edges={edges}
-        activeTemplate={activeTemplateMeta ? {
-          id: activeTemplateMeta.templateId,
-          name: activeTemplateMeta.templateName || activeTemplateMeta.name || '',
-          description: activeTemplateMeta.description,
-          category: activeTemplateMeta.category,
-          tags: activeTemplateMeta.tags,
-          isEditable: activeTemplateMeta.isEditable,
-          isLocked: activeTemplateMeta.isLocked,
-        } : null}
+        activeTemplate={
+          activeTemplateMeta
+            ? {
+                id: activeTemplateMeta.templateId,
+                name: activeTemplateMeta.templateName || activeTemplateMeta.name || '',
+                description: activeTemplateMeta.description,
+                category: activeTemplateMeta.category,
+                tags: activeTemplateMeta.tags,
+                isEditable: activeTemplateMeta.isEditable,
+                isLocked: activeTemplateMeta.isLocked,
+              }
+            : null
+        }
         onSaveSuccess={handleTemplateSaved}
       />
     </div>
   );
 };
 
-export const MultiAgentWorkflowEditorReactFlow: React.FC<MultiAgentWorkflowEditorReactFlowProps> = (props) => {
+export const MultiAgentWorkflowEditorReactFlow: React.FC<MultiAgentWorkflowEditorReactFlowProps> = (
+  props
+) => {
   return (
     <ReactFlowProvider>
       <MultiAgentWorkflowEditorReactFlowInner {...props} />

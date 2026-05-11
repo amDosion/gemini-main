@@ -669,7 +669,7 @@ const AppContent: React.FC = () => {
             visibleModels={visibleModels}
             allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
             apiKey={config.apiKey ?? ''}
-            protocol={config.protocol ?? ''}
+            protocol={config.protocol ?? null}
             onPromptSelect={handleWelcomePrompt}
             onOpenSettings={() => handleOpenSettings('profiles')}
             appMode={appMode}
@@ -685,7 +685,7 @@ const AppContent: React.FC = () => {
           visibleModels={visibleModels}
           allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
           apiKey={config.apiKey ?? ''}
-          protocol={config.protocol ?? ''}
+          protocol={config.protocol ?? null}
           onPromptSelect={handleWelcomePrompt}
           onOpenSettings={() => handleOpenSettings('profiles')}
           appMode={appMode}

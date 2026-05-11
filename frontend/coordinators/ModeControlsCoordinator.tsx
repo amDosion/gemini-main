@@ -1,16 +1,16 @@
 /**
  * 模式控制协调者（仅 Panel 模式）
- * 
+ *
  * 根据当前 mode 和 providerId 分发渲染对应的控制组件
  * 用于 View 组件右侧的参数面板
- * 
+ *
  * 架构说明：
  * - 控件注册表维护“通用实现 + provider 差异覆盖”
  * - 协调者按 providerId + mode 分发渲染
- * 
+ *
  * 使用方式：
- * <ModeControlsCoordinator 
- *   mode={mode} 
+ * <ModeControlsCoordinator
+ *   mode={mode}
  *   providerId={providerId}
  *   controls={controls}
  *   currentModel={activeModelConfig}
@@ -31,7 +31,7 @@ import {
   AudioGenControlsProps,
   VirtualTryOnControlsProps,
   PdfExtractControlsProps,
-  MultiAgentControlsProps
+  MultiAgentControlsProps,
 } from '../controls/types';
 
 type ModeControlsCoordinatorProps = {
@@ -43,27 +43,40 @@ type ModeControlsCoordinatorProps = {
   controls?: ControlsState;
   /** 最大图片数量（image-gen 模式） */
   maxImageCount?: number;
-} & Partial<ChatControlsProps>
-  & Partial<ImageGenControlsProps>
-  & Partial<ImageEditControlsProps>
-  & Partial<ImageMaskEditControlsProps>
-  & Partial<ImageOutpaintControlsProps>
-  & Partial<VideoGenControlsProps>
-  & Partial<AudioGenControlsProps>
-  & Partial<VirtualTryOnControlsProps>
-  & Partial<PdfExtractControlsProps>
-  & Partial<MultiAgentControlsProps>;
+} & Partial<ChatControlsProps> &
+  Partial<ImageGenControlsProps> &
+  Partial<ImageEditControlsProps> &
+  Partial<ImageMaskEditControlsProps> &
+  Partial<ImageOutpaintControlsProps> &
+  Partial<VideoGenControlsProps> &
+  Partial<AudioGenControlsProps> &
+  Partial<VirtualTryOnControlsProps> &
+  Partial<PdfExtractControlsProps> &
+  Partial<MultiAgentControlsProps>;
 
 export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (props) => {
-  const { mode, providerId, currentModel, availableModels, controls, maxImageCount, ...controlProps } = props;
+  const {
+    mode,
+    providerId,
+    currentModel,
+    availableModels,
+    controls,
+    maxImageCount,
+    ...controlProps
+  } = props;
 
   // 获取当前提供商的控件集
   const Controls = getProviderControls(providerId);
 
   switch (mode) {
     case 'chat':
-      return <Controls.ChatControls currentModel={currentModel} {...(controlProps as ChatControlsProps)} />;
-    
+      return (
+        <Controls.ChatControls
+          currentModel={currentModel}
+          {...(controlProps as ChatControlsProps)}
+        />
+      );
+
     case 'image-gen':
       return (
         <Controls.ImageGenControls
@@ -120,7 +133,7 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
           providerId={providerId}
         />
       );
-    
+
     case 'audio-gen':
       return (
         <Controls.AudioGenControls
@@ -141,10 +154,15 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
           providerId={providerId}
         />
       );
-    
+
     case 'multi-agent':
-      return <Controls.MultiAgentControls currentModel={currentModel} {...(controlProps as MultiAgentControlsProps)} />;
-    
+      return (
+        <Controls.MultiAgentControls
+          currentModel={currentModel}
+          {...(controlProps as MultiAgentControlsProps)}
+        />
+      );
+
     default:
       return null;
   }

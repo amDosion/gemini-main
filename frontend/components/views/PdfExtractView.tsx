@@ -108,7 +108,8 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
 
   const extractedData = useMemo((): PdfExtractionResultType | null => {
     if (!activeBatchMessage?.content) return null;
-    const parsed = safeJsonParse<any>(activeBatchMessage.content, null);
+    // safeJsonParse 重载 2 返回 unknown；后置结构性 narrow 确保是 PdfExtractionResultType
+    const parsed = safeJsonParse(activeBatchMessage.content, null) as PdfExtractionResultType | null;
     if (parsed && parsed.success !== undefined && (parsed.data || parsed.error)) {
       return parsed;
     }
@@ -179,7 +180,7 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
             const isSelected = activeBatchMessage?.id === msg.id;
             let result: PdfExtractionResultType | null = null;
             if (msg.content) {
-              const parsed = safeJsonParse<any>(msg.content, null);
+              const parsed = safeJsonParse(msg.content, null) as PdfExtractionResultType | null;
               if (parsed && parsed.success !== undefined) result = parsed;
             }
 

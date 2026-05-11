@@ -166,7 +166,8 @@ describe('useModels cache invalidation', () => {
 
     const initialProps: { mode: 'chat' | 'image-gen' } = { mode: 'chat' };
     const { result, rerender } = renderHook(
-      ({ mode }: { mode: 'chat' | 'image-gen' }) => useModels(true, 'google', mode, 'profile-a:1', [DEFAULT_MODEL, IMAGE_MODEL]),
+      ({ mode }: { mode: 'chat' | 'image-gen' }) =>
+        useModels(true, 'google', mode, 'profile-a:1', [DEFAULT_MODEL, IMAGE_MODEL]),
       { initialProps }
     );
 
@@ -261,7 +262,12 @@ describe('useModels cache invalidation', () => {
       models: [LEGACY_RECONTEXT_MODEL, GEMINI_IMAGE_MODEL, DEFAULT_MODEL],
       defaultModelId: GEMINI_IMAGE_MODEL.id,
       modeCatalog: [
-        { id: 'image-background-edit', label: 'Background', hasModels: true, availableModelCount: 3 },
+        {
+          id: 'image-background-edit',
+          label: 'Background',
+          hasModels: true,
+          availableModelCount: 3,
+        },
       ],
       filteredByMode: mode || null,
     }));

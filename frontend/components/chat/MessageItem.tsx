@@ -1,4 +1,3 @@
-
 import { reportError } from '../../utils/globalErrorHandler';
 import { safeCopyToClipboard } from '../../utils/safeOps';
 import React, { useMemo, useState } from 'react';
@@ -45,7 +44,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
     hasGroundingChunks,
     groundingChunks,
     hasUrlContext,
-    urlContextMetadata
+    urlContextMetadata,
   } = useMessageProcessor(message);
 
   const [isCopied, setIsCopied] = useState(false);
@@ -74,20 +73,20 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
 
   const handleDownload = () => {
     if (!displayContent) return;
-    
+
     try {
       const blob = new Blob([displayContent], { type: 'text/markdown' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      
+
       // Create a filename based on timestamp or ID
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       link.href = url;
       link.download = `message-${timestamp}.md`;
-      
+
       document.body.appendChild(link);
       link.click();
-      
+
       // Cleanup
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
@@ -113,27 +112,34 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
     return resultMap;
   }, [message.toolResults]);
   const researchStatusForDisplay = researchStatus
-    ? (
-      researchStatus.status === 'reconnecting'
-        ? {
-            status: 'in_progress' as const,
-            progress: researchStatus.progress || '连接中断，正在重连...',
-          }
-        : {
-            status: researchStatus.status as 'starting' | 'in_progress' | 'awaiting_action' | 'completed' | 'failed' | 'cancelled',
-            progress: researchStatus.progress,
-          }
-    )
+    ? researchStatus.status === 'reconnecting'
+      ? {
+          status: 'in_progress' as const,
+          progress: researchStatus.progress || '连接中断，正在重连...',
+        }
+      : {
+          status: researchStatus.status as
+            | 'starting'
+            | 'in_progress'
+            | 'awaiting_action'
+            | 'completed'
+            | 'failed'
+            | 'cancelled',
+          progress: researchStatus.progress,
+        }
     : null;
 
   return (
     <div className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'} mb-6 group`}>
-      <div className={`flex max-w-[95%] md:max-w-[85%] lg:max-w-[75%] gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-        
+      <div
+        className={`flex max-w-[95%] md:max-w-[85%] lg:max-w-[75%] gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
+      >
         {/* Avatar */}
-        <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-          isUser ? 'bg-indigo-600' : 'bg-emerald-600'
-        } shadow-lg mt-1`}>
+        <div
+          className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+            isUser ? 'bg-indigo-600' : 'bg-emerald-600'
+          } shadow-lg mt-1`}
+        >
           {isUser ? (
             <User size={16} className="text-white" />
           ) : (
@@ -143,156 +149,158 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
 
         {/* Bubble */}
         <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} w-full min-w-0`}>
-          <div className={`px-4 py-3 rounded-2xl shadow-md border overflow-hidden w-full ${
-            isUser 
-              ? 'bg-indigo-600 border-indigo-500 text-white rounded-tr-none' 
-              : 'bg-slate-800 border-slate-700 text-slate-100 rounded-tl-none'
-          } ${message.isError ? 'border-red-500 bg-red-900/20' : ''}`}>
-            
+          <div
+            className={`px-4 py-3 rounded-2xl shadow-md border overflow-hidden w-full ${
+              isUser
+                ? 'bg-indigo-600 border-indigo-500 text-white rounded-tr-none'
+                : 'bg-slate-800 border-slate-700 text-slate-100 rounded-tl-none'
+            } ${message.isError ? 'border-red-500 bg-red-900/20' : ''}`}
+          >
             {message.isError ? (
               <div className="flex items-center gap-2 text-red-400">
                 <AlertCircle size={16} />
                 <span>{message.content}</span>
               </div>
             ) : (
-               <div className="flex flex-col gap-3">
-                 {/* 0. Deep Research Progress */}
-                 {!isUser && isDeepResearchMessage && researchStatusForDisplay && (
-                    <ResearchProgressIndicator
-                      status={researchStatusForDisplay.status}
-                      elapsedTime={researchStatus?.elapsedTime || 0}
-                      progress={researchStatusForDisplay.progress}
+              <div className="flex flex-col gap-3">
+                {/* 0. Deep Research Progress */}
+                {!isUser && isDeepResearchMessage && researchStatusForDisplay && (
+                  <ResearchProgressIndicator
+                    status={researchStatusForDisplay.status}
+                    elapsedTime={researchStatus?.elapsedTime || 0}
+                    progress={researchStatusForDisplay.progress}
+                  />
+                )}
+
+                {!isUser && isDeepResearchMessage && researchRequiredAction && (
+                  <ResearchRequiredActionCard
+                    requiredAction={researchRequiredAction}
+                    onSubmitAction={
+                      onSubmitResearchAction
+                        ? (selectedInput) => onSubmitResearchAction(message.id, selectedInput)
+                        : undefined
+                    }
+                  />
+                )}
+
+                {/* 1. Search Logic */}
+                {!isUser && showSearch && (
+                  <SearchProcess
+                    queries={searchQueries}
+                    entryPoint={searchEntryPoint}
+                    isThinking={!message.content && !hasGroundingChunks}
+                  />
+                )}
+
+                {/* 2. Thinking Process */}
+                {thinkingContent && (
+                  <ThinkingBlock
+                    content={thinkingContent}
+                    isOpen={isThinkingOpen}
+                    onToggle={() => setIsThinkingOpen(!isThinkingOpen)}
+                    isComplete={isThinkingComplete}
+                  />
+                )}
+
+                {/* 3. Browser Tool Progress */}
+                {!isUser && message.browserOperationId && (
+                  <BrowserProgressIndicator operationId={message.browserOperationId} />
+                )}
+
+                {/* 4. Main Text Content with Cursor */}
+                {(displayContent || showMainCursor) && (
+                  <div className="min-w-0">
+                    <MarkdownRenderer
+                      content={injectCursorToContent(displayContent, showMainCursor)}
                     />
-                 )}
+                  </div>
+                )}
 
-                 {!isUser && isDeepResearchMessage && researchRequiredAction && (
-                    <ResearchRequiredActionCard
-                      requiredAction={researchRequiredAction}
-                      onSubmitAction={
-                        onSubmitResearchAction
-                          ? (selectedInput) => onSubmitResearchAction(message.id, selectedInput)
-                          : undefined
-                      }
-                    />
-                 )}
-                 
-                 {/* 1. Search Logic */}
-                 {!isUser && showSearch && (
-                    <SearchProcess 
-                        queries={searchQueries} 
-                        entryPoint={searchEntryPoint} 
-                        isThinking={!message.content && !hasGroundingChunks} 
-                    />
-                 )}
+                {/* 4.1 Typing Indicator (before first token) */}
+                {showTypingIndicator && (
+                  <div className="flex items-center gap-1.5 py-1" aria-label="AI 正在输入">
+                    <div className="h-2 w-2 rounded-full bg-indigo-400/80 animate-bounce [animation-delay:-0.2s]" />
+                    <div className="h-2 w-2 rounded-full bg-indigo-400/80 animate-bounce [animation-delay:-0.1s]" />
+                    <div className="h-2 w-2 rounded-full bg-indigo-400/80 animate-bounce" />
+                  </div>
+                )}
 
-                 {/* 2. Thinking Process */}
-                 {thinkingContent && (
-                    <ThinkingBlock 
-                        content={thinkingContent}
-                        isOpen={isThinkingOpen}
-                        onToggle={() => setIsThinkingOpen(!isThinkingOpen)}
-                        isComplete={isThinkingComplete}
-                    />
-                 )}
+                {/* 5. Tool Calls */}
+                {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    {message.toolCalls.map((toolCall) => {
+                      const toolResult = toolResultByCallId.get(toolCall.id);
+                      const isToolExecuting = !toolResult && isStreaming;
 
-                 {/* 3. Browser Tool Progress */}
-                 {!isUser && message.browserOperationId && (
-                    <BrowserProgressIndicator operationId={message.browserOperationId} />
-                 )}
+                      return (
+                        <ToolCallDisplay
+                          key={toolCall.id}
+                          toolCall={toolCall}
+                          toolResult={toolResult}
+                          isExecuting={isToolExecuting}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
 
-                 {/* 4. Main Text Content with Cursor */}
-                 {(displayContent || showMainCursor) && (
-                    <div className="min-w-0">
-                      <MarkdownRenderer
-                        content={injectCursorToContent(displayContent, showMainCursor)}
-                      />
-                    </div>
-                 )}
+                {/* 6. Grounding / Sources */}
+                {!isUser && hasGroundingChunks && <GroundingSources chunks={groundingChunks} />}
 
-                 {/* 4.1 Typing Indicator (before first token) */}
-                 {showTypingIndicator && (
-                    <div className="flex items-center gap-1.5 py-1" aria-label="AI 正在输入">
-                      <div className="h-2 w-2 rounded-full bg-indigo-400/80 animate-bounce [animation-delay:-0.2s]" />
-                      <div className="h-2 w-2 rounded-full bg-indigo-400/80 animate-bounce [animation-delay:-0.1s]" />
-                      <div className="h-2 w-2 rounded-full bg-indigo-400/80 animate-bounce" />
-                    </div>
-                 )}
+                {/* 7. URL Context Status */}
+                {!isUser && hasUrlContext && <UrlContextStatus metadata={urlContextMetadata} />}
 
-                 {/* 5. Tool Calls */}
-                 {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
-                     <div className="flex flex-col gap-2">
-                         {message.toolCalls.map((toolCall) => {
-                             const toolResult = toolResultByCallId.get(toolCall.id);
-                             const isToolExecuting = !toolResult && isStreaming;
-
-                             return (
-                                 <ToolCallDisplay
-                                     key={toolCall.id}
-                                     toolCall={toolCall}
-                                     toolResult={toolResult}
-                                     isExecuting={isToolExecuting}
-                                 />
-                             );
-                         })}
-                     </div>
-                 )}
-
-                 {/* 6. Grounding / Sources */}
-                 {!isUser && hasGroundingChunks && (
-                    <GroundingSources chunks={groundingChunks} />
-                 )}
-
-                 {/* 7. URL Context Status */}
-                 {!isUser && hasUrlContext && (
-                    <UrlContextStatus metadata={urlContextMetadata} />
-                 )}
-                 
-                 {/* 8. Attachments (Images, Videos, Files) */}
-                 {message.attachments && message.attachments.length > 0 && (
-                    <AttachmentGrid 
-                        attachments={message.attachments} 
-                        onImageClick={onImageClick} 
-                        onEditImage={onEditImage}
-                    />
-                 )}
-
-               </div>
+                {/* 8. Attachments (Images, Videos, Files) */}
+                {message.attachments && message.attachments.length > 0 && (
+                  <AttachmentGrid
+                    attachments={message.attachments}
+                    onImageClick={onImageClick}
+                    onEditImage={onEditImage}
+                  />
+                )}
+              </div>
             )}
           </div>
-          
+
           <div
             data-testid="message-item-actions"
             className={`flex items-center gap-2 mt-1 px-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
           >
             <span className="text-xs text-slate-500">
-                {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {new Date(message.timestamp).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
             </span>
-            
+
             {/* Actions: Copy & Download */}
             {!message.isError && displayContent && (
               <>
-                <button 
-                    onClick={handleCopy}
-                    className="p-1 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 rounded transition-colors flex items-center gap-1"
-                    title="Copy text"
+                <button
+                  onClick={handleCopy}
+                  className="p-1 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 rounded transition-colors flex items-center gap-1"
+                  title="Copy text"
                 >
-                    {isCopied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
-                    {isCopied && <span className="text-[10px] text-emerald-500">Copied</span>}
+                  {isCopied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                  {isCopied && <span className="text-[10px] text-emerald-500">Copied</span>}
                 </button>
 
-                <button 
-                    onClick={handleDownload}
-                    className="p-1 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 rounded transition-colors flex items-center gap-1"
-                    title="Download as Markdown"
+                <button
+                  onClick={handleDownload}
+                  className="p-1 text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 rounded transition-colors flex items-center gap-1"
+                  title="Download as Markdown"
                 >
-                    {isDownloaded ? <Check size={12} className="text-emerald-500" /> : <Download size={12} />}
-                    {isDownloaded && <span className="text-[10px] text-emerald-500">Saved</span>}
+                  {isDownloaded ? (
+                    <Check size={12} className="text-emerald-500" />
+                  ) : (
+                    <Download size={12} />
+                  )}
+                  {isDownloaded && <span className="text-[10px] text-emerald-500">Saved</span>}
                 </button>
               </>
             )}
           </div>
         </div>
-
       </div>
     </div>
   );
@@ -300,7 +308,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
 
 const areMessageItemPropsEqual = (
   prevProps: Readonly<MessageItemProps>,
-  nextProps: Readonly<MessageItemProps>,
+  nextProps: Readonly<MessageItemProps>
 ): boolean => {
   return (
     prevProps.message === nextProps.message &&

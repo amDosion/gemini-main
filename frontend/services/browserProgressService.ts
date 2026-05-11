@@ -1,7 +1,7 @@
 import { safeJsonParse } from '../utils/safeOps';
 /**
  * Browser Progress Service
- * 
+ *
  * Handles real-time progress updates for browser operations using Server-Sent Events (SSE).
  */
 
@@ -16,12 +16,24 @@ export interface BrowseProgressUpdate {
 
 export type ProgressCallback = (update: BrowseProgressUpdate) => void;
 
+// 配合 safeJsonParse 重载 1 强制类型 guard（type-design-analyzer NEEDS-IMPROVEMENT 修复）
+const isBrowseProgressUpdate = (v: unknown): v is BrowseProgressUpdate => {
+  if (!v || typeof v !== 'object') return false;
+  const r = v as Record<string, unknown>;
+  return (
+    typeof r.operationId === 'string' &&
+    typeof r.step === 'string' &&
+    (r.status === 'in_progress' || r.status === 'completed' || r.status === 'error') &&
+    typeof r.timestamp === 'string'
+  );
+};
+
 export class BrowserProgressService {
   private eventSources: Map<string, EventSource> = new Map();
 
   /**
    * Subscribe to progress updates for a browse operation
-   * 
+   *
    * @param operationId - Unique identifier for the operation
    * @param onProgress - Callback function for progress updates
    * @param onComplete - Optional callback when operation completes
@@ -39,12 +51,16 @@ export class BrowserProgressService {
 
     // Create new EventSource
     // 通过 Vite 代理访问后端 SSE 端点
-    const eventSource = new EventSource(
-      `/api/browse/progress/${operationId}`
-    );
+    const eventSource = new EventSource(`/api/browse/progress/${operationId}`);
 
     eventSource.onmessage = (event) => {
-      const update = safeJsonParse<BrowseProgressUpdate | null>(event.data, null);
+      // safeJsonParse 重载 1：guard 强制运行时类型验证（避免类型逃逸）
+      // 用 BrowseProgressUpdate | null union 让 fallback null 合规
+      const update = safeJsonParse<BrowseProgressUpdate | null>(
+        event.data,
+        null,
+        (v): v is BrowseProgressUpdate | null => v === null || isBrowseProgressUpdate(v)
+      );
       if (!update) return;
 
       // Call progress callback
@@ -76,7 +92,7 @@ export class BrowserProgressService {
 
   /**
    * Unsubscribe from progress updates
-   * 
+   *
    * @param operationId - Operation identifier
    */
   unsubscribe(operationId: string): void {

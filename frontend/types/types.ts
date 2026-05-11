@@ -400,7 +400,7 @@ export interface BaseViewProps {
     visibleModels: ModelConfig[];
     allVisibleModels?: ModelConfig[];
     apiKey: string;
-    protocol: string;
+    protocol: string | null;
     onPromptSelect: (text: string, mode: AppMode, modelId: string, requiredCap: string) => void;
     onOpenSettings: () => void;
     onImageClick: (url: string) => void;

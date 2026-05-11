@@ -37,24 +37,23 @@ const normalizeAgentTaskType = (
     .trim()
     .toLowerCase()
     .replace(/_/g, '-');
-  const aliases: Record<string, string> =
-    {
-      video: 'video-gen',
-      'video-generate': 'video-gen',
-      'video-generation': 'video-gen',
-      audio: 'audio-gen',
-      speech: 'audio-gen',
-      tts: 'audio-gen',
-      'speech-gen': 'audio-gen',
-      'speech-generate': 'audio-gen',
-      'speech-generation': 'audio-gen',
-      'audio-generate': 'audio-gen',
-      'audio-generation': 'audio-gen',
-      'vision-analyze': 'vision-understand',
-      'image-analyze': 'vision-understand',
-      'image-understand': 'vision-understand',
-      'table-analysis': 'data-analysis',
-    };
+  const aliases: Record<string, string> = {
+    video: 'video-gen',
+    'video-generate': 'video-gen',
+    'video-generation': 'video-gen',
+    audio: 'audio-gen',
+    speech: 'audio-gen',
+    tts: 'audio-gen',
+    'speech-gen': 'audio-gen',
+    'speech-generate': 'audio-gen',
+    'speech-generation': 'audio-gen',
+    'audio-generate': 'audio-gen',
+    'audio-generation': 'audio-gen',
+    'vision-analyze': 'vision-understand',
+    'image-analyze': 'vision-understand',
+    'image-understand': 'vision-understand',
+    'table-analysis': 'data-analysis',
+  };
   const safeTask = aliases[normalized] || normalized;
   if (
     safeTask === 'chat' ||

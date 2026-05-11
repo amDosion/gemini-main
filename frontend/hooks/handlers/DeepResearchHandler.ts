@@ -96,7 +96,9 @@ const pickToolArgs = (payload: Record<string, any>): Record<string, any> => {
 
   const args: Record<string, any> = {};
   for (const [key, value] of Object.entries(payload)) {
-    if (['type', 'id', 'callId', 'call_id', 'name', 'tool', 'error', 'result', 'output'].includes(key)) {
+    if (
+      ['type', 'id', 'callId', 'call_id', 'name', 'tool', 'error', 'result', 'output'].includes(key)
+    ) {
       continue;
     }
     args[key] = value;
@@ -162,11 +164,15 @@ const normalizeToolResult = (
     screenshotUrl:
       typeof payload.screenshotUrl === 'string'
         ? payload.screenshotUrl
-        : (typeof payload.screenshot_url === 'string' ? payload.screenshot_url : undefined),
+        : typeof payload.screenshot_url === 'string'
+          ? payload.screenshot_url
+          : undefined,
   };
 };
 
-const extractRequiredAction = (eventPayload: Record<string, any>): ResearchRequiredAction | undefined => {
+const extractRequiredAction = (
+  eventPayload: Record<string, any>
+): ResearchRequiredAction | undefined => {
   const candidates = [
     eventPayload.requiresAction,
     eventPayload.requiredAction,
@@ -194,10 +200,11 @@ const pickFirstString = (...values: unknown[]): string | undefined => {
   return undefined;
 };
 
-const findUnresolvedToolCall = (toolCalls: ToolCall[], toolResults: ToolResult[]): ToolCall | undefined =>
-  [...toolCalls]
-    .reverse()
-    .find((call) => !toolResults.some((result) => result.callId === call.id));
+const findUnresolvedToolCall = (
+  toolCalls: ToolCall[],
+  toolResults: ToolResult[]
+): ToolCall | undefined =>
+  [...toolCalls].reverse().find((call) => !toolResults.some((result) => result.callId === call.id));
 
 const extractRequiredActionCallId = (
   requiredAction: ResearchRequiredAction | undefined,
@@ -278,7 +285,11 @@ const extractRequiredActionName = (
   toolResults: ToolResult[],
   callId: string
 ): string | undefined => {
-  if (requiredAction && isRecord(requiredAction.act) && typeof requiredAction.act.name === 'string') {
+  if (
+    requiredAction &&
+    isRecord(requiredAction.act) &&
+    typeof requiredAction.act.name === 'string'
+  ) {
     return requiredAction.act.name;
   }
   const matchedCall = toolCalls.find((call) => call.id === callId);
@@ -302,7 +313,11 @@ const extractStatusText = (eventPayload: Record<string, any>): string | undefine
   }
 
   const interaction = eventPayload.interaction;
-  if (isRecord(interaction) && typeof interaction.status === 'string' && interaction.status.trim()) {
+  if (
+    isRecord(interaction) &&
+    typeof interaction.status === 'string' &&
+    interaction.status.trim()
+  ) {
     return interaction.status.trim();
   }
 
@@ -370,10 +385,14 @@ export class DeepResearchHandler extends BaseHandler {
       elapsedTime: elapsedTime(),
     });
     const deepResearchPolicy = await fetchDeepResearchStreamPolicy();
-    const deepResearchIdleTimeoutMs = deepResearchPolicy.idleTimeoutMs || DEFAULT_DEEP_RESEARCH_STREAM_POLICY.idleTimeoutMs;
-    const deepResearchWatchdogIntervalMs = deepResearchPolicy.watchdogIntervalMs || DEFAULT_DEEP_RESEARCH_STREAM_POLICY.watchdogIntervalMs;
+    const deepResearchIdleTimeoutMs =
+      deepResearchPolicy.idleTimeoutMs || DEFAULT_DEEP_RESEARCH_STREAM_POLICY.idleTimeoutMs;
+    const deepResearchWatchdogIntervalMs =
+      deepResearchPolicy.watchdogIntervalMs ||
+      DEFAULT_DEEP_RESEARCH_STREAM_POLICY.watchdogIntervalMs;
     const deepResearchMaxRecoveryAttempts =
-      deepResearchPolicy.maxRecoveryAttempts || DEFAULT_DEEP_RESEARCH_STREAM_POLICY.maxRecoveryAttempts;
+      deepResearchPolicy.maxRecoveryAttempts ||
+      DEFAULT_DEEP_RESEARCH_STREAM_POLICY.maxRecoveryAttempts;
 
     // 1. 如果有附件，先上传到 File Search Store
     let fileSearchStoreNames: string[] | undefined;
@@ -541,7 +560,9 @@ export class DeepResearchHandler extends BaseHandler {
       };
 
       const upsertToolResult = (result: ToolResult) => {
-        const existingIndex = accumulatedToolResults.findIndex((item) => item.callId === result.callId);
+        const existingIndex = accumulatedToolResults.findIndex(
+          (item) => item.callId === result.callId
+        );
         if (existingIndex >= 0) {
           accumulatedToolResults[existingIndex] = result;
         } else {
@@ -696,7 +717,9 @@ export class DeepResearchHandler extends BaseHandler {
         );
         if (!response.ok) {
           const errorText = await response.text();
-          throw new Error(`获取研究状态失败: ${response.status} ${response.statusText} - ${errorText}`);
+          throw new Error(
+            `获取研究状态失败: ${response.status} ${response.statusText} - ${errorText}`
+          );
         }
         return response.json();
       };
@@ -717,7 +740,8 @@ export class DeepResearchHandler extends BaseHandler {
         try {
           const statusSnapshot = await fetchInteractionStatus();
           const statusText =
-            (typeof statusSnapshot?.status === 'string' ? statusSnapshot.status : '') || 'in_progress';
+            (typeof statusSnapshot?.status === 'string' ? statusSnapshot.status : '') ||
+            'in_progress';
           const outputs = Array.isArray(statusSnapshot?.outputs) ? statusSnapshot.outputs : [];
           const snapshotRequiredAction = extractRequiredAction(
             isRecord(statusSnapshot) ? statusSnapshot : {}
@@ -747,14 +771,18 @@ export class DeepResearchHandler extends BaseHandler {
             const statusErrorMessage =
               typeof errorPayload === 'string'
                 ? errorPayload
-                : (errorPayload?.message || `研究任务状态: ${statusText}`);
+                : errorPayload?.message || `研究任务状态: ${statusText}`;
             finalizeFailed(statusErrorMessage, `研究失败（状态恢复）: ${statusText}`);
             return;
           }
 
-          if ((statusText === 'requires_action' || snapshotRequiredAction) && snapshotRequiredAction) {
+          if (
+            (statusText === 'requires_action' || snapshotRequiredAction) &&
+            snapshotRequiredAction
+          ) {
             const actionName =
-              (isRecord(snapshotRequiredAction.act) && typeof snapshotRequiredAction.act.name === 'string')
+              isRecord(snapshotRequiredAction.act) &&
+              typeof snapshotRequiredAction.act.name === 'string'
                 ? snapshotRequiredAction.act.name
                 : '需要外部动作';
             emitProgress('awaiting_action', `等待动作: ${actionName}`);
@@ -896,7 +924,6 @@ export class DeepResearchHandler extends BaseHandler {
         currentEventSource = eventSource;
         touchActivity();
 
-
         eventSource.onopen = () => {
           touchActivity();
           recoveryAttempts = 0;
@@ -987,7 +1014,7 @@ export class DeepResearchHandler extends BaseHandler {
 
               if (requiredAction) {
                 const actionName =
-                  (isRecord(requiredAction.act) && typeof requiredAction.act.name === 'string')
+                  isRecord(requiredAction.act) && typeof requiredAction.act.name === 'string'
                     ? requiredAction.act.name
                     : '需要外部动作';
                 emitProgress('awaiting_action', `等待动作: ${actionName}`);
@@ -1026,7 +1053,6 @@ export class DeepResearchHandler extends BaseHandler {
             }
 
             if (eventType === 'interaction.complete') {
-
               if (data.groundingMetadata) {
                 lastGroundingMetadata = data.groundingMetadata;
               }
@@ -1042,7 +1068,7 @@ export class DeepResearchHandler extends BaseHandler {
               const errorMessage =
                 typeof data.error === 'string'
                   ? data.error
-                  : (data.error?.message || JSON.stringify(data.error));
+                  : data.error?.message || JSON.stringify(data.error);
               finalizeFailed(`研究过程中出现错误: ${errorMessage}`, `研究失败: ${errorMessage}`);
             }
           } catch (err) {
@@ -1051,7 +1077,6 @@ export class DeepResearchHandler extends BaseHandler {
         };
 
         eventSource.onerror = (error) => {
-
           if (isComplete) {
             return;
           }

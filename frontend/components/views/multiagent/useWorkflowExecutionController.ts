@@ -15,10 +15,7 @@ import {
 } from '../../../services/runtimePolicies';
 import type { ExecutionStatus, WorkflowEdge, WorkflowNode } from '../../multiagent/types';
 import { useWorkflowExecutionStream } from './useWorkflowExecutionStream';
-import {
-  buildFailedExecutionStatus,
-  createInitialExecutionStatus,
-} from './executionStatusUtils';
+import { buildFailedExecutionStatus, createInitialExecutionStatus } from './executionStatusUtils';
 import { isWorkflowExecutionAbortError } from './workflowExecutionErrors';
 import { getErrorMessage } from '../../../utils/errorMessage';
 
@@ -73,9 +70,10 @@ const createExecutePayload = (workflow: WorkflowExecuteRequest, workflowPrompt: 
     workflow.input && typeof workflow.input === 'object' && !Array.isArray(workflow.input)
       ? { ...workflow.input }
       : {};
-  workflowInput.task = String(
-    workflowInput.task || workflowInput.prompt || workflowInput.text || workflowPrompt
-  ).trim() || workflowPrompt;
+  workflowInput.task =
+    String(
+      workflowInput.task || workflowInput.prompt || workflowInput.text || workflowPrompt
+    ).trim() || workflowPrompt;
 
   const templateId = String(workflow?.meta?.templateId || '').trim();
   const templateName = String(workflow?.meta?.templateName || '').trim();
@@ -188,36 +186,37 @@ export const useWorkflowExecutionController = ({
 
         const token = getAccessToken();
         if (token) {
-                  }
+        }
 
         const normalizedProviderId = String(providerId || '').trim();
         if (!normalizedProviderId) {
           throw new Error('当前 Multi-Agent 模式缺少 providerId');
         }
-        const normalizedModelId =
-          String(modelId || '').trim() || 'workflow-runtime';
+        const normalizedModelId = String(modelId || '').trim() || 'workflow-runtime';
 
-        const modeResponse = await requestJson<any>(`/api/modes/${encodeURIComponent(normalizedProviderId)}/multi-agent`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          withAuth: true,
-          signal: executionController.signal,
-          timeoutMs: 0,
-          errorMessage: '工作流执行失败',
-          body: JSON.stringify({
-            modelId: normalizedModelId,
-            prompt: workflowPrompt,
-            attachments: [],
-            options: {},
-            extra: {
-              workflow: createExecutePayload(workflow, workflowPrompt),
-            },
-          }),
-        });
+        const modeResponse = await requestJson<any>(
+          `/api/modes/${encodeURIComponent(normalizedProviderId)}/multi-agent`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            withAuth: true,
+            signal: executionController.signal,
+            timeoutMs: 0,
+            errorMessage: '工作流执行失败',
+            body: JSON.stringify({
+              modelId: normalizedModelId,
+              prompt: workflowPrompt,
+              attachments: [],
+              options: {},
+              extra: {
+                workflow: createExecutePayload(workflow, workflowPrompt),
+              },
+            }),
+          }
+        );
         const result = modeResponse?.data ?? modeResponse;
 
         if (shouldIgnoreStateUpdate()) return;
-
 
         const receivedExecutionId = result.executionId;
         if (receivedExecutionId) {
@@ -252,9 +251,7 @@ export const useWorkflowExecutionController = ({
           return;
         }
 
-        const errorMessage =
-          terminalFailureMessage ||
-          (getErrorMessage(error));
+        const errorMessage = terminalFailureMessage || getErrorMessage(error);
 
         if (terminalFailureMessage) {
           await finalizeExecutionFailure(errorMessage, { skipStatusWrite: true });

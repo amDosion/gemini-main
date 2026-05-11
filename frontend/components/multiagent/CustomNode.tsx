@@ -4,7 +4,15 @@
 
 import React, { memo, useMemo } from 'react';
 import { Handle, Position, NodeProps, NodeResizeControl } from 'reactflow';
-import { Clock, Loader2, CheckCircle2, XCircle, Image as ImageIcon, Video, Mic } from 'lucide-react';
+import {
+  Clock,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  Image as ImageIcon,
+  Video,
+  Mic,
+} from 'lucide-react';
 import { nodeTypeConfigs } from './nodeTypeConfigs';
 import type { NodeStatus, WorkflowNodeData } from './types';
 import {
@@ -18,19 +26,31 @@ import {
   normalizeImageValue,
 } from './workflowResultUtils';
 import { buildNodeParamChipItems } from './nodeParamSummaryUtils';
-import { buildHandlesForSide, resolveNodePortLayout, type WorkflowNodePortSide } from './workflowPorts';
+import {
+  buildHandlesForSide,
+  resolveNodePortLayout,
+  type WorkflowNodePortSide,
+} from './workflowPorts';
 import '@reactflow/node-resizer/dist/style.css';
 
 export type CustomNodeData = WorkflowNodeData;
 
-const statusConfig: Record<NodeStatus, {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  color: string;
-  border: string;
-  animate?: string;
-}> = {
+const statusConfig: Record<
+  NodeStatus,
+  {
+    icon: React.ComponentType<{ size?: number; className?: string }>;
+    color: string;
+    border: string;
+    animate?: string;
+  }
+> = {
   pending: { icon: Clock, color: 'text-slate-500', border: 'border-slate-700' },
-  running: { icon: Loader2, color: 'text-blue-400', border: 'border-blue-500/50', animate: 'animate-spin' },
+  running: {
+    icon: Loader2,
+    color: 'text-blue-400',
+    border: 'border-blue-500/50',
+    animate: 'animate-spin',
+  },
   completed: { icon: CheckCircle2, color: 'text-emerald-400', border: 'border-emerald-500/50' },
   skipped: { icon: Clock, color: 'text-amber-300', border: 'border-amber-500/50' },
   failed: { icon: XCircle, color: 'text-red-400', border: 'border-red-500/50' },
@@ -47,7 +67,11 @@ const getRelativeOffset = (index: number, count: number): string => {
   return `${((index + 1) / (count + 1)) * 100}%`;
 };
 
-const getHandleClassName = (nodeType: string, side: WorkflowNodePortSide, index: number): string => {
+const getHandleClassName = (
+  nodeType: string,
+  side: WorkflowNodePortSide,
+  index: number
+): string => {
   if (side === 'right' && (nodeType === 'condition' || nodeType === 'loop')) {
     if (index === 0) return '!w-2.5 !h-2.5 !bg-emerald-500 !border-2 !border-slate-800';
     if (index === 1) return '!w-2.5 !h-2.5 !bg-red-500 !border-2 !border-slate-800';
@@ -60,9 +84,7 @@ const getHandleClassName = (nodeType: string, side: WorkflowNodePortSide, index:
 
 const toStringList = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => String(item || '').trim())
-    .filter(Boolean);
+  return value.map((item) => String(item || '').trim()).filter(Boolean);
 };
 
 const mergeUniqueValues = (...sources: Array<unknown>): string[] => {
@@ -96,36 +118,40 @@ const WORKFLOW_EDITOR_SCOPE_SELECTOR = `[${WORKFLOW_EDITOR_SCOPE_ATTRIBUTE}]`;
 const dispatchScopedWorkflowEvent = <TDetail extends Record<string, unknown>>(
   eventName: string,
   target: EventTarget | null,
-  detail: TDetail,
+  detail: TDetail
 ): boolean => {
   if (typeof window === 'undefined' || typeof Element === 'undefined') {
     return false;
   }
   const element = target instanceof Element ? target : null;
   const scopeRoot = element?.closest(WORKFLOW_EDITOR_SCOPE_SELECTOR);
-  const editorScopeId = String(scopeRoot?.getAttribute(WORKFLOW_EDITOR_SCOPE_ATTRIBUTE) || '').trim();
+  const editorScopeId = String(
+    scopeRoot?.getAttribute(WORKFLOW_EDITOR_SCOPE_ATTRIBUTE) || ''
+  ).trim();
   if (!editorScopeId) {
     return false;
   }
-  window.dispatchEvent(new CustomEvent(eventName, {
-    detail: {
-      ...detail,
-      editorScopeId,
-    },
-  }));
+  window.dispatchEvent(
+    new CustomEvent(eventName, {
+      detail: {
+        ...detail,
+        editorScopeId,
+      },
+    })
+  );
   return true;
 };
 
 const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
   const { id, data, selected } = props;
-  const config = nodeTypeConfigs[data.type as keyof typeof nodeTypeConfigs] || nodeTypeConfigs.agent;
+  const config =
+    nodeTypeConfigs[data.type as keyof typeof nodeTypeConfigs] || nodeTypeConfigs.agent;
   const status = data.status || 'pending';
   const statusInfo = statusConfig[status];
   const StatusIcon = statusInfo.icon;
   const progressValueRaw = toFiniteNumber(data.progress);
-  const progressValue = status === 'completed'
-    ? 100
-    : Math.max(0, Math.min(100, Math.round(progressValueRaw ?? 0)));
+  const progressValue =
+    status === 'completed' ? 100 : Math.max(0, Math.min(100, Math.round(progressValueRaw ?? 0)));
   const nodeType = String(data.type || '').toLowerCase();
   const portLayout = useMemo(
     () => resolveNodePortLayout(nodeType, data.portLayout),
@@ -150,7 +176,7 @@ const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
   const inputImagePreviewUrls = useMemo(() => {
     const startNodeCandidates = mergeUniqueValues(
       data.startImageUrls,
-      data.startImageUrl ? [data.startImageUrl] : [],
+      data.startImageUrl ? [data.startImageUrl] : []
     )
       .map((item) => normalizeImageValue(item))
       .filter((item): item is string => Boolean(item && isDirectlyRenderableImageUrl(item)));
@@ -159,70 +185,92 @@ const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
     }
 
     const fallbackCandidate = normalizeImageValue(
-      String(nodeType === 'agent' ? data.agentReferenceImageUrl || '' : nodeType === 'tool' ? data.toolReferenceImageUrl || '' : '')
+      String(
+        nodeType === 'agent'
+          ? data.agentReferenceImageUrl || ''
+          : nodeType === 'tool'
+            ? data.toolReferenceImageUrl || ''
+            : ''
+      )
     );
     if (fallbackCandidate && isDirectlyRenderableImageUrl(fallbackCandidate)) {
       return [fallbackCandidate];
     }
     return [];
-  }, [data.startImageUrls, data.startImageUrl, data.agentReferenceImageUrl, data.toolReferenceImageUrl, nodeType]);
+  }, [
+    data.startImageUrls,
+    data.startImageUrl,
+    data.agentReferenceImageUrl,
+    data.toolReferenceImageUrl,
+    nodeType,
+  ]);
   const resultImageUrls = useMemo(
-    () => extractImageUrls(data.result).filter((imageUrl) => isDirectlyRenderableImageUrl(imageUrl)),
+    () =>
+      extractImageUrls(data.result).filter((imageUrl) => isDirectlyRenderableImageUrl(imageUrl)),
     [data.result]
   );
   const resultAudioUrls = useMemo(
-    () => extractAudioUrls(data.result).filter((audioUrl) => isDirectlyRenderableAudioUrl(audioUrl)),
+    () =>
+      extractAudioUrls(data.result).filter((audioUrl) => isDirectlyRenderableAudioUrl(audioUrl)),
     [data.result]
   );
   const resultVideoUrls = useMemo(
-    () => extractVideoUrls(data.result).filter((videoUrl) => isDirectlyRenderableVideoUrl(videoUrl)),
+    () =>
+      extractVideoUrls(data.result).filter((videoUrl) => isDirectlyRenderableVideoUrl(videoUrl)),
     [data.result]
   );
-  const rawResultText = useMemo(
-    () => extractTextContent(data.result).trim(),
-    [data.result]
-  );
+  const rawResultText = useMemo(() => extractTextContent(data.result).trim(), [data.result]);
   const resultPreviewLimit = nodeType === 'end' ? 150 : 90;
-  const resultTextPreview = rawResultText.length > resultPreviewLimit
-    ? `${rawResultText.slice(0, resultPreviewLimit)}...`
-    : rawResultText;
-  const paramChipItems = useMemo(
-    () => buildNodeParamChipItems(data),
-    [data]
-  );
+  const resultTextPreview =
+    rawResultText.length > resultPreviewLimit
+      ? `${rawResultText.slice(0, resultPreviewLimit)}...`
+      : rawResultText;
+  const paramChipItems = useMemo(() => buildNodeParamChipItems(data), [data]);
   const hasResultPreview = useMemo(
-    () => resultImageUrls.length > 0 || resultAudioUrls.length > 0 || resultVideoUrls.length > 0 || resultTextPreview.length > 0,
-    [resultAudioUrls.length, resultImageUrls.length, resultTextPreview.length, resultVideoUrls.length]
+    () =>
+      resultImageUrls.length > 0 ||
+      resultAudioUrls.length > 0 ||
+      resultVideoUrls.length > 0 ||
+      resultTextPreview.length > 0,
+    [
+      resultAudioUrls.length,
+      resultImageUrls.length,
+      resultTextPreview.length,
+      resultVideoUrls.length,
+    ]
   );
   const shouldRenderInputImage = inputImagePreviewUrls.length > 0;
   const resultPreviewTitle = nodeType === 'end' ? '最终结果预览' : '输出预览';
   const isEndNode = nodeType === 'end';
   const resultImageGridColsClass = isEndNode
-    ? (
-      resultImageUrls.length >= 4
-        ? 'grid-cols-4'
-        : resultImageUrls.length === 3
-          ? 'grid-cols-3'
-          : resultImageUrls.length === 2
-            ? 'grid-cols-2'
-            : 'grid-cols-1'
-    )
-    : (resultImageUrls.length > 1 ? 'grid-cols-2' : 'grid-cols-1');
-  const inputImageGridColsClass = inputImagePreviewUrls.length >= 4
-    ? 'grid-cols-4'
-    : inputImagePreviewUrls.length === 3
-      ? 'grid-cols-3'
-      : inputImagePreviewUrls.length === 2
-        ? 'grid-cols-2'
-        : 'grid-cols-1';
+    ? resultImageUrls.length >= 4
+      ? 'grid-cols-4'
+      : resultImageUrls.length === 3
+        ? 'grid-cols-3'
+        : resultImageUrls.length === 2
+          ? 'grid-cols-2'
+          : 'grid-cols-1'
+    : resultImageUrls.length > 1
+      ? 'grid-cols-2'
+      : 'grid-cols-1';
+  const inputImageGridColsClass =
+    inputImagePreviewUrls.length >= 4
+      ? 'grid-cols-4'
+      : inputImagePreviewUrls.length === 3
+        ? 'grid-cols-3'
+        : inputImagePreviewUrls.length === 2
+          ? 'grid-cols-2'
+          : 'grid-cols-1';
   const inputImageCellHeightClass = inputImagePreviewUrls.length <= 1 ? 'h-28' : 'h-14';
   const resultThumbnailHeightClass = isEndNode
-    ? (resultImageUrls.length <= 1 ? 'h-36' : 'h-16')
+    ? resultImageUrls.length <= 1
+      ? 'h-36'
+      : 'h-16'
     : 'h-28';
   const resultGalleryMaxHeightClass = isEndNode ? 'max-h-96' : 'max-h-56';
 
-  const emitDisconnectHandleEvent = (direction: 'source' | 'target', handleId?: string) =>
-    (event: React.MouseEvent) => {
+  const emitDisconnectHandleEvent =
+    (direction: 'source' | 'target', handleId?: string) => (event: React.MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
 
@@ -233,7 +281,8 @@ const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
       });
     };
 
-  const emitWorkflowActionEvent = (eventName: 'workflow:execute-request' | 'workflow:end-request') =>
+  const emitWorkflowActionEvent =
+    (eventName: 'workflow:execute-request' | 'workflow:end-request') =>
     (event: React.MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
@@ -242,23 +291,21 @@ const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
       });
     };
 
-  const emitFocusNodeFieldEvent = (fieldKey: string) =>
-    (event: React.MouseEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-      dispatchScopedWorkflowEvent('workflow:focus-node-field', event.currentTarget, {
-        nodeId: String(id),
-        fieldKey: String(fieldKey || '').trim(),
-      });
-    };
+  const emitFocusNodeFieldEvent = (fieldKey: string) => (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dispatchScopedWorkflowEvent('workflow:focus-node-field', event.currentTarget, {
+      nodeId: String(id),
+      fieldKey: String(fieldKey || '').trim(),
+    });
+  };
 
   const getMetaText = () => {
     if (data.type === 'agent') {
       const effectiveProvider = data.modelOverrideProviderId || data.agentProviderId;
       const effectiveModel = data.modelOverrideModelId || data.agentModelId;
-      const modelText = effectiveProvider && effectiveModel
-        ? `${effectiveProvider}/${effectiveModel}`
-        : '';
+      const modelText =
+        effectiveProvider && effectiveModel ? `${effectiveProvider}/${effectiveModel}` : '';
       if (data.agentName && modelText) {
         return `${data.agentName} · ${modelText}`;
       }
@@ -271,9 +318,8 @@ const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
       return data.routerPrompt || data.description || '';
     }
     if (data.type === 'tool') {
-      const modelText = data.toolProviderId && data.toolModelId
-        ? `${data.toolProviderId}/${data.toolModelId}`
-        : '';
+      const modelText =
+        data.toolProviderId && data.toolModelId ? `${data.toolProviderId}/${data.toolModelId}` : '';
       if (data.toolName && modelText) {
         return `${data.toolName} · ${modelText}`;
       }
@@ -289,7 +335,10 @@ const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
       return (data.startTask || '').trim() || '未配置文本输入';
     }
     if (data.type === 'input_image') {
-      const sourceList = mergeUniqueValues(data.startImageUrls, data.startImageUrl ? [data.startImageUrl] : []);
+      const sourceList = mergeUniqueValues(
+        data.startImageUrls,
+        data.startImageUrl ? [data.startImageUrl] : []
+      );
       if (sourceList.length === 0) return '未配置图片输入';
       if (sourceList.length > 1) {
         return `已配置 ${sourceList.length} 张图片`;
@@ -298,7 +347,10 @@ const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
       return source.startsWith('data:') ? '已上传图片' : source;
     }
     if (data.type === 'input_file') {
-      const sourceList = mergeUniqueValues(data.startFileUrls, data.startFileUrl ? [data.startFileUrl] : []);
+      const sourceList = mergeUniqueValues(
+        data.startFileUrls,
+        data.startFileUrl ? [data.startFileUrl] : []
+      );
       if (sourceList.length === 0) return '未配置文件输入';
       if (sourceList.length > 1) {
         return `已配置 ${sourceList.length} 个文件`;
@@ -312,11 +364,13 @@ const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
   const metaText = getMetaText();
 
   return (
-    <div className={`
+    <div
+      className={`
       relative w-full h-full min-w-[135px] min-h-0 overflow-visible bg-slate-800/90 backdrop-blur-sm rounded-md border shadow-lg
       ${selected ? 'border-teal-500 shadow-teal-500/20' : statusInfo.border}
       transition-all hover:shadow-xl
-    `}>
+    `}
+    >
       {selected && (
         <NodeResizeControl
           className="nodrag nopan"
@@ -327,194 +381,212 @@ const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
         />
       )}
 
-      <div
-        className="h-full min-h-0 overflow-y-auto overflow-x-hidden [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-600/70 [&::-webkit-scrollbar-track]:bg-transparent"
-      >
-      {/* Header */}
-      <div className="px-3 py-2.5 flex items-center gap-2.5">
-        <span className={`w-8 h-8 ${config.iconColor} rounded-lg flex items-center justify-center text-white text-base flex-shrink-0`}>
-          {config.icon}
-        </span>
-        <div className="flex-1 min-w-0">
-          <div className="text-xs font-semibold text-slate-200 truncate">{data.label}</div>
-          {metaText && (
-            <div className={`text-[10px] truncate ${data.type === 'agent' ? 'text-teal-400/80' : 'text-slate-500'}`}>
-              {metaText}
-            </div>
-          )}
-        </div>
-        <StatusIcon size={14} className={`${statusInfo.color} ${statusInfo.animate || ''} flex-shrink-0`} />
-      </div>
-
-      {/* Progress */}
-      {(status !== 'pending' || progressValue > 0) && (
-        <div className="px-3 pb-2 space-y-1">
-          <div className="flex items-center justify-between text-[9px] text-slate-400">
-            <span>执行进度</span>
-            <span>{progressValue}%</span>
-          </div>
-          <div className="h-1 bg-slate-700 rounded-full overflow-hidden">
-            <div className={`h-full transition-all duration-500 rounded-full ${status === 'completed' ? 'bg-emerald-500' : 'bg-blue-500'}`}
-              style={{ width: `${progressValue}%` }} />
-          </div>
-        </div>
-      )}
-
-      {data.runtime && (
-        <div className="mx-3 mb-2 px-2 py-1 rounded border border-amber-500/30 bg-amber-500/10 text-[9px] text-amber-200 break-all">
-          runtime: {data.runtime}
-        </div>
-      )}
-
-      {paramChipItems.length > 0 && (
-        <div className="mx-3 mb-2">
-          <div className="grid grid-cols-2 gap-1">
-            {paramChipItems.map((chip, index) => (
-              <button
-                type="button"
-                key={`${id}-chip-${index}`}
-                className="px-1.5 py-1 rounded border border-slate-600 bg-slate-700/60 text-left hover:border-teal-500/50 hover:bg-slate-700 transition-colors"
-                title={`点击定位参数：${chip.text}`}
-                onClick={emitFocusNodeFieldEvent(chip.fieldKey)}
-              >
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="text-[8px] uppercase tracking-wide text-slate-400 shrink-0">{chip.label}</span>
-                  <span className="text-[10px] text-slate-200 truncate min-w-0 flex-1 text-right">{chip.value}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Error */}
-      {status === 'failed' && data.error && (
-        <div className="mx-3 mb-2 px-2 py-1 bg-red-500/10 rounded text-[9px] text-red-400 break-words">
-          {data.error.substring(0, 80)}...
-        </div>
-      )}
-
-      {/* Instructions indicator */}
-      {data.instructions && (
-        <div className="mx-3 mb-2 px-2 py-0.5 bg-teal-500/10 rounded text-[9px] text-teal-400 truncate">
-          📝 {data.instructions.substring(0, 30)}...
-        </div>
-      )}
-
-      {shouldRenderInputImage && (
-        <div className="mx-3 mb-2 p-2 rounded border border-slate-700 bg-slate-900/60">
-          <div className="mb-1 text-[9px] text-slate-400 flex items-center gap-1">
-            <ImageIcon size={10} />
-            输入图片 ({inputImagePreviewUrls.length})
-          </div>
-          <div className={`grid gap-1.5 pr-0.5 overflow-y-auto max-h-56 ${inputImageGridColsClass}`}>
-            {inputImagePreviewUrls.map((imageUrl, index) => (
+      <div className="h-full min-h-0 overflow-y-auto overflow-x-hidden [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-600/70 [&::-webkit-scrollbar-track]:bg-transparent">
+        {/* Header */}
+        <div className="px-3 py-2.5 flex items-center gap-2.5">
+          <span
+            className={`w-8 h-8 ${config.iconColor} rounded-lg flex items-center justify-center text-white text-base flex-shrink-0`}
+          >
+            {config.icon}
+          </span>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-semibold text-slate-200 truncate">{data.label}</div>
+            {metaText && (
               <div
-                key={`${id}-input-image-${index}`}
-                className={`w-full rounded border border-slate-700 bg-slate-900 p-1 flex items-center justify-center ${inputImageCellHeightClass}`}
+                className={`text-[10px] truncate ${data.type === 'agent' ? 'text-teal-400/80' : 'text-slate-500'}`}
               >
-                <img
-                  src={imageUrl}
-                  alt={`node-input-image-${id}-${index + 1}`}
-                  className="max-w-full max-h-full h-auto w-auto rounded object-contain"
-                  loading="lazy"
-                />
+                {metaText}
               </div>
-            ))}
+            )}
           </div>
+          <StatusIcon
+            size={14}
+            className={`${statusInfo.color} ${statusInfo.animate || ''} flex-shrink-0`}
+          />
         </div>
-      )}
 
-      {hasResultPreview && (status === 'running' || status === 'completed' || status === 'failed') && (
-        <div className="mx-3 mb-2 p-2 rounded border border-slate-700 bg-slate-900/60 space-y-1">
-          <div className="text-[9px] text-slate-400">{resultPreviewTitle}</div>
-          {resultImageUrls.length > 0 && (
-            <div>
-              <div className="mb-1 text-[9px] text-slate-500">共 {resultImageUrls.length} 张</div>
-              <div className={`grid gap-1.5 pr-0.5 overflow-y-auto ${resultImageGridColsClass} ${resultGalleryMaxHeightClass}`}>
-                {resultImageUrls.map((imageUrl, index) => (
-                  <div
-                    key={`${id}-result-image-${index}`}
-                    className={`w-full rounded border border-slate-700 bg-slate-900 p-1 flex items-center justify-center ${resultThumbnailHeightClass}`}
-                  >
-                    <img
-                      src={imageUrl}
-                      alt={`node-result-image-${id}-${index + 1}`}
-                      className="max-w-full max-h-full h-auto w-auto rounded object-contain"
-                      loading="lazy"
-                    />
+        {/* Progress */}
+        {(status !== 'pending' || progressValue > 0) && (
+          <div className="px-3 pb-2 space-y-1">
+            <div className="flex items-center justify-between text-[9px] text-slate-400">
+              <span>执行进度</span>
+              <span>{progressValue}%</span>
+            </div>
+            <div className="h-1 bg-slate-700 rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all duration-500 rounded-full ${status === 'completed' ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                style={{ width: `${progressValue}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {data.runtime && (
+          <div className="mx-3 mb-2 px-2 py-1 rounded border border-amber-500/30 bg-amber-500/10 text-[9px] text-amber-200 break-all">
+            runtime: {data.runtime}
+          </div>
+        )}
+
+        {paramChipItems.length > 0 && (
+          <div className="mx-3 mb-2">
+            <div className="grid grid-cols-2 gap-1">
+              {paramChipItems.map((chip, index) => (
+                <button
+                  type="button"
+                  key={`${id}-chip-${index}`}
+                  className="px-1.5 py-1 rounded border border-slate-600 bg-slate-700/60 text-left hover:border-teal-500/50 hover:bg-slate-700 transition-colors"
+                  title={`点击定位参数：${chip.text}`}
+                  onClick={emitFocusNodeFieldEvent(chip.fieldKey)}
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-[8px] uppercase tracking-wide text-slate-400 shrink-0">
+                      {chip.label}
+                    </span>
+                    <span className="text-[10px] text-slate-200 truncate min-w-0 flex-1 text-right">
+                      {chip.value}
+                    </span>
                   </div>
-                ))}
-              </div>
+                </button>
+              ))}
             </div>
-          )}
-          {resultVideoUrls.length > 0 && (
-            <div>
-              <div className="mb-1 text-[9px] text-slate-500 flex items-center gap-1">
-                <Video size={10} />
-                视频 {resultVideoUrls.length} 条
-              </div>
-              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
-                {resultVideoUrls.map((videoUrl, index) => (
-                  <video
-                    key={`${id}-result-video-${index}`}
-                    src={videoUrl}
-                    controls
-                    className="w-full rounded border border-slate-700 bg-slate-900"
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-          {resultAudioUrls.length > 0 && (
-            <div>
-              <div className="mb-1 text-[9px] text-slate-500 flex items-center gap-1">
-                <Mic size={10} />
-                音频 {resultAudioUrls.length} 条
-              </div>
-              <div className="space-y-1.5 max-h-40 overflow-y-auto pr-0.5">
-                {resultAudioUrls.map((audioUrl, index) => (
-                  <audio
-                    key={`${id}-result-audio-${index}`}
-                    src={audioUrl}
-                    controls
-                    className="w-full"
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-          {resultTextPreview && (
-            <div className="text-[9px] text-slate-300 break-words leading-relaxed">
-              {resultTextPreview}
-            </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
-      {data.type === 'start' && (
-        <div className="mx-3 mb-2">
-          <button
-            onClick={emitWorkflowActionEvent('workflow:execute-request')}
-            className="w-full px-2 py-1 text-[10px] rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition-colors"
-            title="从该开始节点启动工作流"
-          >
-            开始按钮
-          </button>
-        </div>
-      )}
+        {/* Error */}
+        {status === 'failed' && data.error && (
+          <div className="mx-3 mb-2 px-2 py-1 bg-red-500/10 rounded text-[9px] text-red-400 break-words">
+            {data.error.substring(0, 80)}...
+          </div>
+        )}
 
-      {data.type === 'end' && (
-        <div className="mx-3 mb-2">
-          <button
-            onClick={emitWorkflowActionEvent('workflow:end-request')}
-            className="w-full px-2 py-1 text-[10px] rounded border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 transition-colors"
-            title="查看结束节点输出结果"
-          >
-            结束按钮
-          </button>
-        </div>
-      )}
+        {/* Instructions indicator */}
+        {data.instructions && (
+          <div className="mx-3 mb-2 px-2 py-0.5 bg-teal-500/10 rounded text-[9px] text-teal-400 truncate">
+            📝 {data.instructions.substring(0, 30)}...
+          </div>
+        )}
+
+        {shouldRenderInputImage && (
+          <div className="mx-3 mb-2 p-2 rounded border border-slate-700 bg-slate-900/60">
+            <div className="mb-1 text-[9px] text-slate-400 flex items-center gap-1">
+              <ImageIcon size={10} />
+              输入图片 ({inputImagePreviewUrls.length})
+            </div>
+            <div
+              className={`grid gap-1.5 pr-0.5 overflow-y-auto max-h-56 ${inputImageGridColsClass}`}
+            >
+              {inputImagePreviewUrls.map((imageUrl, index) => (
+                <div
+                  key={`${id}-input-image-${index}`}
+                  className={`w-full rounded border border-slate-700 bg-slate-900 p-1 flex items-center justify-center ${inputImageCellHeightClass}`}
+                >
+                  <img
+                    src={imageUrl}
+                    alt={`node-input-image-${id}-${index + 1}`}
+                    className="max-w-full max-h-full h-auto w-auto rounded object-contain"
+                    loading="lazy"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {hasResultPreview &&
+          (status === 'running' || status === 'completed' || status === 'failed') && (
+            <div className="mx-3 mb-2 p-2 rounded border border-slate-700 bg-slate-900/60 space-y-1">
+              <div className="text-[9px] text-slate-400">{resultPreviewTitle}</div>
+              {resultImageUrls.length > 0 && (
+                <div>
+                  <div className="mb-1 text-[9px] text-slate-500">
+                    共 {resultImageUrls.length} 张
+                  </div>
+                  <div
+                    className={`grid gap-1.5 pr-0.5 overflow-y-auto ${resultImageGridColsClass} ${resultGalleryMaxHeightClass}`}
+                  >
+                    {resultImageUrls.map((imageUrl, index) => (
+                      <div
+                        key={`${id}-result-image-${index}`}
+                        className={`w-full rounded border border-slate-700 bg-slate-900 p-1 flex items-center justify-center ${resultThumbnailHeightClass}`}
+                      >
+                        <img
+                          src={imageUrl}
+                          alt={`node-result-image-${id}-${index + 1}`}
+                          className="max-w-full max-h-full h-auto w-auto rounded object-contain"
+                          loading="lazy"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {resultVideoUrls.length > 0 && (
+                <div>
+                  <div className="mb-1 text-[9px] text-slate-500 flex items-center gap-1">
+                    <Video size={10} />
+                    视频 {resultVideoUrls.length} 条
+                  </div>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
+                    {resultVideoUrls.map((videoUrl, index) => (
+                      <video
+                        key={`${id}-result-video-${index}`}
+                        src={videoUrl}
+                        controls
+                        className="w-full rounded border border-slate-700 bg-slate-900"
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {resultAudioUrls.length > 0 && (
+                <div>
+                  <div className="mb-1 text-[9px] text-slate-500 flex items-center gap-1">
+                    <Mic size={10} />
+                    音频 {resultAudioUrls.length} 条
+                  </div>
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-0.5">
+                    {resultAudioUrls.map((audioUrl, index) => (
+                      <audio
+                        key={`${id}-result-audio-${index}`}
+                        src={audioUrl}
+                        controls
+                        className="w-full"
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {resultTextPreview && (
+                <div className="text-[9px] text-slate-300 break-words leading-relaxed">
+                  {resultTextPreview}
+                </div>
+              )}
+            </div>
+          )}
+
+        {data.type === 'start' && (
+          <div className="mx-3 mb-2">
+            <button
+              onClick={emitWorkflowActionEvent('workflow:execute-request')}
+              className="w-full px-2 py-1 text-[10px] rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition-colors"
+              title="从该开始节点启动工作流"
+            >
+              开始按钮
+            </button>
+          </div>
+        )}
+
+        {data.type === 'end' && (
+          <div className="mx-3 mb-2">
+            <button
+              onClick={emitWorkflowActionEvent('workflow:end-request')}
+              className="w-full px-2 py-1 text-[10px] rounded border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 transition-colors"
+              title="查看结束节点输出结果"
+            >
+              结束按钮
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Handles */}
