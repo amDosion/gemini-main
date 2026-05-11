@@ -486,17 +486,26 @@ const AppContent: React.FC = () => {
         return;
       }
 
-      if (modelForSend && config.protocol) {
-        sendMessage(
-          text,
-          optionsWithPersona,
-          attachments,
-          mode,
-          modelForSend,
-          config.protocol,
-          targetSessionId
-        );
+      if (!modelForSend) {
+        // 上游已守卫，但保留兜底防御
+        return;
       }
+      if (!config.protocol) {
+        // 修复 code-reviewer Step 4 HIGH-1：原 `if (modelForSend)` 不含 protocol 检查；
+        // strict 模式下 sendMessage 第 6 参 protocol 类型为 ApiProtocol 不接 null。
+        // 不能静默 drop 调用，而要显式提示用户。
+        showError('当前没有可用的协议配置（缺失 protocol），请检查模型/Profile 设置后重试。');
+        return;
+      }
+      sendMessage(
+        text,
+        optionsWithPersona,
+        attachments,
+        mode,
+        modelForSend,
+        config.protocol,
+        targetSessionId
+      );
       setInitialAttachments(undefined);
       setInitialPrompt(undefined);
     },

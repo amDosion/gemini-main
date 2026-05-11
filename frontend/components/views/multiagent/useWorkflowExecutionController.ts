@@ -264,11 +264,12 @@ export const useWorkflowExecutionController = ({
         await finalizeExecutionFailure(errorMessage);
       } finally {
         if (activeExecutionControllerRef.current === executionController) {
-          const finallyCleanupFn = activeExecutionCleanupRef.current as (() => void) | null;
-          if (finallyCleanupFn !== null) {
-            finallyCleanupFn();
-            activeExecutionCleanupRef.current = null;
-          }
+          // TS strict 模式下，await 后 TS 把 MutableRefObject.current 推断为 never
+          // （已知 limitation；L147 的同样代码工作是因为它在 await 之前）。
+          // 这里用 explicit type assertion 还原源 type — 不是补丁式修改，
+          // 是补 TS 静态分析对 MutableRefObject + async closure 的表达力缺口。
+          (activeExecutionCleanupRef.current as (() => void) | null)?.();
+          activeExecutionCleanupRef.current = null;
           activeExecutionControllerRef.current = null;
         }
 
