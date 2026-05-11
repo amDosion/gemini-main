@@ -9,6 +9,14 @@
 // Mask 工具类型（增加 move 用于拖动图片）
 export type MaskTool = 'move' | 'select' | 'brush' | 'eraser';
 
+// 选区矩形（mask 编辑器画布上的多选区域）
+export interface SelectionRect {
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+}
+
 // Mask 模式（对应 Vertex AI MaskReferenceConfig.mask_mode）
 export type MaskMode =
   | 'MASK_MODE_USER_PROVIDED' // 用户提供遮罩（手动绘制）

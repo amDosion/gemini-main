@@ -29,17 +29,16 @@ import { useToastContext } from '../../contexts/ToastContext';
 import { useControlsState } from '../../hooks/useControlsState';
 import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
 import ChatEditInputArea from '../chat/ChatEditInputArea';
-import { apiClient } from '../../services/apiClient';
 import { useThinkingBlock } from '../../hooks/useThinkingBlock';
 import { fileToBase64 } from '../../hooks/handlers/attachmentUtils';
+import { useMaskIO } from '../../hooks/useMaskIO';
 import {
   type MaskTool,
   type MaskMode,
+  type SelectionRect,
   SEMANTIC_PERSON_CLASS_ID,
   getMaskModeDisplayLabel,
 } from '../../utils/maskHelpers';
-import { fetchAutoMaskPreview } from '../../utils/maskSegmentation';
-import { getErrorMessage } from '../../utils/errorMessage';
 
 interface ImageMaskEditViewProps {
   messages: Message[];
@@ -73,13 +72,6 @@ const arePropsEqual = (prevProps: ImageMaskEditViewProps, nextProps: ImageMaskEd
 // MaskTool / MaskMode / SEMANTIC_PERSON_CLASS_ID + 3 helper 已抽离到 utils/maskHelpers
 // （JIRA-frontend-view-decomposition.md P0 #2 Step 1）
 
-// 选区矩形类型
-interface SelectionRect {
-  startX: number;
-  startY: number;
-  endX: number;
-  endY: number;
-}
 
 // 复用 ImageEditMainCanvas 组件（从 ImageEditView 导入或复制）
 type ImageEditMainCanvasProps = {
@@ -1259,139 +1251,31 @@ export const ImageMaskEditView = memo(
       updateMaskCanvasUrl();
     }, [isPainting, drawOnMaskCanvas, updateDisplayCanvas, updateMaskCanvasUrl]);
 
-    const handleMaskModeChange = useCallback(
-      async (mode: MaskMode) => {
-        controls.setMaskMode(mode);
-        setMaskRequestDataUrl(null);
-        setMaskPreviewNotice(null);
-        setMaskPreviewError(null);
-
-        // 当切换到自动模式时，清除手动绘制的选区并获取自动 mask 预览
-        if (mode !== 'MASK_MODE_USER_PROVIDED') {
-          setSelectionRects([]);
-          setCurrentSelectionRect(null);
-
-          // 如果有图片，调用 API 获取自动 mask 预览
-          if (activeImageUrl) {
-            setIsPreviewingMask(true);
-            // 抽离的纯函数封装了 fetch + base64 + API + 错误分类（access denied vs 其他）
-            const result = await fetchAutoMaskPreview(activeImageUrl, providerId, mode);
-            if (result.maskUrl) {
-              setMaskPreviewUrl(result.maskUrl);
-              setMaskPreviewNotice(null);
-              setMaskPreviewError(null);
-            } else if (result.notice) {
-              setMaskPreviewUrl(null);
-              setMaskPreviewNotice(result.notice);
-              setMaskPreviewError(null);
-            } else if (result.error) {
-              setMaskPreviewUrl(null);
-              setMaskPreviewError(result.error);
-              showError(result.error);
-            }
-            setIsPreviewingMask(false);
-          } else {
-            setMaskPreviewUrl(null);
-            setMaskPreviewNotice(null);
-            setMaskPreviewError('请先上传或选择一张图片');
-          }
-        } else {
-          // 切换回手动模式时，清除自动 mask 预览
-          setMaskPreviewUrl(null);
-          setMaskRequestDataUrl(null);
-          setMaskPreviewNotice(null);
-          setMaskPreviewError(null);
-        }
+    // P0 #2 Step 3：handleMaskModeChange / handleImportMask / handleClearMask 抽离至 useMaskIO
+    const { handleMaskModeChange, handleImportMask, handleClearMask } = useMaskIO({
+      controls,
+      activeImageUrl,
+      providerId,
+      showError,
+      setters: {
+        setMaskRequestDataUrl,
+        setMaskPreviewNotice,
+        setMaskPreviewError,
+        setSelectionRects,
+        setCurrentSelectionRect,
+        setIsPreviewingMask,
+        setMaskPreviewUrl,
+        setMaskCanvasUrl,
       },
-      [controls, activeImageUrl, providerId, showError]
-    );
-
-    const handleImportMask = useCallback(() => {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'image/png,image/jpeg,image/webp,image/*';
-      input.onchange = async () => {
-        const file = input.files?.[0];
-        if (!file) return;
-
-        let dataUrl: string;
-        try {
-          dataUrl = await fileToBase64(file);
-        } catch {
-          showError('Mask 导入失败，请重新选择图片');
-          return;
-        }
-
-        const applyImportedMask = (normalizedMaskUrl: string) => {
-          controls.setMaskMode('MASK_MODE_USER_PROVIDED');
-          setSelectionRects([]);
-          setCurrentSelectionRect(null);
-          setMaskPreviewUrl(normalizedMaskUrl);
-          setMaskPreviewNotice(null);
-          setMaskPreviewError(null);
-          setMaskRequestDataUrl(normalizedMaskUrl);
-        };
-
-        const rawImage = imageRef.current;
-        if (!rawImage?.naturalWidth || !rawImage?.naturalHeight) {
-          applyImportedMask(dataUrl);
-          return;
-        }
-
-        const importedMask = new Image();
-        importedMask.onload = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = rawImage.naturalWidth;
-          canvas.height = rawImage.naturalHeight;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            applyImportedMask(dataUrl);
-            return;
-          }
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(importedMask, 0, 0, canvas.width, canvas.height);
-          applyImportedMask(canvas.toDataURL('image/png'));
-        };
-        importedMask.onerror = () => showError('Mask 导入失败，请重新选择图片');
-        importedMask.src = dataUrl;
-      };
-      input.click();
-    }, [controls, showError]);
-
-    const handleClearMask = useCallback(() => {
-      setSelectionRects([]);
-      setCurrentSelectionRect(null);
-      setMaskPreviewUrl(null);
-      setMaskPreviewNotice(null);
-      setMaskPreviewError(null);
-      setMaskRequestDataUrl(null);
-      // 清除画笔绘制的 mask
-      if (maskCanvasRef.current) {
-        const ctx = maskCanvasRef.current.getContext('2d', { willReadFrequently: true });
-        if (ctx) {
-          ctx.clearRect(0, 0, maskCanvasRef.current.width, maskCanvasRef.current.height);
-        }
-      }
-      // 清除显示 canvas
-      if (displayCanvasRef.current) {
-        const ctx = displayCanvasRef.current.getContext('2d', { willReadFrequently: true });
-        if (ctx) {
-          ctx.clearRect(0, 0, displayCanvasRef.current.width, displayCanvasRef.current.height);
-        }
-      }
-      // 重置画笔内容标记
-      hasBrushContentRef.current = false;
-      // 清理 blob URL
-      if (maskPreviewBlobUrlRef.current) {
-        URL.revokeObjectURL(maskPreviewBlobUrlRef.current);
-        maskPreviewBlobUrlRef.current = null;
-      }
-      if (maskPreviewUrlRef.current) {
-        URL.revokeObjectURL(maskPreviewUrlRef.current);
-        maskPreviewUrlRef.current = null;
-      }
-      setMaskCanvasUrl(null);
-    }, []);
+      refs: {
+        imageRef,
+        maskCanvasRef,
+        displayCanvasRef,
+        hasBrushContentRef,
+        maskPreviewBlobUrlRef,
+        maskPreviewUrlRef,
+      },
+    });
 
     // ✅ 生成 Mask 图像（支持正常/反转模式，合并矩形和画笔数据）
     // 优化：复用 canvas、使用 drawImage + globalCompositeOperation 替代逐像素遍历、使用 toBlob
