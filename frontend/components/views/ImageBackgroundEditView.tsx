@@ -11,6 +11,7 @@ import { useToastContext } from '../../contexts/ToastContext';
 import { useControlsState } from '../../hooks/useControlsState';
 import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
 import ChatEditInputArea from '../chat/ChatEditInputArea';
+import { useThinkingBlock } from '../../hooks/useThinkingBlock';
 
 interface ImageBackgroundEditViewProps {
     messages: Message[];
@@ -243,8 +244,11 @@ export const ImageBackgroundEditView = memo(({
     }, [controls]);
     
     // State for thinking block
-    const [isThinkingOpen, setIsThinkingOpen] = useState(true);
-    const [displayedThinkingContent, setDisplayedThinkingContent] = useState('');
+    const {
+        isOpen: isThinkingOpen,
+        setIsOpen: setIsThinkingOpen,
+        displayedContent: displayedThinkingContent,
+    } = useThinkingBlock(messages, loadingState);
 
     // Stable canvas URL
     const canvasObjectUrlRef = useRef<string | null>(null);
@@ -319,55 +323,6 @@ export const ImageBackgroundEditView = memo(({
         });
     }, [messages, activeAttachments]);
 
-    useEffect(() => {
-        const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-        if (!lastMessage) {
-            setDisplayedThinkingContent('');
-            return;
-        }
-        
-        const thoughts = lastMessage?.thoughts || [];
-        const textResponse = lastMessage?.textResponse;
-        const thinkingParts: string[] = [];
-        thoughts.forEach((thought) => {
-            if (thought.type === 'text') {
-                thinkingParts.push(thought.content);
-            } else {
-                thinkingParts.push('[图片思考过程]');
-            }
-        });
-        if (textResponse) {
-            thinkingParts.push(`\n\n💬 AI 响应：\n${textResponse}`);
-        }
-        const fullContent = thinkingParts.join('\n\n');
-        
-        if (!fullContent) {
-            setDisplayedThinkingContent('');
-            return;
-        }
-        
-        if (loadingState === 'idle') {
-            setDisplayedThinkingContent(fullContent);
-            return;
-        }
-        
-        const targetLength = fullContent.length;
-        const currentLength = displayedThinkingContent.length;
-        
-        if (currentLength < targetLength) {
-            const chunkSize = 5;
-            const nextLength = Math.min(currentLength + chunkSize, targetLength);
-            
-            const timer = setTimeout(() => {
-                setDisplayedThinkingContent(fullContent.substring(0, nextLength));
-            }, 30);
-            
-            return () => clearTimeout(timer);
-        } else if (fullContent !== displayedThinkingContent) {
-            setDisplayedThinkingContent(fullContent);
-        }
-    }, [messages, loadingState]);
-    
     useEffect(() => {
         if (activeAttachments.length === 0 && !activeImageUrl) {
             const lastUserMsg = [...messages].reverse().find(m => m.role === Role.USER && m.attachments?.length);

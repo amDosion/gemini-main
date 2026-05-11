@@ -12,6 +12,8 @@ import { useControlsState } from '../../hooks/useControlsState';
 import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
 import ChatEditInputArea from '../chat/ChatEditInputArea';
 import { apiClient } from '../../services/apiClient';
+import { useThinkingBlock } from '../../hooks/useThinkingBlock';
+import { fileToBase64 } from '../../hooks/handlers/attachmentUtils';
 
 interface ImageMaskEditViewProps {
     messages: Message[];
@@ -834,8 +836,11 @@ export const ImageMaskEditView = memo(({
     }, [controls]);
     
     // State for thinking block
-    const [isThinkingOpen, setIsThinkingOpen] = useState(true);
-    const [displayedThinkingContent, setDisplayedThinkingContent] = useState('');
+    const {
+        isOpen: isThinkingOpen,
+        setIsOpen: setIsThinkingOpen,
+        displayedContent: displayedThinkingContent,
+    } = useThinkingBlock(messages, loadingState);
 
     // Stable canvas URL
     const canvasObjectUrlRef = useRef<string | null>(null);
@@ -1189,16 +1194,9 @@ export const ImageMaskEditView = memo(({
                     // 获取图片的 base64 数据
                     const response = await fetch(activeImageUrl);
                     const blob = await response.blob();
-                    const base64 = await new Promise<string>((resolve) => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                            const result = reader.result as string;
-                            // 移除 data:image/...;base64, 前缀
-                            const base64Data = result.split(',')[1] || result;
-                            resolve(base64Data);
-                        };
-                        reader.readAsDataURL(blob);
-                    });
+                    const dataUrl = await fileToBase64(blob);
+                    // 移除 data:image/...;base64, 前缀
+                    const base64 = dataUrl.split(',')[1] || dataUrl;
 
                     // 调用 mask 预览 API
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1271,53 +1269,54 @@ export const ImageMaskEditView = memo(({
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = 'image/png,image/jpeg,image/webp,image/*';
-        input.onchange = () => {
+        input.onchange = async () => {
             const file = input.files?.[0];
             if (!file) return;
 
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const dataUrl = String(reader.result || '');
-                if (!dataUrl) {
-                    showError('Mask 导入失败，请重新选择图片');
-                    return;
-                }
+            let dataUrl: string;
+            try {
+                dataUrl = await fileToBase64(file);
+            } catch {
+                showError('Mask 导入失败，请重新选择图片');
+                return;
+            }
+            if (!dataUrl) {
+                showError('Mask 导入失败，请重新选择图片');
+                return;
+            }
 
-                const applyImportedMask = (normalizedMaskUrl: string) => {
-                    controls.setMaskMode('MASK_MODE_USER_PROVIDED');
-                    setSelectionRects([]);
-                    setCurrentSelectionRect(null);
-                    setMaskPreviewUrl(normalizedMaskUrl);
-                    setMaskPreviewNotice(null);
-                    setMaskPreviewError(null);
-                    setMaskRequestDataUrl(normalizedMaskUrl);
-                };
+            const applyImportedMask = (normalizedMaskUrl: string) => {
+                controls.setMaskMode('MASK_MODE_USER_PROVIDED');
+                setSelectionRects([]);
+                setCurrentSelectionRect(null);
+                setMaskPreviewUrl(normalizedMaskUrl);
+                setMaskPreviewNotice(null);
+                setMaskPreviewError(null);
+                setMaskRequestDataUrl(normalizedMaskUrl);
+            };
 
-                const rawImage = imageRef.current;
-                if (!rawImage?.naturalWidth || !rawImage?.naturalHeight) {
+            const rawImage = imageRef.current;
+            if (!rawImage?.naturalWidth || !rawImage?.naturalHeight) {
+                applyImportedMask(dataUrl);
+                return;
+            }
+
+            const importedMask = new Image();
+            importedMask.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = rawImage.naturalWidth;
+                canvas.height = rawImage.naturalHeight;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
                     applyImportedMask(dataUrl);
                     return;
                 }
-
-                const importedMask = new Image();
-                importedMask.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = rawImage.naturalWidth;
-                    canvas.height = rawImage.naturalHeight;
-                    const ctx = canvas.getContext('2d');
-                    if (!ctx) {
-                        applyImportedMask(dataUrl);
-                        return;
-                    }
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    ctx.drawImage(importedMask, 0, 0, canvas.width, canvas.height);
-                    applyImportedMask(canvas.toDataURL('image/png'));
-                };
-                importedMask.onerror = () => showError('Mask 导入失败，请重新选择图片');
-                importedMask.src = dataUrl;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(importedMask, 0, 0, canvas.width, canvas.height);
+                applyImportedMask(canvas.toDataURL('image/png'));
             };
-            reader.onerror = () => showError('Mask 导入失败，请重新选择图片');
-            reader.readAsDataURL(file);
+            importedMask.onerror = () => showError('Mask 导入失败，请重新选择图片');
+            importedMask.src = dataUrl;
         };
         input.click();
     }, [controls, showError]);
@@ -1463,14 +1462,9 @@ export const ImageMaskEditView = memo(({
                 maskPreviewUrlRef.current = url;
                 setMaskPreviewUrl(url);
 
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    setMaskRequestDataUrl(String(reader.result || ''));
-                };
-                reader.onerror = () => {
-                    setMaskRequestDataUrl(null);
-                };
-                reader.readAsDataURL(blob);
+                fileToBase64(blob)
+                    .then((dataUrl) => setMaskRequestDataUrl(dataUrl))
+                    .catch(() => setMaskRequestDataUrl(null));
             }
         }, 'image/png');
 
@@ -1632,56 +1626,6 @@ export const ImageMaskEditView = memo(({
         });
     }, [messages, activeAttachments]);
 
-    useEffect(() => {
-        const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-        if (!lastMessage) {
-            setDisplayedThinkingContent('');
-            return;
-        }
-        
-        const thoughts = lastMessage?.thoughts || [];
-        const textResponse = lastMessage?.textResponse;
-        const thinkingParts: string[] = [];
-        thoughts.forEach((thought) => {
-            if (thought.type === 'text') {
-                thinkingParts.push(thought.content);
-            } else {
-                thinkingParts.push('[图片思考过程]');
-            }
-        });
-        if (textResponse) {
-            thinkingParts.push(`\n\n💬 AI 响应：\n${textResponse}`);
-        }
-        const fullContent = thinkingParts.join('\n\n');
-        
-        if (!fullContent) {
-            setDisplayedThinkingContent('');
-            return;
-        }
-        
-        if (loadingState === 'idle') {
-            setDisplayedThinkingContent(fullContent);
-            return;
-        }
-        
-        const targetLength = fullContent.length;
-        const currentLength = displayedThinkingContent.length;
-        
-        if (currentLength < targetLength) {
-            const chunkSize = 5;
-            const nextLength = Math.min(currentLength + chunkSize, targetLength);
-            
-            const timer = setTimeout(() => {
-                setDisplayedThinkingContent(fullContent.substring(0, nextLength));
-            }, 30);
-            
-            return () => clearTimeout(timer);
-        } else if (fullContent !== displayedThinkingContent) {
-            setDisplayedThinkingContent(fullContent);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [messages, loadingState]); // displayedThinkingContent 故意不加入依赖，避免打字机效果导致无限循环
-    
     useEffect(() => {
         if (activeAttachments.length === 0 && !activeImageUrl) {
             const lastUserMsg = [...messages].reverse().find(m => m.role === Role.USER && m.attachments?.length);

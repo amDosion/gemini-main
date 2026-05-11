@@ -205,26 +205,27 @@ export const sourceToFile = async (
 // ============================================================
 
 /**
- * 将 File 对象转换为 Base64 Data URL
+ * 将 Blob/File 对象转换为 Base64 Data URL
  *
  * 特点：
  * - 不依赖 Blob URL，避免因 URL.revokeObjectURL 导致读取失败
  * - 直接使用 FileReader 读取文件内容
+ * - 接受 Blob | File（File extends Blob），便于直接传入 fetch().blob() 结果
  *
- * @param file File 对象
- * @returns Base64 Data URL
- * @throws 如果 file 为空或读取失败
+ * @param input Blob 或 File 对象
+ * @returns Base64 Data URL（含 `data:<mime>;base64,` 前缀）
+ * @throws 如果 input 为空或读取失败
  */
-export const fileToBase64 = async (file: File): Promise<string> => {
-  if (!file) {
-    throw new Error('[fileToBase64] File is required');
+export const fileToBase64 = async (input: Blob | File): Promise<string> => {
+  if (!input) {
+    throw new Error('[fileToBase64] Blob/File is required');
   }
 
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => resolve(reader.result as string);
     reader.onerror = (error) => reject(new Error(`[fileToBase64] FileReader failed: ${error}`));
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(input);
   });
 };
 

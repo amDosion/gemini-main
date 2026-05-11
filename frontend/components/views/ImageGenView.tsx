@@ -14,6 +14,7 @@ import { useImageCanvas } from '../../hooks/useImageCanvas';
 import { useImageCarousel } from '../../hooks/useImageCarousel';
 import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
 import { useImageHistorySidebar } from '../common/ImageHistorySidebar';
+import { useThinkingBlock } from '../../hooks/useThinkingBlock';
 
 interface ImageGenViewProps {
     messages: Message[];
@@ -102,9 +103,12 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
     
     const isLoading = loadingState !== 'idle';
 
-    // ✅ 思考过程状态
-    const [isThinkingOpen, setIsThinkingOpen] = useState(true);
-    const [displayedThinkingContent, setDisplayedThinkingContent] = useState('');
+    // ✅ 思考过程状态 — 由 useThinkingBlock 提供（含 typewriter + isOpen 控制）
+    const {
+        isOpen: isThinkingOpen,
+        setIsOpen: setIsThinkingOpen,
+        displayedContent: displayedThinkingContent,
+    } = useThinkingBlock(messages, loadingState);
 
     // ✅ 检测提供商类型
     const isOpenAI = providerId === 'openai';
@@ -136,50 +140,6 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
         controls.setOutputCompressionQuality(100);
         controls.setEnhancePrompt(false);
     }, [controls]);
-
-    // Auto-switch to latest generation when new one starts / finishes
-    // ✅ 流式输出思考过程（打字效果）
-    useEffect(() => {
-        const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
-        if (!lastMsg || lastMsg.role !== 'model') {
-            setDisplayedThinkingContent('');
-            return;
-        }
-        const thoughts = lastMsg.thoughts || [];
-        const textResponse = lastMsg.textResponse;
-        const thinkingParts: string[] = [];
-        thoughts.forEach((thought) => {
-            if (thought.type === 'text') {
-                thinkingParts.push(thought.content);
-            } else {
-                thinkingParts.push('[图片思考过程]');
-            }
-        });
-        if (textResponse) {
-            thinkingParts.push(`\n\n💬 AI 响应：\n${textResponse}`);
-        }
-        const fullContent = thinkingParts.join('\n\n');
-        if (!fullContent) {
-            setDisplayedThinkingContent('');
-            return;
-        }
-        if (loadingState === 'idle') {
-            setDisplayedThinkingContent(fullContent);
-            return;
-        }
-        const targetLength = fullContent.length;
-        const currentLength = displayedThinkingContent.length;
-        if (currentLength < targetLength) {
-            const chunkSize = 5;
-            const nextLength = Math.min(currentLength + chunkSize, targetLength);
-            const timer = setTimeout(() => {
-                setDisplayedThinkingContent(fullContent.substring(0, nextLength));
-            }, 30);
-            return () => clearTimeout(timer);
-        } else if (fullContent !== displayedThinkingContent) {
-            setDisplayedThinkingContent(fullContent);
-        }
-    }, [messages, loadingState]);
 
     const prevLoadingStateRef = useRef(loadingState);
     useEffect(() => {

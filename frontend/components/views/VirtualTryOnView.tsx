@@ -18,7 +18,7 @@ import { Shirt, User, Layers, Download, Maximize2, Bot, AlertCircle, Upload, Sli
 import { v4 as uuidv4 } from 'uuid';
 import { GenViewLayout } from '../common/GenViewLayout';
 import { useToastContext } from '../../contexts/ToastContext';
-import { processUserAttachments } from '../../hooks/handlers/attachmentUtils';
+import { processUserAttachments, fileToBase64 } from '../../hooks/handlers/attachmentUtils';
 import { useModeControlsSchema } from '../../hooks/useModeControlsSchema';
 import { downloadSourceUrlInBrowser } from '../../services/downloadService';
 
@@ -176,41 +176,31 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
     }
   }, [numberOfImages, numberOfImageOptions, defaultNumberOfImages]);
 
-  // ✅ 文件转 DataURL
-  const toDataUrl = useCallback((file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }, []);
-
   // ✅ 人物图上传处理
   const handlePersonUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const url = await toDataUrl(file);
+      const url = await fileToBase64(file);
       setPersonImageUrl(url);
     } catch (err) {
       showError('人物图上传失败');
     }
     e.target.value = '';
-  }, [toDataUrl, showError]);
+  }, [showError]);
 
   // ✅ 服装图上传处理
   const handleGarmentUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const url = await toDataUrl(file);
+      const url = await fileToBase64(file);
       setGarmentImageUrl(url);
     } catch (err) {
       showError('服装图上传失败');
     }
     e.target.value = '';
-  }, [toDataUrl, showError]);
+  }, [showError]);
 
   // ✅ 右侧面板试穿按钮处理
   const handleTryOn = useCallback(async () => {

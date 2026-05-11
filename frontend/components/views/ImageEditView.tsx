@@ -13,6 +13,7 @@ import { useImageCarousel } from '../../hooks/useImageCarousel';
 import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
 import ChatEditInputArea from '../chat/ChatEditInputArea';
 import { extractImageHistoryPrompts, useImageHistorySidebar } from '../common/ImageHistorySidebar';
+import { useThinkingBlock } from '../../hooks/useThinkingBlock';
 
 interface ImageEditViewProps {
     messages: Message[];
@@ -329,8 +330,11 @@ export const ImageEditView = memo(({
     const editMode: AppMode = 'image-chat-edit';
 
     // State for thinking block
-    const [isThinkingOpen, setIsThinkingOpen] = useState(true);
-    const [displayedThinkingContent, setDisplayedThinkingContent] = useState('');
+    const {
+        isOpen: isThinkingOpen,
+        setIsOpen: setIsThinkingOpen,
+        displayedContent: displayedThinkingContent,
+    } = useThinkingBlock(messages, loadingState);
 
     // ✅ 多图 URL 缓存（支持多图预览）
     // 使用 Map 缓存每个文件的 Blob URL，避免重复创建和提前 revoke
@@ -528,61 +532,6 @@ export const ImageEditView = memo(({
         }
     }, [activeAttachments, getStableCanvasUrlFromAttachment]);
 
-    // 流式输出思考过程（打字效果）
-    useEffect(() => {
-        const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-        if (!lastMessage) {
-            setDisplayedThinkingContent('');
-            return;
-        }
-        
-        // 合并 thoughts 和 textResponse 的内容
-        const thoughts = lastMessage?.thoughts || [];
-        const textResponse = lastMessage?.textResponse;
-        const thinkingParts: string[] = [];
-        thoughts.forEach((thought) => {
-            if (thought.type === 'text') {
-                thinkingParts.push(thought.content);
-            } else {
-                thinkingParts.push('[图片思考过程]');
-            }
-        });
-        if (textResponse) {
-            thinkingParts.push(`\n\n💬 AI 响应：\n${textResponse}`);
-        }
-        const fullContent = thinkingParts.join('\n\n');
-        
-        if (!fullContent) {
-            setDisplayedThinkingContent('');
-            return;
-        }
-        
-        // 如果加载完成，立即显示完整内容
-        if (loadingState === 'idle') {
-            setDisplayedThinkingContent(fullContent);
-            return;
-        }
-        
-        // 流式输出：逐步显示思考内容（打字效果）
-        const targetLength = fullContent.length;
-        const currentLength = displayedThinkingContent.length;
-        
-        if (currentLength < targetLength) {
-            // 使用 requestAnimationFrame 实现平滑的打字效果
-            const chunkSize = 5; // 每次显示的字符数（可以调整速度）
-            const nextLength = Math.min(currentLength + chunkSize, targetLength);
-            
-            const timer = setTimeout(() => {
-                setDisplayedThinkingContent(fullContent.substring(0, nextLength));
-            }, 30); // 30ms 延迟（可以调整速度）
-            
-            return () => clearTimeout(timer);
-        } else if (fullContent !== displayedThinkingContent) {
-            // 如果内容已更新但长度相同，直接更新
-            setDisplayedThinkingContent(fullContent);
-        }
-    }, [messages, loadingState]);
-    
     // Auto-select latest result logic
     useEffect(() => {
         // 1. Initial Load: If no active image, pick latest from history

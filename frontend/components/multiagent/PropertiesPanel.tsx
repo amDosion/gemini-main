@@ -12,6 +12,7 @@ import { AgentSelector } from './AgentSelector';
 import type { NodeStatus } from './types';
 import type { AgentDef } from './types';
 import { getAuthHeaders } from '../../services/apiClient';
+import { fileToBase64 } from '../../hooks/handlers/attachmentUtils';
 import {
   AgentTaskType,
   ModelOption,
@@ -157,16 +158,6 @@ function getWorkflowVideoResolutionLabel(
 const INLINE_UPLOAD_MAX_BYTES = 8 * 1024 * 1024;
 const INLINE_UPLOAD_MAX_BYTES_LABEL = '8MB';
 
-/** 将文件转为 base64 data URL */
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.onerror = (e) => reject(e);
-    reader.readAsDataURL(file);
-  });
-}
-
 function reportInlineUploadError(fallbackMessage: string, error: unknown): void {
   const message = error instanceof Error && error.message
     ? error.message
@@ -182,7 +173,7 @@ async function readInlineFilesAsDataUrls(files: File[], uploadLabel: string): Pr
       throw new Error(`${uploadLabel} 超过 ${INLINE_UPLOAD_MAX_BYTES_LABEL} 内联上传上限，请改用可访问的 URL。`);
     }
   }
-  return Promise.all(files.map((file) => fileToDataUrl(file)));
+  return Promise.all(files.map((file) => fileToBase64(file)));
 }
 
 interface PropertiesPanelProps {
@@ -2420,7 +2411,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   <input type="file" accept=".csv,.xlsx,.xls,.json,.tsv,.txt" className="hidden"
                     onChange={async (e) => {
                       const f = e.target.files?.[0]; if (!f) return;
-                      try { updateNodeData({ agentFileUrl: await fileToDataUrl(f) }); } catch { /* ignore */ }
+                      try { updateNodeData({ agentFileUrl: await fileToBase64(f) }); } catch { /* ignore */ }
                       e.target.value = '';
                     }} />
                 </label>
@@ -3438,7 +3429,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                       const file = e.target.files?.[0];
                       if (!file) return;
                       try {
-                        updateNodeData({ toolReferenceImageUrl: await fileToDataUrl(file) });
+                        updateNodeData({ toolReferenceImageUrl: await fileToBase64(file) });
                       } catch (err) {
                         reportError('文件转换失败', err);
                       }
