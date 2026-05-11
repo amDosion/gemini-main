@@ -4,9 +4,49 @@
 Refactor / Code Quality / Maintainability
 
 ## 状态
-**Plan Review — Pending User Approval**
+**Done — 实施完成（分支 `refactor/frontend-hook-utility-extraction-A` HEAD `5b6f769`）**
 
-按 `HANDOFF.md` §0 #5 项目硬规则，本工单为 plan 阶段产物。批准后才进入实施；实施期按 §0 #6 启动 agent teams 并行 spot-check。
+实施按 `HANDOFF.md` §0 #5/#6 完成，含 4 轮 reviewer agent teams 并行 spot-check + 全级别 finding 修复。
+**17 commit 交付，84 测试套件 327/327 全绿，tsc 0 错误，prettier check 全过**。
+
+### 实施 commit 索引（since plan `9f3b671`）
+
+| Step | Commit | 内容 |
+|---|---|---|
+| 1 | `5ea1ef6` | utils/errorMessage + debounce + 13 测试 |
+| 1.1 | `e5159f0` | typescript-reviewer 中检 6 项反馈修复 |
+| 1.2 | `7be6f42` | debounce flush 注释（GO+LOW） |
+| 1.3 docs | `f1dcbf7` | JIRA-frontend-tsconfig-strict.md follow-up |
+| 2.1 | `af1a30a` | useThinkingBlock hook + 6 测试 |
+| 2.2-4 | `569b095` | useHoverPromptPreview / useAsyncState / useActionMenu + 15 测试 |
+| 2 fix | `71e6585` | mid-step reviewer NO-GO HIGH×3 / MEDIUM×2 / LOW×1 |
+| 2 fix | `4a8137b` | 复审 GO-WITH-CONDITIONS MEDIUM×2 / LOW×1 |
+| 3.1 | `0b00d2a` | 6 view useThinkingBlock 替换 + 5 处 fileToBase64 替换（净删 300 行） |
+| 3.2 | `a839df9` | getErrorMessage 23 处机械替换（精准匹配 plan 计数） |
+| 3.3 | `155f07a` | useSettings 私有 debounce 删除 |
+| 4 fix | `c4ca3fd` | post-impl 3-agent NO-GO CRITICAL×1 / HIGH×1 / MEDIUM×2 / LOW×2 |
+| chore | `b0b4023` | prettier 全文件 reformat |
+| 3.4.1 | `8f804dc` | ImageExpandView 迁移（−74 LOC） |
+| 3.4.2 | `7b50d36` | VideoGenView 同源迁移（−111 LOC） |
+| 3.4 fix | `5b6f769` | 复审 GO-WITH-CONDITIONS HIGH 行为等价 + MEDIUM/LOW |
+
+### 实施事实（与 plan 对比）
+
+- **§A.1.1 useThinkingBlock**：6 view 全替换；测试 6 case；ImageRecontextView L480 latent deps bug 顺带消除
+- **§A.1.2 useHoverPromptPreview**：泛型 P 实战支持（ImageExpandView 用 base，VideoGenView extends 5 字段）；测试 8 case；2 view 实战消费
+- **§A.1.3 useAsyncState**：hook + 5 case 测试完成；plan §A.1.3 试点目标 `OllamaModelManager` 经 read 评估**不适合**机械迁移（setError 多 handler 共享 + handleDelete 内 `setModels(prev=>...)` 局部更新，违反 hook "data 由 asyncFn 完全返回" 的设计假设）→ 保留为可用工具 hook 待真正需要"纯 async 包装"场景使用
+- **§A.1.4 useActionMenu**：测试 5 case；2 view 实战消费（含 isExempted 复用 isHistoryActionSurface）
+- **§A.2 errorMessage / debounce**：utility + 13 测试；23 处 getErrorMessage 机械替换；useSettings 私有 debounce 删除
+- **App.tsx + usePerformanceOptimization debounce**：经 review 判定为 effect-debounce / schedule-once 模式（非函数式 debounce），不替换以免破坏语义
+
+### Defer（出本工单范围，独立 follow-up）
+
+- `useMobileHistory` 8 处 → A-2
+- `useAsyncState` 剩余 3 处 → A-2 + 各 callsite 适配评估
+- `useEscapeClose` 5 处未迁移 → A-2
+- `safeJsonParse` 4 处 JSON 解析散落 → A-2
+- 68 处 `instanceof Error` B 类（带具体业务 fallback string）→ follow-up
+- tsconfig 开启 strict 模式 → 见 `JIRA-frontend-tsconfig-strict.md`
 
 ## 前置工作（已完成）
 - `docs/REPETITION-AND-PERF-ANALYSIS.md` §1 — 由 4 个并行 reviewer agent 输出的重复代码分析（commit `9bcc8db`）
