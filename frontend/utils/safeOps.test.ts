@@ -36,8 +36,19 @@ describe('safeJsonParse', () => {
     });
   });
 
-  it('preserves backward-compat: 2-arg call still works', () => {
-    expect(safeJsonParse('{"a":1}', null)).toEqual({ a: 1 });
-    expect(safeJsonParse('bad', null)).toBe(null);
+  it('invalid JSON with guard provided: catch fires before guard, returns fallback', () => {
+    // ts-reviewer Step 3 LOW: 守住 catch-before-guard 顺序不变
+    expect(safeJsonParse<Record<string, unknown> | null>('{bad}', null, isRecord)).toBe(null);
+    expect(safeJsonParse<Record<string, unknown> | null>('not json', null, isRecord)).toBe(null);
+  });
+
+  it('guard narrowing to subtype of T: type alignment with UnknownRecord | null', () => {
+    // ts-reviewer Step 3 MEDIUM: 守住 guard 可 narrow 到 T 子类型的实战路径
+    const result: Record<string, unknown> | null = safeJsonParse<Record<string, unknown> | null>(
+      '{"a":1}',
+      null,
+      isRecord
+    );
+    expect(result).toEqual({ a: 1 });
   });
 });

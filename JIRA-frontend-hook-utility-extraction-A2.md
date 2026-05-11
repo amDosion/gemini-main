@@ -42,20 +42,18 @@ Refactor / Code Quality / Maintainability
 **决策**：DISCARD，关闭 plan §A.1.3 "4+ 处候选"命题
 **理由**：code-explorer 验证 0 个真正合格 callsite。`useCacheStatus` / `useAuth.{register,login,logout}` / `useAgentRegistry` / `useWorkflowHistoryController` / `useCloudStorageActions` 全部含 hook 设计假设不支持的副作用（abort / 多源 error / 局部 setData / 外部 props 驱动 data）。`useAsyncState` 保留为 hook 库的工具 — 未来真正需要"纯 async 包装"时使用。
 
-### §3 useEscapeClose 未迁移 — **GO**
+### §3 useEscapeClose 未迁移 — **DISCARD（修正自原 GO 决策）**
 
-**决策**：GO，迁移 4 处纯单键 callsite；4 处含 Enter 共享 handler 保留 inline + 注释。
-**实施**：
-- `WorkflowResultPanel.tsx:182` 单键 → 迁移
-- `ChatControls.tsx:327` 单键（persona menu close）→ 迁移
-- `ChatControls.tsx:356` 单键（mcp menu close）→ 迁移
-- `ChatControls.tsx:385` 单键（auto research menu close）→ 迁移
-- `WorkflowTemplateCategoryCreateDialog.tsx:41` 含 Enter → 保留 inline
-- `SearchInput.tsx:24` 含 Enter → 保留 inline
-- `SessionSwitcher.tsx:175` 含 Enter → 保留 inline
-- `SessionList.tsx:183` 含 Enter → 保留 inline
+**决策**：DISCARD，**全部 8 处 inline Escape 不适合精准迁移**。
+**实施修正**：planner agent + code-explorer 初判"4 处纯单键可迁"基于行级 grep，未看 useEffect 复合结构。实际 read 后发现：
+- `WorkflowResultPanel.tsx:182` — 含 ArrowLeft/ArrowRight 同 handler（不是纯单键）
+- `ChatControls.tsx:327/356/385` — 3 处嵌在含 mousedown/resize/scroll 的复合 useEffect 内（拆出会增加全局 keydown listener 数）
+- `WorkflowTemplateCategoryCreateDialog.tsx:41` / `SearchInput.tsx:24` / `SessionSwitcher.tsx:175` / `SessionList.tsx:183` — 4 处含 Enter 共享 handler
 
-`useEscapeClose` **签名已含 `enabled` 参数**，无需扩签。
+按 §0 #3 精准修复原则，**全部保留 inline**。
+
+**事实修正**：plan agent 报告 `useEscapeClose` "0 调用" 错误。实际 hook 已被 6 个文件使用：
+`ActionDialog.tsx`、`PersonaModal.tsx`、`ImageModal.tsx`、`SettingsModal.tsx`、`McpTab.tsx`、`Header.tsx` — hook 本身有真实生产消费，只是 8 处 inline Escape 不适合迁移到它。
 
 ### §4 safeJsonParse 散落 4 处 — **GO（部分）**
 
