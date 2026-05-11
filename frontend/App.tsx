@@ -20,12 +20,7 @@ import { getErrorMessage } from './utils/errorMessage';
 
 // ✅ 懒加载非关键视图组件（命名导出需要转换为默认导出）
 // 顶层视图 lazy 包装抽离至 ./lazyViews（< 800 行合规）
-import {
-  MultiAgentView,
-  StudioView,
-  CloudStorageView,
-  PersonaManagementView,
-} from './lazyViews';
+import { MultiAgentView, StudioView, CloudStorageView, PersonaManagementView } from './lazyViews';
 import {
   deleteMessageFromSession,
   submitWelcomePrompt,
@@ -33,6 +28,7 @@ import {
   openCloudStoragePanel,
   openPersonaPanel,
 } from './appHandlers';
+import { AppRoutes } from './components/AppRoutes';
 
 // Import Auth Components
 import { LoginPage, RegisterPage } from './components/auth';
@@ -551,7 +547,12 @@ const AppContent: React.FC = () => {
     });
 
   // 3 个 open 面板 handler — 抽离至 ./appHandlers（deps 内联，setter 引用稳定无需 useCallback deps）
-  const _panelDeps = { setIsSettingsOpen, setSettingsInitialTab, setIsPersonaViewOpen, setIsCloudStorageBrowserOpen };
+  const _panelDeps = {
+    setIsSettingsOpen,
+    setSettingsInitialTab,
+    setIsPersonaViewOpen,
+    setIsCloudStorageBrowserOpen,
+  };
   const handleOpenSettings = (tab?: string) => openSettingsPanel(tab, _panelDeps);
   const handleOpenCloudStorage = useCallback(() => openCloudStoragePanel(_panelDeps), []); // eslint-disable-line react-hooks/exhaustive-deps
   const handleOpenPersonaView = useCallback(() => openPersonaPanel(_panelDeps), []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -765,48 +766,17 @@ const AppContent: React.FC = () => {
     </>
   );
 
-  // --- 使用 Routes 渲染 ---
+  // 路由分发抽离至 ./components/AppRoutes
   return (
-    <Routes>
-      <Route
-        path="/login"
-        element={
-          isAuthenticated ? (
-            <Navigate to="/" replace />
-          ) : (
-            <LoginPage
-              onLogin={login}
-              isLoading={isAuthLoading}
-              error={authError}
-              allowRegistration={allowRegistration}
-              onNavigateToRegister={allowRegistration ? () => navigate('/register') : undefined}
-            />
-          )
-        }
-      />
-      <Route
-        path="/register"
-        element={
-          isAuthenticated ? (
-            <Navigate to="/" replace />
-          ) : allowRegistration ? (
-            <RegisterPage
-              onRegister={register}
-              isLoading={isAuthLoading}
-              error={authError}
-              onNavigateToLogin={() => navigate('/login')}
-              allowRegistration={allowRegistration}
-            />
-          ) : (
-            <Navigate to="/login" replace />
-          )
-        }
-      />
-      <Route
-        path="/*"
-        element={isAuthenticated ? mainAppElement : <Navigate to="/login" replace />}
-      />
-    </Routes>
+    <AppRoutes
+      isAuthenticated={isAuthenticated}
+      isAuthLoading={isAuthLoading}
+      authError={authError}
+      allowRegistration={allowRegistration}
+      login={login}
+      register={register}
+      mainAppElement={mainAppElement}
+    />
   );
 };
 
