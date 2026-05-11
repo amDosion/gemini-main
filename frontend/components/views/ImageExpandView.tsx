@@ -34,12 +34,7 @@ import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordina
 import { useHistoryListActions } from '../../hooks/useHistoryListActions';
 import ChatEditInputArea from '../chat/ChatEditInputArea';
 import { isHistoryActionSurface } from '../../utils/historyActionSurface';
-import {
-  useHoverPromptPreview,
-  type HoverPromptPreviewBase,
-  type HoverPromptPreviewSize,
-  type HoverPromptPreviewPosition,
-} from '../../hooks/useHoverPromptPreview';
+import { useHoverPromptPreview } from '../../hooks/useHoverPromptPreview';
 import { useActionMenu, type ActionMenuAnchorBase } from '../../hooks/useActionMenu';
 
 const extractHistoryPrompts = (
@@ -79,11 +74,8 @@ const extractHistoryPrompts = (
   };
 };
 
-// Local aliases — hook 已 export 同形 type；保留别名让 render JSX 无须改名
-type HoverPromptPreview = HoverPromptPreviewBase;
+// ImageExpandView 不需要扩展 hook 默认 payload — 直接用 hook 的 default 类型
 type ActionMenuAnchor = ActionMenuAnchorBase;
-type ActionMenuPosition = { top: number; left: number };
-// HoverPromptPreviewSize / HoverPromptPreviewPosition 已从 hook import
 
 interface ImageExpandViewProps {
   messages: Message[];
@@ -140,7 +132,7 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
     cancelScheduledClose: clearHidePreviewTimer,
     startResize: handlePreviewResizeMouseDown,
     isResizing: isResizingPreview,
-  } = useHoverPromptPreview<HoverPromptPreview>();
+  } = useHoverPromptPreview();
 
   // action menu 由 useActionMenu 统一管理；isExempted 复用 isHistoryActionSurface
   const {

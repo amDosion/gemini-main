@@ -37,8 +37,6 @@ import { isHistoryActionSurface } from '../../utils/historyActionSurface';
 import {
   useHoverPromptPreview,
   type HoverPromptPreviewBase,
-  type HoverPromptPreviewSize,
-  type HoverPromptPreviewPosition,
 } from '../../hooks/useHoverPromptPreview';
 import { useActionMenu, type ActionMenuAnchorBase } from '../../hooks/useActionMenu';
 
@@ -152,7 +150,6 @@ const extractVideoHistoryMeta = (
 };
 
 type ActionMenuAnchor = ActionMenuAnchorBase;
-type ActionMenuPosition = { top: number; left: number };
 
 // 扩展 HoverPromptPreviewBase 添加 view 特有元数据（视频时长 / 策略标签 / 字幕等）
 interface HoverPromptPreview extends HoverPromptPreviewBase {
@@ -162,7 +159,6 @@ interface HoverPromptPreview extends HoverPromptPreviewBase {
   subtitleLabel: string | null;
   subtitleCount: number;
 }
-// HoverPromptPreviewSize / HoverPromptPreviewPosition 已从 hook import
 
 export const VideoGenView: React.FC<VideoGenViewProps> = ({
   messages,
@@ -411,12 +407,12 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
     }
   }, []);
 
-  // view 级 closeHoverPreview：协调 hook closePreview + action menu close + copy 反馈清空
+  // view 级 closeHoverPreview：严格保持原 VideoGenView 行为
+  // ——不关闭 action menu（与 ImageExpandView 刻意不同；调用方需要时显式 closeActionMenu()）
   const closeHoverPreview = useCallback(() => {
     closeHoverPreviewBase();
-    closeActionMenu();
     setCopiedPreviewMessageId(null);
-  }, [closeHoverPreviewBase, closeActionMenu]);
+  }, [closeHoverPreviewBase]);
 
   const historyBatches = useMemo(() => {
     return messages
@@ -507,9 +503,10 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
     if (loadingState === 'loading') {
       setSelectedMsgId(null);
       setIsMobileHistoryOpen(false);
+      closeActionMenu();
       closeHoverPreview();
     }
-  }, [closeHoverPreview, loadingState]);
+  }, [closeActionMenu, closeHoverPreview, loadingState]);
 
   useEffect(() => {
     const nextVideoUrl = displayVideos.find((attachment) => attachment.url)?.url || null;
