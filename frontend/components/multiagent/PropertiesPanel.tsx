@@ -71,6 +71,14 @@ import {
 import { PropertiesPanelResultSection } from './panels/ResultSection';
 import { PropertiesPanelSheetStageSection } from './panels/SheetStagePanel';
 import { classifyToolNode } from './toolClassification';
+import {
+  ConditionNodePanel,
+  RouterNodePanel,
+  ParallelNodePanel,
+  MergeNodePanel,
+  LoopNodePanel,
+  HumanNodePanel,
+} from './panels/SimpleNodeTypePanels';
 import { extractSheetStageProtocolState } from './sheetStageService';
 import {
   getPixelResolutionFromSchema,
@@ -3739,153 +3747,21 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     if (agentNodeConfig) {
       return agentNodeConfig;
     }
+    // 6 个简单节点类型面板抽离至 ./panels/SimpleNodeTypePanels（业务下沉 + 主组件瘦身）
     if (nodeType === 'condition') {
-      return (
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">条件表达式</label>
-            <div className="flex items-start gap-1 mb-1.5">
-              <Info size={10} className="text-slate-600 mt-0.5 flex-shrink-0" />
-              <span className="text-[10px] text-slate-600">
-                支持模板变量，例如 {'{{prev.output.text}}'}
-              </span>
-            </div>
-            <textarea
-              value={nodeData.expression || ''}
-              onChange={(e) => updateNodeData({ expression: e.target.value })}
-              rows={3}
-              data-field-key="expression"
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-300 font-mono focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20 resize-none"
-              placeholder="{{prev.output.text}}.includes('通过')"
-            />
-          </div>
-          <div className="p-2.5 rounded-lg border border-slate-700 bg-slate-800/50 text-[11px] text-slate-400">
-            True 分支使用上方输出口，False 分支使用下方输出口。
-          </div>
-        </div>
-      );
+      return <ConditionNodePanel nodeData={nodeData} updateNodeData={updateNodeData} />;
     }
-
     if (nodeType === 'router') {
-      return (
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs text-slate-500 mb-1.5">路由策略</label>
-            <select
-              value={nodeData.routerStrategy || 'intent'}
-              onChange={(e) =>
-                updateNodeData({
-                  routerStrategy: e.target.value as CustomNodeData['routerStrategy'],
-                })
-              }
-              data-field-key="routerStrategy"
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20"
-            >
-              <option value="intent">Intent（推荐）</option>
-              <option value="keyword">Keyword</option>
-              <option value="llm">LLM 分类</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">路由提示词</label>
-            <textarea
-              value={nodeData.routerPrompt || ''}
-              onChange={(e) => updateNodeData({ routerPrompt: e.target.value })}
-              rows={3}
-              data-field-key="routerPrompt"
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-300 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20 resize-none"
-              placeholder="根据任务意图将输入分发到最合适的分支..."
-            />
-          </div>
-        </div>
-      );
+      return <RouterNodePanel nodeData={nodeData} updateNodeData={updateNodeData} />;
     }
-
     if (nodeType === 'parallel') {
-      return (
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs text-slate-500 mb-1.5">汇聚模式</label>
-            <select
-              value={nodeData.joinMode || 'wait_all'}
-              onChange={(e) =>
-                updateNodeData({ joinMode: e.target.value as CustomNodeData['joinMode'] })
-              }
-              data-field-key="joinMode"
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20"
-            >
-              <option value="wait_all">等待全部分支完成</option>
-              <option value="race_first">任一分支先完成即返回</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1.5">超时（秒）</label>
-            <input
-              type="number"
-              min={5}
-              value={nodeData.timeoutSeconds ?? 60}
-              onChange={(e) =>
-                updateNodeData({ timeoutSeconds: Math.max(5, Number(e.target.value) || 60) })
-              }
-              data-field-key="timeoutSeconds"
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20"
-            />
-          </div>
-        </div>
-      );
+      return <ParallelNodePanel nodeData={nodeData} updateNodeData={updateNodeData} />;
     }
-
     if (nodeType === 'merge') {
-      return (
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs text-slate-500 mb-1.5">结果合并策略</label>
-            <select
-              value={nodeData.mergeStrategy || 'append'}
-              onChange={(e) =>
-                updateNodeData({ mergeStrategy: e.target.value as CustomNodeData['mergeStrategy'] })
-              }
-              data-field-key="mergeStrategy"
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20"
-            >
-              <option value="append">顺序拼接</option>
-              <option value="json_merge">JSON 合并</option>
-              <option value="latest">选择最新结果</option>
-            </select>
-          </div>
-        </div>
-      );
+      return <MergeNodePanel nodeData={nodeData} updateNodeData={updateNodeData} />;
     }
-
     if (nodeType === 'loop') {
-      return (
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs text-slate-500 mb-1.5">循环条件</label>
-            <textarea
-              value={nodeData.loopCondition || ''}
-              onChange={(e) => updateNodeData({ loopCondition: e.target.value })}
-              rows={2}
-              data-field-key="loopCondition"
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-300 font-mono focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20 resize-none"
-              placeholder="{{prev.output.retry}} < 3"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1.5">最大迭代次数</label>
-            <input
-              type="number"
-              min={1}
-              value={nodeData.maxIterations ?? 3}
-              onChange={(e) =>
-                updateNodeData({ maxIterations: Math.max(1, Number(e.target.value) || 1) })
-              }
-              data-field-key="maxIterations"
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20"
-            />
-          </div>
-        </div>
-      );
+      return <LoopNodePanel nodeData={nodeData} updateNodeData={updateNodeData} />;
     }
 
     const toolNodeConfig = renderToolNodeConfig();
@@ -3893,21 +3769,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       return toolNodeConfig;
     }
     if (nodeType === 'human') {
-      return (
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs text-slate-500 mb-1.5">人工审核提示</label>
-            <textarea
-              value={nodeData.approvalPrompt || ''}
-              onChange={(e) => updateNodeData({ approvalPrompt: e.target.value })}
-              rows={3}
-              data-field-key="approvalPrompt"
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-300 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20 resize-none"
-              placeholder="请确认输出是否满足业务规则..."
-            />
-          </div>
-        </div>
-      );
+      return <HumanNodePanel nodeData={nodeData} updateNodeData={updateNodeData} />;
     }
 
     return (
