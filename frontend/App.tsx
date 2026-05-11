@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 
 import { AppMode, Attachment, Role, ChatOptions } from './types/types';
@@ -19,23 +19,20 @@ import {
 import { getErrorMessage } from './utils/errorMessage';
 
 // ✅ 懒加载非关键视图组件（命名导出需要转换为默认导出）
-const MultiAgentView = lazy(() =>
-  import('./components/views/MultiAgentView').then((m) => ({ default: m.MultiAgentView }))
-);
-const StudioView = lazy(() =>
-  import('./components/views/StudioView').then((m) => ({ default: m.StudioView }))
-);
-const CloudStorageView = lazy(() =>
-  import('./components/views/CloudStorageView').then((m) => ({ default: m.CloudStorageView }))
-);
-const PersonaManagementView = lazy(() =>
-  import('./components/views/PersonaManagementView').then((m) => ({
-    default: m.PersonaManagementView,
-  }))
-);
-const LiveAPIView = lazy(() =>
-  import('./components/live/LiveAPIView').then((m) => ({ default: m.LiveAPIView }))
-);
+// 顶层视图 lazy 包装抽离至 ./lazyViews（< 800 行合规）
+import {
+  MultiAgentView,
+  StudioView,
+  CloudStorageView,
+  PersonaManagementView,
+} from './lazyViews';
+import {
+  deleteMessageFromSession,
+  submitWelcomePrompt,
+  openSettingsPanel,
+  openCloudStoragePanel,
+  openPersonaPanel,
+} from './appHandlers';
 
 // Import Auth Components
 import { LoginPage, RegisterPage } from './components/auth';
@@ -545,71 +542,28 @@ const AppContent: React.FC = () => {
     setInitialPrompt,
   });
 
-  const handleWelcomePrompt = (
-    text: string,
-    mode: AppMode,
-    modelId: string,
-    requiredCap: string
-  ) => {
-    handleModelSelect(modelId);
-    handleModeSwitch(mode); // ✅ 使用 handleModeSwitch 确保模型选择逻辑正确
-    onSend(
-      text,
-      {
-        enableSearch: requiredCap === 'search',
-        enableThinking: requiredCap === 'reasoning',
-        enableCodeExecution: false,
-        imageAspectRatio: '1:1',
-        imageResolution: '1K',
-        voiceName: 'Puck',
-      },
-      [],
-      mode,
-      modelId
-    );
-  };
+  // 欢迎屏 prompt 选择 — 抽离至 ./appHandlers
+  const handleWelcomePrompt = (text: string, mode: AppMode, modelId: string, requiredCap: string) =>
+    submitWelcomePrompt(text, mode, modelId, requiredCap, {
+      handleModelSelect,
+      handleModeSwitch,
+      onSend,
+    });
 
-  const handleOpenSettings = (tab?: string) => {
-    const safeTab = tab === 'editor' ? 'editor' : 'profiles';
-    setSettingsInitialTab(safeTab);
-    setIsSettingsOpen(true);
-  };
+  // 3 个 open 面板 handler — 抽离至 ./appHandlers（deps 内联，setter 引用稳定无需 useCallback deps）
+  const _panelDeps = { setIsSettingsOpen, setSettingsInitialTab, setIsPersonaViewOpen, setIsCloudStorageBrowserOpen };
+  const handleOpenSettings = (tab?: string) => openSettingsPanel(tab, _panelDeps);
+  const handleOpenCloudStorage = useCallback(() => openCloudStoragePanel(_panelDeps), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const handleOpenPersonaView = useCallback(() => openPersonaPanel(_panelDeps), []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleOpenCloudStorage = useCallback(() => {
-    setIsPersonaViewOpen(false);
-    setIsCloudStorageBrowserOpen(true);
-  }, []);
-
-  const handleOpenPersonaView = useCallback(() => {
-    setIsCloudStorageBrowserOpen(false);
-    setIsPersonaViewOpen(true);
-  }, []);
-
-  // 删除单条消息（同时删除对应的用户消息）
-  const handleDeleteMessage = (messageId: string) => {
-    if (!currentSessionId) return;
-
-    // 找到要删除的消息
-    const msgToDelete = messages.find((m) => m.id === messageId);
-    if (!msgToDelete) return;
-
-    // 如果是 MODEL 消息，同时删除前一条 USER 消息（成对删除）
-    let idsToDelete = [messageId];
-    if (msgToDelete.role === Role.MODEL) {
-      const msgIndex = messages.findIndex((m) => m.id === messageId);
-      if (msgIndex > 0) {
-        const prevMsg = messages[msgIndex - 1];
-        if (prevMsg.role === Role.USER && prevMsg.mode === msgToDelete.mode) {
-          idsToDelete.push(prevMsg.id);
-        }
-      }
-    }
-
-    // 过滤掉要删除的消息
-    const newMessages = messages.filter((m) => !idsToDelete.includes(m.id));
-    setMessages(newMessages);
-    updateSessionMessages(currentSessionId, newMessages);
-  };
+  // 删除单条消息（同时删除对应的用户消息）— 抽离至 ./appHandlers
+  const handleDeleteMessage = (messageId: string) =>
+    deleteMessageFromSession(messageId, {
+      currentSessionId,
+      messages,
+      setMessages,
+      updateSessionMessages,
+    });
 
   const renderView = () => {
     if (isCloudStorageBrowserOpen) {
