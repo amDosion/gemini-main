@@ -4,7 +4,44 @@
 Tech Debt / Type Safety / Quality Gate
 
 ## 状态
-Backlog — 由 `JIRA-frontend-hook-utility-extraction.md` Step 1 中检（commit `5ea1ef6`）的 typescript-reviewer 输出引出
+**Done — 实施完成（分支 `refactor/frontend-hook-utility-extraction-A` HEAD `d3e8f8c`）**
+
+按 `HANDOFF.md` §0 #5 plan 模式 + §0 #6 agent teams（build-error-resolver + typescript-reviewer + code-reviewer）完成。
+
+### 实施 commit 索引
+
+| Step | Commit | 内容 |
+|---|---|---|
+| 1+2+3 | `45a1d63` | tsconfig 添加 `"strict": true` + react-syntax-highlighter.d.ts 模块声明（消除 14 TS7016）+ build-error-resolver agent 修 50 错误（25 文件）+ 4 测试文件 4 错误 |
+| 4 fix | `d3e8f8c` | code-reviewer 反馈修复 HIGH×2（App.tsx 行为回归 + useWorkflowExecutionController as cast 改用合理 explicit assertion） |
+
+### 实施事实
+
+- **错误规模**：dry-run 检测 68 错误（远低于 plan 估算"几十~数百"）
+- **react-syntax-highlighter 类型缺失** 占 14 处 — 单 declaration file 解决
+- **剩余 54 错误**：
+  - TS2322 (21) 类型不匹配 — 通过类型对齐 / null guard / 类型扩宽解决
+  - TS2345 (6) 参数类型 — 修签名 + 类型守卫
+  - TS18048 (6) Object possibly undefined — 可选链 / 守卫
+  - TS2783 (4) 重复 spread prop — ModeControlsCoordinator 顺序调整
+  - TS2538 / TS2531 / TS2367 / TS2349 / TS2722 / TS2719 / TS2339 / TS18047 (其余 17)
+- **0 个 `as any` / `@ts-ignore` / `@ts-expect-error` 引入**（仅 1 处合理 explicit type assertion 解决 TS strict 已知 limitation）
+- **测试文件 4 错误**：用 object container pattern (`{current}`) 规避 TS strict 闭包内可变 `let` 的 narrowing 失效
+
+### 最终量化指标
+
+- 85 测试套件 334/334 全绿
+- `tsc --noEmit` 0 错误（strict 模式开启）
+- `prettier --check` 全过
+- 影响 35 文件（含新增 1 declaration file）
+- 8 个 strict 子项全开（strict/strictNullChecks/noImplicitAny/strictFunctionTypes/strictBindCallApply/strictPropertyInitialization/alwaysStrict/noImplicitThis/useUnknownInCatchVariables）
+
+### Reviewer 修复 finding 累计
+
+- HIGH×2（App.tsx 行为回归 + cast 合理性）
+- MEDIUM×4 + LOW×3（type declaration index signature 宽松 / nullable widening trade-off / timestamp sentinel 等可接受）
+
+### 历史 finding（已记录）
 
 ## 来源
 - `JIRA-frontend-hook-utility-extraction.md` Step 1 中检 finding #1（HIGH）
