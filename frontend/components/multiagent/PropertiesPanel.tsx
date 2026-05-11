@@ -65,6 +65,11 @@ import {
 } from './workflowResolution';
 import { useProviderModels } from '../../hooks/useProviderModels';
 import {
+  INLINE_UPLOAD_MAX_BYTES_LABEL,
+  reportInlineUploadError,
+  readInlineFilesAsDataUrls,
+} from './uploadHandlers';
+import {
   extractSheetStageProtocolState,
   type SheetStageName,
   type SheetStageProtocolState,
@@ -86,26 +91,8 @@ import {
 // WORKFLOW_RESOLUTION_MAP + 6 resolution helper 抽离至 ./workflowResolution
 // （JIRA-frontend-view-decomposition.md P0 #1 Step 1）
 
-const INLINE_UPLOAD_MAX_BYTES = 8 * 1024 * 1024;
-const INLINE_UPLOAD_MAX_BYTES_LABEL = '8MB';
-
-function reportInlineUploadError(fallbackMessage: string, error: unknown): void {
-  const message = error instanceof Error && error.message ? error.message : fallbackMessage;
-  if (typeof window !== 'undefined' && typeof window.alert === 'function') {
-    window.alert(message);
-  }
-}
-
-async function readInlineFilesAsDataUrls(files: File[], uploadLabel: string): Promise<string[]> {
-  for (const file of files) {
-    if (file.size > INLINE_UPLOAD_MAX_BYTES) {
-      throw new Error(
-        `${uploadLabel} 超过 ${INLINE_UPLOAD_MAX_BYTES_LABEL} 内联上传上限，请改用可访问的 URL。`
-      );
-    }
-  }
-  return Promise.all(files.map((file) => fileToBase64(file)));
-}
+// INLINE_UPLOAD_MAX_BYTES + 3 上传辅助函数抽离至 ./uploadHandlers
+// （JIRA-frontend-view-decomposition.md P0 #1 Step 3）
 
 interface PropertiesPanelProps {
   selectedNode: Node<CustomNodeData> | null;
