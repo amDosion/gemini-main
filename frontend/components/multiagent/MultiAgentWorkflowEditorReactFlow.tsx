@@ -102,28 +102,11 @@ import {
   isNonResultWorkflowOutputNode,
   waitForClonedImages,
 } from './workflowExport';
+import { normalizeStringList, mergeUniqueStringList } from './workflowGraphUtils';
 
-// 8 export 常量 + 5 export helper 抽离至 ./workflowExport
-// （JIRA-frontend-view-decomposition.md P1 #3 Step 1）
-// normalizeStringList / mergeUniqueStringList 抽离至 ./workflowGraphUtils（Step 2 — 待执行）
-const normalizeStringList = (value: unknown): string[] => {
-  if (!Array.isArray(value)) return [];
-  return value.map((item) => String(item || '').trim()).filter(Boolean);
-};
-
-const mergeUniqueStringList = (...sources: string[][]): string[] => {
-  const deduped = new Set<string>();
-  const result: string[] = [];
-  sources.forEach((source) => {
-    source.forEach((item) => {
-      if (!deduped.has(item)) {
-        deduped.add(item);
-        result.push(item);
-      }
-    });
-  });
-  return result;
-};
+// export 常量/helper 抽离至 ./workflowExport（Step 1）
+// graph 字符串列表 helper 抽离至 ./workflowGraphUtils（Step 2）
+// （JIRA-frontend-view-decomposition.md P1 #3）
 
 interface MultiAgentWorkflowEditorReactFlowProps {
   onExecute?: (workflow: {
