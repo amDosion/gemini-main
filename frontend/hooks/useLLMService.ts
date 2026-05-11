@@ -17,10 +17,15 @@ export const useLLMService = (_initData?: InitData, activeProfile?: ConfigProfil
   // _initData 保留参数以维持调用方签名兼容(App.tsx 可不必同步改)。
   useEffect(() => {
     if (activeProfile) {
+      // 修 ts-reviewer MEDIUM：runtime check 替代 `as ApiProtocol` 强转
+      // protocol 后端可能返回任意字符串，需要 narrow 到 ApiProtocol union
+      const rawProtocol = activeProfile.protocol;
+      const protocol: ApiProtocol | null =
+        rawProtocol === 'google' || rawProtocol === 'openai' ? rawProtocol : null;
       llmService.setConfig(
         activeProfile.apiKey || '',
         activeProfile.baseUrl || '',
-        (activeProfile.protocol as ApiProtocol) || null,
+        protocol,
         activeProfile.providerId || ''
       );
     } else if (activeProfile === null) {

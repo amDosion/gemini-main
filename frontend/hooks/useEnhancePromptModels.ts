@@ -58,8 +58,14 @@ export function useEnhancePromptModels(): ModelConfig[] {
   return candidates;
 }
 
-/** 测试-only：清模块 cache 让单测之间隔离 */
-export const __resetEnhancePromptModelsCacheForTesting = (): void => {
+/**
+ * 清空 enhance prompt 模块级 cache。
+ * 应在 logout / 切换用户 profile 后调用，避免跨用户 cache 污染（用户 B 看到 A 的模型列表）。
+ */
+export const clearEnhancePromptCacheForLogout = (): void => {
   enhancePromptCandidatesCache = null;
   inFlightEnhancePromptFetch = null;
 };
+
+/** 测试-only alias：等价 clearEnhancePromptCacheForLogout，命名标识 test-only 用途 */
+export const __resetEnhancePromptModelsCacheForTesting = clearEnhancePromptCacheForLogout;

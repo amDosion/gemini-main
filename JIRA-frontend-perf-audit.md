@@ -4,7 +4,10 @@
 Perf / Bug Fix / Code Quality
 
 ## 状态
-**Done — 实施完成（分支 `refactor/frontend-hook-utility-extraction-A` HEAD `92bb92f`）**
+**Done — 实施完成（分支 `refactor/frontend-hook-utility-extraction-A`）**
+
+> 实际 commit 索引见下方"实施 commit 索引"表；HEAD 在后续 reviewer 修复 commit 后会前进，
+> 表内 commit hash 不变。
 
 按 `HANDOFF.md` §0 #5 plan 模式 + §0 #6 agent teams（Explore × 3 + silent-failure-hunter + type-design-analyzer + architect）。
 

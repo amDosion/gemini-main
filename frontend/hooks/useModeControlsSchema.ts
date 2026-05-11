@@ -120,6 +120,15 @@ const schemaCache = new Map<string, ModeControlsSchema>();
 // （修复用户反馈：image-gen/controls 同 model_id 重复 2 次）
 const inFlightSchemaRequests = new Map<string, Promise<ModeControlsSchema>>();
 
+/**
+ * 清空 schema 模块级 cache + in-flight Map。
+ * 应在 logout / 切换用户 profile 后调用，避免跨用户 cache 污染（用户 B 看到 A 的 schema）。
+ */
+export const clearSchemaCacheForLogout = (): void => {
+  schemaCache.clear();
+  inFlightSchemaRequests.clear();
+};
+
 const FALLBACK_VIDEO_RESOLUTION_MAP: ResolutionMap = {
   '720p': {
     '16:9': '1280×720',

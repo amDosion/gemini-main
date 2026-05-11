@@ -28,7 +28,8 @@ interface UsePerformanceOptimizationOptions {
 interface UsePerformanceOptimizationResult {
   metrics: PerformanceMetrics;
   isLargeWorkflow: boolean;
-  debouncedUpdate: <T>(fn: () => T, delay?: number) => void;
+  // 返回 cancel 函数（调用方可在 unmount 前主动取消，避免 timer 泄漏）
+  debouncedUpdate: <T>(fn: () => T, delay?: number) => () => void;
   measurePerformance: (label: string, fn: () => void) => void;
 }
 
@@ -77,6 +78,8 @@ export const usePerformanceOptimization = (
       const start = performance.now();
       fn();
       const end = performance.now();
+      // 修 code-reviewer MEDIUM：原 end 是 dead code（仅赋值未消费），现记录到 updateTime metric
+      setMetrics((prev) => ({ ...prev, updateTime: end - start }));
     },
     [enableMetrics]
   );

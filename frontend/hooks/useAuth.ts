@@ -3,6 +3,8 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { authService, User, RegisterData, LoginData, ChangePasswordData } from '../services/auth';
+import { clearSchemaCacheForLogout } from './useModeControlsSchema';
+import { clearEnhancePromptCacheForLogout } from './useEnhancePromptModels';
 
 export interface UseAuthReturn {
   user: User | null;
@@ -213,6 +215,11 @@ export function useAuth(): UseAuthReturn {
   const logout = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    // 清空模块级 fetch cache 防跨用户污染（修 code-reviewer HIGH：
+    // schemaCache + enhancePromptCandidatesCache 原本只通过测试 reset 函数清，
+    // 生产 logout 路径未触发清理，多用户切换时下一用户可能看到上一用户的数据）
+    clearSchemaCacheForLogout();
+    clearEnhancePromptCacheForLogout();
     try {
       await authService.logout();
       // ✅ token 已在 authService.logout() 中清除

@@ -123,7 +123,8 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
             return;
           }
 
-          const error = e as Error;
+          // 修 ts-reviewer MEDIUM：catch 入参是 unknown，用 instanceof guard 替代 `as` cast
+          const error = e instanceof Error ? e : new Error(String(e));
 
           // ✅ C-7: 中止/取消错误直接退出,不进重试 loop
           if (

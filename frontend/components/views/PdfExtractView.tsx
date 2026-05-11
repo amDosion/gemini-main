@@ -121,13 +121,16 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
 
   const extractedData = useMemo((): PdfExtractionResultType | null => {
     if (!activeBatchMessage?.content) return null;
-    // safeJsonParse 重载 2 返回 unknown；后置结构性 narrow 确保是 PdfExtractionResultType
-    const parsed = safeJsonParse(
-      activeBatchMessage.content,
-      null
-    ) as PdfExtractionResultType | null;
-    if (parsed && parsed.success !== undefined && (parsed.data || parsed.error)) {
-      return parsed;
+    // safeJsonParse 重载 2 返回 unknown；用结构性 narrow 替代 `as` cast（修 ts-reviewer MEDIUM）
+    const parsed = safeJsonParse(activeBatchMessage.content, null);
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      'success' in parsed &&
+      (('data' in parsed && parsed.data !== undefined) ||
+        ('error' in parsed && parsed.error !== undefined))
+    ) {
+      return parsed as PdfExtractionResultType;
     }
     return null;
   }, [activeBatchMessage]);
@@ -203,8 +206,10 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
           const isSelected = activeBatchMessage?.id === msg.id;
           let result: PdfExtractionResultType | null = null;
           if (msg.content) {
-            const parsed = safeJsonParse(msg.content, null) as PdfExtractionResultType | null;
-            if (parsed && parsed.success !== undefined) result = parsed;
+            const parsed = safeJsonParse(msg.content, null);
+            if (parsed && typeof parsed === 'object' && 'success' in parsed) {
+              result = parsed as PdfExtractionResultType;
+            }
           }
 
           return (
