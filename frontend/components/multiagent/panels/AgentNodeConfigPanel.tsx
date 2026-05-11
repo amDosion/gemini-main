@@ -45,6 +45,9 @@ import {
 } from '../agentNodeDefaults';
 import { AgentVideoGenSection } from './agentSections/AgentVideoGenSection';
 import { AgentImageEditSection } from './agentSections/AgentImageEditSection';
+import { AgentImageGenSection } from './agentSections/AgentImageGenSection';
+import { AgentAudioGenSection } from './agentSections/AgentAudioGenSection';
+import { AgentDataAnalysisSection } from './agentSections/AgentDataAnalysisSection';
 import { reportInlineUploadError, readInlineFilesAsDataUrls } from '../uploadHandlers';
 
 export interface AgentNodeConfigPanelProps {
@@ -569,177 +572,10 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
           )}
         </div>
 
-        {/* ========== 图片生成参数 ========== */}
-        {nodeData.agentTaskType === 'image-gen' &&
-          (() => {
-            const _tier = nodeData.agentResolutionTier || '1K';
-            const _ratio = nodeData.agentAspectRatio || '1:1';
-            const _ratios = [
-              '1:1',
-              '2:3',
-              '3:2',
-              '3:4',
-              '4:3',
-              '4:5',
-              '5:4',
-              '9:16',
-              '16:9',
-              '21:9',
-            ];
-            const _tiers = [
-              { v: '1K', l: '1K 标准' },
-              { v: '1.5K', l: '1.5K' },
-              { v: '2K', l: '2K 高清' },
-              { v: '4K', l: '4K 超清' },
-            ];
-            return (
-              <div className="space-y-3 p-2.5 rounded-lg border border-pink-500/20 bg-pink-500/5">
-                <div className="text-xs text-pink-300 font-medium">图片生成参数</div>
-                {/* 宽高比（联动显示像素） */}
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">宽高比</label>
-                  <select
-                    value={_ratio}
-                    onChange={(e) => updateNodeData({ agentAspectRatio: e.target.value })}
-                    data-field-key="agentAspectRatio"
-                    className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
-                  >
-                    {_ratios.map((r) => (
-                      <option key={r} value={r}>
-                        {r} ({getResolutionLabel(_tier, r)})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {/* 分辨率档位（联动显示像素） */}
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">分辨率</label>
-                  <select
-                    value={_tier}
-                    onChange={(e) => updateNodeData({ agentResolutionTier: e.target.value })}
-                    data-field-key="agentResolutionTier"
-                    className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
-                  >
-                    {_tiers.map((t) => (
-                      <option key={t.v} value={t.v}>
-                        {t.l} ({getResolutionLabel(t.v, _ratio)})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {/* 数量 + 风格 */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">数量</label>
-                    <select
-                      value={nodeData.agentNumberOfImages ?? ''}
-                      onChange={(e) =>
-                        updateNodeData({
-                          agentNumberOfImages: e.target.value ? Number(e.target.value) : undefined,
-                        })
-                      }
-                      data-field-key="agentNumberOfImages"
-                      className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
-                    >
-                      <option value="">默认(1)</option>
-                      <option value="1">1 张</option>
-                      <option value="2">2 张</option>
-                      <option value="3">3 张</option>
-                      <option value="4">4 张</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">风格</label>
-                    <select
-                      value={nodeData.agentImageStyle || ''}
-                      onChange={(e) => updateNodeData({ agentImageStyle: e.target.value })}
-                      data-field-key="agentImageStyle"
-                      className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
-                    >
-                      <option value="">无风格</option>
-                      <option value="Photorealistic">写实</option>
-                      <option value="Anime">动漫</option>
-                      <option value="Digital Art">数字艺术</option>
-                      <option value="Oil Painting">油画</option>
-                      <option value="Cyberpunk">赛博朋克</option>
-                      <option value="Watercolor">水彩</option>
-                    </select>
-                  </div>
-                </div>
-                {/* 输出格式 + Seed */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">输出格式</label>
-                    <select
-                      value={nodeData.agentOutputMimeType || ''}
-                      onChange={(e) => updateNodeData({ agentOutputMimeType: e.target.value })}
-                      data-field-key="agentOutputMimeType"
-                      className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
-                    >
-                      <option value="">默认(PNG)</option>
-                      <option value="image/png">PNG</option>
-                      <option value="image/jpeg">JPEG</option>
-                      <option value="image/webp">WebP</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">Seed</label>
-                    <div className="flex gap-1">
-                      <input
-                        type="number"
-                        value={nodeData.agentSeed ?? -1}
-                        onChange={(e) =>
-                          updateNodeData({ agentSeed: parseInt(e.target.value) || -1 })
-                        }
-                        data-field-key="agentSeed"
-                        className="flex-1 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 font-mono focus:outline-none focus:border-teal-500/50"
-                        placeholder="-1 随机"
-                      />
-                      <button
-                        onClick={() => updateNodeData({ agentSeed: -1 })}
-                        className="px-1.5 bg-slate-800 border border-slate-700 rounded hover:bg-slate-700 text-slate-400 text-xs"
-                        title="随机"
-                      >
-                        🎲
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                {/* 反向提示词 */}
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">反向提示词</label>
-                  <input
-                    type="text"
-                    value={nodeData.agentNegativePrompt || ''}
-                    onChange={(e) => updateNodeData({ agentNegativePrompt: e.target.value })}
-                    data-field-key="agentNegativePrompt"
-                    className="w-full px-3 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
-                    placeholder="blurry, bad quality, distorted..."
-                  />
-                </div>
-                <label className="flex items-center gap-2 text-xs text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(nodeData.agentPromptExtend)}
-                    onChange={(e) => updateNodeData({ agentPromptExtend: e.target.checked })}
-                    data-field-key="agentPromptExtend"
-                    className="accent-teal-500"
-                  />
-                  启用提示词优化（provider 支持时生效）
-                </label>
-                <label className="flex items-center gap-2 text-xs text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={nodeData.agentAddMagicSuffix !== false}
-                    onChange={(e) => updateNodeData({ agentAddMagicSuffix: e.target.checked })}
-                    data-field-key="agentAddMagicSuffix"
-                    className="accent-teal-500"
-                  />
-                  启用提示词增强后缀（provider 支持时生效）
-                </label>
-              </div>
-            );
-          })()}
+        {/* ========== 图片生成参数（抽离至 ./agentSections/AgentImageGenSection） ========== */}
+        {nodeData.agentTaskType === 'image-gen' && (
+          <AgentImageGenSection nodeData={nodeData} updateNodeData={updateNodeData} />
+        )}
 
         {/* ========== 图片理解参数 ========== */}
         {nodeData.agentTaskType === 'vision-understand' &&
@@ -845,146 +681,15 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
           />
         )}
 
-        {/* ========== 音频生成参数 ========== */}
-        {nodeData.agentTaskType === 'audio-gen' &&
-          (() => {
-            const audioFormat = nodeData.agentAudioFormat || 'mp3';
-            const audioSpeed = nodeData.agentSpeechSpeed ?? 1;
-            return (
-              <div className="space-y-3 p-2.5 rounded-lg border border-sky-500/20 bg-sky-500/5">
-                <div className="text-xs text-sky-300 font-medium">音频生成参数</div>
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">音色</label>
-                  <input
-                    type="text"
-                    value={nodeData.agentVoice || ''}
-                    onChange={(e) => updateNodeData({ agentVoice: e.target.value })}
-                    data-field-key="agentVoice"
-                    className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none focus:border-sky-500/50"
-                    placeholder="留空时使用 provider 默认音色"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">输出格式</label>
-                    <select
-                      value={audioFormat}
-                      onChange={(e) => updateNodeData({ agentAudioFormat: e.target.value })}
-                      data-field-key="agentAudioFormat"
-                      className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none focus:border-sky-500/50"
-                    >
-                      <option value="mp3">MP3</option>
-                      <option value="wav">WAV</option>
-                      <option value="opus">OPUS</option>
-                      <option value="aac">AAC</option>
-                      <option value="flac">FLAC</option>
-                      <option value="pcm">PCM</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">语速</label>
-                    <input
-                      type="number"
-                      min={0.25}
-                      max={4}
-                      step={0.25}
-                      value={audioSpeed}
-                      onChange={(e) => {
-                        const raw = Number(e.target.value);
-                        const safe = Number.isFinite(raw) ? Math.max(0.25, Math.min(4, raw)) : 1;
-                        updateNodeData({ agentSpeechSpeed: safe });
-                      }}
-                      data-field-key="agentSpeechSpeed"
-                      className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none focus:border-sky-500/50"
-                    />
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
+        {/* ========== 音频生成参数（抽离至 ./agentSections/AgentAudioGenSection） ========== */}
+        {nodeData.agentTaskType === 'audio-gen' && (
+          <AgentAudioGenSection nodeData={nodeData} updateNodeData={updateNodeData} />
+        )}
 
-        {/* ========== 数据分析参数 ========== */}
-        {nodeData.agentTaskType === 'data-analysis' &&
-          (() => {
-            const _hasFile = !!nodeData.agentFileUrl;
-            const _fileName = nodeData.agentFileUrl?.startsWith('data:')
-              ? '已上传文件'
-              : nodeData.agentFileUrl || '';
-            return (
-              <div className="space-y-3 p-2.5 rounded-lg border border-cyan-500/20 bg-cyan-500/5">
-                <div className="text-xs text-cyan-300 font-medium">数据分析参数</div>
-                {/* 文件上传 */}
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">
-                    数据文件 <span className="text-red-400">*</span>
-                  </label>
-                  {_hasFile && (
-                    <div className="mb-2 flex items-center gap-2 px-2.5 py-1.5 bg-slate-800 rounded border border-cyan-500/30">
-                      <FileSpreadsheet size={14} className="text-cyan-400 flex-shrink-0" />
-                      <span className="text-[10px] text-slate-300 truncate flex-1">
-                        {_fileName}
-                      </span>
-                      <button
-                        onClick={() => updateNodeData({ agentFileUrl: '' })}
-                        className="p-0.5 hover:bg-red-500/20 rounded text-red-400"
-                      >
-                        <X size={10} />
-                      </button>
-                    </div>
-                  )}
-                  <label className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 border border-dashed border-cyan-500/40 rounded-lg cursor-pointer hover:border-cyan-500/60 transition-colors">
-                    <Upload size={12} className="text-cyan-400" />
-                    <span className="text-xs text-cyan-300">
-                      {_hasFile ? '更换文件' : '上传文件'}
-                    </span>
-                    <input
-                      type="file"
-                      accept=".csv,.xlsx,.xls,.json,.tsv,.txt"
-                      className="hidden"
-                      onChange={async (e) => {
-                        const f = e.target.files?.[0];
-                        if (!f) return;
-                        try {
-                          updateNodeData({ agentFileUrl: await fileToBase64(f) });
-                        } catch {
-                          /* ignore */
-                        }
-                        e.target.value = '';
-                      }}
-                    />
-                  </label>
-                  <input
-                    type="text"
-                    value={
-                      !nodeData.agentFileUrl?.startsWith('data:') ? nodeData.agentFileUrl || '' : ''
-                    }
-                    onChange={(e) => updateNodeData({ agentFileUrl: e.target.value })}
-                    data-field-key="agentFileUrl"
-                    className="mt-1.5 w-full px-2 py-1 bg-slate-800 border border-slate-700 rounded text-[10px] text-slate-400 font-mono focus:outline-none focus:border-cyan-500/50"
-                    placeholder="或输入 URL / {{prev.output.fileUrl}}"
-                  />
-                  <div className="mt-1 text-[10px] text-slate-600">
-                    支持 Excel / CSV / JSON / TSV 文件
-                  </div>
-                </div>
-                {/* 输出格式 */}
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">输出格式</label>
-                  <select
-                    value={nodeData.agentOutputFormat || ''}
-                    onChange={(e) => updateNodeData({ agentOutputFormat: e.target.value })}
-                    data-field-key="agentOutputFormat"
-                    className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
-                  >
-                    <option value="">默认（文本）</option>
-                    <option value="text">纯文本</option>
-                    <option value="json">JSON</option>
-                    <option value="markdown">Markdown 表格</option>
-                  </select>
-                </div>
-              </div>
-            );
-          })()}
+        {/* ========== 数据分析参数（抽离至 ./agentSections/AgentDataAnalysisSection） ========== */}
+        {nodeData.agentTaskType === 'data-analysis' && (
+          <AgentDataAnalysisSection nodeData={nodeData} updateNodeData={updateNodeData} />
+        )}
 
         {/* 输出格式（对话模式） */}
         {(!nodeData.agentTaskType || nodeData.agentTaskType === 'chat') && (
