@@ -67,7 +67,9 @@ export const WorkflowAdvancedFeatures: React.FC<WorkflowAdvancedFeaturesProps> =
     reader.onload = (e) => {
       try {
         const json = e.target?.result as string;
-        const { nodes: importedNodes, edges: importedEdges } = importWorkflow(json);
+        const imported = importWorkflow(json);
+        if (!imported) throw new Error('Invalid workflow format');
+        const { nodes: importedNodes, edges: importedEdges } = imported;
         
         // Validate imported workflow
         const validation = validateWorkflow(importedNodes, importedEdges);

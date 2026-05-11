@@ -364,7 +364,7 @@ function useProviderModels(selectedNode: Node<CustomNodeData> | null, nodeType: 
 interface PropertiesPanelResultSectionProps {
   nodeData: CustomNodeData;
   selectedNodeId: string;
-  sourcePreviewUrl: string;
+  sourcePreviewUrl: string | null;
   resultPreviewUrls: string[];
   resultPreviewAudioUrls: string[];
   resultPreviewVideoUrls: string[];
@@ -748,10 +748,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       setResolvedAgent(null);
       return;
     }
-    if (!String(nodeData.agentId || '').trim()) {
+    if (!String(nodeData?.agentId || '').trim()) {
       setResolvedAgent(null);
     }
-  }, [nodeData.agentId, nodeType]);
+  }, [nodeData?.agentId, nodeType]);
 
   const updatePortLayoutCount = (side: WorkflowNodePortSide, rawValue: string) => {
     if (isFixedPortLayout) {

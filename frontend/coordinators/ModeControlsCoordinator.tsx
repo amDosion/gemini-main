@@ -66,16 +66,16 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
     
     case 'image-gen':
       return (
-        <Controls.ImageGenControls 
-          providerId={providerId} 
-          currentModel={currentModel} 
+        <Controls.ImageGenControls
+          currentModel={currentModel}
           controls={controls}
           availableModels={availableModels}
           maxImageCount={maxImageCount}
-          {...(controlProps as ImageGenControlsProps)} 
+          {...(controlProps as ImageGenControlsProps)}
+          providerId={providerId}
         />
       );
-    
+
     // 图片编辑模式
     case 'image-chat-edit':
     case 'image-inpainting':
@@ -83,62 +83,62 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
     case 'image-recontext':
       return (
         <Controls.ImageEditControls
-          providerId={providerId}
           mode={mode}
           controls={controls}
           availableModels={availableModels}
           maxImageCount={maxImageCount}
           {...(controlProps as ImageEditControlsProps)}
+          providerId={providerId}
         />
       );
-    
+
     // 掩码编辑模式（使用专门的 ImageMaskEditControls）
     case 'image-mask-edit':
       return (
-        <Controls.ImageMaskEditControls 
-          providerId={providerId} 
+        <Controls.ImageMaskEditControls
           controls={controls}
-          {...(controlProps as ImageMaskEditControlsProps)} 
+          {...(controlProps as ImageMaskEditControlsProps)}
+          providerId={providerId}
         />
       );
-    
+
     case 'image-outpainting':
       return (
-        <Controls.ImageOutpaintControls 
-          providerId={providerId} 
+        <Controls.ImageOutpaintControls
           controls={controls}
-          {...(controlProps as ImageOutpaintControlsProps)} 
+          {...(controlProps as ImageOutpaintControlsProps)}
+          providerId={providerId}
         />
       );
-    
+
     case 'video-gen':
       return (
-        <Controls.VideoGenControls 
-          providerId={providerId} 
+        <Controls.VideoGenControls
           currentModel={currentModel}
           controls={controls}
-          {...(controlProps as VideoGenControlsProps)} 
+          {...(controlProps as VideoGenControlsProps)}
+          providerId={providerId}
         />
       );
     
     case 'audio-gen':
       return (
-        <Controls.AudioGenControls 
-          providerId={providerId}
+        <Controls.AudioGenControls
           controls={controls}
-          {...(controlProps as AudioGenControlsProps)} 
+          {...(controlProps as AudioGenControlsProps)}
+          providerId={providerId}
         />
       );
-    
+
     case 'pdf-extract':
       return <Controls.PdfExtractControls {...(controlProps as PdfExtractControlsProps)} />;
-    
+
     case 'virtual-try-on':
       return (
-        <Controls.VirtualTryOnControls 
-          providerId={providerId}
+        <Controls.VirtualTryOnControls
           controls={controls}
-          {...(controlProps as VirtualTryOnControlsProps)} 
+          {...(controlProps as VirtualTryOnControlsProps)}
+          providerId={providerId}
         />
       );
     

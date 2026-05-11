@@ -153,7 +153,7 @@ type ImageEditMainCanvasProps = {
   maskPreviewUrl: string | null;
   maskPreviewNotice: string | null;
   maskPreviewError: string | null;
-  imageRef: React.RefObject<HTMLImageElement>;
+  imageRef: React.RefObject<HTMLImageElement | null>;
   // ✅ 画笔/橡皮擦绑定支持
   onBrushStart: (e: React.MouseEvent) => void;
   onBrushMove: (e: React.MouseEvent) => void;
@@ -2077,7 +2077,7 @@ export const ImageMaskEditView = memo(
               activeImageUrl={activeImageUrl}
               onActiveImageUrlChange={setActiveImageUrl}
               messages={messages}
-              sessionId={currentSessionId}
+              sessionId={currentSessionId ?? null}
               initialPrompt={initialPrompt}
               initialAttachments={initialAttachments}
               providerId={providerId}

@@ -39,7 +39,7 @@ export interface UseHoverPromptPreviewResult<P extends HoverPromptPreviewBase> {
   preview: P | null;
   position: HoverPromptPreviewPosition | null;
   size: HoverPromptPreviewSize | null;
-  panelRef: React.RefObject<HTMLDivElement>;
+  panelRef: React.RefObject<HTMLDivElement | null>;
   openPreview: (payload: P) => void;
   closePreview: () => void;
   scheduleClose: (delayMs?: number) => void;

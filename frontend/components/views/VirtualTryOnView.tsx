@@ -242,7 +242,7 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
         tryOnAttachments,
         null,
         messages,
-        sessionId,
+        sessionId ?? null,
         'canvas'
       );
 

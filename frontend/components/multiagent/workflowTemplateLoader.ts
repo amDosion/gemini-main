@@ -70,7 +70,7 @@ export interface WorkflowTemplate {
   [k: string]: unknown;
 }
 
-interface ActiveTemplateMeta {
+export interface ActiveTemplateMeta {
   templateId: string;
   templateName?: string;
   id?: string;

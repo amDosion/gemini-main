@@ -185,7 +185,7 @@ export function useAuth(): UseAuthReturn {
 
       // ✅ B-1: 优先使用 login response 中的 user 字段(后端已返回),消除串行 /me 调用;
       // 兼容旧 schema —— 如果后端尚未返回 user,fall-through 到 /me
-      let currentUser = result.user ?? null;
+      let currentUser: typeof result.user | null = result.user ?? null;
       if (!currentUser) {
         currentUser = await authService.getCurrentUser();
       }

@@ -7,7 +7,7 @@ import {
   fetchDeepResearchStreamPolicy,
 } from '../../services/runtimePolicies';
 import { uploadFormDataWithXhr } from '../../services/httpProgress';
-import { ResearchRequiredAction, ToolCall, ToolResult } from '../../types/types';
+import { GroundingMetadata, ResearchRequiredAction, ToolCall, ToolResult } from '../../types/types';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 const DELTA_TOOL_CALL_TYPES = new Set<string>([
@@ -503,7 +503,7 @@ export class DeepResearchHandler extends BaseHandler {
       let lastActivityAt = Date.now();
       let watchdogTimer: ReturnType<typeof setInterval> | null = null;
       let currentEventSource: EventSource | null = null;
-      let lastGroundingMetadata: unknown = undefined;
+      let lastGroundingMetadata: GroundingMetadata | undefined = undefined;
       let lastRequiredAction: ResearchRequiredAction | undefined = undefined;
 
       const touchActivity = () => {

@@ -486,7 +486,7 @@ const AppContent: React.FC = () => {
         return;
       }
 
-      if (modelForSend) {
+      if (modelForSend && config.protocol) {
         sendMessage(
           text,
           optionsWithPersona,
@@ -560,8 +560,9 @@ const AppContent: React.FC = () => {
     );
   };
 
-  const handleOpenSettings = (tab: 'profiles' | 'editor' = 'profiles') => {
-    setSettingsInitialTab(tab);
+  const handleOpenSettings = (tab?: string) => {
+    const safeTab = tab === 'editor' ? 'editor' : 'profiles';
+    setSettingsInitialTab(safeTab);
     setIsSettingsOpen(true);
   };
 
@@ -658,8 +659,8 @@ const AppContent: React.FC = () => {
             isLoadingModels={isLoadingModels}
             visibleModels={visibleModels}
             allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
-            apiKey={config.apiKey}
-            protocol={config.protocol}
+            apiKey={config.apiKey ?? ''}
+            protocol={config.protocol ?? ''}
             onPromptSelect={handleWelcomePrompt}
             onOpenSettings={() => handleOpenSettings('profiles')}
             appMode={appMode}
@@ -674,8 +675,8 @@ const AppContent: React.FC = () => {
           isLoadingModels={isLoadingModels}
           visibleModels={visibleModels}
           allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
-          apiKey={config.apiKey}
-          protocol={config.protocol}
+          apiKey={config.apiKey ?? ''}
+          protocol={config.protocol ?? ''}
           onPromptSelect={handleWelcomePrompt}
           onOpenSettings={() => handleOpenSettings('profiles')}
           appMode={appMode}

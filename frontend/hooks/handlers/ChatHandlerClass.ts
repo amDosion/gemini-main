@@ -34,7 +34,7 @@ export class ChatHandler extends BaseHandler {
 
     // 辅助函数：发送流更新
     const sendUpdate = () => {
-      context.onStreamUpdate({
+      context.onStreamUpdate?.({
         content: accumulatedText,
         attachments: [...accumulatedAttachments],
         groundingMetadata: lastGroundingMetadata,

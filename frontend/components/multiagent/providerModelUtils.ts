@@ -164,7 +164,8 @@ export const normalizeProviderModels = (payload: unknown): ProviderModels[] => {
       ? payload
       : [];
   return providers
-    .map((provider: Record<string, unknown>) => {
+    .map((providerUnknown: unknown) => {
+      const provider = providerUnknown as Record<string, unknown>;
       const providerId = readProviderString(provider, 'providerId', 'provider_id');
       if (!providerId) return null;
 

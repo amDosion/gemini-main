@@ -409,6 +409,7 @@ export class LLMService {
     referenceImages: Attachment[] = [],
     options?: Partial<ChatOptions>
   ): Promise<VideoGenerationResult> {
+      if (!this._cachedModelConfig) throw new Error('No model selected');
       const finalOptions = options ? { ...this._cachedOptions, ...options } : this._cachedOptions;
 
       return this.currentProvider.generateVideo(
@@ -422,6 +423,7 @@ export class LLMService {
   }
 
   public async generateSpeech(text: string): Promise<AudioGenerationResult> {
+      if (!this._cachedModelConfig) throw new Error('No model selected');
       // 直接使用 currentProvider，由 LLMFactory 负责提供商路由
       return this.currentProvider.generateSpeech(
           this._cachedModelConfig.id,

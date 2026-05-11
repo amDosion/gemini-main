@@ -45,7 +45,7 @@ describe('useActionMenu', () => {
   it('outside-click closes; click inside panel does NOT close; isExempted target does NOT close', () => {
     const exemptNode = document.createElement('div');
     document.body.appendChild(exemptNode);
-    const isExempted = (t: Node) => t === exemptNode;
+    const isExempted = (t: EventTarget | null) => t === exemptNode;
 
     const { result } = renderHook(() => useActionMenu({ isExempted }));
     act(() => {

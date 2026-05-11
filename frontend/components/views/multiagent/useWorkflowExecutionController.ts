@@ -264,8 +264,9 @@ export const useWorkflowExecutionController = ({
         await finalizeExecutionFailure(errorMessage);
       } finally {
         if (activeExecutionControllerRef.current === executionController) {
-          if (activeExecutionCleanupRef.current) {
-            activeExecutionCleanupRef.current();
+          const finallyCleanupFn = activeExecutionCleanupRef.current as (() => void) | null;
+          if (finallyCleanupFn !== null) {
+            finallyCleanupFn();
             activeExecutionCleanupRef.current = null;
           }
           activeExecutionControllerRef.current = null;

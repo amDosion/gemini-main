@@ -206,9 +206,9 @@ export const useSessions = (
         timestamp?: number;
       };
       cacheStatusRef.current?.updateStatus(
-        cacheMeta.fromCache,
-        cacheMeta.isStale,
-        cacheMeta.timestamp
+        cacheMeta.fromCache ?? false,
+        cacheMeta.isStale ?? false,
+        cacheMeta.timestamp ?? 0
       );
     } finally {
       // 仅当本次请求仍是最新时清 loading

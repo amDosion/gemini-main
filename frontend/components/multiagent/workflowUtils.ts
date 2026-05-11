@@ -287,7 +287,7 @@ export const calculateWorkflowStatistics = (
   const nodesByType: Record<string, number> = {};
 
   nodes.forEach(node => {
-    const type = node.data.type;
+    const type = node.data.type ?? '';
     nodesByType[type] = (nodesByType[type] || 0) + 1;
   });
 

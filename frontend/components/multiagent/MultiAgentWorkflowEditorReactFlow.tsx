@@ -28,10 +28,7 @@ import { nodeTypeConfigs, NodeType } from './nodeTypeConfigs';
 import { ExecutionLogPanel } from './ExecutionLogPanel';
 import { WorkflowResultPanel } from './WorkflowResultPanel';
 import { WorkflowTemplateSelector, type WorkflowTemplate } from './WorkflowTemplateSelector';
-import {
-  WorkflowTemplateSaveDialog,
-  type WorkflowTemplateSaveTarget,
-} from './WorkflowTemplateSaveDialog';
+import { WorkflowTemplateSaveDialog } from './WorkflowTemplateSaveDialog';
 import { WorkflowEditorTopBar } from './WorkflowEditorTopBar';
 import { WorkflowEditorCanvasPane } from './WorkflowEditorCanvasPane';
 import { useExecutionLogs } from './WorkflowExecutionHooks';
@@ -56,7 +53,7 @@ import {
 } from './workflowResultUtils';
 import { useAgentRegistry } from './useAgentRegistry';
 import { buildAgentNodeDefaultsFromAgent } from './agentNodeDefaults';
-import { loadTemplateIntoEditor } from './workflowTemplateLoader';
+import { loadTemplateIntoEditor, ActiveTemplateMeta } from './workflowTemplateLoader';
 import { useResultPanelPreviewState } from './useResultPanelPreviewState';
 import {
   applySingleEdgeSelection,
@@ -235,10 +232,6 @@ interface MultiAgentWorkflowEditorReactFlowProps {
   onExit?: () => void;
 }
 
-interface ActiveTemplateMeta extends WorkflowTemplateSaveTarget {
-  templateId: string;
-  templateName?: string;
-}
 
 const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorReactFlowProps> = ({
   onExecute,
@@ -1297,7 +1290,7 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
           ? {
             source: 'template',
             templateId: activeTemplateMeta?.templateId,
-            templateName: activeTemplateMeta.templateName || '',
+            templateName: activeTemplateMeta?.templateName || '',
           }
           : { source: 'editor' },
       });

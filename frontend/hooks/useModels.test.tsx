@@ -119,7 +119,8 @@ describe('useModels cache invalidation', () => {
   });
 
   it('clears stale models immediately when switching mode and then loads new mode models', async () => {
-    let resolveImageMode: ((value: any) => void) | null = null;
+    // 用 object 容器规避 TS strict 模式下闭包内可变 `let` 的 narrowing 失效（never）
+    const resolveImageModeRef: { current: ((value: unknown) => void) | null } = { current: null };
 
     getAvailableModelsPayloadMock.mockImplementation(async (_useCache: boolean, mode?: string) => {
       if (!mode) {
@@ -148,7 +149,7 @@ describe('useModels cache invalidation', () => {
 
       if (mode === 'image-gen') {
         return await new Promise((resolve) => {
-          resolveImageMode = resolve;
+          resolveImageModeRef.current = resolve;
         });
       }
 
@@ -163,9 +164,10 @@ describe('useModels cache invalidation', () => {
       };
     });
 
+    const initialProps: { mode: 'chat' | 'image-gen' } = { mode: 'chat' };
     const { result, rerender } = renderHook(
       ({ mode }: { mode: 'chat' | 'image-gen' }) => useModels(true, 'google', mode, 'profile-a:1', [DEFAULT_MODEL, IMAGE_MODEL]),
-      { initialProps: { mode: 'chat' as const } }
+      { initialProps }
     );
 
     await waitFor(() => {
@@ -179,7 +181,7 @@ describe('useModels cache invalidation', () => {
       expect(result.current.visibleModels).toEqual([]);
     });
 
-    resolveImageMode?.({
+    resolveImageModeRef.current?.({
       models: [IMAGE_MODEL],
       defaultModelId: IMAGE_MODEL.id,
       modeCatalog: [

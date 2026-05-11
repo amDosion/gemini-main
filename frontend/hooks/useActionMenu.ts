@@ -44,7 +44,7 @@ export interface UseActionMenuOptions {
 export interface UseActionMenuResult<A extends ActionMenuAnchorBase> {
   anchor: A | null;
   position: ActionMenuPosition | null;
-  panelRef: React.RefObject<HTMLDivElement>;
+  panelRef: React.RefObject<HTMLDivElement | null>;
   open: (anchor: A) => void;
   close: () => void;
   isOpen: boolean;

@@ -100,7 +100,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
   };
 
   // If streaming and NOT thinking (or thinking is done), show cursor in main content
-  const showMainCursor = isStreaming && (isThinkingComplete || !thinkingContent);
+  const showMainCursor = !!isStreaming && (isThinkingComplete || !thinkingContent);
   const isDeepResearchMessage = message.responseKind === 'deep-research';
   const researchStatus = message.researchStatus;
   const researchRequiredAction = message.researchRequiredAction;

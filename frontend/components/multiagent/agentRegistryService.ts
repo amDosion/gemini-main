@@ -214,7 +214,8 @@ export const createDefaultAgentCard = () => ({
   },
 });
 
-const normalizeAgentItem = (agent: Record<string, unknown>): AgentDef | null => {
+const normalizeAgentItem = (agentUnknown: unknown): AgentDef | null => {
+  const agent = agentUnknown as Record<string, unknown>;
   const id = toSafeString(agent?.id);
   if (!id) return null;
   const runtime = normalizeAgentRuntime(agent);

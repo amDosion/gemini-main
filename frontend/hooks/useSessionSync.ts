@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, Dispatch, SetStateAction } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { ChatSession, Message, ModelConfig, AppMode } from '../types/types';
 import { llmService } from '../services/llmService';
 import { apiClient } from '../services/apiClient';
@@ -9,7 +9,7 @@ interface UseSessionSyncProps {
   sessions: ChatSession[];
   activeModelConfig?: ModelConfig;
   setMessages: (messages: Message[]) => void;
-  setAppMode: Dispatch<SetStateAction<AppMode>>;
+  setAppMode: (mode: AppMode) => void;
 }
 
 /**

@@ -37,7 +37,7 @@ const normalizeAgentTaskType = (
     .trim()
     .toLowerCase()
     .replace(/_/g, '-');
-  const aliases: Record<string, 'video-gen' | 'audio-gen' | 'vision-understand' | 'data-analysis'> =
+  const aliases: Record<string, string> =
     {
       video: 'video-gen',
       'video-generate': 'video-gen',

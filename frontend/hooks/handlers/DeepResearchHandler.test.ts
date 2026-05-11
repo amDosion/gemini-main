@@ -85,7 +85,8 @@ describe('DeepResearchHandler', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const updates: any[] = [];
-    let cancelFn: (() => void) | null = null;
+    // 用 object 容器规避 TS strict 模式下闭包内可变 `let` 的 narrowing 失效（never）
+    const cancelFnRef: { current: (() => void) | null } = { current: null };
 
     const context: ExecutionContext = {
       sessionId: 's1',
@@ -122,7 +123,7 @@ describe('DeepResearchHandler', () => {
         updates.push(update);
       },
       registerCancel: (fn) => {
-        cancelFn = fn;
+        cancelFnRef.current = fn;
       },
     };
 
@@ -142,8 +143,8 @@ describe('DeepResearchHandler', () => {
     expect(startRequestBody.previous_interaction_id).toBe('interaction_prev_456');
     expect(startRequestBody).not.toHaveProperty('researchMode');
 
-    expect(cancelFn).toBeTypeOf('function');
-    cancelFn?.();
+    expect(cancelFnRef.current).toBeTypeOf('function');
+    cancelFnRef.current?.();
 
     const result = await executionPromise;
 

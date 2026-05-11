@@ -118,7 +118,7 @@ const dispatchScopedWorkflowEvent = <TDetail extends Record<string, unknown>>(
 
 const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
   const { id, data, selected } = props;
-  const config = nodeTypeConfigs[data.type] || nodeTypeConfigs.agent;
+  const config = nodeTypeConfigs[data.type as keyof typeof nodeTypeConfigs] || nodeTypeConfigs.agent;
   const status = data.status || 'pending';
   const statusInfo = statusConfig[status];
   const StatusIcon = statusInfo.icon;
