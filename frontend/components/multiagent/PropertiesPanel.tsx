@@ -2447,34 +2447,16 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         return pickProviderDefaultModel(provider, taskType);
       };
       const handleToolNameChange = (nextToolName: string) => {
-        const normalized = nextToolName.trim().toLowerCase().replace(/-/g, '_');
-        const nextIsImageGen = ['image_generate', 'generate_image', 'image_gen'].includes(
-          normalized
-        );
-        const nextIsImageEdit = [
-          'image_edit',
-          'edit_image',
-          'image_chat_edit',
-          'image_mask_edit',
-          'image_inpainting',
-          'image_background_edit',
-          'image_recontext',
-          'image_outpaint',
-          'image_outpainting',
-          'expand_image',
-        ].includes(normalized);
-        const nextIsVideoGenerate = ['video_generate', 'generate_video', 'video_gen'].includes(
-          normalized
-        );
-        const nextIsVideoUnderstand = ['video_understand', 'understand_video'].includes(normalized);
-        const nextIsVideoDelete = ['video_delete', 'delete_video'].includes(normalized);
-        const nextIsPromptOptimize = [
-          'prompt_optimize',
-          'prompt_optimizer',
-          'optimize_prompt',
-          'prompt_rewrite',
-          'rewrite_prompt',
-        ].includes(normalized);
+        // 使用 classifyToolNode 替代内联 alias 重复（与 renderToolNodeConfig 起始处共用同一分类逻辑）
+        const nextClass = classifyToolNode(nextToolName);
+        const {
+          isImageGen: nextIsImageGen,
+          isImageEdit: nextIsImageEdit,
+          isVideoGenerate: nextIsVideoGenerate,
+          isVideoUnderstand: nextIsVideoUnderstand,
+          isVideoDelete: nextIsVideoDelete,
+          isPromptOptimize: nextIsPromptOptimize,
+        } = nextClass;
         const updates: Partial<CustomNodeData> = { toolName: nextToolName };
 
         if (nextIsVideoGenerate) {
