@@ -792,30 +792,5 @@ export const submitUploadTaskToBackend = async (
  * @param uploadStatus - 上传状态（可选，用于区分云存储URL和HTTP临时URL）
  * @returns URL类型描述字符串
  */
-export const getUrlType = (url: string | undefined, uploadStatus?: string): string => {
-  if (!url) {
-    return '空URL';
-  }
-
-  if (url.startsWith('data:')) {
-    return 'Base64 Data URL (AI原始返回)';
-  }
-
-  if (url.startsWith('blob:')) {
-    return 'Blob URL (处理后的本地URL)';
-  }
-
-  if (url.startsWith('/api/temp-images/')) {
-    return '临时代理URL (后端创建)';
-  }
-
-  if (url.startsWith('/api/storage/local-files/')) {
-    return '本地存储URL (已完成)';
-  }
-
-  if (url.startsWith('http://') || url.startsWith('https://')) {
-    return uploadStatus === 'completed' ? '云存储URL (已上传完成)' : 'HTTP临时URL (AI原始返回)';
-  }
-
-  return '未知类型';
-};
+// getUrlType 抽离至 ./urlClassifier（< 800 行合规）
+export { getUrlType } from './urlClassifier';
