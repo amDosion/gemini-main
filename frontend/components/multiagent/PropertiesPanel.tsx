@@ -63,6 +63,7 @@ import {
   normalizeWorkflowVideoExtensionSelection,
   getWorkflowVideoResolutionLabel,
 } from './workflowResolution';
+import { useProviderModels } from '../../hooks/useProviderModels';
 import {
   extractSheetStageProtocolState,
   type SheetStageName,
@@ -203,46 +204,8 @@ function usePropertiesPanelFocus(
   };
 }
 
-function useProviderModels(selectedNode: Node<CustomNodeData> | null, nodeType: NodeType) {
-  const [providers, setProviders] = React.useState<ProviderModels[]>([]);
-  const [providersLoading, setProvidersLoading] = React.useState(false);
-
-  React.useEffect(() => {
-    if (!selectedNode || (nodeType !== 'agent' && nodeType !== 'tool')) {
-      return;
-    }
-    let cancelled = false;
-
-    const fetchProviders = async () => {
-      setProvidersLoading(true);
-      try {
-        const res = await fetch('/api/agents/available-models', {
-          headers: getAuthHeaders(),
-        });
-        if (!res.ok || cancelled) return;
-        const data = await res.json();
-        setProviders(normalizeProviderModels(data));
-      } catch (error) {
-        if (!cancelled) {
-        }
-      } finally {
-        if (!cancelled) {
-          setProvidersLoading(false);
-        }
-      }
-    };
-
-    fetchProviders();
-    return () => {
-      cancelled = true;
-    };
-  }, [nodeType, selectedNode?.id]);
-
-  return {
-    providers,
-    providersLoading,
-  };
-}
+// useProviderModels 抽离至 ../../hooks/useProviderModels
+// （JIRA-frontend-view-decomposition.md P0 #1 Step 2）
 
 interface PropertiesPanelResultSectionProps {
   nodeData: CustomNodeData;
