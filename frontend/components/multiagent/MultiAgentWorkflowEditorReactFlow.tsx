@@ -87,88 +87,25 @@ import {
 } from './workflowPorts';
 import { DEFAULT_WORKFLOW_EDGE_TYPE } from './workflowEdgeTypes';
 import { getErrorMessage } from '../../utils/errorMessage';
+import {
+  TEMP_IMAGE_PATH_SEGMENT,
+  EXPORT_NODE_PADDING,
+  EXPORT_MIN_WIDTH,
+  EXPORT_MIN_HEIGHT,
+  EXPORT_PNG_MAX_SIDE,
+  EXPORT_PNG_MAX_PIXELS,
+  EXPORT_PNG_TARGET_PIXELS,
+  NON_RESULT_WORKFLOW_NODE_TYPES,
+  clampNumber,
+  formatWorkflowExportError,
+  ensureTempImageNoRedirect,
+  isNonResultWorkflowOutputNode,
+  waitForClonedImages,
+} from './workflowExport';
 
-const TEMP_IMAGE_PATH_SEGMENT = '/api/temp-images/';
-const EXPORT_NODE_PADDING = 280;
-const EXPORT_MIN_WIDTH = 1920;
-const EXPORT_MIN_HEIGHT = 1080;
-const EXPORT_PNG_MAX_SIDE = 8192;
-const EXPORT_PNG_MAX_PIXELS = 85_000_000;
-const EXPORT_PNG_TARGET_PIXELS = 140_000_000;
-const NON_RESULT_WORKFLOW_NODE_TYPES = new Set([
-  'start',
-  'input_text',
-  'input_image',
-  'input_video',
-  'input_audio',
-  'input_file',
-]);
-
-const clampNumber = (value: number, min: number, max: number): number => {
-  if (!Number.isFinite(value)) return min;
-  return Math.max(min, Math.min(max, value));
-};
-
-const formatWorkflowExportError = (error: unknown): string => {
-  if (error instanceof Error && typeof error.message === 'string' && error.message.trim()) {
-    return error.message.trim();
-  }
-  if (error instanceof Event) {
-    return error.type ? `浏览器事件: ${error.type}` : '浏览器事件';
-  }
-  if (typeof error === 'string') {
-    return error.trim() || '未知错误';
-  }
-  if (error && typeof error === 'object') {
-    const maybeMessage = (error as { message?: unknown }).message;
-    if (typeof maybeMessage === 'string' && maybeMessage.trim()) {
-      return maybeMessage.trim();
-    }
-    try {
-      const serialized = JSON.stringify(error);
-      if (serialized && serialized !== '{}') {
-        return serialized;
-      }
-    } catch {
-      // ignore JSON stringify errors
-    }
-  }
-  return String(error || '未知错误');
-};
-
-const ensureTempImageNoRedirect = (rawUrl: string): string => {
-  const value = String(rawUrl || '').trim();
-  if (!value) return value;
-  try {
-    const parsed = new URL(value, window.location.origin);
-    if (!parsed.pathname.startsWith(TEMP_IMAGE_PATH_SEGMENT)) {
-      return value;
-    }
-    parsed.searchParams.set('no_redirect', '1');
-    parsed.searchParams.set('export', '1');
-    return `${parsed.pathname}?${parsed.searchParams.toString()}`;
-  } catch {
-    return value;
-  }
-};
-
-const isNonResultWorkflowOutputNode = (nodeId: string, nodeType: string): boolean => {
-  const normalizedNodeType = String(nodeType || '')
-    .trim()
-    .toLowerCase();
-  if (NON_RESULT_WORKFLOW_NODE_TYPES.has(normalizedNodeType)) {
-    return true;
-  }
-  const normalizedNodeId = String(nodeId || '')
-    .trim()
-    .toLowerCase();
-  return (
-    normalizedNodeId.startsWith('start') ||
-    normalizedNodeId.startsWith('input-') ||
-    normalizedNodeId.startsWith('input_')
-  );
-};
-
+// 8 export 常量 + 5 export helper 抽离至 ./workflowExport
+// （JIRA-frontend-view-decomposition.md P1 #3 Step 1）
+// normalizeStringList / mergeUniqueStringList 抽离至 ./workflowGraphUtils（Step 2 — 待执行）
 const normalizeStringList = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
   return value.map((item) => String(item || '').trim()).filter(Boolean);
@@ -186,38 +123,6 @@ const mergeUniqueStringList = (...sources: string[][]): string[] => {
     });
   });
   return result;
-};
-
-const waitForClonedImages = async (container: HTMLElement, timeoutMs = 10000): Promise<void> => {
-  const images = Array.from(container.querySelectorAll('img[src]')) as HTMLImageElement[];
-  if (images.length === 0) {
-    return;
-  }
-
-  await Promise.all(
-    images.map(
-      (img) =>
-        new Promise<void>((resolve) => {
-          if (img.complete) {
-            resolve();
-            return;
-          }
-
-          const cleanup = () => {
-            window.clearTimeout(timer);
-            img.removeEventListener('load', onComplete);
-            img.removeEventListener('error', onComplete);
-          };
-          const onComplete = () => {
-            cleanup();
-            resolve();
-          };
-          const timer = window.setTimeout(onComplete, timeoutMs);
-          img.addEventListener('load', onComplete);
-          img.addEventListener('error', onComplete);
-        })
-    )
-  );
 };
 
 interface MultiAgentWorkflowEditorReactFlowProps {
