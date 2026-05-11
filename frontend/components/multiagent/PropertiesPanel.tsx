@@ -70,6 +70,7 @@ import {
 } from './uploadHandlers';
 import { PropertiesPanelResultSection } from './panels/ResultSection';
 import { PropertiesPanelSheetStageSection } from './panels/SheetStagePanel';
+import { classifyToolNode } from './toolClassification';
 import { extractSheetStageProtocolState } from './sheetStageService';
 import {
   getPixelResolutionFromSchema,
@@ -2392,56 +2393,22 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
   const renderToolNodeConfig = () => {
     if (nodeType === 'tool') {
-      const toolName = (nodeData.toolName || '').trim().toLowerCase().replace(/-/g, '_');
-      const isImageGen = ['image_generate', 'generate_image', 'image_gen'].includes(toolName);
-      const isImageEdit = [
-        'image_edit',
-        'edit_image',
-        'image_chat_edit',
-        'image_mask_edit',
-        'image_inpainting',
-        'image_background_edit',
-        'image_recontext',
-        'image_outpaint',
-        'image_outpainting',
-        'expand_image',
-      ].includes(toolName);
-      const isVideoGenerate = ['video_generate', 'generate_video', 'video_gen'].includes(toolName);
-      const isVideoUnderstand = ['video_understand', 'understand_video'].includes(toolName);
-      const isVideoDelete = ['video_delete', 'delete_video'].includes(toolName);
-      const isPromptOptimize = [
-        'prompt_optimize',
-        'prompt_optimizer',
-        'optimize_prompt',
-        'prompt_rewrite',
-        'rewrite_prompt',
-      ].includes(toolName);
-      const isTableAnalyze = [
-        'table_analyze',
-        'excel_analyze',
-        'analyze_table',
-        'sheet_analyze',
-        'sheet_profile',
-      ].includes(toolName);
-      const isAmazonAdsOptimize = [
-        'amazon_ads_keyword_optimize',
-        'amazon_ads_optimize',
-        'ads_keyword_optimize',
-        'amazon_ppc_optimize',
-        'amazon_search_term_optimize',
-      ].includes(toolName);
-      const toolTaskType: AgentTaskType = isImageEdit
-        ? 'image-edit'
-        : isImageGen
-          ? 'image-gen'
-          : isVideoGenerate
-            ? 'video-gen'
-            : isVideoUnderstand
-              ? 'vision-understand'
-              : 'chat';
-      const shouldShowToolModelOverride =
-        isImageGen || isImageEdit || isPromptOptimize || isVideoGenerate || isVideoUnderstand;
-      const shouldShowToolProviderOverride = shouldShowToolModelOverride || isVideoDelete;
+      // Tool 分类抽离至 ./toolClassification（业务下沉准备 — 未来由后端 tool registry 提供）
+      const toolClass = classifyToolNode(nodeData.toolName);
+      const toolName = toolClass.normalizedToolName;
+      const {
+        isImageGen,
+        isImageEdit,
+        isVideoGenerate,
+        isVideoUnderstand,
+        isVideoDelete,
+        isPromptOptimize,
+        isTableAnalyze,
+        isAmazonAdsOptimize,
+        taskType: toolTaskType,
+        shouldShowToolModelOverride,
+        shouldShowToolProviderOverride,
+      } = toolClass;
       const selectedProviderId = nodeData.toolProviderId || '';
       const selectedProvider = providers.find(
         (provider) => provider.providerId === selectedProviderId
