@@ -14,6 +14,7 @@ import ChatEditInputArea from '../chat/ChatEditInputArea';
 import { apiClient } from '../../services/apiClient';
 import { useThinkingBlock } from '../../hooks/useThinkingBlock';
 import { fileToBase64 } from '../../hooks/handlers/attachmentUtils';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 interface ImageMaskEditViewProps {
     messages: Message[];
@@ -1239,7 +1240,7 @@ export const ImageMaskEditView = memo(({
                     }
                 } catch (error) {
                     setMaskPreviewUrl(null);
-                    const errorText = error instanceof Error ? error.message : String(error || '');
+                    const errorText = getErrorMessage(error);
                     if (isMaskPreviewAccessDenied(errorText)) {
                         setMaskPreviewNotice(getMaskPreviewUnavailableMessage(mode));
                         setMaskPreviewError(null);

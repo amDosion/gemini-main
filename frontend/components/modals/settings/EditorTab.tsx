@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { OllamaModelManager } from './OllamaModelManager';
 import { useToastContext } from '../../../contexts/ToastContext';
 import { ModelSelectionPanel } from './ModelSelectionPanel';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 interface EditorTabProps {
     initialData?: ConfigProfile | null;
@@ -99,7 +100,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                 setTemplatesError(null);
                 
             } catch (error) {
-                setTemplatesError((error instanceof Error ? error.message : String(error)) || 'Failed to load provider templates');
+                setTemplatesError((getErrorMessage(error)) || 'Failed to load provider templates');
                 // 不使用降级配置，显示错误状态
                 setProviderTemplates([]);
             } finally {
@@ -231,7 +232,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                 setVerifyError("Connection established, but no models were returned.");
             }
         } catch (e) {
-            setVerifyError((e instanceof Error ? e.message : String(e)) || "Connection failed.");
+            setVerifyError((getErrorMessage(e)) || "Connection failed.");
         } finally {
             setIsVerifying(false);
         }

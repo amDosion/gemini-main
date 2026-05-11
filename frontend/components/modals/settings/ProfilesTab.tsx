@@ -7,6 +7,7 @@ import { LLMFactory } from '../../../services/LLMFactory';
 import { getAuthHeaders } from '../../../services/apiClient';
 import { v4 as uuidv4 } from 'uuid';
 import { ConfirmDialog } from '../../common/ConfirmDialog';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 interface ProfilesTabProps {
     profiles: ConfigProfile[];
@@ -130,7 +131,7 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
                 setPreviewError("No models found. Check API Key or connectivity.");
             }
         } catch (e) {
-            setPreviewError((e instanceof Error ? e.message : String(e)) || "Failed to fetch models.");
+            setPreviewError((getErrorMessage(e)) || "Failed to fetch models.");
         } finally {
             setIsPreviewLoading(false);
         }

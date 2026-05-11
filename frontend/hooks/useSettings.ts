@@ -4,6 +4,7 @@ import { llmService } from '../services/llmService';
 import { configService, ActiveAppConfig, FullSettings } from '../services/configurationService';
 import { ConfigProfile } from '../services/db';
 import { getAccessToken } from '../services/apiClient';
+import { getErrorMessage } from '../utils/errorMessage';
 
 export interface AppConfig extends ActiveAppConfig {
   dashscopeApiKey: string;
@@ -250,7 +251,7 @@ export const useSettings = (initialData?: {
       llmService.setConfig(apiKey, baseUrl, protocol as ApiProtocol, providerId);
     } catch (error: unknown) {
       // ✅ 静默处理 401 错误（用户未登录或 token 过期）
-      const errorMessage = error instanceof Error ? error.message : String(error || '');
+      const errorMessage = getErrorMessage(error);
       if (
         errorMessage.includes('401') ||
         errorMessage.includes('Unauthorized') ||

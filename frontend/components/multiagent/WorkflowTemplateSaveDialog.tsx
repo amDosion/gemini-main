@@ -18,6 +18,7 @@ import {
   createWorkflowTemplateCategory,
   listWorkflowTemplateCategories,
 } from '../../services/workflowTemplateCategoryService';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 export interface WorkflowTemplateSaveTarget {
   id: string;
@@ -175,7 +176,7 @@ export const WorkflowTemplateSaveDialog: React.FC<WorkflowTemplateSaveDialogProp
         return normalizeInitialCategory(nextNames, activeTemplate);
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = getErrorMessage(err);
       setCategoryFeedback(`加载分类失败：${message}`);
       setAvailableCategories([]);
       setCategory(String(activeTemplate?.category || '').trim());
@@ -226,7 +227,7 @@ export const WorkflowTemplateSaveDialog: React.FC<WorkflowTemplateSaveDialogProp
       setNewCategoryName('');
       setCategoryFeedback(`已新增分类：${createdName}`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = getErrorMessage(err);
       setCategoryFeedback(`新增失败：${message}`);
     } finally {
       setCreatingCategory(false);

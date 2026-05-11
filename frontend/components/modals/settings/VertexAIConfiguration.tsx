@@ -9,6 +9,7 @@ import {
 import { ModelConfig } from '../../../types/types';
 import { useToastContext } from '../../../contexts/ToastContext';
 import { ModelSelectionPanel, SelectableModel, getModelUsage } from './ModelSelectionPanel';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 interface VertexAIConfigurationProps {
     footerNode?: HTMLDivElement | null;
@@ -220,7 +221,7 @@ export const VertexAIConfiguration: React.FC<VertexAIConfigurationProps> = ({
                 setVerifyError(response.message || "Connection established, but no models were returned.");
             }
         } catch (e) {
-            setVerifyError((e instanceof Error ? e.message : String(e)) || "Connection failed.");
+            setVerifyError((getErrorMessage(e)) || "Connection failed.");
         } finally {
             setIsVerifying(false);
         }
@@ -282,7 +283,7 @@ export const VertexAIConfiguration: React.FC<VertexAIConfigurationProps> = ({
             showSuccess('Vertex AI configuration saved successfully!');
             onClose();
         } catch (error) {
-            showError(`Failed to save Vertex AI configuration: ${error instanceof Error ? error.message : String(error)}`);
+            showError(`Failed to save Vertex AI configuration: ${getErrorMessage(error)}`);
         } finally {
             setIsSaving(false);
         }

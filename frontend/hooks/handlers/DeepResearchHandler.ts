@@ -8,6 +8,7 @@ import {
 } from '../../services/runtimePolicies';
 import { uploadFormDataWithXhr } from '../../services/httpProgress';
 import { ResearchRequiredAction, ToolCall, ToolResult } from '../../types/types';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const DELTA_TOOL_CALL_TYPES = new Set<string>([
   'function_call',
@@ -433,7 +434,7 @@ export class DeepResearchHandler extends BaseHandler {
           researchStatus: buildStatus('starting', '文档上传完成，开始深度研究...'),
         });
       } catch (error) {
-        throw new Error(`文档上传失败: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`文档上传失败: ${getErrorMessage(error)}`);
       }
     }
 
@@ -772,7 +773,7 @@ export class DeepResearchHandler extends BaseHandler {
           connectSSE();
         } catch (error) {
           if (recoveryAttempts > deepResearchMaxRecoveryAttempts) {
-            const msg = error instanceof Error ? error.message : String(error);
+            const msg = getErrorMessage(error);
             finalizeFailed(`自动恢复失败: ${msg}`, '连接恢复失败，返回部分结果');
             return;
           }

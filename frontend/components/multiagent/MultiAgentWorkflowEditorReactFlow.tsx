@@ -83,6 +83,7 @@ import {
   resolveNodePortLayout,
 } from './workflowPorts';
 import { DEFAULT_WORKFLOW_EDGE_TYPE } from './workflowEdgeTypes';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 const TEMP_IMAGE_PATH_SEGMENT = '/api/temp-images/';
 const EXPORT_NODE_PADDING = 280;
@@ -1303,7 +1304,7 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
       setExecuteErrorBanner(null);
       addLog('system', '系统', 'info', '工作流执行完成');
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = getErrorMessage(error);
       setExecuteErrorBanner(errorMessage);
       setShowLogs(true);
       addLog('system', '系统', 'error', `工作流执行失败: ${errorMessage}`);

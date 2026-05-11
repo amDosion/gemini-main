@@ -1,3 +1,5 @@
+import { getErrorMessage } from '../utils/errorMessage';
+
 export interface TransferProgress {
   loaded: number;
   total: number | null;
@@ -126,7 +128,7 @@ export const uploadFormDataWithXhr = async <T = any>({
       try {
         resolve(responseText ? (JSON.parse(responseText) as T) : (undefined as T));
       } catch (error) {
-        reject(new Error(`Invalid JSON response: ${error instanceof Error ? error.message : String(error)}`));
+        reject(new Error(`Invalid JSON response: ${getErrorMessage(error)}`));
       }
     };
 

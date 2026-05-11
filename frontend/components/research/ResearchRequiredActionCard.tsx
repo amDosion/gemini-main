@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { AlertTriangle, Loader2, Send } from 'lucide-react';
 import { ResearchRequiredAction } from '../../types/types';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 interface ResearchRequiredActionCardProps {
   requiredAction: ResearchRequiredAction;
@@ -63,7 +64,7 @@ const ResearchRequiredActionCard: React.FC<ResearchRequiredActionCardProps> = ({
     try {
       await onSubmitAction(value);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       setSubmitError(message || '提交动作失败');
     } finally {
       setSubmittingOption(null);

@@ -1,6 +1,7 @@
 import { BaseHandler } from './BaseHandler';
 import { ExecutionContext, HandlerResult } from './types';
 import { requestJson } from '../../services/http';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 interface AgentOutput {
   agentName?: string;
@@ -102,7 +103,7 @@ export class MultiAgentHandler extends BaseHandler {
         attachments: [],
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = getErrorMessage(error);
       onStreamUpdate?.({ content: `❌ 工作流执行失败: ${errorMessage}` });
       throw error;
     }

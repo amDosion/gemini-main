@@ -28,6 +28,7 @@ import {
   listWorkflowTemplateCategories,
 } from '../../services/workflowTemplateCategoryService';
 import { mergeRuntimeHints } from '../views/multiagent/runtimeHints';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 interface WorkflowTemplateResultSummary {
   hasResult: boolean;
@@ -730,7 +731,7 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
       setSelectedTemplate(copiedTemplate);
       setCopyFeedback(`已复制模板：${copiedTemplate.name}`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = getErrorMessage(err);
       setCopyFeedback(`复制失败：${message}`);
     } finally {
       setCopyingTemplateId(null);
@@ -830,7 +831,7 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
       setEditingTemplateName('');
       setTemplateActionFeedback(`已更新模板标题：${updatedTemplate.name}`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = getErrorMessage(err);
       setTemplateActionFeedback(`更新失败：${message}`);
     } finally {
       setSavingTemplateId(null);
@@ -890,7 +891,7 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
       setPendingDeleteTemplate(null);
       setTemplateActionFeedback('模板已删除');
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = getErrorMessage(err);
       setTemplateActionFeedback(`删除失败：${message}`);
     } finally {
       setDeletingTemplateId(null);
@@ -941,7 +942,7 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
       setIsCreateCategoryDialogOpen(false);
       setCategoryActionFeedback(`已新增分类：${createdName}`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = getErrorMessage(err);
       setCategoryActionFeedback(`新增失败：${message}`);
     } finally {
       setAddingCategory(false);

@@ -10,6 +10,7 @@ import {
   isSafeStoragePreviewCandidateUrl,
   isStoragePreviewProxyUrl
 } from '../../../services/storagePreviewService';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 export interface PreviewLoadFailure {
   url: string;
@@ -179,7 +180,7 @@ const parsePreviewErrorHttpStatus = (error: unknown): number | null => {
       return statusValue;
     }
   }
-  const message = error instanceof Error ? error.message : String(error || '');
+  const message = getErrorMessage(error);
   const match = message.match(/HTTP\s+(\d{3})/i);
   if (!match) return null;
   const statusValue = Number(match[1]);
@@ -252,7 +253,7 @@ export const useXhrImagePreview = (
           return;
         } catch (error) {
           const httpStatus = parsePreviewErrorHttpStatus(error);
-          const message = error instanceof Error ? error.message : String(error || 'Unknown preview error');
+          const message = getErrorMessage(error);
           failedPreviewUrlsRef.current.add(candidate);
           setLastFailure({
             url: candidate,

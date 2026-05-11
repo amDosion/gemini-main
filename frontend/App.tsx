@@ -16,6 +16,7 @@ import {
   ErrorView,
   WelcomeScreen,
 } from './components';
+import { getErrorMessage } from './utils/errorMessage';
 
 // ✅ 懒加载非关键视图组件（命名导出需要转换为默认导出）
 const MultiAgentView = lazy(() =>
@@ -341,7 +342,7 @@ const AppContent: React.FC = () => {
         span.end('ok');
       } catch (error) {
         span.end('error', {
-          message: error instanceof Error ? error.message : String(error),
+          message: getErrorMessage(error),
         });
         throw error;
       }

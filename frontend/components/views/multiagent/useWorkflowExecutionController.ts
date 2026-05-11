@@ -20,6 +20,7 @@ import {
   createInitialExecutionStatus,
 } from './executionStatusUtils';
 import { isWorkflowExecutionAbortError } from './workflowExecutionErrors';
+import { getErrorMessage } from '../../../utils/errorMessage';
 
 interface WorkflowExecuteRequest {
   nodes: WorkflowNode[];
@@ -253,7 +254,7 @@ export const useWorkflowExecutionController = ({
 
         const errorMessage =
           terminalFailureMessage ||
-          (error instanceof Error ? error.message : String(error));
+          (getErrorMessage(error));
 
         if (terminalFailureMessage) {
           await finalizeExecutionFailure(errorMessage, { skipStatusWrite: true });
