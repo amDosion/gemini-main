@@ -369,16 +369,19 @@ export const useSessions = (
 
   // ✅ Sprint 3 Phase B: 监听 appMode 变化——切 mode 时重置 currentSessionId 并按新 mode 重拉列表
   // 首次渲染（prevAppModeRef.current === appMode）跳过，由 initialSessions effect 处理首屏
+  //
+  // ref-mirror refreshSessions：useEffect deps 仅含 appMode；refreshSessions useCallback
+  // 引用变化（含 appMode 自身导致的 rebuild）不再触发重 fire（修复同类 mount 重复 fetch）
+  const refreshSessionsRef = useRef(refreshSessions);
+  refreshSessionsRef.current = refreshSessions;
   useEffect(() => {
     if (prevAppModeRef.current === appMode) {
       return;
     }
     prevAppModeRef.current = appMode;
-    // 立刻清空 currentSessionId，避免短暂显示其它 mode 的标题
     setCurrentSessionId(null);
-    // 按新 mode 重拉列表；refreshSessions 内部会在列表非空时设置最近一条为 current
-    refreshSessions();
-  }, [appMode, refreshSessions, setCurrentSessionId]);
+    refreshSessionsRef.current();
+  }, [appMode]);
 
   const updateSessionMessages = useCallback(
     (sessionId: string, newMessages: Message[], options?: UpdateSessionMessagesOptions) => {

@@ -66,10 +66,12 @@ export const useSessionSync = ({
 
   useEffect(() => {
     return () => {
-      cancelInFlightFetch();
+      // 不 abort fetch on unmount：StrictMode 双 mount 触发 abort → re-mount 重新 fetch
+      // 在 Network tab 看到 (canceled)。fetch 内部已 sequence check（fetchRequestSeqRef）
+      // 防 stale result 覆盖；cancelInFlightFetch 仍在 user-action session switch 时调用。
       loadingMessagesRef.current.clear();
     };
-  }, [cancelInFlightFetch]);
+  }, []);
 
   useEffect(() => {
     if (currentSessionId) {

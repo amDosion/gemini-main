@@ -164,9 +164,9 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
     // Cleanup function
     return () => {
       isMountedRef.current = false;
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
+      // 不 abort fetch：React StrictMode 双 mount 触发 cleanup → abort → re-mount
+      // 重 fetch，在 Network tab 看到 (canceled)。fetch 内部已用 isMountedRef
+      // guard 防 setState-after-unmount；abortControllerRef 仅用于 retry 时 cancel 前一次。
     };
   }, [shouldLoad, retryTrigger]); // ✅ 修改依赖：shouldLoad 替代 isAuthenticated
 

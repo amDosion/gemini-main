@@ -126,7 +126,9 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
 
   useEffect(() => {
     return () => {
-      fetchAbortControllerRef.current?.abort();
+      // 不 abort fetch on unmount：StrictMode 双 mount 触发 abort → re-mount 重 fetch
+      // 在 Network tab 看到 (canceled)。fetch 内已用 requestId / signal.aborted
+      // guard 防 stale state 覆盖；search/status 变化时 L95 主动 abort 仍有效。
     };
   }, []);
 
