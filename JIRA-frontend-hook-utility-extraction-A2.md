@@ -4,9 +4,36 @@
 Refactor / Code Quality / Maintainability
 
 ## 状态
-**Plan Ready — Approved for Implementation**
+**Done — 实施完成（分支 `refactor/frontend-hook-utility-extraction-A` HEAD `c5a31be`）**
 
-按 `HANDOFF.md` §0 #5 plan 模式 + §0 #6 agent teams 验证。
+按 `HANDOFF.md` §0 #5 plan 模式 + §0 #6 agent teams 验证完成。
+
+### 实施 commit 索引（since plan `9401547`）
+
+| Step | Commit | 内容 |
+|---|---|---|
+| plan | `9401547` | A-2 plan ticket 创建 |
+| §4 | `d5523d5` | safeJsonParse guard? 重载 + 7 case 测试 + 2 处迁移（adkSessionService.parseJsonObject / sheetStageService.parseJsonValue） |
+| §3 fix | `c5a31be` | reviewer 反馈修复（MEDIUM×2 JSDoc 补充 / LOW×2 测试加强 / 修正 plan §3 为 DISCARD） |
+
+### 6 项 follow-up 最终决策（修正后）
+
+| § | 项目 | 决策 |
+|---|---|---|
+| 1 | useMobileHistory 14 处 | DEFER（GenViewLayout 内部状态范围） |
+| 2 | useAsyncState 剩余适配 | DISCARD（0 合格 callsite） |
+| 3 | useEscapeClose 8 处 inline | **DISCARD**（修正自原 GO：全部不适合精准迁移；hook 本身已有 6 真实调用方） |
+| 4 | safeJsonParse 4 处 | GO 部分（迁移 2 处 + guard? 重载；保留 2 处 inline） |
+| 5 | instanceof Error 68 处 B 类 | DISCARD（语义边界不同） |
+| 6 | tsconfig strict | REFERENCE（独立工单） |
+
+### 最终量化指标
+
+- 85 测试套件 334/334 全绿（A-2 新增 7 case）
+- `tsc --noEmit` 0 错误
+- `prettier --check` 全过
+- `safeJsonParse` 调用从 0 升至 2（adkSessionService + sheetStageService 内部）
+- 验证：`useEscapeClose` 已被 6 文件真实消费（plan 原描述 "0 调用" 是错误）
 
 ## 前置工作
 - 改造组 A 工单（`JIRA-frontend-hook-utility-extraction.md`）实施完成 — 分支 `refactor/frontend-hook-utility-extraction-A` HEAD `4b00ad7`，17 commit
