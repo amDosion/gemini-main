@@ -21,200 +21,29 @@ import {
 } from '../../../services/skybridgeToolService';
 import { useEscapeClose } from '../../../hooks/useEscapeClose';
 import { ConfirmDialog } from '../../common/ConfirmDialog';
-
-type JsonObject = Record<string, any>;
-type TransportType = 'stdio' | 'sse' | 'http' | 'streamable-http' | 'unknown';
-type ServerMapSource = 'mcpServers' | 'root' | 'none';
-
-interface ServerCard {
-  key: string;
-  config: JsonObject;
-  transport: TransportType;
-  enabled: boolean;
-  valid: boolean;
-  summary: string;
-}
-
-interface ServerToolsState {
-  loading: boolean;
-  loaded: boolean;
-  tools: Array<{ name: string; description?: string }>;
-  fetchedAt?: number;
-  cacheHit?: boolean;
-  error?: string;
-}
-
-interface ServerInvokeState {
-  open: boolean;
-  toolName: string;
-  argsText: string;
-  running: boolean;
-  result?: unknown;
-  latencyMs?: number;
-  error?: string;
-  mode?: 'backend' | 'skybridge';
-  notice?: string;
-}
-
-const TOOL_PREVIEW_COUNT = 8;
-const TOOL_CACHE_TTL_MS = 60 * 1000;
-
-const DEFAULT_CONFIG_TEMPLATE = {
-  mcpServers: {},
-};
-
-const NEW_SERVER_TEMPLATE = {
-  name: '',
-  serverType: 'stdio',
-  command: '',
-  args: [],
-};
-
-const KNOWN_SERVER_FIELDS = new Set([
-  'command',
-  'args',
-  'env',
-  'url',
-  'introUrl',
-  'timeout',
-  'type',
-  'serverType',
-  'server_type',
-  'enabled',
-  'disabled',
-  'headers',
-]);
-
-const isPlainObject = (value: unknown): value is JsonObject =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const formatTime = (iso?: string | null): string => {
-  if (!iso) return '-';
-  const time = new Date(iso);
-  if (Number.isNaN(time.getTime())) return '-';
-  return time.toLocaleString();
-};
-
-const parseRootObject = (jsonText: string): JsonObject => {
-  const parsed = JSON.parse((jsonText || '').trim() || '{}');
-  if (!isPlainObject(parsed)) {
-    throw new Error('MCP config root must be a JSON object');
-  }
-  return parsed;
-};
-
-const isRootServerMap = (root: JsonObject): boolean => {
-  const entries = Object.entries(root);
-  if (entries.length === 0) return false;
-  if (entries.some(([key]) => KNOWN_SERVER_FIELDS.has(key))) return false;
-  return entries.every(([, value]) => isPlainObject(value));
-};
-
-const extractServerMap = (
-  root: JsonObject
-): { map: Record<string, JsonObject>; source: ServerMapSource } => {
-  if (isPlainObject(root.mcpServers)) {
-    const map: Record<string, JsonObject> = {};
-    Object.entries(root.mcpServers).forEach(([key, value]) => {
-      if (isPlainObject(value)) map[key] = value;
-    });
-    return { map, source: 'mcpServers' };
-  }
-
-  if (isRootServerMap(root)) {
-    const map: Record<string, JsonObject> = {};
-    Object.entries(root).forEach(([key, value]) => {
-      if (isPlainObject(value)) map[key] = value;
-    });
-    return { map, source: 'root' };
-  }
-
-  return { map: {}, source: 'none' };
-};
-
-const detectTransport = (config: JsonObject): TransportType => {
-  const explicit = String(
-    config.serverType ?? config.server_type ?? config.type ?? ''
-  ).trim().toLowerCase();
-
-  if (explicit === 'stdio' || explicit === 'sse' || explicit === 'http') {
-    return explicit;
-  }
-  if (explicit === 'streamablehttp' || explicit === 'streamable_http' || explicit === 'streamable-http') {
-    return 'streamable-http';
-  }
-  if (config.command) return 'stdio';
-  if (config.url) return 'http';
-  return 'unknown';
-};
-
-const buildSummary = (transport: TransportType, config: JsonObject): string => {
-  if (transport === 'stdio') {
-    const command = String(config.command || '').trim();
-    const args = Array.isArray(config.args) ? config.args.join(' ') : '';
-    if (!command) return 'Missing command';
-    return args ? `${command} ${args}` : command;
-  }
-  if (transport === 'sse' || transport === 'http' || transport === 'streamable-http') {
-    const url = String(config.url || '').trim();
-    return url || 'Missing URL';
-  }
-  return 'Unknown transport';
-};
-
-const validateServer = (transport: TransportType, config: JsonObject): boolean => {
-  if (transport === 'stdio') return !!String(config.command || '').trim();
-  if (transport === 'sse' || transport === 'http' || transport === 'streamable-http') {
-    return !!String(config.url || '').trim();
-  }
-  return false;
-};
-
-const extractServersFromDialogJson = (payload: JsonObject): Record<string, JsonObject> => {
-  if (isPlainObject(payload.mcpServers)) {
-    const map: Record<string, JsonObject> = {};
-    Object.entries(payload.mcpServers).forEach(([key, value]) => {
-      if (isPlainObject(value)) map[key] = value;
-    });
-    if (Object.keys(map).length > 0) return map;
-  }
-
-  if (isRootServerMap(payload)) {
-    const map: Record<string, JsonObject> = {};
-    Object.entries(payload).forEach(([key, value]) => {
-      if (isPlainObject(value)) map[key] = value;
-    });
-    if (Object.keys(map).length > 0) return map;
-  }
-
-  const serverKey = String(payload.name ?? payload.key ?? payload.id ?? '').trim();
-  if (!serverKey) {
-    throw new Error('JSON must contain `mcpServers` or a `name` field');
-  }
-
-  const nextConfig: JsonObject = { ...payload };
-  delete nextConfig.name;
-  delete nextConfig.key;
-  delete nextConfig.id;
-
-  return {
-    [serverKey]: nextConfig,
-  };
-};
-
-const buildPersistedRoot = (
-  previousRoot: JsonObject,
-  source: ServerMapSource,
-  servers: Record<string, JsonObject>
-): JsonObject => {
-  if (source === 'mcpServers') {
-    return { ...previousRoot, mcpServers: servers };
-  }
-  if (source === 'none' && Object.keys(previousRoot).length > 0) {
-    return { ...previousRoot, mcpServers: servers };
-  }
-  return { mcpServers: servers };
-};
+import {
+  type JsonObject,
+  type TransportType,
+  type ServerMapSource,
+  type ServerCard,
+  type ServerToolsState,
+  type ServerInvokeState,
+  TOOL_PREVIEW_COUNT,
+  TOOL_CACHE_TTL_MS,
+  DEFAULT_CONFIG_TEMPLATE,
+  NEW_SERVER_TEMPLATE,
+  KNOWN_SERVER_FIELDS,
+  isPlainObject,
+  formatTime,
+  parseRootObject,
+  isRootServerMap,
+  extractServerMap,
+  detectTransport,
+  buildSummary,
+  validateServer,
+  extractServersFromDialogJson,
+  buildPersistedRoot,
+} from './mcpTabHelpers';
 
 export const McpTab: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
