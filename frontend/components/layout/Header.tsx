@@ -36,59 +36,14 @@ interface HeaderProps {
     onLogout?: () => void;
 }
 
-const getModelIcon = (model: ModelConfig) => {
-    const id = model.id.toLowerCase();
-    // 视频生成模型
-    if (id.includes('veo') || id.includes('sora') || id.includes('luma')) return Video;
-    // 音频生成模型
-    if (id.includes('tts') || id.includes('audio') || id.includes('speech')) return Mic;
-    // 文生图模型：统一使用 Zap 图标
-    if (id.includes('-t2i') || id.includes('z-image') || id.includes('wanx') || id.includes('wan2') || id.includes('dall') || id.includes('flux') || id.includes('midjourney') || id.includes('imagen')) return Zap;
-    // 代码模型
-    if (model.capabilities.coding) return BrainCircuit;
-    // 推理模型
-    if (model.capabilities.reasoning) return Brain;
-    // 搜索模型
-    if (model.capabilities.search) return Globe;
-    // 视觉理解模型（不是文生图）
-    if (model.capabilities.vision) return ImageIcon;
-    // Pro 模型
-    if (id.includes('pro')) return BrainCircuit;
-    // 默认
-    return Zap;
-};
-
-const getProviderIcon = (pid: string) => {
-    if (pid.includes('google')) return <Zap size={14} />;
-    if (pid.includes('deepseek')) return <Cpu size={14} />;
-    if (pid.includes('tongyi')) return <Globe size={14} />;
-    if (pid.includes('openai')) return <Sparkles size={14} />;
-    if (pid.includes('grok')) return <Flame size={14} className="text-orange-400" />;
-    return <Server size={14} />;
-};
-
-const formatBytes = (bytes?: number | null): string => {
-    if (bytes === null || bytes === undefined || Number.isNaN(bytes)) return '—';
-    if (bytes === 0) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const base = Math.floor(Math.log(bytes) / Math.log(1024));
-    const index = Math.min(base, units.length - 1);
-    const value = bytes / Math.pow(1024, index);
-    return `${value.toFixed(value >= 100 || index === 0 ? 0 : 1)} ${units[index]}`;
-};
-
-const formatPercent = (value?: number | null): string => {
-    if (value === null || value === undefined || Number.isNaN(value)) return '—';
-    return `${value.toFixed(1)}%`;
-};
-
-const normalizeNumberInput = (value: string): number | '' => {
-    if (value === '') return '';
-    const n = Number(value);
-    return Number.isFinite(n) ? n : '';
-};
-
-const SYSTEM_STATUS_POLL_INTERVAL_MS = 2000;
+import {
+  getModelIcon,
+  getProviderIcon,
+  formatBytes,
+  formatPercent,
+  normalizeNumberInput,
+  SYSTEM_STATUS_POLL_INTERVAL_MS,
+} from './headerHelpers';
 
 export const Header: React.FC<HeaderProps> = ({
     isSidebarOpen,
