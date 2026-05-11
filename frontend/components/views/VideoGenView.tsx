@@ -39,6 +39,10 @@ import {
   type HoverPromptPreviewBase,
 } from '../../hooks/useHoverPromptPreview';
 import { useActionMenu, type ActionMenuAnchorBase } from '../../hooks/useActionMenu';
+import {
+  extractHistoryPrompts,
+  extractVideoHistoryMeta,
+} from '../../utils/videoHistoryHelpers';
 
 interface VideoGenViewProps {
   messages: Message[];
@@ -55,99 +59,8 @@ interface VideoGenViewProps {
   onDeleteMessage?: (messageId: string) => void;
 }
 
-const extractHistoryPrompts = (
-  msg: Message
-): { originalPrompt: string; optimizedPrompt: string } => {
-  const rawContent = (msg.content || '').trim();
-  const attachmentEnhancedPrompt = msg.attachments
-    ?.find((att) => att.enhancedPrompt?.trim())
-    ?.enhancedPrompt?.trim();
-
-  let originalPrompt = rawContent;
-  let optimizedPrompt = msg.enhancedPrompt?.trim() || attachmentEnhancedPrompt || '';
-
-  const legacyPromptMatch = rawContent.match(/^Video generated for:\s*"([\s\S]*)"$/);
-  if (legacyPromptMatch) {
-    originalPrompt = (legacyPromptMatch[1] || '').trim();
-  }
-
-  const promptPairMatch = rawContent.match(/^📝\s*([\s\S]*?)(?:\n✨\s*([\s\S]*))?$/);
-  if (promptPairMatch) {
-    originalPrompt = (promptPairMatch[1] || '').trim();
-    if (!optimizedPrompt && promptPairMatch[2]) {
-      optimizedPrompt = promptPairMatch[2].trim();
-    }
-  } else {
-    const originalOnlyMatch = rawContent.match(/^📝\s*([\s\S]*)$/);
-    if (originalOnlyMatch) {
-      originalPrompt = originalOnlyMatch[1].trim();
-    }
-
-    if (!optimizedPrompt) {
-      const optimizedOnlyMatch = rawContent.match(/^✨\s*([\s\S]*)$/);
-      if (optimizedOnlyMatch) {
-        optimizedPrompt = optimizedOnlyMatch[1].trim();
-      }
-    }
-  }
-
-  return {
-    originalPrompt: originalPrompt || 'Generated Video Batch',
-    optimizedPrompt,
-  };
-};
-
-const extractVideoHistoryMeta = (
-  msg: Message
-): {
-  extensionCount: number;
-  totalDurationSeconds: number | null;
-  strategyLabel: string | null;
-  subtitleLabel: string | null;
-  subtitleCount: number;
-} => {
-  const extensionCount = Number.isFinite(msg.videoExtensionApplied)
-    ? Number(msg.videoExtensionApplied)
-    : Number.isFinite(msg.videoExtensionCount)
-      ? Number(msg.videoExtensionCount)
-      : 0;
-  const totalDurationSeconds = Number.isFinite(msg.totalDurationSeconds)
-    ? Number(msg.totalDurationSeconds)
-    : null;
-  const continuationStrategy = String(msg.continuationStrategy || '').trim();
-
-  let strategyLabel: string | null = null;
-  if (continuationStrategy === 'video_extension_chain') {
-    strategyLabel = '官方延长';
-  } else if (continuationStrategy === 'last_frame_bridge_chain') {
-    strategyLabel = '末帧桥接延长';
-  } else if (continuationStrategy === 'video_extension') {
-    strategyLabel = '视频续接';
-  } else if (continuationStrategy === 'last_frame_bridge') {
-    strategyLabel = '末帧桥接';
-  }
-
-  const subtitleMode = String(msg.subtitleMode || '')
-    .trim()
-    .toLowerCase();
-  const subtitleCount = Array.isArray(msg.subtitleAttachmentIds)
-    ? msg.subtitleAttachmentIds.length
-    : 0;
-  let subtitleLabel: string | null = null;
-  if (subtitleMode === 'both' || subtitleMode === 'vtt' || subtitleMode === 'srt') {
-    subtitleLabel = '字幕';
-  } else if (subtitleCount > 0) {
-    subtitleLabel = '字幕附件';
-  }
-
-  return {
-    extensionCount: extensionCount > 0 ? extensionCount : 0,
-    totalDurationSeconds,
-    strategyLabel,
-    subtitleLabel,
-    subtitleCount,
-  };
-};
+// extractHistoryPrompts / extractVideoHistoryMeta 抽离至 utils/videoHistoryHelpers
+// （JIRA-frontend-view-decomposition.md P1 #4 Step 1）
 
 type ActionMenuAnchor = ActionMenuAnchorBase;
 
