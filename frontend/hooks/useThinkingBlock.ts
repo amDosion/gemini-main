@@ -66,7 +66,7 @@ function buildFullContent(messages: readonly Message[]): string {
 export function useThinkingBlock(
   messages: readonly Message[],
   loadingState: string,
-  options?: UseThinkingBlockOptions,
+  options?: UseThinkingBlockOptions
 ): UseThinkingBlockResult {
   const chunkSize = options?.chunkSize ?? DEFAULT_CHUNK_SIZE;
   const delayMs = options?.delayMs ?? DEFAULT_DELAY_MS;

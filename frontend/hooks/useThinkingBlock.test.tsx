@@ -54,7 +54,7 @@ describe('useThinkingBlock', () => {
     ];
 
     const { result } = renderHook(() =>
-      useThinkingBlock(messages, 'loading', { chunkSize: 5, delayMs: 30 }),
+      useThinkingBlock(messages, 'loading', { chunkSize: 5, delayMs: 30 })
     );
 
     // Initial render: nothing displayed yet (timer pending)
@@ -105,7 +105,7 @@ describe('useThinkingBlock', () => {
       makeModelMessage({ thoughts: [{ type: 'text', content: 'long content here' }] }),
     ];
     const { unmount } = renderHook(() =>
-      useThinkingBlock(messages, 'loading', { chunkSize: 1, delayMs: 100 }),
+      useThinkingBlock(messages, 'loading', { chunkSize: 1, delayMs: 100 })
     );
 
     // Timer is scheduled but not fired
