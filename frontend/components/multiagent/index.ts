@@ -46,13 +46,12 @@ export { usePerformanceOptimization, useMemoizedComputation, useThrottle } from 
 export {
   validateWorkflow,
   calculateWorkflowStatistics,
-  exportWorkflow,
-  importWorkflow,
   findPath,
   detectCycles,
   getExecutionOrder,
   autoLayoutWorkflow,
 } from './workflowUtils';
+export { exportWorkflow, importWorkflow } from './workflowSerialization';
 
 // Styling
 export {

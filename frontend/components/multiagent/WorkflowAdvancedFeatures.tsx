@@ -12,7 +12,8 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { Node, Edge } from 'reactflow';
 import { Download, Upload, Undo, Redo, Keyboard } from 'lucide-react';
 import { CustomNodeData } from './CustomNode';
-import { exportWorkflow, importWorkflow, validateWorkflow } from './workflowUtils';
+import { validateWorkflow } from './workflowUtils';
+import { exportWorkflow, importWorkflow } from './workflowSerialization';
 import { useToastContext } from '../../contexts/ToastContext';
 
 interface WorkflowAdvancedFeaturesProps {
