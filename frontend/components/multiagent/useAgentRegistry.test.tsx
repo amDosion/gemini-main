@@ -2,7 +2,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentDef } from './types';
-import { useAgentRegistry } from './useAgentRegistry';
+import { useAgentRegistry, __resetAgentRegistryCacheForTesting } from './useAgentRegistry';
 
 interface AgentListFetchResult {
   agents: AgentDef[];
@@ -11,10 +11,7 @@ interface AgentListFetchResult {
   inactiveCount: number;
 }
 
-const {
-  fetchAgentListMock,
-  subscribeAgentRegistryUpdatedMock,
-} = vi.hoisted(() => ({
+const { fetchAgentListMock, subscribeAgentRegistryUpdatedMock } = vi.hoisted(() => ({
   fetchAgentListMock: vi.fn(),
   subscribeAgentRegistryUpdatedMock: vi.fn(),
 }));
@@ -61,14 +58,13 @@ describe('useAgentRegistry', () => {
     fetchAgentListMock.mockReset();
     subscribeAgentRegistryUpdatedMock.mockReset();
     subscribeAgentRegistryUpdatedMock.mockReturnValue(() => {});
+    __resetAgentRegistryCacheForTesting();
   });
 
   it('ignores stale response when a newer refresh resolves first', async () => {
     const first = createDeferred<AgentListFetchResult>();
     const second = createDeferred<AgentListFetchResult>();
-    fetchAgentListMock
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise);
+    fetchAgentListMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
 
     const { result } = renderHook(() => useAgentRegistry());
     await waitFor(() => {

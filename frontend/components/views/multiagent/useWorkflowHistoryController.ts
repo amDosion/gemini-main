@@ -35,10 +35,13 @@ interface UseWorkflowHistoryControllerResult {
   historyError: string | null;
   displayedWorkflowHistory: WorkflowHistoryItem[];
   historyPreviewImages: Record<string, string[]>;
-  historyPreviewMedia: Record<string, {
-    audioItems: WorkflowHistoryMediaPreviewItem[];
-    videoItems: WorkflowHistoryMediaPreviewItem[];
-  }>;
+  historyPreviewMedia: Record<
+    string,
+    {
+      audioItems: WorkflowHistoryMediaPreviewItem[];
+      videoItems: WorkflowHistoryMediaPreviewItem[];
+    }
+  >;
   expandedPreviewHistoryId: string | null;
   selectedHistoryId: string | null;
   loadingHistoryId: string | null;
@@ -75,7 +78,9 @@ export const useWorkflowHistoryController = ({
   const [downloadingHistoryId, setDownloadingHistoryId] = useState<string | null>(null);
   const [downloadingAnalysisId, setDownloadingAnalysisId] = useState<string | null>(null);
   const [downloadMediaProgress, setDownloadMediaProgress] = useState<Record<string, number>>({});
-  const [downloadAnalysisProgress, setDownloadAnalysisProgress] = useState<Record<string, number>>({});
+  const [downloadAnalysisProgress, setDownloadAnalysisProgress] = useState<Record<string, number>>(
+    {}
+  );
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [workflowLoadRequest, setWorkflowLoadRequest] = useState<WorkflowLoadRequest | null>(null);
   const [historySearchQuery, setHistorySearchQuery] = useState('');
@@ -144,24 +149,22 @@ export const useWorkflowHistoryController = ({
     const continuationStrategy = String(
       resultSummary?.continuationStrategy ?? resultSummary?.continuation_strategy ?? ''
     ).trim();
-    const videoExtensionCount = Number(
-      resultSummary?.videoExtensionCount ?? resultSummary?.video_extension_count ?? 0
-    ) || 0;
-    const videoExtensionApplied = Number(
-      resultSummary?.videoExtensionApplied ?? resultSummary?.video_extension_applied ?? 0
-    ) || 0;
-    const totalDurationSeconds = Number(
-      resultSummary?.totalDurationSeconds ?? resultSummary?.total_duration_seconds ?? 0
-    ) || 0;
+    const videoExtensionCount =
+      Number(resultSummary?.videoExtensionCount ?? resultSummary?.video_extension_count ?? 0) || 0;
+    const videoExtensionApplied =
+      Number(resultSummary?.videoExtensionApplied ?? resultSummary?.video_extension_applied ?? 0) ||
+      0;
+    const totalDurationSeconds =
+      Number(resultSummary?.totalDurationSeconds ?? resultSummary?.total_duration_seconds ?? 0) ||
+      0;
     const continuedFromVideo = Boolean(
       resultSummary?.continuedFromVideo ?? resultSummary?.continued_from_video ?? false
     );
     const subtitleMode = String(
       resultSummary?.subtitleMode ?? resultSummary?.subtitle_mode ?? ''
     ).trim();
-    const subtitleFileCount = Number(
-      resultSummary?.subtitleFileCount ?? resultSummary?.subtitle_file_count ?? 0
-    ) || 0;
+    const subtitleFileCount =
+      Number(resultSummary?.subtitleFileCount ?? resultSummary?.subtitle_file_count ?? 0) || 0;
     const runtimeHintsRaw = Array.isArray(resultSummary?.runtimeHints)
       ? resultSummary.runtimeHints
       : [];
@@ -216,7 +219,8 @@ export const useWorkflowHistoryController = ({
     const controller = createRequestController();
     historyListControllerRef.current = controller;
     const isStaleRequest = () =>
-      requestSeq !== historyListRequestSeqRef.current || historyListControllerRef.current !== controller;
+      requestSeq !== historyListRequestSeqRef.current ||
+      historyListControllerRef.current !== controller;
     if (isMountedRef.current) {
       setHistoryLoading(true);
       setHistoryError(null);
@@ -229,7 +233,9 @@ export const useWorkflowHistoryController = ({
         errorMessage: '加载工作流历史失败',
       });
       if (!isMountedRef.current || controller.signal.aborted || isStaleRequest()) return;
-      const items = Array.isArray(payload?.executions) ? payload.executions.map(mapHistoryItem) : [];
+      const items = Array.isArray(payload?.executions)
+        ? payload.executions.map(mapHistoryItem)
+        : [];
       setWorkflowHistory(items);
     } catch (error) {
       if (
@@ -253,228 +259,250 @@ export const useWorkflowHistoryController = ({
     }
   }, [createRequestController, mapHistoryItem, releaseRequestController]);
 
-  const handleLoadWorkflowFromHistory = useCallback(async (executionId: string) => {
-    stopActiveExecutionFlow();
-    historyDetailRequestSeqRef.current += 1;
-    const requestSeq = historyDetailRequestSeqRef.current;
+  const handleLoadWorkflowFromHistory = useCallback(
+    async (executionId: string) => {
+      stopActiveExecutionFlow();
+      historyDetailRequestSeqRef.current += 1;
+      const requestSeq = historyDetailRequestSeqRef.current;
 
-    const previousController = historyDetailControllerRef.current;
-    if (previousController) {
-      previousController.abort();
-      releaseRequestController(previousController);
-      historyDetailControllerRef.current = null;
-    }
-
-    const controller = createRequestController();
-    historyDetailControllerRef.current = controller;
-    const isStaleRequest = () =>
-      requestSeq !== historyDetailRequestSeqRef.current ||
-      historyDetailControllerRef.current !== controller;
-    if (isMountedRef.current) {
-      setLoadingHistoryId(executionId);
-    }
-    try {
-      const payload = await requestJson<any>(`/api/workflows/history/${executionId}`, {
-        withAuth: true,
-        signal: controller.signal,
-        timeoutMs: 0,
-        errorMessage: '加载历史详情失败',
-      });
-      if (!isMountedRef.current || controller.signal.aborted || isStaleRequest()) return;
-
-      const workflow = payload?.workflow || {};
-      const input = payload?.input || {};
-      const nodes = Array.isArray(workflow?.nodes) ? workflow.nodes : [];
-      const edges = Array.isArray(workflow?.edges) ? workflow.edges : [];
-      const promptFromInput = input?.task || input?.prompt || '';
-      const workflowName = payload?.title || payload?.task || `执行记录 ${executionId.slice(0, 8)}`;
-
-      const summaryImageCount = Number(payload?.resultSummary?.imageCount || 0);
-      const summaryAudioCount = Number(payload?.resultSummary?.audioCount || 0);
-      const summaryVideoCount = Number(payload?.resultSummary?.videoCount || 0);
-      const [previewImagesForResult, previewMediaForResult] = await Promise.all([
-        resolveHistoryDetailPreviewImages({
-          executionId,
-          summaryImageCount,
-          signal: controller.signal,
-          isStaleRequest,
-        }),
-        resolveHistoryDetailPreviewMedia({
-          executionId,
-          summaryAudioCount,
-          summaryVideoCount,
-          signal: controller.signal,
-          isStaleRequest,
-        }),
-      ]);
-      if (previewImagesForResult === null || previewMediaForResult === null) {
-        return;
-      }
-
-      setExecutionStatus(buildExecutionStatusFromHistoryDetail(payload, {
-        imageUrls: previewImagesForResult,
-        audioUrls: previewMediaForResult.audioUrls,
-        videoUrls: previewMediaForResult.videoUrls,
-      }));
-      setWorkflowLoadRequest({
-        token: `${executionId}-${Date.now()}`,
-        name: workflowName,
-        prompt: promptFromInput,
-        input: input && typeof input === 'object' && !Array.isArray(input) ? input : {},
-        nodes,
-        edges,
-      });
-      setSelectedHistoryId(executionId);
-    } catch (error) {
-      if (
-        isWorkflowExecutionAbortError(error) ||
-        !isMountedRef.current ||
-        controller.signal.aborted ||
-        isStaleRequest()
-      ) {
-        return;
-      }
-      const message = error instanceof Error ? error.message : '加载历史详情失败';
-      showError(message);
-    } finally {
-      releaseRequestController(controller);
-      if (historyDetailControllerRef.current === controller) {
+      const previousController = historyDetailControllerRef.current;
+      if (previousController) {
+        previousController.abort();
+        releaseRequestController(previousController);
         historyDetailControllerRef.current = null;
       }
-      if (isMountedRef.current && requestSeq === historyDetailRequestSeqRef.current) {
-        setLoadingHistoryId(null);
-      }
-    }
-  }, [
-    createRequestController,
-    releaseRequestController,
-    resolveHistoryDetailPreviewImages,
-    resolveHistoryDetailPreviewMedia,
-    setExecutionStatus,
-    stopActiveExecutionFlow,
-    showError,
-  ]);
 
-  const handleDeleteWorkflowHistory = useCallback(async (executionId: string) => {
-    const controller = createRequestController();
-    if (isMountedRef.current) {
-      setDeletingHistoryId(executionId);
-    }
-    try {
-      await requestJson(`/api/workflows/history/${executionId}`, {
-        method: 'DELETE',
-        withAuth: true,
-        signal: controller.signal,
-        timeoutMs: 0,
-        errorMessage: '删除工作流历史失败',
-      });
-      if (!isMountedRef.current || controller.signal.aborted) return;
-
-      setWorkflowHistory((prev) => prev.filter((item) => item.id !== executionId));
-      setSelectedHistoryId((prev) => (prev === executionId ? null : prev));
-      setExpandedPreviewHistoryId((prev) => (prev === executionId ? null : prev));
-      removeHistoryPreviewImageCache(executionId);
-      removeHistoryPreviewMediaCache(executionId);
-      setDownloadMediaProgress((prev) => removeRecordKey(prev, executionId));
-      setDownloadAnalysisProgress((prev) => removeRecordKey(prev, executionId));
-    } catch (error) {
-      if (isWorkflowExecutionAbortError(error) || !isMountedRef.current || controller.signal.aborted) return;
-      const message = error instanceof Error ? error.message : '删除工作流历史失败';
-      showError(message);
-    } finally {
-      releaseRequestController(controller);
+      const controller = createRequestController();
+      historyDetailControllerRef.current = controller;
+      const isStaleRequest = () =>
+        requestSeq !== historyDetailRequestSeqRef.current ||
+        historyDetailControllerRef.current !== controller;
       if (isMountedRef.current) {
-        setDeletingHistoryId(null);
+        setLoadingHistoryId(executionId);
       }
-    }
-  }, [
-    createRequestController,
-    releaseRequestController,
-    removeHistoryPreviewImageCache,
-    removeHistoryPreviewMediaCache,
-    showError,
-  ]);
+      try {
+        const payload = await requestJson<any>(`/api/workflows/history/${executionId}`, {
+          withAuth: true,
+          signal: controller.signal,
+          timeoutMs: 0,
+          errorMessage: '加载历史详情失败',
+        });
+        if (!isMountedRef.current || controller.signal.aborted || isStaleRequest()) return;
 
-  const handleDownloadWorkflowMedia = useCallback(async (item: WorkflowHistoryItem) => {
-    if (!item?.id) return;
-    const mediaKind = item.resultImageCount > 0
-      ? 'images'
-      : item.resultVideoCount > 0
-        ? 'video'
-        : item.resultAudioCount > 0
-          ? 'audio'
-          : null;
-    if (!mediaKind) return;
-    if (isMountedRef.current) {
-      setDownloadingHistoryId(item.id);
-      setDownloadMediaProgress((prev) => ({ ...prev, [item.id]: 0 }));
-    }
-    try {
-      const { blob, headers } = await downloadBlobWithXhr({
-        url: `/api/workflows/history/${item.id}/${mediaKind}/download`,
-        headers: getAuthHeaders(),
-        withCredentials: true,
-        timeoutMs: 180000,
-        onDownloadProgress: (progress) => {
-          if (!isMountedRef.current) return;
-          if (progress.percent === null) return;
-          setDownloadMediaProgress((prev) => ({ ...prev, [item.id]: progress.percent || 0 }));
-        },
-      });
-      if (!isMountedRef.current) return;
-      const contentDisposition = headers['content-disposition'] || '';
-      const fallbackName = `workflow-${item.id.slice(0, 8)}-${mediaKind}.zip`;
-      const fileName = inferFileNameFromContentDisposition(contentDisposition, fallbackName);
-      downloadBlobInBrowser({ blob, fileName });
-    } catch (error) {
-      if (!isMountedRef.current) return;
-      const message = error instanceof Error ? error.message : '下载结果媒体失败';
-      showError(message);
-    } finally {
-      if (!isMountedRef.current) return;
-      setDownloadingHistoryId(null);
-      setDownloadMediaProgress((prev) => removeRecordKey(prev, item.id));
-    }
-  }, [showError]);
+        const workflow = payload?.workflow || {};
+        const input = payload?.input || {};
+        const nodes = Array.isArray(workflow?.nodes) ? workflow.nodes : [];
+        const edges = Array.isArray(workflow?.edges) ? workflow.edges : [];
+        const promptFromInput = input?.task || input?.prompt || '';
+        const workflowName =
+          payload?.title || payload?.task || `执行记录 ${executionId.slice(0, 8)}`;
 
-  const handleDownloadWorkflowAnalysis = useCallback(async (item: WorkflowHistoryItem) => {
-    if (!item?.id) return;
-    if (isMountedRef.current) {
-      setDownloadingAnalysisId(item.id);
-      setDownloadAnalysisProgress((prev) => ({ ...prev, [item.id]: 0 }));
-    }
-    try {
-      const { blob, headers } = await downloadBlobWithXhr({
-        url: `/api/workflows/history/${item.id}/analysis/download`,
-        headers: getAuthHeaders(),
-        withCredentials: true,
-        timeoutMs: 180000,
-        onDownloadProgress: (progress) => {
-          if (!isMountedRef.current) return;
-          if (progress.percent === null) return;
-          setDownloadAnalysisProgress((prev) => ({ ...prev, [item.id]: progress.percent || 0 }));
-        },
-      });
-      if (!isMountedRef.current) return;
-      const contentDisposition = headers['content-disposition'] || '';
-      const fallbackName = `workflow-${item.id.slice(0, 8)}-analysis.xlsx`;
-      const fileName = inferFileNameFromContentDisposition(contentDisposition, fallbackName);
-      downloadBlobInBrowser({ blob, fileName });
-    } catch (error) {
-      if (!isMountedRef.current) return;
-      const message = error instanceof Error ? error.message : '下载分析结果失败';
-      showError(message);
-    } finally {
-      if (!isMountedRef.current) return;
-      setDownloadingAnalysisId(null);
-      setDownloadAnalysisProgress((prev) => removeRecordKey(prev, item.id));
-    }
-  }, [showError]);
+        const summaryImageCount = Number(payload?.resultSummary?.imageCount || 0);
+        const summaryAudioCount = Number(payload?.resultSummary?.audioCount || 0);
+        const summaryVideoCount = Number(payload?.resultSummary?.videoCount || 0);
+        const [previewImagesForResult, previewMediaForResult] = await Promise.all([
+          resolveHistoryDetailPreviewImages({
+            executionId,
+            summaryImageCount,
+            signal: controller.signal,
+            isStaleRequest,
+          }),
+          resolveHistoryDetailPreviewMedia({
+            executionId,
+            summaryAudioCount,
+            summaryVideoCount,
+            signal: controller.signal,
+            isStaleRequest,
+          }),
+        ]);
+        if (previewImagesForResult === null || previewMediaForResult === null) {
+          return;
+        }
+
+        setExecutionStatus(
+          buildExecutionStatusFromHistoryDetail(payload, {
+            imageUrls: previewImagesForResult,
+            audioUrls: previewMediaForResult.audioUrls,
+            videoUrls: previewMediaForResult.videoUrls,
+          })
+        );
+        setWorkflowLoadRequest({
+          token: `${executionId}-${Date.now()}`,
+          name: workflowName,
+          prompt: promptFromInput,
+          input: input && typeof input === 'object' && !Array.isArray(input) ? input : {},
+          nodes,
+          edges,
+        });
+        setSelectedHistoryId(executionId);
+      } catch (error) {
+        if (
+          isWorkflowExecutionAbortError(error) ||
+          !isMountedRef.current ||
+          controller.signal.aborted ||
+          isStaleRequest()
+        ) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : '加载历史详情失败';
+        showError(message);
+      } finally {
+        releaseRequestController(controller);
+        if (historyDetailControllerRef.current === controller) {
+          historyDetailControllerRef.current = null;
+        }
+        if (isMountedRef.current && requestSeq === historyDetailRequestSeqRef.current) {
+          setLoadingHistoryId(null);
+        }
+      }
+    },
+    [
+      createRequestController,
+      releaseRequestController,
+      resolveHistoryDetailPreviewImages,
+      resolveHistoryDetailPreviewMedia,
+      setExecutionStatus,
+      stopActiveExecutionFlow,
+      showError,
+    ]
+  );
+
+  const handleDeleteWorkflowHistory = useCallback(
+    async (executionId: string) => {
+      const controller = createRequestController();
+      if (isMountedRef.current) {
+        setDeletingHistoryId(executionId);
+      }
+      try {
+        await requestJson(`/api/workflows/history/${executionId}`, {
+          method: 'DELETE',
+          withAuth: true,
+          signal: controller.signal,
+          timeoutMs: 0,
+          errorMessage: '删除工作流历史失败',
+        });
+        if (!isMountedRef.current || controller.signal.aborted) return;
+
+        setWorkflowHistory((prev) => prev.filter((item) => item.id !== executionId));
+        setSelectedHistoryId((prev) => (prev === executionId ? null : prev));
+        setExpandedPreviewHistoryId((prev) => (prev === executionId ? null : prev));
+        removeHistoryPreviewImageCache(executionId);
+        removeHistoryPreviewMediaCache(executionId);
+        setDownloadMediaProgress((prev) => removeRecordKey(prev, executionId));
+        setDownloadAnalysisProgress((prev) => removeRecordKey(prev, executionId));
+      } catch (error) {
+        if (
+          isWorkflowExecutionAbortError(error) ||
+          !isMountedRef.current ||
+          controller.signal.aborted
+        )
+          return;
+        const message = error instanceof Error ? error.message : '删除工作流历史失败';
+        showError(message);
+      } finally {
+        releaseRequestController(controller);
+        if (isMountedRef.current) {
+          setDeletingHistoryId(null);
+        }
+      }
+    },
+    [
+      createRequestController,
+      releaseRequestController,
+      removeHistoryPreviewImageCache,
+      removeHistoryPreviewMediaCache,
+      showError,
+    ]
+  );
+
+  const handleDownloadWorkflowMedia = useCallback(
+    async (item: WorkflowHistoryItem) => {
+      if (!item?.id) return;
+      const mediaKind =
+        item.resultImageCount > 0
+          ? 'images'
+          : item.resultVideoCount > 0
+            ? 'video'
+            : item.resultAudioCount > 0
+              ? 'audio'
+              : null;
+      if (!mediaKind) return;
+      if (isMountedRef.current) {
+        setDownloadingHistoryId(item.id);
+        setDownloadMediaProgress((prev) => ({ ...prev, [item.id]: 0 }));
+      }
+      try {
+        const { blob, headers } = await downloadBlobWithXhr({
+          url: `/api/workflows/history/${item.id}/${mediaKind}/download`,
+          headers: getAuthHeaders(),
+          withCredentials: true,
+          timeoutMs: 180000,
+          onDownloadProgress: (progress) => {
+            if (!isMountedRef.current) return;
+            if (progress.percent === null) return;
+            setDownloadMediaProgress((prev) => ({ ...prev, [item.id]: progress.percent || 0 }));
+          },
+        });
+        if (!isMountedRef.current) return;
+        const contentDisposition = headers['content-disposition'] || '';
+        const fallbackName = `workflow-${item.id.slice(0, 8)}-${mediaKind}.zip`;
+        const fileName = inferFileNameFromContentDisposition(contentDisposition, fallbackName);
+        downloadBlobInBrowser({ blob, fileName });
+      } catch (error) {
+        if (!isMountedRef.current) return;
+        const message = error instanceof Error ? error.message : '下载结果媒体失败';
+        showError(message);
+      } finally {
+        if (!isMountedRef.current) return;
+        setDownloadingHistoryId(null);
+        setDownloadMediaProgress((prev) => removeRecordKey(prev, item.id));
+      }
+    },
+    [showError]
+  );
+
+  const handleDownloadWorkflowAnalysis = useCallback(
+    async (item: WorkflowHistoryItem) => {
+      if (!item?.id) return;
+      if (isMountedRef.current) {
+        setDownloadingAnalysisId(item.id);
+        setDownloadAnalysisProgress((prev) => ({ ...prev, [item.id]: 0 }));
+      }
+      try {
+        const { blob, headers } = await downloadBlobWithXhr({
+          url: `/api/workflows/history/${item.id}/analysis/download`,
+          headers: getAuthHeaders(),
+          withCredentials: true,
+          timeoutMs: 180000,
+          onDownloadProgress: (progress) => {
+            if (!isMountedRef.current) return;
+            if (progress.percent === null) return;
+            setDownloadAnalysisProgress((prev) => ({ ...prev, [item.id]: progress.percent || 0 }));
+          },
+        });
+        if (!isMountedRef.current) return;
+        const contentDisposition = headers['content-disposition'] || '';
+        const fallbackName = `workflow-${item.id.slice(0, 8)}-analysis.xlsx`;
+        const fileName = inferFileNameFromContentDisposition(contentDisposition, fallbackName);
+        downloadBlobInBrowser({ blob, fileName });
+      } catch (error) {
+        if (!isMountedRef.current) return;
+        const message = error instanceof Error ? error.message : '下载分析结果失败';
+        showError(message);
+      } finally {
+        if (!isMountedRef.current) return;
+        setDownloadingAnalysisId(null);
+        setDownloadAnalysisProgress((prev) => removeRecordKey(prev, item.id));
+      }
+    },
+    [showError]
+  );
 
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      // 仅清理 user-initiated workflow execution（真用户操作产生的请求需要 abort）
       if (activeExecutionCleanupRef.current) {
         activeExecutionCleanupRef.current();
         activeExecutionCleanupRef.current = null;
@@ -485,23 +513,32 @@ export const useWorkflowHistoryController = ({
       }
       historyListControllerRef.current = null;
       historyDetailControllerRef.current = null;
-      inFlightControllersRef.current.forEach((controller) => {
-        controller.abort();
-      });
+      // 修用户反馈：history?limit=100 + agents (canceled) — React StrictMode 双 mount
+      // 触发 unmount cleanup abort all in-flight fetch → re-mount 重新发起请求，
+      // 在 Network tab 看到 (canceled) 状态。改为不 abort 自动 fetch（list/detail/
+      // 下载等 background fetch），让请求自然完成；fetch 内部已有 isMountedRef +
+      // sequence guard 防止 setState-after-unmount。
       inFlightControllersRef.current.clear();
     };
   }, []);
 
+  // ref-mirror fetchWorkflowHistory：让 mount useEffect 与 interval useEffect 不响应
+  // fetch 引用变化，避免父组件 re-render 导致 useCallback 重建 → useEffect 重 fire →
+  // 重复 fetch。useEffect deps=[] 后仅 mount 时 fire 一次，cleanup 不 abort 网络层
+  // controller（fetchWorkflowHistory 内部 sequence-based dedupe 已经 handle stale）
+  const fetchWorkflowHistoryRef = useRef(fetchWorkflowHistory);
+  fetchWorkflowHistoryRef.current = fetchWorkflowHistory;
+
   useEffect(() => {
-    void fetchWorkflowHistory();
-  }, [fetchWorkflowHistory]);
+    void fetchWorkflowHistoryRef.current();
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      void fetchWorkflowHistory();
+      void fetchWorkflowHistoryRef.current();
     }, 15000);
     return () => window.clearInterval(timer);
-  }, [fetchWorkflowHistory]);
+  }, []);
 
   const displayedWorkflowHistory = useMemo(() => {
     const keyword = historySearchQuery.trim().toLowerCase();
