@@ -45,15 +45,17 @@ export function useAsyncState<T, Args extends unknown[] = []>(
 
   // 用 ref 镜像最新 asyncFn/onSuccess/onError，使 execute 的 identity 永久稳定。
   // 这样调用方把 execute 放进 useEffect deps 数组不会触发重复执行（即使 asyncFn 是内联函数）。
+  //
+  // 在渲染期同步写 ref（不走 useEffect）：
+  // - 避免无 deps useEffect 每次渲染都进 commit 阶段调度 effect 列表的开销
+  // - 写同一值幂等，strict-mode 双调用也无副作用
+  // - React 团队官方惯用模式（如 useEffectEvent polyfill）
   const asyncFnRef = useRef(asyncFn);
   const onSuccessRef = useRef(options?.onSuccess);
   const onErrorRef = useRef(options?.onError);
-  // intentional: no deps — 每次渲染都把最新回调写入 ref，保证 execute 闭包看到最新版本
-  useEffect(() => {
-    asyncFnRef.current = asyncFn;
-    onSuccessRef.current = options?.onSuccess;
-    onErrorRef.current = options?.onError;
-  });
+  asyncFnRef.current = asyncFn;
+  onSuccessRef.current = options?.onSuccess;
+  onErrorRef.current = options?.onError;
 
   useEffect(() => {
     isMountedRef.current = true;

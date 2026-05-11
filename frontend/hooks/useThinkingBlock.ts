@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Message } from '../types/types';
 
 /**
@@ -74,33 +74,53 @@ export function useThinkingBlock(
 
   const [isOpen, setIsOpen] = useState<boolean>(autoOpen);
   const [displayedContent, setDisplayedContent] = useState<string>('');
+  // displayedContent 同步镜像 — 让 typewriter effect 在 setState 后无需把 state 加入 deps
+  // 即可读到最新值，避免每 30ms re-register effect 的 commit 开销（performance-optimizer
+  // Step 4 CRITICAL：原 deps 含 displayedContent 导致打字机进行中每帧重跑 useEffect cleanup）。
+  const displayedContentRef = useRef<string>('');
 
   const fullContent = buildFullContent(messages);
 
   useEffect(() => {
     if (!fullContent) {
       setDisplayedContent('');
-      return;
+      displayedContentRef.current = '';
+      return undefined;
     }
     if (loadingState === 'idle') {
       setDisplayedContent(fullContent);
-      return;
+      displayedContentRef.current = fullContent;
+      return undefined;
     }
-    const targetLength = fullContent.length;
-    const currentLength = displayedContent.length;
-    if (currentLength < targetLength) {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const advance = () => {
+      if (cancelled) return;
+      const currentLength = displayedContentRef.current.length;
+      const targetLength = fullContent.length;
+      if (currentLength >= targetLength) {
+        if (fullContent !== displayedContentRef.current) {
+          // currentLength >= targetLength 但内容不一致：流式中 fullContent 被截短，直接同步
+          setDisplayedContent(fullContent);
+          displayedContentRef.current = fullContent;
+        }
+        return;
+      }
       const nextLength = Math.min(currentLength + chunkSize, targetLength);
-      const timer = setTimeout(() => {
-        setDisplayedContent(fullContent.substring(0, nextLength));
+      const next = fullContent.substring(0, nextLength);
+      timer = setTimeout(() => {
+        if (cancelled) return;
+        setDisplayedContent(next);
+        displayedContentRef.current = next;
+        advance();
       }, delayMs);
-      return () => clearTimeout(timer);
-    }
-    if (fullContent !== displayedContent) {
-      // currentLength >= targetLength 但内容不一致：流式过程中 fullContent 被截短，直接同步
-      setDisplayedContent(fullContent);
-    }
-    return undefined;
-  }, [fullContent, loadingState, displayedContent, chunkSize, delayMs]);
+    };
+    advance();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [fullContent, loadingState, chunkSize, delayMs]);
 
   return {
     isOpen,

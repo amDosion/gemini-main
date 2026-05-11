@@ -64,12 +64,15 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
   const latestFetchRequestIdRef = useRef(0);
   const fetchAbortControllerRef = useRef<AbortController | null>(null);
 
-  const getHeaders = useCallback((): HeadersInit => ({
-    'Content-Type': 'application/json',
-    ...getAuthHeaders(),
-  }), []);
+  const getHeaders = useCallback(
+    (): HeadersInit => ({
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    }),
+    []
+  );
 
-  const getErrorMessage = useCallback(async (response: Response, fallback: string) => {
+  const extractResponseError = useCallback(async (response: Response, fallback: string) => {
     try {
       const payload = await response.json();
       return payload?.detail || payload?.message || fallback;
@@ -81,8 +84,8 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
   const fetchProviders = useCallback(async () => {
     await fetch('/api/agents/available-models', {
       headers: getHeaders(),
-    }).then(res => {
-      if (res.ok) return res.json().then(data => setProviders(normalizeProviderModels(data)));
+    }).then((res) => {
+      if (res.ok) return res.json().then((data) => setProviders(normalizeProviderModels(data)));
     });
   }, [getHeaders]);
 
@@ -146,16 +149,22 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
     const preferredProvider = normalizedPreferredProviderId
       ? providers.find((provider) => provider.providerId === normalizedPreferredProviderId)
       : undefined;
-    const preferredProviderModel = normalizedPreferredModelId && preferredProvider
-      ? (preferredProvider.allModels.find((model) => model.id === normalizedPreferredModelId)
-        || preferredProvider.models.find((model) => model.id === normalizedPreferredModelId))
-      : undefined;
-    const preferredProviderSupportsTask = modelSupportsTask(preferredProviderModel, defaultTaskType);
+    const preferredProviderModel =
+      normalizedPreferredModelId && preferredProvider
+        ? preferredProvider.allModels.find((model) => model.id === normalizedPreferredModelId) ||
+          preferredProvider.models.find((model) => model.id === normalizedPreferredModelId)
+        : undefined;
+    const preferredProviderSupportsTask = modelSupportsTask(
+      preferredProviderModel,
+      defaultTaskType
+    );
     const fallbackProvider =
-      providers.find((provider) => pickProviderDefaultModel(provider, defaultTaskType))
-      || providers[0];
+      providers.find((provider) => pickProviderDefaultModel(provider, defaultTaskType)) ||
+      providers[0];
     const targetProvider =
-      preferredProvider && (preferredProviderSupportsTask || pickProviderDefaultModel(preferredProvider, defaultTaskType))
+      preferredProvider &&
+      (preferredProviderSupportsTask ||
+        pickProviderDefaultModel(preferredProvider, defaultTaskType))
         ? preferredProvider
         : fallbackProvider;
     const targetModel =
@@ -210,10 +219,14 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
 
   const handleSave = async () => {
     if (!editing || !editing.name.trim() || !editing.providerId || !editing.modelId) return;
-    const defaultTaskType = (editing.agentCard?.defaults?.defaultTaskType || 'chat') as AgentTaskType;
-    const currentProvider = providers.find((provider) => provider.providerId === editing.providerId);
-    const currentModel = currentProvider?.allModels.find((model) => model.id === editing.modelId)
-      || currentProvider?.models.find((model) => model.id === editing.modelId);
+    const defaultTaskType = (editing.agentCard?.defaults?.defaultTaskType ||
+      'chat') as AgentTaskType;
+    const currentProvider = providers.find(
+      (provider) => provider.providerId === editing.providerId
+    );
+    const currentModel =
+      currentProvider?.allModels.find((model) => model.id === editing.modelId) ||
+      currentProvider?.models.find((model) => model.id === editing.modelId);
     if (!modelSupportsTask(currentModel, defaultTaskType)) {
       setNotice({ type: 'error', text: `当前模型不支持 ${defaultTaskType}，请重新选择兼容模型` });
       return;
@@ -229,7 +242,10 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
         body: JSON.stringify({
           name: editing.name,
           description: editing.description,
-          agentType: String(editing.agentType || 'custom').trim().toLowerCase() || 'custom',
+          agentType:
+            String(editing.agentType || 'custom')
+              .trim()
+              .toLowerCase() || 'custom',
           providerId: editing.providerId,
           modelId: editing.modelId,
           systemPrompt: editing.systemPrompt,
@@ -247,7 +263,7 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
         emitAgentRegistryUpdated();
         setNotice({ type: 'success', text: isNew ? 'Agent 创建成功' : 'Agent 更新成功' });
       } else {
-        setNotice({ type: 'error', text: await getErrorMessage(res, '保存 Agent 失败') });
+        setNotice({ type: 'error', text: await extractResponseError(res, '保存 Agent 失败') });
       }
     } catch (error) {
       setNotice({ type: 'error', text: '保存 Agent 失败，请稍后重试' });
@@ -266,7 +282,10 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
         headers: getHeaders(),
       });
       if (!res.ok) {
-        setNotice({ type: 'error', text: await getErrorMessage(res, hardDelete ? '永久删除失败' : '停用失败') });
+        setNotice({
+          type: 'error',
+          text: await extractResponseError(res, hardDelete ? '永久删除失败' : '停用失败'),
+        });
         return;
       }
       await fetchAgents();
@@ -276,7 +295,10 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
         setNotice({ type: 'success', text: 'Agent 已永久删除' });
       }
     } catch (error) {
-      setNotice({ type: 'error', text: hardDelete ? '永久删除失败，请稍后重试' : '停用失败，请稍后重试' });
+      setNotice({
+        type: 'error',
+        text: hardDelete ? '永久删除失败，请稍后重试' : '停用失败，请稍后重试',
+      });
     } finally {
       setDeletingAction(false);
     }
@@ -291,7 +313,7 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
         headers: getHeaders(),
       });
       if (!res.ok) {
-        setNotice({ type: 'error', text: await getErrorMessage(res, '恢复 Agent 失败') });
+        setNotice({ type: 'error', text: await extractResponseError(res, '恢复 Agent 失败') });
         return;
       }
       await fetchAgents();
@@ -375,11 +397,13 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
             <p className="text-sm text-slate-300">
               {pendingDeleteAction.hardDelete ? (
                 <>
-                  将永久删除「<span className="text-rose-200">{pendingDeleteAction.name}</span>」，此操作不可恢复。
+                  将永久删除「<span className="text-rose-200">{pendingDeleteAction.name}</span>
+                  」，此操作不可恢复。
                 </>
               ) : (
                 <>
-                  将停用「<span className="text-amber-200">{pendingDeleteAction.name}</span>」，该操作不会删除数据，可稍后恢复。
+                  将停用「<span className="text-amber-200">{pendingDeleteAction.name}</span>
+                  」，该操作不会删除数据，可稍后恢复。
                 </>
               )}
             </p>
@@ -428,7 +452,8 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
           <div className="w-[430px] max-w-[92vw] rounded-xl border border-slate-700 bg-slate-900 shadow-2xl p-5">
             <h3 className="text-base font-semibold text-slate-100 mb-2">确认恢复 Agent</h3>
             <p className="text-sm text-slate-300">
-              将恢复「<span className="text-emerald-200">{pendingRestoreAction.name}</span>」，并重新出现在 Active 列表中。
+              将恢复「<span className="text-emerald-200">{pendingRestoreAction.name}</span>
+              」，并重新出现在 Active 列表中。
             </p>
             <div className="mt-5 flex items-center justify-end gap-2">
               <button
@@ -445,7 +470,11 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
                 disabled={restoringAction}
                 className="px-3 py-1.5 text-sm rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 border border-emerald-700/60 bg-emerald-900/30 text-emerald-100 hover:bg-emerald-800/40"
               >
-                {restoringAction ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+                {restoringAction ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <RotateCcw size={13} />
+                )}
                 确认恢复
               </button>
             </div>

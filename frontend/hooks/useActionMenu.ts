@@ -88,7 +88,6 @@ function computeMenuPosition(
 export function useActionMenu<A extends ActionMenuAnchorBase = ActionMenuAnchorBase>(
   options?: UseActionMenuOptions
 ): UseActionMenuResult<A> {
-  const isExempted = options?.isExempted;
   const fallbackPanelWidth = options?.fallbackPanelWidth ?? DEFAULT_FALLBACK_PANEL_WIDTH;
   const fallbackPanelHeight = options?.fallbackPanelHeight ?? DEFAULT_FALLBACK_PANEL_HEIGHT;
   const gap = options?.gap ?? DEFAULT_GAP;
@@ -97,6 +96,10 @@ export function useActionMenu<A extends ActionMenuAnchorBase = ActionMenuAnchorB
   const [anchor, setAnchor] = useState<A | null>(null);
   const [position, setPosition] = useState<ActionMenuPosition | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  // isExempted ref 镜像 — 避免调用方内联函数导致 mousedown listener 频繁 detach/re-attach
+  // （performance-optimizer Step 4 LOW）
+  const isExemptedRef = useRef<UseActionMenuOptions['isExempted']>(options?.isExempted);
+  isExemptedRef.current = options?.isExempted;
 
   const open = useCallback(
     (next: A) => {
@@ -127,14 +130,14 @@ export function useActionMenu<A extends ActionMenuAnchorBase = ActionMenuAnchorB
       if (!target) return;
       // contains 只对 Node 生效；isExempted 接收全部 EventTarget（与原 isHistoryActionSurface 一致）
       if (target instanceof Node && panelRef.current?.contains(target)) return;
-      if (isExempted?.(target)) return;
+      if (isExemptedRef.current?.(target)) return;
       close();
     };
     window.addEventListener('mousedown', handleOutsideClick);
     return () => {
       window.removeEventListener('mousedown', handleOutsideClick);
     };
-  }, [anchor, close, isExempted]);
+  }, [anchor, close]);
 
   useEffect(() => {
     if (!anchor) return undefined;
@@ -172,9 +175,10 @@ export function useActionMenu<A extends ActionMenuAnchorBase = ActionMenuAnchorB
   useEffect(() => {
     if (!anchor) return undefined;
     const handleScroll = () => close();
-    window.addEventListener('scroll', handleScroll, true);
+    const scrollOpts: AddEventListenerOptions = { capture: true, passive: true };
+    window.addEventListener('scroll', handleScroll, scrollOpts);
     return () => {
-      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('scroll', handleScroll, scrollOpts);
     };
   }, [anchor, close]);
 

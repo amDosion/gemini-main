@@ -259,11 +259,12 @@ export function useHoverPromptPreview<
       if (target instanceof Node && panelRef.current?.contains(target)) return;
       closePreview();
     };
+    const scrollOpts: AddEventListenerOptions = { capture: true, passive: true };
     window.addEventListener('resize', handleWindowResize);
-    window.addEventListener('scroll', handleWindowScroll, true);
+    window.addEventListener('scroll', handleWindowScroll, scrollOpts);
     return () => {
       window.removeEventListener('resize', handleWindowResize);
-      window.removeEventListener('scroll', handleWindowScroll, true);
+      window.removeEventListener('scroll', handleWindowScroll, scrollOpts);
     };
   }, [preview, closePreview]);
 
