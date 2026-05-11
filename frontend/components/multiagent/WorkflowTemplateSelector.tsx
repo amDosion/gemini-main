@@ -1,6 +1,6 @@
 /**
  * Workflow Template Selector Component
- * 
+ *
  * Modal dialog for selecting and loading workflow templates:
  * - Template list with categories
  * - Template preview
@@ -9,7 +9,20 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Search, FileText, Loader2, ChevronRight, Copy, Pencil, Save, Trash2, Plus, Video, Mic } from 'lucide-react';
+import {
+  X,
+  Search,
+  FileText,
+  Loader2,
+  ChevronRight,
+  Copy,
+  Pencil,
+  Save,
+  Trash2,
+  Plus,
+  Video,
+  Mic,
+} from 'lucide-react';
 import { Node, Edge } from 'reactflow';
 import { CustomNodeData } from './CustomNode';
 import {
@@ -41,6 +54,7 @@ import {
 
 // Re-export WorkflowTemplate for backwards compat（既有 5 个 importer 用 ./WorkflowTemplateSelector）
 export type { WorkflowTemplate } from './workflowTemplateTypes';
+import { migrateTemplate } from './workflowTemplateMigration';
 
 interface WorkflowTemplateSelectorProps {
   isOpen: boolean;
@@ -51,7 +65,7 @@ interface WorkflowTemplateSelectorProps {
 export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> = ({
   isOpen,
   onClose,
-  onLoadTemplate
+  onLoadTemplate,
 }) => {
   const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
   const [loading, setLoading] = useState(false);
@@ -150,259 +164,6 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
     }
   }, [selectedTemplate?.id]);
 
-  const migrateTemplate = (template: Record<string, unknown>): WorkflowTemplate => {
-    const rawConfig = (template?.config || {}) as Record<string, unknown>;
-    const rawOrigin = (template?.origin || {}) as Record<string, unknown>;
-    const rawTemplateMeta = (rawConfig?._templateMeta || {}) as Record<string, unknown>;
-    const rawNodes = Array.isArray(rawConfig.nodes) ? rawConfig.nodes : [];
-    const rawEdges = Array.isArray(rawConfig.edges) ? rawConfig.edges : [];
-    const migratedNodes = rawNodes.map((node: Record<string, unknown>) => ({
-      ...(node as Record<string, unknown>),
-      data: {
-        ...((node?.data || {}) as Record<string, unknown>),
-        type: (node?.data as Record<string, unknown>)?.type || node?.type || 'agent',
-      },
-    }));
-    const migratedEdges = rawEdges;
-    const rawTags = Array.isArray(template?.tags) ? template.tags : [];
-    const estimatedNodeCount = Number(
-      template?.estimatedNodeCount ?? rawNodes.length ?? 0
-    ) || 0;
-    const estimatedEdgeCount = Number(
-      template?.estimatedEdgeCount ?? rawEdges.length ?? 0
-    ) || 0;
-    const rawSampleSummary = template?.sampleResultSummary as Record<string, unknown> | undefined;
-    const sampleSummary = rawSampleSummary && typeof rawSampleSummary === 'object' && !Array.isArray(rawSampleSummary)
-      ? {
-        hasResult: Boolean(rawSampleSummary.hasResult),
-        textPreview: String(rawSampleSummary.textPreview || '').trim(),
-        imageCount: Number((rawSampleSummary.imageCount ?? rawSampleSummary.image_count) || 0) || 0,
-        imageUrls: Array.isArray(rawSampleSummary.imageUrls)
-          ? rawSampleSummary.imageUrls.filter((value: unknown) => typeof value === 'string')
-          : Array.isArray(rawSampleSummary.image_urls)
-            ? rawSampleSummary.image_urls.filter((value: unknown) => typeof value === 'string')
-            : [],
-        audioCount: Number((rawSampleSummary.audioCount ?? rawSampleSummary.audio_count) || 0) || 0,
-        audioUrls: Array.isArray(rawSampleSummary.audioUrls)
-          ? rawSampleSummary.audioUrls.filter((value: unknown) => typeof value === 'string')
-          : Array.isArray(rawSampleSummary.audio_urls)
-            ? rawSampleSummary.audio_urls.filter((value: unknown) => typeof value === 'string')
-            : [],
-        videoCount: Number((rawSampleSummary.videoCount ?? rawSampleSummary.video_count) || 0) || 0,
-        videoUrls: Array.isArray(rawSampleSummary.videoUrls)
-          ? rawSampleSummary.videoUrls.filter((value: unknown) => typeof value === 'string')
-          : Array.isArray(rawSampleSummary.video_urls)
-            ? rawSampleSummary.video_urls.filter((value: unknown) => typeof value === 'string')
-            : [],
-        runtimeHints: mergeRuntimeHints(
-          [],
-          Array.isArray(rawSampleSummary.runtimeHints) ? rawSampleSummary.runtimeHints : [],
-        ),
-        primaryRuntime: String(rawSampleSummary.primaryRuntime || '').trim() || undefined,
-        continuationStrategy: String(
-          rawSampleSummary.continuationStrategy || rawSampleSummary.continuation_strategy || ''
-        ).trim() || undefined,
-        videoExtensionCount: Number(
-          (rawSampleSummary.videoExtensionCount ?? rawSampleSummary.video_extension_count) || 0
-        ) || 0,
-        videoExtensionApplied: Number(
-          (rawSampleSummary.videoExtensionApplied ?? rawSampleSummary.video_extension_applied) || 0
-        ) || 0,
-        totalDurationSeconds: Number(
-          (rawSampleSummary.totalDurationSeconds ?? rawSampleSummary.total_duration_seconds) || 0
-        ) || 0,
-        continuedFromVideo: Boolean(
-          rawSampleSummary.continuedFromVideo ?? rawSampleSummary.continued_from_video ?? false
-        ),
-        subtitleMode: String(
-          rawSampleSummary.subtitleMode || rawSampleSummary.subtitle_mode || ''
-        ).trim() || undefined,
-        subtitleFileCount: Number(
-          (rawSampleSummary.subtitleFileCount ?? rawSampleSummary.subtitle_file_count) || 0
-        ) || 0,
-      }
-      : undefined;
-    const rawSampleInput = template?.sampleInput as Record<string, unknown> | undefined;
-    const sampleInput = rawSampleInput && typeof rawSampleInput === 'object' && !Array.isArray(rawSampleInput)
-      ? {
-        task: typeof rawSampleInput.task === 'string' ? rawSampleInput.task : undefined,
-        prompt: typeof rawSampleInput.prompt === 'string' ? rawSampleInput.prompt : undefined,
-        text: typeof rawSampleInput.text === 'string' ? rawSampleInput.text : undefined,
-        imageUrl: typeof rawSampleInput.imageUrl === 'string' ? rawSampleInput.imageUrl : undefined,
-        imageUrls: Array.isArray(rawSampleInput.imageUrls)
-          ? rawSampleInput.imageUrls.filter((value: unknown) => typeof value === 'string')
-          : undefined,
-        videoUrl: typeof rawSampleInput.videoUrl === 'string'
-          ? rawSampleInput.videoUrl
-          : typeof rawSampleInput.video_url === 'string'
-            ? rawSampleInput.video_url
-            : undefined,
-        videoUrls: Array.isArray(rawSampleInput.videoUrls)
-          ? rawSampleInput.videoUrls.filter((value: unknown) => typeof value === 'string')
-          : Array.isArray(rawSampleInput.video_urls)
-            ? rawSampleInput.video_urls.filter((value: unknown) => typeof value === 'string')
-            : undefined,
-        audioUrl: typeof rawSampleInput.audioUrl === 'string'
-          ? rawSampleInput.audioUrl
-          : typeof rawSampleInput.audio_url === 'string'
-            ? rawSampleInput.audio_url
-            : undefined,
-        audioUrls: Array.isArray(rawSampleInput.audioUrls)
-          ? rawSampleInput.audioUrls.filter((value: unknown) => typeof value === 'string')
-          : Array.isArray(rawSampleInput.audio_urls)
-            ? rawSampleInput.audio_urls.filter((value: unknown) => typeof value === 'string')
-            : undefined,
-        prompts: Array.isArray(rawSampleInput.prompts)
-          ? rawSampleInput.prompts.filter((value: unknown) => typeof value === 'string')
-          : undefined,
-        fileUrl: typeof rawSampleInput.fileUrl === 'string' ? rawSampleInput.fileUrl : undefined,
-        fileUrls: Array.isArray(rawSampleInput.fileUrls)
-          ? rawSampleInput.fileUrls.filter((value: unknown) => typeof value === 'string')
-          : Array.isArray(rawSampleInput.file_urls)
-            ? rawSampleInput.file_urls.filter((value: unknown) => typeof value === 'string')
-            : undefined,
-      }
-      : undefined;
-    const sampleResultUpdatedAt = Number(template?.sampleResultUpdatedAt || 0) || undefined;
-    const starterKey = String(template?.starterKey ?? template?.starter_key ?? '').trim() || undefined;
-    const starterVersion = Number(template?.starterVersion ?? template?.starter_version ?? 0) || undefined;
-    const isStarter = Boolean(template?.isStarter ?? template?.is_starter ?? starterKey);
-    const copiedFromStarterKey = String(
-      template?.copiedFromStarterKey
-      ?? template?.copied_from_starter_key
-      ?? ''
-    ).trim() || undefined;
-    const runtimeScope = normalizeTemplateRuntimeScope(
-      template?.runtimeScope
-      ?? template?.runtime_scope
-      ?? rawOrigin?.runtimeScope
-      ?? rawOrigin?.runtime_scope
-    );
-    const runtimeLabel = String(
-      template?.runtimeLabel
-      ?? template?.runtime_label
-      ?? rawOrigin?.runtimeLabel
-      ?? rawOrigin?.runtime_label
-      ?? ''
-    ).trim() || undefined;
-    const originKind = normalizeTemplateSourceKind(
-      rawOrigin?.kind
-      ?? template?.originKind
-      ?? template?.origin_kind
-      ?? (isStarter ? 'starter' : (template?.isPublic ? 'public' : 'user'))
-    );
-    const originLabel = String(
-      rawOrigin?.label
-      ?? template?.originLabel
-      ?? template?.origin_label
-      ?? (originKind === 'starter' ? '官方 Starter' : originKind === 'public' ? '公开模板' : '我的模板')
-    ).trim() || (originKind === 'starter' ? '官方 Starter' : originKind === 'public' ? '公开模板' : '我的模板');
-    const originIsLocked = Boolean(
-      rawOrigin?.isLocked
-      ?? rawOrigin?.is_locked
-      ?? template?.isLocked
-      ?? template?.is_locked
-      ?? isStarter
-    );
-    const rawTaskTypes =
-      template?.taskTypes
-      ?? template?.task_types
-      ?? rawTemplateMeta?.taskTypes
-      ?? rawTemplateMeta?.task_types;
-    const taskTypes = Array.isArray(rawTaskTypes)
-      ? rawTaskTypes.filter((value: unknown) => typeof value === 'string')
-      : [];
-    const primaryTaskType = String(
-      template?.primaryTaskType
-      ?? template?.primary_task_type
-      ?? rawTemplateMeta?.primaryTaskType
-      ?? rawTemplateMeta?.primary_task_type
-      ?? ''
-    ).trim() || undefined;
-    const bindingStrategy = String(
-      template?.bindingStrategy
-      ?? template?.binding_strategy
-      ?? rawTemplateMeta?.bindingStrategy
-      ?? rawTemplateMeta?.binding_strategy
-      ?? ''
-    ).trim() || undefined;
-    const isLegacyStarterCopy = Boolean(
-      template?.isLegacyStarterCopy
-      ?? template?.is_legacy_starter_copy
-      ?? rawTemplateMeta?.isLegacyStarterCopy
-      ?? rawTemplateMeta?.is_legacy_starter_copy
-    );
-    const legacyFlags = Array.isArray(
-      template?.legacyFlags
-      ?? template?.legacy_flags
-      ?? rawTemplateMeta?.legacyFlags
-      ?? rawTemplateMeta?.legacy_flags
-    )
-      ? ((template?.legacyFlags
-        ?? template?.legacy_flags
-        ?? rawTemplateMeta?.legacyFlags
-        ?? rawTemplateMeta?.legacy_flags) as unknown[]).filter((value: unknown) => typeof value === 'string')
-      : [];
-    const legacyReason = String(
-      template?.legacyReason
-      ?? template?.legacy_reason
-      ?? rawTemplateMeta?.legacyReason
-      ?? rawTemplateMeta?.legacy_reason
-      ?? ''
-    ).trim() || undefined;
-
-    return {
-      id: String(template?.id || ""),
-      userId: typeof template?.userId === 'string' ? template.userId : undefined,
-      name: String(template?.name || '未命名模板'),
-      description: String(template?.description || ''),
-      category: String(template?.category || '通用'),
-      tags: rawTags,
-      thumbnail: typeof template?.thumbnail === 'string' ? template.thumbnail : undefined,
-      workflowType: String(template?.workflowType || 'graph'),
-      version: typeof template?.version === 'number' ? template.version : undefined,
-      isPublic: Boolean(template?.isPublic),
-      modeId: String(template?.modeId || ''),
-      promptHint: String(template?.promptHint ?? ''),
-      promptExample: template?.promptExample as Record<string, unknown> | undefined,
-      requiresImage: Boolean(template?.requiresImage),
-      estimatedNodeCount,
-      estimatedEdgeCount,
-      sampleResult: template?.sampleResult as Record<string, unknown> | undefined,
-      sampleResultSummary: sampleSummary,
-      sampleResultUpdatedAt,
-      sampleExecutionId: String(template?.sampleExecutionId || '').trim() || undefined,
-      sampleInput,
-      isStarter,
-      starterKey,
-      starterVersion,
-      copiedFromStarterKey,
-      isEditable: Boolean(template?.isEditable ?? template?.is_editable ?? !originIsLocked),
-      isDeletable: Boolean(template?.isDeletable ?? template?.is_deletable ?? !originIsLocked),
-      runtimeScope,
-      runtimeLabel,
-      taskTypes,
-      primaryTaskType,
-      bindingStrategy,
-      isLegacyStarterCopy,
-      legacyFlags,
-      legacyReason,
-      origin: {
-        kind: originKind,
-        label: originLabel,
-        isLocked: originIsLocked,
-        runtimeScope,
-        runtimeLabel,
-      },
-      config: {
-        schemaVersion: Number(rawConfig?.schemaVersion || 2),
-        nodes: migratedNodes as unknown as Node<CustomNodeData>[],
-        edges: migratedEdges as Edge[],
-      },
-      createdAt: Number(template?.createdAt || Date.now()),
-      updatedAt: Number(template?.updatedAt || Date.now()),
-    };
-  };
 
   const fetchCurrentUser = async () => {
     try {
@@ -443,10 +204,12 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
       }
 
       const templatePayload = await templateResponse.json();
-      const userTemplates = (templatePayload.templates || []).map((template: Record<string, unknown>) => ({
-        ...migrateTemplate(template),
-        sourceType: 'template' as const,
-      }));
+      const userTemplates = (templatePayload.templates || []).map(
+        (template: Record<string, unknown>) => ({
+          ...migrateTemplate(template),
+          sourceType: 'template' as const,
+        })
+      );
 
       setTemplates(userTemplates);
     } catch (err) {
@@ -462,9 +225,7 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
         includePublic: true,
         ensureDefaults: true,
       });
-      const names = categories
-        .map((item) => String(item.name || '').trim())
-        .filter(Boolean);
+      const names = categories.map((item) => String(item.name || '').trim()).filter(Boolean);
       setAvailableCategories(names);
     } catch {
       // Ignore category fetch errors and fallback to template-derived categories.
@@ -473,12 +234,12 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
 
   const hiddenLegacyStarterCopyCount = useMemo(
     () => templates.filter((template) => template.isLegacyStarterCopy).length,
-    [templates],
+    [templates]
   );
 
   const browseableTemplates = useMemo(
     () => templates.filter((template) => showLegacyStarterCopies || !template.isLegacyStarterCopy),
-    [showLegacyStarterCopies, templates],
+    [showLegacyStarterCopies, templates]
   );
 
   const categories = useMemo(() => {
@@ -507,20 +268,21 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
     }
   }, [categories, selectedCategory]);
 
-  const filteredTemplates = useMemo(() => browseableTemplates.filter(template => {
-    const matchesSearch =
-      template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      template.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      template.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredTemplates = useMemo(
+    () =>
+      browseableTemplates.filter((template) => {
+        const matchesSearch =
+          template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          template.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          template.tags.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase()));
 
-    const matchesCategory = selectedCategory === 'all' || template.category === selectedCategory;
+        const matchesCategory =
+          selectedCategory === 'all' || template.category === selectedCategory;
 
-    return matchesSearch && matchesCategory;
-  }), [
-    browseableTemplates,
-    searchQuery,
-    selectedCategory,
-  ]);
+        return matchesSearch && matchesCategory;
+      }),
+    [browseableTemplates, searchQuery, selectedCategory]
+  );
 
   useEffect(() => {
     if (!selectedTemplate) {
@@ -563,14 +325,17 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
     setCopyingTemplateId(sourceTemplateId);
     setCopyFeedback(null);
     try {
-      const response = await fetch(`/api/workflows/templates/${encodeURIComponent(sourceTemplateId)}/copy`, {
-        method: 'POST',
-        headers: {
-          ...getAuthHeaders(),
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({}),
-      });
+      const response = await fetch(
+        `/api/workflows/templates/${encodeURIComponent(sourceTemplateId)}/copy`,
+        {
+          method: 'POST',
+          headers: {
+            ...getAuthHeaders(),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({}),
+        }
+      );
 
       if (!response.ok) {
         let message = '复制模板失败';
@@ -608,7 +373,11 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
 
   const canManageTemplate = (template: WorkflowTemplate | null): boolean => {
     if (!template) return false;
-    if (template.origin?.isLocked || template.isEditable === false || template.isDeletable === false) {
+    if (
+      template.origin?.isLocked ||
+      template.isEditable === false ||
+      template.isDeletable === false
+    ) {
       return false;
     }
     if (!template.userId) return true;
@@ -691,9 +460,9 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
         sourceType: 'template',
       };
 
-      setTemplates((prev) => prev.map((item) => (
-        item.id === updatedTemplate.id ? updatedTemplate : item
-      )));
+      setTemplates((prev) =>
+        prev.map((item) => (item.id === updatedTemplate.id ? updatedTemplate : item))
+      );
       setSelectedTemplate(updatedTemplate);
       setEditingTemplateId(null);
       setEditingTemplateName('');
@@ -778,7 +547,7 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
     }
 
     const existingCategory = categories.find(
-      (item) => item !== 'all' && item.toLowerCase() === normalizedName.toLowerCase(),
+      (item) => item !== 'all' && item.toLowerCase() === normalizedName.toLowerCase()
     );
     if (existingCategory) {
       setSelectedCategory(existingCategory);
@@ -818,43 +587,43 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
   };
 
   const selectedTemplateSampleImageUrls = selectedTemplate
-    ? Array.from(new Set([
-      ...(Array.isArray(selectedTemplate.sampleResultSummary?.imageUrls)
-        ? selectedTemplate.sampleResultSummary.imageUrls
-        : []),
-      ...extractImageUrls(selectedTemplate.sampleResult),
-    ]))
-      .filter((url) => isDirectlyRenderableImageUrl(url))
+    ? Array.from(
+        new Set([
+          ...(Array.isArray(selectedTemplate.sampleResultSummary?.imageUrls)
+            ? selectedTemplate.sampleResultSummary.imageUrls
+            : []),
+          ...extractImageUrls(selectedTemplate.sampleResult),
+        ])
+      ).filter((url) => isDirectlyRenderableImageUrl(url))
     : [];
   const selectedTemplateSampleAudioUrls = selectedTemplate
-    ? Array.from(new Set([
-      ...(Array.isArray(selectedTemplate.sampleResultSummary?.audioUrls)
-        ? selectedTemplate.sampleResultSummary.audioUrls
-        : []),
-      ...extractAudioUrls(selectedTemplate.sampleResult),
-    ]))
-      .filter((url) => isDirectlyRenderableAudioUrl(url))
+    ? Array.from(
+        new Set([
+          ...(Array.isArray(selectedTemplate.sampleResultSummary?.audioUrls)
+            ? selectedTemplate.sampleResultSummary.audioUrls
+            : []),
+          ...extractAudioUrls(selectedTemplate.sampleResult),
+        ])
+      ).filter((url) => isDirectlyRenderableAudioUrl(url))
     : [];
   const selectedTemplateSampleVideoUrls = selectedTemplate
-    ? Array.from(new Set([
-      ...(Array.isArray(selectedTemplate.sampleResultSummary?.videoUrls)
-        ? selectedTemplate.sampleResultSummary.videoUrls
-        : []),
-      ...extractVideoUrls(selectedTemplate.sampleResult),
-    ]))
-      .filter((url) => isDirectlyRenderableVideoUrl(url))
+    ? Array.from(
+        new Set([
+          ...(Array.isArray(selectedTemplate.sampleResultSummary?.videoUrls)
+            ? selectedTemplate.sampleResultSummary.videoUrls
+            : []),
+          ...extractVideoUrls(selectedTemplate.sampleResult),
+        ])
+      ).filter((url) => isDirectlyRenderableVideoUrl(url))
     : [];
   const selectedTemplateSampleTextPreview = selectedTemplate
     ? (
-      selectedTemplate.sampleResultSummary?.textPreview
-      || extractTextContent(selectedTemplate.sampleResult)
-    ).trim()
+        selectedTemplate.sampleResultSummary?.textPreview ||
+        extractTextContent(selectedTemplate.sampleResult)
+      ).trim()
     : '';
   const selectedTemplateHasSampleResult = selectedTemplate
-    ? Boolean(
-      selectedTemplate.sampleResultSummary?.hasResult
-      || selectedTemplate.sampleResult
-    )
+    ? Boolean(selectedTemplate.sampleResultSummary?.hasResult || selectedTemplate.sampleResult)
     : false;
 
   if (!isOpen) {
@@ -880,7 +649,10 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
         <div className="p-4 border-b border-slate-700 space-y-3 bg-slate-900/80">
           {/* Search Bar */}
           <div className="relative">
-            <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500" />
+            <Search
+              size={18}
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500"
+            />
             <input
               type="text"
               value={searchQuery}
@@ -924,7 +696,9 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
                           : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
                       }`}
                     >
-                      {showLegacyStarterCopies ? '隐藏遗留 Starter 副本' : `显示遗留 Starter 副本 ${hiddenLegacyStarterCopyCount}`}
+                      {showLegacyStarterCopies
+                        ? '隐藏遗留 Starter 副本'
+                        : `显示遗留 Starter 副本 ${hiddenLegacyStarterCopyCount}`}
                     </button>
                   )}
                   <button
@@ -945,14 +719,17 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
 
             {hiddenLegacyStarterCopyCount > 0 && !showLegacyStarterCopies && (
               <div className="text-[11px] text-amber-200 border border-amber-500/20 bg-amber-500/10 rounded-lg px-3 py-2">
-                已默认隐藏 {hiddenLegacyStarterCopyCount} 个遗留 Starter 副本，这些模板仍使用旧的 `agentName` 绑定。
+                已默认隐藏 {hiddenLegacyStarterCopyCount} 个遗留 Starter 副本，这些模板仍使用旧的
+                `agentName` 绑定。
               </div>
             )}
 
             {categoryActionFeedback && (
               <div
                 className={`text-xs ${
-                  categoryActionFeedback.startsWith('新增失败') ? 'text-rose-300' : 'text-emerald-300'
+                  categoryActionFeedback.startsWith('新增失败')
+                    ? 'text-rose-300'
+                    : 'text-emerald-300'
                 }`}
               >
                 {categoryActionFeedback}
@@ -991,7 +768,7 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
               </div>
             ) : (
               <div className="p-4 space-y-4">
-                {filteredTemplates.map(template => (
+                {filteredTemplates.map((template) => (
                   <button
                     key={template.id}
                     onClick={() => setSelectedTemplate(template)}
@@ -1003,9 +780,7 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <h3 className="font-semibold text-slate-100 mb-1">
-                          {template.name}
-                        </h3>
+                        <h3 className="font-semibold text-slate-100 mb-1">{template.name}</h3>
                         <p className="text-sm text-slate-400 mb-2 line-clamp-2">
                           {template.description}
                         </p>
@@ -1027,7 +802,8 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
                             </span>
                           )}
                           <span className="text-xs text-slate-500">
-                            {(template.config.nodes.length || template.estimatedNodeCount || 0)} 个节点
+                            {template.config.nodes.length || template.estimatedNodeCount || 0}{' '}
+                            个节点
                           </span>
                           {template.sampleResultSummary?.hasResult && (
                             <span className="text-xs px-2 py-0.5 bg-emerald-500/20 text-emerald-200 rounded border border-emerald-500/30">
@@ -1036,29 +812,36 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
                           )}
                           {(template.sampleResultSummary?.videoCount || 0) > 0 && (
                             <span className="text-xs px-2 py-0.5 bg-sky-500/15 text-sky-200 rounded border border-sky-500/30">
-                              视频 {(template.sampleResultSummary?.videoCount || 0)}
+                              视频 {template.sampleResultSummary?.videoCount || 0}
                             </span>
                           )}
-                          {((template.sampleResultSummary?.videoExtensionApplied || 0) > 0
-                            || (template.sampleResultSummary?.videoExtensionCount || 0) > 0) && (
+                          {((template.sampleResultSummary?.videoExtensionApplied || 0) > 0 ||
+                            (template.sampleResultSummary?.videoExtensionCount || 0) > 0) && (
                             <span className="text-xs px-2 py-0.5 bg-orange-500/15 text-orange-200 rounded border border-orange-500/30">
-                              延长 {(template.sampleResultSummary?.videoExtensionApplied || template.sampleResultSummary?.videoExtensionCount || 0)}
+                              延长{' '}
+                              {template.sampleResultSummary?.videoExtensionApplied ||
+                                template.sampleResultSummary?.videoExtensionCount ||
+                                0}
                             </span>
                           )}
                           {(template.sampleResultSummary?.totalDurationSeconds || 0) > 0 && (
                             <span className="text-xs px-2 py-0.5 bg-cyan-500/15 text-cyan-200 rounded border border-cyan-500/30">
-                              {(template.sampleResultSummary?.totalDurationSeconds || 0)}s
+                              {template.sampleResultSummary?.totalDurationSeconds || 0}s
                             </span>
                           )}
-                          {(((template.sampleResultSummary?.subtitleMode || '') !== '' && template.sampleResultSummary?.subtitleMode !== 'none')
-                            || (template.sampleResultSummary?.subtitleFileCount || 0) > 0) && (
+                          {(((template.sampleResultSummary?.subtitleMode || '') !== '' &&
+                            template.sampleResultSummary?.subtitleMode !== 'none') ||
+                            (template.sampleResultSummary?.subtitleFileCount || 0) > 0) && (
                             <span className="text-xs px-2 py-0.5 bg-emerald-500/15 text-emerald-200 rounded border border-emerald-500/30">
-                              字幕{(template.sampleResultSummary?.subtitleFileCount || 0) > 0 ? ` · ${template.sampleResultSummary?.subtitleFileCount}` : ''}
+                              字幕
+                              {(template.sampleResultSummary?.subtitleFileCount || 0) > 0
+                                ? ` · ${template.sampleResultSummary?.subtitleFileCount}`
+                                : ''}
                             </span>
                           )}
                           {(template.sampleResultSummary?.audioCount || 0) > 0 && (
                             <span className="text-xs px-2 py-0.5 bg-cyan-500/15 text-cyan-200 rounded border border-cyan-500/30">
-                              音频 {(template.sampleResultSummary?.audioCount || 0)}
+                              音频 {template.sampleResultSummary?.audioCount || 0}
                             </span>
                           )}
                         </div>
@@ -1066,9 +849,7 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
                       <ChevronRight
                         size={20}
                         className={`flex-shrink-0 ml-2 ${
-                          selectedTemplate?.id === template.id
-                            ? 'text-teal-400'
-                            : 'text-slate-500'
+                          selectedTemplate?.id === template.id ? 'text-teal-400' : 'text-slate-500'
                         }`}
                       />
                     </div>
@@ -1098,7 +879,11 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
                         className="px-3 py-2 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                         title="保存标题"
                       >
-                        {savingTemplateId === selectedTemplate.id ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                        {savingTemplateId === selectedTemplate.id ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : (
+                          <Save size={13} />
+                        )}
                         保存
                       </button>
                       <button
@@ -1119,16 +904,16 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
                         onClick={handleStartRenameTemplate}
                         disabled={!canManageTemplate(selectedTemplate)}
                         className="px-2.5 py-1.5 text-xs bg-slate-800 border border-slate-700 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-                        title={canManageTemplate(selectedTemplate) ? '编辑模板标题' : '只读模板不可编辑'}
+                        title={
+                          canManageTemplate(selectedTemplate) ? '编辑模板标题' : '只读模板不可编辑'
+                        }
                       >
                         <Pencil size={13} />
                         编辑标题
                       </button>
                     </div>
                   )}
-                  <p className="text-sm text-slate-400">
-                    {selectedTemplate.description}
-                  </p>
+                  <p className="text-sm text-slate-400">{selectedTemplate.description}</p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -1143,7 +928,7 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
                       {resolveTemplateRuntimeLabel(selectedTemplate)}
                     </span>
                   )}
-                  {selectedTemplate.tags.map(tag => (
+                  {selectedTemplate.tags.map((tag) => (
                     <span
                       key={tag}
                       className="text-xs px-2 py-1 bg-slate-800 text-slate-300 border border-slate-700 rounded"
@@ -1155,17 +940,20 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
 
                 {selectedTemplate.origin?.isLocked && (
                   <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-100">
-                    这是官方 Starter 模板。建议先复制后再编辑，系统会持续按 starter catalog 维护这类模板。
+                    这是官方 Starter 模板。建议先复制后再编辑，系统会持续按 starter catalog
+                    维护这类模板。
                   </div>
                 )}
                 {selectedTemplate.copiedFromStarterKey && !selectedTemplate.origin?.isLocked && (
                   <div className="p-3 rounded-lg border border-slate-700 bg-slate-950/60 text-xs text-slate-300">
-                    当前模板来自 starter：<span className="text-slate-100">{selectedTemplate.copiedFromStarterKey}</span>
+                    当前模板来自 starter：
+                    <span className="text-slate-100">{selectedTemplate.copiedFromStarterKey}</span>
                   </div>
                 )}
                 {selectedTemplate.isLegacyStarterCopy && (
                   <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-100">
-                    这是遗留 Starter 副本：仍在通过 `agentName` 绑定旧 Seed Agent。建议复制官方新版 Starter，或改成 `agentId / inlineUseActiveProfile`。
+                    这是遗留 Starter 副本：仍在通过 `agentName` 绑定旧 Seed Agent。建议复制官方新版
+                    Starter，或改成 `agentId / inlineUseActiveProfile`。
                   </div>
                 )}
 
@@ -1175,13 +963,17 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-slate-400">节点数量</span>
                       <span className="font-medium text-slate-200">
-                        {(selectedTemplate.config.nodes.length || selectedTemplate.estimatedNodeCount || 0)}
+                        {selectedTemplate.config.nodes.length ||
+                          selectedTemplate.estimatedNodeCount ||
+                          0}
                       </span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-slate-400">连接数量</span>
                       <span className="font-medium text-slate-200">
-                        {(selectedTemplate.config.edges.length || selectedTemplate.estimatedEdgeCount || 0)}
+                        {selectedTemplate.config.edges.length ||
+                          selectedTemplate.estimatedEdgeCount ||
+                          0}
                       </span>
                     </div>
                     {selectedTemplate.bindingStrategy && (
@@ -1199,7 +991,9 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
                   <div className="pt-4 border-t border-slate-700">
                     <h4 className="text-sm font-semibold text-slate-200 mb-2">输入建议</h4>
                     {selectedTemplate.promptHint && (
-                      <div className="text-xs text-slate-400 mb-2">{selectedTemplate.promptHint}</div>
+                      <div className="text-xs text-slate-400 mb-2">
+                        {selectedTemplate.promptHint}
+                      </div>
                     )}
                     {selectedTemplate.promptExample && (
                       <pre className="text-[11px] text-slate-300 bg-slate-950/80 border border-slate-700 rounded p-2 whitespace-pre-wrap break-all">
@@ -1209,7 +1003,9 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
                       </pre>
                     )}
                     {selectedTemplate.requiresImage && (
-                      <div className="mt-2 text-[11px] text-amber-300">该流程需要输入参考图片（imageUrl）。</div>
+                      <div className="mt-2 text-[11px] text-amber-300">
+                        该流程需要输入参考图片（imageUrl）。
+                      </div>
                     )}
                   </div>
                 )}
@@ -1226,7 +1022,9 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
                   {selectedTemplateHasSampleResult ? (
                     <div className="space-y-2">
                       {selectedTemplateSampleImageUrls.length > 0 && (
-                        <div className={`grid gap-2 ${selectedTemplateSampleImageUrls.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                        <div
+                          className={`grid gap-2 ${selectedTemplateSampleImageUrls.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}
+                        >
                           {selectedTemplateSampleImageUrls.map((imageUrl, index) => (
                             <img
                               key={`${selectedTemplate.id}-sample-image-${index}`}
@@ -1284,10 +1082,13 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
                         </div>
                       )}
                       <div className="flex flex-wrap gap-1.5">
-                        {((selectedTemplate.sampleResultSummary?.videoExtensionApplied || 0) > 0
-                          || (selectedTemplate.sampleResultSummary?.videoExtensionCount || 0) > 0) && (
+                        {((selectedTemplate.sampleResultSummary?.videoExtensionApplied || 0) > 0 ||
+                          (selectedTemplate.sampleResultSummary?.videoExtensionCount || 0) > 0) && (
                           <span className="text-[11px] px-2 py-0.5 rounded border border-orange-500/30 bg-orange-500/10 text-orange-200">
-                            延长 {selectedTemplate.sampleResultSummary?.videoExtensionApplied || selectedTemplate.sampleResultSummary?.videoExtensionCount} 次
+                            延长{' '}
+                            {selectedTemplate.sampleResultSummary?.videoExtensionApplied ||
+                              selectedTemplate.sampleResultSummary?.videoExtensionCount}{' '}
+                            次
                           </span>
                         )}
                         {(selectedTemplate.sampleResultSummary?.totalDurationSeconds || 0) > 0 && (
@@ -1295,16 +1096,23 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
                             总时长 {selectedTemplate.sampleResultSummary?.totalDurationSeconds}s
                           </span>
                         )}
-                        {(((selectedTemplate.sampleResultSummary?.subtitleMode || '') !== '' && selectedTemplate.sampleResultSummary?.subtitleMode !== 'none')
-                          || (selectedTemplate.sampleResultSummary?.subtitleFileCount || 0) > 0) && (
+                        {(((selectedTemplate.sampleResultSummary?.subtitleMode || '') !== '' &&
+                          selectedTemplate.sampleResultSummary?.subtitleMode !== 'none') ||
+                          (selectedTemplate.sampleResultSummary?.subtitleFileCount || 0) > 0) && (
                           <span className="text-[11px] px-2 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-200">
-                            字幕{(selectedTemplate.sampleResultSummary?.subtitleFileCount || 0) > 0 ? ` · ${selectedTemplate.sampleResultSummary?.subtitleFileCount}` : ''}
+                            字幕
+                            {(selectedTemplate.sampleResultSummary?.subtitleFileCount || 0) > 0
+                              ? ` · ${selectedTemplate.sampleResultSummary?.subtitleFileCount}`
+                              : ''}
                           </span>
                         )}
-                        {(selectedTemplate.sampleResultSummary?.continuedFromVideo
-                          || Boolean(selectedTemplate.sampleResultSummary?.continuationStrategy)) && (
+                        {(selectedTemplate.sampleResultSummary?.continuedFromVideo ||
+                          Boolean(selectedTemplate.sampleResultSummary?.continuationStrategy)) && (
                           <span className="text-[11px] px-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/10 text-violet-200">
-                            {selectedTemplate.sampleResultSummary?.continuationStrategy === 'video_extension_chain' ? '官方续接' : '视频续接'}
+                            {selectedTemplate.sampleResultSummary?.continuationStrategy ===
+                            'video_extension_chain'
+                              ? '官方续接'
+                              : '视频续接'}
                           </span>
                         )}
                       </div>
@@ -1320,7 +1128,7 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
                   <h4 className="text-sm font-semibold text-slate-200 mb-3">节点列表</h4>
                   <div className="space-y-2 max-h-[200px] overflow-y-auto">
                     {selectedTemplate.config.nodes.length > 0 ? (
-                      selectedTemplate.config.nodes.map(node => (
+                      selectedTemplate.config.nodes.map((node) => (
                         <div
                           key={node.id}
                           className="flex items-center gap-2 p-2 bg-slate-800/60 border border-slate-700 rounded text-sm"
@@ -1351,9 +1159,7 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
                 {copyFeedback && (
                   <div
                     className={`text-xs ${
-                      copyFeedback.startsWith('复制失败')
-                        ? 'text-rose-300'
-                        : 'text-emerald-300'
+                      copyFeedback.startsWith('复制失败') ? 'text-rose-300' : 'text-emerald-300'
                     }`}
                   >
                     {copyFeedback}
@@ -1362,7 +1168,8 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
                 {templateActionFeedback && (
                   <div
                     className={`text-xs ${
-                      templateActionFeedback.startsWith('删除失败') || templateActionFeedback.startsWith('更新失败')
+                      templateActionFeedback.startsWith('删除失败') ||
+                      templateActionFeedback.startsWith('更新失败')
                         ? 'text-rose-300'
                         : 'text-emerald-300'
                     }`}
@@ -1387,28 +1194,55 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
           <div className="inline-flex items-stretch rounded-lg border border-slate-700 overflow-hidden bg-slate-900">
             <button
               onClick={handleCopyTemplate}
-              disabled={!selectedTemplate || Boolean(copyingTemplateId) || Boolean(deletingTemplateId)}
+              disabled={
+                !selectedTemplate || Boolean(copyingTemplateId) || Boolean(deletingTemplateId)
+              }
               className="px-3.5 py-1.5 text-xs text-slate-200 bg-slate-800 hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
             >
-              {copyingTemplateId ? <Loader2 size={13} className="animate-spin" /> : <Copy size={13} />}
+              {copyingTemplateId ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <Copy size={13} />
+              )}
               复制模板
             </button>
             <button
               onClick={handleEditTemplate}
-              disabled={!selectedTemplate || Boolean(copyingTemplateId) || Boolean(deletingTemplateId) || !canManageTemplate(selectedTemplate)}
+              disabled={
+                !selectedTemplate ||
+                Boolean(copyingTemplateId) ||
+                Boolean(deletingTemplateId) ||
+                !canManageTemplate(selectedTemplate)
+              }
               className="px-3.5 py-1.5 text-xs text-amber-100 bg-amber-900/30 hover:bg-amber-800/40 border-l border-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-              title={selectedTemplate && !canManageTemplate(selectedTemplate) ? '只读模板不可直接编辑' : '加载到画布并进入编辑'}
+              title={
+                selectedTemplate && !canManageTemplate(selectedTemplate)
+                  ? '只读模板不可直接编辑'
+                  : '加载到画布并进入编辑'
+              }
             >
               <Pencil size={13} />
               编辑模板
             </button>
             <button
               onClick={handleRequestDeleteTemplate}
-              disabled={!selectedTemplate || Boolean(deletingTemplateId) || !canManageTemplate(selectedTemplate)}
+              disabled={
+                !selectedTemplate ||
+                Boolean(deletingTemplateId) ||
+                !canManageTemplate(selectedTemplate)
+              }
               className="px-3.5 py-1.5 text-xs text-rose-200 bg-rose-900/30 hover:bg-rose-800/40 border-l border-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-              title={selectedTemplate && !canManageTemplate(selectedTemplate) ? '只读模板不可删除' : '删除模板'}
+              title={
+                selectedTemplate && !canManageTemplate(selectedTemplate)
+                  ? '只读模板不可删除'
+                  : '删除模板'
+              }
             >
-              {deletingTemplateId ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+              {deletingTemplateId ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <Trash2 size={13} />
+              )}
               删除模板
             </button>
             <button
@@ -1449,7 +1283,11 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
                   disabled={Boolean(deletingTemplateId)}
                   className="px-3 py-1.5 text-sm border border-rose-700/70 bg-rose-900/30 text-rose-200 rounded-lg hover:bg-rose-800/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 >
-                  {deletingTemplateId ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                  {deletingTemplateId ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={13} />
+                  )}
                   确认删除
                 </button>
               </div>
