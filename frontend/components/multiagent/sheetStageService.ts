@@ -1,8 +1,6 @@
 import type { AdkExportPrecheckIssue } from './adkSessionService';
-import {
-  extractAdkExportPrecheckIssues,
-  parseAdkTimestampMs,
-} from './adkSessionService';
+import { extractAdkExportPrecheckIssues, parseAdkTimestampMs } from './adkSessionService';
+import { safeJsonParse } from '../../utils/safeOps';
 
 export const SHEET_STAGE_PROTOCOL_VERSION = 'sheet-stage/v1';
 
@@ -123,12 +121,10 @@ const pickFirstValue = (record: UnknownRecord, keys: string[]): unknown => {
 const parseJsonValue = (value: string): unknown => {
   const raw = String(value || '').trim();
   if (!raw) return null;
-  if (!(raw.startsWith('{') || raw.startsWith('['))) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+  const parsed = safeJsonParse<unknown>(raw, null);
+  // 保留原 startsWith({|[) 行为：拒绝 string/number/boolean/null 字面量，仅接受 object 或 array
+  if (parsed === null || typeof parsed !== 'object') return null;
+  return parsed;
 };
 
 const normalizeStage = (value: unknown): SheetStageName | null => {
@@ -212,10 +208,7 @@ const parseArtifactRef = (
     });
   }
 
-  const artifactSessionId = pickFirstString(value, [
-    'artifact_session_id',
-    'artifactSessionId',
-  ]);
+  const artifactSessionId = pickFirstString(value, ['artifact_session_id', 'artifactSessionId']);
   if (!artifactSessionId) {
     parseErrors.push({
       sourcePath,
@@ -483,17 +476,13 @@ const parseEnvelopeCandidate = (candidate: EnvelopeCandidate): ParsedEnvelopeCan
   );
 
   const inputArtifact = parseArtifactRef(
-    dataRecord
-      ? pickFirstValue(dataRecord, ['input_artifact', 'inputArtifact'])
-      : undefined,
+    dataRecord ? pickFirstValue(dataRecord, ['input_artifact', 'inputArtifact']) : undefined,
     `${candidate.path}.data.input_artifact`,
     parseErrors,
     false
   );
 
-  const nextStageRaw = dataRecord
-    ? pickFirstString(dataRecord, ['next_stage', 'nextStage'])
-    : '';
+  const nextStageRaw = dataRecord ? pickFirstString(dataRecord, ['next_stage', 'nextStage']) : '';
   let nextStage: SheetStageName | '' = '';
   if (nextStageRaw) {
     const normalizedNextStage = normalizeStage(nextStageRaw);
@@ -567,20 +556,20 @@ const parseEnvelopeCandidate = (candidate: EnvelopeCandidate): ParsedEnvelopeCan
     envelope,
     parseErrors: dedupeErrors(parseErrors),
     score: envelope
-      ? (envelope.timeline.length * 10)
-        + envelope.playbackRefs.length
-        + (envelope.status === 'completed' ? 1 : 0)
+      ? envelope.timeline.length * 10 +
+        envelope.playbackRefs.length +
+        (envelope.status === 'completed' ? 1 : 0)
       : 0,
   };
 };
 
 const isEnvelopeCandidateRecord = (record: UnknownRecord): boolean => {
-  const hasProtocolKey = ('protocol_version' in record) || ('protocolVersion' in record);
+  const hasProtocolKey = 'protocol_version' in record || 'protocolVersion' in record;
   if (hasProtocolKey) return true;
 
   const hasStage = 'stage' in record;
   const hasStatus = 'status' in record;
-  const hasSession = ('session_id' in record) || ('sessionId' in record);
+  const hasSession = 'session_id' in record || 'sessionId' in record;
   const hasArtifact = 'artifact' in record;
   return hasStage && hasStatus && hasSession && hasArtifact;
 };
@@ -644,14 +633,12 @@ export const extractSheetStageProtocolState = (snapshot: unknown): SheetStagePro
     };
   }
 
-  const best = validCandidates
-    .slice()
-    .sort((left, right) => {
-      if (right.score !== left.score) {
-        return right.score - left.score;
-      }
-      return left.parseErrors.length - right.parseErrors.length;
-    })[0];
+  const best = validCandidates.slice().sort((left, right) => {
+    if (right.score !== left.score) {
+      return right.score - left.score;
+    }
+    return left.parseErrors.length - right.parseErrors.length;
+  })[0];
 
   const envelope = best.envelope;
   if (!envelope) {

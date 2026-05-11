@@ -2,10 +2,26 @@
  * 统一安全操作工具
  */
 
-/** 安全 JSON 解析，失败返回 fallback */
-export function safeJsonParse<T = unknown>(text: string, fallback: T): T {
+/**
+ * 安全 JSON 解析，失败返回 fallback。
+ *
+ * @param text - 待解析字符串（空字符串 / 非 JSON / 解析后不符合 guard 均视为失败）
+ * @param fallback - 失败时返回的值
+ * @param guard - 可选类型守卫，解析成功后用其验证结果；失败返回 fallback
+ *
+ * @example
+ *   const obj = safeJsonParse(raw, null, isRecord);  // UnknownRecord | null
+ *   const arr = safeJsonParse(raw, [], Array.isArray); // unknown[]
+ */
+export function safeJsonParse<T = unknown>(
+  text: string,
+  fallback: T,
+  guard?: (v: unknown) => v is T
+): T {
   try {
-    return JSON.parse(text) as T;
+    const parsed = JSON.parse(text) as unknown;
+    if (guard && !guard(parsed)) return fallback;
+    return parsed as T;
   } catch {
     return fallback;
   }

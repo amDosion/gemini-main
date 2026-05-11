@@ -1,4 +1,5 @@
 import { requestJson } from '../../services/http';
+import { safeJsonParse } from '../../utils/safeOps';
 
 export interface AdkSessionItem {
   id: string;
@@ -390,13 +391,8 @@ const isApprovalTicketLike = (record: UnknownRecord): boolean => {
 
 const parseJsonObject = (value: string): UnknownRecord | null => {
   const raw = String(value || '').trim();
-  if (!raw || !raw.startsWith('{') || !raw.endsWith('}')) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    return isRecord(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
+  if (!raw) return null;
+  return safeJsonParse<UnknownRecord | null>(raw, null, isRecord);
 };
 
 const toApprovalTicketObject = (value: unknown): AdkApprovalTicket | null => {
