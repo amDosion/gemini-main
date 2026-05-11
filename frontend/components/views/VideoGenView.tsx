@@ -39,10 +39,8 @@ import {
   type HoverPromptPreviewBase,
 } from '../../hooks/useHoverPromptPreview';
 import { useActionMenu, type ActionMenuAnchorBase } from '../../hooks/useActionMenu';
-import {
-  extractHistoryPrompts,
-  extractVideoHistoryMeta,
-} from '../../utils/videoHistoryHelpers';
+import { extractHistoryPrompts, extractVideoHistoryMeta } from '../../utils/videoHistoryHelpers';
+import { useVideoPlayerControls } from '../../hooks/views/useVideoPlayerControls';
 
 interface VideoGenViewProps {
   messages: Message[];
@@ -121,18 +119,32 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
   const [copiedPreviewMessageId, setCopiedPreviewMessageId] = useState<string | null>(null);
   const copiedResetTimerRef = useRef<number | null>(null);
   const historyItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const activeVideoRef = useRef<HTMLVideoElement | null>(null);
-  const activeVideoStageRef = useRef<HTMLDivElement | null>(null);
-  const videoProgressAnimationFrameRef = useRef<number | null>(null);
-  const videoSeekInputRef = useRef<HTMLInputElement | null>(null);
-  const videoProgressFillRef = useRef<HTMLDivElement | null>(null);
-  const videoProgressThumbRef = useRef<HTMLDivElement | null>(null);
-  const videoCurrentTimeLabelRef = useRef<HTMLSpanElement | null>(null);
-  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
-  const [videoDuration, setVideoDuration] = useState(0);
-  const [isVideoFullscreen, setIsVideoFullscreen] = useState(false);
-  const [videoVolume, setVideoVolume] = useState(1);
-  const [isVideoMuted, setIsVideoMuted] = useState(false);
+  // 视频播放器 state/refs/handlers 抽离至 hooks/views/useVideoPlayerControls
+  const {
+    isVideoPlaying,
+    setIsVideoPlaying,
+    videoDuration,
+    setVideoDuration,
+    isVideoFullscreen,
+    setIsVideoFullscreen,
+    videoVolume,
+    isVideoMuted,
+    activeVideoRef,
+    activeVideoStageRef,
+    videoSeekInputRef,
+    videoProgressFillRef,
+    videoProgressThumbRef,
+    videoCurrentTimeLabelRef,
+    videoProgressAnimationFrameRef,
+    handleToggleFullscreen,
+    formatVideoTime,
+    handleActiveVideoSeek,
+    handleActiveVideoVolumeChange,
+    handleToggleMute,
+    stopVideoProgressAnimation,
+    syncVideoProgressUi,
+    startVideoProgressAnimation,
+  } = useVideoPlayerControls();
 
   const videoMode: AppMode = 'video-gen';
   const controls = useControlsState(videoMode, activeModelConfig);
@@ -540,128 +552,6 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
     }
   }, []);
 
-  const handleToggleFullscreen = useCallback(async () => {
-    const target = activeVideoStageRef.current;
-    if (!target || typeof document === 'undefined') {
-      return;
-    }
-
-    const currentFullscreenElement = document.fullscreenElement;
-    if (currentFullscreenElement === target) {
-      if (typeof document.exitFullscreen === 'function') {
-        await document.exitFullscreen();
-      }
-      return;
-    }
-    if (typeof target.requestFullscreen === 'function') {
-      await target.requestFullscreen();
-    }
-  }, []);
-
-  const formatVideoTime = useCallback((timeInSeconds: number) => {
-    if (!Number.isFinite(timeInSeconds) || timeInSeconds < 0) {
-      return '0:00.000';
-    }
-    const totalMilliseconds = Math.floor(timeInSeconds * 1000);
-    const hours = Math.floor(totalMilliseconds / 3_600_000);
-    const minutes = Math.floor((totalMilliseconds % 3_600_000) / 60_000);
-    const seconds = Math.floor((totalMilliseconds % 60_000) / 1000);
-    const milliseconds = totalMilliseconds % 1000;
-
-    if (hours > 0) {
-      return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(milliseconds).padStart(3, '0')}`;
-    }
-
-    return `${minutes}:${String(seconds).padStart(2, '0')}.${String(milliseconds).padStart(3, '0')}`;
-  }, []);
-
-  const handleActiveVideoSeek = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const video = activeVideoRef.current;
-      if (!video) {
-        return;
-      }
-      const nextTime = Number(event.target.value);
-      video.currentTime = nextTime;
-      const duration = video.duration || videoDuration || 0;
-      const ratio = duration > 0 ? nextTime / duration : 0;
-      if (videoProgressFillRef.current) {
-        videoProgressFillRef.current.style.width = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
-      }
-      if (videoProgressThumbRef.current) {
-        videoProgressThumbRef.current.style.left = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
-      }
-      if (videoCurrentTimeLabelRef.current) {
-        videoCurrentTimeLabelRef.current.textContent = formatVideoTime(nextTime);
-      }
-    },
-    [formatVideoTime, videoDuration]
-  );
-
-  const handleActiveVideoVolumeChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const nextVolume = Number(event.target.value);
-      setVideoVolume(nextVolume);
-      setIsVideoMuted(nextVolume <= 0.001);
-    },
-    []
-  );
-
-  const handleToggleMute = useCallback(() => {
-    setIsVideoMuted((previous) => !previous);
-  }, []);
-
-  const stopVideoProgressAnimation = useCallback(() => {
-    if (videoProgressAnimationFrameRef.current !== null) {
-      window.cancelAnimationFrame(videoProgressAnimationFrameRef.current);
-      videoProgressAnimationFrameRef.current = null;
-    }
-  }, []);
-
-  const syncVideoProgressUi = useCallback(
-    (currentTime: number, duration: number) => {
-      const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
-      const safeCurrentTime = Number.isFinite(currentTime) && currentTime > 0 ? currentTime : 0;
-      const ratio = safeDuration > 0 ? safeCurrentTime / safeDuration : 0;
-      const progressPercent = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
-
-      if (videoSeekInputRef.current) {
-        videoSeekInputRef.current.value = String(safeCurrentTime);
-      }
-      if (videoProgressFillRef.current) {
-        videoProgressFillRef.current.style.width = progressPercent;
-      }
-      if (videoProgressThumbRef.current) {
-        videoProgressThumbRef.current.style.left = progressPercent;
-      }
-      if (videoCurrentTimeLabelRef.current) {
-        videoCurrentTimeLabelRef.current.textContent = formatVideoTime(safeCurrentTime);
-      }
-    },
-    [formatVideoTime]
-  );
-
-  const startVideoProgressAnimation = useCallback(() => {
-    stopVideoProgressAnimation();
-
-    const syncProgress = () => {
-      const video = activeVideoRef.current;
-      if (!video) {
-        videoProgressAnimationFrameRef.current = null;
-        return;
-      }
-
-      syncVideoProgressUi(video.currentTime || 0, video.duration || 0);
-
-      if (!video.paused && !video.ended) {
-        videoProgressAnimationFrameRef.current = window.requestAnimationFrame(syncProgress);
-      } else {
-        videoProgressAnimationFrameRef.current = null;
-      }
-    };
-
-    videoProgressAnimationFrameRef.current = window.requestAnimationFrame(syncProgress);
-  }, [stopVideoProgressAnimation, syncVideoProgressUi]);
 
   // hook 自己已处理 rAF position-sync + scroll/resize listener + unmount cleanup；
   // 这里仅保留 view 特有 timer cleanup（copy 反馈 + video 进度 rAF）
