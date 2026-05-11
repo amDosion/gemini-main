@@ -32,7 +32,9 @@ export interface DownloadBlobResult {
 const normalizeProgress = (loaded: number, total: number): TransferProgress => {
   const safeLoaded = Number.isFinite(loaded) ? Math.max(0, loaded) : 0;
   const safeTotal = Number.isFinite(total) && total > 0 ? total : null;
-  const percent = safeTotal ? Math.max(0, Math.min(100, Math.round((safeLoaded / safeTotal) * 100))) : null;
+  const percent = safeTotal
+    ? Math.max(0, Math.min(100, Math.round((safeLoaded / safeTotal) * 100)))
+    : null;
   return {
     loaded: safeLoaded,
     total: safeTotal,
@@ -184,4 +186,3 @@ export const downloadBlobWithXhr = async ({
     xhr.send(body);
   });
 };
-
