@@ -27,8 +27,14 @@ export interface ActionMenuPosition {
 }
 
 export interface UseActionMenuOptions {
-  /** target 命中此函数视为"内部"，不关闭 menu（如历史区域操作面板）。 */
-  isExempted?: (target: Node) => boolean;
+  /**
+   * target 命中此函数视为"内部"，不关闭 menu（如历史区域操作面板）。
+   * 签名与 ImageExpandView 的 isHistoryActionSurface 对齐（接受 EventTarget | null）。
+   *
+   * @example
+   *   useActionMenu({ isExempted: (t) => isHistoryActionSurface(t) })
+   */
+  isExempted?: (target: EventTarget | null) => boolean;
   fallbackPanelWidth?: number;
   fallbackPanelHeight?: number;
   gap?: number;
@@ -117,9 +123,10 @@ export function useActionMenu<A extends ActionMenuAnchorBase = ActionMenuAnchorB
   useEffect(() => {
     if (!anchor) return undefined;
     const handleOutsideClick = (event: MouseEvent) => {
-      const target = event.target as Node | null;
+      const target = event.target;
       if (!target) return;
-      if (panelRef.current?.contains(target)) return;
+      // contains 只对 Node 生效；isExempted 接收全部 EventTarget（与原 isHistoryActionSurface 一致）
+      if (target instanceof Node && panelRef.current?.contains(target)) return;
       if (isExempted?.(target)) return;
       close();
     };

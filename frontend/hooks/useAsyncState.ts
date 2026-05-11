@@ -35,8 +35,6 @@ export function useAsyncState<T, Args extends unknown[] = []>(
   options?: UseAsyncStateOptions<T>
 ): UseAsyncStateResult<T, Args> {
   const initialData = options?.initialData ?? null;
-  const onSuccess = options?.onSuccess;
-  const onError = options?.onError;
 
   const [data, setData] = useState<T | null>(initialData);
   const [loading, setLoading] = useState(false);
@@ -45,6 +43,17 @@ export function useAsyncState<T, Args extends unknown[] = []>(
   const isMountedRef = useRef(true);
   const sequenceRef = useRef(0);
 
+  // 用 ref 镜像最新 asyncFn/onSuccess/onError，使 execute 的 identity 永久稳定。
+  // 这样调用方把 execute 放进 useEffect deps 数组不会触发重复执行（即使 asyncFn 是内联函数）。
+  const asyncFnRef = useRef(asyncFn);
+  const onSuccessRef = useRef(options?.onSuccess);
+  const onErrorRef = useRef(options?.onError);
+  useEffect(() => {
+    asyncFnRef.current = asyncFn;
+    onSuccessRef.current = options?.onSuccess;
+    onErrorRef.current = options?.onError;
+  });
+
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -52,33 +61,32 @@ export function useAsyncState<T, Args extends unknown[] = []>(
     };
   }, []);
 
-  const execute = useCallback(
-    async (...args: Args): Promise<T | null> => {
-      const mySequence = ++sequenceRef.current;
-      setLoading(true);
-      setError(null);
-      try {
-        const result = await asyncFn(...args);
-        if (!isMountedRef.current || mySequence !== sequenceRef.current) {
-          return null;
-        }
-        setData(result);
-        setLoading(false);
-        onSuccess?.(result);
-        return result;
-      } catch (err) {
-        if (!isMountedRef.current || mySequence !== sequenceRef.current) {
-          return null;
-        }
-        const errMsg = getErrorMessage(err);
-        setError(errMsg);
-        setLoading(false);
-        onError?.(err);
+  const execute = useCallback(async (...args: Args): Promise<T | null> => {
+    const mySequence = ++sequenceRef.current;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await asyncFnRef.current(...args);
+      // isMounted=false 或 stale sequence：两种情况均跳过 setState + onSuccess/onError 回调
+      if (!isMountedRef.current || mySequence !== sequenceRef.current) {
         return null;
       }
-    },
-    [asyncFn, onSuccess, onError]
-  );
+      setData(result);
+      setLoading(false);
+      onSuccessRef.current?.(result);
+      return result;
+    } catch (err) {
+      // isMounted=false 或 stale sequence：同样跳过 setState + 回调
+      if (!isMountedRef.current || mySequence !== sequenceRef.current) {
+        return null;
+      }
+      const errMsg = getErrorMessage(err);
+      setError(errMsg);
+      setLoading(false);
+      onErrorRef.current?.(err);
+      return null;
+    }
+  }, []);
 
   const reset = useCallback(() => {
     sequenceRef.current++;

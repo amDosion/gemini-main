@@ -51,6 +51,8 @@ export interface UseHoverPromptPreviewResult<P extends HoverPromptPreviewBase> {
 const DEFAULT_HIDE_DELAY_MS = 300;
 const ESTIMATED_PANEL_WIDTH = 360;
 const ESTIMATED_PANEL_HEIGHT = 260;
+// 与 ImageExpandView.tsx:424 对齐：resize 起始高度回退值（与位置估算 260 不同）
+const RESIZE_FALLBACK_HEIGHT = 280;
 const MIN_PANEL_WIDTH = 280;
 const MIN_PANEL_HEIGHT = 190;
 const VIEWPORT_PADDING = 8;
@@ -94,6 +96,13 @@ export function useHoverPromptPreview<
     onMouseUp?: () => void;
   }>({});
   const isResizingRef = useRef(false);
+  // size / 前一帧 messageId 镜像：openPreview 同步读取，避免 setPreview functional updater 的
+  // strict-mode 双调用副作用（与 ImageExpandView.tsx:407-410 行为对齐）
+  const sizeRef = useRef<HoverPromptPreviewSize | null>(null);
+  const prevMessageIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    sizeRef.current = size;
+  }, [size]);
 
   const clearHideTimer = useCallback(() => {
     if (hideTimerRef.current !== null) {
@@ -117,25 +126,25 @@ export function useHoverPromptPreview<
     setPreview(null);
     setPosition(null);
     setSize(null);
+    sizeRef.current = null;
+    prevMessageIdRef.current = undefined;
   }, [clearHideTimer, detachResizeListeners]);
 
   const openPreview = useCallback(
     (payload: P) => {
       clearHideTimer();
-      setPreview((prev) => {
-        if (!prev || prev.messageId !== payload.messageId) {
-          setSize(null);
-        }
-        return payload;
-      });
-      setPosition(
-        computePosition(
-          payload.anchorX,
-          payload.anchorY,
-          ESTIMATED_PANEL_WIDTH,
-          ESTIMATED_PANEL_HEIGHT
-        )
-      );
+      const sameMsg = prevMessageIdRef.current === payload.messageId;
+      if (!sameMsg) {
+        setSize(null);
+        sizeRef.current = null;
+      }
+      prevMessageIdRef.current = payload.messageId;
+      setPreview(payload);
+      const w = sameMsg ? (sizeRef.current?.width ?? ESTIMATED_PANEL_WIDTH) : ESTIMATED_PANEL_WIDTH;
+      const h = sameMsg
+        ? (sizeRef.current?.height ?? ESTIMATED_PANEL_HEIGHT)
+        : ESTIMATED_PANEL_HEIGHT;
+      setPosition(computePosition(payload.anchorX, payload.anchorY, w, h));
     },
     [clearHideTimer]
   );
@@ -170,7 +179,7 @@ export function useHoverPromptPreview<
       const startY = e.clientY;
       const rect = panelRef.current?.getBoundingClientRect();
       const startWidth = rect?.width ?? size?.width ?? ESTIMATED_PANEL_WIDTH;
-      const startHeight = rect?.height ?? size?.height ?? ESTIMATED_PANEL_HEIGHT;
+      const startHeight = rect?.height ?? size?.height ?? RESIZE_FALLBACK_HEIGHT;
       const anchorLeft = position?.left ?? VIEWPORT_PADDING;
       const anchorTop = position?.top ?? VIEWPORT_PADDING;
 
@@ -236,6 +245,25 @@ export function useHoverPromptPreview<
       window.cancelAnimationFrame(rafId);
     };
   }, [preview, size]);
+
+  // Window scroll + resize 兜底（与 ImageExpandView.tsx:476-490 对齐）
+  // - resize: 直接关闭（panel 估算尺寸失效）
+  // - scroll: 若 scroll target 命中 panel 内部则跳过（用户在 panel 内滚动），否则关闭
+  useEffect(() => {
+    if (!preview) return undefined;
+    const handleWindowResize = () => closePreview();
+    const handleWindowScroll = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Node && panelRef.current?.contains(target)) return;
+      closePreview();
+    };
+    window.addEventListener('resize', handleWindowResize);
+    window.addEventListener('scroll', handleWindowScroll, true);
+    return () => {
+      window.removeEventListener('resize', handleWindowResize);
+      window.removeEventListener('scroll', handleWindowScroll, true);
+    };
+  }, [preview, closePreview]);
 
   // Cleanup on unmount
   useEffect(() => {
