@@ -1,13 +1,23 @@
 /**
  * useChat Hook - 重构版本
- * 
+ *
  * 使用策略模式替代巨大的 if-else 链
  * 修复问题1：创建全局 pollingManager 实例
  * 修复问题2：使用 PreprocessorRegistry 处理文件上传
  */
 
 import { useState, useCallback, useMemo, useEffect, useRef, SetStateAction } from 'react';
-import { Message, Role, LoadingState, ChatOptions, Attachment, AppMode, ModelConfig, ToolCall, ToolResult } from '../types/types';
+import {
+  Message,
+  Role,
+  LoadingState,
+  ChatOptions,
+  Attachment,
+  AppMode,
+  ModelConfig,
+  ToolCall,
+  ToolResult,
+} from '../types/types';
 import { v4 as uuidv4 } from 'uuid';
 import { llmService } from '../services/llmService';
 import { storageUpload } from '../services/storage/storageUpload';
@@ -15,7 +25,12 @@ import { storageUpload } from '../services/storage/storageUpload';
 // 导入新的策略模式组件
 import { strategyRegistry, preprocessorRegistry } from './handlers/strategyConfig';
 import { PollingManager } from './handlers/PollingManager';
-import { ExecutionContext, StreamUpdate, HandlerMode, ResearchActionSubmitHandler } from './handlers/types';
+import {
+  ExecutionContext,
+  StreamUpdate,
+  HandlerMode,
+  ResearchActionSubmitHandler,
+} from './handlers/types';
 import { getUrlType } from './handlers/attachmentUtils';
 
 const AUTO_RESEARCH_CONTEXT_WINDOW = 6;
@@ -54,7 +69,7 @@ const describeLeadRole = (role: AutoResearchLeadRole): string => {
 
 const summarizeToolEvidenceForAutoResearch = (
   toolCalls?: ReadonlyArray<ToolCall>,
-  toolResults?: ReadonlyArray<ToolResult>,
+  toolResults?: ReadonlyArray<ToolResult>
 ): string => {
   const calls = toolCalls || [];
   const results = toolResults || [];
@@ -76,9 +91,7 @@ const summarizeToolEvidenceForAutoResearch = (
     const result = recentResults[index];
     const call = callById.get(result.callId);
     const toolName = call?.name || result.name || 'unknown_tool';
-    const argsText = call?.arguments
-      ? JSON.stringify(call.arguments, null, 0).slice(0, 280)
-      : '{}';
+    const argsText = call?.arguments ? JSON.stringify(call.arguments, null, 0).slice(0, 280) : '{}';
     const rawResult =
       typeof result.result === 'string'
         ? result.result
@@ -109,7 +122,8 @@ const summarizeContextForAutoResearch = (history: Message[]): string => {
 
   return sliced
     .map((message) => {
-      const role = message.role === Role.USER ? '用户' : message.role === Role.MODEL ? '助手' : '系统';
+      const role =
+        message.role === Role.USER ? '用户' : message.role === Role.MODEL ? '助手' : '系统';
       const content = (message.content || '').trim();
       const preview = content.length > 280 ? `${content.slice(0, 280)}...` : content;
       return `[${role}] ${preview || '(空内容)'}`;
@@ -123,7 +137,7 @@ const buildAutoDeepResearchPrompt = (
   contextSummary: string,
   leadRole: AutoResearchLeadRole,
   personaId: string | undefined,
-  toolEvidenceSummary: string,
+  toolEvidenceSummary: string
 ): string => {
   const personaKey = resolvePersonaKey(personaId) || '未指定';
   const leadRoleText = describeLeadRole(leadRole);
@@ -161,7 +175,10 @@ const buildAutoDeepResearchPrompt = (
   ].join('\n');
 };
 
-const combineAutoDeepResearchContent = (chatContent: string, deepResearchContent: string): string => {
+const combineAutoDeepResearchContent = (
+  chatContent: string,
+  deepResearchContent: string
+): string => {
   return [
     chatContent || '',
     '',
@@ -179,7 +196,7 @@ type ModelMessageUpdater = (message: Message) => Message;
 
 const composeModelMessageUpdaters = (
   previousUpdater: ModelMessageUpdater | null,
-  nextUpdater: ModelMessageUpdater,
+  nextUpdater: ModelMessageUpdater
 ): ModelMessageUpdater => {
   if (!previousUpdater) return nextUpdater;
   return (message) => nextUpdater(previousUpdater(message));
@@ -213,7 +230,7 @@ export const useChat = (
   updateSessionMessages: (
     id: string,
     msgs: Message[],
-    options?: { strategy?: 'replace' | 'merge-by-id' },
+    options?: { strategy?: 'replace' | 'merge-by-id' }
   ) => void,
   apiKey?: string,
   activeStorageId?: string | null
@@ -242,53 +259,59 @@ export const useChat = (
       pollingManager.cleanup();
       researchActionHandlersRef.current.clear();
     };
-  }, [pollingManager, researchActionHandlersRef]);
-
-  const stopGeneration = useCallback(() => {
-      llmService.cancelCurrentStream();
-      activeHandlerCancelRef.current?.();
-      activeHandlerCancelRef.current = null;
-      researchActionHandlersRef.current.clear();
-      setLoadingState('idle');
+    // deps=[]：pollingManager 是 useMemo deps=[] 永久稳定；ref identity 永久稳定，
+    // 不应在 deps（React rule）。原 [pollingManager, researchActionHandlersRef]
+    // 无功能影响但属冗余 deps（修 final audit MEDIUM）。
   }, []);
 
-  const submitResearchAction = useCallback(async (messageId: string, selectedInput: unknown) => {
-    const targetMessage = messagesRef.current.find((msg) => msg.id === messageId);
-    if (!targetMessage) {
-      throw new Error('未找到对应的 Deep Research 消息');
-    }
+  const stopGeneration = useCallback(() => {
+    llmService.cancelCurrentStream();
+    activeHandlerCancelRef.current?.();
+    activeHandlerCancelRef.current = null;
+    researchActionHandlersRef.current.clear();
+    setLoadingState('idle');
+  }, []);
 
-    if (targetMessage.responseKind !== 'deep-research' || targetMessage.role !== Role.MODEL) {
-      throw new Error('仅支持对 Deep Research 模型消息提交动作');
-    }
+  const submitResearchAction = useCallback(
+    async (messageId: string, selectedInput: unknown) => {
+      const targetMessage = messagesRef.current.find((msg) => msg.id === messageId);
+      if (!targetMessage) {
+        throw new Error('未找到对应的 Deep Research 消息');
+      }
 
-    const interactionId = targetMessage.researchInteractionId;
-    if (!interactionId) {
-      throw new Error('当前消息缺少 researchInteractionId，无法提交动作');
-    }
+      if (targetMessage.responseKind !== 'deep-research' || targetMessage.role !== Role.MODEL) {
+        throw new Error('仅支持对 Deep Research 模型消息提交动作');
+      }
 
-    const actionHandler = researchActionHandlersRef.current.get(interactionId);
-    if (!actionHandler) {
-      throw new Error('当前 Deep Research 任务未处于可提交动作状态');
-    }
+      const interactionId = targetMessage.researchInteractionId;
+      if (!interactionId) {
+        throw new Error('当前消息缺少 researchInteractionId，无法提交动作');
+      }
 
-    setMessages(prev =>
-      prev.map(msg =>
-        msg.id === messageId
-          ? {
-              ...msg,
-              researchStatus: {
-                status: 'awaiting_action',
-                progress: '正在提交动作，准备继续研究...',
-                elapsedTime: msg.researchStatus?.elapsedTime,
-              },
-            }
-          : msg
-      )
-    );
+      const actionHandler = researchActionHandlersRef.current.get(interactionId);
+      if (!actionHandler) {
+        throw new Error('当前 Deep Research 任务未处于可提交动作状态');
+      }
 
-    await actionHandler(selectedInput);
-  }, [setMessages]);
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId
+            ? {
+                ...msg,
+                researchStatus: {
+                  status: 'awaiting_action',
+                  progress: '正在提交动作，准备继续研究...',
+                  elapsedTime: msg.researchStatus?.elapsedTime,
+                },
+              }
+            : msg
+        )
+      );
+
+      await actionHandler(selectedInput);
+    },
+    [setMessages]
+  );
 
   const sendMessage = async (
     text: string,
@@ -338,8 +361,8 @@ export const useChat = (
       const modelMessageUpdater = pendingModelMessageUpdater;
       pendingModelMessageUpdater = null;
 
-      setMessagesIfCurrentSession(prev =>
-        prev.map(msg => (msg.id === modelMessageId ? modelMessageUpdater(msg) : msg))
+      setMessagesIfCurrentSession((prev) =>
+        prev.map((msg) => (msg.id === modelMessageId ? modelMessageUpdater(msg) : msg))
       );
     };
 
@@ -370,19 +393,19 @@ export const useChat = (
 
     try {
       // 1. Initialize Service Context
-      const contextHistory = baseMessages.filter(m => m.mode === mode || (!m.mode && mode === 'chat'));
+      const contextHistory = baseMessages.filter(
+        (m) => m.mode === mode || (!m.mode && mode === 'chat')
+      );
       // 增强检索：强制启用联网搜索
       const enhancedOptions = options.enableEnhancedRetrieval
         ? { ...options, enableSearch: true }
         : options;
       const isPrimaryDeepResearch = mode === 'chat' && !!options.enableDeepResearch;
-      const isAutoDeepResearch = mode === 'chat' && !isPrimaryDeepResearch && !!options.enableAutoDeepResearch;
-      const handlerMode: HandlerMode =
-        isPrimaryDeepResearch
-          ? 'deep-research'
-          : mode;
+      const isAutoDeepResearch =
+        mode === 'chat' && !isPrimaryDeepResearch && !!options.enableAutoDeepResearch;
+      const handlerMode: HandlerMode = isPrimaryDeepResearch ? 'deep-research' : mode;
       const previousResearchInteractionId =
-        (isPrimaryDeepResearch || isAutoDeepResearch)
+        isPrimaryDeepResearch || isAutoDeepResearch
           ? [...contextHistory]
               .reverse()
               .find(
@@ -390,18 +413,17 @@ export const useChat = (
                   message.role === Role.MODEL &&
                   message.responseKind === 'deep-research' &&
                   !!message.researchInteractionId
-              )
-              ?.researchInteractionId
+              )?.researchInteractionId
           : undefined;
 
       if ((isPrimaryDeepResearch || isAutoDeepResearch) && !options.deepResearchAgentId?.trim()) {
         throw new Error('请先在工具栏“自动深挖”菜单中选择 Deep Research 专用模型。');
       }
-      
+
       // ✅ 详细日志：记录 image-gen 模式下传递给 llmService 的参数
       if (mode === 'image-gen') {
       }
-      
+
       llmService.startNewChat(contextHistory, currentModel, enhancedOptions);
 
       // 2. Create User Message (before preprocessing)
@@ -455,7 +477,7 @@ export const useChat = (
       };
 
       const updatedMessages = [...baseMessages, userMessage];
-      setMessagesIfCurrentSession(prev => [...prev, userMessage]); // ✅ 当前会话保留 Blob URL 用于显示
+      setMessagesIfCurrentSession((prev) => [...prev, userMessage]); // ✅ 当前会话保留 Blob URL 用于显示
       // ✅ 注意：这里不调用 updateSessionMessages，等待 uploadTask 完成后再保存（会清空 Blob URL）
       // 当前会话的 messages 状态保留 Blob URL，用于立即显示
       setLoadingStateIfCurrentSession(mode === 'chat' ? 'streaming' : 'loading');
@@ -469,12 +491,13 @@ export const useChat = (
         timestamp: Date.now(),
         mode: mode,
         responseKind: handlerMode === 'deep-research' ? 'deep-research' : 'chat',
-        researchStatus: handlerMode === 'deep-research'
-          ? { status: 'starting', progress: '正在启动 Deep Research...', elapsedTime: 0 }
-          : undefined,
+        researchStatus:
+          handlerMode === 'deep-research'
+            ? { status: 'starting', progress: '正在启动 Deep Research...', elapsedTime: 0 }
+            : undefined,
       };
 
-      setMessagesIfCurrentSession(prev => [...prev, initialModelMessage]);
+      setMessagesIfCurrentSession((prev) => [...prev, initialModelMessage]);
 
       // 7. Set up callbacks
       const onStreamUpdate = (update: StreamUpdate) => {
@@ -506,10 +529,12 @@ export const useChat = (
           researchRequiredAction: undefined,
           ...(result.thoughts && { thoughts: result.thoughts }),
           ...(result.textResponse && { textResponse: result.textResponse }),
-          ...(result.enhancedPrompt && { enhancedPrompt: result.enhancedPrompt })
+          ...(result.enhancedPrompt && { enhancedPrompt: result.enhancedPrompt }),
         };
 
-        setMessagesIfCurrentSession(prev => prev.map(msg => msg.id === modelMessageId ? chatOnlyMessage : msg));
+        setMessagesIfCurrentSession((prev) =>
+          prev.map((msg) => (msg.id === modelMessageId ? chatOnlyMessage : msg))
+        );
 
         const autoContextSummary = summarizeContextForAutoResearch([
           ...contextHistory,
@@ -519,7 +544,7 @@ export const useChat = (
         const autoLeadRole = resolveLeadRoleByPersona(context.options.personaId);
         const toolEvidenceSummary = summarizeToolEvidenceForAutoResearch(
           result.toolCalls,
-          result.toolResults,
+          result.toolResults
         );
         const autoPrompt = buildAutoDeepResearchPrompt(
           text,
@@ -527,7 +552,7 @@ export const useChat = (
           autoContextSummary,
           autoLeadRole,
           context.options.personaId,
-          toolEvidenceSummary,
+          toolEvidenceSummary
         );
         const autoResearchBaseContent = result.content;
 
@@ -554,9 +579,10 @@ export const useChat = (
             const mergedUpdate: StreamUpdate = {
               ...update,
               responseKind: 'deep-research',
-              content: typeof update.content === 'string'
-                ? combineAutoDeepResearchContent(autoResearchBaseContent, update.content)
-                : undefined,
+              content:
+                typeof update.content === 'string'
+                  ? combineAutoDeepResearchContent(autoResearchBaseContent, update.content)
+                  : undefined,
             };
             onStreamUpdate(mergedUpdate);
           },
@@ -564,7 +590,8 @@ export const useChat = (
 
         try {
           const autoDeepResearchHandler = strategyRegistry.getHandler('deep-research');
-          const autoDeepResearchResult = await autoDeepResearchHandler.execute(autoDeepResearchContext);
+          const autoDeepResearchResult =
+            await autoDeepResearchHandler.execute(autoDeepResearchContext);
           finalResult = {
             ...result,
             content: combineAutoDeepResearchContent(result.content, autoDeepResearchResult.content),
@@ -577,9 +604,10 @@ export const useChat = (
             researchRequiredAction: autoDeepResearchResult.researchRequiredAction,
           };
         } catch (autoResearchError) {
-          const errorMessage = autoResearchError instanceof Error
-            ? autoResearchError.message
-            : String(autoResearchError);
+          const errorMessage =
+            autoResearchError instanceof Error
+              ? autoResearchError.message
+              : String(autoResearchError);
           finalResult = {
             ...result,
             content: `${result.content}\n\n---\n\n## Deep Research 深挖补充\n\n⚠️ 自动深挖失败：${errorMessage}`,
@@ -603,24 +631,44 @@ export const useChat = (
         toolResults: finalResult.toolResults ? [...finalResult.toolResults] : undefined,
         responseKind: finalResult.responseKind || initialModelMessage.responseKind,
         researchStatus: finalResult.researchStatus || initialModelMessage.researchStatus,
-        researchInteractionId: finalResult.researchInteractionId || initialModelMessage.researchInteractionId,
+        researchInteractionId:
+          finalResult.researchInteractionId || initialModelMessage.researchInteractionId,
         researchRequiredAction: finalResult.researchRequiredAction,
         // 存储 thoughts、textResponse、enhancedPrompt（如果存在）
         ...(finalResult.thoughts && { thoughts: finalResult.thoughts }),
         ...(finalResult.textResponse && { textResponse: finalResult.textResponse }),
         ...(finalResult.enhancedPrompt && { enhancedPrompt: finalResult.enhancedPrompt }),
-        ...(finalResult.continuationStrategy && { continuationStrategy: finalResult.continuationStrategy }),
-        ...(typeof finalResult.videoExtensionCount === 'number' && { videoExtensionCount: finalResult.videoExtensionCount }),
-        ...(typeof finalResult.videoExtensionApplied === 'number' && { videoExtensionApplied: finalResult.videoExtensionApplied }),
-        ...(typeof finalResult.totalDurationSeconds === 'number' && { totalDurationSeconds: finalResult.totalDurationSeconds }),
-        ...(finalResult.continuedFromVideo && { continuedFromVideo: finalResult.continuedFromVideo }),
-        ...(typeof finalResult.storyboardShotSeconds === 'number' && { storyboardShotSeconds: finalResult.storyboardShotSeconds }),
-        ...(typeof finalResult.generateAudio === 'boolean' && { generateAudio: finalResult.generateAudio }),
+        ...(finalResult.continuationStrategy && {
+          continuationStrategy: finalResult.continuationStrategy,
+        }),
+        ...(typeof finalResult.videoExtensionCount === 'number' && {
+          videoExtensionCount: finalResult.videoExtensionCount,
+        }),
+        ...(typeof finalResult.videoExtensionApplied === 'number' && {
+          videoExtensionApplied: finalResult.videoExtensionApplied,
+        }),
+        ...(typeof finalResult.totalDurationSeconds === 'number' && {
+          totalDurationSeconds: finalResult.totalDurationSeconds,
+        }),
+        ...(finalResult.continuedFromVideo && {
+          continuedFromVideo: finalResult.continuedFromVideo,
+        }),
+        ...(typeof finalResult.storyboardShotSeconds === 'number' && {
+          storyboardShotSeconds: finalResult.storyboardShotSeconds,
+        }),
+        ...(typeof finalResult.generateAudio === 'boolean' && {
+          generateAudio: finalResult.generateAudio,
+        }),
         ...(finalResult.subtitleMode && { subtitleMode: finalResult.subtitleMode }),
         ...(finalResult.subtitleLanguage && { subtitleLanguage: finalResult.subtitleLanguage }),
-        ...(finalResult.subtitleAttachmentIds && finalResult.subtitleAttachmentIds.length > 0 && { subtitleAttachmentIds: [...finalResult.subtitleAttachmentIds] }),
+        ...(finalResult.subtitleAttachmentIds &&
+          finalResult.subtitleAttachmentIds.length > 0 && {
+            subtitleAttachmentIds: [...finalResult.subtitleAttachmentIds],
+          }),
         ...(finalResult.trackedFeature && { trackedFeature: finalResult.trackedFeature }),
-        ...(finalResult.trackingOverlayText && { trackingOverlayText: finalResult.trackingOverlayText }),
+        ...(finalResult.trackingOverlayText && {
+          trackingOverlayText: finalResult.trackingOverlayText,
+        }),
       };
 
       // ✅ 调试日志：检查 thoughts/textResponse/enhancedPrompt 是否被添加到消息中
@@ -629,14 +677,16 @@ export const useChat = (
       if (displayModelMessage.attachments && displayModelMessage.attachments.length > 0) {
         displayModelMessage.attachments.forEach((att, idx) => {
           const urlType = getUrlType(att.url, att.uploadStatus);
-          
-          const hasCloudUrl = att.uploadStatus === 'completed' && 
-                             (att.url?.startsWith('http://') || att.url?.startsWith('https://'));
-          
+
+          const hasCloudUrl =
+            att.uploadStatus === 'completed' &&
+            (att.url?.startsWith('http://') || att.url?.startsWith('https://'));
         });
       }
 
-      setMessagesIfCurrentSession(prev => prev.map(msg => msg.id === modelMessageId ? displayModelMessage : msg));
+      setMessagesIfCurrentSession((prev) =>
+        prev.map((msg) => (msg.id === modelMessageId ? displayModelMessage : msg))
+      );
 
       // 10. Handle upload task (if any)
       if (finalResult.uploadTask) {
@@ -648,52 +698,71 @@ export const useChat = (
             : userMessage;
 
           const dbModelMessage: Message = {
-              ...initialModelMessage,
-              content: finalResult.content,
-              attachments: dbAttachments as Attachment[],
-              toolCalls: finalResult.toolCalls ? [...finalResult.toolCalls] : undefined,
-              toolResults: finalResult.toolResults ? [...finalResult.toolResults] : undefined,
-              responseKind: finalResult.responseKind || initialModelMessage.responseKind,
-              researchStatus: finalResult.researchStatus || initialModelMessage.researchStatus,
-              researchInteractionId: finalResult.researchInteractionId || initialModelMessage.researchInteractionId,
-              researchRequiredAction: finalResult.researchRequiredAction,
-              ...(finalResult.thoughts && { thoughts: finalResult.thoughts }),
-              ...(finalResult.textResponse && { textResponse: finalResult.textResponse }),
-              ...(finalResult.enhancedPrompt && { enhancedPrompt: finalResult.enhancedPrompt }),
-              ...(finalResult.continuationStrategy && { continuationStrategy: finalResult.continuationStrategy }),
-              ...(typeof finalResult.videoExtensionCount === 'number' && { videoExtensionCount: finalResult.videoExtensionCount }),
-              ...(typeof finalResult.videoExtensionApplied === 'number' && { videoExtensionApplied: finalResult.videoExtensionApplied }),
-              ...(typeof finalResult.totalDurationSeconds === 'number' && { totalDurationSeconds: finalResult.totalDurationSeconds }),
-              ...(finalResult.continuedFromVideo && { continuedFromVideo: finalResult.continuedFromVideo }),
-              ...(typeof finalResult.storyboardShotSeconds === 'number' && { storyboardShotSeconds: finalResult.storyboardShotSeconds }),
-              ...(typeof finalResult.generateAudio === 'boolean' && { generateAudio: finalResult.generateAudio }),
-              ...(finalResult.subtitleMode && { subtitleMode: finalResult.subtitleMode }),
-              ...(finalResult.subtitleLanguage && { subtitleLanguage: finalResult.subtitleLanguage }),
-              ...(finalResult.subtitleAttachmentIds && finalResult.subtitleAttachmentIds.length > 0 && { subtitleAttachmentIds: [...finalResult.subtitleAttachmentIds] }),
-              ...(finalResult.trackedFeature && { trackedFeature: finalResult.trackedFeature }),
-              ...(finalResult.trackingOverlayText && { trackingOverlayText: finalResult.trackingOverlayText }),
-            };
+            ...initialModelMessage,
+            content: finalResult.content,
+            attachments: dbAttachments as Attachment[],
+            toolCalls: finalResult.toolCalls ? [...finalResult.toolCalls] : undefined,
+            toolResults: finalResult.toolResults ? [...finalResult.toolResults] : undefined,
+            responseKind: finalResult.responseKind || initialModelMessage.responseKind,
+            researchStatus: finalResult.researchStatus || initialModelMessage.researchStatus,
+            researchInteractionId:
+              finalResult.researchInteractionId || initialModelMessage.researchInteractionId,
+            researchRequiredAction: finalResult.researchRequiredAction,
+            ...(finalResult.thoughts && { thoughts: finalResult.thoughts }),
+            ...(finalResult.textResponse && { textResponse: finalResult.textResponse }),
+            ...(finalResult.enhancedPrompt && { enhancedPrompt: finalResult.enhancedPrompt }),
+            ...(finalResult.continuationStrategy && {
+              continuationStrategy: finalResult.continuationStrategy,
+            }),
+            ...(typeof finalResult.videoExtensionCount === 'number' && {
+              videoExtensionCount: finalResult.videoExtensionCount,
+            }),
+            ...(typeof finalResult.videoExtensionApplied === 'number' && {
+              videoExtensionApplied: finalResult.videoExtensionApplied,
+            }),
+            ...(typeof finalResult.totalDurationSeconds === 'number' && {
+              totalDurationSeconds: finalResult.totalDurationSeconds,
+            }),
+            ...(finalResult.continuedFromVideo && {
+              continuedFromVideo: finalResult.continuedFromVideo,
+            }),
+            ...(typeof finalResult.storyboardShotSeconds === 'number' && {
+              storyboardShotSeconds: finalResult.storyboardShotSeconds,
+            }),
+            ...(typeof finalResult.generateAudio === 'boolean' && {
+              generateAudio: finalResult.generateAudio,
+            }),
+            ...(finalResult.subtitleMode && { subtitleMode: finalResult.subtitleMode }),
+            ...(finalResult.subtitleLanguage && { subtitleLanguage: finalResult.subtitleLanguage }),
+            ...(finalResult.subtitleAttachmentIds &&
+              finalResult.subtitleAttachmentIds.length > 0 && {
+                subtitleAttachmentIds: [...finalResult.subtitleAttachmentIds],
+              }),
+            ...(finalResult.trackedFeature && { trackedFeature: finalResult.trackedFeature }),
+            ...(finalResult.trackingOverlayText && {
+              trackingOverlayText: finalResult.trackingOverlayText,
+            }),
+          };
 
           // ✅ 保存到数据库的消息（会清空 Blob URL）
           const dbMessages = [
-            ...baseMessages.filter(m => m.id !== userMessage.id),
+            ...baseMessages.filter((m) => m.id !== userMessage.id),
             dbUserMessage,
-            dbModelMessage
+            dbModelMessage,
           ];
 
           // ✅ 保存到数据库（会清空 Blob URL，用于持久化）
           updateSessionMessages(resolvedSessionId, dbMessages, {
             strategy: 'merge-by-id',
           });
-          
+
           // ✅ 重要：当前会话的 messages 状态保留 Blob URL 用于显示
           // 不需要更新 setMessages，因为 UI 显示使用的是 messages 状态，不是数据库中的
-          
+
           // ✅ 详细日志：记录保存到数据库的附件URL类型
           if (dbModelMessage.attachments && dbModelMessage.attachments.length > 0) {
             dbModelMessage.attachments.forEach((att, idx) => {
               const urlType = getUrlType(att.url, att.uploadStatus);
-              
             });
           }
         });
@@ -704,11 +773,10 @@ export const useChat = (
       }
 
       setLoadingStateIfCurrentSession('idle');
-
     } catch (error: unknown) {
       cancelBufferedStreamUpdates();
       activeHandlerCancelRef.current = null;
-      
+
       // 清理轮询任务
       pollingManager.cleanup();
 
@@ -722,9 +790,9 @@ export const useChat = (
         mode: mode,
       };
 
-      setMessagesIfCurrentSession(prev => {
+      setMessagesIfCurrentSession((prev) => {
         const rollbackMessages = modelMessageId
-          ? prev.filter(msg => msg.id !== modelMessageId)
+          ? prev.filter((msg) => msg.id !== modelMessageId)
           : prev;
         return [...rollbackMessages, errorMessage];
       });

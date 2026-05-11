@@ -1,6 +1,6 @@
 /**
  * Performance Optimization Hook
- * 
+ *
  * Provides performance optimization utilities for large workflows:
  * - Virtualization for large node counts
  * - Debounced updates
@@ -37,11 +37,7 @@ export const usePerformanceOptimization = (
   edges: Edge[],
   options: UsePerformanceOptimizationOptions = {}
 ): UsePerformanceOptimizationResult => {
-  const {
-    enableMetrics = true,
-    debounceDelay = 300,
-    largeWorkflowThreshold = 50,
-  } = options;
+  const { enableMetrics = true, debounceDelay = 300, largeWorkflowThreshold = 50 } = options;
 
   const [metrics, setMetrics] = useState<PerformanceMetrics>({
     nodeCount: 0,
@@ -60,7 +56,7 @@ export const usePerformanceOptimization = (
 
   // Debounced update function
   const debouncedUpdate = useCallback(
-    <T,>(fn: () => T, delay: number = debounceDelay) => {
+    <T>(fn: () => T, delay: number = debounceDelay) => {
       const timerId = setTimeout(() => {
         fn();
       }, delay);
@@ -81,22 +77,25 @@ export const usePerformanceOptimization = (
       const start = performance.now();
       fn();
       const end = performance.now();
-      
     },
     [enableMetrics]
   );
 
-  // Update metrics
+  // Update metrics — rAF 递归用 stopped flag + 最新 currentRafId 让 cleanup 真正中断
+  // （修原：cleanup 仅 cancel 第一个 rafId，递归内部启动的新 rafId 未被跟踪 → StrictMode
+  //  双 mount 或 deps 变化时上一条 rAF 链继续跑，可能产生重复 metric 计算）
   useEffect(() => {
     if (!enableMetrics) return;
-
+    let stopped = false;
+    let currentRafId: number | null = null;
     const updateMetrics = () => {
+      if (stopped) return;
       const now = Date.now();
       const delta = now - lastFrameTime.current;
-      
+
       if (delta >= 1000) {
         const fps = Math.round((frameCount.current * 1000) / delta);
-        
+
         setMetrics((prev) => ({
           ...prev,
           nodeCount: nodes.length,
@@ -110,11 +109,13 @@ export const usePerformanceOptimization = (
         frameCount.current++;
       }
 
-      requestAnimationFrame(updateMetrics);
+      currentRafId = requestAnimationFrame(updateMetrics);
     };
-
-    const rafId = requestAnimationFrame(updateMetrics);
-    return () => cancelAnimationFrame(rafId);
+    currentRafId = requestAnimationFrame(updateMetrics);
+    return () => {
+      stopped = true;
+      if (currentRafId !== null) cancelAnimationFrame(currentRafId);
+    };
   }, [nodes.length, edges.length, enableMetrics]);
 
   // Log performance warnings
@@ -137,16 +138,10 @@ export const usePerformanceOptimization = (
 };
 
 // Memoization helper for expensive computations
-export const useMemoizedComputation = <T,>(
-  computation: () => T,
-  dependencies: unknown[]
-): T => {
+export const useMemoizedComputation = <T>(computation: () => T, dependencies: unknown[]): T => {
   const cache = useRef<{ deps: unknown[]; result: T } | null>(null);
 
-  if (
-    !cache.current ||
-    !dependencies.every((dep, i) => dep === cache.current!.deps[i])
-  ) {
+  if (!cache.current || !dependencies.every((dep, i) => dep === cache.current!.deps[i])) {
     cache.current = {
       deps: dependencies,
       result: computation(),

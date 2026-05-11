@@ -55,7 +55,9 @@ export function useHistoryListActions<T extends HistoryListItem>({
         });
         setFavoriteIds(next);
       })
-      ;
+      .catch(() => {
+        // 防未处理 promise rejection；db 失败时保持 favoriteIds 为空 set
+      });
 
     return () => {
       disposed = true;
@@ -77,7 +79,9 @@ export function useHistoryListActions<T extends HistoryListItem>({
         if (disposed) return;
         setShowFavoritesOnlyState(!!preference?.showFavoritesOnly);
       })
-      ;
+      .catch(() => {
+        // 防未处理 promise rejection；db 失败时保持 showFavoritesOnly=false
+      });
 
     return () => {
       disposed = true;
@@ -105,67 +109,75 @@ export function useHistoryListActions<T extends HistoryListItem>({
     [pendingFavoriteIds]
   );
 
-  const toggleFavorite = useCallback(async (messageId: string) => {
-    if (!sessionId) return;
+  const toggleFavorite = useCallback(
+    async (messageId: string) => {
+      if (!sessionId) return;
 
-    const nextIsFavorite = !favoriteIds.has(messageId);
+      const nextIsFavorite = !favoriteIds.has(messageId);
 
-    setFavoriteIds((prev) => {
-      const next = new Set(prev);
-      if (nextIsFavorite) {
-        next.add(messageId);
-      } else {
-        next.delete(messageId);
-      }
-      return next;
-    });
-
-    setPendingFavoriteIds((prev) => {
-      const next = new Set(prev);
-      next.add(messageId);
-      return next;
-    });
-
-    try {
-      await db.updateSessionHistoryState(sessionId, messageId, { isFavorite: nextIsFavorite });
-    } catch (error) {
-      // rollback optimistic update
       setFavoriteIds((prev) => {
         const next = new Set(prev);
         if (nextIsFavorite) {
-          next.delete(messageId);
-        } else {
           next.add(messageId);
+        } else {
+          next.delete(messageId);
         }
         return next;
       });
-    } finally {
+
       setPendingFavoriteIds((prev) => {
+        const next = new Set(prev);
+        next.add(messageId);
+        return next;
+      });
+
+      try {
+        await db.updateSessionHistoryState(sessionId, messageId, { isFavorite: nextIsFavorite });
+      } catch (error) {
+        // rollback optimistic update
+        setFavoriteIds((prev) => {
+          const next = new Set(prev);
+          if (nextIsFavorite) {
+            next.delete(messageId);
+          } else {
+            next.add(messageId);
+          }
+          return next;
+        });
+      } finally {
+        setPendingFavoriteIds((prev) => {
+          const next = new Set(prev);
+          next.delete(messageId);
+          return next;
+        });
+      }
+    },
+    [sessionId, favoriteIds]
+  );
+
+  const deleteItem = useCallback(
+    (messageId: string) => {
+      setFavoriteIds((prev) => {
+        if (!prev.has(messageId)) return prev;
         const next = new Set(prev);
         next.delete(messageId);
         return next;
       });
-    }
-  }, [sessionId, favoriteIds]);
 
-  const deleteItem = useCallback((messageId: string) => {
-    setFavoriteIds((prev) => {
-      if (!prev.has(messageId)) return prev;
-      const next = new Set(prev);
-      next.delete(messageId);
-      return next;
-    });
+      onDeleteItem?.(messageId);
+    },
+    [onDeleteItem]
+  );
 
-    onDeleteItem?.(messageId);
-  }, [onDeleteItem]);
+  const setShowFavoritesOnly = useCallback(
+    (value: boolean) => {
+      setShowFavoritesOnlyState(value);
+      if (!sessionId) return;
 
-  const setShowFavoritesOnly = useCallback((value: boolean) => {
-    setShowFavoritesOnlyState(value);
-    if (!sessionId) return;
-
-    db.updateSessionHistoryPreference(sessionId, { showFavoritesOnly: value })
-      ;
-  }, [sessionId]);
+      db.updateSessionHistoryPreference(sessionId, { showFavoritesOnly: value });
+    },
+    [sessionId]
+  );
 
   const filteredItems = useMemo(() => {
     if (!showFavoritesOnly) return items;
