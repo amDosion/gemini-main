@@ -5,6 +5,7 @@ import { configService, ActiveAppConfig, FullSettings } from '../services/config
 import { ConfigProfile } from '../services/db';
 import { getAccessToken } from '../services/apiClient';
 import { getErrorMessage } from '../utils/errorMessage';
+import { debounce } from '../utils/debounce';
 
 export interface AppConfig extends ActiveAppConfig {
   dashscopeApiKey: string;
@@ -66,25 +67,6 @@ const createSyncChannel = () => {
         window.removeEventListener('storage', storageListener);
       }
     },
-  };
-};
-
-/**
- * Creates a debounced function that delays invoking `func` until after `delay`
- * milliseconds have elapsed since the last time the debounced function was invoked.
- * @param func The function to debounce.
- * @param delay The number of milliseconds to delay.
- * @returns A new debounced function.
- */
-const debounce = <F extends (...args: unknown[]) => void>(func: F, delay: number) => {
-  let timeoutId: NodeJS.Timeout | null = null;
-  return (...args: Parameters<F>) => {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
-    timeoutId = setTimeout(() => {
-      func(...args);
-    }, delay);
   };
 };
 
