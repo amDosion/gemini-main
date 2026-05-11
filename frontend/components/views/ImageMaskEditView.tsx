@@ -37,9 +37,8 @@ import {
   type MaskMode,
   SEMANTIC_PERSON_CLASS_ID,
   getMaskModeDisplayLabel,
-  isMaskPreviewAccessDenied,
-  getMaskPreviewUnavailableMessage,
 } from '../../utils/maskHelpers';
+import { fetchAutoMaskPreview } from '../../utils/maskSegmentation';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 interface ImageMaskEditViewProps {
@@ -1275,72 +1274,22 @@ export const ImageMaskEditView = memo(
           // 如果有图片，调用 API 获取自动 mask 预览
           if (activeImageUrl) {
             setIsPreviewingMask(true);
-            try {
-              // 获取图片的 base64 数据
-              const response = await fetch(activeImageUrl);
-              const blob = await response.blob();
-              const dataUrl = await fileToBase64(blob);
-              // 移除 data:image/...;base64, 前缀
-              const base64 = dataUrl.split(',')[1] || dataUrl;
-
-              // 调用 mask 预览 API
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const result = await apiClient.request<any>(
-                `/api/modes/${providerId || 'google'}/image-mask-preview`,
-                {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    modelId: 'image-segmentation-001',
-                    prompt: '',
-                    attachments: [
-                      {
-                        name: 'image',
-                        mimeType: 'image/png',
-                        base64Data: base64,
-                      },
-                    ],
-                    extra: {
-                      maskMode: mode,
-                    },
-                  }),
-                }
-              );
-
-              // 响应格式: { success: true, data: { success: true, masks: [...] }, provider: ..., mode: ... }
-              const maskData = result.data || result;
-              if (maskData?.success && maskData?.masks?.length > 0) {
-                // 显示第一个 mask 预览
-                const maskUrl = maskData.masks[0].url;
-                setMaskPreviewUrl(maskUrl);
-                setMaskPreviewNotice(null);
-                setMaskPreviewError(null);
-              } else {
-                const errorMsg = maskData?.error || result?.error || 'Unknown error';
-                setMaskPreviewUrl(null);
-                if (isMaskPreviewAccessDenied(errorMsg)) {
-                  setMaskPreviewNotice(getMaskPreviewUnavailableMessage(mode));
-                  setMaskPreviewError(null);
-                } else {
-                  const message = `未能提取 ${getMaskModeDisplayLabel(mode)} Mask：${errorMsg}`;
-                  setMaskPreviewError(message);
-                  showError(message);
-                }
-              }
-            } catch (error) {
+            // 抽离的纯函数封装了 fetch + base64 + API + 错误分类（access denied vs 其他）
+            const result = await fetchAutoMaskPreview(activeImageUrl, providerId, mode);
+            if (result.maskUrl) {
+              setMaskPreviewUrl(result.maskUrl);
+              setMaskPreviewNotice(null);
+              setMaskPreviewError(null);
+            } else if (result.notice) {
               setMaskPreviewUrl(null);
-              const errorText = getErrorMessage(error);
-              if (isMaskPreviewAccessDenied(errorText)) {
-                setMaskPreviewNotice(getMaskPreviewUnavailableMessage(mode));
-                setMaskPreviewError(null);
-              } else {
-                const message = `未能提取 ${getMaskModeDisplayLabel(mode)} Mask，请重试`;
-                setMaskPreviewError(message);
-                showError(message);
-              }
-            } finally {
-              setIsPreviewingMask(false);
+              setMaskPreviewNotice(result.notice);
+              setMaskPreviewError(null);
+            } else if (result.error) {
+              setMaskPreviewUrl(null);
+              setMaskPreviewError(result.error);
+              showError(result.error);
             }
+            setIsPreviewingMask(false);
           } else {
             setMaskPreviewUrl(null);
             setMaskPreviewNotice(null);
