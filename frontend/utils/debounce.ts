@@ -55,6 +55,7 @@ export function debounce<Args extends unknown[]>(
     // 注意：invoke() 内部会把 timerId / lastArgs 重置为 null，
     // 因此 flush 后无 pending；fn 内若 re-entrant 调 debounced()，
     // 新 args 在 invoke() 的 `lastArgs = null` 之后赋值，下一轮窗口正常工作。
+    // cancel() 已同时清 lastArgs 与 timerId，故 timerId!==null && lastArgs===null 不可达。
     if (timerId !== null) {
       clearTimeout(timerId);
       invoke();
