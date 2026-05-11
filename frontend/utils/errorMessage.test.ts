@@ -36,5 +36,25 @@ describe('getErrorMessage', () => {
 
     // Non-string message should NOT short-circuit to err.message
     expect(getErrorMessage({ message: 42 })).toBe('[object Object]');
+
+    // message=undefined should NOT short-circuit (locks in chosen semantics)
+    expect(getErrorMessage({ message: undefined })).toBe('[object Object]');
+  });
+
+  it('ignores message on prototype chain (own-property only)', () => {
+    // 防御性测试：原型上的 message 不应被采纳（hasOwnProperty.call 而非 in）
+    class WithProtoMessage {}
+    (WithProtoMessage.prototype as { message?: string }).message = 'prototype-leak';
+    const obj = new WithProtoMessage();
+    expect(getErrorMessage(obj)).toBe('[object Object]');
+  });
+
+  it('handles primitive non-string err: number / boolean / bigint / Symbol', () => {
+    expect(getErrorMessage(42)).toBe('42');
+    expect(getErrorMessage(0)).toBe('0');
+    expect(getErrorMessage(true)).toBe('true');
+    expect(getErrorMessage(false)).toBe('false');
+    expect(getErrorMessage(123n)).toBe('123');
+    expect(getErrorMessage(Symbol('x'))).toBe('Symbol(x)');
   });
 });
