@@ -21,6 +21,14 @@ import React from 'react';
 import { AppMode, ModelConfig } from '../types/types';
 import { ControlsState } from '../controls/types';
 import { getProviderControls } from '../controls/modes/registry';
+import { useModeControlsSchema } from '../hooks/useModeControlsSchema';
+
+/**
+ * 需要从后端 `/api/.../controls` 接口动态获取 schema 的模式集合。
+ * 这些模式下，Coordinator 内部调用 `useModeControlsSchema`，调用方仅传 mode/providerId/currentModel。
+ * 调用方仍可显式传 controlsSchema / controlsSchemaLoading / controlsSchemaError 进行覆盖（用于测试或视图级共用 schema）。
+ */
+const SCHEMA_DRIVEN_MODES = new Set<AppMode>(['video-gen']);
 import {
   ChatControlsProps,
   ImageGenControlsProps,
@@ -64,6 +72,34 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
     maxImageCount,
     ...controlProps
   } = props;
+
+  // 对 schema-driven 模式（如 video-gen）：Coordinator 内部按 providerId+mode+modelId 拉取
+  // schema（命中 schemaCache 单例，与视图层的 useModeControlsSchema 共享缓存，不重复请求）。
+  // 调用方可显式传 controlsSchema / controlsSchemaLoading / controlsSchemaError 覆盖。
+  const isSchemaDriven = SCHEMA_DRIVEN_MODES.has(mode);
+  const {
+    schema: internalSchema,
+    loading: internalSchemaLoading,
+    error: internalSchemaError,
+  } = useModeControlsSchema(providerId, mode, currentModel?.id, {
+    enabled: isSchemaDriven && !!currentModel?.id,
+  });
+  const schemaProps = isSchemaDriven
+    ? {
+        controlsSchema:
+          (controlProps as { controlsSchema?: unknown }).controlsSchema !== undefined
+            ? (controlProps as { controlsSchema?: unknown }).controlsSchema
+            : internalSchema,
+        controlsSchemaLoading:
+          (controlProps as { controlsSchemaLoading?: unknown }).controlsSchemaLoading !== undefined
+            ? (controlProps as { controlsSchemaLoading?: unknown }).controlsSchemaLoading
+            : internalSchemaLoading,
+        controlsSchemaError:
+          (controlProps as { controlsSchemaError?: unknown }).controlsSchemaError !== undefined
+            ? (controlProps as { controlsSchemaError?: unknown }).controlsSchemaError
+            : internalSchemaError,
+      }
+    : {};
 
   // 获取当前提供商的控件集
   const Controls = getProviderControls(providerId);
@@ -130,6 +166,7 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
           currentModel={currentModel}
           controls={controls}
           {...(controlProps as VideoGenControlsProps)}
+          {...schemaProps}
           providerId={providerId}
         />
       );

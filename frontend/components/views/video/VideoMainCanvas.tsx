@@ -18,7 +18,6 @@ import {
 } from 'lucide-react';
 import type { AppMode, Attachment, ChatOptions, Message, ModelConfig } from '../../../types/types';
 import type { ControlsState } from '../../../controls/types';
-import type { ModeControlsSchema } from '../../../hooks/useModeControlsSchema';
 import { ModeControlsCoordinator } from '../../../coordinators/ModeControlsCoordinator';
 import ChatEditInputArea from '../../chat/ChatEditInputArea';
 import { ViewSideParamsPanel } from '../../common/ViewSideParamsPanel';
@@ -58,9 +57,6 @@ export interface VideoMainCanvasProps {
   resolvedProviderId: string;
   activeModelConfig?: ModelConfig;
   controls: ControlsState;
-  videoControlsSchema: ModeControlsSchema | null;
-  isLoadingVideoControlsSchema: boolean;
-  videoControlsSchemaError: string | null;
   resetParams: () => void;
   // input area
   handleSend: (
@@ -112,9 +108,6 @@ export const VideoMainCanvas: React.FC<VideoMainCanvasProps> = ({
   resolvedProviderId,
   activeModelConfig,
   controls,
-  videoControlsSchema,
-  isLoadingVideoControlsSchema,
-  videoControlsSchemaError,
   resetParams,
   handleSend,
   onStop,
@@ -395,20 +388,12 @@ export const VideoMainCanvas: React.FC<VideoMainCanvasProps> = ({
         title="视频参数"
         iconClass="text-indigo-400"
         resetParams={resetParams}
-        resetDisabled={
-          !videoControlsSchema ||
-          isLoadingVideoControlsSchema ||
-          Boolean(videoControlsSchemaError)
-        }
         controlsContent={
           <ModeControlsCoordinator
             mode={videoMode}
             providerId={resolvedProviderId}
             currentModel={activeModelConfig}
             controls={controls}
-            controlsSchema={videoControlsSchema}
-            controlsSchemaLoading={isLoadingVideoControlsSchema}
-            controlsSchemaError={videoControlsSchemaError}
           />
         }
         editAreaContent={
