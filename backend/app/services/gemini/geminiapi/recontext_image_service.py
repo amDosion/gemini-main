@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 from google.genai import types as genai_types
 
 from ..client_pool import get_client_pool
+from ....core.sdk_executor import run_in_sdk_thread
 from ....utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
@@ -289,7 +290,7 @@ class GeminiRecontextImageService:
         message = self._build_message(prompt, reference_images, number_of_images)
         config = self._build_config(kwargs)
         chat = client.chats.create(model=model, config=config)
-        response = await asyncio.to_thread(
+        response = await run_in_sdk_thread(
             chat.send_message,
             message=message,
         )

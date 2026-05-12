@@ -19,6 +19,10 @@ import {
 import { ImageHistoryHoverPreviewPanel } from './ImageHistoryHoverPreviewPanel';
 import { HistoryActionMenuPortal } from './HistoryActionMenuPortal';
 import { ImageHistoryListRow } from './ImageHistoryListRow';
+import {
+  VirtualizedHistoryList,
+  type VirtualizedHistoryListHandle,
+} from './VirtualizedHistoryList';
 
 // Re-export for backwards compat
 export type {
@@ -54,8 +58,8 @@ export function useImageHistorySidebar({
   sidebarContent: React.ReactNode;
 } {
   const tone = ACCENT_CLASSES[accent];
-  const scrollRef = useRef<HTMLDivElement>(null);
   const historyItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const virtualListRef = useRef<VirtualizedHistoryListHandle>(null);
   const actionMenuPanelRef = useRef<HTMLDivElement | null>(null);
   const hoverPreviewPanelRef = useRef<HTMLDivElement | null>(null);
   const hidePreviewTimerRef = useRef<number | null>(null);
@@ -494,12 +498,19 @@ export function useImageHistorySidebar({
 
   useEffect(() => {
     if (!selectedMessageId) return;
-    const itemEl = historyItemRefs.current[selectedMessageId];
-    if (!itemEl || typeof itemEl.scrollIntoView !== 'function') return;
+    // virtualized 分支：先把 row 滚到可见范围，再让 ref 接管 scrollIntoView（rAF 确保已挂载）
+    if (virtualListRef.current?.isVirtualized) {
+      const idx = filteredItems.findIndex((m) => m.id === selectedMessageId);
+      if (idx >= 0) {
+        virtualListRef.current.scrollToIndex(idx);
+      }
+    }
     requestAnimationFrame(() => {
+      const itemEl = historyItemRefs.current[selectedMessageId];
+      if (!itemEl || typeof itemEl.scrollIntoView !== 'function') return;
       itemEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
-  }, [selectedMessageId]);
+  }, [selectedMessageId, filteredItems]);
 
   const sidebarExtraHeader = useMemo(
     () => (
@@ -527,10 +538,14 @@ export function useImageHistorySidebar({
 
   const sidebarContent = useMemo(
     () => (
-      <div ref={scrollRef} className="flex-1 p-3 space-y-2.5 overflow-y-auto custom-scrollbar">
-        {filteredItems.map((message) => (
+      <VirtualizedHistoryList
+        ref={virtualListRef}
+        items={filteredItems}
+        estimatedRowHeight={92}
+        className="flex-1 p-3 overflow-y-auto custom-scrollbar space-y-2.5"
+        getKey={(message) => message.id}
+        renderRow={(message) => (
           <ImageHistoryListRow
-            key={message.id}
             message={message}
             tone={tone}
             modelLabel={modelLabel}
@@ -552,8 +567,8 @@ export function useImageHistorySidebar({
             setOpenActionMenu={setOpenActionMenu}
             setActionMenuPosition={setActionMenuPosition}
           />
-        ))}
-
+        )}
+      >
         {filteredItems.length === 0 && (
           <div className="text-center py-10 text-slate-600 text-xs italic">
             {showFavoritesOnly ? '暂无收藏记录。' : emptyText}
@@ -604,8 +619,7 @@ export function useImageHistorySidebar({
             isResizingPreview={isResizingPreview}
           />
         )}
-        <div />
-      </div>
+      </VirtualizedHistoryList>
     ),
     [
       activeImageUrl,

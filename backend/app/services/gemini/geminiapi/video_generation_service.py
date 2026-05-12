@@ -34,6 +34,7 @@ from ..base.video_common import (
 from ..base.video_frame_bridge import extract_last_frame_image
 from ..base.video_storyboard import normalize_generate_audio
 from ..client_pool import get_client_pool
+from ....core.sdk_executor import run_in_sdk_thread
 
 logger = logging.getLogger(__name__)
 
@@ -263,7 +264,7 @@ class GeminiAPIVideoGenerationService:
             len(extra_reference_images),
         )
 
-        operation = await asyncio.to_thread(
+        operation = await run_in_sdk_thread(
             self._client.models.generate_videos,
             model=normalized_model,
             source=source_payload,
@@ -432,7 +433,7 @@ class GeminiAPIVideoGenerationService:
             await asyncio.sleep(current_interval)
             current_interval = min(current_interval * 1.5, max_interval)
             try:
-                current = await asyncio.to_thread(
+                current = await run_in_sdk_thread(
                     self._client.operations.get,
                     current,
                     config=self._operation_get_config(),
@@ -527,7 +528,7 @@ class GeminiAPIVideoGenerationService:
             raw_bytes = video.get("video_bytes") or video.get("videoBytes")
             if raw_bytes:
                 return bytes(raw_bytes)
-        data = await asyncio.to_thread(self._client.files.download, file=video)
+        data = await run_in_sdk_thread(self._client.files.download, file=video)
         if getattr(video, "video_bytes", None):
             return bytes(video.video_bytes)
         if isinstance(data, bytearray):

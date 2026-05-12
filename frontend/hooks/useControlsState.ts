@@ -1,7 +1,26 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { AppMode, LoraConfig, ModelConfig } from '../types/types';
 import { ControlsState, OffsetPixels } from '../controls/types';
 
+/**
+ * Centralized controls state hook.
+ *
+ * Implementation notes (Wave 3 ARCH-D refactor):
+ * - State is split into many independent `useState` calls (one per field).
+ *   This means a change to one field only causes React to schedule a single
+ *   re-render of this hook's host component, not invalidate an entire object.
+ * - The returned aggregate object is memoized via `useMemo` keyed on every
+ *   field value. When NO field changes between renders, the returned reference
+ *   is stable — letting downstream `React.memo` children that receive
+ *   `controls` as a prop bail out of re-rendering.
+ * - `useState` setter identities are guaranteed stable by React, so consumer
+ *   `useEffect` / `useCallback` deps that reference setters do not churn.
+ * - The model-capability sync effect uses a ref-mirror of current values so
+ *   the effect only re-runs when `currentModel` actually changes — not on
+ *   every flip of enableSearch / enableThinking.
+ *
+ * External API surface (`ControlsState` in controls/types.ts) is unchanged.
+ */
 export function useControlsState(mode: AppMode, currentModel?: ModelConfig): ControlsState {
   // Chat Controls
   const [enableSearch, setEnableSearch] = useState(false);
@@ -90,93 +109,130 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
     setShowAdvanced(true);
   }, [mode]);
 
-  // Sync with model capabilities
+  // Sync with model capabilities.
+  // Use a ref mirror for the boolean toggles so this effect only runs when
+  // `currentModel` actually changes — flipping enableSearch / enableThinking
+  // no longer re-fires the effect (and the previous `[currentModel, enableSearch, enableThinking]`
+  // deps caused redundant work plus a subtle behavior where toggling the booleans
+  // re-evaluated the capability check on every change).
+  const toggleRef = useRef({ enableSearch, enableThinking });
+  toggleRef.current.enableSearch = enableSearch;
+  toggleRef.current.enableThinking = enableThinking;
   useEffect(() => {
-    if (currentModel) {
-      if (!currentModel.capabilities.search && enableSearch) setEnableSearch(false);
-      if (!currentModel.capabilities.reasoning && enableThinking) setEnableThinking(false);
+    if (!currentModel) return;
+    if (!currentModel.capabilities.search && toggleRef.current.enableSearch) {
+      setEnableSearch(false);
     }
-  }, [currentModel, enableSearch, enableThinking]);
+    if (!currentModel.capabilities.reasoning && toggleRef.current.enableThinking) {
+      setEnableThinking(false);
+    }
+  }, [currentModel]);
 
-  return {
-    // Chat Controls
-    enableSearch, setEnableSearch,
-    enableThinking, setEnableThinking,
-    enableCodeExecution, setEnableCodeExecution,
-    enableUrlContext, setEnableUrlContext,
-    enableBrowser, setEnableBrowser,
-    enableRAG, setEnableRAG,
-    enableEnhancedRetrieval, setEnableEnhancedRetrieval,
-    enableDeepResearch, setEnableDeepResearch,
-    enableAutoDeepResearch, setEnableAutoDeepResearch,
-    deepResearchAgentId, setDeepResearchAgentId,
-    googleCacheMode, setGoogleCacheMode,
-    selectedMcpServerKey, setSelectedMcpServerKey,
+  // Memoize the returned aggregate so the reference is stable across renders
+  // when no field has changed. Children consuming `controls` through
+  // React.memo can bail out of re-rendering in that case.
+  //
+  // All `setXxx` references come from `useState` which React guarantees stable,
+  // so they are intentionally omitted from the dependency array.
+  return useMemo<ControlsState>(
+    () => ({
+      // Chat Controls
+      enableSearch, setEnableSearch,
+      enableThinking, setEnableThinking,
+      enableCodeExecution, setEnableCodeExecution,
+      enableUrlContext, setEnableUrlContext,
+      enableBrowser, setEnableBrowser,
+      enableRAG, setEnableRAG,
+      enableEnhancedRetrieval, setEnableEnhancedRetrieval,
+      enableDeepResearch, setEnableDeepResearch,
+      enableAutoDeepResearch, setEnableAutoDeepResearch,
+      deepResearchAgentId, setDeepResearchAgentId,
+      googleCacheMode, setGoogleCacheMode,
+      selectedMcpServerKey, setSelectedMcpServerKey,
 
-    // Generation Controls
-    aspectRatio, setAspectRatio,
-    resolution, setResolution,
-    videoSeconds, setVideoSeconds,
-    videoExtensionCount, setVideoExtensionCount,
-    storyboardShotSeconds, setStoryboardShotSeconds,
-    generateAudio, setGenerateAudio,
-    subtitleMode, setSubtitleMode,
-    subtitleLanguage, setSubtitleLanguage,
-    subtitleScript, setSubtitleScript,
-    storyboardPrompt, setStoryboardPrompt,
-    storyboardSegments, setStoryboardSegments,
-    numberOfImages, setNumberOfImages,
-    style, setStyle,
-
-
-    // Advanced Settings
-    showAdvanced, setShowAdvanced,
-    negativePrompt, setNegativePrompt,
-    seed, setSeed,
-    loraConfig, setLoraConfig,
-
-    // Google Imagen Advanced Parameters
-    // guidanceScale removed - not officially documented by Google Imagen
-    outputMimeType, setOutputMimeType,
-    outputCompressionQuality, setOutputCompressionQuality,
-    enhancePrompt, setEnhancePrompt,
-    enhancePromptModel, setEnhancePromptModel,
-
-    // TongYi Specific Parameters
-    promptExtend, setPromptExtend,
-    addMagicSuffix, setAddMagicSuffix,
+      // Generation Controls
+      aspectRatio, setAspectRatio,
+      resolution, setResolution,
+      videoSeconds, setVideoSeconds,
+      videoExtensionCount, setVideoExtensionCount,
+      storyboardShotSeconds, setStoryboardShotSeconds,
+      generateAudio, setGenerateAudio,
+      subtitleMode, setSubtitleMode,
+      subtitleLanguage, setSubtitleLanguage,
+      subtitleScript, setSubtitleScript,
+      storyboardPrompt, setStoryboardPrompt,
+      storyboardSegments, setStoryboardSegments,
+      numberOfImages, setNumberOfImages,
+      style, setStyle,
 
 
-    // Out-Painting (旧参数，保留向后兼容)
-    outPaintingMode, setOutPaintingMode,
-    scaleFactor, setScaleFactor,
-    offsetPixels, setOffsetPixels,
+      // Advanced Settings
+      showAdvanced, setShowAdvanced,
+      negativePrompt, setNegativePrompt,
+      seed, setSeed,
+      loraConfig, setLoraConfig,
 
-    // Out-Painting (新参数)
-    outpaintMode, setOutpaintMode,
-    xScale, setXScale,
-    yScale, setYScale,
-    upscaleFactor, setUpscaleFactor,
+      // Google Imagen Advanced Parameters
+      // guidanceScale removed - not officially documented by Google Imagen
+      outputMimeType, setOutputMimeType,
+      outputCompressionQuality, setOutputCompressionQuality,
+      enhancePrompt, setEnhancePrompt,
+      enhancePromptModel, setEnhancePromptModel,
 
-    // Audio
-    voice, setVoice,
+      // TongYi Specific Parameters
+      promptExtend, setPromptExtend,
+      addMagicSuffix, setAddMagicSuffix,
 
-    // PDF
-    pdfTemplate, setPdfTemplate,
-    pdfAdditionalInstructions, setPdfAdditionalInstructions,
 
-    // Virtual Try-On
-    baseSteps, setBaseSteps,
+      // Out-Painting (旧参数，保留向后兼容)
+      outPaintingMode, setOutPaintingMode,
+      scaleFactor, setScaleFactor,
+      offsetPixels, setOffsetPixels,
 
-    // Multi-Agent Controls
-    enableMultiAgent, setEnableMultiAgent,
+      // Out-Painting (新参数)
+      outpaintMode, setOutpaintMode,
+      xScale, setXScale,
+      yScale, setYScale,
+      upscaleFactor, setUpscaleFactor,
 
-    // Mask Edit Controls
-    editMode, setEditMode,
-    maskDilation, setMaskDilation,
-    guidanceScale, setGuidanceScale,
-    maskMode, setMaskMode,
-  };
+      // Audio
+      voice, setVoice,
+
+      // PDF
+      pdfTemplate, setPdfTemplate,
+      pdfAdditionalInstructions, setPdfAdditionalInstructions,
+
+      // Virtual Try-On
+      baseSteps, setBaseSteps,
+
+      // Multi-Agent Controls
+      enableMultiAgent, setEnableMultiAgent,
+
+      // Mask Edit Controls
+      editMode, setEditMode,
+      maskDilation, setMaskDilation,
+      guidanceScale, setGuidanceScale,
+      maskMode, setMaskMode,
+    }),
+    [
+      enableSearch, enableThinking, enableCodeExecution, enableUrlContext,
+      enableBrowser, enableRAG, enableEnhancedRetrieval, enableDeepResearch,
+      enableAutoDeepResearch, deepResearchAgentId, googleCacheMode, selectedMcpServerKey,
+      aspectRatio, resolution, videoSeconds, videoExtensionCount, storyboardShotSeconds,
+      generateAudio, subtitleMode, subtitleLanguage, subtitleScript,
+      storyboardPrompt, storyboardSegments, numberOfImages, style,
+      showAdvanced, negativePrompt, seed, loraConfig,
+      outputMimeType, outputCompressionQuality, enhancePrompt, enhancePromptModel,
+      promptExtend, addMagicSuffix,
+      outPaintingMode, scaleFactor, offsetPixels,
+      outpaintMode, xScale, yScale, upscaleFactor,
+      voice,
+      pdfTemplate, pdfAdditionalInstructions,
+      baseSteps,
+      enableMultiAgent,
+      editMode, maskDilation, guidanceScale, maskMode,
+    ],
+  );
 }
 
 export default useControlsState;

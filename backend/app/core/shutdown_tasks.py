@@ -113,6 +113,25 @@ def close_gemini_client_pool(log_prefixes: Dict[str, str]) -> None:
         )
 
 
+def shutdown_sdk_thread_pool(log_prefixes: Dict[str, str]) -> None:
+    """关闭专用 SDK 线程池。
+
+    与 ``close_gemini_client_pool`` 平级。模块本身通过 ``atexit`` 兜底注册，
+    但显式从 lifespan 调用可在 graceful shutdown 时及时释放线程；调用幂等，
+    所以两条路径同时存在是安全的。
+    """
+    try:
+        from .sdk_executor import shutdown_sdk_executor
+
+        shutdown_sdk_executor()
+        logger.info(f"{log_prefixes['success']} SDK thread pool shut down")
+    except Exception as e:
+        logger.error(
+            f"{log_prefixes['error']} Error shutting down SDK thread pool: {e}",
+            exc_info=True,
+        )
+
+
 async def run_all_shutdown_tasks(
     worker_pool: Any,
     worker_pool_available: bool,
@@ -154,5 +173,8 @@ async def run_all_shutdown_tasks(
 
     # 4. 关闭 Gemini Client Pool（释放 httpx 连接池 / keep-alive 套接字）
     close_gemini_client_pool(log_prefixes)
+
+    # 5. 关闭专用 SDK 线程池（与 atexit 兜底并行，保证 graceful 路径及时释放）
+    shutdown_sdk_thread_pool(log_prefixes)
 
     logger.info(f"{log_prefixes['success']} Shutdown sequence completed")

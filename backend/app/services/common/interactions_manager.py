@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from ..gemini.http_options import HttpOptions, HttpOptionsDict
 from ..mcp.mcp_manager import MCPManager, get_mcp_manager
 from ..gemini.client_pool import get_client_pool
+from ...core.sdk_executor import run_in_sdk_thread
 from .interactions_event_utils import (
     build_interaction_stream_event,
     serialize_usage,
@@ -309,7 +310,7 @@ class InteractionsManager:
             if store is not None:
                 create_params["store"] = store
 
-            interaction = await asyncio.to_thread(client.interactions.create, **create_params)
+            interaction = await run_in_sdk_thread(client.interactions.create, **create_params)
 
             logger.info(f"[create_interaction] Successfully created interaction: id={interaction.id}, status={interaction.status}")
             
@@ -496,7 +497,7 @@ class InteractionsManager:
             location=location
         )
 
-        interaction = await asyncio.to_thread(client.interactions.get, interaction_id)
+        interaction = await run_in_sdk_thread(client.interactions.get, interaction_id)
 
         return {
             'id': interaction.id,

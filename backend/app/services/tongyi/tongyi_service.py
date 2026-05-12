@@ -24,6 +24,7 @@ from ..common.base_provider import BaseProviderService
 from ..common.client_selector import ProviderCapabilities, UserPreferences
 from ..common.model_capabilities import ModelConfig
 from ..common.provider_config import ProviderConfig
+from ...core.sdk_executor import run_in_sdk_thread
 from ...utils.attachment_handler import is_http_url
 
 logger = logging.getLogger(__name__)
@@ -510,8 +511,8 @@ class TongyiService(BaseProviderService):
             output_ratio=kwargs.get("output_ratio", "16:9")
         )
         
-        # 调用扩展服务
-        result = await asyncio.to_thread(
+        # 调用扩展服务（DashScope/Tongyi 同步 SDK，使用专用 SDK 线程池）
+        result = await run_in_sdk_thread(
             self._image_expand_service.execute_with_fallback,
             image_url=image_url,
             api_key=self.api_key,

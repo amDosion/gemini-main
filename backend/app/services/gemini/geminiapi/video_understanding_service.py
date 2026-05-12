@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 
 from ..base.video_common import extract_source_video_uri_ref, load_source_video
 from ..client_pool import get_client_pool
+from ....core.sdk_executor import run_in_sdk_thread
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +127,7 @@ class GeminiAPIVideoUnderstandingService:
         if isinstance(max_tokens, int) and max_tokens > 0:
             config_kwargs["max_output_tokens"] = max_tokens
 
-        response = await asyncio.to_thread(
+        response = await run_in_sdk_thread(
             self._client.models.generate_content,
             model=normalized_model,
             contents=[video_part, final_prompt],

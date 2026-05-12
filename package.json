@@ -25,6 +25,7 @@
     "@iconify/react": "^6.0.2",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@skybridge/devtools": "^0.33.3",
+    "@tanstack/react-virtual": "^3.13.24",
     "@xyflow/react": "^12.10.0",
     "dompurify": "^3.3.1",
     "eventsource-parser": "^3.0.6",

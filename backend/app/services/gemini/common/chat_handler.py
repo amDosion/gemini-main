@@ -11,6 +11,7 @@ import json
 import hashlib
 
 from ..client_pool import get_client_pool
+from ....core.sdk_executor import run_in_sdk_thread
 from .message_converter import MessageConverter
 from .response_parser import ResponseParser
 from .config_builder import ConfigBuilder
@@ -237,8 +238,8 @@ class ChatHandler:
             # 构建配置
             config = ConfigBuilder.build_generate_config(**kwargs)
 
-            # 调用新版 SDK（同步方法），放到线程池中避免阻塞事件循环。
-            response = await asyncio.to_thread(
+            # 调用新版 SDK（同步方法），放到专用 SDK 线程池中避免阻塞事件循环。
+            response = await run_in_sdk_thread(
                 client.models.generate_content,
                 model=model,
                 contents=contents,

@@ -14,6 +14,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
+from ...core.sdk_executor import run_in_sdk_thread
 from ...utils.url_security import get_with_redirect_guard, validate_outbound_http_url
 from ...utils.attachment_handler import is_base64_url
 
@@ -98,7 +99,7 @@ class VideoGenerator:
             reference_path = self._write_reference_temp_file(reference_bytes, reference_mime_type)
 
         try:
-            video = await asyncio.to_thread(
+            video = await run_in_sdk_thread(
                 self._create_video_sync,
                 normalized_model,
                 prompt,
@@ -110,12 +111,12 @@ class VideoGenerator:
             if not video_id:
                 raise RuntimeError("OpenAI video response did not include a video id.")
 
-            video = await asyncio.to_thread(self._poll_video_sync, video_id)
+            video = await run_in_sdk_thread(self._poll_video_sync, video_id)
             status = self._get_status(video) or "unknown"
             if status != "completed":
                 raise RuntimeError(self._extract_failure_message(video, video_id, status))
 
-            video_bytes = await asyncio.to_thread(self._download_video_sync, video_id)
+            video_bytes = await run_in_sdk_thread(self._download_video_sync, video_id)
             duration_seconds = int(seconds)
             return {
                 "url": self._to_data_url(video_bytes, "video/mp4"),

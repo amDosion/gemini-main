@@ -13,6 +13,7 @@ from typing import Dict, Any, List, Optional
 
 from ..base.imagen_base import BaseImageGenerator
 from ..client_pool import get_client_pool
+from ....core.sdk_executor import run_in_sdk_thread
 from ..base.imagen_common import (
     validate_aspect_ratio,
     validate_image_size,
@@ -286,7 +287,7 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
             
             async def _gen_one(idx):
                 try:
-                    resp = await asyncio.to_thread(
+                    resp = await run_in_sdk_thread(
                         self._client.models.generate_content,
                         model=model, contents=contents, config=generate_config,
                     )
