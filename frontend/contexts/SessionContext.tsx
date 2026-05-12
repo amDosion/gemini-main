@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useCallback } from 'react';
+import React, { createContext, useContext, useCallback, useMemo } from 'react';
 import { ChatSession } from '../types/types';
 import { CacheStatusInfo } from '../hooks/useCacheStatus';
 
@@ -49,19 +49,52 @@ interface SessionProviderProps {
 
 export const SessionProvider: React.FC<SessionProviderProps> = ({
   children,
+  sessions,
+  currentSessionId,
+  onNewChat,
   onSelectSession,
-  ...rest
+  onDeleteSession,
+  onUpdateSessionTitle,
+  cacheStatus,
+  onRefreshSessions,
+  hasMoreSessions,
+  isLoadingMore,
+  loadMoreSessions,
 }) => {
   const onSelectSessionKeepMode = useCallback((id: string) => {
     skipModeRestoreFlag.current = true;
     onSelectSession(id);
   }, [onSelectSession]);
 
-  const value: SessionContextValue = {
-    ...rest,
+  // ✅ Wave 2 perf: useMemo 包裹 context value，避免每次 SessionProvider 渲染
+  // 都创建新对象引用，触发所有 useSessionContext consumer 不必要的重渲染。
+  const value = useMemo<SessionContextValue>(() => ({
+    sessions,
+    currentSessionId,
+    onNewChat,
     onSelectSession,
+    onDeleteSession,
+    onUpdateSessionTitle,
+    cacheStatus,
+    onRefreshSessions,
+    hasMoreSessions,
+    isLoadingMore,
+    loadMoreSessions,
     onSelectSessionKeepMode,
-  };
+  }), [
+    sessions,
+    currentSessionId,
+    onNewChat,
+    onSelectSession,
+    onDeleteSession,
+    onUpdateSessionTitle,
+    cacheStatus,
+    onRefreshSessions,
+    hasMoreSessions,
+    isLoadingMore,
+    loadMoreSessions,
+    onSelectSessionKeepMode,
+  ]);
 
   return (
     <SessionContext.Provider value={value}>

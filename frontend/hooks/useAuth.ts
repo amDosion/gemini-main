@@ -241,7 +241,8 @@ export function useAuth(): UseAuthReturn {
   // 刷新用户信息
   const refreshUser = useCallback(async () => {
     try {
-      const currentUser = await authService.getCurrentUser();
+      // ✅ Wave 2 perf: force=true 绕过缓存（用户主动刷新场景需要实时数据）
+      const currentUser = await authService.getCurrentUser(true);
       setUser(currentUser);
 
       // ✅ 更新配置状态

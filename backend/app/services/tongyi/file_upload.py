@@ -15,18 +15,40 @@ DashScope 临时文件上传服务
     # 方式2: 从二进制数据上传
     result = upload_bytes_to_dashscope(image_data, "image.png", api_key)
 """
-import requests
+import asyncio
 import base64
-import time
 import logging
-from typing import Optional
+import time
 from dataclasses import dataclass
+from typing import Optional
+
+import httpx
+import requests
+
 from ...utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
 
 # DashScope API 配置
 DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com"
+
+# Module-level lazy ``httpx.AsyncClient`` for async upload paths. The sync
+# functions below still use ``requests`` because they are called from sync
+# code paths (e.g. ``image_expand._retry_with_oss`` which itself runs
+# inside ``asyncio.to_thread``). The async variants avoid blocking the
+# event loop on the typically expensive image upload.
+_http_client: Optional[httpx.AsyncClient] = None
+_http_client_lock = asyncio.Lock()
+
+
+async def _get_async_http_client() -> httpx.AsyncClient:
+    """Lazy initializer for the module-level ``httpx.AsyncClient``."""
+    global _http_client
+    if _http_client is None:
+        async with _http_client_lock:
+            if _http_client is None:
+                _http_client = httpx.AsyncClient(timeout=httpx.Timeout(60.0))
+    return _http_client
 
 
 @dataclass
@@ -317,4 +339,207 @@ def upload_to_dashscope(
         return DashScopeUploadResult(
             success=False,
             error=str(e)
+        )
+
+
+# ---------------------------------------------------------------------------
+# Async variants (httpx-based) for use from FastAPI async paths.
+# Result shapes match the sync versions exactly so call sites can be swapped
+# 1:1 with ``await``.
+# ---------------------------------------------------------------------------
+
+
+async def _get_upload_policy_async(
+    api_key: str,
+    model: str = "wanx-v1",
+) -> tuple[bool, Optional[dict], Optional[str]]:
+    """Async variant of ``_get_upload_policy``.
+
+    Uses the module-level ``httpx.AsyncClient`` to avoid blocking the event
+    loop. Same parameters and return shape as the sync version.
+    """
+    try:
+        policy_url = f"{DASHSCOPE_BASE_URL}/api/v1/uploads"
+        client = await _get_async_http_client()
+        response = await client.get(
+            policy_url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            params={
+                "action": "getPolicy",
+                "model": model,
+            },
+            timeout=30.0,
+        )
+
+        if response.status_code != 200:
+            return False, None, f"获取上传凭证失败: {response.text}"
+
+        policy_data = response.json().get("data", {})
+        if not policy_data:
+            return False, None, "上传凭证数据为空"
+
+        return True, policy_data, None
+
+    except Exception as e:
+        return False, None, f"获取上传凭证异常: {str(e)}"
+
+
+async def _upload_to_oss_async(
+    image_data: bytes,
+    filename: str,
+    policy_data: dict,
+) -> tuple[bool, Optional[str], Optional[str]]:
+    """Async variant of ``_upload_to_oss``."""
+    try:
+        key = f"{policy_data['upload_dir']}/{filename}"
+
+        # 确定 Content-Type
+        if filename.lower().endswith(".png"):
+            content_type = "image/png"
+        elif filename.lower().endswith(".jpg") or filename.lower().endswith(".jpeg"):
+            content_type = "image/jpeg"
+        elif filename.lower().endswith(".webp"):
+            content_type = "image/webp"
+        else:
+            content_type = "image/png"
+
+        # 构建 multipart/form-data — httpx accepts the same shape as requests.
+        files = {
+            "key": (None, key),
+            "OSSAccessKeyId": (None, policy_data["oss_access_key_id"]),
+            "Signature": (None, policy_data["signature"]),
+            "policy": (None, policy_data["policy"]),
+            "x-oss-object-acl": (None, policy_data["x_oss_object_acl"]),
+            "x-oss-forbid-overwrite": (None, policy_data["x_oss_forbid_overwrite"]),
+            "success_action_status": (None, "200"),
+            "file": (filename, image_data, content_type),
+        }
+
+        client = await _get_async_http_client()
+        response = await client.post(
+            policy_data["upload_host"],
+            files=files,
+            timeout=60.0,
+        )
+
+        if response.status_code != 200:
+            return False, None, f"上传失败: {response.text}"
+
+        oss_url = f"oss://{key}"
+        return True, oss_url, None
+
+    except Exception as e:
+        return False, None, f"上传异常: {str(e)}"
+
+
+async def upload_bytes_to_dashscope_async(
+    image_data: bytes,
+    filename: str,
+    api_key: str,
+    model: str = "wanx-v1",
+) -> DashScopeUploadResult:
+    """Async variant of :func:`upload_bytes_to_dashscope`.
+
+    Behavior identical — only the underlying HTTP transport changes from
+    ``requests`` to ``httpx.AsyncClient``.
+    """
+    logger.info(f"[DashScope Upload] 开始上传二进制数据 (async): {len(image_data)} bytes")
+
+    success, policy_data, error = await _get_upload_policy_async(api_key, model)
+    if not success:
+        logger.error(f"[DashScope Upload] {error}")
+        return DashScopeUploadResult(success=False, error=error)
+
+    logger.info("[DashScope Upload] ✅ 获取上传凭证成功")
+
+    success, oss_url, error = await _upload_to_oss_async(image_data, filename, policy_data)
+    if not success:
+        logger.error(f"[DashScope Upload] {error}")
+        return DashScopeUploadResult(success=False, error=error)
+
+    logger.info(f"[DashScope Upload] ✅ 上传成功: {oss_url}")
+    logger.info("[DashScope Upload] ⏱️  有效期 48 小时")
+
+    return DashScopeUploadResult(success=True, oss_url=oss_url)
+
+
+async def upload_to_dashscope_async(
+    image_url: str,
+    api_key: str,
+    model: str = "wanx-v1",
+) -> DashScopeUploadResult:
+    """Async variant of :func:`upload_to_dashscope`.
+
+    Behavior identical — only the underlying HTTP transport changes from
+    ``requests`` to ``httpx.AsyncClient``. Used by FastAPI async paths so
+    the (potentially seconds-long) upload does not block the event loop.
+    """
+    try:
+        logger.info("[DashScope Upload] 开始上传到临时存储 (async)...")
+        logger.info(f"[DashScope Upload] 模型: {model}")
+
+        # 步骤 1: 获取上传凭证
+        logger.info("[DashScope Upload] 步骤 1: 获取上传凭证...")
+        success, policy_data, error = await _get_upload_policy_async(api_key, model)
+        if not success:
+            logger.error(f"[DashScope Upload] 获取凭证失败: {error}")
+            return DashScopeUploadResult(success=False, error=error)
+
+        logger.info("[DashScope Upload] ✅ 获取上传凭证成功")
+
+        # 步骤 2: 转换图片为二进制数据
+        logger.info("[DashScope Upload] 步骤 2: 转换图片为二进制数据...")
+        client = await _get_async_http_client()
+
+        if is_base64_url(image_url):
+            try:
+                header, base64_data = image_url.split(",", 1)
+                mime_type = header.split(":")[1].split(";")[0] if ":" in header else "image/jpeg"
+                image_data = base64.b64decode(base64_data)
+                extension = mime_type.split("/")[1] if "/" in mime_type else "jpg"
+                file_name = f"expansion-{int(time.time() * 1000)}.{extension}"
+            except Exception as e:
+                return DashScopeUploadResult(
+                    success=False,
+                    error=f"解析 base64 数据失败: {str(e)}",
+                )
+        else:
+            try:
+                image_response = await client.get(image_url, timeout=30.0)
+                if image_response.status_code != 200:
+                    return DashScopeUploadResult(
+                        success=False,
+                        error=f"下载图片失败: HTTP {image_response.status_code}",
+                    )
+                image_data = image_response.content
+                file_name = f"expansion-{int(time.time() * 1000)}.jpg"
+            except Exception as e:
+                return DashScopeUploadResult(
+                    success=False,
+                    error=f"下载图片失败: {str(e)}",
+                )
+
+        logger.info(f"[DashScope Upload] ✅ 图片转换完成: {len(image_data)} bytes")
+
+        # 步骤 3: 上传到 OSS
+        logger.info("[DashScope Upload] 步骤 3: 上传到 OSS...")
+        success, oss_url, error = await _upload_to_oss_async(image_data, file_name, policy_data)
+        if not success:
+            logger.error(f"[DashScope Upload] {error}")
+            return DashScopeUploadResult(success=False, error=error)
+
+        logger.info("[DashScope Upload] ✅ 上传成功!")
+        logger.info(f"[DashScope Upload] OSS URL: {oss_url}")
+        logger.info("[DashScope Upload] ⏱️  有效期 48 小时")
+
+        return DashScopeUploadResult(success=True, oss_url=oss_url)
+
+    except Exception as e:
+        logger.error(f"[DashScope Upload] 错误: {str(e)}")
+        return DashScopeUploadResult(
+            success=False,
+            error=str(e),
         )

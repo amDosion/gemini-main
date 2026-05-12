@@ -375,7 +375,16 @@ class GeminiAPIVideoGenerationService:
         start = loop.time()
         last_state = "STATE_UNSPECIFIED"
 
-        while True:
+        # Exponential backoff: start at configured interval, grow 1.5x,
+        # cap at max(10s, configured). Conservative — initial cadence
+        # matches the previous fixed-interval behavior.
+        initial_interval = max(float(self.file_ready_poll_interval_seconds), 0.5)
+        max_interval = max(10.0, initial_interval)
+        current_interval = initial_interval
+
+        # Hard iteration safeguard. ``file_ready_timeout_seconds`` is the
+        # primary stop; this just protects against pathological configs.
+        for _ in range(600):
             file_obj = await self._client.aio.files.get(name=normalized_name)
             state = getattr(file_obj, "state", None)
             state_value = getattr(state, "value", state)
@@ -395,15 +404,33 @@ class GeminiAPIVideoGenerationService:
                 raise TimeoutError(
                     f"Timed out waiting for Gemini video asset {normalized_name} to become ACTIVE (last state={last_state})."
                 )
-            await asyncio.sleep(self.file_ready_poll_interval_seconds)
+            await asyncio.sleep(current_interval)
+            current_interval = min(current_interval * 1.5, max_interval)
+
+        raise TimeoutError(
+            f"Exceeded iteration limit waiting for Gemini video asset {normalized_name} (last state={last_state})."
+        )
 
     async def _wait_for_operation(self, operation: Any) -> Any:
         start = asyncio.get_running_loop().time()
         current = operation
+
+        # Exponential backoff bounded by [poll_interval_seconds, max(10s, poll_interval_seconds)].
+        initial_interval = max(float(self.poll_interval_seconds), 0.5)
+        max_interval = max(10.0, initial_interval)
+        current_interval = initial_interval
+
+        iterations = 0
         while not getattr(current, "done", False):
+            iterations += 1
+            if iterations > 600:
+                raise TimeoutError(
+                    "Exceeded iteration limit waiting for Gemini video generation to finish."
+                )
             if asyncio.get_running_loop().time() - start > self.poll_timeout_seconds:
                 raise TimeoutError("Timed out waiting for Gemini video generation to finish.")
-            await asyncio.sleep(self.poll_interval_seconds)
+            await asyncio.sleep(current_interval)
+            current_interval = min(current_interval * 1.5, max_interval)
             try:
                 current = await asyncio.to_thread(
                     self._client.operations.get,

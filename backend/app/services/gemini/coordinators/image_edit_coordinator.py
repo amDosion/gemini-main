@@ -25,6 +25,7 @@ from ..vertexai.inpainting_service import InpaintingService
 from ..vertexai.background_edit_service import BackgroundEditService
 from ..vertexai.recontext_service import RecontextService
 from ...common.google_model_catalog import get_static_google_vertex_model_ids_for_family
+from ._config_cache import get_or_load as _cached_load, clear_config_cache  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -153,43 +154,60 @@ class ImageEditCoordinator:
             try:
                 from ....models.db_models import VertexAIConfig
                 from ....core.encryption import decrypt_data
-                
-                user_config = self._db.query(VertexAIConfig).filter(
-                    VertexAIConfig.user_id == self._user_id
-                ).first()
-                
+
+                def _load_vertex() -> Optional[Dict[str, Any]]:
+                    row = self._db.query(VertexAIConfig).filter(
+                        VertexAIConfig.user_id == self._user_id
+                    ).first()
+                    if not row:
+                        return None
+                    return {
+                        "api_mode": row.api_mode,
+                        "vertex_ai_project_id": row.vertex_ai_project_id,
+                        "vertex_ai_location": row.vertex_ai_location,
+                        "vertex_ai_credentials_json": row.vertex_ai_credentials_json,
+                    }
+
+                user_config = _cached_load(self._user_id, "vertex_ai_config", _load_vertex)
+
                 if user_config:
                     logger.info(f"[ImageEditCoordinator] Using Vertex AI config from database for user={self._user_id}")
-                    
-                    config['api_mode'] = user_config.api_mode
-                    config['vertex_ai_project_id'] = user_config.vertex_ai_project_id
-                    config['vertex_ai_location'] = user_config.vertex_ai_location or 'us-central1'
-                    
+
+                    config['api_mode'] = user_config.get('api_mode')
+                    config['vertex_ai_project_id'] = user_config.get('vertex_ai_project_id')
+                    config['vertex_ai_location'] = user_config.get('vertex_ai_location') or 'us-central1'
+
                     # Decrypt credentials JSON if present
-                    if user_config.vertex_ai_credentials_json:
+                    raw_credentials = user_config.get('vertex_ai_credentials_json')
+                    if raw_credentials:
                         try:
-                            config['vertex_ai_credentials_json'] = decrypt_data(
-                                user_config.vertex_ai_credentials_json
-                            )
+                            config['vertex_ai_credentials_json'] = decrypt_data(raw_credentials)
                             logger.debug(f"[ImageEditCoordinator] Successfully decrypted Vertex AI credentials")
                         except Exception as e:
                             logger.error(f"[ImageEditCoordinator] Failed to decrypt credentials: {e}")
                             config['vertex_ai_credentials_json'] = None
-                    
+
                     # For Gemini API mode, get API key from ConfigProfile
-                    if user_config.api_mode == 'gemini_api':
+                    if user_config.get('api_mode') == 'gemini_api':
                         from ....models.db_models import ConfigProfile
                         from ....core.encryption import decrypt_data, is_encrypted
-                        
-                        # Find Google provider config for this user
-                        google_profile = self._db.query(ConfigProfile).filter(
-                            ConfigProfile.user_id == self._user_id,
-                            ConfigProfile.provider_id == 'google'
-                        ).first()
-                        
-                        if google_profile and google_profile.api_key:
+
+                        def _load_google_profile() -> Optional[Dict[str, Any]]:
+                            row = self._db.query(ConfigProfile).filter(
+                                ConfigProfile.user_id == self._user_id,
+                                ConfigProfile.provider_id == 'google'
+                            ).first()
+                            if not row:
+                                return None
+                            return {"api_key": row.api_key}
+
+                        google_profile = _cached_load(
+                            self._user_id, "config_profile_first", _load_google_profile, "google"
+                        )
+
+                        if google_profile and google_profile.get('api_key'):
                             # ✅ 解密 API Key（如果已加密）
-                            api_key = google_profile.api_key
+                            api_key = google_profile.get('api_key')
                             if is_encrypted(api_key):
                                 try:
                                     api_key = decrypt_data(api_key, silent=True)
@@ -198,7 +216,7 @@ class ImageEditCoordinator:
                                     logger.error(f"[ImageEditCoordinator] Failed to decrypt API key from ConfigProfile: {e}")
                                     # 解密失败时，不设置 gemini_api_key，让系统回退到环境变量
                                     api_key = None
-                            
+
                             if api_key:
                                 config['gemini_api_key'] = api_key
                                 logger.info(f"[ImageEditCoordinator] Using Gemini API key from ConfigProfile for user={self._user_id}")
@@ -206,9 +224,9 @@ class ImageEditCoordinator:
                                 logger.warning(f"[ImageEditCoordinator] Failed to decrypt API key from ConfigProfile for user={self._user_id}, will fall back to environment")
                         else:
                             logger.warning(f"[ImageEditCoordinator] No Google ConfigProfile found for user={self._user_id}, will fall back to environment")
-                    
+
                     # Validate configuration completeness
-                    if user_config.api_mode == 'vertex_ai':
+                    if user_config.get('api_mode') == 'vertex_ai':
                         missing_fields = []
                         if not config.get('vertex_ai_project_id'):
                             missing_fields.append('vertex_ai_project_id')
@@ -216,19 +234,19 @@ class ImageEditCoordinator:
                             missing_fields.append('vertex_ai_location')
                         if not config.get('vertex_ai_credentials_json'):
                             missing_fields.append('vertex_ai_credentials_json')
-                        
+
                         if missing_fields:
                             logger.warning(
                                 f"[ImageEditCoordinator] Incomplete Vertex AI config from database for user={self._user_id}: "
                                 f"missing {', '.join(missing_fields)}. Will fall back to environment variables or Gemini API."
                             )
-                    elif user_config.api_mode == 'gemini_api':
+                    elif user_config.get('api_mode') == 'gemini_api':
                         if not config.get('gemini_api_key'):
                             logger.warning(
                                 f"[ImageEditCoordinator] Incomplete Gemini API config from database for user={self._user_id}: "
                                 f"missing API key. Will fall back to environment variables."
                             )
-                    
+
                     logger.debug(f"[ImageEditCoordinator] Loaded config from database: api_mode={config['api_mode']}")
                     return config
                 else:
@@ -362,10 +380,13 @@ class ImageEditCoordinator:
     def reload_config(self) -> None:
         """
         Reload configuration and clear editor cache.
-        
+
         This is useful when configuration changes at runtime.
         """
         logger.info("[ImageEditCoordinator] Reloading configuration")
+        # Invalidate shared config cache so DB is re-read on next _load_config
+        if self._user_id:
+            clear_config_cache(user_id=self._user_id)
         self._config = self._load_config()
         self._editor_cache.clear()
         logger.info(f"[ImageEditCoordinator] Configuration reloaded: api_mode={self._config.get('api_mode')}")

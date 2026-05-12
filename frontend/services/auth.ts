@@ -105,6 +105,11 @@ class AuthService {
   private configCacheTTL = 30000; // 30秒缓存
   private configPromise: Promise<AuthConfig> | null = null; // 防止并发请求
 
+  // ✅ Wave 2 perf: in-flight + result cache for current user
+  // 避免 useAuth init/refresh 等同 mount tick 内多次串行调用 /auth/me
+  // logout / login / refreshToken 需调 clearUserCache() 失效
+  private userPromise: Promise<User | null> | null = null;
+
   constructor() {
     // ✅ 监听其他标签页的 token 刷新
     listenTokenRefresh((accessToken, refreshToken) => {
@@ -260,6 +265,8 @@ class AuthService {
     if (result.hasActiveProfile !== undefined) {
       localStorage.setItem('has_active_profile', String(result.hasActiveProfile));
     }
+    // ✅ Wave 2 perf: 清除可能存在的上一用户缓存（新用户登录场景）
+    this.clearUserCache();
     return result;
   }
 
@@ -283,45 +290,79 @@ class AuthService {
       // ✅ 清除所有 token
       removeAccessToken();
       removeRefreshToken();
+      // ✅ Wave 2 perf: 清除用户缓存防跨用户脏读
+      this.clearUserCache();
       // ✅ 广播登出事件给其他标签页
       broadcastLogout();
     }
   }
 
   /**
-   * 获取当前用户
+   * 清除当前用户缓存（logout / token 刷新失败 / login 切换用户 时调用）。
+   * Wave 2 perf: 避免跨用户脏读 + 配合 Promise 单例去重。
    */
-  async getCurrentUser(): Promise<User | null> {
-    try {
-      const token = getAccessToken();
-      if (!token) {
-        return null;
-      }
-      const response = await fetchWithTimeout(`${this.baseUrl}/me`, {
-        method: 'GET',
-        headers: getHeaders(),
-      });
-      if (!response.ok) {
-        if (response.status === 401) {
-          // Token 无效，清除本地 token
-          removeAccessToken();
+  clearUserCache(): void {
+    this.userPromise = null;
+  }
+
+  /**
+   * 获取当前用户
+   *
+   * ✅ Wave 2 perf: Promise 单例去重 —— 同 tick 内多次调用（init + refresh + login）
+   * 复用同一个 /auth/me in-flight Promise；resolve 后保留结果便于其它 consumer 复用。
+   * force=true 时绕过缓存（refreshUser 主动刷新场景）。
+   * 注意：仅缓存成功结果；错误/无 token 时不缓存，让下次调用重新尝试。
+   */
+  async getCurrentUser(force = false): Promise<User | null> {
+    if (force) {
+      this.userPromise = null;
+    }
+    if (this.userPromise) {
+      return this.userPromise;
+    }
+
+    const promise = (async (): Promise<User | null> => {
+      try {
+        const token = getAccessToken();
+        if (!token) {
           return null;
         }
-        throw new Error('Failed to get current user');
-      }
-      const result = await readJsonResponse<any>(response);
+        const response = await fetchWithTimeout(`${this.baseUrl}/me`, {
+          method: 'GET',
+          headers: getHeaders(),
+        });
+        if (!response.ok) {
+          if (response.status === 401) {
+            // Token 无效，清除本地 token
+            removeAccessToken();
+            return null;
+          }
+          throw new Error('Failed to get current user');
+        }
+        const result = await readJsonResponse<any>(response);
 
-      // ✅ 更新配置状态（优化：减少前端初始化请求）
-      if (result.hasActiveProfile !== undefined) {
-        localStorage.setItem('has_active_profile', String(result.hasActiveProfile));
-      }
+        // ✅ 更新配置状态（优化：减少前端初始化请求）
+        if (result.hasActiveProfile !== undefined) {
+          localStorage.setItem('has_active_profile', String(result.hasActiveProfile));
+        }
 
+        return result;
+      } catch {
+        // getCurrentUser failed, clearing token
+        removeAccessToken();
+        return null;
+      }
+    })();
+
+    // 仅在成功（user 非空）时保留缓存；null/失败 不缓存以允许后续重试
+    this.userPromise = promise.then((result) => {
+      if (result === null) {
+        this.userPromise = null;
+      }
       return result;
-    } catch {
-      // getCurrentUser failed, clearing token
-      removeAccessToken();
-      return null;
-    }
+    });
+
+    return this.userPromise;
   }
 
   /**

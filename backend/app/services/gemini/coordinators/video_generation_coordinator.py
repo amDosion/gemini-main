@@ -45,6 +45,7 @@ from ...common.model_capabilities import is_multimodal_understanding_model
 from ..geminiapi.video_generation_service import GeminiAPIVideoGenerationService
 from ..vertexai.video_generation_service import VertexAIVideoGenerationService
 from ....utils.attachment_handler import is_base64_url
+from ._config_cache import get_or_load as _cached_load
 
 logger = logging.getLogger(__name__)
 
@@ -986,14 +987,25 @@ class VideoGenerationCoordinator:
                 from ....models.db_models import ConfigProfile, UserSettings, VertexAIConfig
                 from ....core.encryption import decrypt_data, is_encrypted
 
-                vertex_config = self._db.query(VertexAIConfig).filter(
-                    VertexAIConfig.user_id == self._user_id
-                ).first()
-                if vertex_config:
-                    config["api_mode"] = vertex_config.api_mode or "gemini_api"
-                    config["vertex_ai_project_id"] = vertex_config.vertex_ai_project_id
-                    config["vertex_ai_location"] = vertex_config.vertex_ai_location or "us-central1"
-                    raw_credentials = vertex_config.vertex_ai_credentials_json
+                def _load_vertex() -> Optional[Dict[str, Any]]:
+                    row = self._db.query(VertexAIConfig).filter(
+                        VertexAIConfig.user_id == self._user_id
+                    ).first()
+                    if not row:
+                        return None
+                    return {
+                        "api_mode": row.api_mode,
+                        "vertex_ai_project_id": row.vertex_ai_project_id,
+                        "vertex_ai_location": row.vertex_ai_location,
+                        "vertex_ai_credentials_json": row.vertex_ai_credentials_json,
+                    }
+
+                vertex_snapshot = _cached_load(self._user_id, "vertex_ai_config", _load_vertex)
+                if vertex_snapshot:
+                    config["api_mode"] = vertex_snapshot.get("api_mode") or "gemini_api"
+                    config["vertex_ai_project_id"] = vertex_snapshot.get("vertex_ai_project_id")
+                    config["vertex_ai_location"] = vertex_snapshot.get("vertex_ai_location") or "us-central1"
+                    raw_credentials = vertex_snapshot.get("vertex_ai_credentials_json")
                     if raw_credentials:
                         config["vertex_ai_credentials_json"] = (
                             decrypt_data(raw_credentials) if is_encrypted(raw_credentials) else raw_credentials
@@ -1002,31 +1014,54 @@ class VideoGenerationCoordinator:
                 if self._provided_api_key:
                     config["gemini_api_key"] = self._provided_api_key
                 else:
-                    active_profile_id = None
-                    settings_row = self._db.query(UserSettings).filter(
-                        UserSettings.user_id == self._user_id
-                    ).first()
-                    if settings_row and getattr(settings_row, "active_profile_id", None):
-                        active_profile_id = str(settings_row.active_profile_id or "").strip() or None
-
-                    google_profile = None
-                    if active_profile_id:
-                        active_google_profile = self._db.query(ConfigProfile).filter(
-                            ConfigProfile.user_id == self._user_id,
-                            ConfigProfile.id == active_profile_id,
+                    def _load_settings() -> Optional[Dict[str, Any]]:
+                        row = self._db.query(UserSettings).filter(
+                            UserSettings.user_id == self._user_id
                         ).first()
-                        if active_google_profile:
-                            provider_id = str(active_google_profile.provider_id or "").strip().lower()
-                            if provider_id.startswith("google"):
-                                google_profile = active_google_profile
+                        if not row:
+                            return None
+                        return {"active_profile_id": getattr(row, "active_profile_id", None)}
 
-                    if google_profile is None:
-                        google_profile = self._db.query(ConfigProfile).filter(
-                            ConfigProfile.user_id == self._user_id,
-                            ConfigProfile.provider_id.like("google%"),
-                        ).order_by(ConfigProfile.updated_at.desc()).first()
-                    if google_profile and google_profile.api_key:
-                        key = google_profile.api_key
+                    settings_snapshot = _cached_load(self._user_id, "user_settings", _load_settings)
+                    active_profile_id = None
+                    if settings_snapshot and settings_snapshot.get("active_profile_id"):
+                        active_profile_id = str(settings_snapshot["active_profile_id"] or "").strip() or None
+
+                    google_snapshot: Optional[Dict[str, Any]] = None
+                    if active_profile_id:
+                        def _load_active_profile() -> Optional[Dict[str, Any]]:
+                            row = self._db.query(ConfigProfile).filter(
+                                ConfigProfile.user_id == self._user_id,
+                                ConfigProfile.id == active_profile_id,
+                            ).first()
+                            if not row:
+                                return None
+                            return {"provider_id": row.provider_id, "api_key": row.api_key}
+
+                        active_snapshot = _cached_load(
+                            self._user_id, "config_profile_by_id", _load_active_profile, active_profile_id
+                        )
+                        if active_snapshot:
+                            provider_id = str(active_snapshot.get("provider_id") or "").strip().lower()
+                            if provider_id.startswith("google"):
+                                google_snapshot = active_snapshot
+
+                    if google_snapshot is None:
+                        def _load_google_like() -> Optional[Dict[str, Any]]:
+                            row = self._db.query(ConfigProfile).filter(
+                                ConfigProfile.user_id == self._user_id,
+                                ConfigProfile.provider_id.like("google%"),
+                            ).order_by(ConfigProfile.updated_at.desc()).first()
+                            if not row:
+                                return None
+                            return {"provider_id": row.provider_id, "api_key": row.api_key}
+
+                        google_snapshot = _cached_load(
+                            self._user_id, "config_profile_like_google", _load_google_like
+                        )
+
+                    if google_snapshot and google_snapshot.get("api_key"):
+                        key = google_snapshot["api_key"]
                         if is_encrypted(key):
                             key = decrypt_data(key, silent=True)
                         config["gemini_api_key"] = key

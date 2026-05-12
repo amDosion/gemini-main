@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 
 import { AppMode, Attachment, Role, ChatOptions } from './types/types';
@@ -306,6 +306,17 @@ const AppContent: React.FC = () => {
   const { messages, setMessages, loadingState, sendMessage, submitResearchAction, stopGeneration } =
     useChat(currentSessionId, updateSessionMessages, config.apiKey, activeStorageId);
 
+  // --- Wave 2 #36: refs mirror state for stable useCallback handlers ---
+  // 模式同 Wave 1 panRef:setter 引用稳定,ref.current 在每次渲染同步,handler 闭包稳定 deps=[]。
+  const activePersonaIdRef = useRef(activePersonaId);
+  const activeModelConfigRef = useRef(activeModelConfig);
+  const currentSessionIdRef = useRef(currentSessionId);
+  const messagesRef = useRef(messages);
+  activePersonaIdRef.current = activePersonaId;
+  activeModelConfigRef.current = activeModelConfig;
+  currentSessionIdRef.current = currentSessionId;
+  messagesRef.current = messages;
+
   // --- 消息过滤 ---
   const currentViewMessages = useViewMessages(messages, appMode);
 
@@ -380,12 +391,14 @@ const AppContent: React.FC = () => {
   });
 
   // --- Handlers ---
-  const handleNewChat = () => {
-    createNewSession(activePersonaId);
-    if (activeModelConfig) llmService.startNewChat([], activeModelConfig);
+  // Wave 2 #36: useCallback + refs(activePersonaId/activeModelConfig) 保持 deps=[]。
+  const handleNewChat = useCallback(() => {
+    createNewSession(activePersonaIdRef.current);
+    const cfg = activeModelConfigRef.current;
+    if (cfg) llmService.startNewChat([], cfg);
     setInitialAttachments(undefined);
     setInitialPrompt(undefined);
-  };
+  }, [createNewSession]);
 
   const handleModelSelect = useCallback(
     (id: string) => {
@@ -396,14 +409,19 @@ const AppContent: React.FC = () => {
     [setCurrentModelId, setIsModelMenuOpen]
   );
 
-  const handlePersonaSelect = (id: string) => {
-    setActivePersonaId(id);
+  // Wave 2 #36: useCallback + currentSessionIdRef 保持 deps 最小。
+  const handlePersonaSelect = useCallback(
+    (id: string) => {
+      setActivePersonaId(id);
 
-    // ✅ 如果有当前会话，更新会话的 persona
-    if (currentSessionId) {
-      updateSessionPersona(currentSessionId, id);
-    }
-  };
+      // ✅ 如果有当前会话，更新会话的 persona
+      const sid = currentSessionIdRef.current;
+      if (sid) {
+        updateSessionPersona(sid, id);
+      }
+    },
+    [setActivePersonaId, updateSessionPersona]
+  );
 
   const onSend = useCallback(
     (
@@ -539,12 +557,16 @@ const AppContent: React.FC = () => {
   });
 
   // 欢迎屏 prompt 选择 — 抽离至 ./appHandlers
-  const handleWelcomePrompt = (text: string, mode: AppMode, modelId: string, requiredCap: string) =>
-    submitWelcomePrompt(text, mode, modelId, requiredCap, {
-      handleModelSelect,
-      handleModeSwitch,
-      onSend,
-    });
+  // Wave 2 #36: useCallback 包装,deps 仅为已稳定的 useCallback 引用 (handleModelSelect / handleModeSwitch / onSend)。
+  const handleWelcomePrompt = useCallback(
+    (text: string, mode: AppMode, modelId: string, requiredCap: string) =>
+      submitWelcomePrompt(text, mode, modelId, requiredCap, {
+        handleModelSelect,
+        handleModeSwitch,
+        onSend,
+      }),
+    [handleModelSelect, handleModeSwitch, onSend]
+  );
 
   // 3 个 open 面板 handler — 抽离至 ./appHandlers（deps 内联，setter 引用稳定无需 useCallback deps）
   const _panelDeps = {
@@ -553,18 +575,23 @@ const AppContent: React.FC = () => {
     setIsPersonaViewOpen,
     setIsCloudStorageBrowserOpen,
   };
-  const handleOpenSettings = (tab?: string) => openSettingsPanel(tab, _panelDeps);
+  // Wave 2 #36: useCallback 包装(setter 引用稳定,_panelDeps 仅是 setter 收集器,deps=[] 安全)。
+  const handleOpenSettings = useCallback((tab?: string) => openSettingsPanel(tab, _panelDeps), []); // eslint-disable-line react-hooks/exhaustive-deps
   const handleOpenCloudStorage = useCallback(() => openCloudStoragePanel(_panelDeps), []); // eslint-disable-line react-hooks/exhaustive-deps
   const handleOpenPersonaView = useCallback(() => openPersonaPanel(_panelDeps), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 删除单条消息（同时删除对应的用户消息）— 抽离至 ./appHandlers
-  const handleDeleteMessage = (messageId: string) =>
-    deleteMessageFromSession(messageId, {
-      currentSessionId,
-      messages,
-      setMessages,
-      updateSessionMessages,
-    });
+  // Wave 2 #36: useCallback + refs(currentSessionId/messages) 保持 deps 仅为稳定 setter。
+  const handleDeleteMessage = useCallback(
+    (messageId: string) =>
+      deleteMessageFromSession(messageId, {
+        currentSessionId: currentSessionIdRef.current,
+        messages: messagesRef.current,
+        setMessages,
+        updateSessionMessages,
+      }),
+    [setMessages, updateSessionMessages]
+  );
 
   const renderView = () => {
     if (isCloudStorageBrowserOpen) {

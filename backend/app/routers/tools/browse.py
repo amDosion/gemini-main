@@ -8,12 +8,35 @@ import uuid
 import json
 import logging
 
+import httpx
+
 from ...core.dependencies import require_current_user
 
 logger = logging.getLogger(__name__)
 from ...utils.url_security import validate_outbound_http_url
 
 router = APIRouter(prefix="/api", tags=["browse"])
+
+# Module-level lazy httpx.AsyncClient for the browse route. Reusing a single
+# client avoids tearing down TCP/TLS handshakes per request and keeps the
+# event loop free of blocking ``requests`` work.
+_http_client: Optional[httpx.AsyncClient] = None
+_http_client_lock = asyncio.Lock()
+
+
+async def _get_async_http_client() -> httpx.AsyncClient:
+    """Lazy initializer for the module-level ``httpx.AsyncClient``.
+
+    Using a lazy initializer avoids import-time side effects (which can
+    interact poorly with multi-worker process pools) while still ensuring
+    only a single client is created per worker.
+    """
+    global _http_client
+    if _http_client is None:
+        async with _http_client_lock:
+            if _http_client is None:
+                _http_client = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
+    return _http_client
 
 # ==================== Browser Session Management ====================
 
@@ -389,12 +412,16 @@ async def browse_webpage(
                         progress=50
                     )
                 
-                import requests
                 from bs4 import BeautifulSoup
 
-                response = await asyncio.to_thread(requests.get, url, timeout=10, headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                })
+                client = await _get_async_http_client()
+                response = await client.get(
+                    url,
+                    timeout=10.0,
+                    headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    },
+                )
                 title = extract_title_from_html(response.text)
 
                 # Convert content to markdown
@@ -460,14 +487,14 @@ async def browse_webpage(
                 progress=40
             )
 
-        import requests
         from bs4 import BeautifulSoup
 
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
 
-        response = await asyncio.to_thread(requests.get, url, timeout=10, headers=headers)
+        client = await _get_async_http_client()
+        response = await client.get(url, timeout=10.0, headers=headers)
         response.raise_for_status()
 
         # Extract title
@@ -511,9 +538,7 @@ async def browse_webpage(
         )
 
     except Exception as e:
-        import requests
-        
-        if isinstance(e, requests.exceptions.Timeout):
+        if isinstance(e, httpx.TimeoutException):
             if _logger and _LOG_PREFIXES:
                 _logger.error(f"{_LOG_PREFIXES['error']} Timeout while accessing {url}")
             if _progress_tracker:
@@ -522,7 +547,7 @@ async def browse_webpage(
                 status_code=504,
                 detail=f"Timeout while accessing {url}"
             )
-        elif isinstance(e, requests.exceptions.RequestException):
+        elif isinstance(e, (httpx.RequestError, httpx.HTTPStatusError)):
             if _logger and _LOG_PREFIXES:
                 _logger.error(f"{_LOG_PREFIXES['error']} Request error accessing {url}: {str(e)}")
             if _progress_tracker:

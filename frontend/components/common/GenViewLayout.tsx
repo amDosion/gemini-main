@@ -75,15 +75,25 @@ export const GenViewLayout: React.FC<GenViewLayoutProps> = React.memo(({
         }
     }, [isDesktopSidebarCollapsed]);
 
+    // ✅ Wave 2 perf: debounce localStorage 写入。拖拽 resizer 时 leftSidebarWidth
+    // 每帧变化（mousemove 高频），原实现每帧同步写 localStorage 引发主线程阻塞。
+    // 250ms 后写入；后续渲染会取消上一次未触发的 timer 重新调度；
+    // 卸载时取消 timer 但不丢失（下次 mount 时 useState lazy init 会读 storage —
+    // 即使 storage 落后 250ms，UI 仍以 React state 为准）。
     React.useEffect(() => {
         if (typeof window === 'undefined') {
             return;
         }
-        try {
-            window.localStorage.setItem(LEFT_WIDTH_STORAGE_KEY, String(leftSidebarWidth));
-        } catch {
-            // ignore storage errors
-        }
+        const timer = window.setTimeout(() => {
+            try {
+                window.localStorage.setItem(LEFT_WIDTH_STORAGE_KEY, String(leftSidebarWidth));
+            } catch {
+                // ignore storage errors
+            }
+        }, 250);
+        return () => {
+            window.clearTimeout(timer);
+        };
     }, [leftSidebarWidth]);
 
     const activeResizeHandlersRef = React.useRef<{ onMouseMove?: (event: MouseEvent) => void; onMouseUp?: () => void }>({});

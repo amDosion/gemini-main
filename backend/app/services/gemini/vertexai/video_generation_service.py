@@ -493,10 +493,24 @@ class VertexAIVideoGenerationService:
     async def _wait_for_operation(self, operation: Any) -> Any:
         start = asyncio.get_running_loop().time()
         current = operation
+
+        # Exponential backoff bounded by [poll_interval_seconds, max(10s, poll_interval_seconds)].
+        # Conservative — initial cadence matches the previous fixed interval.
+        initial_interval = max(float(self.poll_interval_seconds), 0.5)
+        max_interval = max(10.0, initial_interval)
+        current_interval = initial_interval
+
+        iterations = 0
         while not getattr(current, "done", False):
+            iterations += 1
+            if iterations > 600:
+                raise TimeoutError(
+                    "Exceeded iteration limit waiting for Vertex AI video generation to finish."
+                )
             if asyncio.get_running_loop().time() - start > self.poll_timeout_seconds:
                 raise TimeoutError("Timed out waiting for Vertex AI video generation to finish.")
-            await asyncio.sleep(self.poll_interval_seconds)
+            await asyncio.sleep(current_interval)
+            current_interval = min(current_interval * 1.5, max_interval)
             try:
                 current = await asyncio.to_thread(
                     self._client.operations.get,

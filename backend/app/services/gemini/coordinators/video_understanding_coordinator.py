@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..geminiapi.video_understanding_service import GeminiAPIVideoUnderstandingService
 from ..vertexai.video_understanding_service import VertexAIVideoUnderstandingService
+from ._config_cache import get_or_load as _cached_load
 
 logger = logging.getLogger(__name__)
 
@@ -40,14 +41,25 @@ class VideoUnderstandingCoordinator:
                 from ....models.db_models import ConfigProfile, VertexAIConfig
                 from ....core.encryption import decrypt_data, is_encrypted
 
-                vertex_config = self._db.query(VertexAIConfig).filter(
-                    VertexAIConfig.user_id == self._user_id
-                ).first()
-                if vertex_config:
-                    config["api_mode"] = vertex_config.api_mode or "gemini_api"
-                    config["vertex_ai_project_id"] = vertex_config.vertex_ai_project_id
-                    config["vertex_ai_location"] = vertex_config.vertex_ai_location or "us-central1"
-                    raw_credentials = vertex_config.vertex_ai_credentials_json
+                def _load_vertex() -> Optional[Dict[str, Any]]:
+                    row = self._db.query(VertexAIConfig).filter(
+                        VertexAIConfig.user_id == self._user_id
+                    ).first()
+                    if not row:
+                        return None
+                    return {
+                        "api_mode": row.api_mode,
+                        "vertex_ai_project_id": row.vertex_ai_project_id,
+                        "vertex_ai_location": row.vertex_ai_location,
+                        "vertex_ai_credentials_json": row.vertex_ai_credentials_json,
+                    }
+
+                vertex_snapshot = _cached_load(self._user_id, "vertex_ai_config", _load_vertex)
+                if vertex_snapshot:
+                    config["api_mode"] = vertex_snapshot.get("api_mode") or "gemini_api"
+                    config["vertex_ai_project_id"] = vertex_snapshot.get("vertex_ai_project_id")
+                    config["vertex_ai_location"] = vertex_snapshot.get("vertex_ai_location") or "us-central1"
+                    raw_credentials = vertex_snapshot.get("vertex_ai_credentials_json")
                     if raw_credentials:
                         config["vertex_ai_credentials_json"] = (
                             decrypt_data(raw_credentials) if is_encrypted(raw_credentials) else raw_credentials
@@ -56,12 +68,20 @@ class VideoUnderstandingCoordinator:
                 if self._provided_api_key:
                     config["gemini_api_key"] = self._provided_api_key
                 else:
-                    google_profile = self._db.query(ConfigProfile).filter(
-                        ConfigProfile.user_id == self._user_id,
-                        ConfigProfile.provider_id == "google",
-                    ).order_by(ConfigProfile.updated_at.desc()).first()
-                    if google_profile and google_profile.api_key:
-                        key = google_profile.api_key
+                    def _load_google_profile() -> Optional[Dict[str, Any]]:
+                        row = self._db.query(ConfigProfile).filter(
+                            ConfigProfile.user_id == self._user_id,
+                            ConfigProfile.provider_id == "google",
+                        ).order_by(ConfigProfile.updated_at.desc()).first()
+                        if not row:
+                            return None
+                        return {"api_key": row.api_key}
+
+                    google_snapshot = _cached_load(
+                        self._user_id, "config_profile", _load_google_profile, "google"
+                    )
+                    if google_snapshot and google_snapshot.get("api_key"):
+                        key = google_snapshot["api_key"]
                         if is_encrypted(key):
                             key = decrypt_data(key, silent=True)
                         config["gemini_api_key"] = key

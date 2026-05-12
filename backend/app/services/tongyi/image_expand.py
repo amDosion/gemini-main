@@ -11,9 +11,11 @@
 from typing import Optional, Tuple
 from dataclasses import dataclass
 import asyncio
-import requests
-import time
 import logging
+import time
+
+import httpx
+import requests
 
 # 导入独立的上传服务
 from .file_upload import upload_bytes_to_dashscope
@@ -22,6 +24,27 @@ logger = logging.getLogger(__name__)
 
 # DashScope API 配置
 DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com"
+
+# Polling backoff bounds (seconds). Conservative: start at the existing
+# 5s baseline, grow 1.5x each iteration, cap at 10s. The goal is to reduce
+# wasted poll requests for long jobs, not to change short-job timing.
+_POLL_INITIAL_INTERVAL = 5.0
+_POLL_MAX_INTERVAL = 10.0
+_POLL_BACKOFF_FACTOR = 1.5
+
+# Module-level lazy ``httpx.AsyncClient`` used by ``poll_task_async``.
+_http_client: Optional[httpx.AsyncClient] = None
+_http_client_lock = asyncio.Lock()
+
+
+async def _get_async_http_client() -> httpx.AsyncClient:
+    """Lazy initializer for the module-level ``httpx.AsyncClient``."""
+    global _http_client
+    if _http_client is None:
+        async with _http_client_lock:
+            if _http_client is None:
+                _http_client = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
+    return _http_client
 
 
 @dataclass
@@ -189,29 +212,35 @@ class ImageExpandService:
     def poll_task(self, task_id: str, api_key: str, max_retries: int = 120) -> OutPaintingResult:
         """
         轮询任务状态
-        
+
         Args:
             task_id: 任务 ID
             api_key: DashScope API Key
-            max_retries: 最大重试次数（默认 120 次，每次 5 秒，共 10 分钟）
-        
+            max_retries: 最大重试次数（默认 120 次，作为硬迭代上限保护）
+
         Returns:
             OutPaintingResult
         """
         task_url = f"{DASHSCOPE_BASE_URL}/api/v1/tasks/{task_id}"
         task_headers = {"Authorization": f"Bearer {api_key}"}
-        
+
+        # Exponential backoff: start at 5s (existing baseline), grow 1.5x,
+        # cap at 10s. ``time.sleep`` is intentional — this function runs
+        # inside ``asyncio.to_thread`` from ``tongyi_service.py``.
+        current_interval = _POLL_INITIAL_INTERVAL
+
         for i in range(max_retries):
-            time.sleep(5)
-            
+            time.sleep(current_interval)
+            current_interval = min(current_interval * _POLL_BACKOFF_FACTOR, _POLL_MAX_INTERVAL)
+
             try:
                 task_response = requests.get(task_url, headers=task_headers, timeout=30)
                 if task_response.status_code != 200:
                     continue
-                
+
                 task_data = task_response.json()
                 task_status = task_data.get("output", {}).get("task_status")
-                
+
                 if task_status == "SUCCEEDED":
                     output_url = task_data.get("output", {}).get("output_image_url")
                     logger.info(f"[OutPainting] 任务成功: {output_url}")
@@ -234,26 +263,27 @@ class ImageExpandService:
             except Exception as e:
                 logger.error(f"[OutPainting] 轮询异常: {str(e)}")
                 continue
-        
+
         return OutPaintingResult(
             success=False,
             task_id=task_id,
-            error="任务超时（10分钟）"
+            error="任务超时"
         )
 
     async def poll_task_async(self, task_id: str, api_key: str, max_retries: int = 120) -> OutPaintingResult:
         """
         异步轮询任务状态（async 变体）
 
-        Preferred for async callers: uses ``await asyncio.sleep(5)`` so the
-        event loop stays responsive, and runs the blocking ``requests.get``
-        in a worker thread via ``asyncio.to_thread``. Behavior matches
-        :py:meth:`poll_task` exactly — same retry budget, same return shape.
+        Preferred for async callers: uses ``await asyncio.sleep`` so the
+        event loop stays responsive, and uses ``httpx.AsyncClient`` for the
+        HTTP call so we do not even need ``asyncio.to_thread``. Behavior
+        matches :py:meth:`poll_task` exactly — same retry budget, same
+        return shape, same exponential backoff (5s → 1.5x → cap 10s).
 
         Args:
             task_id: 任务 ID
             api_key: DashScope API Key
-            max_retries: 最大重试次数（默认 120 次，每次 5 秒，共 10 分钟）
+            max_retries: 最大重试次数（默认 120 次，硬迭代上限保护）
 
         Returns:
             OutPaintingResult
@@ -261,13 +291,15 @@ class ImageExpandService:
         task_url = f"{DASHSCOPE_BASE_URL}/api/v1/tasks/{task_id}"
         task_headers = {"Authorization": f"Bearer {api_key}"}
 
+        client = await _get_async_http_client()
+        current_interval = _POLL_INITIAL_INTERVAL
+
         for i in range(max_retries):
-            await asyncio.sleep(5)
+            await asyncio.sleep(current_interval)
+            current_interval = min(current_interval * _POLL_BACKOFF_FACTOR, _POLL_MAX_INTERVAL)
 
             try:
-                task_response = await asyncio.to_thread(
-                    requests.get, task_url, headers=task_headers, timeout=30
-                )
+                task_response = await client.get(task_url, headers=task_headers, timeout=30.0)
                 if task_response.status_code != 200:
                     continue
 
@@ -300,59 +332,7 @@ class ImageExpandService:
         return OutPaintingResult(
             success=False,
             task_id=task_id,
-            error="任务超时（10分钟）"
-        )
-
-    async def poll_task_async(self, task_id: str, api_key: str, max_retries: int = 120) -> OutPaintingResult:
-        """
-        Async 轮询任务状态 - 与 ``poll_task`` 行为一致，但使用 ``await asyncio.sleep``
-        以避免在 async 调用方中阻塞事件循环（或线程池的 worker）。
-
-        HTTP 请求仍是同步的，通过 ``asyncio.to_thread`` 卸载到线程池。
-        """
-        task_url = f"{DASHSCOPE_BASE_URL}/api/v1/tasks/{task_id}"
-        task_headers = {"Authorization": f"Bearer {api_key}"}
-
-        for i in range(max_retries):
-            await asyncio.sleep(5)
-
-            try:
-                task_response = await asyncio.to_thread(
-                    requests.get, task_url, headers=task_headers, timeout=30
-                )
-                if task_response.status_code != 200:
-                    continue
-
-                task_data = task_response.json()
-                task_status = task_data.get("output", {}).get("task_status")
-
-                if task_status == "SUCCEEDED":
-                    output_url = task_data.get("output", {}).get("output_image_url")
-                    logger.info(f"[OutPainting] 任务成功: {output_url}")
-                    return OutPaintingResult(
-                        success=True,
-                        task_id=task_id,
-                        output_url=output_url
-                    )
-                elif task_status == "FAILED":
-                    error_msg = task_data.get("output", {}).get("message", "任务失败")
-                    error_code = task_data.get("output", {}).get("code", "")
-                    logger.error(f"[OutPainting] 任务失败: {error_code} - {error_msg}")
-                    return OutPaintingResult(
-                        success=False,
-                        task_id=task_id,
-                        error=f"{error_code}: {error_msg}"
-                    )
-                else:
-                    logger.debug(f"[OutPainting] 任务处理中: {task_status} ({i+1}/{max_retries})")
-            except Exception as e:
-                logger.error(f"[OutPainting] 轮询异常: {str(e)}")
-                continue
-
-        return OutPaintingResult(
-            success=False,
-            task_id=task_id,
-            error="任务超时（10分钟）"
+            error="任务超时"
         )
 
     def execute_with_fallback(

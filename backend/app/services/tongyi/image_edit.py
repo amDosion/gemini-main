@@ -16,7 +16,7 @@ from dataclasses import dataclass
 import httpx
 import logging
 
-from .file_upload import upload_to_dashscope
+from .file_upload import upload_to_dashscope, upload_to_dashscope_async
 
 logger = logging.getLogger(__name__)
 
@@ -88,10 +88,12 @@ class ImageEditService:
         logger.info(f"[Image Edit] 上传图片到 OSS: {image_url[:60]}...")
         logger.info(f"[Image Edit] 使用模型获取上传凭证: {model}")
 
-        result = upload_to_dashscope(
+        # Use the async httpx variant from this async context so we do not
+        # block the event loop on the DashScope policy + OSS upload calls.
+        result = await upload_to_dashscope_async(
             image_url=image_url,
             api_key=self.api_key,
-            model=model
+            model=model,
         )
 
         if not result.success:

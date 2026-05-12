@@ -14,6 +14,7 @@ from ..base.imagen_base import BaseImageGenerator
 from ..geminiapi.imagen_gemini_api import GeminiAPIImageGenerator
 from ..vertexai.imagen_vertex_ai import VertexAIImageGenerator
 from ..base.imagen_common import ConfigurationError
+from ._config_cache import get_or_load as _cached_load, clear_config_cache  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -164,31 +165,41 @@ class ImagenCoordinator:
             try:
                 from ....models.db_models import VertexAIConfig
                 from ....core.encryption import decrypt_data
-                
-                user_config = self._db.query(VertexAIConfig).filter(
-                    VertexAIConfig.user_id == self._user_id
-                ).first()
-                
+
+                def _load_vertex() -> Optional[Dict[str, Any]]:
+                    row = self._db.query(VertexAIConfig).filter(
+                        VertexAIConfig.user_id == self._user_id
+                    ).first()
+                    if not row:
+                        return None
+                    return {
+                        "api_mode": row.api_mode,
+                        "vertex_ai_project_id": row.vertex_ai_project_id,
+                        "vertex_ai_location": row.vertex_ai_location,
+                        "vertex_ai_credentials_json": row.vertex_ai_credentials_json,
+                    }
+
+                user_config = _cached_load(self._user_id, "vertex_ai_config", _load_vertex)
+
                 if user_config:
                     logger.info(f"[ImagenCoordinator] Using Vertex AI config from database for user={self._user_id}")
-                    
-                    config['api_mode'] = user_config.api_mode
-                    config['vertex_ai_project_id'] = user_config.vertex_ai_project_id
-                    config['vertex_ai_location'] = user_config.vertex_ai_location or 'us-central1'
-                    
+
+                    config['api_mode'] = user_config.get('api_mode')
+                    config['vertex_ai_project_id'] = user_config.get('vertex_ai_project_id')
+                    config['vertex_ai_location'] = user_config.get('vertex_ai_location') or 'us-central1'
+
                     # Decrypt credentials JSON if present
-                    if user_config.vertex_ai_credentials_json:
+                    raw_credentials = user_config.get('vertex_ai_credentials_json')
+                    if raw_credentials:
                         try:
-                            config['vertex_ai_credentials_json'] = decrypt_data(
-                                user_config.vertex_ai_credentials_json
-                            )
+                            config['vertex_ai_credentials_json'] = decrypt_data(raw_credentials)
                             logger.debug(f"[ImagenCoordinator] Successfully decrypted Vertex AI credentials")
                         except Exception as e:
                             logger.error(f"[ImagenCoordinator] Failed to decrypt credentials: {e}")
                             config['vertex_ai_credentials_json'] = None
-                    
+
                     # For Gemini API mode, get API key from ConfigProfile
-                    if user_config.api_mode == 'gemini_api':
+                    if user_config.get('api_mode') == 'gemini_api':
                         # ✅ 优先使用传入的已解密 API Key（来自 credential_manager）
                         if self._provided_api_key:
                             config['gemini_api_key'] = self._provided_api_key
@@ -197,16 +208,23 @@ class ImagenCoordinator:
                             # 回退：从数据库加载并解密
                             from ....models.db_models import ConfigProfile
                             from ....core.encryption import decrypt_data, is_encrypted
-                            
-                            # Find Google provider config for this user
-                            google_profile = self._db.query(ConfigProfile).filter(
-                                ConfigProfile.user_id == self._user_id,
-                                ConfigProfile.provider_id == 'google'
-                            ).first()
-                            
-                            if google_profile and google_profile.api_key:
+
+                            def _load_google_profile() -> Optional[Dict[str, Any]]:
+                                row = self._db.query(ConfigProfile).filter(
+                                    ConfigProfile.user_id == self._user_id,
+                                    ConfigProfile.provider_id == 'google'
+                                ).first()
+                                if not row:
+                                    return None
+                                return {"api_key": row.api_key}
+
+                            google_profile = _cached_load(
+                                self._user_id, "config_profile_first", _load_google_profile, "google"
+                            )
+
+                            if google_profile and google_profile.get('api_key'):
                                 # ✅ 解密 API Key（如果已加密）
-                                api_key = google_profile.api_key
+                                api_key = google_profile.get('api_key')
                                 if is_encrypted(api_key):
                                     try:
                                         api_key = decrypt_data(api_key, silent=True)
@@ -215,7 +233,7 @@ class ImagenCoordinator:
                                         logger.error(f"[ImagenCoordinator] Failed to decrypt API key from ConfigProfile: {e}")
                                         # 解密失败时，不设置 gemini_api_key，让系统回退到环境变量
                                         api_key = None
-                                
+
                                 if api_key:
                                     config['gemini_api_key'] = api_key
                                     logger.info(f"[ImagenCoordinator] Using Gemini API key from ConfigProfile for user={self._user_id}")
@@ -223,9 +241,9 @@ class ImagenCoordinator:
                                     logger.warning(f"[ImagenCoordinator] Failed to decrypt API key from ConfigProfile for user={self._user_id}, will fall back to environment")
                             else:
                                 logger.warning(f"[ImagenCoordinator] No Google ConfigProfile found for user={self._user_id}, will fall back to environment")
-                    
+
                     # Validate configuration completeness
-                    if user_config.api_mode == 'vertex_ai':
+                    if user_config.get('api_mode') == 'vertex_ai':
                         missing_fields = []
                         if not config.get('vertex_ai_project_id'):
                             missing_fields.append('vertex_ai_project_id')
@@ -233,19 +251,19 @@ class ImagenCoordinator:
                             missing_fields.append('vertex_ai_location')
                         if not config.get('vertex_ai_credentials_json'):
                             missing_fields.append('vertex_ai_credentials_json')
-                        
+
                         if missing_fields:
                             logger.warning(
                                 f"[ImagenCoordinator] Incomplete Vertex AI config from database for user={self._user_id}: "
                                 f"missing {', '.join(missing_fields)}. Will fall back to environment variables or Gemini API."
                             )
-                    elif user_config.api_mode == 'gemini_api':
+                    elif user_config.get('api_mode') == 'gemini_api':
                         if not config.get('gemini_api_key'):
                             logger.warning(
                                 f"[ImagenCoordinator] Incomplete Gemini API config from database for user={self._user_id}: "
                                 f"missing API key. Will fall back to environment variables."
                             )
-                    
+
                     logger.debug(f"[ImagenCoordinator] Loaded config from database: api_mode={config['api_mode']}")
                     return config
                 else:
@@ -399,10 +417,13 @@ class ImagenCoordinator:
     def reload_config(self) -> None:
         """
         Reload configuration and clear generator cache.
-        
+
         Use this when configuration changes (e.g., API mode switch).
         """
         logger.info(f"[ImagenCoordinator] Reloading configuration for user={self._user_id}")
+        # Invalidate shared config cache so DB is re-read on next _load_config
+        if self._user_id:
+            clear_config_cache(user_id=self._user_id)
         self._config = self._load_config()
         self._generator_cache.clear()
         logger.info(f"[ImagenCoordinator] Configuration reloaded: api_mode={self._config.get('api_mode')}")

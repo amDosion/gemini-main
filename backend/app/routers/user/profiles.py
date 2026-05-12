@@ -13,6 +13,7 @@ from ...models.db_models import ConfigProfile as DBConfigProfile, UserSettings
 from ...core.dependencies import require_current_user
 from ...core.user_scoped_query import UserScopedQuery
 from ...core.encryption import encrypt_data, is_encrypted, decrypt_api_key
+from ...services.gemini.coordinators._config_cache import clear_config_cache
 
 logger = logging.getLogger(__name__)
 
@@ -218,6 +219,11 @@ async def create_or_update_profile(
         
         db.commit()
         db.refresh(profile)
+        # Invalidate coordinator config cache so next read sees the write
+        try:
+            clear_config_cache(user_id=user_id)
+        except Exception:  # pragma: no cover - cache invalidation is best-effort
+            logger.debug("[Profiles] clear_config_cache failed", exc_info=True)
         return profile.to_dict()
     except Exception as e:
         db.rollback()
@@ -245,6 +251,10 @@ async def delete_profile(
         
         db.delete(profile)
         db.commit()
+        try:
+            clear_config_cache(user_id=user_id)
+        except Exception:  # pragma: no cover - cache invalidation is best-effort
+            logger.debug("[Profiles] clear_config_cache failed", exc_info=True)
         return {"success": True}
     except Exception as e:
         db.rollback()
@@ -290,6 +300,10 @@ async def set_active_profile(
             settings.active_profile_id = profile_id
         
         db.commit()
+        try:
+            clear_config_cache(user_id=user_id)
+        except Exception:  # pragma: no cover - cache invalidation is best-effort
+            logger.debug("[Profiles] clear_config_cache failed", exc_info=True)
         return {"success": True, "id": profile_id}
     except Exception as e:
         db.rollback()

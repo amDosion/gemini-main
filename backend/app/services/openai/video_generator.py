@@ -288,7 +288,21 @@ class VideoGenerator:
         start_time = time.time()
         last_status: Optional[str] = None
 
-        while True:
+        # Exponential backoff bounded by [poll_interval, 10s] with a 1.5x
+        # growth factor. Sync ``time.sleep`` here is intentional — this
+        # function runs inside ``asyncio.to_thread``. Starting from the
+        # configured ``poll_interval`` keeps observable timing close to the
+        # previous fixed-interval behavior; the cap simply avoids burning
+        # poll requests on long-running jobs.
+        initial_interval = max(float(self.poll_interval), 1.0)
+        max_interval = max(10.0, initial_interval)
+        current_interval = initial_interval
+
+        # Hard iteration safeguard: prevents an infinite loop if the time
+        # ceiling is never tripped (e.g. ``poll_timeout`` misconfigured).
+        max_iterations = 600
+
+        for _ in range(max_iterations):
             video = self.client.videos.retrieve(video_id)
             status = self._get_status(video) or "unknown"
             if status != last_status:
@@ -298,7 +312,12 @@ class VideoGenerator:
                 return video
             if time.time() - start_time > self.poll_timeout:
                 raise TimeoutError(f"Timed out waiting for OpenAI video job {video_id}")
-            time.sleep(self.poll_interval)
+            time.sleep(current_interval)
+            current_interval = min(current_interval * 1.5, max_interval)
+
+        raise TimeoutError(
+            f"Exceeded {max_iterations} poll iterations waiting for OpenAI video job {video_id}"
+        )
 
     def _download_video_sync(self, video_id: str) -> bytes:
         content = self.client.videos.download_content(video_id, variant="video")

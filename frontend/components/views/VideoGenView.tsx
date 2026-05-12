@@ -526,30 +526,31 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
     };
   }, [clearCopiedResetTimer, stopVideoProgressAnimation]);
 
-  useEffect(() => {
-    if (filteredHistoryBatches.length === 0) return;
+  // Wave 2 #37: 通过 ref 持有 filteredHistoryBatches,避免每次历史变化都
+  // 重挂 window keydown listener;closeHoverPreview / closeActionMenu / isInteractiveKeyboardTarget
+  // 均为 useCallback 稳定引用,deps 收敛后 effect 仅在 mount/unmount 时运行。
+  const filteredHistoryBatchesRef = useRef(filteredHistoryBatches);
+  filteredHistoryBatchesRef.current = filteredHistoryBatches;
 
+  useEffect(() => {
     const handleHistoryNavigation = (event: KeyboardEvent) => {
       if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
       if (isInteractiveKeyboardTarget(event.target)) {
         return;
       }
+      const batches = filteredHistoryBatchesRef.current;
+      if (batches.length === 0) return;
 
       event.preventDefault();
       closeHoverPreview();
       closeActionMenu();
 
       setSelectedMsgId((prevId) => {
-        const currentIndex = prevId
-          ? filteredHistoryBatches.findIndex((message) => message.id === prevId)
-          : 0;
+        const currentIndex = prevId ? batches.findIndex((message) => message.id === prevId) : 0;
         const safeCurrentIndex = currentIndex >= 0 ? currentIndex : 0;
         const delta = event.key === 'ArrowUp' ? -1 : 1;
-        const nextIndex = Math.max(
-          0,
-          Math.min(filteredHistoryBatches.length - 1, safeCurrentIndex + delta)
-        );
-        const nextMessage = filteredHistoryBatches[nextIndex];
+        const nextIndex = Math.max(0, Math.min(batches.length - 1, safeCurrentIndex + delta));
+        const nextMessage = batches[nextIndex];
         if (nextMessage) {
           const nextVideo = (nextMessage.attachments || []).find(
             (attachment) => attachment.mimeType?.startsWith('video/') && attachment.url
@@ -565,7 +566,7 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
     return () => {
       window.removeEventListener('keydown', handleHistoryNavigation);
     };
-  }, [closeHoverPreview, filteredHistoryBatches, isInteractiveKeyboardTarget]);
+  }, [closeActionMenu, closeHoverPreview, isInteractiveKeyboardTarget]);
 
   useEffect(() => {
     const handleVideoKeyboardShortcut = (event: KeyboardEvent) => {

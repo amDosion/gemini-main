@@ -1,0 +1,100 @@
+"""
+Shared TTL cache for coordinator `_load_config` DB reads.
+
+Multiple coordinators (ImagenCoordinator, ImageEditCoordinator,
+VideoUnderstandingCoordinator, VideoGenerationCoordinator) all read the
+same per-user rows from `VertexAIConfig`, `ConfigProfile` (provider='google'),
+and `UserSettings`. When a request fans out to multiple coordinators within
+the same user request, each coordinator was re-issuing the same SELECT.
+
+This module provides a process-wide TTL cache (60s, max 512 entries) keyed
+by `(user_id, kind, *extra)` where `kind` describes which row is being
+fetched. The cache stores plain dicts of column values (NOT ORM rows), so
+they're safe to share across sessions without detached-instance hazards.
+
+Call `clear_config_cache(user_id=...)` after writes to invalidate.
+"""
+
+from __future__ import annotations
+
+import logging
+import threading
+from typing import Any, Callable, Dict, Optional, Tuple
+
+from cachetools import TTLCache
+
+logger = logging.getLogger(__name__)
+
+# Module-level singleton — intentionally NOT on `self`.
+# 60s TTL is short enough to pick up config changes quickly while still
+# coalescing the per-request fan-out across coordinators.
+_CACHE: TTLCache = TTLCache(maxsize=512, ttl=60)
+_LOCK = threading.RLock()
+
+# Sentinel to distinguish "cached None" (no row) from "cache miss"
+_MISS = object()
+
+
+def _make_key(user_id: str, kind: str, *extra: Any) -> Tuple[Any, ...]:
+    return (str(user_id), str(kind), *extra)
+
+
+def get_or_load(
+    user_id: Optional[str],
+    kind: str,
+    loader: Callable[[], Optional[Dict[str, Any]]],
+    *extra: Any,
+) -> Optional[Dict[str, Any]]:
+    """
+    Return cached row dict for (user_id, kind, *extra), or run `loader()`
+    and cache its result.
+
+    `loader` MUST return either a plain dict of column values (snapshot
+    of the DB row) or None. Returning ORM rows is not supported because
+    they may carry a detached session reference.
+
+    If `user_id` is falsy, caching is skipped (loader runs every time).
+    """
+    if not user_id:
+        return loader()
+
+    key = _make_key(user_id, kind, *extra)
+    with _LOCK:
+        cached = _CACHE.get(key, _MISS)
+    if cached is not _MISS:
+        return cached  # type: ignore[return-value]
+
+    value = loader()
+    with _LOCK:
+        _CACHE[key] = value
+    return value
+
+
+def clear_config_cache(
+    user_id: Optional[str] = None,
+    kind: Optional[str] = None,
+) -> None:
+    """
+    Invalidate cached config entries.
+
+    - `clear_config_cache()` — wipe everything.
+    - `clear_config_cache(user_id="u1")` — wipe all entries for one user.
+    - `clear_config_cache(user_id="u1", kind="vertex_ai")` — wipe one kind.
+    """
+    with _LOCK:
+        if user_id is None and kind is None:
+            _CACHE.clear()
+            return
+        target_user = None if user_id is None else str(user_id)
+        target_kind = None if kind is None else str(kind)
+        # Snapshot keys since we mutate the dict during iteration.
+        keys = list(_CACHE.keys())
+        for key in keys:
+            if not isinstance(key, tuple) or len(key) < 2:
+                continue
+            key_user, key_kind = key[0], key[1]
+            if target_user is not None and key_user != target_user:
+                continue
+            if target_kind is not None and key_kind != target_kind:
+                continue
+            _CACHE.pop(key, None)

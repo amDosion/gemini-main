@@ -4,19 +4,37 @@
 """
 
 import asyncio
-import requests
-from requests.adapters import HTTPAdapter
 from typing import Dict, Any, Optional
+
+import httpx
+
 from .base import BaseStorageProvider, UploadResult
 
 
-# Module-level Session for HTTP connection pooling. Reusing a Session
-# across calls avoids repeatedly tearing down TCP/TLS handshakes for the
-# same upstream host, which is the dominant cost when the storage host
-# is geographically far from the app server.
-_session: requests.Session = requests.Session()
-_session.mount("https://", HTTPAdapter(pool_connections=10, pool_maxsize=20))
-_session.mount("http://", HTTPAdapter(pool_connections=10, pool_maxsize=20))
+# Module-level lazy httpx.AsyncClient with connection pooling. Reusing a
+# single client across calls avoids repeated TCP/TLS handshake costs and
+# keeps the FastAPI event loop unblocked. The previous implementation used
+# a ``requests.Session`` and called ``_session.get`` directly inside async
+# methods, which blocked the event loop until the upstream responded.
+_http_client: Optional[httpx.AsyncClient] = None
+_http_client_lock = asyncio.Lock()
+
+
+async def _get_async_http_client() -> httpx.AsyncClient:
+    """Lazy initializer for the module-level ``httpx.AsyncClient``.
+
+    Created on first use to avoid import-time side effects in worker
+    processes that fork after configuration.
+    """
+    global _http_client
+    if _http_client is None:
+        async with _http_client_lock:
+            if _http_client is None:
+                _http_client = httpx.AsyncClient(
+                    timeout=httpx.Timeout(60.0),
+                    limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+                )
+    return _http_client
 
 
 class LskyProvider(BaseStorageProvider):
@@ -31,23 +49,23 @@ class LskyProvider(BaseStorageProvider):
             "Authorization": auth_token,
             "Accept": "application/json"
         }
-    
+
     async def upload(self, filename: str, content: bytes, content_type: str) -> UploadResult:
         """
         上传文件到兰空图床
-        
+
         Args:
             filename: 文件名
             content: 文件内容
             content_type: 文件 MIME 类型
-            
+
         Returns:
             UploadResult: 上传结果
         """
         domain = self.config.get("domain")
         token = self.config.get("token")
         strategy_id = self.config.get("strategy_id")
-        
+
         # 验证配置
         if not domain or not token:
             return UploadResult(
@@ -55,40 +73,40 @@ class LskyProvider(BaseStorageProvider):
                 error="兰空图床配置不完整：缺少 domain 或 token",
                 provider="lsky"
             )
-        
+
         # 确保 token 有 Bearer 前缀
         auth_token = token if token.startswith("Bearer ") else f"Bearer {token}"
-        
+
         # 构建上传 URL
         upload_url = f"{domain.rstrip('/')}/api/v1/upload"
-        
+
         # 准备表单数据
         files = {
             "file": (filename, content, content_type)
         }
-        
+
         headers = {
             "Authorization": auth_token,
             "Accept": "application/json"
         }
-        
+
         data = {}
         if strategy_id:
             data["strategy_id"] = strategy_id
-        
+
         try:
-            response = await asyncio.to_thread(
-                _session.post,
+            client = await _get_async_http_client()
+            response = await client.post(
                 upload_url,
                 files=files,
                 headers=headers,
                 data=data,
-                timeout=60
+                timeout=60.0,
             )
             response.raise_for_status()
-            
+
             result = response.json()
-            
+
             # 兰空图床返回格式：
             # {
             #   "status": true,
@@ -114,27 +132,27 @@ class LskyProvider(BaseStorageProvider):
                     error=f"兰空图床上传失败: {error_msg}",
                     provider="lsky"
                 )
-        
-        except requests.exceptions.Timeout:
+
+        except httpx.TimeoutException:
             return UploadResult(
                 success=False,
                 error="兰空图床上传超时",
                 provider="lsky"
             )
-        except requests.exceptions.RequestException as e:
+        except (httpx.RequestError, httpx.HTTPStatusError) as e:
             return UploadResult(
                 success=False,
                 error=f"兰空图床上传失败: {str(e)}",
                 provider="lsky"
             )
-    
+
     async def delete(self, file_url: str) -> bool:
         """
         删除文件（占位实现）
-        
+
         Args:
             file_url: 文件 URL
-            
+
         Returns:
             bool: 删除是否成功
         """
@@ -215,14 +233,15 @@ class LskyProvider(BaseStorageProvider):
             f"{base}/api/v1/manage/images",
         ]
 
+        client = await _get_async_http_client()
         last_error = None
         for endpoint in candidate_urls:
             try:
-                response = _session.get(
+                response = await client.get(
                     endpoint,
                     headers=headers,
                     params={"page": page, "per_page": page_size},
-                    timeout=20
+                    timeout=20.0,
                 )
                 response.raise_for_status()
                 payload = response.json()
@@ -283,7 +302,7 @@ class LskyProvider(BaseStorageProvider):
                     "next_cursor": next_cursor,
                     "has_more": has_more
                 }
-            except requests.exceptions.RequestException as e:
+            except (httpx.RequestError, httpx.HTTPStatusError) as e:
                 last_error = str(e)
             except ValueError as e:
                 last_error = str(e)
@@ -328,17 +347,18 @@ class LskyProvider(BaseStorageProvider):
         page_size = 200
         last_error = None
 
+        client = await _get_async_http_client()
         for endpoint in candidate_urls:
             try:
                 page = 1
                 total_count = 0
 
                 while True:
-                    response = _session.get(
+                    response = await client.get(
                         endpoint,
                         headers=headers,
                         params={"page": page, "per_page": page_size},
-                        timeout=20
+                        timeout=20.0,
                     )
                     response.raise_for_status()
                     payload = response.json()
@@ -386,7 +406,7 @@ class LskyProvider(BaseStorageProvider):
                     "path": "",
                     "total_count": total_count
                 }
-            except requests.exceptions.RequestException as e:
+            except (httpx.RequestError, httpx.HTTPStatusError) as e:
                 last_error = str(e)
             except ValueError as e:
                 last_error = str(e)
@@ -399,24 +419,24 @@ class LskyProvider(BaseStorageProvider):
             "total_count": None,
             "message": f"兰空图床统计失败: {last_error or '未知错误'}"
         }
-    
+
     async def test(self) -> UploadResult:
         """
         测试配置是否有效
-        
+
         Returns:
             UploadResult: 测试结果
         """
         domain = self.config.get("domain")
         token = self.config.get("token")
-        
+
         if not domain or not token:
             return UploadResult(
                 success=False,
                 error="兰空图床配置不完整：缺少 domain 或 token",
                 provider="lsky"
             )
-        
+
         return UploadResult(
             success=True,
             provider="lsky"
