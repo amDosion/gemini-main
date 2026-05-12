@@ -1,41 +1,21 @@
 import { safeCopyToClipboard } from '../../utils/safeOps';
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
-import {
-  Expand,
-  AlertCircle,
-  Layers,
-  SlidersHorizontal,
-  RotateCcw,
-  Clock,
-  Grid,
-  Image as ImageIcon,
-  Wand2,
-  Copy,
-  Check,
-  Star,
-  FolderOpen,
-  Trash2,
-} from 'lucide-react';
+import { Clock, Star } from 'lucide-react';
 import { useImageCanvas } from '../../hooks/useImageCanvas';
-import { ImageCanvasControls } from '../common/ImageCanvasControls';
-import {
-  ImageCarouselArrows,
-  ImageCarouselThumbnails,
-  type CarouselMediaItem,
-} from '../common/ImageCarouselControls';
-import { ImageCompare } from '../common/ImageCompare';
+import { type CarouselMediaItem } from '../common/ImageCarouselControls';
 import { GenViewLayout } from '../common/GenViewLayout';
 import { useToastContext } from '../../contexts/ToastContext';
 import { useControlsState } from '../../hooks/useControlsState';
 import { useImageCarousel } from '../../hooks/useImageCarousel';
-import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
 import { useHistoryListActions } from '../../hooks/useHistoryListActions';
-import ChatEditInputArea from '../chat/ChatEditInputArea';
 import { isHistoryActionSurface } from '../../utils/historyActionSurface';
 import { useHoverPromptPreview } from '../../hooks/useHoverPromptPreview';
 import { useActionMenu, type ActionMenuAnchorBase } from '../../hooks/useActionMenu';
+import { ImageHistoryActionMenuPortal } from '../common/ImageHistoryActionMenuPortal';
+import { HoverPromptPreviewPortal } from '../common/HoverPromptPreviewPortal';
+import { ExpandHistoryRow } from './expand/ExpandHistoryRow';
+import { ExpandMainCanvas } from './expand/ExpandMainCanvas';
 
 const extractHistoryPrompts = (
   msg: Message
@@ -472,126 +452,28 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
     () => (
       <div className="p-3 space-y-2.5">
         {filteredHistoryBatches.map((msg) => {
-          const firstImage = msg.attachments?.[0]?.url;
-          const count = msg.attachments?.length || 0;
-          const isSelected = activeBatchMessage?.id === msg.id;
           const { originalPrompt, optimizedPrompt } = extractHistoryPrompts(msg);
-          const favorited = isFavorite(msg.id);
-          const isActionMenuOpen = openActionMenu?.messageId === msg.id;
-
           return (
-            <div
+            <ExpandHistoryRow
               key={msg.id}
-              ref={(el) => {
-                historyItemRefs.current[msg.id] = el;
-              }}
-              className="group relative"
-            >
-              <div
-                className={`relative rounded-xl border cursor-pointer transition-all flex items-center gap-3 bg-slate-800/40 p-2 ${
-                  isSelected
-                    ? 'ring-1 ring-orange-500 border-transparent bg-slate-800'
-                    : 'border-slate-700/50 hover:border-slate-600 hover:bg-slate-800'
-                }`}
-                onMouseEnter={(e) => showHoverPreview(e, msg.id, originalPrompt, optimizedPrompt)}
-                onMouseLeave={() => scheduleHideHoverPreview()}
-                onClick={() => {
-                  setSelectedMsgId(msg.id);
-                  if (window.innerWidth < 768) setIsMobileHistoryOpen(false);
-                  closeHoverPreview();
-                }}
-              >
-                {favorited && (
-                  <span className="absolute right-2 top-2 inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-400/20 border border-amber-300/50 z-10">
-                    <Star size={11} className="fill-amber-300 text-amber-300" />
-                  </span>
-                )}
-
-                <div className="h-14 w-20 flex-shrink-0 rounded-lg overflow-hidden bg-slate-900 relative">
-                  {msg.isError ? (
-                    <div className="w-full h-full flex items-center justify-center text-red-400 bg-red-900/10">
-                      <AlertCircle size={20} />
-                    </div>
-                  ) : firstImage ? (
-                    <>
-                      <img
-                        src={firstImage}
-                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                        loading="lazy"
-                        alt="Expanded image"
-                      />
-                      {count > 1 && (
-                        <div className="absolute top-1 right-1 bg-black/60 backdrop-blur-sm text-white text-[10px] px-1.5 py-0.5 rounded-md flex items-center gap-1 font-medium border border-white/10">
-                          <Layers size={10} /> {count}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-600">
-                      <ImageIcon size={18} className="opacity-50" />
-                    </div>
-                  )}
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <p className="text-[11px] text-slate-200 leading-relaxed font-medium line-clamp-2 break-words">
-                    {originalPrompt}
-                  </p>
-                  <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-500">
-                    <span>
-                      {new Date(msg.timestamp).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </span>
-                    {optimizedPrompt && (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-orange-500/30 bg-orange-500/10 px-1.5 py-0.5 text-orange-300">
-                        <Wand2 size={10} />
-                        已优化
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div
-                  className="absolute right-2 bottom-2 z-20"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
-                >
-                  <button
-                    type="button"
-                    className={`transition-opacity rounded-md border border-slate-600/70 bg-slate-900/90 p-1 text-slate-300 hover:text-white hover:border-slate-400 ${
-                      isActionMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                    }`}
-                    title="历史项操作"
-                    data-history-action-trigger={msg.id}
-                    onMouseEnter={(event) => {
-                      event.stopPropagation();
-                      closeHoverPreview();
-                    }}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      closeHoverPreview();
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      if (openActionMenu?.messageId === msg.id) {
-                        closeActionMenu();
-                      } else {
-                        openActionMenuBase({
-                          messageId: msg.id,
-                          anchorX: rect.right,
-                          anchorY: rect.bottom,
-                        });
-                      }
-                    }}
-                  >
-                    <FolderOpen size={12} />
-                  </button>
-                </div>
-              </div>
-            </div>
+              msg={msg}
+              firstImage={msg.attachments?.[0]?.url}
+              count={msg.attachments?.length || 0}
+              isSelected={activeBatchMessage?.id === msg.id}
+              originalPrompt={originalPrompt}
+              optimizedPrompt={optimizedPrompt}
+              favorited={isFavorite(msg.id)}
+              isActionMenuOpen={openActionMenu?.messageId === msg.id}
+              openActionMenu={openActionMenu}
+              historyItemRefs={historyItemRefs}
+              showHoverPreview={showHoverPreview}
+              scheduleHideHoverPreview={scheduleHideHoverPreview}
+              setSelectedMsgId={setSelectedMsgId}
+              setIsMobileHistoryOpen={setIsMobileHistoryOpen}
+              closeHoverPreview={closeHoverPreview}
+              closeActionMenu={closeActionMenu}
+              openActionMenuBase={openActionMenuBase}
+            />
           );
         })}
 
@@ -601,147 +483,34 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
           </div>
         )}
 
-        {openActionMenu &&
-          typeof document !== 'undefined' &&
-          createPortal(
-            <div
-              ref={actionMenuPanelRef}
-              data-history-action-menu
-              className="fixed z-[90] inline-flex flex-col gap-1 rounded-lg border border-slate-700 bg-slate-950/95 shadow-2xl backdrop-blur-md p-1"
-              onMouseEnter={closeHoverPreview}
-              style={{
-                top: actionMenuPosition?.top ?? openActionMenu.anchorY,
-                left: actionMenuPosition?.left ?? openActionMenu.anchorX,
-              }}
-            >
-              <button
-                type="button"
-                className="whitespace-nowrap px-2.5 py-1.5 rounded text-left text-[11px] text-slate-200 hover:bg-slate-800 flex items-center gap-1.5 disabled:opacity-50"
-                disabled={
-                  openActionMenu.messageId ? isFavoritePending(openActionMenu.messageId) : false
-                }
-                onClick={async () => {
-                  await toggleFavorite(openActionMenu.messageId);
-                  closeActionMenu();
-                }}
-              >
-                <Star
-                  size={11}
-                  className={
-                    openActionMenu.messageId && isFavorite(openActionMenu.messageId)
-                      ? 'fill-amber-300 text-amber-300'
-                      : 'text-amber-300'
-                  }
-                />
-                {openActionMenu.messageId && isFavorite(openActionMenu.messageId)
-                  ? '取消收藏'
-                  : '收藏'}
-              </button>
-              <button
-                type="button"
-                className="whitespace-nowrap px-2.5 py-1.5 rounded text-left text-[11px] text-red-300 hover:bg-red-950/50 flex items-center gap-1.5"
-                onClick={() => {
-                  deleteItem(openActionMenu.messageId);
-                  if (hoverPreview?.messageId === openActionMenu.messageId) {
-                    closeHoverPreview();
-                  }
-                  closeActionMenu();
-                }}
-              >
-                <Trash2 size={11} />
-                删除
-              </button>
-            </div>,
-            document.body
-          )}
+        {openActionMenu && (
+          <ImageHistoryActionMenuPortal
+            openActionMenu={openActionMenu}
+            actionMenuPosition={actionMenuPosition}
+            actionMenuPanelRef={actionMenuPanelRef}
+            closeHoverPreview={closeHoverPreview}
+            isFavorite={isFavorite}
+            isFavoritePending={isFavoritePending}
+            toggleFavorite={toggleFavorite}
+            setOpenActionMenu={() => closeActionMenu()}
+            setActionMenuPosition={() => undefined}
+            deleteItem={deleteItem}
+            hoverPreviewMessageId={hoverPreview?.messageId ?? null}
+          />
+        )}
 
-        {hoverPreview &&
-          typeof document !== 'undefined' &&
-          createPortal(
-            <div
-              ref={hoverPreviewPanelRef}
-              className="fixed hidden md:block"
-              style={{
-                top: hoverPreviewPosition?.top ?? hoverPreview.anchorY,
-                left: hoverPreviewPosition?.left ?? hoverPreview.anchorX,
-                ...(hoverPreviewSize
-                  ? { width: hoverPreviewSize.width, height: hoverPreviewSize.height }
-                  : {}),
-              }}
-              onMouseEnter={() => clearHidePreviewTimer()}
-              onMouseLeave={() => scheduleHideHoverPreview()}
-            >
-              <div
-                className={`group relative rounded-xl border border-slate-700/80 bg-slate-950/95 backdrop-blur-lg p-3 shadow-2xl ${
-                  hoverPreviewSize ? 'h-full' : 'inline-block w-fit max-w-[min(70vw,560px)]'
-                }`}
-              >
-                <div
-                  className="absolute right-full -translate-y-1/2 h-2.5 w-2.5 rotate-45 border-b border-l border-slate-700/80 bg-slate-950/95"
-                  style={{ top: hoverPreviewPosition?.arrowOffsetY ?? '50%' }}
-                />
-
-                <div
-                  className={`pr-2 pb-5 custom-scrollbar ${
-                    hoverPreviewSize ? 'h-full overflow-y-auto' : 'max-h-[70vh] overflow-y-auto'
-                  }`}
-                >
-                  <div className="mb-3">
-                    <p className="text-[10px] uppercase tracking-wider text-slate-500">
-                      原始提示词
-                    </p>
-                    <p className="mt-1 text-xs text-slate-200 whitespace-pre-wrap break-words">
-                      {hoverPreview.originalPrompt}
-                    </p>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-[10px] uppercase tracking-wider text-orange-400">
-                        优化后提示词
-                      </p>
-                      {hoverPreview.optimizedPrompt && (
-                        <button
-                          type="button"
-                          onClick={handleCopyOptimizedPrompt}
-                          className="pointer-events-auto inline-flex items-center gap-1 rounded-md border border-orange-500/30 bg-orange-500/10 px-1.5 py-0.5 text-[10px] text-orange-200 hover:bg-orange-500/20 transition-colors"
-                          title="复制优化后提示词"
-                        >
-                          {copiedPreviewMessageId === hoverPreview.messageId ? (
-                            <Check size={11} />
-                          ) : (
-                            <Copy size={11} />
-                          )}
-                          {copiedPreviewMessageId === hoverPreview.messageId ? '已复制' : '复制'}
-                        </button>
-                      )}
-                    </div>
-                    {hoverPreview.optimizedPrompt ? (
-                      <p className="mt-1 text-xs text-orange-100 whitespace-pre-wrap break-words">
-                        {hoverPreview.optimizedPrompt}
-                      </p>
-                    ) : (
-                      <p className="mt-1 text-xs text-slate-500 italic">未返回优化后的提示词</p>
-                    )}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  aria-label="拖动调整提示词预览大小"
-                  className="absolute bottom-0 right-0 h-5 w-5 cursor-se-resize bg-transparent"
-                  onMouseDown={handlePreviewResizeMouseDown}
-                />
-                {isResizingPreview && (
-                  <div className="pointer-events-none absolute bottom-1 left-3 text-[10px] text-slate-500">
-                    {Math.round(hoverPreviewSize?.width || 0)} x{' '}
-                    {Math.round(hoverPreviewSize?.height || 0)}
-                  </div>
-                )}
-              </div>
-            </div>,
-            document.body
-          )}
+        <HoverPromptPreviewPortal
+          preview={hoverPreview}
+          position={hoverPreviewPosition}
+          size={hoverPreviewSize}
+          panelRef={hoverPreviewPanelRef}
+          clearHidePreviewTimer={clearHidePreviewTimer}
+          scheduleHideHoverPreview={scheduleHideHoverPreview}
+          handleCopyOptimizedPrompt={handleCopyOptimizedPrompt}
+          copiedPreviewMessageId={copiedPreviewMessageId}
+          handlePreviewResizeMouseDown={handlePreviewResizeMouseDown}
+          isResizingPreview={isResizingPreview}
+        />
       </div>
     ),
     [
@@ -814,249 +583,36 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
   // ✅ 主区域：两栏布局（画布 + 参数面板）
   const mainContent = useMemo(
     () => (
-      <div className="flex-1 flex flex-row h-full">
-        {/* ========== 左侧：画布区域（带旋转木马） ========== */}
-        <div
-          className="flex-1 w-full h-full select-none flex flex-col relative"
-          onWheel={isCompareMode ? undefined : canvas.handleWheel}
-        >
-          {/* 棋盘格背景 */}
-          <div
-            className="absolute inset-0 opacity-20 pointer-events-none"
-            style={{
-              backgroundImage: `
-                            linear-gradient(45deg, #334155 25%, transparent 25%), 
-                            linear-gradient(-45deg, #334155 25%, transparent 25%), 
-                            linear-gradient(45deg, transparent 75%, #334155 75%), 
-                            linear-gradient(-45deg, transparent 75%, #334155 75%)
-                        `,
-              backgroundSize: '20px 20px',
-              backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
-            }}
-          />
-
-          {/* 主图片显示区域 */}
-          {loadingState !== 'idle' ? (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="flex flex-col items-center gap-6 p-8 rounded-3xl bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 shadow-2xl">
-                <div className="relative">
-                  <div className="w-20 h-20 border-4 border-orange-500/30 border-t-orange-500 rounded-full animate-spin"></div>
-                  <div className="absolute inset-0 flex items-center justify-center text-xs font-mono text-orange-400 font-bold">
-                    EXP
-                  </div>
-                </div>
-                <div className="text-center space-y-2">
-                  <p className="text-slate-200 font-medium text-lg">扩图中...</p>
-                  <p className="text-slate-500 text-sm">这可能需要几秒钟</p>
-                </div>
-              </div>
-            </div>
-          ) : isBatchError ? (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="flex flex-col items-center gap-4 text-center p-8 bg-slate-900/50 rounded-2xl border border-red-900/30">
-                <AlertCircle size={48} className="text-red-500 opacity-80" />
-                <div>
-                  <h3 className="text-lg font-bold text-slate-200">扩图失败</h3>
-                  <p className="text-sm text-red-400 mt-2 max-w-md">
-                    {activeBatchMessage?.content || '未知错误'}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : displayImages.length > 0 ? (
-            <>
-              {/* 旋转木马视图 */}
-              <div className="absolute inset-0 flex flex-col items-center justify-center overflow-hidden">
-                {/* 主图展示区 - 支持拖拽 */}
-                <div
-                  className="flex-1 w-full flex items-center justify-center relative px-16 overflow-hidden"
-                  onMouseDown={isCompareMode ? undefined : canvas.handleMouseDown}
-                  onMouseMove={isCompareMode ? undefined : canvas.handleMouseMove}
-                  onMouseUp={isCompareMode ? undefined : canvas.handleMouseUp}
-                  onMouseLeave={isCompareMode ? undefined : canvas.handleMouseUp}
-                  style={{
-                    cursor: isCompareMode
-                      ? 'default'
-                      : canvas.isDragging
-                        ? 'grabbing'
-                        : canvas.zoom > 1
-                          ? 'grab'
-                          : 'default',
-                  }}
-                >
-                  <ImageCarouselArrows
-                    itemCount={displayImages.length}
-                    onPrev={handleCarouselPrev}
-                    onNext={handleCarouselNext}
-                  />
-
-                  {/* 当前图片（支持对比模式） */}
-                  <div className="relative group max-w-full max-h-full flex items-center justify-center">
-                    {isCompareMode && originalImageUrl && currentDisplayUrl ? (
-                      <div
-                        className="relative shadow-2xl transition-transform duration-75 ease-out"
-                        style={canvas.canvasStyle}
-                      >
-                        <ImageCompare
-                          beforeImage={originalImageUrl}
-                          afterImage={currentDisplayUrl}
-                          beforeLabel="原图"
-                          afterLabel="扩图结果"
-                          accentColor="orange"
-                          className="max-w-none rounded-lg border border-slate-800"
-                          style={{ maxHeight: '70vh', maxWidth: '80vw' }}
-                        />
-                      </div>
-                    ) : currentDisplayUrl ? (
-                      <img
-                        src={currentDisplayUrl}
-                        className="block max-h-[70vh] max-w-full object-contain rounded-2xl shadow-2xl border border-slate-800/50 select-none"
-                        style={canvas.canvasStyle}
-                        onDoubleClick={() => onImageClick(currentDisplayUrl)}
-                        alt={`扩图结果 ${carouselIndex + 1}`}
-                        draggable={false}
-                      />
-                    ) : (
-                      <div className="w-64 h-64 flex items-center justify-center text-slate-600 bg-slate-900 rounded-2xl">
-                        <ImageIcon size={48} className="opacity-50" />
-                      </div>
-                    )}
-                    {/* 悬浮操作按钮 */}
-                    {currentDisplayUrl && (
-                      <ImageCanvasControls
-                        variant="canvas"
-                        mode="image-outpainting"
-                        modeAware={false}
-                        className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                        zoom={canvas.zoom}
-                        onZoomIn={canvas.handleZoomIn}
-                        onZoomOut={canvas.handleZoomOut}
-                        onReset={canvas.handleReset}
-                        onFullscreen={() => onImageClick(currentDisplayUrl)}
-                        downloadUrl={currentDisplayUrl}
-                        onToggleCompare={originalImageUrl ? toggleCompare : undefined}
-                        isCompareMode={isCompareMode}
-                        accentColor="orange"
-                      />
-                    )}
-                  </div>
-
-                  {/* 缩放提示 */}
-                  {canvas.zoom !== 1 && (
-                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-slate-400 text-xs bg-black/60 px-3 py-1.5 rounded-full backdrop-blur pointer-events-none">
-                      {Math.round(canvas.zoom * 100)}% · 拖拽移动 · 双击全屏
-                    </div>
-                  )}
-                </div>
-
-                {/* 底部缩略图导航 */}
-                <ImageCarouselThumbnails
-                  items={carouselItems}
-                  currentIndex={carouselIndex}
-                  onSelect={handleCarouselSelect}
-                  accentTone="orange"
-                  panelClassName="flex items-center gap-3 py-4 px-4"
-                  counterClassName="ml-2 text-sm text-slate-400 font-mono"
-                />
-              </div>
-            </>
-          ) : activeImageUrl ? (
-            // 显示用户上传的原图（还没有生成结果时）
-            <div className="flex-1 flex items-center justify-center p-0 w-full h-full">
-              <div
-                className="relative shadow-2xl group transition-transform duration-75 ease-out"
-                style={canvas.canvasStyle}
-                onMouseDown={canvas.handleMouseDown}
-                onMouseMove={canvas.handleMouseMove}
-                onMouseUp={canvas.handleMouseUp}
-                onMouseLeave={canvas.handleMouseUp}
-              >
-                <img
-                  src={activeImageUrl}
-                  className="max-w-none rounded-lg border border-slate-800 pointer-events-none"
-                  style={{ maxHeight: '80vh', maxWidth: '80vw' }}
-                  alt="Source Preview"
-                />
-                <ImageCanvasControls
-                  variant="canvas"
-                  className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                  zoom={canvas.zoom}
-                  onZoomIn={canvas.handleZoomIn}
-                  onZoomOut={canvas.handleZoomOut}
-                  onReset={canvas.handleReset}
-                  onFullscreen={() => onImageClick(activeImageUrl)}
-                  downloadUrl={activeImageUrl}
-                  accentColor="orange"
-                />
-              </div>
-            </div>
-          ) : (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center text-slate-600 pointer-events-none flex flex-col items-center gap-4 max-w-md">
-                <Expand size={48} className="opacity-20" />
-                <div>
-                  <h3 className="text-xl font-bold text-slate-500 mb-2">Out-Paint Workspace</h3>
-                  <p className="text-sm opacity-60">在右侧上传图片，设置参数后点击扩图</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 批次信息提示 */}
-          {displayImages.length > 1 && (
-            <div className="absolute top-4 left-4 z-10 animate-[fadeIn_0.3s_ease-out] pointer-events-none">
-              <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-4 py-1.5 text-xs font-medium text-slate-300 flex items-center gap-2 shadow-xl">
-                <Grid size={14} className="text-orange-400" />
-                批次结果 ({displayImages.length})
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ========== 右侧：参数面板 ========== */}
-        <div className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900/50 flex flex-col h-full overflow-hidden">
-          {/* 头部 */}
-          <div className="px-4 py-3 border-b border-slate-800/50 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <SlidersHorizontal size={14} className="text-orange-400" />
-              <span className="text-xs font-bold text-white">扩图参数</span>
-            </div>
-            <button
-              onClick={resetParams}
-              className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-              title="重置为默认值"
-            >
-              <RotateCcw size={12} />
-            </button>
-          </div>
-
-          {/* 参数滚动区 - 通过 ModeControlsCoordinator 分发对应的参数组件 */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
-            <ModeControlsCoordinator
-              mode={expandMode}
-              providerId={providerId || 'google'}
-              controls={controls}
-            />
-          </div>
-
-          {/* 底部固定区：使用 ChatEditInputArea 组件 */}
-          <ChatEditInputArea
-            onSend={handleSend}
-            isLoading={loadingState !== 'idle'}
-            onStop={onStop}
-            mode={expandMode}
-            activeAttachments={activeAttachments}
-            onAttachmentsChange={setActiveAttachments}
-            activeImageUrl={activeImageUrl}
-            onActiveImageUrlChange={setActiveImageUrl}
-            messages={messages}
-            sessionId={currentSessionId ?? null}
-            initialAttachments={initialAttachments}
-            providerId={providerId}
-            controls={controls}
-          />
-        </div>
-      </div>
+      <ExpandMainCanvas
+        loadingState={loadingState}
+        isBatchError={isBatchError}
+        displayImages={displayImages}
+        activeBatchMessage={activeBatchMessage}
+        currentDisplayUrl={currentDisplayUrl}
+        activeImageUrl={activeImageUrl}
+        setActiveImageUrl={setActiveImageUrl}
+        originalImageUrl={originalImageUrl}
+        isCompareMode={isCompareMode}
+        toggleCompare={toggleCompare}
+        canvas={canvas}
+        carouselIndex={carouselIndex}
+        carouselItems={carouselItems}
+        handleCarouselPrev={handleCarouselPrev}
+        handleCarouselNext={handleCarouselNext}
+        handleCarouselSelect={handleCarouselSelect}
+        onImageClick={onImageClick}
+        controls={controls}
+        providerId={providerId}
+        resetParams={resetParams}
+        expandMode={expandMode}
+        onStop={onStop}
+        messages={messages}
+        currentSessionId={currentSessionId}
+        initialAttachments={initialAttachments}
+        handleSend={handleSend}
+        activeAttachments={activeAttachments}
+        setActiveAttachments={setActiveAttachments}
+      />
     ),
     [
       loadingState,
@@ -1087,6 +643,7 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
       activeAttachments,
     ]
   );
+
 
   return (
     <GenViewLayout
