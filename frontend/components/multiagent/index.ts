@@ -1,6 +1,6 @@
 /**
  * Multi-Agent Workflow Editor - Main Export File
- * 
+ *
  * Centralized exports for all workflow editor components and utilities
  */
 
@@ -36,11 +36,13 @@ export type {
 } from './types';
 
 // Hooks
-export {
-  useExecutionLogs,
-} from './WorkflowExecutionHooks';
+export { useExecutionLogs } from './WorkflowExecutionHooks';
 export { useUndoRedo } from './useUndoRedo';
-export { usePerformanceOptimization, useMemoizedComputation, useThrottle } from './usePerformanceOptimization';
+export {
+  usePerformanceOptimization,
+  useMemoizedComputation,
+  useThrottle,
+} from './usePerformanceOptimization';
 
 // Utilities
 export {

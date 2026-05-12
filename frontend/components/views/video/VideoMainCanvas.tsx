@@ -76,7 +76,7 @@ export interface VideoMainCanvasProps {
   videoControlsStatusMessage: string | null;
 }
 
-export const VideoMainCanvas: React.FC<VideoMainCanvasProps> = ({
+const VideoMainCanvasComponent: React.FC<VideoMainCanvasProps> = ({
   loadingState,
   isBatchError,
   activeBatchMessage,
@@ -419,3 +419,5 @@ export const VideoMainCanvas: React.FC<VideoMainCanvasProps> = ({
     </div>
   );
 };
+
+export const VideoMainCanvas = React.memo(VideoMainCanvasComponent);

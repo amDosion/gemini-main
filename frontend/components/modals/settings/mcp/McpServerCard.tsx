@@ -6,14 +6,7 @@
  */
 
 import React from 'react';
-import {
-  MoreHorizontal,
-  RefreshCcw,
-  Pencil,
-  Play,
-  Trash2,
-  ExternalLink,
-} from 'lucide-react';
+import { MoreHorizontal, RefreshCcw, Pencil, Play, Trash2, ExternalLink } from 'lucide-react';
 import type { ServerCard, ServerToolsState, ServerInvokeState } from '../mcpTabHelpers';
 import { TOOL_PREVIEW_COUNT } from '../mcpTabHelpers';
 

@@ -17,6 +17,8 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
+from cachetools import TTLCache
+
 if TYPE_CHECKING:
     from ..common.redis_queue_service import GlobalRedisConnectionPool
 
@@ -136,17 +138,40 @@ def _merge_runtime_states(local_state: WorkflowRuntimeState, redis_state: Workfl
 
 
 class LocalWorkflowRuntimeStore:
-    """进程内 fallback store。"""
+    """进程内 fallback store。
+
+    内部使用 :class:`cachetools.TTLCache` 而不是普通 ``dict``，以避免长时间运行
+    的进程因为执行 ID 不断累积而内存泄漏。TTLCache 暴露与 ``dict`` 一致的
+    ``__getitem__`` / ``__setitem__`` / ``.get`` / ``.pop`` / ``.items`` 接口，
+    本类原有逻辑（``self._state.pop`` / ``self._state.get`` 等）无须改动。
+
+    如果调用方显式传入 ``shared_state`` / ``shared_payload_state``（例如测试
+    fixture 需要观察 store 内部状态），则继续使用调用方提供的容器以保持兼容性。
+    """
+
+    # 与 Redis store 的 ttl_seconds=24h 对齐，保证 fallback 与主路径行为相近。
+    _DEFAULT_TTL_SECONDS = 24 * 60 * 60
+    _DEFAULT_MAXSIZE = 10000
 
     def __init__(
         self,
         shared_state: Optional[Dict[str, WorkflowRuntimeState]] = None,
         shared_payload_state: Optional[Dict[str, Dict[str, Any]]] = None,
     ):
-        self._state: Dict[str, WorkflowRuntimeState] = shared_state if shared_state is not None else {}
-        self._payload_state: Dict[str, Dict[str, Any]] = (
-            shared_payload_state if shared_payload_state is not None else {}
-        )
+        if shared_state is not None:
+            self._state = shared_state
+        else:
+            self._state = TTLCache(
+                maxsize=self._DEFAULT_MAXSIZE,
+                ttl=self._DEFAULT_TTL_SECONDS,
+            )
+        if shared_payload_state is not None:
+            self._payload_state = shared_payload_state
+        else:
+            self._payload_state = TTLCache(
+                maxsize=self._DEFAULT_MAXSIZE,
+                ttl=self._DEFAULT_TTL_SECONDS,
+            )
         self._lock: Optional[asyncio.Lock] = None
 
     def _get_lock(self) -> asyncio.Lock:

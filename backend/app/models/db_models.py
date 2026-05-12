@@ -29,6 +29,17 @@ class ConfigProfile(Base):
         'saved_models': [],
     }
 
+    # 复合索引 + text_pattern_ops 支持 LIKE 'google%' 等左前缀匹配
+    # PostgreSQL btree 默认使用 C 排序规则只对 = 优化；text_pattern_ops 显式启用前缀匹配
+    __table_args__ = (
+        Index(
+            'ix_config_profiles_user_provider',
+            'user_id',
+            'provider_id',
+            postgresql_ops={'provider_id': 'text_pattern_ops'},
+        ),
+    )
+
 
 class UserSettings(Base):
     """用户设置表 - 存储用户级别的设置（如活动配置ID）"""
@@ -80,12 +91,12 @@ class MessageIndex(Base):
     timestamp = Column(BigInteger, nullable=False)  # 消息时间戳（ms）
     parent_id = Column(String(36), nullable=True)  # 链式关联（同模式内）
 
-    # 复合索引在 __table_args__ 中定义
+    # 复合索引
     __table_args__ = (
         # 主排序索引：按会话+顺序查询
-        # CREATE INDEX idx_message_index_session_seq ON message_index(session_id, seq)
+        Index('idx_message_index_session_seq', 'session_id', 'seq'),
         # 模式过滤索引：按会话+模式+顺序查询
-        # CREATE INDEX idx_message_index_session_mode_seq ON message_index(session_id, mode, seq)
+        Index('idx_message_index_session_mode_seq', 'session_id', 'mode', 'seq'),
     )
 
     # 使用基类的统一 to_dict() 方法
@@ -940,6 +951,11 @@ class WorkflowExecution(Base):
     started_at = Column(BigInteger, nullable=False)
     completed_at = Column(BigInteger, nullable=True)
 
+    # 复合索引：按用户最近优先查询（user_id, started_at）
+    # 注：(user_id, idempotency_key) 由 startup_tasks.migrate_workflow_idempotency_schema 创建
+    # 为 partial unique（WHERE idempotency_key IS NOT NULL），同时覆盖普通幂等检查查询。
+    __table_args__ = (Index('ix_workflow_exec_user_started_desc', 'user_id', 'started_at'),)
+
     # 使用基类 to_dict()：auto-parse workflow_json/input_json/result_json
 
 
@@ -957,6 +973,11 @@ class NodeExecution(Base):
     error = Column(Text, nullable=True)
     started_at = Column(BigInteger, nullable=True)
     completed_at = Column(BigInteger, nullable=True)
+
+    # 复合索引：按 execution_id + node_id + status 快速过滤节点状态更新
+    __table_args__ = (
+        Index('ix_node_exec_execution_node_status', 'execution_id', 'node_id', 'status'),
+    )
 
     # 使用基类 to_dict()：auto-parse input_json/output_json
 

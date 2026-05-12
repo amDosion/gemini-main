@@ -17,7 +17,7 @@
  * - useWorkflowEditorLoading.ts    → executionStatus + loadedWorkflow sync
  */
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Node,
   Edge,
@@ -36,12 +36,7 @@ import { WorkflowEditorTopBar } from './WorkflowEditorTopBar';
 import { WorkflowEditorCanvasPane } from './WorkflowEditorCanvasPane';
 import { useExecutionLogs } from './WorkflowExecutionHooks';
 import { useUndoRedo } from './useUndoRedo';
-import type {
-  ExecutionStatus,
-  WorkflowNode,
-  WorkflowEdge,
-  WorkflowNodeData,
-} from './types';
+import type { ExecutionStatus, WorkflowNode, WorkflowEdge, WorkflowNodeData } from './types';
 import { useAgentRegistry } from './useAgentRegistry';
 import { loadTemplateIntoEditor, ActiveTemplateMeta } from './workflowTemplateLoader';
 import { useResultPanelPreviewState } from './useResultPanelPreviewState';
@@ -102,6 +97,17 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
   const [nodes, setNodes, onNodesChange] = useNodesState<WorkflowNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
+
+  // Ref-shadow of nodes/edges so callbacks can read latest values without
+  // listing nodes/edges in their useCallback deps (prevents callback churn
+  // that would otherwise cause React Flow to reinstall event handlers on
+  // every node edit).
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  useEffect(() => {
+    nodesRef.current = nodes;
+    edgesRef.current = edges;
+  }, [nodes, edges]);
 
   // UI state
   const [showLogs, setShowLogs] = useState(false);
@@ -381,7 +387,10 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
           isLocked: false,
         });
         setActiveTemplateFingerprint(
-          buildWorkflowStructureFingerprint(nodes as Node<WorkflowNodeData>[], edges as Edge[])
+          buildWorkflowStructureFingerprint(
+            nodesRef.current as Node<WorkflowNodeData>[],
+            edgesRef.current as Edge[]
+          )
         );
       }
       setShowTemplateSave(false);
@@ -391,9 +400,12 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
         'info',
         `${meta?.mode === 'update' ? '已更新模板' : '已保存模板'}: ${template.name}`
       );
-      onSave?.({ nodes: nodes as WorkflowNode[], edges: edges as WorkflowEdge[] });
+      onSave?.({
+        nodes: nodesRef.current as WorkflowNode[],
+        edges: edgesRef.current as WorkflowEdge[],
+      });
     },
-    [addLog, onSave, nodes, edges]
+    [addLog, onSave]
   );
 
   return (

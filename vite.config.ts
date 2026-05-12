@@ -153,8 +153,8 @@ export default defineConfig({
         },
       },
     },
-    // 提高 chunk 大小警告阈值
-    chunkSizeWarningLimit: 1000,
+    // 提高 chunk 大小警告阈值（默认 500kB，使用 Vite 默认值以警示大 chunk）
+    chunkSizeWarningLimit: 500,
   },
   // 优化依赖预构建
   optimizeDeps: {

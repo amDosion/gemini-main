@@ -26,9 +26,7 @@ import {
   listWorkflowTemplateCategories,
 } from '../../services/workflowTemplateCategoryService';
 import { getErrorMessage } from '../../utils/errorMessage';
-import {
-  type WorkflowTemplate,
-} from './workflowTemplateTypes';
+import { type WorkflowTemplate } from './workflowTemplateTypes';
 
 // Re-export WorkflowTemplate for backwards compat（既有 5 个 importer 用 ./WorkflowTemplateSelector）
 export type { WorkflowTemplate } from './workflowTemplateTypes';

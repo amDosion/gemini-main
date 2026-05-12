@@ -319,8 +319,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
   if (!selectedNode || !nodeData) return null;
 
-
-
   const renderResultNodeConfig = () => {
     if (nodeType === 'end') {
       return (
@@ -340,7 +338,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
   const renderNodeConfigEditor = () => {
     if (
-      ['start', 'input_text', 'input_image', 'input_video', 'input_audio', 'input_file'].includes(nodeType)
+      ['start', 'input_text', 'input_image', 'input_video', 'input_audio', 'input_file'].includes(
+        nodeType
+      )
     ) {
       return (
         <StartInputNodeConfigPanel

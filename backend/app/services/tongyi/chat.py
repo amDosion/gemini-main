@@ -1065,7 +1065,7 @@ class QwenNativeProvider(BaseProviderService):
         Returns:
             格式化后的 ChatResponse
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         # 判断是否为视觉模型
         if is_vision_model(model):
@@ -1101,7 +1101,7 @@ class QwenNativeProvider(BaseProviderService):
             格式化后的 StreamChunk
         """
         # 在线程池中运行同步流式调用
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         # 判断是否为视觉模型
         if is_vision_model(model):

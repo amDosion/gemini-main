@@ -64,7 +64,6 @@ const arePropsEqual = (prevProps: ImageEditViewProps, nextProps: ImageEditViewPr
   return true;
 };
 
-
 export const ImageEditView = memo(
   ({
     messages,

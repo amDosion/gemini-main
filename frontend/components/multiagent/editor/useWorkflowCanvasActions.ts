@@ -21,7 +21,7 @@
  * call and dependency mirrors the original component logic.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Connection, Edge, Node, ReactFlowInstance } from 'reactflow';
 import { addEdge } from 'reactflow';
 
@@ -39,10 +39,7 @@ import {
   NODE_DEFAULT_FOCUS_FIELD_BY_TYPE,
   WorkflowNodeFieldFocusRequest,
 } from '../workflowEditorUtils';
-import {
-  filterEdgesByNodePortLayouts,
-  resolveNodePortLayout,
-} from '../workflowPorts';
+import { filterEdgesByNodePortLayouts, resolveNodePortLayout } from '../workflowPorts';
 import { DEFAULT_WORKFLOW_EDGE_TYPE } from '../workflowEdgeTypes';
 
 import type { LogLevel } from '../ExecutionLogPanel';
@@ -56,9 +53,7 @@ type AddLog = (
 ) => void;
 
 type SetNodes = (
-  updater:
-    | Node<WorkflowNodeData>[]
-    | ((prev: Node<WorkflowNodeData>[]) => Node<WorkflowNodeData>[])
+  updater: Node<WorkflowNodeData>[] | ((prev: Node<WorkflowNodeData>[]) => Node<WorkflowNodeData>[])
 ) => void;
 type SetEdges = (updater: Edge[] | ((prev: Edge[]) => Edge[])) => void;
 
@@ -168,6 +163,17 @@ export const useWorkflowCanvasActions = ({
 }: UseWorkflowCanvasActionsArgs): UseWorkflowCanvasActionsResult => {
   const [isMainWorkspaceFullscreen, setIsMainWorkspaceFullscreen] = useState(false);
 
+  // Ref-shadow pattern: keep refs in sync with state so callbacks can read
+  // latest nodes/edges without listing them in dep arrays. This prevents
+  // callback churn on every node edit, which would otherwise force React
+  // Flow to reinstall its internal event handlers each render.
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  useEffect(() => {
+    nodesRef.current = nodes;
+    edgesRef.current = edges;
+  }, [nodes, edges]);
+
   const hydrateAgentBindingsFromRegistry = useCallback(
     async (inputNodes: Node<WorkflowNodeData>[]): Promise<Node<WorkflowNodeData>[]> => {
       if (!Array.isArray(inputNodes) || inputNodes.length === 0) {
@@ -245,24 +251,23 @@ export const useWorkflowCanvasActions = ({
     };
   }, [editorRootRef]);
 
-  const isValidConnection = useCallback(
-    (connection: Connection) => {
-      const { source, target } = connection;
-      if (!source || !target || source === target) return false;
-      const sourceNode = nodes.find((n) => n.id === source);
-      const targetNode = nodes.find((n) => n.id === target);
-      if (!sourceNode || !targetNode) return false;
-      if (targetNode.data.type === 'start') return false;
-      if (sourceNode.data.type === 'end') return false;
-      if (edges.find((e) => e.source === source && e.target === target)) return false;
-      return true;
-    },
-    [nodes, edges]
-  );
+  const isValidConnection = useCallback((connection: Connection) => {
+    const { source, target } = connection;
+    if (!source || !target || source === target) return false;
+    const currentNodes = nodesRef.current;
+    const currentEdges = edgesRef.current;
+    const sourceNode = currentNodes.find((n) => n.id === source);
+    const targetNode = currentNodes.find((n) => n.id === target);
+    if (!sourceNode || !targetNode) return false;
+    if (targetNode.data.type === 'start') return false;
+    if (sourceNode.data.type === 'end') return false;
+    if (currentEdges.find((e) => e.source === source && e.target === target)) return false;
+    return true;
+  }, []);
 
   const onConnect = useCallback(
     (params: Connection) => {
-      takeSnapshot(nodes, edges);
+      takeSnapshot(nodesRef.current, edgesRef.current);
       setEdges((eds) =>
         addEdge(
           {
@@ -275,7 +280,7 @@ export const useWorkflowCanvasActions = ({
         )
       );
     },
-    [setEdges, takeSnapshot, nodes, edges]
+    [setEdges, takeSnapshot]
   );
 
   const onNodeClick = useCallback(
@@ -307,29 +312,31 @@ export const useWorkflowCanvasActions = ({
     if (!selectedEdgeId) {
       return;
     }
-    takeSnapshot(nodes, edges);
+    takeSnapshot(nodesRef.current, edgesRef.current);
     setEdges((eds) => eds.filter((edge) => edge.id !== selectedEdgeId));
     addLog('system', '系统', 'info', '已断开 1 条连接');
-  }, [selectedEdgeId, takeSnapshot, nodes, edges, setEdges, addLog]);
+  }, [selectedEdgeId, takeSnapshot, setEdges, addLog]);
 
   const handleRemoveEdgeById = useCallback(
     (edgeId: string) => {
       const normalizedId = String(edgeId || '').trim();
-      if (!normalizedId || !edges.some((edge) => edge.id === normalizedId)) {
+      const currentEdges = edgesRef.current;
+      if (!normalizedId || !currentEdges.some((edge) => edge.id === normalizedId)) {
         return;
       }
-      takeSnapshot(nodes, edges);
+      takeSnapshot(nodesRef.current, currentEdges);
       setEdges((eds) => eds.filter((edge) => edge.id !== normalizedId));
       addLog('system', '系统', 'info', '已移除连接线');
     },
-    [edges, takeSnapshot, nodes, setEdges, addLog]
+    [takeSnapshot, setEdges, addLog]
   );
 
   const handleDisconnectByHandle = useCallback(
     (detail: DisconnectHandleEventDetail) => {
       const normalizeHandleId = (value?: string | null) => value ?? '__default__';
 
-      const matchedEdges = edges.filter((edge) => {
+      const currentEdges = edgesRef.current;
+      const matchedEdges = currentEdges.filter((edge) => {
         if (detail.direction === 'source') {
           if (edge.source !== detail.nodeId) return false;
           return normalizeHandleId(edge.sourceHandle) === normalizeHandleId(detail.handleId);
@@ -344,25 +351,26 @@ export const useWorkflowCanvasActions = ({
       }
 
       const matchedIds = new Set(matchedEdges.map((edge) => edge.id));
-      takeSnapshot(nodes, edges);
+      takeSnapshot(nodesRef.current, currentEdges);
       setEdges((eds) => eds.filter((edge) => !matchedIds.has(edge.id)));
       addLog('system', '系统', 'info', `端口已断开 ${matchedEdges.length} 条连接`);
     },
-    [edges, addLog, takeSnapshot, nodes, setEdges]
+    [addLog, takeSnapshot, setEdges]
   );
 
   const handleRemoveNodeById = useCallback(
     (nodeId: string) => {
-      const node = nodes.find((item) => item.id === nodeId);
+      const currentNodes = nodesRef.current;
+      const node = currentNodes.find((item) => item.id === nodeId);
       if (!node) {
         return;
       }
-      takeSnapshot(nodes, edges);
+      takeSnapshot(currentNodes, edgesRef.current);
       setNodes((nds) => nds.filter((item) => item.id !== nodeId));
       setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
       addLog('system', '系统', 'info', `已移除节点：${node.data.label}`);
     },
-    [nodes, edges, takeSnapshot, setNodes, setEdges, addLog]
+    [takeSnapshot, setNodes, setEdges, addLog]
   );
 
   const handleRemoveSelectedNode = useCallback(() => {
@@ -373,18 +381,23 @@ export const useWorkflowCanvasActions = ({
   }, [selectedNode, handleRemoveNodeById]);
 
   const handleAutoLayout = useCallback(() => {
-    if (nodes.length === 0) {
+    const currentNodes = nodesRef.current;
+    const currentEdges = edgesRef.current;
+    if (currentNodes.length === 0) {
       return;
     }
-    takeSnapshot(nodes, edges);
+    takeSnapshot(currentNodes, currentEdges);
     setNodes(
-      autoLayoutWorkflow(nodes as Node<WorkflowNodeData>[], edges) as Node<WorkflowNodeData>[]
+      autoLayoutWorkflow(
+        currentNodes as Node<WorkflowNodeData>[],
+        currentEdges
+      ) as Node<WorkflowNodeData>[]
     );
     requestAnimationFrame(() => {
       reactFlowInstance?.fitView({ padding: 0.25, duration: 450 });
     });
     addLog('system', '系统', 'info', '已完成自动排版');
-  }, [nodes, edges, takeSnapshot, setNodes, reactFlowInstance, addLog]);
+  }, [takeSnapshot, setNodes, reactFlowInstance, addLog]);
 
   const handleUpdateNode = useCallback(
     (nodeId: string, updates: Partial<WorkflowNodeData>) => {
@@ -411,7 +424,7 @@ export const useWorkflowCanvasActions = ({
       };
 
       if (includesPortLayoutUpdate) {
-        takeSnapshot(nodes, edges);
+        takeSnapshot(nodesRef.current, edgesRef.current);
       }
 
       setNodes((nds) => nds.map((node) => mergeNodeData(node as Node<WorkflowNodeData>)));
@@ -427,7 +440,7 @@ export const useWorkflowCanvasActions = ({
           const updatedNodes =
             currentNodes.length > 0
               ? currentNodes
-              : nodes.map((node) => mergeNodeData(node as Node<WorkflowNodeData>));
+              : nodesRef.current.map((node) => mergeNodeData(node as Node<WorkflowNodeData>));
           const filteredEdges = filterEdgesByNodePortLayouts(updatedNodes, eds);
           const removedCount = eds.length - filteredEdges.length;
           if (removedCount > 0) {
@@ -437,7 +450,7 @@ export const useWorkflowCanvasActions = ({
         });
       }
     },
-    [addLog, edges, nodes, setEdges, setNodes, takeSnapshot]
+    [addLog, setEdges, setNodes, takeSnapshot]
   );
 
   const canClearCanvas = useMemo(
@@ -470,8 +483,10 @@ export const useWorkflowCanvasActions = ({
     if (!canClearCanvas) {
       return;
     }
-    if (nodes.length > 0 || edges.length > 0) {
-      takeSnapshot(nodes as Node<WorkflowNodeData>[], edges as Edge[]);
+    const currentNodes = nodesRef.current;
+    const currentEdges = edgesRef.current;
+    if (currentNodes.length > 0 || currentEdges.length > 0) {
+      takeSnapshot(currentNodes as Node<WorkflowNodeData>[], currentEdges as Edge[]);
     }
     setNodes([]);
     setEdges([]);
@@ -492,8 +507,6 @@ export const useWorkflowCanvasActions = ({
   }, [
     addLog,
     canClearCanvas,
-    edges,
-    nodes,
     takeSnapshot,
     setNodes,
     setEdges,
@@ -570,7 +583,7 @@ export const useWorkflowCanvasActions = ({
           ...agentPresetUpdates,
         },
       };
-      takeSnapshot(nodes, edges);
+      takeSnapshot(nodesRef.current, edgesRef.current);
       setNodes((nds) =>
         applySingleNodeSelection(nds.concat(newNode) as Node<WorkflowNodeData>[], newNode.id)
       );
@@ -584,15 +597,7 @@ export const useWorkflowCanvasActions = ({
         });
       }
     },
-    [
-      reactFlowInstance,
-      setEdges,
-      setNodes,
-      takeSnapshot,
-      nodes,
-      edges,
-      setPendingNodeFieldFocusRequest,
-    ]
+    [reactFlowInstance, setEdges, setNodes, takeSnapshot, setPendingNodeFieldFocusRequest]
   );
 
   return {

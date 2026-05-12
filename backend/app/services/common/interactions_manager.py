@@ -309,8 +309,8 @@ class InteractionsManager:
             if store is not None:
                 create_params["store"] = store
 
-            interaction = client.interactions.create(**create_params)
-            
+            interaction = await asyncio.to_thread(client.interactions.create, **create_params)
+
             logger.info(f"[create_interaction] Successfully created interaction: id={interaction.id}, status={interaction.status}")
             
         except Exception as e:
@@ -496,7 +496,7 @@ class InteractionsManager:
             location=location
         )
 
-        interaction = client.interactions.get(interaction_id)
+        interaction = await asyncio.to_thread(client.interactions.get, interaction_id)
 
         return {
             'id': interaction.id,
@@ -766,8 +766,9 @@ class InteractionsManager:
         # ✅ Stream对象是同步迭代器，需要在事件循环中迭代
         # 使用asyncio.to_thread()在后台线程中迭代，或直接使用for循环（如果Stream支持）
         # 根据官方SDK，Stream对象应该可以直接迭代
-        import asyncio
-        loop = asyncio.get_event_loop()
+        # NOTE: get_running_loop() is required (we're inside an async coroutine);
+        # the loop reference is then closed over by the worker thread below.
+        loop = asyncio.get_running_loop()
         
         # 创建一个队列来在后台线程中迭代Stream
         queue = asyncio.Queue()
@@ -837,9 +838,9 @@ class InteractionsManager:
                 
                 # 记录交互事件
                 if interaction_id:
-                    logger.info(f"[Stream Event #{event_count}] {event_type} - ID: {interaction_id}, Status: {interaction_status}")
+                    logger.debug("[Stream Event #%d] %s - ID: %s, Status: %s", event_count, event_type, interaction_id, interaction_status)
                 else:
-                    logger.info(f"[Stream Event #{event_count}] {event_type} - Status: {interaction_status}")
+                    logger.debug("[Stream Event #%d] %s - Status: %s", event_count, event_type, interaction_status)
             
             # ✅ 处理 content 事件（如果存在，但 Interactions API 主要使用 delta）
             if hasattr(event, 'content'):
@@ -853,14 +854,14 @@ class InteractionsManager:
                         
                         # 记录内容事件
                         text_preview = text[:100] if text else ""
-                        logger.info(f"[Stream Event #{event_count}] {event_type} - Type: {content_type}, Length: {len(text)} chars")
+                        logger.debug("[Stream Event #%d] %s - Type: %s, Length: %d chars", event_count, event_type, content_type, len(text))
                         if text_preview:
                             logger.debug(f"Content preview: {text_preview}...")
                 elif hasattr(content, 'type'):
                     # 即使没有文本，也记录内容类型
                     content_type = getattr(content, 'type', 'unknown')
                     event_dict['content_type'] = content_type
-                    logger.info(f"[Stream Event #{event_count}] {event_type} - Type: {content_type} (no text)")
+                    logger.debug("[Stream Event #%d] %s - Type: %s (no text)", event_count, event_type, content_type)
             
             if hasattr(event, 'delta'):
                 delta = event.delta
@@ -889,9 +890,9 @@ class InteractionsManager:
                         }
                     
                     total_delta_length += len(delta_text)
-                    
+
                     # 记录增量内容（研究过程的实时输出）
-                    logger.info(f"[Stream Event #{event_count}] ContentDelta - Type: {delta_type or 'text'}, Length: {len(delta_text)} chars, Total: {total_delta_length} chars")
+                    logger.debug("[Stream Event #%d] ContentDelta - Type: %s, Length: %d chars, Total: %d chars", event_count, delta_type or 'text', len(delta_text), total_delta_length)
                     # 记录增量内容的前100个字符
                     if len(delta_text) > 0:
                         preview = delta_text[:100].replace('\n', '\\n')
@@ -902,7 +903,7 @@ class InteractionsManager:
             if hasattr(event, 'status'):
                 status = event.status
                 event_dict['status'] = status
-                logger.info(f"[Stream Event #{event_count}] {event_type} - Status: {status}")
+                logger.debug("[Stream Event #%d] %s - Status: %s", event_count, event_type, status)
             
             if hasattr(event, 'error'):
                 error = event.error
@@ -971,8 +972,8 @@ class InteractionsManager:
         """
         import asyncio
         from queue import Queue
-        from threading import Thread
-        
+        from threading import Thread, Event as _ThreadingEvent
+
         # 默认使用 Vertex AI
         use_vertexai = vertexai if vertexai is not None else self._default_vertexai
         vertex_credentials = None
@@ -1014,6 +1015,12 @@ class InteractionsManager:
 
             # 使用队列在线程和异步代码之间传递数据
             queue = Queue()
+
+            # Cooperative cancellation/backoff control for the worker thread.
+            # Using a threading.Event() instead of time.sleep() means a caller
+            # (or future cancellation hook) can interrupt the wait by calling
+            # _stop_event.set(); the wait will return immediately.
+            _stop_event = _ThreadingEvent()
 
             def sync_stream_worker():
                 """在独立线程中运行同步的流式代码"""
@@ -1085,7 +1092,8 @@ class InteractionsManager:
                             interaction_id,
                             current_last_event_id,
                         )
-                        time.sleep(backoff_sec * resume_attempt)
+                        # Interruptible backoff: if _stop_event is set the wait returns immediately.
+                        _stop_event.wait(timeout=backoff_sec * resume_attempt)
 
                     except Exception as e:
                         if _is_retryable_stream_exception(e) and resume_attempt < max_resume:
@@ -1098,7 +1106,8 @@ class InteractionsManager:
                                 current_last_event_id,
                                 e,
                             )
-                            time.sleep(backoff_sec * resume_attempt)
+                            # Interruptible backoff: if _stop_event is set the wait returns immediately.
+                            _stop_event.wait(timeout=backoff_sec * resume_attempt)
                             continue
 
                         logger.error(f"Failed to stream interaction {interaction_id}: {e}")

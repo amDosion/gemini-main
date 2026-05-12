@@ -15,11 +15,7 @@
 import { useCallback, useState } from 'react';
 import type { Edge, Node } from 'reactflow';
 
-import type {
-  WorkflowEdge,
-  WorkflowNode,
-  WorkflowNodeData,
-} from '../types';
+import type { WorkflowEdge, WorkflowNode, WorkflowNodeData } from '../types';
 import type { ActiveTemplateMeta } from '../workflowTemplateLoader';
 import { validateWorkflow } from '../workflowUtils';
 import { buildWorkflowStructureFingerprint } from '../workflowEditorUtils';

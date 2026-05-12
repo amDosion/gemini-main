@@ -17,12 +17,7 @@
 import { useEffect } from 'react';
 import type { Edge, Node, ReactFlowInstance } from 'reactflow';
 
-import type {
-  ExecutionStatus,
-  WorkflowEdge,
-  WorkflowNode,
-  WorkflowNodeData,
-} from '../types';
+import type { ExecutionStatus, WorkflowEdge, WorkflowNode, WorkflowNodeData } from '../types';
 import { ActiveTemplateMeta } from '../workflowTemplateLoader';
 import {
   applySingleEdgeSelection,
@@ -52,9 +47,7 @@ type AddLog = (
 ) => void;
 
 type SetNodes = (
-  updater:
-    | Node<WorkflowNodeData>[]
-    | ((prev: Node<WorkflowNodeData>[]) => Node<WorkflowNodeData>[])
+  updater: Node<WorkflowNodeData>[] | ((prev: Node<WorkflowNodeData>[]) => Node<WorkflowNodeData>[])
 ) => void;
 type SetEdges = (updater: Edge[] | ((prev: Edge[]) => Edge[])) => void;
 

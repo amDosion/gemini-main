@@ -6,16 +6,7 @@
 
 import React from 'react';
 import { createPortal } from 'react-dom';
-import {
-  Activity,
-  Cpu,
-  HardDrive,
-  Loader2,
-  Network,
-  RefreshCw,
-  Trash2,
-  X,
-} from 'lucide-react';
+import { Activity, Cpu, HardDrive, Loader2, Network, RefreshCw, Trash2, X } from 'lucide-react';
 import type { SystemConfigPayload, SystemStatusPayload } from '../../services/systemAdmin';
 import { formatBytes, formatPercent } from './headerHelpers';
 
@@ -112,11 +103,7 @@ export const HeaderSystemConfigDialog: React.FC<HeaderSystemConfigDialogProps> =
                           <button
                             type="button"
                             onClick={() =>
-                              handleSystemConfigValueChange(
-                                field.key,
-                                'boolean',
-                                !(value === true)
-                              )
+                              handleSystemConfigValueChange(field.key, 'boolean', !(value === true))
                             }
                             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                               value ? 'bg-indigo-500' : 'bg-slate-700'

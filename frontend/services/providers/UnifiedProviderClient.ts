@@ -1,13 +1,13 @@
 /**
  * Unified Provider Client
- * 
+ *
  * This client provides a unified interface to interact with all AI providers
  * through the backend API. It implements the ILLMProvider interface and routes
  * all requests to the unified backend endpoints:
  * - All modes (including chat): /api/modes/{provider}/{mode}
- * 
+ *
  * All requests use the new unified authentication (JWT Bearer token).
- * 
+ *
  * 统一模式处理:
  * - 所有模式都通过 executeMode(mode, ...) 方法统一处理
  * - 支持的模式: image-gen, image-chat-edit, image-mask-edit,
@@ -16,12 +16,12 @@
  * - 旧方法 (generateImage, editImage, etc.) 已标记为 @deprecated，内部委托给 executeMode
  */
 
-import { 
-  ILLMProvider, 
-  StreamUpdate, 
-  ImageGenerationResult, 
-  VideoGenerationResult, 
-  AudioGenerationResult 
+import {
+  ILLMProvider,
+  StreamUpdate,
+  ImageGenerationResult,
+  VideoGenerationResult,
+  AudioGenerationResult,
 } from './interfaces';
 import { createParser, type EventSourceMessage, type ParseError } from 'eventsource-parser';
 import { ModelConfig, Message, Attachment, ChatOptions } from '../../types/types';
@@ -38,11 +38,11 @@ import {
 
 export class UnifiedProviderClient implements ILLMProvider {
   public id: string;
-  
+
   constructor(providerId: string) {
     this.id = providerId;
   }
-  
+
   /**
    * Get available models for this provider
    *
@@ -52,13 +52,17 @@ export class UnifiedProviderClient implements ILLMProvider {
    *
    * Backend returns complete ModelConfig objects with capabilities.
    */
-  async getAvailableModels(apiKey?: string, baseUrl?: string, useCache: boolean = true): Promise<ModelConfig[]> {
+  async getAvailableModels(
+    apiKey?: string,
+    baseUrl?: string,
+    useCache: boolean = true
+  ): Promise<ModelConfig[]> {
     try {
       // Build query parameters
       // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
       const params = new URLSearchParams();
       if (apiKey) {
-        params.append('apiKey', apiKey);  // ✅ 传递 API Key 给后端
+        params.append('apiKey', apiKey); // ✅ 传递 API Key 给后端
       }
       if (baseUrl) {
         params.append('baseUrl', baseUrl);
@@ -88,14 +92,20 @@ export class UnifiedProviderClient implements ILLMProvider {
         id: String(model.id),
         name: String(model.name || model.id),
         description: String(model.description || `${this.id} model: ${model.id}`),
-        capabilities: (model.capabilities || { vision: false, search: false, reasoning: false, coding: false }) as Record<string, boolean>,
-        contextWindow: Number(model.contextWindow) || this.getDefaultContextWindow(String(model.id))
+        capabilities: (model.capabilities || {
+          vision: false,
+          search: false,
+          reasoning: false,
+          coding: false,
+        }) as Record<string, boolean>,
+        contextWindow:
+          Number(model.contextWindow) || this.getDefaultContextWindow(String(model.id)),
       }));
     } catch (error) {
       throw error;
     }
   }
-  
+
   /**
    * Send a message and stream the response
    */
@@ -123,16 +133,16 @@ export class UnifiedProviderClient implements ILLMProvider {
       if (!Array.isArray(attachments)) {
         throw new Error('Invalid attachments: must be an array');
       }
-      
+
       // ✅ 安全访问 options（提供默认值）
       const safeOptions: ChatOptions = options || {
         enableSearch: false,
         enableThinking: false,
         enableCodeExecution: false,
         imageAspectRatio: '1:1',
-        imageResolution: '1024x1024'
+        imageResolution: '1024x1024',
       };
-      
+
       // Build request body
       // ✅ 不传递 apiKey，让后端从数据库获取（基于用户认证）
       // 只有在明确需要测试/覆盖时才传递 apiKey
@@ -153,22 +163,22 @@ export class UnifiedProviderClient implements ILLMProvider {
           enableGrounding: safeOptions.enableGrounding,
           personaId: safeOptions.personaId,
           mcpServerKey: safeOptions.mcpServerKey,
-          baseUrl: baseUrl || safeOptions.baseUrl
+          baseUrl: baseUrl || safeOptions.baseUrl,
         },
-        stream: true
+        stream: true,
       };
-      
+
       // ✅ 只有在明确需要测试/覆盖时才传递 apiKey（例如：验证连接时）
       // 正常使用时，后端会从数据库获取 API key（基于用户 ID）
       // if (apiKey && /* 测试场景 */) {
       //   requestBody.apiKey = apiKey;
       // }
-      
+
       // ✅ 构建请求头，添加 Authorization header
       const headers = withAuthorization({
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       });
-      
+
       // ✅ 不在前端硬编码流式超时：
       // 流式生命周期由上层 abortSignal（用户停止）与后端/SDK 网络策略控制。
       const controller = new AbortController();
@@ -183,31 +193,31 @@ export class UnifiedProviderClient implements ILLMProvider {
           abortSignal.addEventListener('abort', upstreamAbortListener, { once: true });
         }
       }
-      
+
       try {
         // Call backend API - ✅ 统一使用 /api/modes/{provider}/chat
-        
+
         const response = await fetch(`/api/modes/${this.id}/chat`, {
           method: 'POST',
           headers,
           body: JSON.stringify(requestBody),
-          signal: controller.signal
+          signal: controller.signal,
         });
-        
+
         if (!response.ok) {
           const error = await response.text();
           throw new Error(`Chat failed: ${error}`);
         }
-        
+
         // 检查响应类型
         const contentType = response.headers.get('content-type');
-        
+
         // Read SSE stream
         const reader = response.body?.getReader();
         if (!reader) {
           throw new Error('No response body');
         }
-        
+
         const decoder = new TextDecoder();
         let chunkCount = 0;
         let totalTextLength = 0;
@@ -242,8 +252,8 @@ export class UnifiedProviderClient implements ILLMProvider {
                     id: callId,
                     type: chunk.toolType || 'function_call',
                     name: chunk.toolName,
-                    arguments: chunk.toolArgs || {}
-                  }
+                    arguments: chunk.toolArgs || {},
+                  },
                 });
                 return;
               }
@@ -259,8 +269,8 @@ export class UnifiedProviderClient implements ILLMProvider {
                     result: chunk.toolResult || '',
                     error: chunk.toolError,
                     screenshot: chunk.screenshot,
-                    screenshotUrl: chunk.screenshotUrl
-                  }
+                    screenshotUrl: chunk.screenshotUrl,
+                  },
                 });
                 return;
               }
@@ -277,9 +287,10 @@ export class UnifiedProviderClient implements ILLMProvider {
                 return;
               }
 
-              const shouldYield = chunk.chunkType === 'done' ||
-                                  chunk.chunkType === 'content' ||
-                                  chunk.text !== undefined;
+              const shouldYield =
+                chunk.chunkType === 'done' ||
+                chunk.chunkType === 'content' ||
+                chunk.text !== undefined;
               if (!shouldYield) {
                 return;
               }
@@ -292,7 +303,7 @@ export class UnifiedProviderClient implements ILLMProvider {
                 attachments: chunk.attachments,
                 groundingMetadata: chunk.groundingMetadata,
                 urlContextMetadata: chunk.urlContextMetadata,
-                browserOperationId: chunk.browserOperationId
+                browserOperationId: chunk.browserOperationId,
               });
             } catch (error) {
               streamError = error instanceof Error ? error : new Error(String(error));
@@ -300,7 +311,7 @@ export class UnifiedProviderClient implements ILLMProvider {
           },
           onError: (error: ParseError) => {
             // For malformed lines, keep stream resilient and continue parsing following events.
-          }
+          },
         });
 
         while (true) {
@@ -353,12 +364,12 @@ export class UnifiedProviderClient implements ILLMProvider {
       throw error;
     }
   }
-  
+
   /**
    * 统一模式处理方法
-   * 
+   *
    * 处理所有模式请求，统一调用 /api/modes/{provider}/{mode}
-   * 
+   *
    * @param mode - 模式名称 (image-gen, image-chat-edit, image-mask-edit, image-inpainting, image-background-edit, image-recontext, pdf-extract, etc.)
    * @param modelId - 模型 ID
    * @param prompt - 提示词
@@ -378,78 +389,89 @@ export class UnifiedProviderClient implements ILLMProvider {
     try {
       const normalizedOptions = normalizeLegacyModeOptions(mode, options);
       const normalizedExtra = pruneUndefinedEntries({ ...(extra || {}) });
-      const { kept: sanitizedOptions, droppedKeys: droppedOptionKeys } = pickAllowedEntries(normalizedOptions, MODE_OPTION_KEYS);
-      const { kept: sanitizedExtra, droppedKeys: droppedExtraKeys } = pickAllowedEntries(normalizedExtra, MODE_EXTRA_KEYS);
+      const { kept: sanitizedOptions, droppedKeys: droppedOptionKeys } = pickAllowedEntries(
+        normalizedOptions,
+        MODE_OPTION_KEYS
+      );
+      const { kept: sanitizedExtra, droppedKeys: droppedExtraKeys } = pickAllowedEntries(
+        normalizedExtra,
+        MODE_EXTRA_KEYS
+      );
       const requestBody = {
         modelId,
         prompt,
         attachments,
         options: sanitizedOptions,
-        extra: sanitizedExtra
+        extra: sanitizedExtra,
       };
-      
+
       // ✅ 详细日志：记录发送给后端的参数（特别是 image-gen 模式）
       if (mode === 'image-gen') {
         if (droppedOptionKeys.length > 0 || droppedExtraKeys.length > 0) {
         }
       }
-      
+
       // ✅ 构建请求头，添加 Authorization header
       const headers = withAuthorization({
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       });
-      
+
       // ✅ 统一路由: /api/modes/{provider}/{mode}
       const url = `/api/modes/${this.id}/${mode}`;
       if (mode === 'image-gen') {
       }
-      
+
       const response = await fetchWithTimeout(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestBody),
         timeoutMs: 0,
       });
-      
+
       if (!response.ok) {
-        const parsedError = await parseHttpError(response, `Mode execution failed (${response.status})`);
+        const parsedError = await parseHttpError(
+          response,
+          `Mode execution failed (${response.status})`
+        );
         throw new Error(parsedError.message);
       }
-      
+
       const data = await readJsonResponse<any>(response);
       // ✅ 新架构统一响应格式: { success: true, data: {...} }
       if (!data.success || data.data === undefined) {
         throw new Error(`Invalid response format: ${JSON.stringify(data)}`);
       }
-      
+
       // ✅ 处理图片生成、编辑、试衣结果（后端已处理，返回标准化格式）
       // 对于 image-gen、image-edit、virtual-try-on 模式，后端返回 { images: [...] }
-      const isImageMode = mode === 'image-gen' || 
-                          mode.startsWith('image-') || 
-                          mode === 'virtual-try-on';
+      const isImageMode =
+        mode === 'image-gen' || mode.startsWith('image-') || mode === 'virtual-try-on';
       if (isImageMode && data.data.images) {
         // 将后端格式转换为 ImageGenerationResult[]
         // ✅ 修复：复制后端返回的所有元数据字段，确保前端能获取完整信息
-        return data.data.images.map((img: Record<string, unknown>) => ({
-          url: img.url,  // 显示URL（可能是 /api/temp-images/{attachment_id} 或 HTTP URL）
-          mimeType: img.mimeType || 'image/png',
-          filename: img.filename,
-          attachmentId: img.attachmentId,
-          uploadStatus: img.uploadStatus,
-          taskId: img.taskId,
-          thoughts: img.thoughts,  // ✅ 修复断点2：传递 thinking 数据
-          text: img.text,          // ✅ 修复断点2：传递文本响应
-          enhancedPrompt: img.enhancedPrompt,  // ✅ 传递增强后的提示词（如果存在）
-          // ✅ 新增：传递完整的附件元数据（后端 CaseConversionMiddleware 会自动转换 snake_case → camelCase）
-          messageId: img.messageId,      // 关联的消息 ID
-          sessionId: img.sessionId,      // 关联的会话 ID
-          userId: img.userId,            // 用户 ID
-          size: img.size,                // 文件大小（字节）
-          cloudUrl: img.cloudUrl,        // 云存储 URL（如果已上传）
-          createdAt: img.createdAt       // 创建时间戳（毫秒）
-        } as ImageGenerationResult));
+        return data.data.images.map(
+          (img: Record<string, unknown>) =>
+            ({
+              url: img.url, // 显示URL（可能是 /api/temp-images/{attachment_id} 或 HTTP URL）
+              mimeType: img.mimeType || 'image/png',
+              filename: img.filename,
+              attachmentId: img.attachmentId,
+              uploadStatus: img.uploadStatus,
+              taskId: img.taskId,
+              thoughts: img.thoughts, // ✅ 修复断点2：传递 thinking 数据
+              text: img.text, // ✅ 修复断点2：传递文本响应
+              enhancedPrompt: img.enhancedPrompt, // ✅ 传递增强后的提示词（如果存在）
+              // ✅ 新增：传递完整的附件元数据（后端 CaseConversionMiddleware 会自动转换 snake_case → camelCase）
+              messageId: img.messageId, // 关联的消息 ID
+              sessionId: img.sessionId, // 关联的会话 ID
+              userId: img.userId, // 用户 ID
+              size: img.size, // 文件大小（字节）
+              cloudUrl: img.cloudUrl, // 云存储 URL（如果已上传）
+              createdAt: img.createdAt, // 创建时间戳（毫秒）
+            }) as ImageGenerationResult
+        );
       }
-      
+
       return data.data;
     } catch (error) {
       throw error;
@@ -458,7 +480,7 @@ export class UnifiedProviderClient implements ILLMProvider {
 
   /**
    * Generate images
-   * 
+   *
    * @deprecated 使用 executeMode('image-gen', ...) 代替
    */
   async generateImage(
@@ -470,21 +492,18 @@ export class UnifiedProviderClient implements ILLMProvider {
     baseUrl: string
   ): Promise<ImageGenerationResult[]> {
     // ✅ 委托给统一模式处理方法
-    const data = await this.executeMode(
-      'image-gen',
-      modelId,
-      prompt,
-      referenceImages,
-      { ...options, baseUrl: baseUrl || options.baseUrl }
-    );
+    const data = await this.executeMode('image-gen', modelId, prompt, referenceImages, {
+      ...options,
+      baseUrl: baseUrl || options.baseUrl,
+    });
     return Array.isArray(data) ? data : [];
   }
-  
+
   /**
    * Edit images (Google Imagen edit_image API)
-   * 
+   *
    * @deprecated 使用 executeMode('image-chat-edit', ...) 代替
-   * 
+   *
    * @param modelId - Model ID (e.g., "imagen-3.0-capability-001")
    * @param prompt - Edit prompt describing the desired changes
    * @param referenceImages - Dictionary of reference images:
@@ -502,7 +521,7 @@ export class UnifiedProviderClient implements ILLMProvider {
   async editImage(
     modelId: string,
     prompt: string,
-    referenceImages: Record<string, Attachment | Attachment[]>,  // ✅ 支持多图：raw 可以是数组
+    referenceImages: Record<string, Attachment | Attachment[]>, // ✅ 支持多图：raw 可以是数组
     options: ChatOptions,
     baseUrl: string,
     mode?: string
@@ -520,7 +539,7 @@ export class UnifiedProviderClient implements ILLMProvider {
     if (!referenceImages.raw) {
       throw new Error('Invalid referenceImages: must include "raw" base image');
     }
-    
+
     // ✅ 将 referenceImages 对象转换为 attachments 数组
     // 重要：保留原始附件的所有字段（特别是 id、uploadStatus、uploadTaskId）
     const attachments: Attachment[] = [];
@@ -547,7 +566,10 @@ export class UnifiedProviderClient implements ILLMProvider {
       const attachment: Attachment = {
         id: `ref-${key}-${Date.now()}`,
         name: key === 'mask' ? 'mask.png' : 'reference.png',
-        mimeType: typeof value === 'object' && (value as Record<string, unknown>).mimeType ? String((value as Record<string, unknown>).mimeType) : 'image/png'
+        mimeType:
+          typeof value === 'object' && (value as Record<string, unknown>).mimeType
+            ? String((value as Record<string, unknown>).mimeType)
+            : 'image/png',
       };
 
       // 根据值的类型设置 url
@@ -559,10 +581,15 @@ export class UnifiedProviderClient implements ILLMProvider {
         if (valObj.url) attachment.url = String(valObj.url);
         if (valObj.tempUrl) attachment.tempUrl = String(valObj.tempUrl);
         if (valObj.mimeType) attachment.mimeType = String(valObj.mimeType);
-        if (valObj.id) attachment.id = String(valObj.id);  // ✅ 保留原始 id
-        if (valObj.uploadStatus) attachment.uploadStatus = String(valObj.uploadStatus) as "completed" | "failed" | "pending" | "uploading";  // ✅ 保留上传状态
-        if (valObj.uploadTaskId) attachment.uploadTaskId = String(valObj.uploadTaskId);  // ✅ 保留任务 ID
-        if (valObj.name) attachment.name = String(valObj.name);  // ✅ 保留文件名
+        if (valObj.id) attachment.id = String(valObj.id); // ✅ 保留原始 id
+        if (valObj.uploadStatus)
+          attachment.uploadStatus = String(valObj.uploadStatus) as
+            | 'completed'
+            | 'failed'
+            | 'pending'
+            | 'uploading'; // ✅ 保留上传状态
+        if (valObj.uploadTaskId) attachment.uploadTaskId = String(valObj.uploadTaskId); // ✅ 保留任务 ID
+        if (valObj.name) attachment.name = String(valObj.name); // ✅ 保留文件名
         if (valObj.role) attachment.role = String(valObj.role);
       }
 
@@ -594,25 +621,26 @@ export class UnifiedProviderClient implements ILLMProvider {
     }
 
     attachments.forEach((att, idx) => {
-      const urlPreview = att.url ? (att.url.length > 50 ? att.url.substring(0, 50) + '...' : att.url) : 'N/A';
+      const urlPreview = att.url
+        ? att.url.length > 50
+          ? att.url.substring(0, 50) + '...'
+          : att.url
+        : 'N/A';
     });
-    
+
     // ✅ 使用统一模式处理方法
     const editMode = mode || 'image-chat-edit';
-    const data = await this.executeMode(
-      editMode,
-      modelId,
-      prompt,
-      attachments,
-      { ...options, baseUrl: baseUrl || options.baseUrl }
-    );
-    
+    const data = await this.executeMode(editMode, modelId, prompt, attachments, {
+      ...options,
+      baseUrl: baseUrl || options.baseUrl,
+    });
+
     return Array.isArray(data) ? data : [];
   }
-  
+
   /**
    * Generate video
-   * 
+   *
    * @deprecated 使用 executeMode('video-gen', ...) 代替
    */
   async generateVideo(
@@ -624,18 +652,15 @@ export class UnifiedProviderClient implements ILLMProvider {
     baseUrl: string
   ): Promise<VideoGenerationResult> {
     // ✅ 委托给统一模式处理方法
-    return await this.executeMode(
-      'video-gen',
-      modelId,
-      prompt,
-      referenceImages,
-      { ...options, baseUrl: baseUrl || options.baseUrl }
-    );
+    return await this.executeMode('video-gen', modelId, prompt, referenceImages, {
+      ...options,
+      baseUrl: baseUrl || options.baseUrl,
+    });
   }
-  
+
   /**
    * Generate speech
-   * 
+   *
    * @deprecated 使用 executeMode('audio-gen', ...) 代替
    */
   async generateSpeech(
@@ -651,21 +676,21 @@ export class UnifiedProviderClient implements ILLMProvider {
       modelId,
       text,
       [],
-      { 
+      {
         baseUrl,
         enableSearch: false,
         enableThinking: false,
         enableCodeExecution: false,
         imageAspectRatio: '1:1',
-        imageResolution: '1024x1024'
+        imageResolution: '1024x1024',
       },
       { voice: voiceName }
     );
   }
-  
+
   /**
    * Out-paint image (image expansion)
-   * 
+   *
    * @deprecated 使用 executeMode('image-outpainting', ...) 代替
    */
   async outPaintImage(
@@ -683,14 +708,14 @@ export class UnifiedProviderClient implements ILLMProvider {
       { ...options, baseUrl: baseUrl || options.baseUrl },
       options.outPainting || {}
     );
-    
+
     // 返回单个结果（outpainting 通常返回单张图片）
     if (Array.isArray(data) && data.length > 0) {
       return data[0];
     }
     return data as ImageGenerationResult;
   }
-  
+
   /**
    * Upload file
    */
@@ -704,31 +729,31 @@ export class UnifiedProviderClient implements ILLMProvider {
       if (baseUrl) {
         formData.append('baseUrl', baseUrl);
       }
-      
+
       // ✅ 构建请求头，添加 Authorization header
       const headers = withAuthorization();
-      
+
       const response = await fetchWithTimeout(`/api/upload/${this.id}`, {
         method: 'POST',
         headers,
         body: formData,
         timeoutMs: 120000,
       });
-      
+
       if (!response.ok) {
         const parsedError = await parseHttpError(response, 'File upload failed');
         throw new Error(`File upload failed: ${parsedError.message}`);
       }
-      
+
       const data = await readJsonResponse<any>(response);
       return data.fileId || data.url;
     } catch (error) {
       throw error;
     }
   }
-  
+
   // ==================== Helper Methods ====================
-  
+
   /**
    * Get default context window for a model
    * Used as fallback when backend doesn't provide context_window
@@ -746,21 +771,21 @@ export class UnifiedProviderClient implements ILLMProvider {
       'gemini-1.5-flash': 1000000,
       'claude-3-opus': 200000,
       'claude-3-sonnet': 200000,
-      'claude-3-haiku': 200000
+      'claude-3-haiku': 200000,
     };
-    
+
     // Try exact match
     if (contextWindows[modelId]) {
       return contextWindows[modelId];
     }
-    
+
     // Try partial match
     for (const [key, value] of Object.entries(contextWindows)) {
       if (modelId.includes(key)) {
         return value;
       }
     }
-    
+
     // Default
     return 4096;
   }

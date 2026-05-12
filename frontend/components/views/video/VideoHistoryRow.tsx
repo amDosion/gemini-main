@@ -72,13 +72,8 @@ export const VideoHistoryRow: React.FC<VideoHistoryRowProps> = ({
       attachment.mimeType?.startsWith('video/') || attachment.mimeType?.startsWith('image/')
   ).length;
   const { originalPrompt, optimizedPrompt } = extractHistoryPrompts(msg);
-  const {
-    extensionCount,
-    totalDurationSeconds,
-    strategyLabel,
-    subtitleLabel,
-    subtitleCount,
-  } = extractVideoHistoryMeta(msg);
+  const { extensionCount, totalDurationSeconds, strategyLabel, subtitleLabel, subtitleCount } =
+    extractVideoHistoryMeta(msg);
 
   return (
     <div
@@ -183,10 +178,7 @@ export const VideoHistoryRow: React.FC<VideoHistoryRowProps> = ({
               </span>
             )}
           </div>
-          {(extensionCount > 0 ||
-            totalDurationSeconds ||
-            strategyLabel ||
-            subtitleLabel) && (
+          {(extensionCount > 0 || totalDurationSeconds || strategyLabel || subtitleLabel) && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
               {extensionCount > 0 && (
                 <span className="inline-flex items-center rounded-full border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-cyan-200">

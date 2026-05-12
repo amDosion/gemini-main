@@ -373,9 +373,7 @@ export const ToolNodeConfigPanel: React.FC<ToolNodeConfigPanelProps> = ({
         )}
 
         {/* 图片生成参数（抽离至 ./toolSections/ToolImageGenSection） */}
-        {isImageGen && (
-          <ToolImageGenSection nodeData={nodeData} updateNodeData={updateNodeData} />
-        )}
+        {isImageGen && <ToolImageGenSection nodeData={nodeData} updateNodeData={updateNodeData} />}
 
         {/* 视频生成参数（抽离至 ./toolSections/ToolVideoGenSection） */}
         {isVideoGenerate && (

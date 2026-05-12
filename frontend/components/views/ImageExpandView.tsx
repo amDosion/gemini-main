@@ -448,92 +448,71 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
   );
 
   // ✅ 统一历史列表：左图右提示词 + 收藏/操作/悬浮预览
-  const sidebarContent = useMemo(
-    () => (
-      <div className="p-3 space-y-2.5">
-        {filteredHistoryBatches.map((msg) => {
-          const { originalPrompt, optimizedPrompt } = extractHistoryPrompts(msg);
-          return (
-            <ExpandHistoryRow
-              key={msg.id}
-              msg={msg}
-              firstImage={msg.attachments?.[0]?.url}
-              count={msg.attachments?.length || 0}
-              isSelected={activeBatchMessage?.id === msg.id}
-              originalPrompt={originalPrompt}
-              optimizedPrompt={optimizedPrompt}
-              favorited={isFavorite(msg.id)}
-              isActionMenuOpen={openActionMenu?.messageId === msg.id}
-              openActionMenu={openActionMenu}
-              historyItemRefs={historyItemRefs}
-              showHoverPreview={showHoverPreview}
-              scheduleHideHoverPreview={scheduleHideHoverPreview}
-              setSelectedMsgId={setSelectedMsgId}
-              setIsMobileHistoryOpen={setIsMobileHistoryOpen}
-              closeHoverPreview={closeHoverPreview}
-              closeActionMenu={closeActionMenu}
-              openActionMenuBase={openActionMenuBase}
-            />
-          );
-        })}
-
-        {filteredHistoryBatches.length === 0 && (
-          <div className="text-center py-10 text-slate-600 text-xs italic">
-            {showFavoritesOnly ? '暂无收藏记录。' : '暂无扩图历史'}
-          </div>
-        )}
-
-        {openActionMenu && (
-          <HistoryActionMenuPortal
+  // sidebarContent: 原 useMemo 的 deps 在每次 hover/选中变化时都会失效，
+  // memo 本身收益微乎其微；下游 ExpandHistoryRow 内部已通过 React.memo + 自定义比较器
+  // 拦截不必要的重渲染。此处保留 plain JSX 转发。
+  const sidebarContent = (
+    <div className="p-3 space-y-2.5">
+      {filteredHistoryBatches.map((msg) => {
+        const { originalPrompt, optimizedPrompt } = extractHistoryPrompts(msg);
+        return (
+          <ExpandHistoryRow
+            key={msg.id}
+            msg={msg}
+            firstImage={msg.attachments?.[0]?.url}
+            count={msg.attachments?.length || 0}
+            isSelected={activeBatchMessage?.id === msg.id}
+            originalPrompt={originalPrompt}
+            optimizedPrompt={optimizedPrompt}
+            favorited={isFavorite(msg.id)}
+            isActionMenuOpen={openActionMenu?.messageId === msg.id}
             openActionMenu={openActionMenu}
-            actionMenuPosition={actionMenuPosition}
-            actionMenuPanelRef={actionMenuPanelRef}
+            historyItemRefs={historyItemRefs}
+            showHoverPreview={showHoverPreview}
+            scheduleHideHoverPreview={scheduleHideHoverPreview}
+            setSelectedMsgId={setSelectedMsgId}
+            setIsMobileHistoryOpen={setIsMobileHistoryOpen}
             closeHoverPreview={closeHoverPreview}
             closeActionMenu={closeActionMenu}
-            isFavorite={isFavorite}
-            isFavoritePending={isFavoritePending}
-            toggleFavorite={toggleFavorite}
-            deleteItem={deleteItem}
-            hoverPreviewMessageId={hoverPreview?.messageId ?? null}
+            openActionMenuBase={openActionMenuBase}
           />
-        )}
+        );
+      })}
 
-        <HoverPromptPreviewPortal
-          preview={hoverPreview}
-          position={hoverPreviewPosition}
-          size={hoverPreviewSize}
-          panelRef={hoverPreviewPanelRef}
-          clearHidePreviewTimer={clearHidePreviewTimer}
-          scheduleHideHoverPreview={scheduleHideHoverPreview}
-          handleCopyOptimizedPrompt={handleCopyOptimizedPrompt}
-          copiedPreviewMessageId={copiedPreviewMessageId}
-          handlePreviewResizeMouseDown={handlePreviewResizeMouseDown}
-          isResizingPreview={isResizingPreview}
+      {filteredHistoryBatches.length === 0 && (
+        <div className="text-center py-10 text-slate-600 text-xs italic">
+          {showFavoritesOnly ? '暂无收藏记录。' : '暂无扩图历史'}
+        </div>
+      )}
+
+      {openActionMenu && (
+        <HistoryActionMenuPortal
+          openActionMenu={openActionMenu}
+          actionMenuPosition={actionMenuPosition}
+          actionMenuPanelRef={actionMenuPanelRef}
+          closeHoverPreview={closeHoverPreview}
+          closeActionMenu={closeActionMenu}
+          isFavorite={isFavorite}
+          isFavoritePending={isFavoritePending}
+          toggleFavorite={toggleFavorite}
+          deleteItem={deleteItem}
+          hoverPreviewMessageId={hoverPreview?.messageId ?? null}
         />
-      </div>
-    ),
-    [
-      filteredHistoryBatches,
-      showFavoritesOnly,
-      activeBatchMessage?.id,
-      openActionMenu,
-      actionMenuPosition,
-      hoverPreview,
-      hoverPreviewPosition,
-      hoverPreviewSize,
-      isResizingPreview,
-      copiedPreviewMessageId,
-      showHoverPreview,
-      scheduleHideHoverPreview,
-      clearHidePreviewTimer,
-      handleCopyOptimizedPrompt,
-      handlePreviewResizeMouseDown,
-      closeHoverPreview,
-      isFavorite,
-      isFavoritePending,
-      toggleFavorite,
-      deleteItem,
-    ]
+      )}
+
+      <HoverPromptPreviewPortal
+        preview={hoverPreview}
+        position={hoverPreviewPosition}
+        size={hoverPreviewSize}
+        panelRef={hoverPreviewPanelRef}
+        clearHidePreviewTimer={clearHidePreviewTimer}
+        scheduleHideHoverPreview={scheduleHideHoverPreview}
+        handleCopyOptimizedPrompt={handleCopyOptimizedPrompt}
+        copiedPreviewMessageId={copiedPreviewMessageId}
+        handlePreviewResizeMouseDown={handlePreviewResizeMouseDown}
+        isResizingPreview={isResizingPreview}
+      />
+    </div>
   );
 
   const sidebarHeaderIcon = <Clock size={14} />;

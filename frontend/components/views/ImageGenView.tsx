@@ -343,18 +343,10 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
           accentColor="pink"
           controlsExtra={{
             onEdit: onEditImage
-              ? () =>
-                  onEditImage(
-                    displayImages[carouselIndex].url!,
-                    displayImages[carouselIndex]
-                  )
+              ? () => onEditImage(displayImages[carouselIndex].url!, displayImages[carouselIndex])
               : undefined,
             onExpand: onExpandImage
-              ? () =>
-                  onExpandImage(
-                    displayImages[carouselIndex].url!,
-                    displayImages[carouselIndex]
-                  )
+              ? () => onExpandImage(displayImages[carouselIndex].url!, displayImages[carouselIndex])
               : undefined,
             onFullscreen: () => onImageClick(displayImages[carouselIndex].url!),
           }}

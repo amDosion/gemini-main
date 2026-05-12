@@ -84,6 +84,10 @@ export const updateMaskCanvasUrl = ({
       }
     }, 'image/png');
   } else {
+    if (maskPreviewBlobUrlRef.current) {
+      URL.revokeObjectURL(maskPreviewBlobUrlRef.current);
+      maskPreviewBlobUrlRef.current = null;
+    }
     setMaskCanvasUrl(null);
   }
   onAfterUpdate();
@@ -204,6 +208,7 @@ export interface GenerateMaskFromSelectionsArgs {
   hasBrushContentRef: React.MutableRefObject<boolean>;
   maskCompositeCanvasRef: React.MutableRefObject<HTMLCanvasElement | null>;
   maskPreviewUrlRef: React.MutableRefObject<string | null>;
+  isMountedRef: React.MutableRefObject<boolean>;
   setMaskPreviewUrl: (url: string | null) => void;
   setMaskRequestDataUrl: (url: string | null) => void;
   setMaskPreviewError: (error: string | null) => void;
@@ -218,6 +223,7 @@ export const generateMaskFromSelections = ({
   hasBrushContentRef,
   maskCompositeCanvasRef,
   maskPreviewUrlRef,
+  isMountedRef,
   setMaskPreviewUrl,
   setMaskRequestDataUrl,
   setMaskPreviewError,
@@ -293,21 +299,28 @@ export const generateMaskFromSelections = ({
   }
 
   canvas.toBlob((blob) => {
-    if (blob) {
-      if (maskPreviewUrlRef.current) {
-        URL.revokeObjectURL(maskPreviewUrlRef.current);
-      }
-      const url = URL.createObjectURL(blob);
-      maskPreviewUrlRef.current = url;
-      setMaskPreviewUrl(url);
-
-      fileToBase64(blob)
-        .then((dataUrl) => setMaskRequestDataUrl(dataUrl))
-        .catch(() => {
-          setMaskRequestDataUrl(null);
-          setMaskPreviewError('Mask 转换失败，请重试');
-          showError('Mask 数据转换失败，请重试');
-        });
+    if (!blob) return;
+    // 卸载后 callback 仍可能到达：直接丢弃 blob，不创建 URL，避免泄漏。
+    if (!isMountedRef.current) {
+      return;
     }
+    if (maskPreviewUrlRef.current) {
+      URL.revokeObjectURL(maskPreviewUrlRef.current);
+    }
+    const url = URL.createObjectURL(blob);
+    maskPreviewUrlRef.current = url;
+    setMaskPreviewUrl(url);
+
+    fileToBase64(blob)
+      .then((dataUrl) => {
+        if (!isMountedRef.current) return;
+        setMaskRequestDataUrl(dataUrl);
+      })
+      .catch(() => {
+        if (!isMountedRef.current) return;
+        setMaskRequestDataUrl(null);
+        setMaskPreviewError('Mask 转换失败，请重试');
+        showError('Mask 数据转换失败，请重试');
+      });
   }, 'image/png');
 };

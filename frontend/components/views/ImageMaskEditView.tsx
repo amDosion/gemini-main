@@ -77,6 +77,16 @@ export const ImageMaskEditView = memo(
     const { showError } = useToastContext();
     const scrollRef = useRef<HTMLDivElement>(null);
 
+    // Mounted flag：用于 generateMaskFromSelections 中 canvas.toBlob 异步回调，
+    // 若组件已卸载则丢弃后续 URL.createObjectURL，避免 blob URL 泄漏。
+    const isMountedRef = useRef(true);
+    useEffect(() => {
+      isMountedRef.current = true;
+      return () => {
+        isMountedRef.current = false;
+      };
+    }, []);
+
     // State for reference image
     const [activeAttachments, setActiveAttachments] = useState<Attachment[]>([]);
     const [activeImageUrl, setActiveImageUrl] = useState<string | null>(null);
@@ -206,10 +216,7 @@ export const ImageMaskEditView = memo(
       [brushSize]
     );
 
-    const getMaskCanvas = useCallback(
-      () => getOrCreateMaskCanvas(imageRef, maskCanvasRef),
-      []
-    );
+    const getMaskCanvas = useCallback(() => getOrCreateMaskCanvas(imageRef, maskCanvasRef), []);
     const updateDisplayCanvas = useCallback(
       () => drawDisplayCanvas(maskCanvasRef, displayCanvasRef),
       []
@@ -349,6 +356,7 @@ export const ImageMaskEditView = memo(
           hasBrushContentRef,
           maskCompositeCanvasRef,
           maskPreviewUrlRef,
+          isMountedRef,
           setMaskPreviewUrl,
           setMaskRequestDataUrl,
           setMaskPreviewError,

@@ -181,13 +181,8 @@ export const ImageResultCanvas = memo(
     }`;
 
     const outerOnWheel =
-      wheelTarget === 'outer'
-        ? isCompareMode
-          ? undefined
-          : canvas.handleWheel
-        : undefined;
-    const carouselOnWheel =
-      wheelTarget === 'carousel' ? canvas.handleWheel : undefined;
+      wheelTarget === 'outer' ? (isCompareMode ? undefined : canvas.handleWheel) : undefined;
+    const carouselOnWheel = wheelTarget === 'carousel' ? canvas.handleWheel : undefined;
 
     return (
       <div
@@ -235,9 +230,7 @@ export const ImageResultCanvas = memo(
               <AlertCircle size={48} className="text-red-500 opacity-80" />
               <div>
                 <h3 className="text-lg font-bold text-slate-200">{errorTitle}</h3>
-                <p className="text-sm text-red-400 mt-2 max-w-md">
-                  {errorMessage || '未知错误'}
-                </p>
+                <p className="text-sm text-red-400 mt-2 max-w-md">{errorMessage || '未知错误'}</p>
               </div>
             </div>
           </div>
@@ -298,9 +291,7 @@ export const ImageResultCanvas = memo(
                       onReset={canvas.handleReset}
                       onEdit={controlsExtra?.onEdit}
                       onExpand={controlsExtra?.onExpand}
-                      onFullscreen={
-                        controlsExtra?.onFullscreen ?? (() => onImageClick(currentUrl))
-                      }
+                      onFullscreen={controlsExtra?.onFullscreen ?? (() => onImageClick(currentUrl))}
                       downloadUrl={currentUrl}
                       onToggleCompare={controlsExtra?.onToggleCompare}
                       isCompareMode={isCompareMode}

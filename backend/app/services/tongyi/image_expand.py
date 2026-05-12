@@ -10,6 +10,7 @@
 """
 from typing import Optional, Tuple
 from dataclasses import dataclass
+import asyncio
 import requests
 import time
 import logging
@@ -234,6 +235,120 @@ class ImageExpandService:
                 logger.error(f"[OutPainting] 轮询异常: {str(e)}")
                 continue
         
+        return OutPaintingResult(
+            success=False,
+            task_id=task_id,
+            error="任务超时（10分钟）"
+        )
+
+    async def poll_task_async(self, task_id: str, api_key: str, max_retries: int = 120) -> OutPaintingResult:
+        """
+        异步轮询任务状态（async 变体）
+
+        Preferred for async callers: uses ``await asyncio.sleep(5)`` so the
+        event loop stays responsive, and runs the blocking ``requests.get``
+        in a worker thread via ``asyncio.to_thread``. Behavior matches
+        :py:meth:`poll_task` exactly — same retry budget, same return shape.
+
+        Args:
+            task_id: 任务 ID
+            api_key: DashScope API Key
+            max_retries: 最大重试次数（默认 120 次，每次 5 秒，共 10 分钟）
+
+        Returns:
+            OutPaintingResult
+        """
+        task_url = f"{DASHSCOPE_BASE_URL}/api/v1/tasks/{task_id}"
+        task_headers = {"Authorization": f"Bearer {api_key}"}
+
+        for i in range(max_retries):
+            await asyncio.sleep(5)
+
+            try:
+                task_response = await asyncio.to_thread(
+                    requests.get, task_url, headers=task_headers, timeout=30
+                )
+                if task_response.status_code != 200:
+                    continue
+
+                task_data = task_response.json()
+                task_status = task_data.get("output", {}).get("task_status")
+
+                if task_status == "SUCCEEDED":
+                    output_url = task_data.get("output", {}).get("output_image_url")
+                    logger.info(f"[OutPainting] 任务成功: {output_url}")
+                    return OutPaintingResult(
+                        success=True,
+                        task_id=task_id,
+                        output_url=output_url
+                    )
+                elif task_status == "FAILED":
+                    error_msg = task_data.get("output", {}).get("message", "任务失败")
+                    error_code = task_data.get("output", {}).get("code", "")
+                    logger.error(f"[OutPainting] 任务失败: {error_code} - {error_msg}")
+                    return OutPaintingResult(
+                        success=False,
+                        task_id=task_id,
+                        error=f"{error_code}: {error_msg}"
+                    )
+                else:
+                    logger.debug(f"[OutPainting] 任务处理中: {task_status} ({i+1}/{max_retries})")
+            except Exception as e:
+                logger.error(f"[OutPainting] 轮询异常: {str(e)}")
+                continue
+
+        return OutPaintingResult(
+            success=False,
+            task_id=task_id,
+            error="任务超时（10分钟）"
+        )
+
+    async def poll_task_async(self, task_id: str, api_key: str, max_retries: int = 120) -> OutPaintingResult:
+        """
+        Async 轮询任务状态 - 与 ``poll_task`` 行为一致，但使用 ``await asyncio.sleep``
+        以避免在 async 调用方中阻塞事件循环（或线程池的 worker）。
+
+        HTTP 请求仍是同步的，通过 ``asyncio.to_thread`` 卸载到线程池。
+        """
+        task_url = f"{DASHSCOPE_BASE_URL}/api/v1/tasks/{task_id}"
+        task_headers = {"Authorization": f"Bearer {api_key}"}
+
+        for i in range(max_retries):
+            await asyncio.sleep(5)
+
+            try:
+                task_response = await asyncio.to_thread(
+                    requests.get, task_url, headers=task_headers, timeout=30
+                )
+                if task_response.status_code != 200:
+                    continue
+
+                task_data = task_response.json()
+                task_status = task_data.get("output", {}).get("task_status")
+
+                if task_status == "SUCCEEDED":
+                    output_url = task_data.get("output", {}).get("output_image_url")
+                    logger.info(f"[OutPainting] 任务成功: {output_url}")
+                    return OutPaintingResult(
+                        success=True,
+                        task_id=task_id,
+                        output_url=output_url
+                    )
+                elif task_status == "FAILED":
+                    error_msg = task_data.get("output", {}).get("message", "任务失败")
+                    error_code = task_data.get("output", {}).get("code", "")
+                    logger.error(f"[OutPainting] 任务失败: {error_code} - {error_msg}")
+                    return OutPaintingResult(
+                        success=False,
+                        task_id=task_id,
+                        error=f"{error_code}: {error_msg}"
+                    )
+                else:
+                    logger.debug(f"[OutPainting] 任务处理中: {task_status} ({i+1}/{max_retries})")
+            except Exception as e:
+                logger.error(f"[OutPainting] 轮询异常: {str(e)}")
+                continue
+
         return OutPaintingResult(
             success=False,
             task_id=task_id,

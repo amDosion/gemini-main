@@ -11,6 +11,8 @@ from typing import List, Optional, Tuple, Any, Dict
 import logging
 import time
 
+from cachetools import TTLCache
+
 from ...core.database import get_db
 from ...models.db_models import ConfigProfile, UserSettings, VertexAIConfig
 from ...services.common.model_capabilities import (
@@ -54,8 +56,14 @@ UNSUPPORTED_GENERAL_MODEL_KEYWORDS = [
 
 # Simple in-memory cache
 # Format: {provider: {"models": [ModelConfig, ...], "timestamp": float}}
-_model_cache: dict[str, dict[str, Any]] = {}
+# Backed by TTLCache so entries auto-evict after `_cache_ttl` seconds and the
+# dict cannot grow unbounded if many providers are queried. maxsize=200 is
+# well above any plausible provider count; ttl mirrors the historical 1-hour
+# freshness window. The existing per-entry `timestamp` field is kept (and
+# still consulted by `is_cache_valid`) so behavior is bit-for-bit identical
+# while we're inside the freshness window.
 _cache_ttl = 3600  # 1 hour in seconds
+_model_cache: TTLCache = TTLCache(maxsize=200, ttl=_cache_ttl)
 
 
 # ==================== Helper Functions ====================

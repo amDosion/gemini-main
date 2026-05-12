@@ -177,7 +177,10 @@ export const composeModelMessageUpdaters = (
   return (message) => nextUpdater(previousUpdater(message));
 };
 
-export const applyStreamUpdateToModelMessage = (message: Message, update: StreamUpdate): Message => {
+export const applyStreamUpdateToModelMessage = (
+  message: Message,
+  update: StreamUpdate
+): Message => {
   return {
     ...message,
     content: update.content || message.content,

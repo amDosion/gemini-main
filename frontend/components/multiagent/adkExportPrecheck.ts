@@ -5,10 +5,7 @@
  * （JIRA-frontend-deep-architecture-split.md #2 Step 3）。
  */
 
-import type {
-  AdkExportPrecheckIssue,
-  AdkExportPrecheckIssueCode,
-} from './adkSessionTypes';
+import type { AdkExportPrecheckIssue, AdkExportPrecheckIssueCode } from './adkSessionTypes';
 import {
   toSafeString,
   isRecord,

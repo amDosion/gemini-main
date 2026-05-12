@@ -34,7 +34,7 @@ export interface ExpandHistoryRowProps {
   openActionMenuBase: (anchor: ActionMenuAnchorBase) => void;
 }
 
-export const ExpandHistoryRow: React.FC<ExpandHistoryRowProps> = ({
+const ExpandHistoryRowComponent: React.FC<ExpandHistoryRowProps> = ({
   msg,
   firstImage,
   count,
@@ -167,3 +167,16 @@ export const ExpandHistoryRow: React.FC<ExpandHistoryRowProps> = ({
     </div>
   );
 };
+
+export const ExpandHistoryRow = React.memo(
+  ExpandHistoryRowComponent,
+  (prev, next) =>
+    prev.msg.id === next.msg.id &&
+    prev.isSelected === next.isSelected &&
+    prev.favorited === next.favorited &&
+    prev.isActionMenuOpen === next.isActionMenuOpen &&
+    prev.firstImage === next.firstImage &&
+    prev.count === next.count &&
+    prev.originalPrompt === next.originalPrompt &&
+    prev.optimizedPrompt === next.optimizedPrompt
+);

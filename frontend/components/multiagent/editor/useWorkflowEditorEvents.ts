@@ -43,9 +43,7 @@ type AddLog = (
 ) => void;
 
 type SetNodes = (
-  updater:
-    | Node<WorkflowNodeData>[]
-    | ((prev: Node<WorkflowNodeData>[]) => Node<WorkflowNodeData>[])
+  updater: Node<WorkflowNodeData>[] | ((prev: Node<WorkflowNodeData>[]) => Node<WorkflowNodeData>[])
 ) => void;
 type SetEdges = (updater: Edge[] | ((prev: Edge[]) => Edge[])) => void;
 

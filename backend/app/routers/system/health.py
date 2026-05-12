@@ -81,7 +81,26 @@ async def _check_db() -> None:
 
 
 async def _check_redis() -> None:
-    """Probe redis readiness via ping."""
+    """Probe redis readiness via ping.
+
+    Prefer the application-wide :class:`GlobalRedisConnectionPool` so health
+    checks reuse the existing connection (no per-call socket setup). Fall back
+    to a one-shot ``redis.from_url`` only when the global pool is not
+    initialized (e.g. very early in app startup or in tests that skip pool
+    bootstrap).
+    """
+    from ...services.common.redis_queue_service import GlobalRedisConnectionPool
+
+    pool = GlobalRedisConnectionPool.get_instance()
+    if pool.is_initialized():
+        client = pool.get_connection()
+        if client is not None:
+            await client.ping()
+            return
+
+    # Fallback: pool not yet initialized — issue a one-shot ping using a
+    # transient client. Keep behavior identical to the previous implementation
+    # so health output is unchanged on cold-start.
     import redis.asyncio as redis
 
     from ...core.config import settings

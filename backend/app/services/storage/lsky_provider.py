@@ -5,8 +5,18 @@
 
 import asyncio
 import requests
+from requests.adapters import HTTPAdapter
 from typing import Dict, Any, Optional
 from .base import BaseStorageProvider, UploadResult
+
+
+# Module-level Session for HTTP connection pooling. Reusing a Session
+# across calls avoids repeatedly tearing down TCP/TLS handshakes for the
+# same upstream host, which is the dominant cost when the storage host
+# is geographically far from the app server.
+_session: requests.Session = requests.Session()
+_session.mount("https://", HTTPAdapter(pool_connections=10, pool_maxsize=20))
+_session.mount("http://", HTTPAdapter(pool_connections=10, pool_maxsize=20))
 
 
 class LskyProvider(BaseStorageProvider):
@@ -68,7 +78,7 @@ class LskyProvider(BaseStorageProvider):
         
         try:
             response = await asyncio.to_thread(
-                requests.post,
+                _session.post,
                 upload_url,
                 files=files,
                 headers=headers,
@@ -208,7 +218,7 @@ class LskyProvider(BaseStorageProvider):
         last_error = None
         for endpoint in candidate_urls:
             try:
-                response = requests.get(
+                response = _session.get(
                     endpoint,
                     headers=headers,
                     params={"page": page, "per_page": page_size},
@@ -324,7 +334,7 @@ class LskyProvider(BaseStorageProvider):
                 total_count = 0
 
                 while True:
-                    response = requests.get(
+                    response = _session.get(
                         endpoint,
                         headers=headers,
                         params={"page": page, "per_page": page_size},

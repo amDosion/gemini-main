@@ -64,7 +64,7 @@ export interface ImageHistoryListRowProps {
   >;
 }
 
-export const ImageHistoryListRow: React.FC<ImageHistoryListRowProps> = ({
+const ImageHistoryListRowComponent: React.FC<ImageHistoryListRowProps> = ({
   message,
   tone,
   modelLabel,
@@ -97,8 +97,7 @@ export const ImageHistoryListRow: React.FC<ImageHistoryListRowProps> = ({
   const isSelected = selectedMessageId
     ? selectedMessageId === message.id
     : Boolean(
-        activeImageUrl &&
-          previewAttachments.some((attachment) => attachment.url === activeImageUrl)
+        activeImageUrl && previewAttachments.some((attachment) => attachment.url === activeImageUrl)
       );
 
   const itemToneClass = isUserMessage
@@ -142,9 +141,7 @@ export const ImageHistoryListRow: React.FC<ImageHistoryListRowProps> = ({
         <div className="h-14 w-20 flex-shrink-0 rounded-lg overflow-hidden bg-slate-900 relative">
           <span
             className={`absolute top-1 left-1 z-10 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-medium border ${
-              isUserMessage
-                ? 'bg-blue-950/85 text-blue-200 border-blue-400/30'
-                : tone.modelPill
+              isUserMessage ? 'bg-blue-950/85 text-blue-200 border-blue-400/30' : tone.modelPill
             }`}
           >
             {isUserMessage ? <User size={9} /> : <Bot size={9} />}
@@ -256,3 +253,20 @@ export const ImageHistoryListRow: React.FC<ImageHistoryListRowProps> = ({
     </div>
   );
 };
+
+export const ImageHistoryListRow = React.memo(
+  ImageHistoryListRowComponent,
+  (prev, next) =>
+    prev.message.id === next.message.id &&
+    prev.message === next.message &&
+    prev.tone === next.tone &&
+    prev.modelLabel === next.modelLabel &&
+    prev.secondaryPromptBadgeText === next.secondaryPromptBadgeText &&
+    prev.selectedMessageId === next.selectedMessageId &&
+    prev.activeImageUrl === next.activeImageUrl &&
+    prev.openActionMenu === next.openActionMenu &&
+    prev.isFavorite === next.isFavorite &&
+    prev.getDisplayAttachments === next.getDisplayAttachments &&
+    prev.getPreviewAttachments === next.getPreviewAttachments &&
+    prev.extractPrompts === next.extractPrompts
+);

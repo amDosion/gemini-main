@@ -214,6 +214,75 @@ async def migrate_workflow_idempotency_schema(log_prefixes: Dict[str, str]):
         logger.warning(f"{log_prefixes['warning']} Failed to migrate workflow idempotency schema: {e}")
 
 
+async def ensure_performance_indexes(log_prefixes: Dict[str, str]):
+    """
+    兼容旧库：为已部署实例补建 declarative 模型新增的复合索引。
+
+    覆盖的索引：
+    - message_index(session_id, seq) + (session_id, mode, seq) — 修正之前只在注释里的索引
+    - workflow_executions(user_id, started_at) — 按用户最近优先
+    - node_executions(execution_id, node_id, status) — 节点状态更新
+    - config_profiles(user_id, provider_id text_pattern_ops) — LIKE 'google%' 前缀匹配
+
+    `CREATE INDEX IF NOT EXISTS` 幂等执行，已存在时不报错。
+    """
+    try:
+        from sqlalchemy import inspect, text
+        from .database import engine
+
+        inspector = inspect(engine)
+        table_names = set(inspector.get_table_names())
+
+        migrations: list[tuple[str, str, str]] = [
+            (
+                "message_index",
+                "idx_message_index_session_seq",
+                "CREATE INDEX IF NOT EXISTS idx_message_index_session_seq "
+                "ON message_index (session_id, seq)",
+            ),
+            (
+                "message_index",
+                "idx_message_index_session_mode_seq",
+                "CREATE INDEX IF NOT EXISTS idx_message_index_session_mode_seq "
+                "ON message_index (session_id, mode, seq)",
+            ),
+            (
+                "workflow_executions",
+                "ix_workflow_exec_user_started_desc",
+                "CREATE INDEX IF NOT EXISTS ix_workflow_exec_user_started_desc "
+                "ON workflow_executions (user_id, started_at)",
+            ),
+            (
+                "node_executions",
+                "ix_node_exec_execution_node_status",
+                "CREATE INDEX IF NOT EXISTS ix_node_exec_execution_node_status "
+                "ON node_executions (execution_id, node_id, status)",
+            ),
+            (
+                "config_profiles",
+                "ix_config_profiles_user_provider",
+                "CREATE INDEX IF NOT EXISTS ix_config_profiles_user_provider "
+                "ON config_profiles (user_id, provider_id text_pattern_ops)",
+            ),
+        ]
+
+        with engine.begin() as conn:
+            for table, index_name, sql in migrations:
+                if table not in table_names:
+                    continue
+                try:
+                    conn.execute(text(sql))
+                    logger.info(
+                        f"{log_prefixes['success']} Ensured index {index_name} on {table}"
+                    )
+                except Exception as inner:
+                    logger.warning(
+                        f"{log_prefixes['warning']} Failed to ensure {index_name}: {inner}"
+                    )
+    except Exception as e:
+        logger.warning(f"{log_prefixes['warning']} Failed to ensure performance indexes: {e}")
+
+
 async def initialize_redis_pool(log_prefixes: Dict[str, str]):
     """
     初始化全局 Redis 连接池
@@ -463,6 +532,7 @@ async def run_all_startup_tasks(
         migrate_user_admin_schema(log_prefixes),
         migrate_workflow_idempotency_schema(log_prefixes),
         migrate_ip_login_history_index(log_prefixes),
+        ensure_performance_indexes(log_prefixes),
     )
 
     # 4. Group 3: 清理任务（依赖迁移完成，并行）

@@ -366,7 +366,7 @@ const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
   return (
     <div
       className={`
-      relative w-full h-full min-w-[135px] min-h-0 overflow-visible bg-slate-800/90 backdrop-blur-sm rounded-md border shadow-lg
+      relative w-full h-full min-w-[135px] min-h-0 overflow-visible bg-slate-800/90 rounded-md border shadow-lg
       ${selected ? 'border-teal-500 shadow-teal-500/20' : statusInfo.border}
       transition-all hover:shadow-xl
     `}

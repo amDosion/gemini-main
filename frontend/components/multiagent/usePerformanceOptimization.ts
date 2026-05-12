@@ -38,7 +38,7 @@ export const usePerformanceOptimization = (
   edges: Edge[],
   options: UsePerformanceOptimizationOptions = {}
 ): UsePerformanceOptimizationResult => {
-  const { enableMetrics = true, debounceDelay = 300, largeWorkflowThreshold = 50 } = options;
+  const { enableMetrics = false, debounceDelay = 300, largeWorkflowThreshold = 50 } = options;
 
   const [metrics, setMetrics] = useState<PerformanceMetrics>({
     nodeCount: 0,
