@@ -9,22 +9,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import {
-  X,
-  Search,
-  FileText,
-  Loader2,
-  ChevronRight,
-  Copy,
-  Pencil,
-  Save,
-  Trash2,
-  Plus,
-  Video,
-  Mic,
-} from 'lucide-react';
-import { Node, Edge } from 'reactflow';
-import { CustomNodeData } from './CustomNode';
+import { Loader2, Trash2, X } from 'lucide-react';
 import {
   extractAudioUrls,
   extractImageUrls,
@@ -40,21 +25,18 @@ import {
   createWorkflowTemplateCategory,
   listWorkflowTemplateCategories,
 } from '../../services/workflowTemplateCategoryService';
-import { mergeRuntimeHints } from '../views/multiagent/runtimeHints';
 import { getErrorMessage } from '../../utils/errorMessage';
 import {
   type WorkflowTemplate,
-  type WorkflowTemplateSourceKind,
-  normalizeTemplateSourceKind,
-  normalizeTemplateRuntimeScope,
-  resolveTemplateOriginKind,
-  resolveTemplateOriginLabel,
-  resolveTemplateRuntimeLabel,
 } from './workflowTemplateTypes';
 
 // Re-export WorkflowTemplate for backwards compat（既有 5 个 importer 用 ./WorkflowTemplateSelector）
 export type { WorkflowTemplate } from './workflowTemplateTypes';
 import { migrateTemplate } from './workflowTemplateMigration';
+import { TemplateSearchFilter } from './templates/TemplateSearchFilter';
+import { TemplateListPanel } from './templates/TemplateListPanel';
+import { TemplatePreviewPanel } from './templates/TemplatePreviewPanel';
+import { TemplateFooterActions } from './templates/TemplateFooterActions';
 
 interface WorkflowTemplateSelectorProps {
   isOpen: boolean;
@@ -163,7 +145,6 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
       setEditingTemplateName('');
     }
   }, [selectedTemplate?.id]);
-
 
   const fetchCurrentUser = async () => {
     try {
@@ -646,620 +627,67 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
         </div>
 
         {/* Search and Filter */}
-        <div className="p-4 border-b border-slate-700 space-y-3 bg-slate-900/80">
-          {/* Search Bar */}
-          <div className="relative">
-            <Search
-              size={18}
-              className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500"
-            />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索模板名称、描述或标签..."
-              className="w-full pl-10 pr-4 py-2 border border-slate-700 rounded-lg bg-slate-800 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50"
-            />
-          </div>
-
-          {/* Category Filter */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex-1 overflow-x-auto">
-                <div className="inline-flex items-stretch rounded-lg border border-slate-700 overflow-hidden bg-slate-900 min-w-max">
-                  {categories.map((category, index) => (
-                    <button
-                      key={category}
-                      onClick={() => setSelectedCategory(category)}
-                      className={`px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
-                        index > 0 ? 'border-l border-slate-700' : ''
-                      } ${
-                        selectedCategory === category
-                          ? 'bg-teal-600 text-white'
-                          : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                      }`}
-                    >
-                      {category === 'all' ? '全部' : category}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {!isCreateCategoryDialogOpen && (
-                <div className="flex items-center gap-2">
-                  {hiddenLegacyStarterCopyCount > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setShowLegacyStarterCopies((prev) => !prev)}
-                      className={`px-3 py-1.5 text-xs border rounded-lg transition-colors ${
-                        showLegacyStarterCopies
-                          ? 'border-amber-500/40 bg-amber-500/10 text-amber-200'
-                          : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
-                      }`}
-                    >
-                      {showLegacyStarterCopies
-                        ? '隐藏遗留 Starter 副本'
-                        : `显示遗留 Starter 副本 ${hiddenLegacyStarterCopyCount}`}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsCreateCategoryDialogOpen(true);
-                      setCategoryActionFeedback(null);
-                    }}
-                    disabled={addingCategory}
-                    className="px-3 py-1.5 text-xs border border-slate-700 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-                  >
-                    <Plus size={13} />
-                    新增分类
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {hiddenLegacyStarterCopyCount > 0 && !showLegacyStarterCopies && (
-              <div className="text-[11px] text-amber-200 border border-amber-500/20 bg-amber-500/10 rounded-lg px-3 py-2">
-                已默认隐藏 {hiddenLegacyStarterCopyCount} 个遗留 Starter 副本，这些模板仍使用旧的
-                `agentName` 绑定。
-              </div>
-            )}
-
-            {categoryActionFeedback && (
-              <div
-                className={`text-xs ${
-                  categoryActionFeedback.startsWith('新增失败')
-                    ? 'text-rose-300'
-                    : 'text-emerald-300'
-                }`}
-              >
-                {categoryActionFeedback}
-              </div>
-            )}
-          </div>
-        </div>
+        <TemplateSearchFilter
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          categories={categories}
+          selectedCategory={selectedCategory}
+          setSelectedCategory={setSelectedCategory}
+          isCreateCategoryDialogOpen={isCreateCategoryDialogOpen}
+          setIsCreateCategoryDialogOpen={setIsCreateCategoryDialogOpen}
+          hiddenLegacyStarterCopyCount={hiddenLegacyStarterCopyCount}
+          showLegacyStarterCopies={showLegacyStarterCopies}
+          setShowLegacyStarterCopies={setShowLegacyStarterCopies}
+          addingCategory={addingCategory}
+          categoryActionFeedback={categoryActionFeedback}
+          setCategoryActionFeedback={setCategoryActionFeedback}
+        />
 
         {/* Content */}
         <div className="flex-1 overflow-hidden flex">
           {/* Template List */}
-          <div className="w-1/2 border-r border-slate-700 overflow-y-auto bg-slate-950/40">
-            {loading ? (
-              <div className="flex items-center justify-center h-full">
-                <Loader2 size={32} className="animate-spin text-teal-400" />
-              </div>
-            ) : error ? (
-              <div className="flex items-center justify-center h-full text-rose-300">
-                <div className="text-center">
-                  <p className="font-medium">加载失败</p>
-                  <p className="text-sm mt-1">{error}</p>
-                  <button
-                    onClick={fetchTemplates}
-                    className="mt-3 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-500"
-                  >
-                    重试
-                  </button>
-                </div>
-              </div>
-            ) : filteredTemplates.length === 0 ? (
-              <div className="flex items-center justify-center h-full text-slate-500">
-                <div className="text-center">
-                  <FileText size={48} className="mx-auto mb-2" />
-                  <p>没有找到匹配的模板</p>
-                </div>
-              </div>
-            ) : (
-              <div className="p-4 space-y-4">
-                {filteredTemplates.map((template) => (
-                  <button
-                    key={template.id}
-                    onClick={() => setSelectedTemplate(template)}
-                    className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
-                      selectedTemplate?.id === template.id
-                        ? 'border-teal-500 bg-teal-500/10'
-                        : 'border-slate-700 hover:border-slate-600 hover:bg-slate-800/60'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-slate-100 mb-1">{template.name}</h3>
-                        <p className="text-sm text-slate-400 mb-2 line-clamp-2">
-                          {template.description}
-                        </p>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-xs px-2 py-0.5 bg-slate-800 text-slate-300 rounded border border-slate-700">
-                            {template.category}
-                          </span>
-                          <span className="text-xs px-2 py-0.5 bg-slate-950/80 text-slate-300 rounded border border-slate-700">
-                            {resolveTemplateOriginLabel(template)}
-                          </span>
-                          {resolveTemplateRuntimeLabel(template) && (
-                            <span className="text-xs px-2 py-0.5 bg-amber-500/10 text-amber-200 rounded border border-amber-500/20">
-                              {resolveTemplateRuntimeLabel(template)}
-                            </span>
-                          )}
-                          {template.isLegacyStarterCopy && (
-                            <span className="text-xs px-2 py-0.5 bg-amber-600/15 text-amber-100 rounded border border-amber-500/30">
-                              遗留 Starter 副本
-                            </span>
-                          )}
-                          <span className="text-xs text-slate-500">
-                            {template.config.nodes.length || template.estimatedNodeCount || 0}{' '}
-                            个节点
-                          </span>
-                          {template.sampleResultSummary?.hasResult && (
-                            <span className="text-xs px-2 py-0.5 bg-emerald-500/20 text-emerald-200 rounded border border-emerald-500/30">
-                              有结果样例
-                            </span>
-                          )}
-                          {(template.sampleResultSummary?.videoCount || 0) > 0 && (
-                            <span className="text-xs px-2 py-0.5 bg-sky-500/15 text-sky-200 rounded border border-sky-500/30">
-                              视频 {template.sampleResultSummary?.videoCount || 0}
-                            </span>
-                          )}
-                          {((template.sampleResultSummary?.videoExtensionApplied || 0) > 0 ||
-                            (template.sampleResultSummary?.videoExtensionCount || 0) > 0) && (
-                            <span className="text-xs px-2 py-0.5 bg-orange-500/15 text-orange-200 rounded border border-orange-500/30">
-                              延长{' '}
-                              {template.sampleResultSummary?.videoExtensionApplied ||
-                                template.sampleResultSummary?.videoExtensionCount ||
-                                0}
-                            </span>
-                          )}
-                          {(template.sampleResultSummary?.totalDurationSeconds || 0) > 0 && (
-                            <span className="text-xs px-2 py-0.5 bg-cyan-500/15 text-cyan-200 rounded border border-cyan-500/30">
-                              {template.sampleResultSummary?.totalDurationSeconds || 0}s
-                            </span>
-                          )}
-                          {(((template.sampleResultSummary?.subtitleMode || '') !== '' &&
-                            template.sampleResultSummary?.subtitleMode !== 'none') ||
-                            (template.sampleResultSummary?.subtitleFileCount || 0) > 0) && (
-                            <span className="text-xs px-2 py-0.5 bg-emerald-500/15 text-emerald-200 rounded border border-emerald-500/30">
-                              字幕
-                              {(template.sampleResultSummary?.subtitleFileCount || 0) > 0
-                                ? ` · ${template.sampleResultSummary?.subtitleFileCount}`
-                                : ''}
-                            </span>
-                          )}
-                          {(template.sampleResultSummary?.audioCount || 0) > 0 && (
-                            <span className="text-xs px-2 py-0.5 bg-cyan-500/15 text-cyan-200 rounded border border-cyan-500/30">
-                              音频 {template.sampleResultSummary?.audioCount || 0}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <ChevronRight
-                        size={20}
-                        className={`flex-shrink-0 ml-2 ${
-                          selectedTemplate?.id === template.id ? 'text-teal-400' : 'text-slate-500'
-                        }`}
-                      />
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <TemplateListPanel
+            loading={loading}
+            error={error}
+            filteredTemplates={filteredTemplates}
+            selectedTemplate={selectedTemplate}
+            setSelectedTemplate={setSelectedTemplate}
+            fetchTemplates={fetchTemplates}
+          />
 
           {/* Template Preview */}
-          <div className="w-1/2 overflow-y-auto bg-slate-900/40">
-            {selectedTemplate ? (
-              <div className="p-6 space-y-4">
-                <div>
-                  {editingTemplateId === selectedTemplate.id ? (
-                    <div className="flex items-start gap-2 mb-2">
-                      <input
-                        type="text"
-                        value={editingTemplateName}
-                        onChange={(event) => setEditingTemplateName(event.target.value)}
-                        className="flex-1 px-3 py-2 border border-slate-700 rounded-lg bg-slate-800 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50"
-                        placeholder="输入模板标题"
-                      />
-                      <button
-                        onClick={handleSaveTemplateTitle}
-                        disabled={savingTemplateId === selectedTemplate.id}
-                        className="px-3 py-2 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-                        title="保存标题"
-                      >
-                        {savingTemplateId === selectedTemplate.id ? (
-                          <Loader2 size={13} className="animate-spin" />
-                        ) : (
-                          <Save size={13} />
-                        )}
-                        保存
-                      </button>
-                      <button
-                        onClick={handleCancelRenameTemplate}
-                        disabled={savingTemplateId === selectedTemplate.id}
-                        className="px-3 py-2 text-xs bg-slate-800 border border-slate-700 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="取消编辑"
-                      >
-                        取消
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <h3 className="text-lg font-semibold text-slate-100">
-                        {selectedTemplate.name}
-                      </h3>
-                      <button
-                        onClick={handleStartRenameTemplate}
-                        disabled={!canManageTemplate(selectedTemplate)}
-                        className="px-2.5 py-1.5 text-xs bg-slate-800 border border-slate-700 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-                        title={
-                          canManageTemplate(selectedTemplate) ? '编辑模板标题' : '只读模板不可编辑'
-                        }
-                      >
-                        <Pencil size={13} />
-                        编辑标题
-                      </button>
-                    </div>
-                  )}
-                  <p className="text-sm text-slate-400">{selectedTemplate.description}</p>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs px-2 py-1 bg-teal-500/20 text-teal-200 border border-teal-500/30 rounded font-medium">
-                    {selectedTemplate.category}
-                  </span>
-                  <span className="text-xs px-2 py-1 bg-slate-900 text-slate-200 border border-slate-700 rounded">
-                    {resolveTemplateOriginLabel(selectedTemplate)}
-                  </span>
-                  {resolveTemplateRuntimeLabel(selectedTemplate) && (
-                    <span className="text-xs px-2 py-1 bg-amber-500/10 text-amber-200 border border-amber-500/20 rounded">
-                      {resolveTemplateRuntimeLabel(selectedTemplate)}
-                    </span>
-                  )}
-                  {selectedTemplate.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="text-xs px-2 py-1 bg-slate-800 text-slate-300 border border-slate-700 rounded"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-
-                {selectedTemplate.origin?.isLocked && (
-                  <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-100">
-                    这是官方 Starter 模板。建议先复制后再编辑，系统会持续按 starter catalog
-                    维护这类模板。
-                  </div>
-                )}
-                {selectedTemplate.copiedFromStarterKey && !selectedTemplate.origin?.isLocked && (
-                  <div className="p-3 rounded-lg border border-slate-700 bg-slate-950/60 text-xs text-slate-300">
-                    当前模板来自 starter：
-                    <span className="text-slate-100">{selectedTemplate.copiedFromStarterKey}</span>
-                  </div>
-                )}
-                {selectedTemplate.isLegacyStarterCopy && (
-                  <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-100">
-                    这是遗留 Starter 副本：仍在通过 `agentName` 绑定旧 Seed Agent。建议复制官方新版
-                    Starter，或改成 `agentId / inlineUseActiveProfile`。
-                  </div>
-                )}
-
-                <div className="pt-4 border-t border-slate-700">
-                  <h4 className="text-sm font-semibold text-slate-200 mb-3">工作流结构</h4>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-400">节点数量</span>
-                      <span className="font-medium text-slate-200">
-                        {selectedTemplate.config.nodes.length ||
-                          selectedTemplate.estimatedNodeCount ||
-                          0}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-400">连接数量</span>
-                      <span className="font-medium text-slate-200">
-                        {selectedTemplate.config.edges.length ||
-                          selectedTemplate.estimatedEdgeCount ||
-                          0}
-                      </span>
-                    </div>
-                    {selectedTemplate.bindingStrategy && (
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-slate-400">绑定方式</span>
-                        <span className="font-medium text-slate-200">
-                          {selectedTemplate.bindingStrategy}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {(selectedTemplate.promptHint || selectedTemplate.promptExample) && (
-                  <div className="pt-4 border-t border-slate-700">
-                    <h4 className="text-sm font-semibold text-slate-200 mb-2">输入建议</h4>
-                    {selectedTemplate.promptHint && (
-                      <div className="text-xs text-slate-400 mb-2">
-                        {selectedTemplate.promptHint}
-                      </div>
-                    )}
-                    {selectedTemplate.promptExample && (
-                      <pre className="text-[11px] text-slate-300 bg-slate-950/80 border border-slate-700 rounded p-2 whitespace-pre-wrap break-all">
-                        {typeof selectedTemplate.promptExample === 'string'
-                          ? selectedTemplate.promptExample
-                          : JSON.stringify(selectedTemplate.promptExample, null, 2)}
-                      </pre>
-                    )}
-                    {selectedTemplate.requiresImage && (
-                      <div className="mt-2 text-[11px] text-amber-300">
-                        该流程需要输入参考图片（imageUrl）。
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div className="pt-4 border-t border-slate-700">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-semibold text-slate-200">模板最近结果</h4>
-                    {selectedTemplate.sampleResultUpdatedAt && (
-                      <span className="text-[11px] text-slate-500">
-                        {new Date(selectedTemplate.sampleResultUpdatedAt).toLocaleString()}
-                      </span>
-                    )}
-                  </div>
-                  {selectedTemplateHasSampleResult ? (
-                    <div className="space-y-2">
-                      {selectedTemplateSampleImageUrls.length > 0 && (
-                        <div
-                          className={`grid gap-2 ${selectedTemplateSampleImageUrls.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}
-                        >
-                          {selectedTemplateSampleImageUrls.map((imageUrl, index) => (
-                            <img
-                              key={`${selectedTemplate.id}-sample-image-${index}`}
-                              src={imageUrl}
-                              alt={`template-sample-${index + 1}`}
-                              className="w-full h-24 rounded border border-slate-700 object-cover bg-slate-950/70"
-                            />
-                          ))}
-                        </div>
-                      )}
-                      {selectedTemplateSampleVideoUrls.length > 0 && (
-                        <div className="space-y-2">
-                          <div className="text-xs text-slate-400 inline-flex items-center gap-1">
-                            <Video size={12} />
-                            视频结果（{selectedTemplateSampleVideoUrls.length}）
-                          </div>
-                          <div className="space-y-2">
-                            {selectedTemplateSampleVideoUrls.map((videoUrl, index) => (
-                              <video
-                                key={`${selectedTemplate.id}-sample-video-${index}`}
-                                src={videoUrl}
-                                controls
-                                className="w-full rounded border border-slate-700 bg-slate-950/70"
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {selectedTemplateSampleAudioUrls.length > 0 && (
-                        <div className="space-y-2">
-                          <div className="text-xs text-slate-400 inline-flex items-center gap-1">
-                            <Mic size={12} />
-                            音频结果（{selectedTemplateSampleAudioUrls.length}）
-                          </div>
-                          <div className="space-y-2">
-                            {selectedTemplateSampleAudioUrls.map((audioUrl, index) => (
-                              <audio
-                                key={`${selectedTemplate.id}-sample-audio-${index}`}
-                                src={audioUrl}
-                                controls
-                                className="w-full"
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {selectedTemplateSampleTextPreview && (
-                        <pre className="text-[11px] text-slate-300 bg-slate-950/80 border border-slate-700 rounded p-2 whitespace-pre-wrap break-all max-h-[130px] overflow-y-auto">
-                          {selectedTemplateSampleTextPreview}
-                        </pre>
-                      )}
-                      {selectedTemplate.sampleResultSummary?.primaryRuntime && (
-                        <div className="text-[11px] text-slate-500">
-                          runtime: {selectedTemplate.sampleResultSummary.primaryRuntime}
-                        </div>
-                      )}
-                      <div className="flex flex-wrap gap-1.5">
-                        {((selectedTemplate.sampleResultSummary?.videoExtensionApplied || 0) > 0 ||
-                          (selectedTemplate.sampleResultSummary?.videoExtensionCount || 0) > 0) && (
-                          <span className="text-[11px] px-2 py-0.5 rounded border border-orange-500/30 bg-orange-500/10 text-orange-200">
-                            延长{' '}
-                            {selectedTemplate.sampleResultSummary?.videoExtensionApplied ||
-                              selectedTemplate.sampleResultSummary?.videoExtensionCount}{' '}
-                            次
-                          </span>
-                        )}
-                        {(selectedTemplate.sampleResultSummary?.totalDurationSeconds || 0) > 0 && (
-                          <span className="text-[11px] px-2 py-0.5 rounded border border-cyan-500/30 bg-cyan-500/10 text-cyan-200">
-                            总时长 {selectedTemplate.sampleResultSummary?.totalDurationSeconds}s
-                          </span>
-                        )}
-                        {(((selectedTemplate.sampleResultSummary?.subtitleMode || '') !== '' &&
-                          selectedTemplate.sampleResultSummary?.subtitleMode !== 'none') ||
-                          (selectedTemplate.sampleResultSummary?.subtitleFileCount || 0) > 0) && (
-                          <span className="text-[11px] px-2 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-200">
-                            字幕
-                            {(selectedTemplate.sampleResultSummary?.subtitleFileCount || 0) > 0
-                              ? ` · ${selectedTemplate.sampleResultSummary?.subtitleFileCount}`
-                              : ''}
-                          </span>
-                        )}
-                        {(selectedTemplate.sampleResultSummary?.continuedFromVideo ||
-                          Boolean(selectedTemplate.sampleResultSummary?.continuationStrategy)) && (
-                          <span className="text-[11px] px-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/10 text-violet-200">
-                            {selectedTemplate.sampleResultSummary?.continuationStrategy ===
-                            'video_extension_chain'
-                              ? '官方续接'
-                              : '视频续接'}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-xs text-slate-500 border border-dashed border-slate-700 rounded p-2 bg-slate-800/30">
-                      暂无模板结果。加载并执行一次该模板后，会自动写入结果快照用于快速预览。
-                    </div>
-                  )}
-                </div>
-
-                <div className="pt-4 border-t border-slate-700">
-                  <h4 className="text-sm font-semibold text-slate-200 mb-3">节点列表</h4>
-                  <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                    {selectedTemplate.config.nodes.length > 0 ? (
-                      selectedTemplate.config.nodes.map((node) => (
-                        <div
-                          key={node.id}
-                          className="flex items-center gap-2 p-2 bg-slate-800/60 border border-slate-700 rounded text-sm"
-                        >
-                          <span className="text-lg">{node.data.icon}</span>
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-slate-100 truncate">
-                              {node.data.label}
-                            </div>
-                            <div className="text-xs text-slate-500 truncate">
-                              {node.data.description}
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-xs text-slate-500 p-2 border border-slate-700 rounded bg-slate-800/30">
-                        模板未包含节点定义。
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="pt-4 text-xs text-slate-500">
-                  <div>创建时间: {new Date(selectedTemplate.createdAt).toLocaleString()}</div>
-                  <div>更新时间: {new Date(selectedTemplate.updatedAt).toLocaleString()}</div>
-                </div>
-                {copyFeedback && (
-                  <div
-                    className={`text-xs ${
-                      copyFeedback.startsWith('复制失败') ? 'text-rose-300' : 'text-emerald-300'
-                    }`}
-                  >
-                    {copyFeedback}
-                  </div>
-                )}
-                {templateActionFeedback && (
-                  <div
-                    className={`text-xs ${
-                      templateActionFeedback.startsWith('删除失败') ||
-                      templateActionFeedback.startsWith('更新失败')
-                        ? 'text-rose-300'
-                        : 'text-emerald-300'
-                    }`}
-                  >
-                    {templateActionFeedback}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="flex items-center justify-center h-full text-slate-500">
-                <div className="text-center">
-                  <FileText size={48} className="mx-auto mb-2" />
-                  <p>选择一个模板查看详情</p>
-                </div>
-              </div>
-            )}
-          </div>
+          <TemplatePreviewPanel
+            selectedTemplate={selectedTemplate}
+            editingTemplateId={editingTemplateId}
+            editingTemplateName={editingTemplateName}
+            setEditingTemplateName={setEditingTemplateName}
+            savingTemplateId={savingTemplateId}
+            handleSaveTemplateTitle={handleSaveTemplateTitle}
+            handleCancelRenameTemplate={handleCancelRenameTemplate}
+            handleStartRenameTemplate={handleStartRenameTemplate}
+            canManageTemplate={canManageTemplate}
+            selectedTemplateHasSampleResult={selectedTemplateHasSampleResult}
+            selectedTemplateSampleImageUrls={selectedTemplateSampleImageUrls}
+            selectedTemplateSampleVideoUrls={selectedTemplateSampleVideoUrls}
+            selectedTemplateSampleAudioUrls={selectedTemplateSampleAudioUrls}
+            selectedTemplateSampleTextPreview={selectedTemplateSampleTextPreview}
+            copyFeedback={copyFeedback}
+            templateActionFeedback={templateActionFeedback}
+          />
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end p-4 border-t border-slate-700 bg-slate-900/80">
-          <div className="inline-flex items-stretch rounded-lg border border-slate-700 overflow-hidden bg-slate-900">
-            <button
-              onClick={handleCopyTemplate}
-              disabled={
-                !selectedTemplate || Boolean(copyingTemplateId) || Boolean(deletingTemplateId)
-              }
-              className="px-3.5 py-1.5 text-xs text-slate-200 bg-slate-800 hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-            >
-              {copyingTemplateId ? (
-                <Loader2 size={13} className="animate-spin" />
-              ) : (
-                <Copy size={13} />
-              )}
-              复制模板
-            </button>
-            <button
-              onClick={handleEditTemplate}
-              disabled={
-                !selectedTemplate ||
-                Boolean(copyingTemplateId) ||
-                Boolean(deletingTemplateId) ||
-                !canManageTemplate(selectedTemplate)
-              }
-              className="px-3.5 py-1.5 text-xs text-amber-100 bg-amber-900/30 hover:bg-amber-800/40 border-l border-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-              title={
-                selectedTemplate && !canManageTemplate(selectedTemplate)
-                  ? '只读模板不可直接编辑'
-                  : '加载到画布并进入编辑'
-              }
-            >
-              <Pencil size={13} />
-              编辑模板
-            </button>
-            <button
-              onClick={handleRequestDeleteTemplate}
-              disabled={
-                !selectedTemplate ||
-                Boolean(deletingTemplateId) ||
-                !canManageTemplate(selectedTemplate)
-              }
-              className="px-3.5 py-1.5 text-xs text-rose-200 bg-rose-900/30 hover:bg-rose-800/40 border-l border-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-              title={
-                selectedTemplate && !canManageTemplate(selectedTemplate)
-                  ? '只读模板不可删除'
-                  : '删除模板'
-              }
-            >
-              {deletingTemplateId ? (
-                <Loader2 size={13} className="animate-spin" />
-              ) : (
-                <Trash2 size={13} />
-              )}
-              删除模板
-            </button>
-            <button
-              onClick={handleLoadTemplate}
-              disabled={!selectedTemplate}
-              className="px-3.5 py-1.5 text-xs text-white bg-teal-600 hover:bg-teal-500 border-l border-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              加载到画布
-            </button>
-            <button
-              onClick={onClose}
-              className="px-3.5 py-1.5 text-xs text-slate-300 bg-slate-800 hover:bg-slate-700 border-l border-slate-700 transition-colors"
-            >
-              取消
-            </button>
-          </div>
-        </div>
+        <TemplateFooterActions
+          selectedTemplate={selectedTemplate}
+          copyingTemplateId={copyingTemplateId}
+          deletingTemplateId={deletingTemplateId}
+          canManageTemplate={canManageTemplate}
+          handleCopyTemplate={handleCopyTemplate}
+          handleEditTemplate={handleEditTemplate}
+          handleRequestDeleteTemplate={handleRequestDeleteTemplate}
+          handleLoadTemplate={handleLoadTemplate}
+          onClose={onClose}
+        />
 
         {pendingDeleteTemplate && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm">
