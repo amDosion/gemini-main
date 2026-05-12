@@ -44,6 +44,7 @@ import {
   extractServersFromDialogJson,
   buildPersistedRoot,
 } from './mcpTabHelpers';
+import { McpServerDialog } from './mcp/McpServerDialog';
 
 export const McpTab: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -68,7 +69,9 @@ export const McpTab: React.FC = () => {
   const [expandedToolsMap, setExpandedToolsMap] = useState<Record<string, boolean>>({});
   const [serverInvokeMap, setServerInvokeMap] = useState<Record<string, ServerInvokeState>>({});
   const [openMenuKey, setOpenMenuKey] = useState<string | null>(null);
-  const toolsCacheRef = useRef<Record<string, { expiresAt: number; tools: Array<{ name: string; description?: string }> }>>({});
+  const toolsCacheRef = useRef<
+    Record<string, { expiresAt: number; tools: Array<{ name: string; description?: string }> }>
+  >({});
   const skybridgeHostType = useMemo(() => getSkybridgeHostType(), []);
 
   useEscapeClose(isDialogOpen, () => setIsDialogOpen(false));
@@ -427,18 +430,20 @@ export const McpTab: React.FC = () => {
     setDeleteTargetKey(null);
   };
 
-  const openToolInvoke = async (serverKey: string, availableTools: Array<{ name: string; description?: string }>) => {
+  const openToolInvoke = async (
+    serverKey: string,
+    availableTools: Array<{ name: string; description?: string }>
+  ) => {
     const currentToolsState = serverToolsMap[serverKey];
     if (!currentToolsState?.loaded && !currentToolsState?.loading) {
       await loadServerTools(serverKey);
     }
 
-    const latestTools = (
-      serverToolsMap[serverKey]?.tools
-      || availableTools
-      || toolsCacheRef.current[serverKey]?.tools
-      || []
-    );
+    const latestTools =
+      serverToolsMap[serverKey]?.tools ||
+      availableTools ||
+      toolsCacheRef.current[serverKey]?.tools ||
+      [];
     const defaultToolName = latestTools[0]?.name || '';
     setServerInvokeMap((prev) => {
       const existing = prev[serverKey];
@@ -512,7 +517,9 @@ export const McpTab: React.FC = () => {
           return;
         }
       } catch (error: unknown) {
-        updateInvokeState(serverKey, { error: `Invalid JSON arguments: ${error instanceof Error ? error.message : 'parse error'}` });
+        updateInvokeState(serverKey, {
+          error: `Invalid JSON arguments: ${error instanceof Error ? error.message : 'parse error'}`,
+        });
         return;
       }
     }
@@ -530,7 +537,7 @@ export const McpTab: React.FC = () => {
         running: false,
         result: response.result,
         latencyMs: response.latencyMs,
-        error: response.isError ? (response.error || 'Tool returned error') : undefined,
+        error: response.isError ? response.error || 'Tool returned error' : undefined,
         mode: 'backend',
         notice,
       });
@@ -546,20 +553,27 @@ export const McpTab: React.FC = () => {
           running: false,
           result: response.structuredContent ?? response.content ?? response.result ?? response,
           latencyMs,
-          error: response.isError ? (typeof response.result === 'string' ? response.result : 'Tool returned error') : undefined,
+          error: response.isError
+            ? typeof response.result === 'string'
+              ? response.result
+              : 'Tool returned error'
+            : undefined,
           mode: 'skybridge',
           notice: `Executed via skybridge host (${getSkybridgeHostType() || 'unknown'})`,
         });
         return;
       } catch (skybridgeError: unknown) {
-        const reason = skybridgeError instanceof Error ? skybridgeError.message : 'Skybridge call failed';
+        const reason =
+          skybridgeError instanceof Error ? skybridgeError.message : 'Skybridge call failed';
         try {
           await invokeWithBackend(`Skybridge failed (${reason}); fell back to backend bridge.`);
           return;
         } catch (backendFallbackError: unknown) {
           updateInvokeState(serverKey, {
             running: false,
-            error: (backendFallbackError instanceof Error ? backendFallbackError.message : undefined) || 'Failed to invoke MCP tool',
+            error:
+              (backendFallbackError instanceof Error ? backendFallbackError.message : undefined) ||
+              'Failed to invoke MCP tool',
             mode: 'backend',
             notice: `Skybridge failed (${reason}); backend fallback failed too.`,
           });
@@ -589,14 +603,16 @@ export const McpTab: React.FC = () => {
               MCP Servers ({cards.length})
             </h2>
           </div>
-          <p className="text-xs text-slate-500">
-            Last updated: {formatTime(updatedAt)}
-          </p>
+          <p className="text-xs text-slate-500">Last updated: {formatTime(updatedAt)}</p>
           <p className="text-[11px] text-slate-500 mt-1">
             Tools are loaded on-demand and invokable per server (MCP bridge mode).
           </p>
           <p className="text-[11px] text-slate-500 mt-1">
-            Invocation route: {skybridgeHostType ? `skybridge host (${skybridgeHostType}) with backend fallback` : 'backend bridge only (no skybridge host detected)'}.
+            Invocation route:{' '}
+            {skybridgeHostType
+              ? `skybridge host (${skybridgeHostType}) with backend fallback`
+              : 'backend bridge only (no skybridge host detected)'}
+            .
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -650,11 +666,7 @@ export const McpTab: React.FC = () => {
               const hiddenToolsCount = Math.max(0, tools.length - TOOL_PREVIEW_COUNT);
               const isToolsLoaded = !!toolsState?.loaded;
               const isToolsLoading = !!toolsState?.loading;
-              const statusLabel = !card.enabled
-                ? 'Disabled'
-                : card.valid
-                  ? 'Ready'
-                  : 'Invalid';
+              const statusLabel = !card.enabled ? 'Disabled' : card.valid ? 'Ready' : 'Invalid';
               const statusClass = !card.enabled
                 ? 'bg-slate-500/10 text-slate-400 border-slate-500/30'
                 : card.valid
@@ -674,9 +686,14 @@ export const McpTab: React.FC = () => {
                       <div className="relative shrink-0" data-mcp-card-actions>
                         <button
                           type="button"
-                          onClick={() => setOpenMenuKey((prev) => (prev === card.key ? null : card.key))}
-                          className={`p-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-all ${isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
-                            }`}
+                          onClick={() =>
+                            setOpenMenuKey((prev) => (prev === card.key ? null : card.key))
+                          }
+                          className={`p-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-all ${
+                            isMenuOpen
+                              ? 'opacity-100'
+                              : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+                          }`}
                           title="Actions"
                         >
                           <MoreHorizontal size={14} />
@@ -720,7 +737,11 @@ export const McpTab: React.FC = () => {
                                 }}
                                 className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-800 rounded"
                               >
-                                <span>{isToolsExpanded ? 'Show less tools' : `Show all tools (+${hiddenToolsCount})`}</span>
+                                <span>
+                                  {isToolsExpanded
+                                    ? 'Show less tools'
+                                    : `Show all tools (+${hiddenToolsCount})`}
+                                </span>
                               </button>
                             )}
 
@@ -752,20 +773,22 @@ export const McpTab: React.FC = () => {
                       <span className="px-1.5 py-0.5 bg-indigo-500/10 text-indigo-400 text-[10px] font-medium rounded border border-indigo-500/20 uppercase">
                         {card.transport}
                       </span>
-                      <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded border ${statusClass}`}>
+                      <span
+                        className={`px-1.5 py-0.5 text-[10px] font-medium rounded border ${statusClass}`}
+                      >
                         {statusLabel}
                       </span>
                     </div>
                   </div>
 
-                  <div className="text-xs text-slate-500 font-mono break-all">
-                    {card.summary}
-                  </div>
+                  <div className="text-xs text-slate-500 font-mono break-all">{card.summary}</div>
 
                   {typeof card.config.introUrl === 'string' && card.config.introUrl.trim() && (
                     <button
                       type="button"
-                      onClick={() => window.open(card.config.introUrl, '_blank', 'noopener,noreferrer')}
+                      onClick={() =>
+                        window.open(card.config.introUrl, '_blank', 'noopener,noreferrer')
+                      }
                       className="mt-2 inline-flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300 transition-colors text-left break-all"
                       title={card.config.introUrl}
                     >
@@ -804,7 +827,9 @@ export const McpTab: React.FC = () => {
                       <div className="text-xs text-slate-500">Loading tools...</div>
                     )}
                     {!isToolsLoading && !isToolsLoaded && (
-                      <div className="text-xs text-slate-500">Tools are loaded on demand to reduce startup overhead.</div>
+                      <div className="text-xs text-slate-500">
+                        Tools are loaded on demand to reduce startup overhead.
+                      </div>
                     )}
                     {!isToolsLoading && isToolsLoaded && toolsState?.cacheHit && (
                       <div className="text-[10px] text-slate-500">Loaded from cache</div>
@@ -812,9 +837,12 @@ export const McpTab: React.FC = () => {
                     {!isToolsLoading && isToolsLoaded && toolsState?.error && (
                       <div className="text-xs text-amber-400">{toolsState.error}</div>
                     )}
-                    {!isToolsLoading && isToolsLoaded && !toolsState?.error && tools.length === 0 && (
-                      <div className="text-xs text-slate-500">No tools exposed</div>
-                    )}
+                    {!isToolsLoading &&
+                      isToolsLoaded &&
+                      !toolsState?.error &&
+                      tools.length === 0 && (
+                        <div className="text-xs text-slate-500">No tools exposed</div>
+                      )}
                     {!isToolsLoading && isToolsLoaded && !toolsState?.error && tools.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {visibleTools.map((tool) => (
@@ -831,7 +859,9 @@ export const McpTab: React.FC = () => {
                     {invokeState?.open && (
                       <div className="mt-2 rounded-lg border border-indigo-500/30 bg-indigo-950/20 p-2.5 space-y-2">
                         <div className="flex items-center justify-between gap-2">
-                          <div className="text-[11px] text-indigo-200 font-medium">Tool Invocation</div>
+                          <div className="text-[11px] text-indigo-200 font-medium">
+                            Tool Invocation
+                          </div>
                           <button
                             type="button"
                             onClick={() => closeToolInvoke(card.key)}
@@ -844,7 +874,12 @@ export const McpTab: React.FC = () => {
                         {tools.length > 0 ? (
                           <select
                             value={invokeState.toolName}
-                            onChange={(event) => updateInvokeState(card.key, { toolName: event.target.value, error: undefined })}
+                            onChange={(event) =>
+                              updateInvokeState(card.key, {
+                                toolName: event.target.value,
+                                error: undefined,
+                              })
+                            }
                             className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                           >
                             {tools.map((tool) => (
@@ -854,12 +889,19 @@ export const McpTab: React.FC = () => {
                             ))}
                           </select>
                         ) : (
-                          <div className="text-[11px] text-slate-400">Load tools first to invoke.</div>
+                          <div className="text-[11px] text-slate-400">
+                            Load tools first to invoke.
+                          </div>
                         )}
 
                         <textarea
                           value={invokeState.argsText}
-                          onChange={(event) => updateInvokeState(card.key, { argsText: event.target.value, error: undefined })}
+                          onChange={(event) =>
+                            updateInvokeState(card.key, {
+                              argsText: event.target.value,
+                              error: undefined,
+                            })
+                          }
                           className="w-full h-24 resize-y rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-[11px] font-mono text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                           spellCheck={false}
                         />
@@ -882,11 +924,14 @@ export const McpTab: React.FC = () => {
                         )}
                         {invokeState.mode && (
                           <div className="text-[10px] text-slate-400">
-                            Mode: {invokeState.mode === 'skybridge' ? 'Skybridge Host' : 'Backend Bridge'}
+                            Mode:{' '}
+                            {invokeState.mode === 'skybridge' ? 'Skybridge Host' : 'Backend Bridge'}
                           </div>
                         )}
                         {invokeState.latencyMs !== undefined && (
-                          <div className="text-[10px] text-slate-400">Latency: {invokeState.latencyMs} ms</div>
+                          <div className="text-[10px] text-slate-400">
+                            Latency: {invokeState.latencyMs} ms
+                          </div>
                         )}
                         {invokeState.result !== undefined && (
                           <pre className="max-h-44 overflow-auto rounded-md border border-slate-700 bg-slate-950 p-2 text-[10px] text-slate-200 whitespace-pre-wrap break-all">
@@ -896,7 +941,6 @@ export const McpTab: React.FC = () => {
                       </div>
                     )}
                   </div>
-
                 </div>
               );
             })}
@@ -904,85 +948,21 @@ export const McpTab: React.FC = () => {
         )}
       </div>
 
-      {isDialogOpen && (
-        <div className="fixed inset-0 z-[160] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-3xl bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
-              <h3 className="text-base md:text-lg font-semibold text-white">
-                {dialogMode === 'edit' ? 'Edit MCP Server' : 'New MCP Server'}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsDialogOpen(false)}
-                className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-                title="Close"
-              >
-                <X size={18} />
-              </button>
-            </div>
+      {/* Server 创建/编辑 Dialog 抽离至 ./mcp/McpServerDialog */}
+      <McpServerDialog
+        isOpen={isDialogOpen}
+        mode={dialogMode}
+        jsonText={dialogJsonText}
+        onJsonTextChange={setDialogJsonText}
+        introUrl={dialogIntroUrl}
+        onIntroUrlChange={setDialogIntroUrl}
+        introUrlError={dialogIntroUrlError}
+        dialogError={dialogError}
+        isSaving={isSaving}
+        onSave={handleSaveDialog}
+        onCancel={() => setIsDialogOpen(false)}
+      />
 
-            <div className="p-5 space-y-3">
-              <p className="text-xs text-slate-500">
-                Paste server JSON. Supported formats: <code className="font-mono">{"{ name, ...config }"}</code> or <code className="font-mono">{"{ mcpServers: { ... } }"}</code>.
-              </p>
-              <div className="space-y-1.5">
-                <label className="block text-xs text-slate-400">
-                  MCP Intro Website URL (optional)
-                </label>
-                <input
-                  type="text"
-                  value={dialogIntroUrl}
-                  onChange={(e) => setDialogIntroUrl(e.target.value)}
-                  placeholder="https://example.com/mcp-intro"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
-                  disabled={isSaving}
-                />
-                {dialogIntroUrlError && (
-                  <div className="rounded-lg border border-red-800/60 bg-red-900/20 px-3 py-2 text-xs text-red-200 flex items-center gap-2">
-                    <AlertTriangle size={14} />
-                    <span>{dialogIntroUrlError}</span>
-                  </div>
-                )}
-              </div>
-
-              <textarea
-                value={dialogJsonText}
-                onChange={(e) => setDialogJsonText(e.target.value)}
-                spellCheck={false}
-                className="w-full h-72 md:h-80 resize-y rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-xs md:text-sm font-mono text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
-                disabled={isSaving}
-              />
-
-              {dialogError && (
-                <div className="rounded-lg border border-red-800/60 bg-red-900/20 px-3 py-2 text-xs text-red-200 flex items-center gap-2">
-                  <AlertTriangle size={14} />
-                  <span>{dialogError}</span>
-                </div>
-              )}
-            </div>
-
-            <div className="px-5 py-4 border-t border-slate-800 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setIsDialogOpen(false)}
-                className="px-4 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors text-sm"
-                disabled={isSaving}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveDialog}
-                disabled={isSaving}
-                className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium inline-flex items-center gap-2 transition-colors"
-              >
-                <Save size={14} />
-                {isSaving ? 'Saving...' : 'Save'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       <ConfirmDialog
         isOpen={!!deleteTargetKey}
         title="Delete MCP Server"
