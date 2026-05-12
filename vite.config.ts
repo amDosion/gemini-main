@@ -157,7 +157,31 @@ export default defineConfig({
     chunkSizeWarningLimit: 500,
   },
   // 优化依赖预构建
+  // markdown 相关依赖虽然是动态 import (React.lazy)，仍需显式 include 以保证 dev 服务启动时
+  // 同步完成 pre-bundle。否则首次 lazy load 触发懒优化，chunk 哈希在重新发现期间可能失效，
+  // 导致 react-syntax-highlighter 等子 chunk 出现 ERR_FAILED。
   optimizeDeps: {
-    include: ['react', 'react-dom', 'lucide-react'],
+    include: [
+      'react',
+      'react-dom',
+      'lucide-react',
+      'react-markdown',
+      'rehype-raw',
+      'rehype-sanitize',
+      'react-syntax-highlighter',
+      'react-syntax-highlighter/dist/esm/styles/prism',
+      'react-syntax-highlighter/dist/esm/languages/prism/bash',
+      'react-syntax-highlighter/dist/esm/languages/prism/css',
+      'react-syntax-highlighter/dist/esm/languages/prism/javascript',
+      'react-syntax-highlighter/dist/esm/languages/prism/json',
+      'react-syntax-highlighter/dist/esm/languages/prism/jsx',
+      'react-syntax-highlighter/dist/esm/languages/prism/markdown',
+      'react-syntax-highlighter/dist/esm/languages/prism/markup',
+      'react-syntax-highlighter/dist/esm/languages/prism/python',
+      'react-syntax-highlighter/dist/esm/languages/prism/sql',
+      'react-syntax-highlighter/dist/esm/languages/prism/tsx',
+      'react-syntax-highlighter/dist/esm/languages/prism/typescript',
+      'react-syntax-highlighter/dist/esm/languages/prism/yaml',
+    ],
   },
 });
