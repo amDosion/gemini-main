@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { ViewSideParamsPanel } from '../../common/ViewSideParamsPanel';
 import { Message, AppMode, Attachment, ChatOptions } from '../../../types/types';
 import { ModeControlsCoordinator } from '../../../coordinators/ModeControlsCoordinator';
 import ChatEditInputArea from '../../chat/ChatEditInputArea';
@@ -189,48 +189,38 @@ export const MaskEditMain: React.FC<MaskEditMainProps> = (props) => {
         displayCanvasRef={displayCanvasRef}
       />
 
-      <div className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900/50 flex flex-col h-full overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-800/50 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <SlidersHorizontal size={14} className="text-purple-400" />
-            <span className="text-xs font-bold text-white">Mask 参数</span>
-          </div>
-          <button
-            onClick={resetParams}
-            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-            title="重置为默认值"
-          >
-            <RotateCcw size={12} />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+      <ViewSideParamsPanel
+        title="Mask 参数"
+        iconClass="text-purple-400"
+        resetParams={resetParams}
+        controlsContent={
           <ModeControlsCoordinator
             mode={editMode}
             providerId={providerId || 'google'}
             controls={controls}
           />
-        </div>
-
-        <ChatEditInputArea
-          onSend={handleSend}
-          isLoading={loadingState !== 'idle'}
-          onStop={onStop}
-          mode={editMode}
-          activeAttachments={activeAttachments}
-          onAttachmentsChange={setActiveAttachments}
-          activeImageUrl={activeImageUrl}
-          onActiveImageUrlChange={setActiveImageUrl}
-          messages={messages}
-          sessionId={currentSessionId ?? null}
-          initialPrompt={initialPrompt}
-          initialAttachments={initialAttachments}
-          providerId={providerId}
-          controls={controls}
-          externalDisabled={Boolean(maskInputDisabledReason)}
-          externalDisabledReason={maskInputDisabledReason}
-        />
-      </div>
+        }
+        editAreaContent={
+          <ChatEditInputArea
+            onSend={handleSend}
+            isLoading={loadingState !== 'idle'}
+            onStop={onStop}
+            mode={editMode}
+            activeAttachments={activeAttachments}
+            onAttachmentsChange={setActiveAttachments}
+            activeImageUrl={activeImageUrl}
+            onActiveImageUrlChange={setActiveImageUrl}
+            messages={messages}
+            sessionId={currentSessionId ?? null}
+            initialPrompt={initialPrompt}
+            initialAttachments={initialAttachments}
+            providerId={providerId}
+            controls={controls}
+            externalDisabled={Boolean(maskInputDisabledReason)}
+            externalDisabledReason={maskInputDisabledReason}
+          />
+        }
+      />
     </div>
   );
 };

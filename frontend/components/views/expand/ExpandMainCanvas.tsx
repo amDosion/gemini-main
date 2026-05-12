@@ -5,14 +5,8 @@
  */
 
 import React from 'react';
-import {
-  AlertCircle,
-  Expand,
-  Grid,
-  Image as ImageIcon,
-  RotateCcw,
-  SlidersHorizontal,
-} from 'lucide-react';
+import { AlertCircle, Expand, Grid, Image as ImageIcon } from 'lucide-react';
+import { ViewSideParamsPanel } from '../../common/ViewSideParamsPanel';
 import { ImageCanvasControls } from '../../common/ImageCanvasControls';
 import {
   ImageCarouselArrows,
@@ -284,45 +278,35 @@ export const ExpandMainCanvas: React.FC<ExpandMainCanvasProps> = ({
         )}
       </div>
 
-      <div className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900/50 flex flex-col h-full overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-800/50 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <SlidersHorizontal size={14} className="text-orange-400" />
-            <span className="text-xs font-bold text-white">扩图参数</span>
-          </div>
-          <button
-            onClick={resetParams}
-            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-            title="重置为默认值"
-          >
-            <RotateCcw size={12} />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+      <ViewSideParamsPanel
+        title="扩图参数"
+        iconClass="text-orange-400"
+        resetParams={resetParams}
+        controlsContent={
           <ModeControlsCoordinator
             mode={expandMode}
             providerId={providerId || 'google'}
             controls={controls}
           />
-        </div>
-
-        <ChatEditInputArea
-          onSend={handleSend}
-          isLoading={loadingState !== 'idle'}
-          onStop={onStop}
-          mode={expandMode}
-          activeAttachments={activeAttachments}
-          onAttachmentsChange={setActiveAttachments}
-          activeImageUrl={activeImageUrl}
-          onActiveImageUrlChange={setActiveImageUrl}
-          messages={messages}
-          sessionId={currentSessionId ?? null}
-          initialAttachments={initialAttachments}
-          providerId={providerId}
-          controls={controls}
-        />
-      </div>
+        }
+        editAreaContent={
+          <ChatEditInputArea
+            onSend={handleSend}
+            isLoading={loadingState !== 'idle'}
+            onStop={onStop}
+            mode={expandMode}
+            activeAttachments={activeAttachments}
+            onAttachmentsChange={setActiveAttachments}
+            activeImageUrl={activeImageUrl}
+            onActiveImageUrlChange={setActiveImageUrl}
+            messages={messages}
+            sessionId={currentSessionId ?? null}
+            initialAttachments={initialAttachments}
+            providerId={providerId}
+            controls={controls}
+          />
+        }
+      />
     </div>
   );
 };

@@ -12,23 +12,16 @@ import {
   Maximize2,
   Pause,
   Play,
-  RotateCcw,
-  SlidersHorizontal,
   Video as VideoIcon,
   Volume2,
   VolumeX,
 } from 'lucide-react';
-import type {
-  AppMode,
-  Attachment,
-  ChatOptions,
-  Message,
-  ModelConfig,
-} from '../../../types/types';
+import type { AppMode, Attachment, ChatOptions, Message, ModelConfig } from '../../../types/types';
 import type { ControlsState } from '../../../controls/types';
 import type { ModeControlsSchema } from '../../../hooks/useModeControlsSchema';
 import { ModeControlsCoordinator } from '../../../coordinators/ModeControlsCoordinator';
 import ChatEditInputArea from '../../chat/ChatEditInputArea';
+import { ViewSideParamsPanel } from '../../common/ViewSideParamsPanel';
 
 export interface VideoMainCanvasProps {
   // workspace state
@@ -70,7 +63,12 @@ export interface VideoMainCanvasProps {
   videoControlsSchemaError: string | null;
   resetParams: () => void;
   // input area
-  handleSend: (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => void;
+  handleSend: (
+    text: string,
+    options: ChatOptions,
+    attachments: Attachment[],
+    mode: AppMode
+  ) => void;
   onStop: () => void;
   activeAttachments: Attachment[];
   setActiveAttachments: React.Dispatch<React.SetStateAction<Attachment[]>>;
@@ -393,27 +391,16 @@ export const VideoMainCanvas: React.FC<VideoMainCanvasProps> = ({
         )}
       </div>
 
-      <div className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900/50 flex flex-col h-full overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-800/50 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <SlidersHorizontal size={14} className="text-indigo-400" />
-            <span className="text-xs font-bold text-white">视频参数</span>
-          </div>
-          <button
-            onClick={resetParams}
-            disabled={
-              !videoControlsSchema ||
-              isLoadingVideoControlsSchema ||
-              Boolean(videoControlsSchemaError)
-            }
-            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title="重置为默认值"
-          >
-            <RotateCcw size={12} />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+      <ViewSideParamsPanel
+        title="视频参数"
+        iconClass="text-indigo-400"
+        resetParams={resetParams}
+        resetDisabled={
+          !videoControlsSchema ||
+          isLoadingVideoControlsSchema ||
+          Boolean(videoControlsSchemaError)
+        }
+        controlsContent={
           <ModeControlsCoordinator
             mode={videoMode}
             providerId={resolvedProviderId}
@@ -423,26 +410,27 @@ export const VideoMainCanvas: React.FC<VideoMainCanvasProps> = ({
             controlsSchemaLoading={isLoadingVideoControlsSchema}
             controlsSchemaError={videoControlsSchemaError}
           />
-        </div>
-
-        <ChatEditInputArea
-          onSend={handleSend}
-          isLoading={loadingState !== 'idle'}
-          onStop={onStop}
-          mode={videoMode}
-          activeAttachments={activeAttachments}
-          onAttachmentsChange={setActiveAttachments}
-          activeImageUrl={activeImageUrl}
-          onActiveImageUrlChange={setActiveImageUrl}
-          messages={messages}
-          sessionId={sessionId ?? null}
-          initialPrompt={initialPrompt}
-          providerId={resolvedProviderId}
-          controls={controls}
-          externalDisabled={Boolean(videoControlsStatusMessage)}
-          externalDisabledReason={videoControlsStatusMessage}
-        />
-      </div>
+        }
+        editAreaContent={
+          <ChatEditInputArea
+            onSend={handleSend}
+            isLoading={loadingState !== 'idle'}
+            onStop={onStop}
+            mode={videoMode}
+            activeAttachments={activeAttachments}
+            onAttachmentsChange={setActiveAttachments}
+            activeImageUrl={activeImageUrl}
+            onActiveImageUrlChange={setActiveImageUrl}
+            messages={messages}
+            sessionId={sessionId ?? null}
+            initialPrompt={initialPrompt}
+            providerId={resolvedProviderId}
+            controls={controls}
+            externalDisabled={Boolean(videoControlsStatusMessage)}
+            externalDisabledReason={videoControlsStatusMessage}
+          />
+        }
+      />
     </div>
   );
 };
