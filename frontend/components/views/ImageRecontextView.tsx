@@ -2,13 +2,8 @@ import React, { useState, useRef, useEffect, useMemo, useCallback, memo } from '
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
 import { Sparkles, Layers, Bot, SlidersHorizontal, RotateCcw } from 'lucide-react';
 import { useImageCanvas } from '../../hooks/useImageCanvas';
-import { ImageCanvasControls } from '../common/ImageCanvasControls';
-import {
-  ImageCarouselArrows,
-  ImageCarouselThumbnails,
-  type CarouselMediaItem,
-} from '../common/ImageCarouselControls';
-import { ImageCompare } from '../common/ImageCompare';
+import { ImageCarouselThumbnails } from '../common/ImageCarouselControls';
+import { ImageWorkspaceCanvas } from '../common/ImageWorkspaceCanvas';
 import { GenViewLayout } from '../common/GenViewLayout';
 import { ThinkingBlock } from '../message/ThinkingBlock';
 import { useToastContext } from '../../contexts/ToastContext';
@@ -49,7 +44,7 @@ const arePropsEqual = (prevProps: ImageRecontextViewProps, nextProps: ImageRecon
   return true;
 };
 
-// 复用 ImageEditMainCanvas 组件（从 ImageEditView 导入或复制）
+// 复用共享的 ImageWorkspaceCanvas（components/common/ImageWorkspaceCanvas.tsx）
 type ImageEditMainCanvasProps = {
   loadingState: string;
   isCompareMode: boolean;
@@ -76,202 +71,68 @@ type ImageEditMainCanvasProps = {
   getStableUrl: (att: Attachment) => string | null;
 };
 
+const RECONTEXT_EMPTY_STATE = (
+  <div className="text-center text-slate-600 pointer-events-none flex flex-col items-center gap-4 max-w-md">
+    <Sparkles size={48} className="opacity-20" />
+    <div>
+      <h3 className="text-xl font-bold text-slate-500 mb-2">Recontext Editor</h3>
+      <p className="text-sm opacity-60">上传图片并调整其上下文环境</p>
+    </div>
+  </div>
+);
+
 const ImageEditMainCanvas = memo(
   ({
-    loadingState,
-    isCompareMode,
-    activeAttachments,
-    activeImageUrl,
-    originalImageUrl,
-    zoom,
-    isDragging,
-    canvasStyle,
-    onWheel,
-    onMouseDown,
-    onMouseMove,
-    onMouseUp,
-    onZoomIn,
-    onZoomOut,
-    onReset,
-    onFullscreen,
-    onExpand,
-    onToggleCompare,
     carouselIndex,
     onCarouselPrev,
     onCarouselNext,
     onCarouselSelect,
     getStableUrl,
-  }: ImageEditMainCanvasProps) => {
-    const cursor = isCompareMode
-      ? 'default'
-      : isDragging
-        ? 'grabbing'
-        : activeImageUrl
-          ? 'grab'
-          : 'default';
-    const isMultiImageMode = activeAttachments.length > 1;
-    const currentDisplayUrl =
-      isMultiImageMode && activeAttachments[carouselIndex]
-        ? activeAttachments[carouselIndex].url ||
-          activeAttachments[carouselIndex].tempUrl ||
-          getStableUrl(activeAttachments[carouselIndex])
-        : activeImageUrl;
-    const carouselItems = useMemo<CarouselMediaItem[]>(
-      () =>
-        activeAttachments.map((att, idx) => {
-          const thumbUrl = att.url || att.tempUrl || getStableUrl(att);
-          return {
-            id: att.id || `${idx}`,
-            url: thumbUrl,
-            thumbUrl,
-            alt: `重上下文结果 ${idx + 1}`,
-          };
-        }),
-      [activeAttachments, getStableUrl]
-    );
-
-    return (
-      <div
-        className="flex-1 w-full h-full select-none flex flex-col relative"
-        onWheel={isCompareMode ? undefined : onWheel}
-        onMouseDown={isCompareMode ? undefined : onMouseDown}
-        onMouseMove={isCompareMode ? undefined : onMouseMove}
-        onMouseUp={isCompareMode ? undefined : onMouseUp}
-        onMouseLeave={isCompareMode ? undefined : onMouseUp}
-        style={{ cursor }}
-      >
-        {/* Checkerboard Background */}
-        <div
-          className="absolute inset-0 opacity-20 pointer-events-none"
-          style={{
-            backgroundImage: `
-                               linear-gradient(45deg, #334155 25%, transparent 25%), 
-                               linear-gradient(-45deg, #334155 25%, transparent 25%), 
-                               linear-gradient(45deg, transparent 75%, #334155 75%), 
-                               linear-gradient(-45deg, transparent 75%, #334155 75%)
-                           `,
-            backgroundSize: '20px 20px',
-            backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
-          }}
-        />
-
-        {/* Canvas Header */}
-        <div className="absolute top-4 left-4 z-10 pointer-events-none">
-          <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-4 py-1.5 text-xs font-medium text-slate-300 flex items-center gap-2 shadow-lg">
-            <Sparkles size={12} className="text-yellow-400" />
-            {isCompareMode
-              ? '对比模式'
-              : isMultiImageMode
-                ? `重上下文结果 (${carouselIndex + 1}/${activeAttachments.length})`
-                : activeAttachments.length > 0 && activeImageUrl === activeAttachments[0].url
-                  ? 'Source Preview'
-                  : 'Recontext Editor'}
-            <span className="opacity-50">|</span>
-            <span className="font-mono text-[10px] opacity-70">{Math.round(zoom * 100)}%</span>
-          </div>
-        </div>
-
-        {/* Main Image Display */}
-        <div className="flex-1 flex items-center justify-center p-0 w-full h-full">
-          {loadingState !== 'idle' ? (
-            (() => {
-              let statusText = 'Processing Image...';
-              if (loadingState === 'uploading') {
-                statusText = '上传图片中...';
-              } else if (loadingState === 'loading') {
-                statusText = '重新上下文处理中，正在调整图片上下文...';
-              } else if (loadingState === 'streaming') {
-                statusText = '流式处理中...';
-              }
-
-              return (
-                <div className="flex flex-col items-center gap-4 pointer-events-none">
-                  <div className="relative">
-                    <div className="w-20 h-20 border-4 border-yellow-500/30 border-t-yellow-500 rounded-full animate-spin"></div>
-                  </div>
-                  <p className="text-slate-400 animate-pulse">{statusText}</p>
-                </div>
-              );
-            })()
-          ) : isCompareMode && originalImageUrl && currentDisplayUrl ? (
-            <div
-              className="relative shadow-2xl transition-transform duration-75 ease-out"
-              style={canvasStyle}
-            >
-              <ImageCompare
-                beforeImage={originalImageUrl}
-                afterImage={currentDisplayUrl}
-                beforeLabel="原图"
-                afterLabel="重上下文结果"
-                accentColor="orange"
-                className="max-w-none rounded-lg border border-slate-800"
-                style={{ maxHeight: '80vh', maxWidth: '80vw' }}
-              />
-            </div>
-          ) : currentDisplayUrl ? (
-            <>
-              <ImageCarouselArrows
-                itemCount={activeAttachments.length}
-                onPrev={onCarouselPrev}
-                onNext={onCarouselNext}
-              />
-              <div
-                className="relative shadow-2xl group transition-transform duration-75 ease-out"
-                style={canvasStyle}
-              >
-                <img
-                  src={currentDisplayUrl}
-                  className="max-w-none rounded-lg border border-slate-800 pointer-events-none"
-                  style={{ maxHeight: '70vh', maxWidth: '70vw' }}
-                  alt="Main Canvas"
-                />
-              </div>
-            </>
-          ) : (
-            <div className="text-center text-slate-600 pointer-events-none flex flex-col items-center gap-4 max-w-md">
-              <Sparkles size={48} className="opacity-20" />
-              <div>
-                <h3 className="text-xl font-bold text-slate-500 mb-2">Recontext Editor</h3>
-                <p className="text-sm opacity-60">上传图片并调整其上下文环境</p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {isMultiImageMode && loadingState === 'idle' && (
+    ...rest
+  }: ImageEditMainCanvasProps) => (
+    <ImageWorkspaceCanvas
+      {...rest}
+      headerIcon={Sparkles}
+      headerIconClassName="text-yellow-400"
+      headerLabel="Recontext Editor"
+      multiImageLabelPrefix="重上下文结果"
+      spinnerClassName="border-yellow-500/30 border-t-yellow-500"
+      loadingText={{
+        default: 'Processing Image...',
+        uploading: '上传图片中...',
+        loading: '重新上下文处理中，正在调整图片上下文...',
+        streaming: '流式处理中...',
+      }}
+      compareConfig={{
+        beforeLabel: '原图',
+        afterLabel: '重上下文结果',
+        accentColor: 'orange',
+      }}
+      controlsAccentColor="orange"
+      carousel={{
+        carouselIndex,
+        onCarouselPrev,
+        onCarouselNext,
+        onCarouselSelect,
+        getStableUrl,
+        altFor: (idx) => `重上下文结果 ${idx + 1}`,
+        renderThumbnails: ({ items, currentIndex, onSelect }) => (
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 bg-slate-950/85 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl">
             <ImageCarouselThumbnails
-              items={carouselItems}
-              currentIndex={carouselIndex}
-              onSelect={onCarouselSelect}
+              items={items}
+              currentIndex={currentIndex}
+              onSelect={onSelect}
               accentTone="orange"
               thumbnailSize={52}
               panelClassName="flex items-center gap-2 py-2 px-3"
               counterClassName="ml-1 text-xs text-slate-400 font-mono"
             />
           </div>
-        )}
-
-        {/* Floating Controls */}
-        {currentDisplayUrl && (
-          <div className="absolute bottom-6 right-6 z-20">
-            <ImageCanvasControls
-              zoom={zoom}
-              onZoomIn={onZoomIn}
-              onZoomOut={onZoomOut}
-              onReset={onReset}
-              onFullscreen={onFullscreen}
-              downloadUrl={currentDisplayUrl}
-              onExpand={onExpand}
-              onToggleCompare={onToggleCompare}
-              isCompareMode={isCompareMode}
-              accentColor="orange"
-            />
-          </div>
-        )}
-      </div>
-    );
-  }
+        ),
+      }}
+      emptyState={RECONTEXT_EMPTY_STATE}
+    />
+  )
 );
 
 ImageEditMainCanvas.displayName = 'ImageEditMainCanvas';
