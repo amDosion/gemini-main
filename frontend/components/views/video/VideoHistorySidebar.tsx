@@ -14,8 +14,8 @@ import type {
 import type { ActionMenuPosition } from '../../../hooks/useActionMenu';
 import type { ActionMenuAnchor, HoverPromptPreview } from './types';
 import { VideoHistoryRow } from './VideoHistoryRow';
-import { VideoHistoryActionMenuPortal } from './VideoHistoryActionMenuPortal';
-import { VideoHoverPreviewPortal } from './VideoHoverPreviewPortal';
+import { HistoryActionMenuPortal } from '../../common/HistoryActionMenuPortal';
+import { HoverPromptPreviewPortal } from '../../common/HoverPromptPreviewPortal';
 
 export interface VideoHistorySidebarProps {
   filteredHistoryBatches: Message[];
@@ -125,7 +125,7 @@ export const VideoHistorySidebar: React.FC<VideoHistorySidebarProps> = ({
       )}
 
       {openActionMenu && (
-        <VideoHistoryActionMenuPortal
+        <HistoryActionMenuPortal
           openActionMenu={openActionMenu}
           actionMenuPosition={actionMenuPosition}
           actionMenuPanelRef={actionMenuPanelRef}
@@ -135,22 +135,56 @@ export const VideoHistorySidebar: React.FC<VideoHistorySidebarProps> = ({
           isFavoritePending={isFavoritePending}
           toggleFavorite={toggleFavorite}
           deleteItem={deleteItem}
-          hoverPreview={hoverPreview}
+          hoverPreviewMessageId={hoverPreview?.messageId ?? null}
+          zClass="z-[130]"
         />
       )}
 
       {hoverPreview && (
-        <VideoHoverPreviewPortal
-          hoverPreview={hoverPreview}
-          hoverPreviewPosition={hoverPreviewPosition}
-          hoverPreviewSize={hoverPreviewSize}
-          hoverPreviewPanelRef={hoverPreviewPanelRef}
+        <HoverPromptPreviewPortal
+          preview={hoverPreview}
+          position={hoverPreviewPosition}
+          size={hoverPreviewSize}
+          panelRef={hoverPreviewPanelRef}
           clearHidePreviewTimer={clearHidePreviewTimer}
           scheduleHideHoverPreview={scheduleHideHoverPreview}
           handleCopyOptimizedPrompt={handleCopyOptimizedPrompt}
           copiedPreviewMessageId={copiedPreviewMessageId}
           handlePreviewResizeMouseDown={handlePreviewResizeMouseDown}
           isResizingPreview={isResizingPreview}
+          zClass="z-[140]"
+          extraContent={
+            (hoverPreview.extensionCount > 0 ||
+              hoverPreview.totalDurationSeconds ||
+              hoverPreview.strategyLabel ||
+              hoverPreview.subtitleLabel) && (
+              <div className="mt-3 border-t border-slate-800 pt-3">
+                <p className="text-[10px] uppercase tracking-wider text-cyan-400">视频信息</p>
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
+                  {hoverPreview.extensionCount > 0 && (
+                    <span className="inline-flex items-center rounded-full border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-cyan-200">
+                      延长 {hoverPreview.extensionCount} 次
+                    </span>
+                  )}
+                  {hoverPreview.totalDurationSeconds && (
+                    <span className="inline-flex items-center rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-emerald-200">
+                      总时长 {hoverPreview.totalDurationSeconds}s
+                    </span>
+                  )}
+                  {hoverPreview.strategyLabel && (
+                    <span className="inline-flex items-center rounded-full border border-slate-600 bg-slate-800/80 px-1.5 py-0.5 text-slate-300">
+                      {hoverPreview.strategyLabel}
+                    </span>
+                  )}
+                  {hoverPreview.subtitleLabel && (
+                    <span className="inline-flex items-center rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 px-1.5 py-0.5 text-fuchsia-200">
+                      {hoverPreview.subtitleLabel}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )
+          }
         />
       )}
     </div>

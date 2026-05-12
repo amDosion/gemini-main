@@ -1,52 +1,62 @@
 /**
- * ImageHistorySidebar 行操作菜单 Portal（收藏 / 删除）。
+ * 通用历史行操作菜单 Portal（收藏 / 删除）。
  *
- * 1:1 抽离自 `ImageHistorySidebar.tsx` L729-783 action menu portal。
+ * 由 `ImageHistorySidebar` / `ImageExpandView` / `VideoHistorySidebar` 共用。
+ *
+ * 与原 `ImageHistoryActionMenuPortal` + `VideoHistoryActionMenuPortal` 合并而来：
+ *  - 收敛关闭 API 为单个 `closeActionMenu` 回调（Image 侧合成 `setOpen(null) + setPos(null)`）
+ *  - 通过 `zClass` 切换层级（Image=`z-[90]`、Video=`z-[130]`）
  */
 
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { Star, Trash2 } from 'lucide-react';
-import type {
-  ImageHistoryActionMenuAnchor,
-  ImageHistoryActionMenuPosition,
-} from './imageHistorySidebarHelpers';
 
-export interface ImageHistoryActionMenuPortalProps {
-  openActionMenu: ImageHistoryActionMenuAnchor;
-  actionMenuPosition: ImageHistoryActionMenuPosition | null;
+export interface HistoryActionMenuAnchor {
+  messageId: string;
+  anchorX: number;
+  anchorY: number;
+}
+
+export interface HistoryActionMenuPosition {
+  top: number;
+  left: number;
+}
+
+export interface HistoryActionMenuPortalProps {
+  openActionMenu: HistoryActionMenuAnchor;
+  actionMenuPosition: HistoryActionMenuPosition | null;
   actionMenuPanelRef: React.RefObject<HTMLDivElement | null>;
   closeHoverPreview: () => void;
+  closeActionMenu: () => void;
   isFavorite: (messageId: string) => boolean;
   isFavoritePending: (messageId: string) => boolean;
   toggleFavorite: (messageId: string) => Promise<void> | void;
-  setOpenActionMenu: React.Dispatch<React.SetStateAction<ImageHistoryActionMenuAnchor | null>>;
-  setActionMenuPosition: React.Dispatch<
-    React.SetStateAction<ImageHistoryActionMenuPosition | null>
-  >;
   deleteItem: (messageId: string) => void;
   hoverPreviewMessageId: string | null;
+  /** Portal 层级 class。默认 `z-[90]`（Image 视图）；Video 视图传入 `z-[130]`。 */
+  zClass?: string;
 }
 
-export const ImageHistoryActionMenuPortal: React.FC<ImageHistoryActionMenuPortalProps> = ({
+export const HistoryActionMenuPortal: React.FC<HistoryActionMenuPortalProps> = ({
   openActionMenu,
   actionMenuPosition,
   actionMenuPanelRef,
   closeHoverPreview,
+  closeActionMenu,
   isFavorite,
   isFavoritePending,
   toggleFavorite,
-  setOpenActionMenu,
-  setActionMenuPosition,
   deleteItem,
   hoverPreviewMessageId,
+  zClass = 'z-[90]',
 }) => {
   if (typeof document === 'undefined') return null;
   return createPortal(
     <div
       ref={actionMenuPanelRef}
       data-history-action-menu
-      className="fixed z-[90] inline-flex flex-col gap-1 rounded-lg border border-slate-700 bg-slate-950/95 shadow-2xl backdrop-blur-md p-1"
+      className={`fixed ${zClass} inline-flex flex-col gap-1 rounded-lg border border-slate-700 bg-slate-950/95 shadow-2xl backdrop-blur-md p-1`}
       onMouseEnter={closeHoverPreview}
       style={{
         top: actionMenuPosition?.top ?? openActionMenu.anchorY,
@@ -59,8 +69,7 @@ export const ImageHistoryActionMenuPortal: React.FC<ImageHistoryActionMenuPortal
         disabled={openActionMenu.messageId ? isFavoritePending(openActionMenu.messageId) : false}
         onClick={async () => {
           await toggleFavorite(openActionMenu.messageId);
-          setOpenActionMenu(null);
-          setActionMenuPosition(null);
+          closeActionMenu();
         }}
       >
         <Star
@@ -81,8 +90,7 @@ export const ImageHistoryActionMenuPortal: React.FC<ImageHistoryActionMenuPortal
           if (hoverPreviewMessageId === openActionMenu.messageId) {
             closeHoverPreview();
           }
-          setOpenActionMenu(null);
-          setActionMenuPosition(null);
+          closeActionMenu();
         }}
       >
         <Trash2 size={11} />

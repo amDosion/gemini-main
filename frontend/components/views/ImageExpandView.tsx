@@ -12,7 +12,7 @@ import { useHistoryListActions } from '../../hooks/useHistoryListActions';
 import { isHistoryActionSurface } from '../../utils/historyActionSurface';
 import { useHoverPromptPreview } from '../../hooks/useHoverPromptPreview';
 import { useActionMenu, type ActionMenuAnchorBase } from '../../hooks/useActionMenu';
-import { ImageHistoryActionMenuPortal } from '../common/ImageHistoryActionMenuPortal';
+import { HistoryActionMenuPortal } from '../common/HistoryActionMenuPortal';
 import { HoverPromptPreviewPortal } from '../common/HoverPromptPreviewPortal';
 import { ExpandHistoryRow } from './expand/ExpandHistoryRow';
 import { ExpandMainCanvas } from './expand/ExpandMainCanvas';
@@ -484,16 +484,15 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
         )}
 
         {openActionMenu && (
-          <ImageHistoryActionMenuPortal
+          <HistoryActionMenuPortal
             openActionMenu={openActionMenu}
             actionMenuPosition={actionMenuPosition}
             actionMenuPanelRef={actionMenuPanelRef}
             closeHoverPreview={closeHoverPreview}
+            closeActionMenu={closeActionMenu}
             isFavorite={isFavorite}
             isFavoritePending={isFavoritePending}
             toggleFavorite={toggleFavorite}
-            setOpenActionMenu={() => closeActionMenu()}
-            setActionMenuPosition={() => undefined}
             deleteItem={deleteItem}
             hoverPreviewMessageId={hoverPreview?.messageId ?? null}
           />
@@ -643,7 +642,6 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
       activeAttachments,
     ]
   );
-
 
   return (
     <GenViewLayout

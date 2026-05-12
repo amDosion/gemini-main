@@ -1,7 +1,9 @@
 /**
- * 通用 hover prompt 预览 Portal（Expand / Recontext / Edit 等视图共用）。
+ * 通用 hover prompt 预览 Portal（Expand / Recontext / Edit / Video 等视图共用）。
  *
- * 1:1 抽离自 `ImageExpandView.tsx` L658-744 hover preview portal。
+ * 与原 `VideoHoverPreviewPortal` 合并：
+ *  - `extraContent` 插槽：渲染优化提示词区块下方的额外信息（如视频元数据）
+ *  - `zClass` 控制层级（默认无；Video 视图传 `z-[140]`）
  */
 
 import React from 'react';
@@ -31,6 +33,10 @@ export interface HoverPromptPreviewPortalProps {
   missingOptimizedText?: string;
   maxWidthClass?: string;
   maxHeightClass?: string;
+  /** 渲染在优化提示词下方的额外内容（如 Video 视图的"视频信息"区块）。 */
+  extraContent?: React.ReactNode;
+  /** Portal 层级 class。默认无（Image 视图）；Video 视图传 `z-[140]`。 */
+  zClass?: string;
 }
 
 export const HoverPromptPreviewPortal: React.FC<HoverPromptPreviewPortalProps> = ({
@@ -51,12 +57,14 @@ export const HoverPromptPreviewPortal: React.FC<HoverPromptPreviewPortalProps> =
   missingOptimizedText = '未返回优化后的提示词',
   maxWidthClass = 'inline-block w-fit max-w-[min(70vw,560px)]',
   maxHeightClass = 'max-h-[70vh] overflow-y-auto',
+  extraContent,
+  zClass,
 }) => {
   if (!preview || typeof document === 'undefined') return null;
   return createPortal(
     <div
       ref={panelRef}
-      className="fixed hidden md:block"
+      className={`fixed hidden md:block${zClass ? ` ${zClass}` : ''}`}
       style={{
         top: position?.top ?? preview.anchorY,
         left: position?.left ?? preview.anchorX,
@@ -114,6 +122,8 @@ export const HoverPromptPreviewPortal: React.FC<HoverPromptPreviewPortalProps> =
               <p className="mt-1 text-xs text-slate-500 italic">{missingOptimizedText}</p>
             )}
           </div>
+
+          {extraContent}
         </div>
 
         <button

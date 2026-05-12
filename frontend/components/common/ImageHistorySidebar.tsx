@@ -17,7 +17,7 @@ import {
   ACCENT_CLASSES,
 } from './imageHistorySidebarHelpers';
 import { ImageHistoryHoverPreviewPanel } from './ImageHistoryHoverPreviewPanel';
-import { ImageHistoryActionMenuPortal } from './ImageHistoryActionMenuPortal';
+import { HistoryActionMenuPortal } from './HistoryActionMenuPortal';
 import { ImageHistoryListRow } from './ImageHistoryListRow';
 
 // Re-export for backwards compat
@@ -561,16 +561,18 @@ export function useImageHistorySidebar({
         )}
 
         {openActionMenu && (
-          <ImageHistoryActionMenuPortal
+          <HistoryActionMenuPortal
             openActionMenu={openActionMenu}
             actionMenuPosition={actionMenuPosition}
             actionMenuPanelRef={actionMenuPanelRef}
             closeHoverPreview={closeHoverPreview}
+            closeActionMenu={() => {
+              setOpenActionMenu(null);
+              setActionMenuPosition(null);
+            }}
             isFavorite={isFavorite}
             isFavoritePending={isFavoritePending}
             toggleFavorite={toggleFavorite}
-            setOpenActionMenu={setOpenActionMenu}
-            setActionMenuPosition={setActionMenuPosition}
             deleteItem={deleteItem}
             hoverPreviewMessageId={hoverPreview?.messageId ?? null}
           />
