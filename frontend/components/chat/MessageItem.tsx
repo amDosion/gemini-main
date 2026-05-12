@@ -1,11 +1,8 @@
 import { reportError } from '../../utils/globalErrorHandler';
 import { safeCopyToClipboard } from '../../utils/safeOps';
-import React, { useMemo, useState, Suspense } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Message, Role, ToolCall, ToolResult } from '../../types/types';
-// ✅ Wave 2 perf: 懒加载 MarkdownRenderer 把 react-markdown + 12 种
-// react-syntax-highlighter 语言 + rehype-raw + rehype-sanitize 移出主 bundle。
-// Suspense fallback 用纯文本兜底（无依赖）保证消息内容立即可见。
-const MarkdownRenderer = React.lazy(() => import('./MarkdownRenderer'));
+import MarkdownRenderer from './MarkdownRenderer';
 import { injectCursorToContent } from '../../utils/cursorUtils';
 import { Bot, User, AlertCircle, Copy, Check, Download } from 'lucide-react';
 import { useMessageProcessor } from '../../hooks/useMessageProcessor';
@@ -213,17 +210,9 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
                 {/* 4. Main Text Content with Cursor */}
                 {(displayContent || showMainCursor) && (
                   <div className="min-w-0">
-                    <Suspense
-                      fallback={
-                        <div className="whitespace-pre-wrap break-words text-slate-200">
-                          {injectCursorToContent(displayContent, showMainCursor)}
-                        </div>
-                      }
-                    >
-                      <MarkdownRenderer
-                        content={injectCursorToContent(displayContent, showMainCursor)}
-                      />
-                    </Suspense>
+                    <MarkdownRenderer
+                      content={injectCursorToContent(displayContent, showMainCursor)}
+                    />
                   </div>
                 )}
 
