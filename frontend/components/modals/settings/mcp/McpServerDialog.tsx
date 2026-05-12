@@ -59,9 +59,7 @@ export const McpServerDialog: React.FC<McpServerDialogProps> = ({
             <code className="font-mono">{'{ mcpServers: { ... } }'}</code>.
           </p>
           <div className="space-y-1.5">
-            <label className="block text-xs text-slate-400">
-              MCP Intro Website URL (optional)
-            </label>
+            <label className="block text-xs text-slate-400">MCP Intro Website URL (optional)</label>
             <input
               type="text"
               value={introUrl}
