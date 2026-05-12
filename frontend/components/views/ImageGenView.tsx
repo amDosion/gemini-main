@@ -4,19 +4,13 @@ import {
   Image as ImageIcon,
   Layers,
   Clock,
-  AlertCircle,
-  Grid,
   SlidersHorizontal,
   RotateCcw,
   Sparkles,
 } from 'lucide-react';
 import { GenViewLayout } from '../common/GenViewLayout';
-import { ImageCanvasControls } from '../common/ImageCanvasControls';
-import {
-  ImageCarouselArrows,
-  ImageCarouselThumbnails,
-  type CarouselMediaItem,
-} from '../common/ImageCarouselControls';
+import { ImageResultCanvas } from '../common/ImageResultCanvas';
+import { type CarouselMediaItem } from '../common/ImageCarouselControls';
 import { ThinkingBlock } from '../message/ThinkingBlock';
 import { useControlsState } from '../../hooks/useControlsState';
 import { useModeControlsSchema } from '../../hooks/useModeControlsSchema';
@@ -331,153 +325,71 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
     () => (
       <div className="flex-1 flex flex-row h-full">
         {/* ========== 左侧：结果显示区 ========== */}
-        <div className="flex-1 w-full h-full select-none flex flex-col relative">
-          {/* 棋盘格背景 */}
-          <div
-            className="absolute inset-0 opacity-20 pointer-events-none"
-            style={{
-              backgroundImage: `
-                            linear-gradient(45deg, #334155 25%, transparent 25%), 
-                            linear-gradient(-45deg, #334155 25%, transparent 25%), 
-                            linear-gradient(45deg, transparent 75%, #334155 75%), 
-                            linear-gradient(-45deg, transparent 75%, #334155 75%)
-                        `,
-              backgroundSize: '20px 20px',
-              backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
-            }}
-          />
-
-          {/* 主图片显示区域 - 简化布局，居中显示 */}
-          {isLoading ? (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="flex flex-col items-center gap-6 p-8 rounded-3xl bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 shadow-2xl max-w-lg w-full">
-                <div className="relative">
-                  <div className="w-20 h-20 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin"></div>
-                  <div className="absolute inset-0 flex items-center justify-center text-xs font-mono text-emerald-400 font-bold">
-                    GEN
-                  </div>
-                </div>
-                <div className="text-center space-y-2">
-                  <p className="text-slate-200 font-medium text-lg">生成中...</p>
-                  <p className="text-slate-500 text-sm">这可能需要几秒钟</p>
-                </div>
-                {displayedThinkingContent && (
-                  <div className="w-full mt-2">
-                    <ThinkingBlock
-                      content={displayedThinkingContent}
-                      isOpen={isThinkingOpen}
-                      onToggle={() => setIsThinkingOpen(!isThinkingOpen)}
-                      isComplete={false}
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : isBatchError ? (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="flex flex-col items-center gap-4 text-center p-8 bg-slate-900/50 rounded-2xl border border-red-900/30">
-                <AlertCircle size={48} className="text-red-500 opacity-80" />
-                <div>
-                  <h3 className="text-lg font-bold text-slate-200">生成失败</h3>
-                  <p className="text-sm text-red-400 mt-2 max-w-md">
-                    {activeBatchMessage?.content || '未知错误'}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : displayImages.length > 0 ? (
-            <>
-              {/* 旋转木马视图（直接支持缩放） */}
-              <div
-                className="absolute inset-0 flex flex-col items-center justify-center overflow-hidden"
-                onWheel={canvas.handleWheel}
-              >
-                {/* 主图展示区 - 支持拖拽 */}
-                <div
-                  className="flex-1 w-full flex items-center justify-center relative px-16 overflow-hidden"
-                  onMouseDown={canvas.handleMouseDown}
-                  onMouseMove={canvas.handleMouseMove}
-                  onMouseUp={canvas.handleMouseUp}
-                  onMouseLeave={canvas.handleMouseUp}
-                  style={{
-                    cursor: canvas.isDragging ? 'grabbing' : canvas.zoom > 1 ? 'grab' : 'default',
-                  }}
-                >
-                  <ImageCarouselArrows
-                    itemCount={displayImages.length}
-                    onPrev={handleCarouselPrev}
-                    onNext={handleCarouselNext}
-                  />
-
-                  {/* 当前图片 */}
-                  <div className="relative group max-w-full max-h-full flex items-center justify-center">
-                    {displayImages[carouselIndex]?.url ? (
-                      <img
-                        src={displayImages[carouselIndex].url}
-                        className="block max-h-[70vh] max-w-full object-contain rounded-2xl shadow-2xl border border-slate-800/50 select-none"
-                        style={canvas.canvasStyle}
-                        onDoubleClick={() => onImageClick(displayImages[carouselIndex].url!)}
-                        alt={`生成图片 ${carouselIndex + 1}`}
-                        draggable={false}
-                      />
-                    ) : (
-                      <div className="w-64 h-64 flex items-center justify-center text-slate-600 bg-slate-900 rounded-2xl">
-                        <ImageIcon size={48} className="opacity-50" />
-                      </div>
-                    )}
-                    {/* 悬浮操作按钮（包含缩放控制） */}
-                    <ImageCanvasControls
-                      variant="canvas"
-                      mode="image-gen"
-                      modeAware={false}
-                      className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                      zoom={canvas.zoom}
-                      onZoomIn={canvas.handleZoomIn}
-                      onZoomOut={canvas.handleZoomOut}
-                      onReset={canvas.handleReset}
-                      onEdit={
-                        onEditImage
-                          ? () =>
-                              onEditImage(
-                                displayImages[carouselIndex].url!,
-                                displayImages[carouselIndex]
-                              )
-                          : undefined
-                      }
-                      onExpand={
-                        onExpandImage
-                          ? () =>
-                              onExpandImage(
-                                displayImages[carouselIndex].url!,
-                                displayImages[carouselIndex]
-                              )
-                          : undefined
-                      }
-                      onFullscreen={() => onImageClick(displayImages[carouselIndex].url!)}
-                      downloadUrl={displayImages[carouselIndex].url}
-                    />
-                  </div>
-
-                  {/* 缩放提示（仅在缩放时显示） */}
-                  {canvas.zoom !== 1 && (
-                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-slate-400 text-xs bg-black/60 px-3 py-1.5 rounded-full backdrop-blur pointer-events-none">
-                      {Math.round(canvas.zoom * 100)}% · 拖拽移动 · 双击全屏
-                    </div>
-                  )}
-                </div>
-
-                {/* 底部缩略图导航 */}
-                <ImageCarouselThumbnails
-                  items={carouselItems}
-                  currentIndex={carouselIndex}
-                  onSelect={handleCarouselSelect}
-                  accentTone="emerald"
-                  panelClassName="flex items-center gap-3 py-4 px-4"
-                  counterClassName="ml-2 text-sm text-slate-400 font-mono"
+        <ImageResultCanvas
+          loadingState={loadingState}
+          isBatchError={isBatchError}
+          errorTitle="生成失败"
+          errorMessage={activeBatchMessage?.content}
+          displayImages={displayImages}
+          carouselItems={carouselItems}
+          carouselIndex={carouselIndex}
+          handleCarouselPrev={handleCarouselPrev}
+          handleCarouselNext={handleCarouselNext}
+          handleCarouselSelect={handleCarouselSelect}
+          onImageClick={onImageClick}
+          altFor={(idx) => `生成图片 ${idx + 1}`}
+          canvas={canvas}
+          mode="image-gen"
+          accentColor="pink"
+          controlsExtra={{
+            onEdit: onEditImage
+              ? () =>
+                  onEditImage(
+                    displayImages[carouselIndex].url!,
+                    displayImages[carouselIndex]
+                  )
+              : undefined,
+            onExpand: onExpandImage
+              ? () =>
+                  onExpandImage(
+                    displayImages[carouselIndex].url!,
+                    displayImages[carouselIndex]
+                  )
+              : undefined,
+            onFullscreen: () => onImageClick(displayImages[carouselIndex].url!),
+          }}
+          spinnerColorClass="border-emerald-500/30 border-t-emerald-500"
+          spinnerBadgeText="GEN"
+          spinnerBadgeColorClass="text-emerald-400"
+          loadingWrapperExtraClass="max-w-lg w-full"
+          accentIconClass="text-emerald-400"
+          carouselAccentTone="emerald"
+          wheelTarget="carousel"
+          loadingExtraContent={
+            displayedThinkingContent && (
+              <div className="w-full mt-2">
+                <ThinkingBlock
+                  content={displayedThinkingContent}
+                  isOpen={isThinkingOpen}
+                  onToggle={() => setIsThinkingOpen(!isThinkingOpen)}
+                  isComplete={false}
                 />
               </div>
-            </>
-          ) : (
+            )
+          }
+          floatingExtraContent={
+            displayedThinkingContent && (
+              <div className="absolute bottom-4 left-4 right-4 z-10 max-w-lg">
+                <ThinkingBlock
+                  content={displayedThinkingContent}
+                  isOpen={isThinkingOpen}
+                  onToggle={() => setIsThinkingOpen(!isThinkingOpen)}
+                  isComplete={true}
+                />
+              </div>
+            )
+          }
+          emptyState={
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center text-slate-600 pointer-events-none flex flex-col items-center gap-4 max-w-md">
                 <ImageIcon size={48} className="opacity-20" />
@@ -487,30 +399,8 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
                 </div>
               </div>
             </div>
-          )}
-
-          {/* 批次信息提示 */}
-          {displayImages.length > 1 && (
-            <div className="absolute top-4 left-4 z-10 animate-[fadeIn_0.3s_ease-out] pointer-events-none">
-              <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-4 py-1.5 text-xs font-medium text-slate-300 flex items-center gap-2 shadow-xl">
-                <Grid size={14} className="text-emerald-400" />
-                批次结果 ({displayImages.length})
-              </div>
-            </div>
-          )}
-
-          {/* ✅ 思考过程展示（生成完成后） */}
-          {!isLoading && displayedThinkingContent && (
-            <div className="absolute bottom-4 left-4 right-4 z-10 max-w-lg">
-              <ThinkingBlock
-                content={displayedThinkingContent}
-                isOpen={isThinkingOpen}
-                onToggle={() => setIsThinkingOpen(!isThinkingOpen)}
-                isComplete={true}
-              />
-            </div>
-          )}
-        </div>
+          }
+        />
 
         {/* ========== 中间：控制面板 ========== */}
         <div className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900/50 flex flex-col h-full overflow-hidden">

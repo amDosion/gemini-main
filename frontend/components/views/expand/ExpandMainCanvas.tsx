@@ -5,14 +5,11 @@
  */
 
 import React from 'react';
-import { AlertCircle, Expand, Grid, Image as ImageIcon } from 'lucide-react';
+import { Expand } from 'lucide-react';
 import { ViewSideParamsPanel } from '../../common/ViewSideParamsPanel';
 import { ImageCanvasControls } from '../../common/ImageCanvasControls';
-import {
-  ImageCarouselArrows,
-  ImageCarouselThumbnails,
-  type CarouselMediaItem,
-} from '../../common/ImageCarouselControls';
+import { ImageResultCanvas } from '../../common/ImageResultCanvas';
+import { type CarouselMediaItem } from '../../common/ImageCarouselControls';
 import { ImageCompare } from '../../common/ImageCompare';
 import ChatEditInputArea from '../../chat/ChatEditInputArea';
 import { ModeControlsCoordinator } from '../../../coordinators/ModeControlsCoordinator';
@@ -91,172 +88,85 @@ export const ExpandMainCanvas: React.FC<ExpandMainCanvasProps> = ({
 }) => {
   return (
     <div className="flex-1 flex flex-row h-full">
-      <div
-        className="flex-1 w-full h-full select-none flex flex-col relative"
-        onWheel={isCompareMode ? undefined : canvas.handleWheel}
-      >
-        <div
-          className="absolute inset-0 opacity-20 pointer-events-none"
-          style={{
-            backgroundImage: `
-                            linear-gradient(45deg, #334155 25%, transparent 25%),
-                            linear-gradient(-45deg, #334155 25%, transparent 25%),
-                            linear-gradient(45deg, transparent 75%, #334155 75%),
-                            linear-gradient(-45deg, transparent 75%, #334155 75%)
-                        `,
-            backgroundSize: '20px 20px',
-            backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
-          }}
-        />
-
-        {loadingState !== 'idle' ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="flex flex-col items-center gap-6 p-8 rounded-3xl bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 shadow-2xl">
-              <div className="relative">
-                <div className="w-20 h-20 border-4 border-orange-500/30 border-t-orange-500 rounded-full animate-spin"></div>
-                <div className="absolute inset-0 flex items-center justify-center text-xs font-mono text-orange-400 font-bold">
-                  EXP
-                </div>
-              </div>
-              <div className="text-center space-y-2">
-                <p className="text-slate-200 font-medium text-lg">扩图中...</p>
-                <p className="text-slate-500 text-sm">这可能需要几秒钟</p>
-              </div>
-            </div>
-          </div>
-        ) : isBatchError ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="flex flex-col items-center gap-4 text-center p-8 bg-slate-900/50 rounded-2xl border border-red-900/30">
-              <AlertCircle size={48} className="text-red-500 opacity-80" />
-              <div>
-                <h3 className="text-lg font-bold text-slate-200">扩图失败</h3>
-                <p className="text-sm text-red-400 mt-2 max-w-md">
-                  {activeBatchMessage?.content || '未知错误'}
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : displayImages.length > 0 ? (
-          <>
-            <div className="absolute inset-0 flex flex-col items-center justify-center overflow-hidden">
-              <div
-                className="flex-1 w-full flex items-center justify-center relative px-16 overflow-hidden"
-                onMouseDown={isCompareMode ? undefined : canvas.handleMouseDown}
-                onMouseMove={isCompareMode ? undefined : canvas.handleMouseMove}
-                onMouseUp={isCompareMode ? undefined : canvas.handleMouseUp}
-                onMouseLeave={isCompareMode ? undefined : canvas.handleMouseUp}
-                style={{
-                  cursor: isCompareMode
-                    ? 'default'
-                    : canvas.isDragging
-                      ? 'grabbing'
-                      : canvas.zoom > 1
-                        ? 'grab'
-                        : 'default',
-                }}
-              >
-                <ImageCarouselArrows
-                  itemCount={displayImages.length}
-                  onPrev={handleCarouselPrev}
-                  onNext={handleCarouselNext}
-                />
-
-                <div className="relative group max-w-full max-h-full flex items-center justify-center">
-                  {isCompareMode && originalImageUrl && currentDisplayUrl ? (
-                    <div
-                      className="relative shadow-2xl transition-transform duration-75 ease-out"
-                      style={canvas.canvasStyle}
-                    >
-                      <ImageCompare
-                        beforeImage={originalImageUrl}
-                        afterImage={currentDisplayUrl}
-                        beforeLabel="原图"
-                        afterLabel="扩图结果"
-                        accentColor="orange"
-                        className="max-w-none rounded-lg border border-slate-800"
-                        style={{ maxHeight: '70vh', maxWidth: '80vw' }}
-                      />
-                    </div>
-                  ) : currentDisplayUrl ? (
-                    <img
-                      src={currentDisplayUrl}
-                      className="block max-h-[70vh] max-w-full object-contain rounded-2xl shadow-2xl border border-slate-800/50 select-none"
-                      style={canvas.canvasStyle}
-                      onDoubleClick={() => onImageClick(currentDisplayUrl)}
-                      alt={`扩图结果 ${carouselIndex + 1}`}
-                      draggable={false}
-                    />
-                  ) : (
-                    <div className="w-64 h-64 flex items-center justify-center text-slate-600 bg-slate-900 rounded-2xl">
-                      <ImageIcon size={48} className="opacity-50" />
-                    </div>
-                  )}
-                  {currentDisplayUrl && (
-                    <ImageCanvasControls
-                      variant="canvas"
-                      mode="image-outpainting"
-                      modeAware={false}
-                      className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                      zoom={canvas.zoom}
-                      onZoomIn={canvas.handleZoomIn}
-                      onZoomOut={canvas.handleZoomOut}
-                      onReset={canvas.handleReset}
-                      onFullscreen={() => onImageClick(currentDisplayUrl)}
-                      downloadUrl={currentDisplayUrl}
-                      onToggleCompare={originalImageUrl ? toggleCompare : undefined}
-                      isCompareMode={isCompareMode}
-                      accentColor="orange"
-                    />
-                  )}
-                </div>
-
-                {canvas.zoom !== 1 && (
-                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-slate-400 text-xs bg-black/60 px-3 py-1.5 rounded-full backdrop-blur pointer-events-none">
-                    {Math.round(canvas.zoom * 100)}% · 拖拽移动 · 双击全屏
-                  </div>
-                )}
-              </div>
-
-              <ImageCarouselThumbnails
-                items={carouselItems}
-                currentIndex={carouselIndex}
-                onSelect={handleCarouselSelect}
-                accentTone="orange"
-                panelClassName="flex items-center gap-3 py-4 px-4"
-                counterClassName="ml-2 text-sm text-slate-400 font-mono"
-              />
-            </div>
-          </>
-        ) : activeImageUrl ? (
-          <div className="flex-1 flex items-center justify-center p-0 w-full h-full">
+      <ImageResultCanvas
+        loadingState={loadingState}
+        isBatchError={isBatchError}
+        errorTitle="扩图失败"
+        errorMessage={activeBatchMessage?.content}
+        displayImages={displayImages}
+        carouselItems={carouselItems}
+        carouselIndex={carouselIndex}
+        handleCarouselPrev={handleCarouselPrev}
+        handleCarouselNext={handleCarouselNext}
+        handleCarouselSelect={handleCarouselSelect}
+        onImageClick={onImageClick}
+        altFor={(idx) => `扩图结果 ${idx + 1}`}
+        canvas={canvas}
+        mode="image-outpainting"
+        accentColor="orange"
+        controlsExtra={{
+          onFullscreen: currentDisplayUrl ? () => onImageClick(currentDisplayUrl) : undefined,
+          onToggleCompare: originalImageUrl ? toggleCompare : undefined,
+          isCompareMode,
+        }}
+        spinnerColorClass="border-orange-500/30 border-t-orange-500"
+        spinnerBadgeText="EXP"
+        spinnerBadgeColorClass="text-orange-400"
+        loadingTitle="扩图中..."
+        accentIconClass="text-orange-400"
+        carouselAccentTone="orange"
+        wheelTarget="outer"
+        compareSlot={
+          originalImageUrl && currentDisplayUrl ? (
             <div
-              className="relative shadow-2xl group transition-transform duration-75 ease-out"
+              className="relative shadow-2xl transition-transform duration-75 ease-out"
               style={canvas.canvasStyle}
-              onMouseDown={canvas.handleMouseDown}
-              onMouseMove={canvas.handleMouseMove}
-              onMouseUp={canvas.handleMouseUp}
-              onMouseLeave={canvas.handleMouseUp}
             >
-              <img
-                src={activeImageUrl}
-                className="max-w-none rounded-lg border border-slate-800 pointer-events-none"
-                style={{ maxHeight: '80vh', maxWidth: '80vw' }}
-                alt="Source Preview"
-              />
-              <ImageCanvasControls
-                variant="canvas"
-                className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                zoom={canvas.zoom}
-                onZoomIn={canvas.handleZoomIn}
-                onZoomOut={canvas.handleZoomOut}
-                onReset={canvas.handleReset}
-                onFullscreen={() => onImageClick(activeImageUrl)}
-                downloadUrl={activeImageUrl}
+              <ImageCompare
+                beforeImage={originalImageUrl}
+                afterImage={currentDisplayUrl}
+                beforeLabel="原图"
+                afterLabel="扩图结果"
                 accentColor="orange"
+                className="max-w-none rounded-lg border border-slate-800"
+                style={{ maxHeight: '70vh', maxWidth: '80vw' }}
               />
             </div>
-          </div>
-        ) : (
+          ) : null
+        }
+        sourcePreviewSlot={
+          activeImageUrl ? (
+            <div className="flex-1 flex items-center justify-center p-0 w-full h-full">
+              <div
+                className="relative shadow-2xl group transition-transform duration-75 ease-out"
+                style={canvas.canvasStyle}
+                onMouseDown={canvas.handleMouseDown}
+                onMouseMove={canvas.handleMouseMove}
+                onMouseUp={canvas.handleMouseUp}
+                onMouseLeave={canvas.handleMouseUp}
+              >
+                <img
+                  src={activeImageUrl}
+                  className="max-w-none rounded-lg border border-slate-800 pointer-events-none"
+                  style={{ maxHeight: '80vh', maxWidth: '80vw' }}
+                  alt="Source Preview"
+                />
+                <ImageCanvasControls
+                  variant="canvas"
+                  className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                  zoom={canvas.zoom}
+                  onZoomIn={canvas.handleZoomIn}
+                  onZoomOut={canvas.handleZoomOut}
+                  onReset={canvas.handleReset}
+                  onFullscreen={() => onImageClick(activeImageUrl)}
+                  downloadUrl={activeImageUrl}
+                  accentColor="orange"
+                />
+              </div>
+            </div>
+          ) : null
+        }
+        emptyState={
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center text-slate-600 pointer-events-none flex flex-col items-center gap-4 max-w-md">
               <Expand size={48} className="opacity-20" />
@@ -266,17 +176,8 @@ export const ExpandMainCanvas: React.FC<ExpandMainCanvasProps> = ({
               </div>
             </div>
           </div>
-        )}
-
-        {displayImages.length > 1 && (
-          <div className="absolute top-4 left-4 z-10 animate-[fadeIn_0.3s_ease-out] pointer-events-none">
-            <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-4 py-1.5 text-xs font-medium text-slate-300 flex items-center gap-2 shadow-xl">
-              <Grid size={14} className="text-orange-400" />
-              批次结果 ({displayImages.length})
-            </div>
-          </div>
-        )}
-      </div>
+        }
+      />
 
       <ViewSideParamsPanel
         title="扩图参数"
