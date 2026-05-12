@@ -1,26 +1,21 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
-import {
-  Crop,
-  AlertCircle,
-  Layers,
-  User,
-  Bot,
-  Sparkles,
-  SlidersHorizontal,
-  RotateCcw,
-} from 'lucide-react';
+import { Layers } from 'lucide-react';
 import { useImageCanvas } from '../../hooks/useImageCanvas';
 import { GenViewLayout } from '../common/GenViewLayout';
-import { ThinkingBlock } from '../message/ThinkingBlock';
 import { useToastContext } from '../../contexts/ToastContext';
 import { useControlsState } from '../../hooks/useControlsState';
-import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
-import ChatEditInputArea from '../chat/ChatEditInputArea';
 import { useThinkingBlock } from '../../hooks/useThinkingBlock';
-import { fileToBase64 } from '../../hooks/handlers/attachmentUtils';
 import { useMaskIO } from '../../hooks/useMaskIO';
-import { MaskCanvasPainter } from './mask/MaskCanvasPainter';
+import { MaskEditSidebar } from './maskedit/MaskEditSidebar';
+import { MaskEditMain } from './maskedit/MaskEditMain';
+import {
+  drawOnMaskCanvas as drawOnMaskCanvasPure,
+  generateMaskFromSelections as generateMaskFromSelectionsPure,
+  getOrCreateMaskCanvas,
+  drawDisplayCanvas,
+  updateMaskCanvasUrl as updateMaskCanvasUrlPure,
+} from './maskedit/maskDrawingHelpers';
 import {
   type MaskTool,
   type MaskMode,
@@ -211,180 +206,39 @@ export const ImageMaskEditView = memo(
       [brushSize]
     );
 
-    // ✅ 初始化/获取 mask canvas
-    const getMaskCanvas = useCallback(() => {
-      const img = imageRef.current;
-      if (!img) return null;
-
-      // 如果 canvas 不存在或尺寸不匹配，创建新的
-      if (
-        !maskCanvasRef.current ||
-        maskCanvasRef.current.width !== img.naturalWidth ||
-        maskCanvasRef.current.height !== img.naturalHeight
-      ) {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        // 初始化为全透明
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (ctx) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-        }
-        maskCanvasRef.current = canvas;
-      }
-      return maskCanvasRef.current;
-    }, []);
-
-    // ✅ 直接更新显示 canvas（不触发 React 重渲染）
-    const updateDisplayCanvas = useCallback(() => {
-      const srcCanvas = maskCanvasRef.current;
-      const dstCanvas = displayCanvasRef.current;
-      if (!srcCanvas || !dstCanvas) return;
-
-      const ctx = dstCanvas.getContext('2d', { willReadFrequently: true });
-      if (!ctx) return;
-
-      // 确保尺寸匹配
-      if (dstCanvas.width !== srcCanvas.width || dstCanvas.height !== srcCanvas.height) {
-        dstCanvas.width = srcCanvas.width;
-        dstCanvas.height = srcCanvas.height;
-      }
-
-      // 清除并绘制
-      ctx.clearRect(0, 0, dstCanvas.width, dstCanvas.height);
-      ctx.drawImage(srcCanvas, 0, 0);
-    }, []);
-
-    // ✅ 更新 mask canvas 显示 URL（仅在笔画结束时调用）
-    // 优化：使用布尔标记代替全图扫描，使用 toBlob + objectURL 代替 toDataURL
-    const updateMaskCanvasUrl = useCallback(() => {
-      const canvas = maskCanvasRef.current;
-      if (!canvas) return;
-
-      // 使用布尔标记判断是否有内容（避免全图扫描）
-      if (hasBrushContentRef.current) {
-        // 清理之前的 blob URL
-        if (maskPreviewBlobUrlRef.current) {
-          URL.revokeObjectURL(maskPreviewBlobUrlRef.current);
-          maskPreviewBlobUrlRef.current = null;
-        }
-
-        // 使用 toBlob + objectURL 代替 toDataURL（更快，内存占用更小）
-        canvas.toBlob((blob) => {
-          if (blob) {
-            const url = URL.createObjectURL(blob);
-            maskPreviewBlobUrlRef.current = url;
-            setMaskCanvasUrl(url);
-          }
-        }, 'image/png');
-      } else {
-        setMaskCanvasUrl(null);
-      }
-
-      // 同时更新显示 canvas
-      updateDisplayCanvas();
+    const getMaskCanvas = useCallback(
+      () => getOrCreateMaskCanvas(imageRef, maskCanvasRef),
+      []
+    );
+    const updateDisplayCanvas = useCallback(
+      () => drawDisplayCanvas(maskCanvasRef, displayCanvasRef),
+      []
+    );
+    const updateMaskCanvasUrlCb = useCallback(() => {
+      updateMaskCanvasUrlPure({
+        maskCanvasRef,
+        hasBrushContentRef,
+        maskPreviewBlobUrlRef,
+        setMaskCanvasUrl,
+        onAfterUpdate: updateDisplayCanvas,
+      });
     }, [updateDisplayCanvas]);
 
-    // ✅ 在 mask canvas 上绘制（使用贝塞尔曲线实现平滑笔画）
+    // ✅ 在 mask canvas 上绘制（贝塞尔曲线平滑笔画，纯函数已抽离）
     const drawOnMaskCanvas = useCallback(
       (x: number, y: number, isEraser: boolean = false, isStart: boolean = false) => {
-        const canvas = getMaskCanvas();
-        if (!canvas) return;
-
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (!ctx) return;
-
-        const img = imageRef.current;
-        if (!img) return;
-
-        // 转换坐标：从显示坐标到实际图片坐标
-        const scaleX = img.naturalWidth / img.clientWidth;
-        const scaleY = img.naturalHeight / img.clientHeight;
-        const actualX = x * scaleX;
-        const actualY = y * scaleY;
-        const actualBrushSize = brushSize * Math.max(scaleX, scaleY);
-
-        // 设置绘制模式
-        // 注意：画笔使用完全不透明的蓝色，显示时通过 CSS 应用透明度
-        // 这样橡皮擦可以正确擦除（destination-out 需要完全不透明的像素才能完全擦除）
-        if (isEraser) {
-          ctx.globalCompositeOperation = 'destination-out';
-          ctx.fillStyle = 'rgba(255, 255, 255, 1)'; // 使用白色擦除
-          ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
-        } else {
-          ctx.globalCompositeOperation = 'source-over';
-          ctx.fillStyle = 'rgba(59, 130, 246, 1)'; // 完全不透明的蓝色
-          ctx.strokeStyle = 'rgba(59, 130, 246, 1)';
-        }
-
-        // 如果是新笔画开始，重置点历史并绘制起始点
-        if (isStart) {
-          brushPointsRef.current = [{ x: actualX, y: actualY }];
-          ctx.beginPath();
-          ctx.arc(actualX, actualY, actualBrushSize / 2, 0, Math.PI * 2);
-          ctx.fill();
-        } else {
-          // 添加新点到历史
-          brushPointsRef.current.push({ x: actualX, y: actualY });
-          const points = brushPointsRef.current;
-
-          ctx.lineWidth = actualBrushSize;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-
-          if (points.length >= 3) {
-            // 使用二次贝塞尔曲线绘制平滑路径
-            // 取最后三个点：p0, p1 (控制点), p2
-            const p0 = points[points.length - 3];
-            const p1 = points[points.length - 2]; // 控制点
-            const p2 = points[points.length - 1];
-
-            // 计算曲线的起点和终点（使用中点来确保曲线连续）
-            const startX = (p0.x + p1.x) / 2;
-            const startY = (p0.y + p1.y) / 2;
-            const endX = (p1.x + p2.x) / 2;
-            const endY = (p1.y + p2.y) / 2;
-
-            ctx.beginPath();
-            ctx.moveTo(startX, startY);
-            ctx.quadraticCurveTo(p1.x, p1.y, endX, endY);
-            ctx.stroke();
-
-            // 绘制终点圆形确保笔画末端圆润
-            ctx.beginPath();
-            ctx.arc(endX, endY, actualBrushSize / 2, 0, Math.PI * 2);
-            ctx.fill();
-
-            // 保留最后两个点用于下一段曲线
-            if (points.length > 4) {
-              brushPointsRef.current = points.slice(-3);
-            }
-          } else if (points.length === 2) {
-            // 只有两个点时，绘制直线
-            const p0 = points[0];
-            const p1 = points[1];
-            ctx.beginPath();
-            ctx.moveTo(p0.x, p0.y);
-            ctx.lineTo(p1.x, p1.y);
-            ctx.stroke();
-
-            // 绘制终点圆形
-            ctx.beginPath();
-            ctx.arc(p1.x, p1.y, actualBrushSize / 2, 0, Math.PI * 2);
-            ctx.fill();
-          }
-        }
-
-        // 重置混合模式
-        ctx.globalCompositeOperation = 'source-over';
-
-        // 标记有画笔内容（用于避免全图扫描）
-        if (!isEraser) {
-          hasBrushContentRef.current = true;
-        }
-
-        // 更新上一个位置（用于其他逻辑）
-        lastBrushPosRef.current = { x, y };
+        drawOnMaskCanvasPure({
+          x,
+          y,
+          isEraser,
+          isStart,
+          getMaskCanvas,
+          imageRef,
+          brushSize,
+          brushPointsRef,
+          hasBrushContentRef,
+          lastBrushPosRef,
+        });
       },
       [getMaskCanvas, brushSize]
     );
@@ -455,8 +309,8 @@ export const ImageMaskEditView = memo(
 
       setIsPainting(false);
       lastBrushPosRef.current = null;
-      updateMaskCanvasUrl();
-    }, [isPainting, drawOnMaskCanvas, updateDisplayCanvas, updateMaskCanvasUrl]);
+      updateMaskCanvasUrlCb();
+    }, [isPainting, drawOnMaskCanvas, updateDisplayCanvas, updateMaskCanvasUrlCb]);
 
     // P0 #2 Step 3：handleMaskModeChange / handleImportMask / handleClearMask 抽离至 useMaskIO
     const { handleMaskModeChange, handleImportMask, handleClearMask } = useMaskIO({
@@ -484,130 +338,25 @@ export const ImageMaskEditView = memo(
       },
     });
 
-    // ✅ 生成 Mask 图像（支持正常/反转模式，合并矩形和画笔数据）
-    // 优化：复用 canvas、使用 drawImage + globalCompositeOperation 替代逐像素遍历、使用 toBlob
+    // ✅ 生成 Mask 图像（纯函数已抽离至 maskDrawingHelpers）
     const generateMaskFromSelections = useCallback(
       (rects: SelectionRect[], inverted: boolean = false) => {
-        const img = imageRef.current;
-        const hasBrushMask = hasBrushContentRef.current;
-
-        // 如果既没有矩形也没有画笔数据，清除 mask
-        if ((!img || rects.length === 0) && !hasBrushMask) {
-          setMaskPreviewUrl(null);
-          setMaskRequestDataUrl(null);
-          return;
-        }
-
-        if (!img) return;
-
-        // 获取图片的实际尺寸
-        const imgWidth = img.naturalWidth;
-        const imgHeight = img.naturalHeight;
-
-        // 获取图片在页面上的显示尺寸
-        const displayWidth = img.clientWidth;
-        const displayHeight = img.clientHeight;
-
-        // 计算缩放比例
-        const scaleX = imgWidth / displayWidth;
-        const scaleY = imgHeight / displayHeight;
-
-        // 复用合成 canvas（避免每次创建新的）
-        if (
-          !maskCompositeCanvasRef.current ||
-          maskCompositeCanvasRef.current.width !== imgWidth ||
-          maskCompositeCanvasRef.current.height !== imgHeight
-        ) {
-          maskCompositeCanvasRef.current = document.createElement('canvas');
-          maskCompositeCanvasRef.current.width = imgWidth;
-          maskCompositeCanvasRef.current.height = imgHeight;
-        }
-        const canvas = maskCompositeCanvasRef.current;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (!ctx) return;
-
-        // 清除画布
-        ctx.clearRect(0, 0, imgWidth, imgHeight);
-
-        if (inverted) {
-          // 反转模式：白色背景，黑色选区（选中区域外部为编辑区域）
-          ctx.fillStyle = 'white';
-          ctx.fillRect(0, 0, imgWidth, imgHeight);
-          ctx.fillStyle = 'black';
-        } else {
-          // 正常模式：黑色背景，白色选区（选中区域内部为编辑区域）
-          ctx.fillStyle = 'black';
-          ctx.fillRect(0, 0, imgWidth, imgHeight);
-          ctx.fillStyle = 'white';
-        }
-
-        // 绘制所有矩形
-        rects.forEach((rect) => {
-          const x = Math.min(rect.startX, rect.endX) * scaleX;
-          const y = Math.min(rect.startY, rect.endY) * scaleY;
-          const width = Math.abs(rect.endX - rect.startX) * scaleX;
-          const height = Math.abs(rect.endY - rect.startY) * scaleY;
-          ctx.fillRect(x, y, width, height);
+        generateMaskFromSelectionsPure({
+          rects,
+          inverted,
+          imageRef,
+          maskCanvasRef,
+          hasBrushContentRef,
+          maskCompositeCanvasRef,
+          maskPreviewUrlRef,
+          setMaskPreviewUrl,
+          setMaskRequestDataUrl,
+          setMaskPreviewError,
+          showError,
         });
-
-        // 合并画笔绘制的 mask（如果有）
-        // 优化：使用 drawImage + globalCompositeOperation 替代逐像素遍历
-        if (maskCanvasRef.current && hasBrushMask) {
-          const brushCanvas = maskCanvasRef.current;
-
-          // 保存当前状态
-          ctx.save();
-
-          // 使用 destination-out（反转模式）或 source-over（正常模式）合成
-          // 首先需要将画笔的蓝色区域转换为黑白 mask
-          // 创建临时 canvas 来转换
-          const tempCanvas = document.createElement('canvas');
-          tempCanvas.width = brushCanvas.width;
-          tempCanvas.height = brushCanvas.height;
-          const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
-          if (tempCtx) {
-            // 先填充目标颜色
-            tempCtx.fillStyle = inverted ? 'black' : 'white';
-            tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-
-            // 使用 destination-in 只保留画笔区域
-            tempCtx.globalCompositeOperation = 'destination-in';
-            tempCtx.drawImage(brushCanvas, 0, 0);
-
-            // 合并到主 canvas
-            ctx.globalCompositeOperation = 'source-over';
-            ctx.drawImage(tempCanvas, 0, 0);
-          }
-
-          ctx.restore();
-        }
-
-        // 使用 toBlob + objectURL 代替 toDataURL（更快，内存占用更小）
-        canvas.toBlob((blob) => {
-          if (blob) {
-            // 清理之前的 URL（使用 ref 避免循环依赖）
-            if (maskPreviewUrlRef.current) {
-              URL.revokeObjectURL(maskPreviewUrlRef.current);
-            }
-            const url = URL.createObjectURL(blob);
-            maskPreviewUrlRef.current = url;
-            setMaskPreviewUrl(url);
-
-            fileToBase64(blob)
-              .then((dataUrl) => setMaskRequestDataUrl(dataUrl))
-              .catch(() => {
-                // 修 silent-failure-hunter MEDIUM-1：fileToBase64 失败（OOM / 损坏 blob）时
-                // 之前只 setMaskRequestDataUrl(null)，下游 send guard 误显示"请绘制 mask"。
-                // 此处显式向用户暴露真实失败。
-                setMaskRequestDataUrl(null);
-                setMaskPreviewError('Mask 转换失败，请重试');
-                showError('Mask 数据转换失败，请重试');
-              });
-          }
-        }, 'image/png');
       },
-      []
-    ); // 移除 maskPreviewUrl 依赖，使用 ref 避免循环
+      [showError]
+    );
 
     // ✅ 选区开始（考虑缩放比例）
     const handleSelectionStart = useCallback(
@@ -860,128 +609,26 @@ export const ImageMaskEditView = memo(
 
     const sidebarContent = useMemo(
       () => (
-        <div ref={scrollRef} className="flex-1 p-4 space-y-6 overflow-y-auto custom-scrollbar">
-          {messages.map((msg) => {
-            const isPlaceholder =
-              !msg.content && (!msg.attachments || msg.attachments.length === 0) && !msg.isError;
-            if (isPlaceholder) return null;
-
-            return (
-              <div
-                key={msg.id}
-                className={`flex flex-col gap-2 ${msg.role === Role.USER ? 'items-end' : 'items-start'}`}
-              >
-                <div className="flex items-center gap-2 text-xs text-slate-500 px-1">
-                  {msg.role === Role.USER ? <User size={12} /> : <Bot size={12} />}
-                  <span>{msg.role === Role.USER ? 'You' : activeModelConfig?.name || 'AI'}</span>
-                </div>
-                <div
-                  className={`p-3 rounded-2xl max-w-full text-sm shadow-sm ${
-                    msg.role === Role.USER
-                      ? 'bg-slate-800 text-slate-200 rounded-tr-sm'
-                      : 'bg-slate-800/50 text-slate-300 border border-slate-700/50 rounded-tl-sm'
-                  }`}
-                >
-                  {msg.content && <p className="mb-2">{msg.content}</p>}
-                  {msg.attachments
-                    ?.filter((att) => att.url && att.url.length > 0)
-                    .map((att, idx) => (
-                      <div
-                        key={idx}
-                        onClick={() => setActiveImageUrl(att.url || null)}
-                        className={`relative group mt-1 rounded-lg overflow-hidden border cursor-pointer transition-all ${
-                          activeImageUrl === att.url
-                            ? 'ring-2 ring-purple-500 border-transparent'
-                            : 'border-slate-700 hover:border-slate-500'
-                        }`}
-                      >
-                        <img
-                          src={att.url}
-                          className="w-full h-32 object-cover bg-slate-900"
-                          alt="thumbnail"
-                        />
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                          {activeImageUrl === att.url && (
-                            <div className="bg-purple-500 w-2 h-2 rounded-full absolute top-2 right-2 shadow-sm" />
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  {msg.isError && (
-                    <div className="flex items-center gap-2 text-red-400 text-xs mt-1">
-                      <AlertCircle size={12} /> Error generating
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-          {loadingState !== 'idle' &&
-            (() => {
-              let statusText = 'Processing request...';
-              let statusIcon = <Bot size={16} className="text-slate-500" />;
-
-              if (loadingState === 'uploading') {
-                statusText = '上传图片中...';
-                statusIcon = <Layers size={16} className="text-blue-400" />;
-              } else if (loadingState === 'loading') {
-                statusText = 'Mask 编辑中，正在处理遮罩区域...';
-                statusIcon = <Crop size={16} className="text-purple-400" />;
-              } else if (loadingState === 'streaming') {
-                statusText = '流式处理中...';
-                statusIcon = <Sparkles size={16} className="text-purple-400 animate-pulse" />;
-              }
-
-              const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-              const thoughts = lastMessage?.thoughts || [];
-              const textResponse = lastMessage?.textResponse;
-              const hasTextContent = lastMessage?.content && lastMessage.content.trim().length > 0;
-              const isThinkingComplete = loadingState === 'idle';
-
-              return (
-                <div className="flex items-start gap-2">
-                  <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center flex-shrink-0">
-                    {statusIcon}
-                  </div>
-                  <div className="bg-slate-800/50 rounded-xl p-3 text-xs text-slate-400 flex-1">
-                    <div
-                      className={`font-medium mb-1 ${loadingState !== 'idle' ? 'animate-pulse' : ''}`}
-                    >
-                      {statusText}
-                    </div>
-
-                    {displayedThinkingContent && (
-                      <div className="mt-2">
-                        <ThinkingBlock
-                          content={displayedThinkingContent}
-                          isOpen={isThinkingOpen}
-                          onToggle={() => setIsThinkingOpen(!isThinkingOpen)}
-                          isComplete={isThinkingComplete}
-                        />
-                      </div>
-                    )}
-
-                    {hasTextContent && !thoughts.length && !textResponse && (
-                      <div className="mt-2 pt-2 border-t border-slate-700/50 text-slate-500 italic">
-                        {lastMessage.content.substring(0, 100)}
-                        {lastMessage.content.length > 100 ? '...' : ''}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-          <div />
-        </div>
+        <MaskEditSidebar
+          scrollRef={scrollRef}
+          messages={messages}
+          activeModelConfig={activeModelConfig}
+          loadingState={loadingState}
+          activeImageUrl={activeImageUrl}
+          setActiveImageUrl={setActiveImageUrl}
+          displayedThinkingContent={displayedThinkingContent}
+          isThinkingOpen={isThinkingOpen}
+          setIsThinkingOpen={setIsThinkingOpen}
+        />
       ),
       [
         messages,
         loadingState,
-        activeModelConfig?.name,
+        activeModelConfig,
         activeImageUrl,
-        activeAttachments,
         displayedThinkingContent,
         isThinkingOpen,
+        setIsThinkingOpen,
       ]
     );
 
@@ -1002,112 +649,61 @@ export const ImageMaskEditView = memo(
     // ✅ 主区域：两栏布局（画布 + 参数面板）
     const mainContent = useMemo(
       () => (
-        <div className="flex-1 flex flex-row h-full">
-          {/* ========== 左侧：画布区域 ========== */}
-          <MaskCanvasPainter
-            loadingState={loadingState}
-            isCompareMode={isCompareMode}
-            activeAttachments={activeAttachments}
-            activeImageUrl={activeImageUrl}
-            originalImageUrl={originalImageUrl}
-            zoom={canvas.zoom}
-            isDragging={canvas.isDragging}
-            canvasStyle={canvas.canvasStyle}
-            onWheel={canvas.handleWheel}
-            onMouseDown={canvas.handleMouseDown}
-            onMouseMove={canvas.handleMouseMove}
-            onMouseUp={canvas.handleMouseUp}
-            onZoomIn={canvas.handleZoomIn}
-            onZoomOut={canvas.handleZoomOut}
-            onReset={canvas.handleReset}
-            onFullscreen={activeImageUrl ? handleFullscreen : undefined}
-            onExpand={onExpandImage && activeImageUrl ? handleExpand : undefined}
-            onToggleCompare={originalImageUrl ? toggleCompare : undefined}
-            // ✅ Mask 工具栏
-            activeMaskTool={activeMaskTool}
-            onMaskToolChange={handleMaskToolChange}
-            brushSize={brushSize}
-            onBrushSizeChange={handleBrushSizeChange}
-            // ✅ Mask 自动提取模式
-            maskMode={controls.maskMode}
-            onMaskModeChange={handleMaskModeChange}
-            onImportMask={handleImportMask}
-            onClearMask={handleClearMask}
-            isPreviewingMask={isPreviewingMask}
-            // ✅ Mask 反转（前景/背景切换）
-            isMaskInverted={isMaskInverted}
-            onToggleMaskInvert={handleToggleMaskInvert}
-            // ✅ 选区和 Mask 预览（支持多个矩形）
-            selectionRects={selectionRects}
-            currentSelectionRect={currentSelectionRect}
-            isSelecting={isSelecting}
-            onSelectionStart={handleSelectionStart}
-            onSelectionMove={handleSelectionMove}
-            onSelectionEnd={handleSelectionEnd}
-            onDeleteSelection={handleDeleteSelection}
-            maskPreviewUrl={maskPreviewUrl}
-            maskPreviewNotice={maskPreviewNotice}
-            maskPreviewError={maskPreviewError}
-            imageRef={imageRef}
-            // ✅ 画笔/橡皮擦
-            onBrushStart={handleBrushStart}
-            onBrushMove={handleBrushMove}
-            onBrushEnd={handleBrushEnd}
-            isPainting={isPainting}
-            maskCanvasUrl={maskCanvasUrl}
-            brushCursorRef={brushCursorRef}
-            onBrushCursorMove={handleBrushCursorMove}
-            maskCanvasRef={maskCanvasRef}
-            displayCanvasRef={displayCanvasRef}
-          />
-
-          {/* ========== 右侧：参数面板 ========== */}
-          <div className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900/50 flex flex-col h-full overflow-hidden">
-            {/* 头部 */}
-            <div className="px-4 py-3 border-b border-slate-800/50 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <SlidersHorizontal size={14} className="text-purple-400" />
-                <span className="text-xs font-bold text-white">Mask 参数</span>
-              </div>
-              <button
-                onClick={resetParams}
-                className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-                title="重置为默认值"
-              >
-                <RotateCcw size={12} />
-              </button>
-            </div>
-
-            {/* 参数滚动区 */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
-              <ModeControlsCoordinator
-                mode={editMode}
-                providerId={providerId || 'google'}
-                controls={controls}
-              />
-            </div>
-
-            {/* 底部固定区：使用 ChatEditInputArea 组件 */}
-            <ChatEditInputArea
-              onSend={handleSend}
-              isLoading={loadingState !== 'idle'}
-              onStop={onStop}
-              mode={editMode}
-              activeAttachments={activeAttachments}
-              onAttachmentsChange={setActiveAttachments}
-              activeImageUrl={activeImageUrl}
-              onActiveImageUrlChange={setActiveImageUrl}
-              messages={messages}
-              sessionId={currentSessionId ?? null}
-              initialPrompt={initialPrompt}
-              initialAttachments={initialAttachments}
-              providerId={providerId}
-              controls={controls}
-              externalDisabled={Boolean(maskInputDisabledReason)}
-              externalDisabledReason={maskInputDisabledReason}
-            />
-          </div>
-        </div>
+        <MaskEditMain
+          loadingState={loadingState}
+          isCompareMode={isCompareMode}
+          activeAttachments={activeAttachments}
+          setActiveAttachments={setActiveAttachments}
+          activeImageUrl={activeImageUrl}
+          setActiveImageUrl={setActiveImageUrl}
+          originalImageUrl={originalImageUrl}
+          canvas={canvas}
+          handleFullscreen={handleFullscreen}
+          handleExpand={handleExpand}
+          toggleCompare={toggleCompare}
+          onExpandImage={onExpandImage}
+          controls={controls}
+          providerId={providerId}
+          resetParams={resetParams}
+          editMode={editMode}
+          onStop={onStop}
+          messages={messages}
+          currentSessionId={currentSessionId}
+          initialPrompt={initialPrompt}
+          initialAttachments={initialAttachments}
+          handleSend={handleSend}
+          activeMaskTool={activeMaskTool}
+          handleMaskToolChange={handleMaskToolChange}
+          brushSize={brushSize}
+          handleBrushSizeChange={handleBrushSizeChange}
+          handleMaskModeChange={handleMaskModeChange}
+          handleImportMask={handleImportMask}
+          handleClearMask={handleClearMask}
+          isPreviewingMask={isPreviewingMask}
+          isMaskInverted={isMaskInverted}
+          handleToggleMaskInvert={handleToggleMaskInvert}
+          selectionRects={selectionRects}
+          currentSelectionRect={currentSelectionRect}
+          isSelecting={isSelecting}
+          handleSelectionStart={handleSelectionStart}
+          handleSelectionMove={handleSelectionMove}
+          handleSelectionEnd={handleSelectionEnd}
+          handleDeleteSelection={handleDeleteSelection}
+          maskPreviewUrl={maskPreviewUrl}
+          maskPreviewNotice={maskPreviewNotice}
+          maskPreviewError={maskPreviewError}
+          imageRef={imageRef}
+          handleBrushStart={handleBrushStart}
+          handleBrushMove={handleBrushMove}
+          handleBrushEnd={handleBrushEnd}
+          isPainting={isPainting}
+          maskCanvasUrl={maskCanvasUrl}
+          brushCursorRef={brushCursorRef}
+          handleBrushCursorMove={handleBrushCursorMove}
+          maskCanvasRef={maskCanvasRef}
+          displayCanvasRef={displayCanvasRef}
+          maskInputDisabledReason={maskInputDisabledReason}
+        />
       ),
       [
         loadingState,
