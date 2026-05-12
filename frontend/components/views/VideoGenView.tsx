@@ -1,46 +1,22 @@
 import { safeCopyToClipboard } from '../../utils/safeOps';
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
-import {
-  Video as VideoIcon,
-  Check,
-  Clock,
-  Copy,
-  AlertCircle,
-  Download,
-  Maximize2,
-  Film,
-  SlidersHorizontal,
-  RotateCcw,
-  Layers,
-  Star,
-  FolderOpen,
-  Trash2,
-  Wand2,
-  Play,
-  Pause,
-  Volume2,
-  VolumeX,
-} from 'lucide-react';
+import { Clock, Star } from 'lucide-react';
 import { GenViewLayout } from '../common/GenViewLayout';
 import { useControlsState } from '../../hooks/useControlsState';
 import { useModeControlsSchema } from '../../hooks/useModeControlsSchema';
-import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
-import ChatEditInputArea from '../chat/ChatEditInputArea';
 import {
   buildVideoControlContract,
   isVideoControlSelectionValid,
 } from '../../utils/videoControlSchema';
 import { useHistoryListActions } from '../../hooks/useHistoryListActions';
 import { isHistoryActionSurface } from '../../utils/historyActionSurface';
-import {
-  useHoverPromptPreview,
-  type HoverPromptPreviewBase,
-} from '../../hooks/useHoverPromptPreview';
-import { useActionMenu, type ActionMenuAnchorBase } from '../../hooks/useActionMenu';
-import { extractHistoryPrompts, extractVideoHistoryMeta } from '../../utils/videoHistoryHelpers';
+import { useHoverPromptPreview } from '../../hooks/useHoverPromptPreview';
+import { useActionMenu } from '../../hooks/useActionMenu';
 import { useVideoPlayerControls } from '../../hooks/views/useVideoPlayerControls';
+import type { ActionMenuAnchor, HoverPromptPreview } from './video/types';
+import { VideoHistorySidebar } from './video/VideoHistorySidebar';
+import { VideoMainCanvas } from './video/VideoMainCanvas';
 
 interface VideoGenViewProps {
   messages: Message[];
@@ -59,17 +35,7 @@ interface VideoGenViewProps {
 
 // extractHistoryPrompts / extractVideoHistoryMeta 抽离至 utils/videoHistoryHelpers
 // （JIRA-frontend-view-decomposition.md P1 #4 Step 1）
-
-type ActionMenuAnchor = ActionMenuAnchorBase;
-
-// 扩展 HoverPromptPreviewBase 添加 view 特有元数据（视频时长 / 策略标签 / 字幕等）
-interface HoverPromptPreview extends HoverPromptPreviewBase {
-  extensionCount: number;
-  totalDurationSeconds: number | null;
-  strategyLabel: string | null;
-  subtitleLabel: string | null;
-  subtitleCount: number;
-}
+// ActionMenuAnchor / HoverPromptPreview 已抽离至 ./video/types
 
 export const VideoGenView: React.FC<VideoGenViewProps> = ({
   messages,
@@ -135,7 +101,6 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
     videoProgressFillRef,
     videoProgressThumbRef,
     videoCurrentTimeLabelRef,
-    videoProgressAnimationFrameRef,
     handleToggleFullscreen,
     formatVideoTime,
     handleActiveVideoSeek,
@@ -552,7 +517,6 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
     }
   }, []);
 
-
   // hook 自己已处理 rAF position-sync + scroll/resize listener + unmount cleanup；
   // 这里仅保留 view 特有 timer cleanup（copy 反馈 + video 进度 rAF）
   useEffect(() => {
@@ -695,772 +659,92 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
     ]
   );
 
-  const sidebarContent = useMemo(
-    () => (
-      <div className="p-3 space-y-2.5">
-        {filteredHistoryBatches.map((msg) => {
-          const previewVideo = msg.attachments?.find(
-            (attachment) => attachment.mimeType?.startsWith('video/') && attachment.url
-          );
-          const previewImage = msg.attachments?.find(
-            (attachment) => attachment.mimeType?.startsWith('image/') && attachment.url
-          );
-          const previewCount = (msg.attachments || []).filter(
-            (attachment) =>
-              attachment.mimeType?.startsWith('video/') || attachment.mimeType?.startsWith('image/')
-          ).length;
-          const isSelected = activeBatchMessage?.id === msg.id;
-          const { originalPrompt, optimizedPrompt } = extractHistoryPrompts(msg);
-          const {
-            extensionCount,
-            totalDurationSeconds,
-            strategyLabel,
-            subtitleLabel,
-            subtitleCount,
-          } = extractVideoHistoryMeta(msg);
-          const favorited = isFavorite(msg.id);
-          const isActionMenuOpen = openActionMenu?.messageId === msg.id;
-
-          return (
-            <div
-              key={msg.id}
-              ref={(element) => {
-                historyItemRefs.current[msg.id] = element;
-              }}
-              className="group relative"
-            >
-              <div
-                className={`relative rounded-xl border cursor-pointer transition-all flex items-center gap-3 bg-slate-800/40 p-2 ${
-                  isSelected
-                    ? 'ring-1 ring-indigo-500 border-transparent bg-slate-800'
-                    : 'border-slate-700/50 hover:border-slate-600 hover:bg-slate-800'
-                }`}
-                data-testid={`video-history-item-${msg.id}`}
-                onMouseEnter={(event) =>
-                  showHoverPreview(event, msg.id, originalPrompt, optimizedPrompt, {
-                    extensionCount,
-                    totalDurationSeconds,
-                    strategyLabel,
-                    subtitleLabel,
-                    subtitleCount,
-                  })
-                }
-                onMouseLeave={() => scheduleHideHoverPreview()}
-                onClick={() => {
-                  activateHistoryMessage(msg);
-                  if (window.innerWidth < 768) {
-                    setIsMobileHistoryOpen(false);
-                  }
-                  closeActionMenu();
-                }}
-              >
-                {favorited && (
-                  <span className="absolute right-2 top-2 inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-400/20 border border-amber-300/50 z-10">
-                    <Star size={11} className="fill-amber-300 text-amber-300" />
-                  </span>
-                )}
-
-                <div className="h-14 w-20 flex-shrink-0 rounded-lg overflow-hidden bg-slate-900 relative">
-                  {msg.isError ? (
-                    <div className="w-full h-full flex items-center justify-center text-red-400 bg-red-900/10">
-                      <AlertCircle size={20} />
-                    </div>
-                  ) : previewVideo?.url ? (
-                    <>
-                      <video
-                        src={previewVideo.url}
-                        className="w-full h-full object-cover"
-                        muted
-                        playsInline
-                        preload="metadata"
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="bg-black/50 p-1.5 rounded-full backdrop-blur-sm">
-                          <VideoIcon size={14} className="text-white" />
-                        </div>
-                      </div>
-                      {previewCount > 1 && (
-                        <div className="absolute top-1 right-1 bg-black/60 backdrop-blur-sm text-white text-[10px] px-1.5 py-0.5 rounded-md flex items-center gap-1 font-medium border border-white/10">
-                          <Layers size={10} /> {previewCount}
-                        </div>
-                      )}
-                    </>
-                  ) : previewImage?.url ? (
-                    <>
-                      <img
-                        src={previewImage.url}
-                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                        loading="lazy"
-                        alt="Video reference"
-                      />
-                      {previewCount > 1 && (
-                        <div className="absolute top-1 right-1 bg-black/60 backdrop-blur-sm text-white text-[10px] px-1.5 py-0.5 rounded-md flex items-center gap-1 font-medium border border-white/10">
-                          <Layers size={10} /> {previewCount}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-600">
-                      <Film size={18} className="opacity-50" />
-                    </div>
-                  )}
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <p className="text-[11px] text-slate-200 leading-relaxed font-medium line-clamp-2 break-words">
-                    {originalPrompt}
-                  </p>
-                  <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-500">
-                    <span>
-                      {new Date(msg.timestamp).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </span>
-                    {optimizedPrompt && (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-1.5 py-0.5 text-indigo-300">
-                        <Wand2 size={10} />
-                        已优化
-                      </span>
-                    )}
-                  </div>
-                  {(extensionCount > 0 ||
-                    totalDurationSeconds ||
-                    strategyLabel ||
-                    subtitleLabel) && (
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
-                      {extensionCount > 0 && (
-                        <span className="inline-flex items-center rounded-full border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-cyan-200">
-                          延长 {extensionCount} 次
-                        </span>
-                      )}
-                      {totalDurationSeconds && (
-                        <span className="inline-flex items-center rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-emerald-200">
-                          总时长 {totalDurationSeconds}s
-                        </span>
-                      )}
-                      {strategyLabel && (
-                        <span className="inline-flex items-center rounded-full border border-slate-600 bg-slate-800/80 px-1.5 py-0.5 text-slate-300">
-                          {strategyLabel}
-                        </span>
-                      )}
-                      {subtitleLabel && (
-                        <span className="inline-flex items-center rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 px-1.5 py-0.5 text-fuchsia-200">
-                          {subtitleLabel}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div
-                  className="absolute right-2 bottom-2 z-20"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
-                >
-                  <button
-                    type="button"
-                    className={`transition-opacity rounded-md border border-slate-600/70 bg-slate-900/90 p-1 text-slate-300 hover:text-white hover:border-slate-400 ${
-                      isActionMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                    }`}
-                    title="历史项操作"
-                    data-history-action-trigger={msg.id}
-                    onMouseEnter={(event) => {
-                      event.stopPropagation();
-                      closeHoverPreview();
-                    }}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      closeHoverPreview();
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      if (openActionMenu?.messageId === msg.id) {
-                        closeActionMenu();
-                      } else {
-                        openActionMenuBase({
-                          messageId: msg.id,
-                          anchorX: rect.right,
-                          anchorY: rect.bottom,
-                        });
-                      }
-                    }}
-                  >
-                    <FolderOpen size={12} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-
-        {filteredHistoryBatches.length === 0 && (
-          <div className="text-center py-10 text-slate-600 text-xs italic">
-            {showFavoritesOnly ? '暂无收藏记录。' : 'No video history yet.'}
-          </div>
-        )}
-
-        {openActionMenu &&
-          typeof document !== 'undefined' &&
-          createPortal(
-            <div
-              ref={actionMenuPanelRef}
-              data-history-action-menu
-              className="fixed z-[130] inline-flex flex-col gap-1 rounded-lg border border-slate-700 bg-slate-950/95 shadow-2xl backdrop-blur-md p-1"
-              onMouseEnter={closeHoverPreview}
-              style={{
-                top: actionMenuPosition?.top ?? openActionMenu.anchorY,
-                left: actionMenuPosition?.left ?? openActionMenu.anchorX,
-              }}
-            >
-              <button
-                type="button"
-                className="whitespace-nowrap px-2.5 py-1.5 rounded text-left text-[11px] text-slate-200 hover:bg-slate-800 flex items-center gap-1.5 disabled:opacity-50"
-                disabled={
-                  openActionMenu.messageId ? isFavoritePending(openActionMenu.messageId) : false
-                }
-                onClick={async () => {
-                  await toggleFavorite(openActionMenu.messageId);
-                  closeActionMenu();
-                }}
-              >
-                <Star
-                  size={11}
-                  className={
-                    openActionMenu.messageId && isFavorite(openActionMenu.messageId)
-                      ? 'fill-amber-300 text-amber-300'
-                      : 'text-amber-300'
-                  }
-                />
-                {openActionMenu.messageId && isFavorite(openActionMenu.messageId)
-                  ? '取消收藏'
-                  : '收藏'}
-              </button>
-              <button
-                type="button"
-                className="whitespace-nowrap px-2.5 py-1.5 rounded text-left text-[11px] text-red-300 hover:bg-red-950/50 flex items-center gap-1.5"
-                onClick={() => {
-                  deleteItem(openActionMenu.messageId);
-                  if (hoverPreview?.messageId === openActionMenu.messageId) {
-                    closeHoverPreview();
-                  }
-                  closeActionMenu();
-                }}
-              >
-                <Trash2 size={11} />
-                删除
-              </button>
-            </div>,
-            document.body
-          )}
-
-        {hoverPreview &&
-          typeof document !== 'undefined' &&
-          createPortal(
-            <div
-              ref={hoverPreviewPanelRef}
-              className="fixed z-[140] hidden md:block"
-              style={{
-                top: hoverPreviewPosition?.top ?? hoverPreview.anchorY,
-                left: hoverPreviewPosition?.left ?? hoverPreview.anchorX,
-                ...(hoverPreviewSize
-                  ? { width: hoverPreviewSize.width, height: hoverPreviewSize.height }
-                  : {}),
-              }}
-              onMouseEnter={() => clearHidePreviewTimer()}
-              onMouseLeave={() => scheduleHideHoverPreview()}
-            >
-              <div
-                className={`group relative rounded-xl border border-slate-700/80 bg-slate-950/95 backdrop-blur-lg p-3 shadow-2xl ${
-                  hoverPreviewSize ? 'h-full' : 'inline-block w-fit max-w-[min(70vw,560px)]'
-                }`}
-              >
-                <div
-                  className="absolute right-full -translate-y-1/2 h-2.5 w-2.5 rotate-45 border-b border-l border-slate-700/80 bg-slate-950/95"
-                  style={{ top: hoverPreviewPosition?.arrowOffsetY ?? '50%' }}
-                />
-
-                <div
-                  className={`pr-2 pb-5 custom-scrollbar ${
-                    hoverPreviewSize ? 'h-full overflow-y-auto' : 'max-h-[70vh] overflow-y-auto'
-                  }`}
-                >
-                  <div className="mb-3">
-                    <p className="text-[10px] uppercase tracking-wider text-slate-500">
-                      原始提示词
-                    </p>
-                    <p className="mt-1 text-xs text-slate-200 whitespace-pre-wrap break-words">
-                      {hoverPreview.originalPrompt}
-                    </p>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-[10px] uppercase tracking-wider text-indigo-400">
-                        优化后提示词
-                      </p>
-                      {hoverPreview.optimizedPrompt && (
-                        <button
-                          type="button"
-                          onClick={handleCopyOptimizedPrompt}
-                          className="pointer-events-auto inline-flex items-center gap-1 rounded-md border border-indigo-500/30 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] text-indigo-200 hover:bg-indigo-500/20 transition-colors"
-                          title="复制优化后提示词"
-                        >
-                          {copiedPreviewMessageId === hoverPreview.messageId ? (
-                            <Check size={11} />
-                          ) : (
-                            <Copy size={11} />
-                          )}
-                          {copiedPreviewMessageId === hoverPreview.messageId ? '已复制' : '复制'}
-                        </button>
-                      )}
-                    </div>
-                    {hoverPreview.optimizedPrompt ? (
-                      <p className="mt-1 text-xs text-indigo-100 whitespace-pre-wrap break-words">
-                        {hoverPreview.optimizedPrompt}
-                      </p>
-                    ) : (
-                      <p className="mt-1 text-xs text-slate-500 italic">未返回优化后的提示词</p>
-                    )}
-                  </div>
-
-                  {(hoverPreview.extensionCount > 0 ||
-                    hoverPreview.totalDurationSeconds ||
-                    hoverPreview.strategyLabel ||
-                    hoverPreview.subtitleLabel) && (
-                    <div className="mt-3 border-t border-slate-800 pt-3">
-                      <p className="text-[10px] uppercase tracking-wider text-cyan-400">视频信息</p>
-                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
-                        {hoverPreview.extensionCount > 0 && (
-                          <span className="inline-flex items-center rounded-full border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-cyan-200">
-                            延长 {hoverPreview.extensionCount} 次
-                          </span>
-                        )}
-                        {hoverPreview.totalDurationSeconds && (
-                          <span className="inline-flex items-center rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-emerald-200">
-                            总时长 {hoverPreview.totalDurationSeconds}s
-                          </span>
-                        )}
-                        {hoverPreview.strategyLabel && (
-                          <span className="inline-flex items-center rounded-full border border-slate-600 bg-slate-800/80 px-1.5 py-0.5 text-slate-300">
-                            {hoverPreview.strategyLabel}
-                          </span>
-                        )}
-                        {hoverPreview.subtitleLabel && (
-                          <span className="inline-flex items-center rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 px-1.5 py-0.5 text-fuchsia-200">
-                            {hoverPreview.subtitleLabel}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  aria-label="拖动调整提示词预览大小"
-                  className="absolute bottom-0 right-0 h-5 w-5 cursor-se-resize bg-transparent"
-                  onMouseDown={handlePreviewResizeMouseDown}
-                />
-                {isResizingPreview && (
-                  <div className="pointer-events-none absolute bottom-1 left-3 text-[10px] text-slate-500">
-                    {Math.round(hoverPreviewSize?.width || 0)} ×{' '}
-                    {Math.round(hoverPreviewSize?.height || 0)}
-                  </div>
-                )}
-              </div>
-            </div>,
-            document.body
-          )}
-      </div>
-    ),
-    [
-      activeBatchMessage?.id,
-      clearHidePreviewTimer,
-      closeHoverPreview,
-      copiedPreviewMessageId,
-      deleteItem,
-      favoriteCount,
-      filteredHistoryBatches,
-      activateHistoryMessage,
-      handleCopyOptimizedPrompt,
-      handlePreviewResizeMouseDown,
-      historyBatches.length,
-      isFavorite,
-      isFavoritePending,
-      isResizingPreview,
-      loadingState,
-      openActionMenu,
-      hoverPreview,
-      hoverPreviewPosition,
-      hoverPreviewSize,
-      sessionId,
-      scheduleHideHoverPreview,
-      showFavoritesOnly,
-      showHoverPreview,
-      setShowFavoritesOnly,
-      toggleFavorite,
-    ]
+  // sidebarContent / mainContent 由子组件接管渲染；原 useMemo 的 deps
+  // 几乎在每次渲染都会变化（loadingState/controls/...），useMemo 本身收益微乎其微，
+  // 因此此处仅保留 plain JSX 转发——React 元素重建是 O(1)，下游 VideoHistorySidebar /
+  // VideoMainCanvas 自身的内部 memoization 与 useEffect 仍保持原行为。
+  const sidebarContent = (
+    <VideoHistorySidebar
+      filteredHistoryBatches={filteredHistoryBatches}
+      activeBatchMessageId={activeBatchMessage?.id}
+      showFavoritesOnly={showFavoritesOnly}
+      isFavorite={isFavorite}
+      isFavoritePending={isFavoritePending}
+      toggleFavorite={toggleFavorite}
+      deleteItem={deleteItem}
+      historyItemRefs={historyItemRefs}
+      hoverPreview={hoverPreview}
+      hoverPreviewPosition={hoverPreviewPosition}
+      hoverPreviewSize={hoverPreviewSize}
+      hoverPreviewPanelRef={hoverPreviewPanelRef}
+      clearHidePreviewTimer={clearHidePreviewTimer}
+      scheduleHideHoverPreview={scheduleHideHoverPreview}
+      showHoverPreview={showHoverPreview}
+      closeHoverPreview={closeHoverPreview}
+      handleCopyOptimizedPrompt={handleCopyOptimizedPrompt}
+      copiedPreviewMessageId={copiedPreviewMessageId}
+      handlePreviewResizeMouseDown={handlePreviewResizeMouseDown}
+      isResizingPreview={isResizingPreview}
+      openActionMenu={openActionMenu}
+      actionMenuPosition={actionMenuPosition}
+      actionMenuPanelRef={actionMenuPanelRef}
+      openActionMenuBase={openActionMenuBase}
+      closeActionMenu={closeActionMenu}
+      activateHistoryMessage={activateHistoryMessage}
+      setIsMobileHistoryOpen={setIsMobileHistoryOpen}
+    />
   );
 
   const isBatchError = activeBatchMessage?.isError;
 
-  const mainContent = useMemo(
-    () => (
-      <div className="flex-1 flex flex-row h-full">
-        <div className="flex-1 flex flex-col items-center justify-center p-8 overflow-hidden bg-slate-950 relative">
-          <div
-            className="absolute inset-0 opacity-20 pointer-events-none"
-            style={{
-              backgroundImage: `
-                            linear-gradient(45deg, #334155 25%, transparent 25%), 
-                            linear-gradient(-45deg, #334155 25%, transparent 25%), 
-                            linear-gradient(45deg, transparent 75%, #334155 75%), 
-                            linear-gradient(-45deg, transparent 75%, #334155 75%)
-                        `,
-              backgroundSize: '20px 20px',
-              backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
-            }}
-          />
-
-          <div className="absolute top-4 left-4 z-10 pointer-events-none">
-            <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-4 py-1.5 text-xs font-medium text-slate-300 flex items-center gap-2 shadow-lg">
-              <Film size={12} className="text-indigo-400" />
-              Video Workspace
-            </div>
-          </div>
-
-          {loadingState !== 'idle' ? (
-            <div
-              className="flex flex-col items-center gap-6 p-8 rounded-3xl bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 shadow-2xl relative z-10"
-              data-testid="video-main-loading-skeleton"
-            >
-              <div className="relative">
-                <div className="w-24 h-24 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
-                <div className="absolute inset-0 flex items-center justify-center text-sm font-mono text-indigo-400 font-bold tracking-widest">
-                  VEO
-                </div>
-              </div>
-              <div className="text-center">
-                <p className="text-slate-200 font-medium text-lg">生成中...</p>
-                <p className="text-slate-500 text-xs mt-1">视频生成通常会比图片更久一些。</p>
-              </div>
-            </div>
-          ) : isBatchError ? (
-            <div className="flex flex-col items-center gap-4 text-center p-8 bg-slate-900/50 rounded-2xl border border-red-900/30 relative z-10">
-              <AlertCircle size={48} className="text-red-500 opacity-80" />
-              <div>
-                <h3 className="text-lg font-bold text-slate-200">生成失败</h3>
-                <p className="text-sm text-red-400 mt-2 max-w-md">
-                  {activeBatchMessage?.content || '未知错误'}
-                </p>
-              </div>
-            </div>
-          ) : activeVideoUrl ? (
-            <div
-              ref={activeVideoStageRef}
-              data-testid="video-main-stage"
-              className="relative w-full max-w-5xl rounded-[28px] bg-slate-900/80 backdrop-blur-sm border border-slate-800/60 shadow-2xl overflow-hidden z-10"
-            >
-              <div className="relative group aspect-video bg-black flex items-center justify-center">
-                <video
-                  ref={activeVideoRef}
-                  data-testid="video-main-player"
-                  src={activeVideoUrl}
-                  autoPlay
-                  loop
-                  playsInline
-                  preload="metadata"
-                  className="h-full w-full object-contain shadow-2xl"
-                  onClick={() => {
-                    void toggleActiveVideoPlayback();
-                  }}
-                  onDoubleClick={() => {
-                    void handleToggleFullscreen();
-                  }}
-                  onPlay={() => setIsVideoPlaying(true)}
-                  onPause={() => {
-                    setIsVideoPlaying(false);
-                    const video = activeVideoRef.current;
-                    if (video) {
-                      syncVideoProgressUi(video.currentTime || 0, video.duration || 0);
-                    }
-                  }}
-                  onLoadedMetadata={(event) => {
-                    const nextDuration = event.currentTarget.duration || 0;
-                    setVideoDuration(nextDuration);
-                    Array.from(event.currentTarget.textTracks || []).forEach((track, index) => {
-                      track.mode = index === 0 ? 'showing' : 'disabled';
-                    });
-                    syncVideoProgressUi(event.currentTarget.currentTime || 0, nextDuration);
-                  }}
-                  onDurationChange={(event) => {
-                    const nextDuration = event.currentTarget.duration || 0;
-                    setVideoDuration(nextDuration);
-                    syncVideoProgressUi(event.currentTarget.currentTime || 0, nextDuration);
-                  }}
-                  onEnded={() => {
-                    setIsVideoPlaying(false);
-                    syncVideoProgressUi(0, videoDuration);
-                  }}
-                >
-                  {activeSubtitleTrack?.url && (
-                    <track
-                      key={activeSubtitleTrack.id}
-                      src={activeSubtitleTrack.url}
-                      kind="captions"
-                      srcLang={(activeSubtitleTrack.language || 'zh-CN').split('-')[0]}
-                      label={activeSubtitleTrack.language || '字幕'}
-                      default
-                    />
-                  )}
-                </video>
-
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-black/40 opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    void toggleActiveVideoPlayback();
-                  }}
-                  className="absolute inset-0 z-10 flex items-center justify-center"
-                  aria-label={isVideoPlaying ? '暂停视频' : '播放视频'}
-                  title={isVideoPlaying ? '暂停视频' : '播放视频'}
-                >
-                  <span
-                    className={`inline-flex h-16 w-16 items-center justify-center rounded-full border border-white/15 bg-black/55 text-white shadow-2xl backdrop-blur-md transition-all duration-200 ${
-                      isVideoPlaying
-                        ? 'opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100'
-                        : 'opacity-100'
-                    }`}
-                  >
-                    {isVideoPlaying ? (
-                      <Pause size={28} />
-                    ) : (
-                      <Play size={28} className="translate-x-0.5" />
-                    )}
-                  </span>
-                </button>
-              </div>
-
-              <div className="border-t border-slate-800/70 px-5 py-4 bg-slate-950/90">
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void toggleActiveVideoPlayback();
-                    }}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-100 hover:border-slate-500 hover:bg-slate-800 transition-colors"
-                    title={isVideoPlaying ? '暂停视频' : '播放视频'}
-                    aria-label={isVideoPlaying ? '暂停视频' : '播放视频'}
-                  >
-                    {isVideoPlaying ? (
-                      <Pause size={18} />
-                    ) : (
-                      <Play size={18} className="translate-x-0.5" />
-                    )}
-                  </button>
-                  <span
-                    ref={videoCurrentTimeLabelRef}
-                    className="w-[76px] text-right font-mono text-xs text-slate-400 tabular-nums"
-                  >
-                    0:00.000
-                  </span>
-                  <div className="relative flex-1 h-8 flex items-center">
-                    <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1.5 rounded-full bg-slate-800" />
-                    <div
-                      ref={videoProgressFillRef}
-                      className="absolute left-0 top-1/2 -translate-y-1/2 h-1.5 rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400"
-                      style={{ width: '0%' }}
-                    />
-                    <div
-                      ref={videoProgressThumbRef}
-                      className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/60 bg-white shadow-[0_0_0_4px_rgba(99,102,241,0.18)] pointer-events-none"
-                      style={{ left: '0%' }}
-                    />
-                    <input
-                      ref={videoSeekInputRef}
-                      type="range"
-                      min={0}
-                      max={Math.max(videoDuration, 0.001)}
-                      step="any"
-                      defaultValue={0}
-                      onChange={handleActiveVideoSeek}
-                      className="relative z-10 h-8 w-full cursor-pointer opacity-0"
-                      aria-label="视频进度"
-                    />
-                  </div>
-                  <span className="w-[76px] font-mono text-xs text-slate-400 tabular-nums">
-                    {formatVideoTime(videoDuration)}
-                  </span>
-                  <div className="mx-1 h-5 w-px bg-slate-800" />
-                  <button
-                    type="button"
-                    onClick={handleToggleMute}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-100 hover:border-slate-500 hover:bg-slate-800 transition-colors"
-                    title={isVideoMuted || videoVolume <= 0.001 ? '取消静音' : '静音'}
-                    aria-label={isVideoMuted || videoVolume <= 0.001 ? '取消静音' : '静音'}
-                  >
-                    {isVideoMuted || videoVolume <= 0.001 ? (
-                      <VolumeX size={18} />
-                    ) : (
-                      <Volume2 size={18} />
-                    )}
-                  </button>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    value={isVideoMuted ? 0 : videoVolume}
-                    onChange={handleActiveVideoVolumeChange}
-                    className="w-24 accent-indigo-500"
-                    aria-label="视频音量"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void handleToggleFullscreen();
-                    }}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-100 hover:border-slate-500 hover:bg-slate-800 transition-colors"
-                    title={isVideoFullscreen ? '退出全屏' : '全屏播放'}
-                    aria-label={isVideoFullscreen ? '退出全屏' : '全屏播放'}
-                  >
-                    <Maximize2 size={18} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDownload(activeVideoUrl)}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-500/30 bg-indigo-600 text-white hover:bg-indigo-500 transition-colors shadow-lg"
-                    title="下载视频"
-                    aria-label="下载视频"
-                  >
-                    <Download size={18} />
-                  </button>
-                  {downloadableSubtitleAttachment?.url && (
-                    <button
-                      type="button"
-                      onClick={() => handleDownload(downloadableSubtitleAttachment.url!)}
-                      className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 px-3 text-xs text-slate-100 hover:border-slate-500 hover:bg-slate-800 transition-colors"
-                      title="下载字幕文件"
-                      aria-label="下载字幕文件"
-                    >
-                      字幕
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="text-center text-slate-600 flex flex-col items-center gap-6 relative z-10">
-              <div className="w-32 h-32 rounded-3xl bg-slate-900 border border-slate-800 flex items-center justify-center shadow-inner relative overflow-hidden group">
-                <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                <VideoIcon
-                  size={64}
-                  className="opacity-20 group-hover:scale-110 transition-transform duration-500"
-                />
-              </div>
-              <div>
-                <h3 className="text-2xl font-bold text-slate-500 mb-2">Video Generator</h3>
-                <p className="max-w-xs mx-auto text-sm opacity-60">
-                  Describe a scene, or upload an image to animate using Google Veo.
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900/50 flex flex-col h-full overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-800/50 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <SlidersHorizontal size={14} className="text-indigo-400" />
-              <span className="text-xs font-bold text-white">视频参数</span>
-            </div>
-            <button
-              onClick={resetParams}
-              disabled={
-                !videoControlsSchema ||
-                isLoadingVideoControlsSchema ||
-                Boolean(videoControlsSchemaError)
-              }
-              className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              title="重置为默认值"
-            >
-              <RotateCcw size={12} />
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
-            <ModeControlsCoordinator
-              mode={videoMode}
-              providerId={resolvedProviderId}
-              currentModel={activeModelConfig}
-              controls={controls}
-              controlsSchema={videoControlsSchema}
-              controlsSchemaLoading={isLoadingVideoControlsSchema}
-              controlsSchemaError={videoControlsSchemaError}
-            />
-          </div>
-
-          <ChatEditInputArea
-            onSend={handleSend}
-            isLoading={loadingState !== 'idle'}
-            onStop={onStop}
-            mode={videoMode}
-            activeAttachments={activeAttachments}
-            onAttachmentsChange={setActiveAttachments}
-            activeImageUrl={activeImageUrl}
-            onActiveImageUrlChange={setActiveImageUrl}
-            messages={messages}
-            sessionId={sessionId ?? null}
-            initialPrompt={initialPrompt}
-            providerId={resolvedProviderId}
-            controls={controls}
-            externalDisabled={Boolean(videoControlsStatusMessage)}
-            externalDisabledReason={videoControlsStatusMessage}
-          />
-        </div>
-      </div>
-    ),
-    [
-      activeAttachments,
-      activeBatchMessage?.content,
-      activeImageUrl,
-      activeModelConfig,
-      activeSubtitleTrack?.id,
-      activeSubtitleTrack?.language,
-      activeSubtitleTrack?.url,
-      activeVideoUrl,
-      controls,
-      downloadableSubtitleAttachment?.url,
-      formatVideoTime,
-      handleActiveVideoSeek,
-      handleActiveVideoVolumeChange,
-      handleDownload,
-      handleSend,
-      handleToggleFullscreen,
-      handleToggleMute,
-      initialPrompt,
-      isVideoFullscreen,
-      isVideoMuted,
-      isVideoPlaying,
-      isBatchError,
-      isLoadingVideoControlsSchema,
-      loadingState,
-      messages,
-      onStop,
-      resetParams,
-      resolvedProviderId,
-      sessionId,
-      videoControlsSchema,
-      videoControlsSchemaError,
-      videoControlsStatusMessage,
-      videoMode,
-      toggleActiveVideoPlayback,
-      videoDuration,
-      videoVolume,
-    ]
+  const mainContent = (
+    <VideoMainCanvas
+      loadingState={loadingState}
+      isBatchError={Boolean(isBatchError)}
+      activeBatchMessage={activeBatchMessage}
+      activeVideoUrl={activeVideoUrl}
+      activeSubtitleTrack={activeSubtitleTrack}
+      downloadableSubtitleAttachment={downloadableSubtitleAttachment}
+      activeVideoRef={activeVideoRef}
+      activeVideoStageRef={activeVideoStageRef}
+      videoSeekInputRef={videoSeekInputRef}
+      videoProgressFillRef={videoProgressFillRef}
+      videoProgressThumbRef={videoProgressThumbRef}
+      videoCurrentTimeLabelRef={videoCurrentTimeLabelRef}
+      isVideoPlaying={isVideoPlaying}
+      setIsVideoPlaying={setIsVideoPlaying}
+      videoDuration={videoDuration}
+      setVideoDuration={setVideoDuration}
+      isVideoFullscreen={isVideoFullscreen}
+      isVideoMuted={isVideoMuted}
+      videoVolume={videoVolume}
+      toggleActiveVideoPlayback={toggleActiveVideoPlayback}
+      handleToggleFullscreen={handleToggleFullscreen}
+      handleToggleMute={handleToggleMute}
+      handleActiveVideoSeek={handleActiveVideoSeek}
+      handleActiveVideoVolumeChange={handleActiveVideoVolumeChange}
+      syncVideoProgressUi={syncVideoProgressUi}
+      formatVideoTime={formatVideoTime}
+      handleDownload={handleDownload}
+      videoMode={videoMode}
+      resolvedProviderId={resolvedProviderId}
+      activeModelConfig={activeModelConfig}
+      controls={controls}
+      videoControlsSchema={videoControlsSchema}
+      isLoadingVideoControlsSchema={isLoadingVideoControlsSchema}
+      videoControlsSchemaError={videoControlsSchemaError}
+      resetParams={resetParams}
+      handleSend={handleSend}
+      onStop={onStop}
+      activeAttachments={activeAttachments}
+      setActiveAttachments={setActiveAttachments}
+      activeImageUrl={activeImageUrl}
+      setActiveImageUrl={setActiveImageUrl}
+      messages={messages}
+      sessionId={sessionId}
+      initialPrompt={initialPrompt}
+      videoControlsStatusMessage={videoControlsStatusMessage}
+    />
   );
 
   return (
