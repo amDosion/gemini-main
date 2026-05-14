@@ -3,6 +3,7 @@ S3 兼容存储提供商
 支持 AWS S3 和 S3 兼容服务（如 MinIO、Ceph 等）
 """
 
+import asyncio
 import boto3
 from botocore.exceptions import ClientError, EndpointConnectionError
 from botocore.config import Config
@@ -149,7 +150,8 @@ class S3Provider(BaseStorageProvider):
                 object_key = f"uploads/{timestamp}_{filename}"
             
             # 上传文件
-            response = client.put_object(
+            response = await asyncio.to_thread(
+                client.put_object,
                 Bucket=bucket,
                 Key=object_key,
                 Body=content,

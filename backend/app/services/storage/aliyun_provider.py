@@ -3,6 +3,7 @@
 支持上传文件到阿里云 OSS
 """
 
+import asyncio
 import oss2
 from datetime import datetime
 from typing import Dict, Any, Optional
@@ -93,7 +94,12 @@ class AliyunProvider(BaseStorageProvider):
             }
             
             # 上传文件
-            result = bucket.put_object(object_name, content, headers=headers)
+            result = await asyncio.to_thread(
+                bucket.put_object,
+                object_name,
+                content,
+                headers=headers
+            )
             
             if result.status == 200:
                 # 构建公开访问 URL

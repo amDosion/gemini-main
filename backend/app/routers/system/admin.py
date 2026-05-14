@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from ...core.database import get_db
 from ...core.dependencies import require_current_user
+from ...core.logger import DatabaseLoggingFilter
 from ...models.db_models import User
 from ...services.common.system_config_service import get_system_config, update_system_config
 
@@ -369,6 +370,8 @@ async def patch_admin_system_config(
         raise HTTPException(status_code=400, detail="No configuration changes provided")
 
     config = update_system_config(db, **updates)
+    if "enable_logging" in updates:
+        DatabaseLoggingFilter.set_enable_logging(config.enable_logging)
     return {
         "values": _serialize_system_config(config),
         "fields": [field.model_dump() for field in SYSTEM_CONFIG_FIELDS],

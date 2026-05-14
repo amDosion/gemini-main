@@ -85,10 +85,11 @@ async def get_sessions(
     async def fetch_sessions():
         user_query = UserScopedQuery(db, user_id)
 
-        # 1. 查询所有会话(可按 mode 过滤)
-        sessions = user_query.get_all(DBChatSession)
+        # 1. 查询会话(可按 mode 过滤)
+        session_query = user_query.query(DBChatSession)
         if mode:
-            sessions = [s for s in sessions if s.mode == mode]
+            session_query = session_query.filter(DBChatSession.mode == mode)
+        sessions = session_query.all()
         if not sessions:
             return []
         
@@ -428,7 +429,8 @@ async def create_or_update_session(
             has_thoughts = 'thoughts' in extracted_meta
             has_text_response = 'text_response' in extracted_meta
             has_enhanced_prompt = 'enhanced_prompt' in extracted_meta
-            logger.info(f"[Sessions] 📝 消息 {msg_id} 的 metadata 字段: {meta_keys}, thoughts={has_thoughts}, text_response={has_text_response}, enhanced_prompt={has_enhanced_prompt}")
+            logger.debug("[Sessions] 消息 %s 的 metadata 字段: %s, thoughts=%s, text_response=%s, enhanced_prompt=%s",
+                         msg_id, meta_keys, has_thoughts, has_text_response, has_enhanced_prompt)
 
         metadata_json = json.dumps(extracted_meta) if extracted_meta else None
         

@@ -9,9 +9,7 @@ import logging
 import sys
 import os
 import threading
-import time
 from datetime import datetime
-from typing import Optional
 
 # 全部使用 ASCII 前缀，避免表情符号在部分环境下显示异常
 LOG_PREFIXES = {
@@ -55,22 +53,27 @@ class FlushingStreamHandler(logging.StreamHandler):
 
 class DatabaseLoggingFilter(logging.Filter):
     """
-    日志过滤器：根据数据库配置决定是否显示日志
+    日志过滤器：根据内存中的系统配置决定是否显示日志
     
-    从 SystemConfig 表中读取 enable_logging 字段（布尔值）：
+    enable_logging 由启动/配置更新路径同步写入内存：
     - True: 显示日志
     - False: 不显示日志
-    
-    使用缓存机制，避免每次都查询数据库（缓存时间：30秒）
+
+    filter() 是日志热路径，不能执行同步数据库查询。
     """
+
+    _enable_logging: bool = True
+    _lock = threading.Lock()
     
     def __init__(self):
         super().__init__()
-        self._cached_value: Optional[bool] = None
-        self._cache_timestamp: float = 0
-        self._cache_ttl: float = 30.0  # 缓存时间：30秒
-        self._lock = threading.Lock()
         self._default_value: bool = True  # 默认值：显示日志（向后兼容）
+
+    @classmethod
+    def set_enable_logging(cls, enabled: bool) -> None:
+        """同步更新进程内日志开关。"""
+        with cls._lock:
+            cls._enable_logging = bool(enabled)
     
     def _get_enable_logging_from_db(self) -> bool:
         """
@@ -97,35 +100,6 @@ class DatabaseLoggingFilter(logging.Filter):
             # 不记录错误，避免循环依赖
             return self._default_value
     
-    def _get_cached_value(self) -> bool:
-        """
-        获取缓存的配置值，如果缓存过期则重新查询数据库
-        
-        Returns:
-            bool: enable_logging 配置值
-        """
-        current_time = time.time()
-
-        # 快速路径：缓存有效时无需加锁
-        if (self._cached_value is not None and
-                current_time - self._cache_timestamp < self._cache_ttl):
-            return self._cached_value
-
-        with self._lock:
-            # 双重检查：其他线程可能已刷新缓存
-            if (self._cached_value is not None and
-                    current_time - self._cache_timestamp < self._cache_ttl):
-                return self._cached_value
-
-            # 缓存过期或不存在，重新查询数据库
-            try:
-                self._cached_value = self._get_enable_logging_from_db()
-                self._cache_timestamp = current_time
-                return self._cached_value
-            except Exception:
-                # 查询失败，使用默认值
-                return self._default_value
-    
     def filter(self, record: logging.LogRecord) -> bool:
         """
         过滤日志记录
@@ -136,8 +110,7 @@ class DatabaseLoggingFilter(logging.Filter):
         Returns:
             bool: True 表示允许记录，False 表示不允许记录
         """
-        # 从数据库读取配置（带缓存）
-        enable_logging = self._get_cached_value()
+        enable_logging = self.__class__._enable_logging
         
         # 如果 enable_logging 为 False，不显示日志
         if not enable_logging:
@@ -148,11 +121,9 @@ class DatabaseLoggingFilter(logging.Filter):
     
     def refresh_cache(self):
         """
-        手动刷新缓存（用于配置更新后立即生效）
+        从数据库刷新进程内配置（非日志热路径使用）。
         """
-        with self._lock:
-            self._cached_value = None
-            self._cache_timestamp = 0
+        self.set_enable_logging(self._get_enable_logging_from_db())
 
 
 # 全局日志过滤器实例

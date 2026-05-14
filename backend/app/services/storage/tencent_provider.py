@@ -3,6 +3,7 @@
 支持上传文件到腾讯云 COS
 """
 
+import asyncio
 from qcloud_cos import CosConfig, CosS3Client
 from qcloud_cos.cos_exception import CosServiceError, CosClientError
 from datetime import datetime
@@ -117,7 +118,8 @@ class TencentProvider(BaseStorageProvider):
                 object_name = f"uploads/{timestamp}_{filename}"
             
             # 上传文件
-            response = client.put_object(
+            response = await asyncio.to_thread(
+                client.put_object,
                 Bucket=bucket,
                 Key=object_name,
                 Body=content,
