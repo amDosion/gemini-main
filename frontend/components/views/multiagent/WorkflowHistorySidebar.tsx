@@ -2,6 +2,9 @@ import React from 'react';
 import { Bot, Download, Eye, FileText, Loader2, RefreshCcw, Search, Trash2 } from 'lucide-react';
 import type { WorkflowHistoryMediaPreviewItem } from '../../../services/workflowHistoryService';
 import type { WorkflowHistoryItem } from './types';
+import { CachedImage } from '../../common/CachedImage';
+import { HISTORY_THUMBNAIL_CACHE_PROPS } from '../../common/historyThumbnailCache';
+import { RetainedAudio, RetainedVideo } from '../../common/RetainedMedia';
 
 interface WorkflowHistorySidebarProps {
   historySearchQuery: string;
@@ -287,11 +290,17 @@ export const WorkflowHistorySidebar: React.FC<WorkflowHistorySidebarProps> = ({
                           className="group relative rounded border border-slate-700 overflow-hidden bg-slate-900/60"
                           title="点击查看大图"
                         >
-                          <img
+                          <CachedImage
+                            source={{
+                              attachmentId: `${item.id}-preview-${previewIndex}`,
+                              url: previewUrl,
+                              mimeType: 'image/png',
+                              name: `workflow-preview-${previewIndex + 1}.png`,
+                            }}
                             src={previewUrl}
+                            {...HISTORY_THUMBNAIL_CACHE_PROPS}
                             alt={`workflow-preview-${previewIndex + 1}`}
                             className="h-20 w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
-                            loading="lazy"
                           />
                         </button>
                       ))}
@@ -306,7 +315,7 @@ export const WorkflowHistorySidebar: React.FC<WorkflowHistorySidebarProps> = ({
                           className="rounded border border-slate-700 bg-slate-900/60 p-2"
                         >
                           <div className="mb-1 text-[10px] text-slate-400">{previewItem.fileName || `video-${previewItem.index}`}</div>
-                          <video
+                          <RetainedVideo
                             controls
                             preload="metadata"
                             className="w-full rounded bg-black"
@@ -325,7 +334,7 @@ export const WorkflowHistorySidebar: React.FC<WorkflowHistorySidebarProps> = ({
                           className="rounded border border-slate-700 bg-slate-900/60 p-2"
                         >
                           <div className="mb-1 text-[10px] text-slate-400">{previewItem.fileName || `audio-${previewItem.index}`}</div>
-                          <audio
+                          <RetainedAudio
                             controls
                             preload="metadata"
                             className="w-full"

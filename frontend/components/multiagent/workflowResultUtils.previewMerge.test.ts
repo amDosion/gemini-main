@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  extractImageUrls,
   extractTextContent,
   extractAudioUrls,
   extractVideoUrls,
+  isDirectlyRenderableAudioUrl,
+  isDirectlyRenderableImageUrl,
+  isDirectlyRenderableVideoUrl,
   mergePreviewMediaIntoResult,
   mergePreviewImagesIntoResult,
   PREVIEW_IMAGE_MAX_ENTRIES,
@@ -185,6 +189,41 @@ describe('mergePreviewImagesIntoResult', () => {
     expect(extractVideoUrls(payload)).toEqual([
       'https://example.com/api/temp-images/video-attachment-id',
     ]);
+  });
+
+  it('does not treat browser-local blob urls as directly renderable workflow result media', () => {
+    expect(isDirectlyRenderableImageUrl('blob:https://gemini.dicry.cn:18443/stale-image')).toBe(
+      false
+    );
+    expect(isDirectlyRenderableAudioUrl('blob:https://gemini.dicry.cn:18443/stale-audio')).toBe(
+      false
+    );
+    expect(isDirectlyRenderableVideoUrl('blob:https://gemini.dicry.cn:18443/stale-video')).toBe(
+      false
+    );
+    expect(extractAudioUrls({ audioUrl: 'blob:https://gemini.dicry.cn:18443/stale-audio' })).toEqual(
+      []
+    );
+    expect(extractVideoUrls({ videoUrl: 'blob:https://gemini.dicry.cn:18443/stale-video' })).toEqual(
+      []
+    );
+  });
+
+  it('ignores source and reference images when extracting generated result images', () => {
+    const payload = {
+      sourceImageUrl: '/api/storage/local-files/source.png',
+      referenceImages: [
+        {
+          imageUrl: '/api/storage/local-files/reference.png',
+        },
+      ],
+      finalOutput: {
+        imageUrl: '/api/storage/local-files/generated.png',
+        imageUrls: ['/api/storage/local-files/generated.png'],
+      },
+    };
+
+    expect(extractImageUrls(payload)).toEqual(['/api/storage/local-files/generated.png']);
   });
 
   it('ignores source-video containers and source-video url hints when extracting result videos', () => {

@@ -9,8 +9,11 @@
 import React from 'react';
 import { AppMode } from '../../types/types';
 import * as CommonControls from './google';
+import { ImageEditControls as OpenAIImageEditControls } from './openai/ImageEditControls';
 import { ImageGenControls as OpenAIImageGenControls } from './openai/ImageGenControls';
-import { VideoGenControls as OpenAIVideoGenControls } from './openai/VideoGenControls';
+import { ImageMaskEditControls as OpenAIImageMaskEditControls } from './openai/ImageMaskEditControls';
+import { ImageOutpaintControls as OpenAIImageOutpaintControls } from './openai/ImageOutpaintControls';
+import { VirtualTryOnControls as OpenAIVirtualTryOnControls } from './openai/VirtualTryOnControls';
 import { ImageEditControls as TongYiImageEditControls } from './tongyi/ImageEditControls';
 import { ImageGenControls as TongYiImageGenControls } from './tongyi/ImageGenControls';
 import { ImageGenControls as GrokImageGenControls } from './grok/ImageGenControls';
@@ -45,7 +48,10 @@ const commonControls: ProviderModeControls = {
 const providerOverrides: Record<string, Partial<ProviderModeControls>> = {
   openai: {
     ImageGenControls: OpenAIImageGenControls,
-    VideoGenControls: OpenAIVideoGenControls,
+    ImageEditControls: OpenAIImageEditControls,
+    ImageMaskEditControls: OpenAIImageMaskEditControls,
+    ImageOutpaintControls: OpenAIImageOutpaintControls,
+    VirtualTryOnControls: OpenAIVirtualTryOnControls,
   },
   tongyi: {
     ImageGenControls: TongYiImageGenControls,

@@ -23,7 +23,10 @@
       {
         "id": "start-video-asset-cleanup",
         "type": "start",
-        "position": { "x": 80, "y": 220 },
+        "position": {
+          "x": 80,
+          "y": 220
+        },
         "data": {
           "type": "start",
           "label": "开始",
@@ -35,7 +38,10 @@
       {
         "id": "input-video-asset-cleanup",
         "type": "input_video",
-        "position": { "x": 300, "y": 220 },
+        "position": {
+          "x": 300,
+          "y": 220
+        },
         "data": {
           "type": "input_video",
           "label": "输入视频资产",
@@ -48,7 +54,10 @@
       {
         "id": "tool-video-asset-cleanup",
         "type": "tool",
-        "position": { "x": 580, "y": 220 },
+        "position": {
+          "x": 580,
+          "y": 220
+        },
         "data": {
           "type": "tool",
           "label": "删除视频资产",
@@ -63,7 +72,10 @@
       {
         "id": "end-video-asset-cleanup",
         "type": "end",
-        "position": { "x": 900, "y": 220 },
+        "position": {
+          "x": 900,
+          "y": 220
+        },
         "data": {
           "type": "end",
           "label": "结束",
@@ -74,9 +86,21 @@
       }
     ],
     "edges": [
-      { "id": "edge-video-asset-cleanup-1", "source": "start-video-asset-cleanup", "target": "input-video-asset-cleanup" },
-      { "id": "edge-video-asset-cleanup-2", "source": "input-video-asset-cleanup", "target": "tool-video-asset-cleanup" },
-      { "id": "edge-video-asset-cleanup-3", "source": "tool-video-asset-cleanup", "target": "end-video-asset-cleanup" }
+      {
+        "id": "edge-video-asset-cleanup-1",
+        "source": "start-video-asset-cleanup",
+        "target": "input-video-asset-cleanup"
+      },
+      {
+        "id": "edge-video-asset-cleanup-2",
+        "source": "input-video-asset-cleanup",
+        "target": "tool-video-asset-cleanup"
+      },
+      {
+        "id": "edge-video-asset-cleanup-3",
+        "source": "tool-video-asset-cleanup",
+        "target": "end-video-asset-cleanup"
+      }
     ]
   }
 }

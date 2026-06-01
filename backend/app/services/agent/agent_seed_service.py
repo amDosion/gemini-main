@@ -8,6 +8,7 @@ import time
 import logging
 import json
 import re
+import copy
 from typing import List, Dict, Any, Tuple, Optional
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,82 @@ from ...models.db_models import AgentRegistry, ConfigProfile, generate_uuid
 from ..common.prompt_enricher import enhance_seed_agents
 
 logger = logging.getLogger(__name__)
+
+SEED_AGENT_KEYS_BY_NAME = {
+    "亚马逊广告分析师": "amazon-ad-analyst",
+    "亚马逊选品分析师": "amazon-product-researcher",
+    "Listing优化专家": "listing-optimizer",
+    "关键词研究专家": "keyword-researcher",
+    "竞品分析专家": "competitor-analyst",
+    "数据报表分析师": "data-report-analyst",
+    "电商文案创作师": "ecommerce-copywriter",
+    "产品图片设计师": "product-image-designer",
+    "图片编辑优化师": "image-edit-optimizer",
+    "图片视觉理解师": "image-vision-analyst",
+    "视频创意导演": "video-creative-director",
+    "Google Veo Background Editor": "google-veo-background-editor",
+    "语音旁白制作师": "voiceover-producer",
+    "亚马逊合规审核师": "amazon-compliance-reviewer",
+    "客户沟通专家": "customer-communication-specialist",
+    "多店铺运营整合师": "multi-store-ops-integrator",
+    "运营策略顾问": "ops-strategy-consultant",
+}
+
+SEED_AGENT_DEFAULT_TASK_TYPES_BY_NAME = {
+    "亚马逊广告分析师": "data-analysis",
+    "亚马逊选品分析师": "data-analysis",
+    "关键词研究专家": "data-analysis",
+    "竞品分析专家": "data-analysis",
+    "数据报表分析师": "data-analysis",
+    "多店铺运营整合师": "data-analysis",
+}
+
+
+def _normalize_seed_key(value: Any) -> str:
+    return re.sub(r"[^a-z0-9-]+", "-", str(value or "").strip().lower()).strip("-")
+
+
+def _seed_key_for_seed(seed: Dict[str, Any]) -> str:
+    explicit = _normalize_seed_key(seed.get("seed_key") or seed.get("seedKey"))
+    if explicit:
+        return explicit
+    mapped = _normalize_seed_key(SEED_AGENT_KEYS_BY_NAME.get(str(seed.get("name") or "").strip()))
+    if mapped:
+        return mapped
+    return _normalize_seed_key(seed.get("name"))
+
+
+def _with_seed_metadata(seed: Dict[str, Any]) -> Dict[str, Any]:
+    item = copy.deepcopy(seed)
+    seed_name = str(item.get("name") or "").strip()
+    seed_key = _seed_key_for_seed(item)
+    default_task_type = str(
+        SEED_AGENT_DEFAULT_TASK_TYPES_BY_NAME.get(seed_name) or "chat"
+    ).strip()
+    if seed_key:
+        item["seed_key"] = seed_key
+        agent_card = item.get("agent_card")
+        if not isinstance(agent_card, dict):
+            agent_card = {}
+        defaults = agent_card.get("defaults")
+        if not isinstance(defaults, dict):
+            defaults = {}
+        defaults.setdefault("defaultTaskType", default_task_type)
+        if defaults.get("defaultTaskType") == "data-analysis":
+            data_analysis = defaults.get("dataAnalysis")
+            if not isinstance(data_analysis, dict):
+                data_analysis = {}
+            data_analysis.setdefault("outputFormat", "markdown")
+            defaults["dataAnalysis"] = data_analysis
+        agent_card["defaults"] = defaults
+        metadata = agent_card.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+        metadata["seedKey"] = seed_key
+        metadata["managedBy"] = "starter-agent-catalog"
+        agent_card["metadata"] = metadata
+        item["agent_card"] = agent_card
+    return item
 
 
 def _parse_saved_model_ids(raw_saved_models: Any) -> List[str]:
@@ -169,14 +246,16 @@ def _rank_model_for_task(model_id: str, task_type: str) -> Tuple[int, float]:
     preview_penalty = 1 if any(flag in lowered for flag in ("preview", "-exp", "_exp", "experimental")) else 0
 
     if normalized_task == "image-gen":
-        if "imagen" in lowered and "generate" in lowered:
+        if "gpt-image-2" in lowered:
             family_rank = 0
-        elif any(token in lowered for token in ("-t2i", "wanx")):
+        elif "gpt-image" in lowered or "chatgpt-image" in lowered:
             family_rank = 1
-        elif "dall" in lowered:
+        elif "imagen" in lowered and "generate" in lowered:
             family_rank = 2
-        elif "image" in lowered:
+        elif any(token in lowered for token in ("-t2i", "wanx")):
             family_rank = 3
+        elif "image" in lowered:
+            family_rank = 4
         else:
             family_rank = 9
         return (family_rank + preview_penalty, -version_score)
@@ -269,7 +348,7 @@ def _default_model_for_provider_task(provider_id: str, task_type: str) -> str:
         return "qwen-plus"
     if lowered.startswith("openai"):
         if normalized_task == "image-gen":
-            return "dall-e-3"
+            return "gpt-image-2"
         if normalized_task == "audio-gen":
             return "tts-1"
         if normalized_task in {"vision-understand", "image-understand", "vision-analyze", "image-analyze"}:
@@ -725,6 +804,40 @@ SEED_AGENTS: List[Dict[str, Any]] = [
         },
     },
     {
+        "name": "Google Veo Background Editor",
+        "description": "使用 Google Veo 视频编辑能力执行背景替换并保持主体连续性",
+        "provider_id": "google",
+        "model_id": "veo-2.0-generate-001",
+        "icon": "🏞️",
+        "color": "#d946ef",
+        "temperature": 0.35,
+        "max_tokens": 4096,
+        "system_prompt": """你是视频背景编辑节点，负责使用 Google Veo 视频编辑模型执行背景替换。
+
+## 核心要求
+1. 只允许改变用户指定的背景区域
+2. 必须保留主体身份、动作节奏、机位、前景结构、光线连续性和边缘稳定性
+3. 新背景需要匹配原视频的透视、光线方向、景深和运动模糊
+4. 避免背景闪烁、边缘抖动、主体穿帮、颜色污染和明显抠图痕迹
+
+输出应直接用于下游交付，不要返回无关解释。""",
+        "agent_card": {
+            "defaults": {
+                "defaultTaskType": "video-gen",
+                "preferLatestModel": True,
+                "videoGeneration": {
+                    "aspectRatio": "16:9",
+                    "resolution": "720p",
+                    "durationSeconds": 8,
+                    "videoExtensionCount": 0,
+                    "generateAudio": False,
+                    "subtitleMode": "none",
+                    "promptExtend": False,
+                },
+            }
+        },
+    },
+    {
         "name": "语音旁白制作师",
         "description": "将脚本整理为可直接生成的旁白文本，并输出自然语音参数建议",
         "provider_id": "openai",
@@ -868,11 +981,11 @@ SEED_AGENTS: List[Dict[str, Any]] = [
     },
 ]
 
-SEED_AGENTS = enhance_seed_agents(SEED_AGENTS)
+SEED_AGENTS = [_with_seed_metadata(seed) for seed in enhance_seed_agents(SEED_AGENTS)]
 
 
 def get_default_seed_agents() -> List[Dict[str, Any]]:
-    return list(SEED_AGENTS)
+    return [copy.deepcopy(seed) for seed in SEED_AGENTS]
 
 
 def get_media_seed_agents() -> List[Dict[str, Any]]:
@@ -892,10 +1005,13 @@ def ensure_seed_agents(db: Session, user_id: str, seeds: Optional[List[Dict[str,
         AgentRegistry.user_id == user_id,
     ).all()
     active_agents_by_name = {}
+    seed_agents_by_name = {}
     for agent in existing_agents:
         normalized_name = str(agent.name or "").strip().lower()
         if not normalized_name:
             continue
+        if str(agent.agent_type or "").strip().lower() == "seed":
+            seed_agents_by_name[normalized_name] = agent
         if str(agent.status or "").strip().lower() != "active":
             continue
         active_agents_by_name[normalized_name] = agent
@@ -918,12 +1034,19 @@ def ensure_seed_agents(db: Session, user_id: str, seeds: Optional[List[Dict[str,
         if not target_model:
             target_model = str(seed.get("model_id") or "").strip()
 
-        active_agent = active_agents_by_name.get(normalized_name)
+        active_agent = active_agents_by_name.get(normalized_name) or seed_agents_by_name.get(normalized_name)
         if active_agent:
             if str(active_agent.agent_type or "").strip().lower() == "seed":
                 changed = False
                 current_provider = str(active_agent.provider_id or "").strip()
                 current_model = str(active_agent.model_id or "").strip()
+                seed_description = str(seed.get("description") or "").strip()
+                seed_system_prompt = str(seed.get("system_prompt") or "")
+                seed_temperature = seed.get("temperature")
+                seed_max_tokens = seed.get("max_tokens")
+                seed_icon = str(seed.get("icon") or "").strip()
+                seed_color = str(seed.get("color") or "").strip()
+                seed_agent_card = seed.get("agent_card") if isinstance(seed.get("agent_card"), dict) else None
 
                 should_align_provider = (
                     not current_provider
@@ -947,11 +1070,38 @@ def ensure_seed_agents(db: Session, user_id: str, seeds: Optional[List[Dict[str,
                 ):
                     active_agent.model_id = target_model
                     changed = True
-                if not str(active_agent.description or "").strip() and str(seed.get("description") or "").strip():
-                    active_agent.description = str(seed.get("description") or "").strip()
+                if seed_description and str(active_agent.description or "") != seed_description:
+                    active_agent.description = seed_description
                     changed = True
-                if isinstance(seed.get("agent_card"), dict) and not str(active_agent.agent_card_json or "").strip():
-                    active_agent.agent_card_json = json.dumps(seed.get("agent_card"), ensure_ascii=False)
+                if seed_system_prompt and str(active_agent.system_prompt or "") != seed_system_prompt:
+                    active_agent.system_prompt = seed_system_prompt
+                    changed = True
+                if seed_temperature is not None and active_agent.temperature != seed_temperature:
+                    active_agent.temperature = seed_temperature
+                    changed = True
+                if seed_max_tokens is not None and active_agent.max_tokens != seed_max_tokens:
+                    active_agent.max_tokens = seed_max_tokens
+                    changed = True
+                if seed_icon and str(active_agent.icon or "") != seed_icon:
+                    active_agent.icon = seed_icon
+                    changed = True
+                if seed_color and str(active_agent.color or "") != seed_color:
+                    active_agent.color = seed_color
+                    changed = True
+                if seed_agent_card is not None:
+                    next_agent_card_json = json.dumps(seed_agent_card, ensure_ascii=False, sort_keys=True)
+                    current_agent_card_json = ""
+                    try:
+                        current_agent_card = json.loads(active_agent.agent_card_json or "{}")
+                        if isinstance(current_agent_card, dict):
+                            current_agent_card_json = json.dumps(current_agent_card, ensure_ascii=False, sort_keys=True)
+                    except Exception:
+                        current_agent_card_json = str(active_agent.agent_card_json or "")
+                    if current_agent_card_json != next_agent_card_json:
+                        active_agent.agent_card_json = json.dumps(seed_agent_card, ensure_ascii=False)
+                        changed = True
+                if str(active_agent.status or "").strip().lower() != "active":
+                    active_agent.status = "active"
                     changed = True
                 if changed:
                     active_agent.updated_at = now

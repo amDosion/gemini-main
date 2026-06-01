@@ -66,6 +66,16 @@ def build_video_generate_kwargs(engine: Any, tool_args: Dict[str, Any]) -> Dict[
     if video_extension_count is not None:
         kwargs["video_extension_count"] = video_extension_count
 
+    video_input_strategy = engine._get_tool_arg(
+        tool_args,
+        "video_input_strategy",
+        "videoInputStrategy",
+        "input_strategy",
+        "inputStrategy",
+    )
+    if video_input_strategy is not None and str(video_input_strategy).strip():
+        kwargs["video_input_strategy"] = str(video_input_strategy).strip()
+
     fps = engine._to_int(
         engine._get_tool_arg(tool_args, "fps", "frame_rate", "frameRate"),
         default=None,
@@ -96,6 +106,19 @@ def build_video_generate_kwargs(engine: Any, tool_args: Dict[str, Any]) -> Dict[
     generate_audio = engine._get_tool_arg(tool_args, "generate_audio", "generateAudio")
     if generate_audio is not None:
         kwargs["generate_audio"] = engine._to_bool(generate_audio)
+
+    audio_url = engine._get_tool_arg(
+        tool_args,
+        "audio_url",
+        "audioUrl",
+        "driving_audio",
+        "drivingAudio",
+        "source_audio",
+        "sourceAudio",
+    )
+    normalized_audio_url = engine._extract_first_audio_url(audio_url)
+    if normalized_audio_url:
+        kwargs["audio_url"] = normalized_audio_url
 
     subtitle_mode = engine._get_tool_arg(tool_args, "subtitle_mode", "subtitleMode")
     if subtitle_mode is not None and str(subtitle_mode).strip():

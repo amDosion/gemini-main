@@ -21,6 +21,12 @@ import { UnifiedProviderClient } from './providers/UnifiedProviderClient';
 import mcpConfigService from './mcpConfigService';
 import { fetchWithTimeout, parseHttpError, readJsonResponse } from './http';
 import { cacheManager } from './CacheManager';
+import {
+  capturePrivateCacheLifecycleSnapshot,
+  isPrivateCacheLifecycleSnapshotCurrent,
+  registerPrivateCacheResetHandler,
+} from './privateCacheInvalidation';
+import { scopedPrivateCacheKey } from './privateCacheScope';
 
 export interface ModelsApiResponse {
   models: ModelConfig[];
@@ -31,11 +37,27 @@ export interface ModelsApiResponse {
   provider?: string;
 }
 
+export interface GetAvailableModelsOptions {
+  includeHidden?: boolean;
+}
+
 interface ModelCache {
   payload: ModelsApiResponse;
   timestamp: number;
   providerId: string;
 }
+
+const emptyModelsPayload = (
+  providerId: string,
+  filteredByMode?: AppMode | string
+): ModelsApiResponse => ({
+  models: [],
+  defaultModelId: null,
+  modeCatalog: [],
+  filteredByMode: filteredByMode ? String(filteredByMode) : null,
+  cached: false,
+  provider: providerId,
+});
 
 // Model cache TTL is managed by CacheManager (default: 5 minutes)
 
@@ -44,6 +66,7 @@ export class LLMService {
   private baseUrl: string = '';
   private protocol: ApiProtocol | null = null; // ✅ 移除默认值，由后端配置决定
   private providerId: string = ''; // ✅ 移除默认值，由后端配置决定
+  private modelCacheGeneration = 0;
 
   // Model cache migrated to unified CacheManager (domain: "models:" prefix)
 
@@ -115,17 +138,25 @@ export class LLMService {
 
   public async getAvailableModelsPayload(
     useCache: boolean = true,
-    mode?: AppMode | string
+    mode?: AppMode | string,
+    options: GetAvailableModelsOptions = {}
   ): Promise<ModelsApiResponse> {
+    const requestProviderId = this.providerId;
     // ✅ 如果未配置 Provider，返回空数组而不是发送请求
-    if (!this.providerId) {
+    if (!requestProviderId) {
       return { models: [], defaultModelId: null, modeCatalog: [] };
     }
     // ✅ 从后端 API 获取模型列表（后端会从数据库读取 API Key）
     // 缓存策略：仅缓存 provider 级完整模型列表；mode 请求始终单独获取。
-    const cacheKey = mode ? `${this.providerId}:${mode}` : `${this.providerId}`;
+    const visibilityScope = options.includeHidden ? ':include-hidden' : ':visible';
+    const cacheKey = mode
+      ? `${requestProviderId}:${mode}${visibilityScope}`
+      : `${requestProviderId}${visibilityScope}`;
     const now = Date.now();
-    const cachedData = cacheManager.get<ModelCache>('models:' + cacheKey);
+    const generationAtStart = this.modelCacheGeneration;
+    const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
+    const scopedCacheKey = scopedPrivateCacheKey('models:', cacheKey);
+    const cachedData = cacheManager.get<ModelCache>(scopedCacheKey);
 
     // 使用缓存（mode 和非 mode 请求各自独立缓存）
     if (useCache && cachedData) {
@@ -141,12 +172,15 @@ export class LLMService {
       const params = new URLSearchParams();
       // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
       params.append('useCache', String(useCache));
+      if (options.includeHidden) {
+        params.append('includeHidden', 'true');
+      }
       if (mode) {
         params.append('mode', mode);
       }
 
       const response = await fetchWithTimeout(
-        `/api/models/${this.providerId}?${params.toString()}`,
+        `/api/models/${requestProviderId}?${params.toString()}`,
         {
           method: 'GET',
           cache: 'no-store',
@@ -171,15 +205,26 @@ export class LLMService {
         modeCatalog: Array.isArray(data.modeCatalog) ? data.modeCatalog : [],
         filteredByMode: typeof data.filteredByMode === 'string' ? data.filteredByMode : null,
         cached: Boolean(data.cached),
-        provider: typeof data.provider === 'string' ? data.provider : this.providerId,
+        provider: typeof data.provider === 'string' ? data.provider : requestProviderId,
       };
 
-      // 缓存所有请求结果（mode 和非 mode 各自独立缓存）
-      cacheManager.set('models:' + cacheKey, {
-        payload,
-        timestamp: now,
-        providerId: this.providerId,
-      });
+      if (
+        this.providerId !== requestProviderId ||
+        !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
+      ) {
+        return emptyModelsPayload(requestProviderId, mode);
+      }
+
+      // 缓存所有请求结果（mode 和非 mode 各自独立缓存）。
+      // 如果请求期间只是模型缓存被清理，不丢弃已经返回的同 provider 新鲜 payload；
+      // 仅跳过写缓存，避免把清理前的请求重新灌回缓存。
+      if (generationAtStart === this.modelCacheGeneration) {
+        cacheManager.set(scopedCacheKey, {
+          payload,
+          timestamp: now,
+          providerId: requestProviderId,
+        });
+      }
 
       return payload;
     } catch (error) {
@@ -196,6 +241,7 @@ export class LLMService {
   }
 
   public clearModelCache() {
+    this.modelCacheGeneration += 1;
     cacheManager.clearDomain('models:');
   }
 
@@ -217,6 +263,10 @@ export class LLMService {
           // guidanceScale removed - not officially documented by Google Imagen
           outputMimeType: options.outputMimeType,
           outputCompressionQuality: options.outputCompressionQuality,
+          quality: options.quality,
+          background: options.background,
+          moderation: options.moderation,
+          outputFormat: options.outputFormat,
           enhancePrompt: options.enhancePrompt,
         });
         this.debugLog('[startNewChat] 完整 Options 对象:', JSON.stringify(options, null, 2));
@@ -326,6 +376,10 @@ export class LLMService {
       // guidanceScale removed - not officially documented by Google Imagen
       outputMimeType: this._cachedOptions.outputMimeType,
       outputCompressionQuality: this._cachedOptions.outputCompressionQuality,
+      quality: this._cachedOptions.quality,
+      background: this._cachedOptions.background,
+      moderation: this._cachedOptions.moderation,
+      outputFormat: this._cachedOptions.outputFormat,
       enhancePrompt: this._cachedOptions.enhancePrompt,
       enableSearch: this._cachedOptions.enableSearch,
       enableThinking: this._cachedOptions.enableThinking,
@@ -614,6 +668,39 @@ export class LLMService {
 
     throw new Error('Virtual Try-On not supported by current provider.');
   }
+
+  public async extractPdfData(
+    prompt: string,
+    attachments: Attachment[] = [],
+    options?: Partial<ChatOptions>
+  ): Promise<unknown> {
+    if (!this._cachedModelConfig) {
+      throw new Error('No model selected for PDF extraction.');
+    }
+
+    const mergedOptions = {
+      ...this._cachedOptions,
+      ...options,
+    };
+
+    if (this.currentProvider && 'executeMode' in this.currentProvider) {
+      const unifiedProvider = this.currentProvider as any;
+      return unifiedProvider.executeMode(
+        'pdf-extract',
+        this._cachedModelConfig.id,
+        prompt,
+        attachments,
+        mergedOptions,
+        {}
+      );
+    }
+
+    throw new Error('PDF extraction not supported by current provider.');
+  }
 }
 
 export const llmService = new LLMService();
+
+registerPrivateCacheResetHandler(() => {
+  llmService.clearModelCache();
+});

@@ -5,7 +5,7 @@
  * 三处原本各自重复同一段 wrapper（w-72 + 标题 + RotateCcw 按钮 + 滚动 controls + 底部 input）。
  */
 
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import { RotateCcw, SlidersHorizontal } from 'lucide-react';
 
 export interface ViewSideParamsPanelProps {
@@ -21,6 +21,24 @@ export interface ViewSideParamsPanelProps {
   editAreaContent: React.ReactNode;
 }
 
+const PARAMS_PANEL_WIDTH_STORAGE_KEY = 'view-side-params-panel:width';
+const DEFAULT_PARAMS_PANEL_WIDTH = 288;
+const MIN_PARAMS_PANEL_WIDTH = 280;
+const MAX_PARAMS_PANEL_WIDTH = 520;
+
+const clampParamsPanelWidth = (value: number): number =>
+  Math.max(MIN_PARAMS_PANEL_WIDTH, Math.min(MAX_PARAMS_PANEL_WIDTH, Math.round(value)));
+
+const getInitialParamsPanelWidth = (): number => {
+  if (typeof window === 'undefined') {
+    return DEFAULT_PARAMS_PANEL_WIDTH;
+  }
+  const storedWidth = Number(window.localStorage.getItem(PARAMS_PANEL_WIDTH_STORAGE_KEY));
+  return Number.isFinite(storedWidth) && storedWidth > 0
+    ? clampParamsPanelWidth(storedWidth)
+    : DEFAULT_PARAMS_PANEL_WIDTH;
+};
+
 export const ViewSideParamsPanel: React.FC<ViewSideParamsPanelProps> = ({
   title,
   iconClass = 'text-slate-400',
@@ -30,8 +48,60 @@ export const ViewSideParamsPanel: React.FC<ViewSideParamsPanelProps> = ({
   controlsContent,
   editAreaContent,
 }) => {
+  const [panelWidth, setPanelWidth] = useState(getInitialParamsPanelWidth);
+
+  const handleResizeStart = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = panelWidth;
+      let nextWidth = panelWidth;
+      let animationFrame: number | null = null;
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        nextWidth = clampParamsPanelWidth(startWidth + startX - moveEvent.clientX);
+        if (animationFrame !== null) {
+          window.cancelAnimationFrame(animationFrame);
+        }
+        animationFrame = window.requestAnimationFrame(() => {
+          setPanelWidth(nextWidth);
+          animationFrame = null;
+        });
+      };
+
+      const handleMouseUp = () => {
+        if (animationFrame !== null) {
+          window.cancelAnimationFrame(animationFrame);
+          animationFrame = null;
+        }
+        window.localStorage.setItem(PARAMS_PANEL_WIDTH_STORAGE_KEY, String(nextWidth));
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      };
+
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    },
+    [panelWidth]
+  );
+
   return (
-    <div className="w-72 flex-shrink-0 border-l border-slate-800 bg-slate-900/50 flex flex-col h-full overflow-hidden">
+    <div
+      data-testid="view-side-params-panel"
+      className="relative flex-shrink-0 border-l border-slate-800 bg-slate-900/50 flex flex-col h-full overflow-hidden"
+      style={{ width: panelWidth }}
+    >
+      <div
+        role="separator"
+        aria-label="拖动调整参数面板宽度"
+        aria-orientation="vertical"
+        onMouseDown={handleResizeStart}
+        className="hidden md:block absolute left-0 top-0 z-20 h-full w-2 -translate-x-1/2 cursor-col-resize"
+      />
       <div className="px-4 py-3 border-b border-slate-800/50 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <SlidersHorizontal size={14} className={iconClass} />

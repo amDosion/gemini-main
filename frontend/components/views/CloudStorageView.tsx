@@ -173,6 +173,7 @@ export const CloudStorageView: React.FC<CloudStorageViewProps> = ({
     currentViewerImageSrc,
     currentViewerImageExhausted,
     currentViewerVideoSrc,
+    handleViewerImagePreviewError,
     handleViewerPreviewError
   } = useCloudStorageViewer({
     items,
@@ -491,6 +492,7 @@ export const CloudStorageView: React.FC<CloudStorageViewProps> = ({
         goViewerPrev={goViewerPrev}
         goViewerNext={goViewerNext}
         selectViewerIndex={selectViewerIndex}
+        handleViewerImagePreviewError={handleViewerImagePreviewError}
         handleViewerPreviewError={handleViewerPreviewError}
         onDownloadItem={handleDownloadItem}
         onCopyUrl={handleCopyUrl}

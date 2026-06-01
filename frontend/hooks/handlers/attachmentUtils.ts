@@ -9,14 +9,22 @@
  * URL 类型说明：
  * - 云存储 URL: 我们上传后返回的永久 URL（uploadStatus === 'completed'）
  * - Base64 URL: 内嵌数据 URL（data:image/png;base64,xxx）
- * - Blob URL: 浏览器本地 URL（blob:xxx，页面关闭后失效）
+ * - Blob URL: 浏览器本地 URL（blob:xxx，页面关闭后失效；仅兼容旧附件）
  * - 远程临时 URL: API 返回的临时 URL（会过期）
  */
 import { reportError } from '../../utils/globalErrorHandler';
 import { v4 as uuidv4 } from 'uuid';
 import { Attachment, Message } from '../../types/types';
 import { storageUpload } from '../../services/storage/storageUpload';
-import { getAccessToken } from '../../services/apiClient';
+import { fetchWithTimeout, readJsonResponse } from '../../services/http';
+import {
+  getPreferredAttachmentUrl,
+  getLocalBlobAttachmentId,
+  isBlobAttachmentUrl,
+  isDataAttachmentUrl,
+  isHttpAttachmentUrl,
+  isLocalBlobAttachmentUrl,
+} from '../../utils/attachmentUrl';
 
 /**
  * 将 Base64 Data URL 转换为 File 对象
@@ -43,24 +51,21 @@ export const isUploadedToCloud = (att: Attachment): boolean => {
  * 检查 URL 是否是 HTTP/HTTPS URL
  */
 export const isHttpUrl = (url: string | undefined): boolean => {
-  if (!url) return false;
-  return url.startsWith('http://') || url.startsWith('https://');
+  return isHttpAttachmentUrl(url);
 };
 
 /**
  * 检查 URL 是否是 Blob URL
  */
 export const isBlobUrl = (url: string | undefined): boolean => {
-  if (!url) return false;
-  return url.startsWith('blob:');
+  return isBlobAttachmentUrl(url);
 };
 
 /**
  * 检查 URL 是否是 Base64 Data URL
  */
 export const isBase64Url = (url: string | undefined): boolean => {
-  if (!url) return false;
-  return url.startsWith('data:');
+  return isDataAttachmentUrl(url);
 };
 
 /**
@@ -344,14 +349,10 @@ export const fetchAttachmentStatus = async (
   attachmentId: string
 ): Promise<{ url: string; uploadStatus: string; taskId?: string; taskStatus?: string } | null> => {
   try {
-    const headers: HeadersInit = {};
-    const token = getAccessToken();
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const response = await fetch(`/api/attachments/${attachmentId}/cloud-url`, {
-      headers,
+    const response = await fetchWithTimeout(`/api/attachments/${attachmentId}/cloud-url`, {
+      method: 'GET',
+      withAuth: true,
+      skipAuth: true,
     });
 
     if (!response.ok) {
@@ -362,7 +363,7 @@ export const fetchAttachmentStatus = async (
       return null;
     }
 
-    return await response.json();
+    return await readJsonResponse(response);
   } catch (error) {
     reportError('附件状态查询异常', error);
     return null;
@@ -403,15 +404,12 @@ export const prepareAttachmentForApi = async (
   filePrefix: string = 'canvas'
 ): Promise<Attachment | null> => {
   if (!imageUrl) return null;
+  if (isLocalBlobAttachmentUrl(imageUrl)) return null;
 
   // Sprint 2 PR-2: CONTINUITY 解析完全交给后端权威实现
   // 不再做前端降级查找/转换 — 删除原 ~187 行三层 fallback
   // (后端 API + findAttachmentByUrl + urlToBase64 + 新建)
   try {
-    const headers: HeadersInit = { 'Content-Type': 'application/json' };
-    const token = getAccessToken();
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
     // 简化消息历史,只发后端 lookup 必要字段(避免发送整个 base64 payload)
     const simplifiedMessages =
       messages?.map((m) => ({
@@ -426,9 +424,11 @@ export const prepareAttachmentForApi = async (
         })),
       })) || [];
 
-    const response = await fetch('/api/attachments/resolve-continuity', {
+    const response = await fetchWithTimeout('/api/attachments/resolve-continuity', {
       method: 'POST',
-      headers,
+      headers: { 'Content-Type': 'application/json' },
+      withAuth: true,
+      skipAuth: true,
       body: JSON.stringify({
         activeImageUrl: imageUrl,
         sessionId: sessionId,
@@ -445,7 +445,7 @@ export const prepareAttachmentForApi = async (
       return null;
     }
 
-    const resolved = await response.json();
+    const resolved = await readJsonResponse<any>(response);
     return {
       id: resolved.attachmentId,
       mimeType: resolved.mimeType || 'image/png',
@@ -470,6 +470,64 @@ export const prepareAttachmentForApi = async (
   }
 };
 
+const findLocalBlobAttachmentInMessages = (
+  localBlobUrl: string,
+  messages: Message[]
+): Attachment | null => {
+  const attachmentId = getLocalBlobAttachmentId(localBlobUrl);
+  if (!attachmentId) return null;
+
+  for (const message of messages) {
+    const attachment = message.attachments?.find((att) => att.id === attachmentId);
+    if (attachment) return attachment;
+  }
+
+  return null;
+};
+
+const normalizeAttachmentForMediaRequest = async (att: Attachment): Promise<Attachment> => {
+  const preferredUrl = getPreferredAttachmentUrl(att);
+  const file = att.file;
+  const shouldInlineFile =
+    file && (!preferredUrl || isBlobUrl(preferredUrl) || isBlobUrl(att.url));
+
+  if (shouldInlineFile) {
+    try {
+      const base64Url = await fileToBase64(file);
+      return {
+        ...att,
+        url: base64Url,
+        tempUrl: base64Url,
+      };
+    } catch (e) {
+      reportError('图片转换失败', e);
+      return att;
+    }
+  }
+
+  if (isHttpUrl(preferredUrl || '')) {
+    return { ...att, url: preferredUrl || att.url };
+  }
+
+  if (isBase64Url(preferredUrl || '')) {
+    return { ...att, url: preferredUrl || att.url };
+  }
+
+  if (att.file) {
+    return preferredUrl ? { ...att, url: preferredUrl } : att;
+  }
+
+  return {
+    ...att,
+    url: preferredUrl || '',
+    uploadStatus: att.uploadStatus || ('pending' as const),
+  };
+};
+
+const normalizeAttachmentsForMediaRequest = async (
+  attachments: Attachment[]
+): Promise<Attachment[]> => Promise.all(attachments.map(normalizeAttachmentForMediaRequest));
+
 // ============================================================
 // View 组件附件处理统一函数
 // ============================================================
@@ -482,7 +540,7 @@ export const prepareAttachmentForApi = async (
  * - 当用户上传了附件时，整理附件元数据传递给后端
  *
  * 前端职责：
- * - 文件选择与预览（创建 Blob URL）
+ * - 文件选择与预览（File 交给共享 CachedImage/mediaCache 处理）
  * - 附件元数据整理
  * - CONTINUITY LOGIC 处理
  *
@@ -506,6 +564,11 @@ export const processUserAttachments = async (
   filePrefix: string = 'canvas'
 ): Promise<Attachment[]> => {
   const result: Attachment[] = [];
+
+  if (attachments.length === 0 && activeImageUrl && isLocalBlobAttachmentUrl(activeImageUrl)) {
+    const localAttachment = findLocalBlobAttachmentInMessages(activeImageUrl, messages);
+    return localAttachment ? normalizeAttachmentsForMediaRequest([localAttachment]) : [];
+  }
 
   // ✅ 1. 如果有画布图片且没有新上传附件，使用画布图片（CONTINUITY LOGIC）
   if (attachments.length === 0 && activeImageUrl) {
@@ -535,67 +598,16 @@ export const processUserAttachments = async (
 
   // ✅ 2. 如果有新上传的附件，处理附件
   if (attachments.length > 0) {
-    // 格式化 URL 用于日志（Base64 URL 只显示类型和长度）
-    const formatUrlForLog = (url: string | undefined): string => {
-      if (!url) return 'N/A';
-      if (url.startsWith('data:')) {
-        return `Base64 Data URL (长度: ${url.length} 字符)`;
-      }
-      return url.length > 80 ? url.substring(0, 80) + '...' : url;
-    };
-
-    // ✅ 统一处理：将 Blob URL 转换为 Base64（确保后端能访问）
-    // 原因：JSON.stringify 会忽略 File 对象，Blob URL 无法被后端访问
-    const processedAttachments = await Promise.all(
-      attachments.map(async (att, index) => {
-        // ✅ 如果有 File 对象且 URL 是 Blob URL，转换为 Base64（与 ChatInputArea 一致）
-        if (att.file && isBlobUrl(att.url)) {
-          try {
-            const base64Url = await fileToBase64(att.file);
-            return {
-              ...att,
-              url: base64Url, // 使用 Base64 URL，后端可以访问
-              tempUrl: base64Url, // 同时更新 tempUrl
-              // 保留 File 对象用于上传任务（uploadTask 中会使用）
-            };
-          } catch (e) {
-            // 转换失败时回退到原 attachment（仍是 blob URL，后端不可达）；
-            // 通过 reportError 让用户感知，避免沉默丢失附件
-            reportError('图片转换失败', e);
-            return att;
-          }
-        }
-
-        // 如果 URL 是 HTTP URL，直接使用（后端会自己下载）
-        if (isHttpUrl(att.url || '')) {
-          return att;
-        }
-
-        // 如果 URL 是 Base64，直接使用
-        if (isBase64Url(att.url || '')) {
-          return att;
-        }
-
-        // 如果有 File 对象但 URL 不是 Blob URL，直接返回
-        if (att.file) {
-          return att;
-        }
-
-        // 整理元数据，确保有 URL
-        const finalUrl = att.url || att.tempUrl || '';
-        return {
-          ...att,
-          url: finalUrl,
-          uploadStatus: att.uploadStatus || ('pending' as const),
-        };
-      })
-    );
+    const processedAttachments = await normalizeAttachmentsForMediaRequest(attachments);
 
     // ✅ 3. 如果同时有画布图片，也添加（支持"附件 + 画布图片"组合）
     // 检查画布图片是否已经在附件中（避免重复）
-    if (activeImageUrl) {
+    if (activeImageUrl && !isLocalBlobAttachmentUrl(activeImageUrl)) {
       const isCanvasImageInAttachments = processedAttachments.some(
-        (att) => att.url === activeImageUrl || att.tempUrl === activeImageUrl
+        (att) =>
+          [att.url, att.tempUrl, att.cloudUrl, att.fileUri, getPreferredAttachmentUrl(att)].some(
+            (url) => url === activeImageUrl
+          )
       );
 
       if (!isCanvasImageInAttachments) {
@@ -633,7 +645,7 @@ export const processUserAttachments = async (
  * URL 处理：
  * - Base64 URL：直接使用作为显示 URL
  * - Blob URL：直接使用作为显示 URL
- * - HTTP URL：下载后转换为 Blob URL 用于显示（避免临时 URL 过期）
+ * - HTTP URL：保留 URL 给渲染层加载；若有 cloudUrl 则优先使用稳定地址
  *
  * 字段说明：
  * - `url`: 用于 UI 显示的 URL（可能是 Blob URL 或 Base64 URL）
@@ -669,14 +681,8 @@ export const processMediaResult = async (
   const defaultExtension = filePrefix === 'video' ? 'mp4' : filePrefix === 'audio' ? 'mp3' : 'png';
   const filename = res.filename || `${filePrefix}-${Date.now()}.${defaultExtension}`;
   const originalUrl = res.url;
-  let displayUrl = res.url;
-
-  // HTTP URL 需要转换为 Blob URL 用于显示（避免临时 URL 过期）
-  if (isHttpUrl(res.url)) {
-    const response = await fetch(res.url);
-    const blob = await response.blob();
-    displayUrl = URL.createObjectURL(blob);
-  }
+  const displayUrl = res.cloudUrl || res.url;
+  const uploadStatus = res.uploadStatus || (res.cloudUrl ? 'completed' : 'pending');
 
   // 创建用于 UI 显示的附件
   const displayAttachment: Attachment = {
@@ -685,7 +691,14 @@ export const processMediaResult = async (
     name: filename,
     url: displayUrl,
     tempUrl: originalUrl, // 保存原始 URL，用于跨模式查找
-    uploadStatus: 'pending' as const,
+    uploadStatus,
+    cloudUrl: res.cloudUrl,
+    uploadTaskId: res.taskId,
+    size: res.size,
+    messageId: res.messageId,
+    sessionId: res.sessionId,
+    userId: res.userId,
+    createdAt: res.createdAt,
   };
 
   // Sprint 2 PR-5: 后端在 image/video/audio mode 已自动创建 attachment 行并触发上传任务。

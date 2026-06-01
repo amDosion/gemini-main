@@ -17,6 +17,7 @@
 
 import { useCallback, type RefObject, type MutableRefObject } from 'react';
 import { fileToBase64 } from './handlers/attachmentUtils';
+import { revokeManagedMediaObjectUrl } from '../services/mediaCache';
 import { type MaskMode, type SelectionRect } from '../utils/maskHelpers';
 import { fetchAutoMaskPreview } from '../utils/maskSegmentation';
 
@@ -211,11 +212,11 @@ export const useMaskIO = ({
     hasBrushContentRef.current = false;
     // 清理 blob URL（防内存泄漏）
     if (maskPreviewBlobUrlRef.current) {
-      URL.revokeObjectURL(maskPreviewBlobUrlRef.current);
+      revokeManagedMediaObjectUrl(maskPreviewBlobUrlRef.current);
       maskPreviewBlobUrlRef.current = null;
     }
     if (maskPreviewUrlRef.current) {
-      URL.revokeObjectURL(maskPreviewUrlRef.current);
+      revokeManagedMediaObjectUrl(maskPreviewUrlRef.current);
       maskPreviewUrlRef.current = null;
     }
     setMaskCanvasUrl(null);

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentDef } from '../types';
@@ -146,5 +146,56 @@ describe('AgentManagerListView', () => {
     expect(screen.getByText('来源: 官方 Seed')).toBeInTheDocument();
     expect(screen.getByText('Runtime: Google ADK')).toBeInTheDocument();
     expect(screen.getByText('官方编排')).toBeInTheDocument();
+  });
+
+  it('exports an agent preset drag payload for dropping into the workflow canvas', () => {
+    const agent = {
+      ...makeAgent('image-agent', 'image-gen'),
+      name: 'Image Agent',
+      icon: '🎨',
+      color: '#d946ef',
+    };
+    const storedPayload = new Map<string, string>();
+    const dataTransfer = {
+      setData: vi.fn((type: string, value: string) => {
+        storedPayload.set(type, value);
+      }),
+      effectAllowed: '',
+    };
+
+    render(
+      <AgentManagerListView
+        activeCount={1}
+        inactiveCount={0}
+        searchKeyword=""
+        selectedStatus="active"
+        notice={null}
+        loading={false}
+        agents={[agent]}
+        onSearchKeywordChange={vi.fn()}
+        onSelectStatus={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onDisable={vi.fn()}
+        onRestore={vi.fn()}
+        onHardDelete={vi.fn()}
+        onOpenRuntimeSessions={vi.fn()}
+      />
+    );
+
+    fireEvent.dragStart(screen.getByTestId('agent-drag-image-agent'), { dataTransfer });
+
+    expect(storedPayload.get('application/reactflow')).toBe('agent');
+    const payload = JSON.parse(storedPayload.get('application/reactflow-node-payload') || '{}');
+    expect(payload).toMatchObject({
+      kind: 'agentPreset',
+      agent: {
+        id: 'image-agent',
+        name: 'Image Agent',
+        providerId: 'google',
+        modelId: 'image-agent',
+      },
+    });
+    expect(dataTransfer.effectAllowed).toBe('move');
   });
 });

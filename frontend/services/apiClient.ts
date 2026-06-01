@@ -5,7 +5,6 @@ import { authService } from './auth';
 import {
   getAccessToken as getStoredAccessToken,
   getAuthorizationHeader,
-  withAuthorization,
 } from './authTokenStore';
 import { fetchWithTimeout, parseHttpError, readJsonResponse } from './http';
 
@@ -31,8 +30,8 @@ export function getAccessToken(): string | null {
   return getStoredAccessToken();
 }
 
-export function getAuthHeaders(): Record<string, string> {
-  return getAuthorizationHeader();
+export function getAuthHeaders(options: { includeBearer?: boolean } = {}): Record<string, string> {
+  return options.includeBearer ? getAuthorizationHeader() : {};
 }
 
 // ============================================
@@ -63,7 +62,7 @@ class ApiClient {
   async request<T>(url: string, options: RequestOptions = {}): Promise<T> {
     const { skipAuth, timeoutMs, ...fetchOptions } = options;
 
-    // 发送请求（不再使用 credentials: 'include'，因为不使用 cookie）
+    // 发送请求。认证请求统一同时支持内存 Authorization 与 httpOnly Cookie。
     const response = await fetchWithTimeout(`${this.baseUrl}${url}`, {
       ...fetchOptions,
       withAuth: !skipAuth,
@@ -74,15 +73,14 @@ class ApiClient {
     if (response.status === 401 && !skipAuth) {
       const refreshed = await this.tryRefreshToken();
       if (refreshed) {
-        // ✅ 修复：重试时带上新的 access_token
-        const retryHeaders = withAuthorization(fetchOptions.headers, {
-          token: getAccessToken(),
-        });
+        const retryHeaders = new Headers(fetchOptions.headers);
+        retryHeaders.delete('Authorization');
         
-        // 重试原请求（带新 token）
+        // 重试原请求，仍然走 httpOnly Cookie，避免 stale bearer 覆盖新 Cookie。
         const retryResponse = await fetchWithTimeout(`${this.baseUrl}${url}`, {
           ...fetchOptions,
           headers: retryHeaders,
+          withAuth: true,
           timeoutMs,
         });
         

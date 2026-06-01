@@ -12,17 +12,16 @@
  */
 
 import React from 'react';
-import { Upload, X } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import { reportError } from '../../../utils/globalErrorHandler';
 import { CustomNodeData } from '../CustomNode';
 import { NodeType } from '../nodeTypeConfigs';
 import {
   AgentTaskType,
-  ModelOption,
   ProviderModels,
   formatModelTaskHint,
   modelSupportsTask,
-  pickProviderDefaultModel,
+  resolveProviderTaskModelSelection,
 } from '../providerModelUtils';
 import { useModeControlsSchema } from '../../../hooks/useModeControlsSchema';
 import {
@@ -40,6 +39,7 @@ import {
 import { fileToBase64 } from '../../../hooks/handlers/attachmentUtils';
 import { ToolVideoGenSection } from './toolSections/ToolVideoGenSection';
 import { ToolImageGenSection } from './toolSections/ToolImageGenSection';
+import { InlineReferenceImagePreview } from './InlineReferenceImagePreview';
 
 export interface ToolNodeConfigPanelProps {
   nodeData: CustomNodeData;
@@ -78,33 +78,15 @@ export const ToolNodeConfigPanel: React.FC<ToolNodeConfigPanelProps> = ({
       shouldShowToolProviderOverride,
     } = toolClass;
     const selectedProviderId = nodeData.toolProviderId || '';
-    const selectedProvider = providers.find(
-      (provider) => provider.providerId === selectedProviderId
-    );
-    const providerModels = selectedProvider?.allModels || selectedProvider?.models || [];
-    const compatibleModels = providerModels.filter((model) =>
-      modelSupportsTask(model, toolTaskType)
-    );
-    const selectedModels = compatibleModels;
-    const providerHasNoCompatibleModels =
-      selectedProviderId !== '' && providerModels.length > 0 && compatibleModels.length === 0;
-    const selectedToolModel = providerModels.find(
-      (model) => model.id === (nodeData.toolModelId || '')
-    );
-    const isToolTaskCompatible = (model: ModelOption | undefined, taskType: AgentTaskType) => {
-      return modelSupportsTask(model, taskType);
-    };
-    const findProviderModels = (providerId: string): ModelOption[] => {
-      const provider = providers.find((item) => item.providerId === providerId);
-      return provider?.allModels || provider?.models || [];
-    };
-    const pickCompatibleToolModel = (
-      providerId: string,
-      taskType: AgentTaskType
-    ): ModelOption | undefined => {
-      const provider = providers.find((item) => item.providerId === providerId);
-      return pickProviderDefaultModel(provider, taskType);
-    };
+    const toolModelSelection = resolveProviderTaskModelSelection({
+      providers,
+      providerId: selectedProviderId,
+      modelId: nodeData.toolModelId || '',
+      taskType: toolTaskType,
+    });
+    const selectedModels = toolModelSelection.selectedModels;
+    const providerHasNoCompatibleModels = toolModelSelection.providerHasNoCompatibleModels;
+    const selectedToolModel = toolModelSelection.selectedModel;
     const handleToolNameChange = (nextToolName: string) => {
       // 使用 classifyToolNode 替代内联 alias 重复（与 renderToolNodeConfig 起始处共用同一分类逻辑）
       const nextClass = classifyToolNode(nextToolName);
@@ -167,21 +149,25 @@ export const ToolNodeConfigPanel: React.FC<ToolNodeConfigPanelProps> = ({
         const currentModelId = String(nodeData.toolModelId || '').trim();
 
         if (currentProviderId) {
-          const currentModel = findProviderModels(currentProviderId).find(
-            (model) => model.id === currentModelId
+          const currentModel = toolModelSelection.findModelById(
+            currentProviderId,
+            currentModelId
           );
-          if (!isToolTaskCompatible(currentModel, targetTask)) {
-            const fallback = pickCompatibleToolModel(currentProviderId, targetTask);
+          if (!modelSupportsTask(currentModel, targetTask)) {
+            const fallback = toolModelSelection.pickCompatibleModel(currentProviderId, targetTask);
             updates.toolModelId = fallback?.id || '';
           }
         } else {
           const providerWithModel = providers.find((provider) => {
             const modelPool = provider.allModels || provider.models || [];
-            return modelPool.some((model) => isToolTaskCompatible(model, targetTask));
+            return modelPool.some((model) => modelSupportsTask(model, targetTask));
           });
 
           if (providerWithModel?.providerId) {
-            const fallback = pickCompatibleToolModel(providerWithModel.providerId, targetTask);
+            const fallback = toolModelSelection.pickCompatibleModel(
+              providerWithModel.providerId,
+              targetTask
+            );
             updates.toolProviderId = providerWithModel.providerId;
             updates.toolModelId = fallback?.id || '';
           }
@@ -313,8 +299,7 @@ export const ToolNodeConfigPanel: React.FC<ToolNodeConfigPanelProps> = ({
                 value={selectedProviderId}
                 onChange={(e) => {
                   const providerId = e.target.value;
-                  const provider = providers.find((item) => item.providerId === providerId);
-                  const fallbackModel = pickProviderDefaultModel(provider, toolTaskType);
+                  const fallbackModel = toolModelSelection.pickCompatibleModel(providerId);
                   updateNodeData({
                     toolProviderId: providerId,
                     toolModelId:
@@ -586,22 +571,11 @@ export const ToolNodeConfigPanel: React.FC<ToolNodeConfigPanelProps> = ({
               <label className="block text-xs text-slate-500 mb-1">
                 参考图片 <span className="text-red-400">*</span>
               </label>
-              {!!nodeData.toolReferenceImageUrl &&
-                nodeData.toolReferenceImageUrl.startsWith('data:') && (
-                  <div className="mb-2 relative group">
-                    <img
-                      src={nodeData.toolReferenceImageUrl}
-                      alt="参考图片"
-                      className="w-full h-24 object-cover rounded border border-purple-500/30"
-                    />
-                    <button
-                      onClick={() => updateNodeData({ toolReferenceImageUrl: '' })}
-                      className="absolute top-1 right-1 p-0.5 bg-red-500/80 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <X size={10} />
-                    </button>
-                  </div>
-                )}
+              <InlineReferenceImagePreview
+                imageUrl={nodeData.toolReferenceImageUrl}
+                borderClassName="border-purple-500/30"
+                onClear={() => updateNodeData({ toolReferenceImageUrl: '' })}
+              />
               <label className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 border border-dashed border-purple-500/40 rounded-lg cursor-pointer hover:border-purple-500/60 transition-colors">
                 <Upload size={12} className="text-purple-400" />
                 <span className="text-xs text-purple-300">

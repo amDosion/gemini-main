@@ -14,6 +14,12 @@ import { CustomNodeData } from './CustomNode';
 import { WorkflowValidationResult, WorkflowStatistics } from './types';
 import { buildNodeParamChips } from './nodeParamSummaryUtils';
 import {
+  WORKFLOW_NODE_TYPES,
+  isActiveInlineProviderToken,
+  isAutoInlineModelToken,
+  normalizeWorkflowAgentTaskType,
+} from './workflowContract';
+import {
   extractAudioUrls,
   extractImageUrls,
   extractTextContent,
@@ -22,40 +28,6 @@ import {
   isDirectlyRenderableImageUrl,
   isDirectlyRenderableVideoUrl,
 } from './workflowResultUtils';
-
-const ACTIVE_INLINE_PROVIDER_TOKENS = new Set([
-  '__active__',
-  '__current__',
-  'active',
-  'current',
-  'active-profile',
-  'current-profile',
-]);
-
-const AUTO_INLINE_MODEL_TOKENS = new Set([
-  '',
-  '__auto__',
-  '__active__',
-  'auto',
-  'active',
-  'current',
-  'active-profile',
-  'current-profile',
-]);
-
-const isActiveInlineProviderToken = (value: unknown): boolean =>
-  ACTIVE_INLINE_PROVIDER_TOKENS.has(
-    String(value || '')
-      .trim()
-      .toLowerCase()
-  );
-
-const isAutoInlineModelToken = (value: unknown): boolean =>
-  AUTO_INLINE_MODEL_TOKENS.has(
-    String(value || '')
-      .trim()
-      .toLowerCase()
-  );
 
 const toBooleanFlag = (value: unknown): boolean => {
   if (typeof value === 'boolean') {
@@ -67,6 +39,8 @@ const toBooleanFlag = (value: unknown): boolean => {
       .toLowerCase()
   );
 };
+
+const ALLOWED_WORKFLOW_NODE_TYPES = new Set<string>(WORKFLOW_NODE_TYPES);
 
 /**
  * Validate workflow structure
@@ -106,11 +80,18 @@ export const validateWorkflow = (
   // Validate each node
   nodes.forEach((node) => {
     const errors: string[] = [];
-    const nodeType = node.data.type;
+    const nodeType = String(node.data.type || node.type || '')
+      .trim()
+      .toLowerCase()
+      .replace(/-/g, '_');
 
     // Check required fields
     if (!node.data.label || node.data.label.trim() === '') {
       errors.push('节点名称不能为空');
+    }
+
+    if (!ALLOWED_WORKFLOW_NODE_TYPES.has(nodeType)) {
+      errors.push(`不支持的节点类型：${nodeType || '<empty>'}`);
     }
 
     // Agent 节点必须绑定用户 Agent，或使用内联运行时配置
@@ -138,24 +119,25 @@ export const validateWorkflow = (
         );
       }
 
-      const normalizedTaskType = String(node.data.agentTaskType || 'chat')
-        .trim()
-        .toLowerCase()
-        .replace(/_/g, '-');
+      const rawAgentTaskType = node.data.agentTaskType;
+      const hasExplicitAgentTaskType = String(rawAgentTaskType || '').trim().length > 0;
+      const normalizedTaskType = normalizeWorkflowAgentTaskType(rawAgentTaskType, null);
       const hasReferenceImage =
         typeof node.data.agentReferenceImageUrl === 'string' &&
         node.data.agentReferenceImageUrl.trim().length > 0;
       if (
         hasReferenceImage &&
-        ![
-          'vision-understand',
-          'image-understand',
-          'vision-analyze',
-          'image-analyze',
-          'image-edit',
-        ].includes(normalizedTaskType)
+        hasExplicitAgentTaskType &&
+        (
+          !normalizedTaskType ||
+          ![
+            'vision-understand',
+            'image-edit',
+            'video-gen',
+          ].includes(normalizedTaskType)
+        )
       ) {
-        errors.push('节点配置了参考图时，任务类型必须是 vision-understand 或 image-edit');
+        errors.push('节点配置了参考图时，任务类型必须是 vision-understand、image-edit 或 video-gen');
       }
     }
 
@@ -173,6 +155,10 @@ export const validateWorkflow = (
 
     if (nodeType === 'tool' && !node.data.toolName?.trim()) {
       errors.push('工具节点必须配置工具名称');
+    }
+
+    if (nodeType === 'human' && node.data.autoApprove !== true) {
+      errors.push('人工审核节点当前没有真实确认流程，必须显式启用自动通过后才能执行');
     }
 
     if (errors.length > 0) {
@@ -305,6 +291,22 @@ export const validateWorkflow = (
     edgeErrors,
     globalErrors,
   };
+};
+
+export const formatWorkflowValidationError = (
+  validation: WorkflowValidationResult,
+  fallback = '工作流结构校验失败，请检查开始/结束节点及连线'
+): string => {
+  const nodeErrorDetails = Object.entries(validation.nodeErrors || {})
+    .slice(0, 4)
+    .map(([nodeId, errors]) => `${nodeId}: ${(errors || []).join('；')}`);
+  const details = [
+    ...(validation.globalErrors || []),
+    ...(validation.edgeErrors || []),
+    ...nodeErrorDetails,
+  ].filter(Boolean);
+
+  return details.length > 0 ? `工作流结构校验失败：${details.join(' | ')}` : fallback;
 };
 
 /**

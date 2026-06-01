@@ -1,18 +1,22 @@
 """
 OpenAI 图片生成器
 
-处理 OpenAI 的图片生成操作（DALL-E）。
+处理 OpenAI 的图片生成操作（GPT Image）。
 """
 from __future__ import annotations
 from typing import Dict, Any, List, Optional
 import logging
+import time
 
 from ._shared import (
-    IMAGE_ALLOWED_OPTION_KEYS,
     build_async_client,
-    filter_allowed_kwargs,
-    image_output_format_to_mime_type,
-    map_image_aspect_ratio_to_size,
+    coerce_openai_image_max_retries,
+    coerce_openai_image_timeout,
+    elapsed_ms,
+    enhance_openai_image_prompt,
+    image_response_to_results,
+    normalize_image_api_kwargs,
+    with_openai_image_client_options,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,6 +40,8 @@ class ImageGenerator:
         """
         self.api_key = api_key
         self.base_url = base_url or "https://api.openai.com/v1"
+        self.image_timeout = coerce_openai_image_timeout(kwargs.get("image_timeout"))
+        self.image_max_retries = coerce_openai_image_max_retries(kwargs.get("image_max_retries"))
         self.client = build_async_client(
             api_key=api_key,
             base_url=self.base_url,
@@ -49,51 +55,104 @@ class ImageGenerator:
     async def generate_image(
         self,
         prompt: str,
-        model: str = "dall-e-3",
+        model: str = "gpt-image-2",
         **kwargs
     ) -> List[Dict[str, Any]]:
         """
-        使用 DALL-E 生成图片
+        使用 OpenAI GPT Image 生成图片
         
         Args:
             prompt: 图片描述文本
-            model: 使用的模型 ('dall-e-2' 或 'dall-e-3')
+            model: 使用的模型，默认使用 gpt-image-2
             **kwargs: 额外参数:
-                - size (str): 图片尺寸 ('1024x1024', '1792x1024', '1024x1792')
-                - quality (str): 图片质量 ('standard' 或 'hd')
-                - style (str): 图片风格 ('vivid' 或 'natural')
+                - size (str): 图片尺寸 ('1024x1024', '1536x1024', '1024x1536', 'auto')
+                - quality (str): 图片质量 ('auto', 'low', 'medium', 'high')
+                - background (str): 背景 ('auto', 'opaque', 'transparent')
+                - output_format (str): 输出格式 ('png', 'jpeg', 'webp')
                 - n (int): 生成图片数量 (1-10)
         
         Returns:
             图片结果列表（统一格式，即使只有一张图片也返回列表）
         """
+        operation_start = time.perf_counter()
         try:
             logger.info(f"[OpenAI ImageGenerator] Image generation: model={model}, prompt={prompt[:50]}...")
-            request_kwargs = self._normalize_generate_kwargs(model, kwargs)
+            enhanced_prompt = None
+            effective_prompt = prompt
+            if kwargs.get("enhance_prompt") or kwargs.get("enhancePrompt"):
+                enhance_start = time.perf_counter()
+                enhanced_prompt = await enhance_openai_image_prompt(
+                    self.client,
+                    prompt,
+                    model_hint=kwargs.get("enhance_prompt_model") or kwargs.get("enhancePromptModel"),
+                    thinking_level=(
+                        kwargs.get("enhance_prompt_thinking_level")
+                        or kwargs.get("enhancePromptThinkingLevel")
+                    ),
+                    )
+                if enhanced_prompt:
+                    effective_prompt = enhanced_prompt
+                logger.info(
+                    "[OpenAI ImageGenerator] Prompt enhancement phase completed "
+                    "(elapsed_ms=%.2f, requested=true, enhanced=%s, enhanced_len=%s)",
+                    elapsed_ms(enhance_start),
+                    bool(enhanced_prompt),
+                    len(enhanced_prompt or ""),
+                )
 
-            # Call DALL-E API
-            response = await self.client.images.generate(
+            request_kwargs = self._normalize_generate_kwargs(model, kwargs)
+            requested_count = self._requested_image_count(request_kwargs)
+            self._log_generation_request_options(
                 model=model,
-                prompt=prompt,
-                **request_kwargs
+                request_kwargs=request_kwargs,
+                prompt=effective_prompt,
+                enhanced_prompt_used=bool(enhanced_prompt),
             )
-            
-            # 转换为统一格式（列表）
-            results = []
-            for item in response.data:
-                image_url = self._extract_image_url(item, request_kwargs)
-                if not image_url:
-                    continue
-                results.append({
-                    "url": image_url,
-                    "revised_prompt": self._read_field(item, "revised_prompt"),
-                    "mime_type": self._infer_result_mime_type(item, request_kwargs),
-                })
+
+            api_start = time.perf_counter()
+            response = await self._call_generate_image_api(
+                prompt=effective_prompt,
+                model=model,
+                request_kwargs=request_kwargs,
+            )
+            logger.info(
+                "[OpenAI ImageGenerator] Images Generate API completed "
+                "(elapsed_ms=%.2f, model=%s, n=%s, size=%s, quality=%s, output_format=%s)",
+                elapsed_ms(api_start),
+                model,
+                request_kwargs.get("n", 1),
+                request_kwargs.get("size"),
+                request_kwargs.get("quality"),
+                request_kwargs.get("output_format"),
+            )
+
+            parse_start = time.perf_counter()
+            results = self._response_to_results(response, request_kwargs)
+            logger.info(
+                "[OpenAI ImageGenerator] Response conversion completed (elapsed_ms=%.2f, images=%s)",
+                elapsed_ms(parse_start),
+                len(results),
+            )
+
+            if len(results) < requested_count:
+                raise RuntimeError(
+                    "OpenAI Images Generate returned fewer images than requested "
+                    f"({len(results)}/{requested_count}). The native Image API n request "
+                    "did not satisfy the contract."
+                )
 
             if not results:
                 raise RuntimeError("OpenAI image response did not contain a usable image payload.")
+
+            if enhanced_prompt:
+                for result in results:
+                    result["enhanced_prompt"] = enhanced_prompt
             
-            logger.info(f"[OpenAI ImageGenerator] Image generated: {len(results)} image(s)")
+            logger.info(
+                "[OpenAI ImageGenerator] Image generated: %s image(s) (total_elapsed_ms=%.2f)",
+                len(results),
+                elapsed_ms(operation_start),
+            )
             
             return results
         
@@ -101,78 +160,59 @@ class ImageGenerator:
             logger.error(f"[OpenAI ImageGenerator] Image generation error: {e}", exc_info=True)
             raise
 
-    def _normalize_generate_kwargs(self, model: str, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-        normalized = filter_allowed_kwargs(
-            kwargs,
-            allowed_keys=IMAGE_ALLOWED_OPTION_KEYS,
-            aliases={"number_of_images": "n"},
+    async def _call_generate_image_api(
+        self,
+        *,
+        prompt: str,
+        model: str,
+        request_kwargs: Dict[str, Any],
+    ) -> Any:
+        image_client = self._image_request_client()
+        return await image_client.images.generate(
+            model=model,
+            prompt=prompt,
+            **request_kwargs,
         )
 
-        size = normalized.get("size")
-        if not size:
-            size = kwargs.get("image_resolution")
-        if not size:
-            size = map_image_aspect_ratio_to_size(
-                model,
-                kwargs.get("image_aspect_ratio") or kwargs.get("aspect_ratio"),
-            )
-        if size:
-            normalized["size"] = str(size).strip()
+    def _response_to_results(self, response: Any, request_kwargs: Dict[str, Any]) -> List[Dict[str, Any]]:
+        return image_response_to_results(response, request_kwargs)
 
-        if "n" in normalized:
-            try:
-                count = int(normalized["n"])
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"Unsupported OpenAI image count: {normalized['n']}") from exc
-            if str(model or "").strip().lower().startswith("dall-e-3"):
-                count = 1
-            else:
-                count = max(1, min(count, 10))
-            normalized["n"] = count
-        elif str(model or "").strip().lower().startswith("dall-e-3"):
-            normalized["n"] = 1
+    def _requested_image_count(self, request_kwargs: Dict[str, Any]) -> int:
+        try:
+            return max(1, int(request_kwargs.get("n") or 1))
+        except (TypeError, ValueError):
+            return 1
 
-        response_format = str(normalized.get("response_format") or "").strip().lower()
-        if response_format and response_format not in {"url", "b64_json"}:
-            normalized.pop("response_format", None)
+    def _normalize_generate_kwargs(self, model: str, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        return normalize_image_api_kwargs(model, kwargs)
 
-        output_format = str(normalized.get("output_format") or "").strip().lower()
-        if output_format and output_format not in {"png", "jpeg", "webp"}:
-            normalized.pop("output_format", None)
+    def _image_request_client(self):
+        return with_openai_image_client_options(
+            self.client,
+            timeout=self.image_timeout,
+            max_retries=self.image_max_retries,
+        )
 
-        if str(model or "").strip().lower().startswith("dall-e-2"):
-            normalized.pop("quality", None)
-            normalized.pop("style", None)
-
-        return normalized
-
-    def _extract_image_url(self, item: Any, request_kwargs: Dict[str, Any]) -> Optional[str]:
-        direct_url = self._read_field(item, "url")
-        if isinstance(direct_url, str) and direct_url:
-            return direct_url
-
-        b64_json = self._read_field(item, "b64_json")
-        if isinstance(b64_json, str) and b64_json:
-            mime_type = self._infer_result_mime_type(item, request_kwargs)
-            return f"data:{mime_type};base64,{b64_json}"
-
-        return None
-
-    def _infer_result_mime_type(self, item: Any, request_kwargs: Dict[str, Any]) -> str:
-        explicit_mime = self._read_field(item, "mime_type", "mimeType")
-        if isinstance(explicit_mime, str) and explicit_mime:
-            return explicit_mime
-        return image_output_format_to_mime_type(request_kwargs.get("output_format"))
-
-    def _read_field(self, item: Any, *field_names: str) -> Any:
-        if isinstance(item, dict):
-            for field_name in field_names:
-                if field_name in item:
-                    return item[field_name]
-            return None
-
-        for field_name in field_names:
-            value = getattr(item, field_name, None)
-            if value is not None:
-                return value
-        return None
+    def _log_generation_request_options(
+        self,
+        *,
+        model: str,
+        request_kwargs: Dict[str, Any],
+        prompt: str,
+        enhanced_prompt_used: bool,
+    ) -> None:
+        logger.info(
+            "[OpenAI ImageGenerator] Request options: model=%s size=%s n=%s quality=%s "
+            "output_format=%s base_url=%s image_timeout=%ss image_max_retries=%s "
+            "prompt_len=%s enhanced_prompt_used=%s",
+            model,
+            request_kwargs.get("size"),
+            request_kwargs.get("n", 1),
+            request_kwargs.get("quality"),
+            request_kwargs.get("output_format"),
+            self.base_url,
+            self.image_timeout,
+            self.image_max_retries,
+            len(prompt or ""),
+            enhanced_prompt_used,
+        )

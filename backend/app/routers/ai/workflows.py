@@ -88,9 +88,11 @@ from ...services.agent.workflow_payload_normalizer import (
     _validate_and_normalize_agent_card,
     _validate_workflow_execute_payload,
 )
+from ...services.agent.workflow_agent_binding import validate_workflow_agent_bindings
 from ...services.agent.agent_seed_service import ensure_seed_agents, get_default_seed_agents
 from ...services.gemini.agent.workflow_template_service import WorkflowTemplateService
 from ...services.common.attachment_service import AttachmentService, safe_persist_ai_result
+from ...services.common.video_result_derivatives import safe_persist_video_last_frame_derivative
 from ...services.common.reference_image_catalog import (
     is_placeholder_reference_image_url,
     pick_reference_image,
@@ -1266,24 +1268,6 @@ async def _publish_runtime_event(execution_id: str, event_type: str, data: Dict[
     except Exception:
         logger.debug("[Workflow] runtime store touch failed for execution=%s", execution_id, exc_info=True)
 
-    delivered = 0
-    dropped = 0
-    delivered_legacy_queues: List[asyncio.Queue] = []
-    for queue in list(runtime.subscribers):
-        try:
-            queue.put_nowait({"event": event_type, "data": data})
-            delivered += 1
-            delivered_legacy_queues.append(queue)
-        except asyncio.QueueFull:
-            dropped += 1
-
-    metrics = record_runtime_event_publish(
-        runtime.metrics,
-        delivered=delivered,
-        dropped=dropped,
-        emitted_at=now,
-    )
-
     execution_state_payload = _build_execution_state_from_runtime_event(
         execution_id,
         event_type,
@@ -1292,16 +1276,29 @@ async def _publish_runtime_event(execution_id: str, event_type: str, data: Dict[
     )
     emitted_execution_state = 0
     dropped_execution_state = 0
-    if not delivered_legacy_queues:
+
+    if not runtime.subscribers:
+        record_runtime_event_publish(
+            runtime.metrics,
+            delivered=0,
+            dropped=0,
+            emitted_at=now,
+        )
         _record_execution_state_push_skipped(runtime, skipped_at=now)
     elif _should_emit_execution_state(runtime, execution_state_payload, emitted_at=now):
         execution_state_message = {"event": "execution_state", "data": execution_state_payload}
-        for queue in delivered_legacy_queues:
+        for queue in list(runtime.subscribers):
             try:
                 queue.put_nowait(execution_state_message)
                 emitted_execution_state += 1
             except asyncio.QueueFull:
                 dropped_execution_state += 1
+        record_runtime_event_publish(
+            runtime.metrics,
+            delivered=emitted_execution_state,
+            dropped=dropped_execution_state,
+            emitted_at=now,
+        )
         _record_execution_state_push_delivery(
             runtime,
             emitted=emitted_execution_state,
@@ -1311,17 +1308,14 @@ async def _publish_runtime_event(execution_id: str, event_type: str, data: Dict[
         if emitted_execution_state > 0:
             _mark_execution_state_emitted(runtime, execution_state_payload, emitted_at=now)
     else:
+        record_runtime_event_publish(
+            runtime.metrics,
+            delivered=0,
+            dropped=0,
+            emitted_at=now,
+        )
         _record_execution_state_push_skipped(runtime, skipped_at=now)
 
-    if dropped > 0:
-        logger.warning(
-            "[Workflow] SSE queue full, dropping event: execution=%s event=%s dropped=%s total_dropped=%s subscribers=%s",
-            execution_id,
-            event_type,
-            dropped,
-            metrics.dropped_event_count,
-            len(runtime.subscribers),
-        )
     if dropped_execution_state > 0:
         logger.debug(
             "[Workflow] SSE queue full, dropping execution_state: execution=%s source_event=%s dropped=%s subscribers=%s",
@@ -1595,6 +1589,8 @@ def _extract_image_urls(payload: Any) -> List[str]:
         "original_image_url",
         "startimageurl",
         "start_image_url",
+        "lastframeimageurl",
+        "last_frame_image_url",
         "raw",
         "rawurl",
         "raw_url",
@@ -1614,6 +1610,8 @@ def _extract_image_urls(payload: Any) -> List[str]:
         "original",
         "originalimage",
         "original_image",
+        "derivedassets",
+        "derived_assets",
         "input",
         "inputs",
     }
@@ -2168,6 +2166,27 @@ async def _persist_workflow_result_media(
         )
         if processed is None:
             return None
+        if normalized_kind == "video":
+            last_frame_asset = await safe_persist_video_last_frame_derivative(
+                attachment_service,
+                video_payload={
+                    "url": processed.get("display_url") or source,
+                    "mime_type": processed.get("mime_type") or entry.get("mime_type") or "video/mp4",
+                    "filename": processed.get("filename") or entry.get("filename") or "",
+                    "attachment_id": processed.get("attachment_id") or "",
+                    "provider_file_name": entry.get("provider_file_name") or "",
+                    "provider_file_uri": entry.get("provider_file_uri") or "",
+                    "gcs_uri": entry.get("gcs_uri") or "",
+                    "file_uri": processed.get("file_uri") or entry.get("file_uri") or "",
+                },
+                source_url=source,
+                session_id=execution_id,
+                message_id=execution_id,
+                user_id=user_id,
+                storage_id=storage_id,
+            )
+            if last_frame_asset:
+                processed["last_frame_derivative"] = last_frame_asset
         processed_sources[source] = processed
         replacements[source] = str(processed.get("display_url") or "").strip() or source
         return processed
@@ -2223,6 +2242,14 @@ async def _persist_workflow_result_media(
                         updated["file_uri"] = processed.get("file_uri")
                     if processed.get("google_file_uri") and "google_file_uri" not in updated and "googleFileUri" not in updated:
                         updated["google_file_uri"] = processed.get("google_file_uri")
+                    last_frame_asset = processed.get("last_frame_derivative")
+                    if isinstance(last_frame_asset, dict):
+                        updated["last_frame_image_url"] = last_frame_asset.get("url") or ""
+                        updated["last_frame_attachment_id"] = last_frame_asset.get("attachment_id") or ""
+                        existing_derived_assets = updated.get("derived_assets") or updated.get("derivedAssets") or []
+                        if not isinstance(existing_derived_assets, list):
+                            existing_derived_assets = []
+                        updated["derived_assets"] = [*existing_derived_assets, last_frame_asset]
                     return {
                         key: await walk(item, key, counter)
                         for key, item in updated.items()
@@ -4088,6 +4115,14 @@ async def execute_workflow(
     validation_error = _validate_workflow_execute_payload(normalized_nodes, request.edges)
     if validation_error:
         raise HTTPException(status_code=400, detail=validation_error)
+    ensure_seed_agents(db, user_id, seeds=get_default_seed_agents())
+    agent_binding_error = validate_workflow_agent_bindings(
+        db=db,
+        user_id=user_id,
+        nodes=normalized_nodes,
+    )
+    if agent_binding_error:
+        raise HTTPException(status_code=400, detail=agent_binding_error)
 
     now = int(time.time() * 1000)
     execution_id: Optional[str] = None
@@ -5141,6 +5176,17 @@ async def resume_workflow_history_execution(
         )
         if validation_error:
             raise HTTPException(status_code=400, detail=f"Resume checkpoint is invalid: {validation_error}")
+        ensure_seed_agents(db, user_id, seeds=get_default_seed_agents())
+        agent_binding_error = validate_workflow_agent_bindings(
+            db=db,
+            user_id=user_id,
+            nodes=request_payload.get("nodes") if isinstance(request_payload, dict) else [],
+        )
+        if agent_binding_error:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Resume checkpoint Agent binding is invalid: {agent_binding_error}",
+            )
 
         now = int(time.time() * 1000)
         db.query(NodeExecution).filter(
@@ -5452,7 +5498,7 @@ def _load_provider_models(user_id: str, db: Session) -> List[Dict[str, Any]]:
     video_generation_tokens = ("veo", "sora", "luma", "video")
     audio_generation_tokens = ("tts", "speech")
     image_generation_tokens = (
-        "imagen", "image", "dall", "wanx", "-t2i", "z-image",
+        "imagen", "image", "gpt-image", "chatgpt-image", "wanx", "-t2i", "z-image",
         "flux", "midjourney", "nano-banana",
     )
     image_edit_tokens = (
@@ -5521,7 +5567,7 @@ def _load_provider_models(user_id: str, db: Session) -> List[Dict[str, Any]]:
             if any(token in lower_id for token in media_only_tokens):
                 supports_chat = False
             if (
-                any(token in lower_id for token in ("imagen", "dall", "wanx", "-t2i", "z-image", "midjourney", "flux"))
+                any(token in lower_id for token in ("imagen", "gpt-image", "chatgpt-image", "wanx", "-t2i", "z-image", "midjourney", "flux"))
                 and "gemini" not in lower_id
             ):
                 supports_chat = False
@@ -5587,7 +5633,7 @@ def _load_provider_models(user_id: str, db: Session) -> List[Dict[str, Any]]:
             return [
                 {"id": "gpt-4o-mini", "name": "GPT-4o mini", "supported_tasks": ["chat", "data-analysis"], "capabilities": {}},
                 {"id": "gpt-4o", "name": "GPT-4o", "supported_tasks": ["chat", "data-analysis", "vision-understand"], "capabilities": {}},
-                {"id": "dall-e-3", "name": "DALL-E 3", "supported_tasks": ["image-gen"], "capabilities": {}},
+                {"id": "gpt-image-2", "name": "GPT Image 2", "supported_tasks": ["image-gen"], "capabilities": {}},
                 {"id": "tts-1", "name": "TTS 1", "supported_tasks": ["audio-gen"], "capabilities": {}},
             ]
         return []

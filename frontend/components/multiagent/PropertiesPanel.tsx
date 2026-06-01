@@ -28,15 +28,6 @@ import type { AgentDef } from './types';
 import { getAuthHeaders } from '../../services/apiClient';
 import { fileToBase64 } from '../../hooks/handlers/attachmentUtils';
 import {
-  AgentTaskType,
-  ModelOption,
-  ProviderModels,
-  formatModelTaskHint,
-  modelSupportsTask,
-  normalizeProviderModels,
-  pickProviderDefaultModel,
-} from './providerModelUtils';
-import {
   extractAudioUrls,
   extractImageUrls,
   extractTextContent,
@@ -52,10 +43,10 @@ import {
   resolveNodePortLayout,
   type WorkflowNodePortSide,
 } from './workflowPorts';
+import { resolveNodeIconAppearance } from './workflowNodeAppearance';
 import { dispatchScopedWorkflowEvent } from './workflowEditorUtils';
 import {
   WORKFLOW_RESOLUTION_MAP,
-  WORKFLOW_LEGACY_VIDEO_RESOLUTION_ALIASES,
   getResolutionLabel,
   normalizeWorkflowVideoResolutionSelection,
   normalizeWorkflowVideoSecondsSelection,
@@ -230,11 +221,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const statusDisplay = statusDisplayConfig[status];
   const StatusIcon = statusDisplay.icon;
   const nodeData = selectedNode?.data;
+  const iconAppearance = resolveNodeIconAppearance(nodeData || {}, config);
   const resolvedPortLayout = resolveNodePortLayout(nodeType, nodeData?.portLayout);
-  const normalizedToolName = String(nodeData?.toolName || '')
-    .trim()
-    .toLowerCase()
-    .replace(/-/g, '_');
   const shouldLoadWorkflowVideoSchema = nodeType === 'agent' || nodeType === 'tool';
   const workflowVideoSchemaProviderId = shouldLoadWorkflowVideoSchema
     ? nodeType === 'agent'
@@ -423,9 +411,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span
-            className={`w-6 h-6 ${config.iconColor} rounded flex items-center justify-center text-white text-xs`}
+            className={`w-6 h-6 ${iconAppearance.iconColorClassName} rounded flex items-center justify-center text-white text-xs`}
+            style={iconAppearance.iconColorStyle}
           >
-            {config.icon}
+            {iconAppearance.icon}
           </span>
           <div className="min-w-0">
             <div className="text-sm font-semibold text-slate-200 truncate">

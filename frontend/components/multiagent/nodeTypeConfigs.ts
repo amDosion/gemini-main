@@ -156,7 +156,7 @@ export const nodeTypeConfigs: Record<NodeType, NodeTypeConfig> = {
     iconColor: 'bg-indigo-500',
     label: '工具',
     description: '外部工具 / MCP 工具调用',
-    category: '智能体',
+    category: '执行节点',
     defaultInputs: 1,
     defaultOutputs: 1
   },
@@ -166,7 +166,7 @@ export const nodeTypeConfigs: Record<NodeType, NodeTypeConfig> = {
     iconColor: 'bg-pink-500',
     label: '人工审核',
     description: '等待人工确认后继续',
-    category: '智能体',
+    category: '执行节点',
     defaultInputs: 1,
     defaultOutputs: 1
   },
@@ -192,7 +192,8 @@ export const nodeTypeConfigs: Record<NodeType, NodeTypeConfig> = {
   }
 };
 
-// Group node types by category for the component library
+// Group node types by category for the component library.
+// Concrete Agent nodes are dragged from Agent Manager, not from this generic library.
 export const nodeCategories = [
   {
     name: '流程控制',
@@ -210,8 +211,8 @@ export const nodeCategories = [
     ]
   },
   {
-    name: '智能体',
-    items: [nodeTypeConfigs.agent, nodeTypeConfigs.tool, nodeTypeConfigs.human]
+    name: '执行节点',
+    items: [nodeTypeConfigs.tool, nodeTypeConfigs.human]
   },
   {
     name: '编排模式',

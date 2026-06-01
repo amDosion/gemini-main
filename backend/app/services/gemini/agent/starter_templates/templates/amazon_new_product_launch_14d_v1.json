@@ -76,11 +76,13 @@
           "description": "识别关键字段与缺口，输出统一口径",
           "icon": "🧪",
           "iconColor": "bg-sky-500",
-          "agentName": "数据报表分析师",
           "agentTaskType": "data-analysis",
           "agentFileUrl": "{{input-file-launch-14d.output.fileUrl}}",
           "inputMapping": "文件：{{input-file-launch-14d.output.fileUrl}}\n目标：{{input-text-launch-14d.output.text}}",
-          "instructions": "输出字段映射、缺失项、可执行前置条件清单。"
+          "instructions": "输出字段映射、缺失项、可执行前置条件清单。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -113,10 +115,12 @@
           "description": "输出 Core/Long-tail/Defense 词包",
           "icon": "🔑",
           "iconColor": "bg-amber-500",
-          "agentName": "关键词研究专家",
           "agentTaskType": "data-analysis",
           "inputMapping": "质检结果：{{agent-launch-14d-intake.output.text}}\n目标：{{input-text-launch-14d.output.text}}",
-          "instructions": "输出 14 天投放词包与匹配策略（exact/phrase/broad）。"
+          "instructions": "输出 14 天投放词包与匹配策略（exact/phrase/broad）。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "keyword-researcher"
         }
       },
       {
@@ -132,9 +136,12 @@
           "description": "产出标题、五点、描述初版",
           "icon": "✍️",
           "iconColor": "bg-emerald-500",
-          "agentName": "Listing优化专家",
           "inputMapping": "质检结果：{{agent-launch-14d-intake.output.text}}\n目标：{{input-text-launch-14d.output.text}}",
-          "instructions": "输出目标站点语言版本（默认英文），并给迭代优先级。"
+          "instructions": "输出目标站点语言版本（默认英文），并给迭代优先级。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.6,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "listing-optimizer"
         }
       },
       {
@@ -150,12 +157,19 @@
           "description": "输出主图/场景图/卖点图首批样稿",
           "icon": "🎨",
           "iconColor": "bg-pink-500",
-          "agentName": "产品图片设计师",
           "agentTaskType": "image-gen",
           "agentAspectRatio": "1:1",
           "agentNumberOfImages": 2,
           "inputMapping": "质检结果：{{agent-launch-14d-intake.output.text}}\n目标：{{input-text-launch-14d.output.text}}\n\n请基于新品定位生成可用于亚马逊二级图的首批素材。",
-          "instructions": "输出英文卖点文案，避免遮挡主体。"
+          "instructions": "输出英文卖点文案，避免遮挡主体。",
+          "agentTemperature": 0.7,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "product-image-designer"
         }
       },
       {
@@ -171,10 +185,12 @@
           "description": "输出 Day1-Day14 广告动作与预算节奏",
           "icon": "📈",
           "iconColor": "bg-blue-500",
-          "agentName": "亚马逊广告分析师",
           "agentTaskType": "data-analysis",
           "inputMapping": "质检结果：{{agent-launch-14d-intake.output.text}}\n目标：{{input-text-launch-14d.output.text}}",
-          "instructions": "按 Day1-3 / Day4-7 / Day8-14 输出预算与竞价策略。"
+          "instructions": "按 Day1-3 / Day4-7 / Day8-14 输出预算与竞价策略。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-ad-analyst"
         }
       },
       {
@@ -206,9 +222,12 @@
           "description": "校验文案和素材风险",
           "icon": "🛡️",
           "iconColor": "bg-cyan-500",
-          "agentName": "亚马逊合规审核师",
           "inputMapping": "并行方案：{{merge-launch-14d.output.text}}",
-          "instructions": "输出 Pass/Fail、风险项、可直接上线版本。"
+          "instructions": "输出 Pass/Fail、风险项、可直接上线版本。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.2,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-compliance-reviewer"
         }
       },
       {
@@ -224,9 +243,12 @@
           "description": "输出任务排期、负责人与复盘指标",
           "icon": "🧭",
           "iconColor": "bg-indigo-500",
-          "agentName": "运营策略顾问",
           "inputMapping": "合规结论：{{agent-launch-14d-compliance.output.text}}",
-          "instructions": "输出 Day1-Day14 逐日动作、KPI 与回滚条件。"
+          "instructions": "输出 Day1-Day14 逐日动作、KPI 与回滚条件。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {

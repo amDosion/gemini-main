@@ -12,26 +12,12 @@ import uuid
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-logger = logging.getLogger(__name__)
+from ..workflow_contract import (
+    is_active_inline_provider_token as contract_is_active_inline_provider_token,
+    is_auto_inline_model_token as contract_is_auto_inline_model_token,
+)
 
-ACTIVE_INLINE_PROVIDER_TOKENS = {
-    "__active__",
-    "__current__",
-    "active",
-    "current",
-    "active-profile",
-    "current-profile",
-}
-AUTO_INLINE_MODEL_TOKENS = {
-    "",
-    "__auto__",
-    "__active__",
-    "auto",
-    "active",
-    "current",
-    "active-profile",
-    "current-profile",
-}
+logger = logging.getLogger(__name__)
 
 
 def get_workflow_user_id(engine: Any) -> str:
@@ -152,12 +138,12 @@ async def create_provider_service(engine: Any, provider_id: str, profile_id: str
 
 def is_active_inline_provider_token(engine: Any, value: Any) -> bool:
     _ = engine
-    return str(value or "").strip().lower() in ACTIVE_INLINE_PROVIDER_TOKENS
+    return contract_is_active_inline_provider_token(value)
 
 
 def is_auto_inline_model_token(engine: Any, value: Any) -> bool:
     _ = engine
-    return str(value or "").strip().lower() in AUTO_INLINE_MODEL_TOKENS
+    return contract_is_auto_inline_model_token(value)
 
 
 def should_resolve_inline_from_active_profile(
@@ -360,14 +346,16 @@ def rank_model_for_agent_task(
         return (family_rank, preview_penalty, -version_score)
 
     if normalized_task == "image-gen":
-        if "imagen" in lowered and "generate" in lowered:
+        if "gpt-image-2" in lowered:
             family_rank = 0
-        elif any(token in lowered for token in ("-t2i", "wanx")):
+        elif "gpt-image" in lowered or "chatgpt-image" in lowered:
             family_rank = 1
-        elif "dall" in lowered:
+        elif "imagen" in lowered and "generate" in lowered:
             family_rank = 2
-        elif "image" in lowered:
+        elif any(token in lowered for token in ("-t2i", "wanx")):
             family_rank = 3
+        elif "image" in lowered:
+            family_rank = 4
         else:
             family_rank = 9
         return (family_rank, preview_penalty, -version_score)
@@ -463,7 +451,7 @@ def get_default_image_model(engine: Any, provider_id: str, operation: str) -> st
         if lowered.startswith("google"):
             return "imagen-3.0-generate-002"
         if lowered.startswith("openai"):
-            return "dall-e-3"
+            return "gpt-image-2"
         if lowered.startswith("tongyi") or lowered.startswith("dashscope"):
             return "wan2.6-t2i"
     else:

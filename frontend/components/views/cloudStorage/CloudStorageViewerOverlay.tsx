@@ -8,7 +8,6 @@ import type {
   StorageFileMetadataItem
 } from '../../../types/storage';
 import {
-  createGeneratedThumb,
   formatBytes,
   getFileExtension,
   getFileKind,
@@ -16,6 +15,9 @@ import {
 } from './filePresentation';
 import { CloudStorageThumbnailCell } from './CloudStorageThumbnailCell';
 import type { MutableRefObject } from 'react';
+import { CloudStoragePreviewImage } from './CloudStoragePreviewImage';
+import { CloudStorageGeneratedThumbnail } from './CloudStorageGeneratedThumbnail';
+import { RetainedVideo } from '../../common/RetainedMedia';
 
 interface CloudStorageViewerOverlayProps {
   isOpen: boolean;
@@ -30,6 +32,7 @@ interface CloudStorageViewerOverlayProps {
   goViewerPrev: () => void;
   goViewerNext: () => void;
   selectViewerIndex: (index: number) => void;
+  handleViewerImagePreviewError: (failedSrc?: string | null) => boolean;
   handleViewerPreviewError: () => void;
   onDownloadItem: (item: StorageBrowseItem) => Promise<void>;
   onCopyUrl: (item: StorageBrowseItem) => Promise<void>;
@@ -51,6 +54,7 @@ export const CloudStorageViewerOverlay: React.FC<CloudStorageViewerOverlayProps>
   goViewerPrev,
   goViewerNext,
   selectViewerIndex,
+  handleViewerImagePreviewError,
   handleViewerPreviewError,
   onDownloadItem,
   onCopyUrl,
@@ -149,17 +153,19 @@ export const CloudStorageViewerOverlay: React.FC<CloudStorageViewerOverlayProps>
         />
 
         {currentViewerKind === 'image' && currentViewerImageSrc && (
-          <img
+          <CloudStoragePreviewImage
             src={currentViewerImageSrc}
             alt={currentViewerFile.name}
+            onRecoverPreviewError={handleViewerImagePreviewError}
             className="max-h-full max-w-full object-contain rounded-xl border border-slate-700 shadow-2xl"
           />
         )}
 
         {currentViewerKind === 'image' && !currentViewerImageSrc && !currentViewerImageExhausted && (
           <div className="w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-900/80 p-6 md:p-8 flex flex-col items-center text-center gap-4">
-            <img
-              src={createGeneratedThumb('image', getFileExtension(currentViewerFile.name))}
+            <CloudStorageGeneratedThumbnail
+              kind="image"
+              ext={getFileExtension(currentViewerFile.name)}
               alt="image preview loading"
               className="h-28 w-28 rounded-2xl border border-slate-700 object-cover opacity-80"
             />
@@ -174,8 +180,9 @@ export const CloudStorageViewerOverlay: React.FC<CloudStorageViewerOverlayProps>
             className="w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-900/80 p-6 md:p-8 flex flex-col items-center text-center gap-4 hover:border-slate-600 transition-colors"
           >
             <div className="relative">
-              <img
-                src={createGeneratedThumb('video', getFileExtension(currentViewerFile.name))}
+              <CloudStorageGeneratedThumbnail
+                kind="video"
+                ext={getFileExtension(currentViewerFile.name)}
                 alt="video preview placeholder"
                 className="h-28 w-28 rounded-2xl border border-slate-700 object-cover"
               />
@@ -193,7 +200,7 @@ export const CloudStorageViewerOverlay: React.FC<CloudStorageViewerOverlayProps>
         )}
 
         {currentViewerKind === 'video' && currentViewerVideoSrc && shouldLoadCurrentVideo && (
-          <video
+          <RetainedVideo
             src={currentViewerVideoSrc}
             controls
             preload="metadata"
@@ -207,8 +214,9 @@ export const CloudStorageViewerOverlay: React.FC<CloudStorageViewerOverlayProps>
           ((currentViewerKind === 'image' && currentViewerImageExhausted && !currentViewerImageSrc) ||
             (currentViewerKind === 'video' && !currentViewerVideoSrc)) && (
             <div className="w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-900/80 p-6 md:p-8 flex flex-col items-center text-center gap-4">
-              <img
-                src={createGeneratedThumb(currentViewerKind, getFileExtension(currentViewerFile.name))}
+              <CloudStorageGeneratedThumbnail
+                kind={currentViewerKind}
+                ext={getFileExtension(currentViewerFile.name)}
                 alt={`${currentViewerKind} thumbnail`}
                 className="h-28 w-28 rounded-2xl border border-slate-700 object-cover"
               />
@@ -223,8 +231,9 @@ export const CloudStorageViewerOverlay: React.FC<CloudStorageViewerOverlayProps>
 
         {currentViewerKind && currentViewerKind !== 'image' && currentViewerKind !== 'video' && (
           <div className="w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-900/80 p-6 md:p-8 flex flex-col items-center text-center gap-4">
-            <img
-              src={createGeneratedThumb(currentViewerKind, getFileExtension(currentViewerFile.name))}
+            <CloudStorageGeneratedThumbnail
+              kind={currentViewerKind}
+              ext={getFileExtension(currentViewerFile.name)}
               alt={`${currentViewerKind} thumbnail`}
               className="h-28 w-28 rounded-2xl border border-slate-700 object-cover"
             />

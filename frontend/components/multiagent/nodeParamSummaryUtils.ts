@@ -1,4 +1,6 @@
 import type { WorkflowNodeData } from './types';
+import { classifyToolNode } from './toolClassification';
+import { normalizeWorkflowAgentTaskType } from './workflowContract';
 import { resolveNodePortLayout } from './workflowPorts';
 
 const toFiniteNumber = (value: unknown): number | null => {
@@ -23,88 +25,8 @@ const withDefault = <K extends keyof WorkflowNodeData>(
   }
 };
 
-const normalizeAgentTaskType = (
-  value: unknown
-):
-  | 'chat'
-  | 'image-gen'
-  | 'image-edit'
-  | 'video-gen'
-  | 'audio-gen'
-  | 'vision-understand'
-  | 'data-analysis' => {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/_/g, '-');
-  const aliases: Record<string, string> = {
-    video: 'video-gen',
-    'video-generate': 'video-gen',
-    'video-generation': 'video-gen',
-    audio: 'audio-gen',
-    speech: 'audio-gen',
-    tts: 'audio-gen',
-    'speech-gen': 'audio-gen',
-    'speech-generate': 'audio-gen',
-    'speech-generation': 'audio-gen',
-    'audio-generate': 'audio-gen',
-    'audio-generation': 'audio-gen',
-    'vision-analyze': 'vision-understand',
-    'image-analyze': 'vision-understand',
-    'image-understand': 'vision-understand',
-    'table-analysis': 'data-analysis',
-  };
-  const safeTask = aliases[normalized] || normalized;
-  if (
-    safeTask === 'chat' ||
-    safeTask === 'image-gen' ||
-    safeTask === 'image-edit' ||
-    safeTask === 'video-gen' ||
-    safeTask === 'audio-gen' ||
-    safeTask === 'vision-understand' ||
-    safeTask === 'data-analysis'
-  ) {
-    return safeTask;
-  }
-  return 'chat';
-};
-
-const normalizeToolName = (value: unknown): string =>
-  String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/-/g, '_');
-
-const IMAGE_GEN_TOOL_NAMES = new Set(['image_generate', 'generate_image', 'image_gen']);
-
-const IMAGE_EDIT_TOOL_NAMES = new Set([
-  'image_edit',
-  'edit_image',
-  'image_chat_edit',
-  'image_mask_edit',
-  'image_inpainting',
-  'image_background_edit',
-  'image_recontext',
-  'image_outpaint',
-  'image_outpainting',
-  'expand_image',
-]);
-
-const PROMPT_OPTIMIZE_TOOL_NAMES = new Set([
-  'prompt_optimize',
-  'prompt_optimizer',
-  'optimize_prompt',
-  'prompt_rewrite',
-  'rewrite_prompt',
-]);
-
-const TABLE_ANALYZE_TOOL_NAMES = new Set([
-  'table_analyze',
-  'excel_analyze',
-  'analyze_table',
-  'sheet_analyze',
-  'sheet_profile',
-]);
+const normalizeAgentTaskType = (value: unknown) =>
+  normalizeWorkflowAgentTaskType(value, 'chat') || 'chat';
 
 const parseToolArgsObject = (rawValue: unknown): Record<string, unknown> | null => {
   if (rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)) {
@@ -179,23 +101,24 @@ export const buildEffectiveNodeData = (
   }
 
   if (nodeType === 'tool') {
-    const normalizedTool = normalizeToolName(next.toolName);
+    const toolClassification = classifyToolNode(String(next.toolName || ''));
+    const normalizedTool = toolClassification.normalizedToolName;
     if (normalizedTool) {
       next.toolName = normalizedTool;
     }
 
-    if (IMAGE_GEN_TOOL_NAMES.has(normalizedTool)) {
+    if (toolClassification.isImageGen) {
       withDefault(next, 'toolAspectRatio', '1:1');
       withDefault(next, 'toolResolutionTier', next.toolImageSize || '1K');
       withDefault(next, 'toolNumberOfImages', 1);
       if (next.toolAddMagicSuffix === undefined) {
         next.toolAddMagicSuffix = true;
       }
-    } else if (IMAGE_EDIT_TOOL_NAMES.has(normalizedTool)) {
+    } else if (toolClassification.isImageEdit) {
       withDefault(next, 'toolNumberOfImages', 1);
-    } else if (TABLE_ANALYZE_TOOL_NAMES.has(normalizedTool)) {
+    } else if (toolClassification.isTableAnalyze) {
       withDefault(next, 'toolAnalysisType', 'comprehensive');
-    } else if (PROMPT_OPTIMIZE_TOOL_NAMES.has(normalizedTool)) {
+    } else if (toolClassification.isPromptOptimize) {
       const parsed = parseToolArgsObject(next.toolArgsTemplate);
       if (parsed) {
         if (isBlank(parsed.language)) {
@@ -326,6 +249,7 @@ const FIELD_LABELS: Record<string, string> = {
   toolReferenceImageUrl: '参考图',
   toolAnalysisType: '分析类型',
   approvalPrompt: '审核提示',
+  autoApprove: '自动通过',
   startTask: '任务输入',
   startImageUrl: '图片输入',
   startImageUrls: '图片输入列表',
@@ -431,7 +355,7 @@ const FIELD_PRIORITY_BY_NODE_TYPE: Record<string, string[]> = {
   parallel: ['joinMode', 'timeoutSeconds'],
   merge: ['mergeStrategy'],
   loop: ['loopCondition', 'maxIterations', 'continueOnError'],
-  human: ['approvalPrompt'],
+  human: ['approvalPrompt', 'autoApprove'],
 };
 
 const EXCLUDED_KEYS = new Set([

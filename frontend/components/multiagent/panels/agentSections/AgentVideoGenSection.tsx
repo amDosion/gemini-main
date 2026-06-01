@@ -63,6 +63,19 @@ export const AgentVideoGenSection: React.FC<AgentVideoGenSectionProps> = ({
               durationOptions,
               workflowVideoControlContract.defaultVideoSeconds
             );
+            const inputStrategyOptions = workflowVideoSchema?.videoContract?.inputStrategies ?? [];
+            const inputStrategyValues = inputStrategyOptions.map((item) => item.id);
+            const videoInputStrategy = inputStrategyValues.includes(
+              String(nodeData.agentVideoInputStrategy || '').trim()
+            )
+              ? String(nodeData.agentVideoInputStrategy || '').trim()
+              : inputStrategyValues[0] || '';
+            const supportsDrivingAudio =
+              workflowVideoSchema?.videoContract?.attachmentSlots?.some(
+                (slot) =>
+                  slot.enabled !== false &&
+                  (slot.kind === 'audio' || slot.name === 'driving_audio')
+              ) ?? false;
             const extensionOptions = getVideoExtensionOptions(
               workflowVideoControlContract,
               videoDuration
@@ -178,6 +191,26 @@ export const AgentVideoGenSection: React.FC<AgentVideoGenSectionProps> = ({
                     </select>
                   </div>
                 </div>
+                {inputStrategyOptions.length > 0 && (
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1" htmlFor="agent-video-input-strategy">
+                      输入方式
+                    </label>
+                    <select
+                      id="agent-video-input-strategy"
+                      value={videoInputStrategy}
+                      onChange={(e) => updateNodeData({ agentVideoInputStrategy: e.target.value })}
+                      data-field-key="agentVideoInputStrategy"
+                      className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none focus:border-fuchsia-500/50"
+                    >
+                      {inputStrategyOptions.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.label || item.id}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 {extensionOptions.length > 0 && (
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -394,6 +427,22 @@ export const AgentVideoGenSection: React.FC<AgentVideoGenSectionProps> = ({
                     placeholder="https://... 或 {{input-last-frame.output.imageUrl}}"
                   />
                 </div>
+                {supportsDrivingAudio && (
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1" htmlFor="agent-audio-url">
+                      驱动音频 URL（可选）
+                    </label>
+                    <input
+                      id="agent-audio-url"
+                      type="text"
+                      value={nodeData.agentAudioUrl || ''}
+                      onChange={(e) => updateNodeData({ agentAudioUrl: e.target.value })}
+                      data-field-key="agentAudioUrl"
+                      className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none focus:border-fuchsia-500/50"
+                      placeholder="https://... 或 {{input-audio.output.audioUrl}}"
+                    />
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-xs text-slate-500 mb-1">

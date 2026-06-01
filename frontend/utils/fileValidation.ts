@@ -31,18 +31,21 @@ export function getAcceptedTypes(mode: AppMode): string[] {
         'application/json'
       ];
     case 'image-gen':
+      return ['image/*'];
     case 'image-chat-edit':
     case 'image-mask-edit':
     case 'image-inpainting':
     case 'image-background-edit':
     case 'image-recontext':
     case 'image-outpainting':
-    case 'video-gen':
-    case 'audio-gen':
     case 'virtual-try-on':
-      return ['image/*', 'video/*', 'audio/*'];
+      return ['image/*'];
+    case 'video-gen':
+      return ['image/*', 'video/*'];
+    case 'audio-gen':
+      return [];
     case 'pdf-extract':
-      return ['application/pdf'];
+      return ['.pdf', 'application/pdf'];
     default:
       return [];
   }
@@ -53,15 +56,20 @@ export function getAcceptedTypes(mode: AppMode): string[] {
  */
 export function isValidFileType(file: File, acceptedTypes: string[]): boolean {
   if (acceptedTypes.length === 0) return true;
+  const filename = file.name.toLowerCase();
   
   return acceptedTypes.some(type => {
+    const normalizedType = type.toLowerCase();
+    if (normalizedType.startsWith('.')) {
+      return filename.endsWith(normalizedType);
+    }
     // 通配符匹配 (如 image/*)
-    if (type.endsWith('/*')) {
-      const prefix = type.slice(0, -2);
-      return file.type.startsWith(prefix);
+    if (normalizedType.endsWith('/*')) {
+      const prefix = normalizedType.slice(0, -2);
+      return file.type.toLowerCase().startsWith(prefix);
     }
     // 精确匹配
-    return file.type === type;
+    return file.type.toLowerCase() === normalizedType;
   });
 }
 

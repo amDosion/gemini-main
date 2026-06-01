@@ -9,15 +9,12 @@ import {
 } from './authSync';
 import {
   getAccessToken,
-  getRefreshToken,
   removeAccessToken,
   removeRefreshToken,
-  setAccessToken,
-  setRefreshToken,
-  withAuthorization,
 } from './authTokenStore';
 import { fetchWithTimeout, parseHttpError, readJsonResponse } from './http';
-import { cacheManager } from './CacheManager';
+import { clearPrivateClientCaches } from './privateClientCache';
+import { getPrivateCacheUserScope, setPrivateCacheUserScope } from './privateCacheScope';
 
 export { getAccessToken } from './authTokenStore';
 
@@ -46,8 +43,6 @@ export interface User {
 
 export interface LoginResponse {
   user: User;
-  accessToken: string;
-  refreshToken?: string;
   tokenType?: string;
   expiresIn: number;
   hasActiveProfile?: boolean; // ✅ 新增：是否有活跃的配置文件
@@ -89,8 +84,23 @@ function isTokenExpired(token: string): boolean {
   }
 }
 
-function getHeaders(includeJson = true): HeadersInit {
-  return withAuthorization(includeJson ? { 'Content-Type': 'application/json' } : {});
+function getTokenExpiresAt(token: string | null): number | null {
+  if (!token) return null;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const exp = Number(payload.exp);
+    return Number.isFinite(exp) ? exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+function getJsonHeaders(): HeadersInit {
+  return { 'Content-Type': 'application/json' };
+}
+
+function setAuthenticatedMediaScope(user: Pick<User, 'id'> | null | undefined): void {
+  setPrivateCacheUserScope(user?.id || null);
 }
 
 // ============================================
@@ -109,18 +119,54 @@ class AuthService {
   // 避免 useAuth init/refresh 等同 mount tick 内多次串行调用 /auth/me
   // logout / login / refreshToken 需调 clearUserCache() 失效
   private userPromise: Promise<User | null> | null = null;
+  private userCacheGeneration = 0;
+
+  private async clearPrivateBrowserCaches(): Promise<void> {
+    await clearPrivateClientCaches();
+  }
+
+  private isUserCacheGenerationCurrent(generation: number | null | undefined): boolean {
+    return generation === null || generation === undefined || generation === this.userCacheGeneration;
+  }
+
+  private async applyAuthenticatedUserScope(
+    user: Pick<User, 'id'> | null | undefined,
+    generationAtStart?: number
+  ): Promise<boolean> {
+    if (!this.isUserCacheGenerationCurrent(generationAtStart)) {
+      return false;
+    }
+
+    const nextUserScope = user?.id || null;
+    if (!nextUserScope) {
+      setAuthenticatedMediaScope(null);
+      return true;
+    }
+
+    const currentUserScope = getPrivateCacheUserScope();
+    if (currentUserScope !== nextUserScope) {
+      await this.clearPrivateBrowserCaches();
+      if (!this.isUserCacheGenerationCurrent(generationAtStart)) {
+        return false;
+      }
+    }
+
+    setPrivateCacheUserScope(nextUserScope);
+    return true;
+  }
 
   constructor() {
-    // ✅ 监听其他标签页的 token 刷新
-    listenTokenRefresh((accessToken, refreshToken) => {
-      setAccessToken(accessToken);
-      setRefreshToken(refreshToken);
+    // 其他标签页刷新 Cookie 后，本标签页清掉可能过期的内存 token。
+    // 后续请求优先走 httpOnly Cookie，避免 stale Authorization header 覆盖新 Cookie。
+    listenTokenRefresh(() => {
+      removeAccessToken();
+      removeRefreshToken();
+      this.clearUserCache();
     });
 
     // ✅ 监听其他标签页的登出
-    listenLogout(() => {
-      removeAccessToken();
-      removeRefreshToken();
+    listenLogout(async () => {
+      await this.clearLocalPrivateSessionState();
       // 触发页面刷新或重定向到登录页
       window.location.reload();
     });
@@ -209,7 +255,9 @@ class AuthService {
   async register(data: RegisterData): Promise<User> {
     const response = await fetchWithTimeout(`${this.baseUrl}/register`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: getJsonHeaders(),
+      withAuth: true,
+      skipAuth: true,
       body: JSON.stringify({
         email: data.email,
         password: data.password,
@@ -222,28 +270,27 @@ class AuthService {
       throw new Error(error.message);
     }
     const result = await readJsonResponse<any>(response);
-    // ✅ 新增：如果注册返回了 tokens，保存它们（注册即登录）
-    if (result.accessToken) {
-      setAccessToken(result.accessToken);
-    }
-    if (result.refreshToken) {
-      setRefreshToken(result.refreshToken);
-    }
-    // ✅ 保存配置状态（优化：减少前端初始化请求）
-    if (result.hasActiveProfile !== undefined) {
-      localStorage.setItem('has_active_profile', String(result.hasActiveProfile));
-    }
+    removeAccessToken();
+    this.clearUserCache();
+    await this.clearPrivateBrowserCaches();
+    setAuthenticatedMediaScope(result.user || result);
     // 返回用户对象
-    return result.user || result;
+    const user = result.user || result;
+    if (user?.hasActiveProfile === undefined && result.hasActiveProfile !== undefined) {
+      return { ...user, hasActiveProfile: result.hasActiveProfile };
+    }
+    return user;
   }
 
   /**
-   * 用户登录 - 返回用户信息和 token
+   * 用户登录 - 返回用户信息；认证凭据由后端写入 httpOnly Cookie
    */
   async login(data: LoginData): Promise<LoginResponse> {
     const response = await fetchWithTimeout(`${this.baseUrl}/login`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: getJsonHeaders(),
+      withAuth: true,
+      skipAuth: true,
       body: JSON.stringify(data),
     });
     if (!response.ok) {
@@ -251,22 +298,11 @@ class AuthService {
       throw new Error(error.message);
     }
     const result = await readJsonResponse<any>(response);
-    // ✅ 保存 access_token 到 localStorage
-    if (result.accessToken) {
-      setAccessToken(result.accessToken);
-      // ✅ 同时设置 Cookie（用于 EventSource 等场景）
-      // 注意：后端也会设置 Cookie，这里作为双重保障
-    }
-    // ✅ 保存 refresh_token
-    if (result.refreshToken) {
-      setRefreshToken(result.refreshToken);
-    }
-    // ✅ 保存配置状态（优化：减少前端初始化请求）
-    if (result.hasActiveProfile !== undefined) {
-      localStorage.setItem('has_active_profile', String(result.hasActiveProfile));
-    }
+    removeAccessToken();
     // ✅ Wave 2 perf: 清除可能存在的上一用户缓存（新用户登录场景）
     this.clearUserCache();
+    await this.clearPrivateBrowserCaches();
+    setAuthenticatedMediaScope(result.user);
     return result;
   }
 
@@ -278,7 +314,8 @@ class AuthService {
     try {
       const response = await fetchWithTimeout(`${this.baseUrl}/logout`, {
         method: 'POST',
-        headers: getHeaders(),
+        withAuth: true,
+        skipAuth: true,
       });
       // 即使后端请求失败，也清除本地 token
       if (!response.ok) {
@@ -287,11 +324,24 @@ class AuthService {
     } catch (error) {
       // Logout request error, clearing local tokens
     } finally {
-      // ✅ 清除所有 token
-      removeAccessToken();
-      removeRefreshToken();
-      // ✅ Wave 2 perf: 清除用户缓存防跨用户脏读
-      this.clearUserCache();
+      await this.clearLocalPrivateSessionState({ broadcast: true });
+    }
+  }
+
+  async clearLocalPrivateSessionState(options: { broadcast?: boolean } = {}): Promise<void> {
+    // ✅ 清除所有 token
+    removeAccessToken();
+    removeRefreshToken();
+    try {
+      localStorage.removeItem('has_active_profile');
+    } catch {
+      // ignore storage errors
+    }
+    // ✅ Wave 2 perf: 清除用户缓存防跨用户脏读
+    this.clearUserCache();
+    await this.clearPrivateBrowserCaches();
+    setAuthenticatedMediaScope(null);
+    if (options.broadcast) {
       // ✅ 广播登出事件给其他标签页
       broadcastLogout();
     }
@@ -302,7 +352,18 @@ class AuthService {
    * Wave 2 perf: 避免跨用户脏读 + 配合 Promise 单例去重。
    */
   clearUserCache(): void {
+    this.userCacheGeneration += 1;
     this.userPromise = null;
+  }
+
+  getAccessTokenRefreshDelayMs(): number {
+    const expiresAt = getTokenExpiresAt(getAccessToken());
+    if (!expiresAt) {
+      return 5 * 60 * 1000;
+    }
+
+    const refreshAt = expiresAt - 2 * 60 * 1000;
+    return Math.max(30 * 1000, refreshAt - Date.now());
   }
 
   /**
@@ -315,53 +376,59 @@ class AuthService {
    */
   async getCurrentUser(force = false): Promise<User | null> {
     if (force) {
-      this.userPromise = null;
+      this.clearUserCache();
     }
     if (this.userPromise) {
       return this.userPromise;
     }
 
+    const generationAtStart = this.userCacheGeneration;
     const promise = (async (): Promise<User | null> => {
       try {
-        const token = getAccessToken();
-        if (!token) {
-          return null;
-        }
         const response = await fetchWithTimeout(`${this.baseUrl}/me`, {
           method: 'GET',
-          headers: getHeaders(),
+          withAuth: true,
+          skipAuth: true,
         });
         if (!response.ok) {
           if (response.status === 401) {
-            // Token 无效，清除本地 token
-            removeAccessToken();
+            await this.clearLocalPrivateSessionState();
             return null;
           }
           throw new Error('Failed to get current user');
         }
         const result = await readJsonResponse<any>(response);
 
-        // ✅ 更新配置状态（优化：减少前端初始化请求）
-        if (result.hasActiveProfile !== undefined) {
-          localStorage.setItem('has_active_profile', String(result.hasActiveProfile));
+        if (!this.isUserCacheGenerationCurrent(generationAtStart)) {
+          return null;
         }
 
+        const scopeApplied = await this.applyAuthenticatedUserScope(result, generationAtStart);
+        if (!scopeApplied) {
+          return null;
+        }
         return result;
-      } catch {
-        // getCurrentUser failed, clearing token
-        removeAccessToken();
-        return null;
+      } catch (error) {
+        throw error;
       }
     })();
 
     // 仅在成功（user 非空）时保留缓存；null/失败 不缓存以允许后续重试
-    this.userPromise = promise.then((result) => {
-      if (result === null) {
-        this.userPromise = null;
-      }
-      return result;
-    });
+    const trackedPromise = promise
+      .then((result) => {
+        if (result === null && this.userPromise === trackedPromise) {
+          this.userPromise = null;
+        }
+        return result;
+      })
+      .catch((error) => {
+        if (this.userPromise === trackedPromise) {
+          this.userPromise = null;
+        }
+        throw error;
+      });
 
+    this.userPromise = trackedPromise;
     return this.userPromise;
   }
 
@@ -374,47 +441,25 @@ class AuthService {
    */
   async refreshToken(): Promise<boolean> {
     const accessToken = getAccessToken();
-    const refreshToken = getRefreshToken();
-
-    if (!refreshToken) {
-      return false;
-    }
 
     // ✅ 检查 access_token 是否真的需要刷新
     if (accessToken && !isTokenExpired(accessToken)) {
       return true;
     }
 
-    // 发送 refresh_token —— 网络错误向上抛,由 caller 决定是否清 token
+    const headers = new Headers({ 'Content-Type': 'application/json' });
+
+    // refresh token 只走 httpOnly Cookie，不再进入 JS 内存或 Authorization header。
     const response = await fetchWithTimeout(`${this.baseUrl}/refresh`, {
       method: 'POST',
-      headers: withAuthorization(
-        {
-          'Content-Type': 'application/json',
-        },
-        { token: refreshToken }
-      ),
+      headers,
+      withAuth: true,
+      skipAuth: true,
     });
 
     if (response.ok) {
-      const result = await readJsonResponse<any>(response);
-
-      // ✅ 更新 access_token
-      if (result.accessToken) {
-        setAccessToken(result.accessToken);
-      }
-
-      // ✅ 更新 refresh_token（Token 轮换）
-      if (result.refreshToken) {
-        setRefreshToken(result.refreshToken);
-        // ✅ 广播给其他标签页
-        broadcastTokenRefresh(result.accessToken, result.refreshToken);
-      }
-
-      // ✅ 更新配置状态（优化：减少前端初始化请求）
-      if (result.hasActiveProfile !== undefined) {
-        localStorage.setItem('has_active_profile', String(result.hasActiveProfile));
-      }
+      removeAccessToken();
+      broadcastTokenRefresh();
 
       return true;
     }
@@ -434,7 +479,9 @@ class AuthService {
   async changePassword(data: ChangePasswordData): Promise<void> {
     const response = await fetchWithTimeout(`${this.baseUrl}/change-password`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: getJsonHeaders(),
+      withAuth: true,
+      skipAuth: true,
       body: JSON.stringify({
         currentPassword: data.currentPassword,
         newPassword: data.newPassword,

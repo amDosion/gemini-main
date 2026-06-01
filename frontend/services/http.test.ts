@@ -1,19 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fetchWithTimeout, requestJson } from './http';
+import { removeAccessToken, setAccessToken } from './authTokenStore';
 
 describe('http service utilities', () => {
   afterEach(() => {
+    removeAccessToken();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 
-  it('injects Authorization header when withAuth is enabled', async () => {
-    vi.stubGlobal('window', {
-      localStorage: {
-        getItem: vi.fn((key: string) => (key === 'access_token' ? 'token-123' : null)),
-      },
-    } as any);
+  it('uses cookie-first auth without bearer headers when withAuth is enabled', async () => {
+    setAccessToken('token-123');
 
     const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
       async () =>
@@ -31,7 +29,53 @@ describe('http service utilities', () => {
 
     const requestInit = fetchMock.mock.calls[0][1] as RequestInit;
     const headers = new Headers(requestInit.headers);
+    expect(headers.has('Authorization')).toBe(false);
+    expect(requestInit.credentials).toBe('include');
+  });
+
+  it('can explicitly opt in to bearer auth for non-cookie clients', async () => {
+    setAccessToken('token-123');
+
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+      async () =>
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await requestJson<{ ok: boolean }>('/api/test', {
+      method: 'GET',
+      withAuth: true,
+      includeBearer: true,
+    });
+
+    const requestInit = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = new Headers(requestInit.headers);
     expect(headers.get('Authorization')).toBe('Bearer token-123');
+    expect(requestInit.credentials).toBe('include');
+  });
+
+  it('includes cookies for authenticated requests even when no JS token is available', async () => {
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+      async () =>
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await requestJson<{ ok: boolean }>('/api/test', {
+      method: 'GET',
+      withAuth: true,
+    });
+
+    const requestInit = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = new Headers(requestInit.headers);
+    expect(headers.has('Authorization')).toBe(false);
+    expect(requestInit.credentials).toBe('include');
   });
 
   it('throws stable timeout error when request exceeds timeoutMs', async () => {

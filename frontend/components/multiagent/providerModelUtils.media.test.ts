@@ -4,6 +4,7 @@ import {
   normalizeProviderModels,
   normalizeSupportedTasks,
   pickProviderDefaultModel,
+  resolveProviderTaskModelSelection,
 } from './providerModelUtils';
 
 describe('providerModelUtils media support', () => {
@@ -60,5 +61,32 @@ describe('providerModelUtils media support', () => {
     ]);
 
     expect(pickProviderDefaultModel(providers[0], 'chat')).toBeUndefined();
+  });
+
+  it('resolves reusable provider task model selection state for panels', () => {
+    const providers = normalizeProviderModels([
+      {
+        provider_id: 'google',
+        provider_name: 'Google',
+        all_models: [
+          { id: 'gemini-chat', name: 'Gemini Chat', supported_tasks: ['chat'] },
+          { id: 'veo', name: 'Veo', supported_tasks: ['video-gen'] },
+        ],
+      },
+    ]);
+
+    const selection = resolveProviderTaskModelSelection({
+      providers,
+      providerId: 'google',
+      modelId: 'gemini-chat',
+      taskType: 'video-gen',
+    });
+
+    expect(selection.selectedProvider?.providerId).toBe('google');
+    expect(selection.compatibleModels.map((model) => model.id)).toEqual(['veo']);
+    expect(selection.providerHasNoCompatibleModels).toBe(false);
+    expect(selection.selectedModel?.id).toBe('gemini-chat');
+    expect(selection.selectedModelSupportsTask).toBe(false);
+    expect(selection.pickCompatibleModel()?.id).toBe('veo');
   });
 });

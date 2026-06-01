@@ -13,8 +13,8 @@
  * 支持的 4 种内置主体分支（按 loadingState / isCompareMode / 多图 / 单图 / 空 顺序）：
  *   1) loading - 旋转 spinner + 状态文本（spinner 颜色用 accent class 自定义）
  *   2) compare - <ImageCompare> 前后对比（标签/accent 由 props 控制）
- *   3) carousel - <ImageCarouselArrows> + <img> + 底部缩略图
- *   4) single image - 普通 <img> 显示
+ *   3) carousel - <ImageCarouselArrows> + <CachedImage> + 底部缩略图
+ *   4) single image - <CachedImage> 显示
  *   5) empty - 由调用方通过 emptyState slot 提供
  *
  * 视图差异通过 props 控制：
@@ -33,6 +33,11 @@ import { Attachment } from '../../types/types';
 import { ImageCanvasControls } from './ImageCanvasControls';
 import { ImageCarouselArrows, type CarouselMediaItem } from './ImageCarouselControls';
 import { ImageCompare } from './ImageCompare';
+import { CachedImage } from './CachedImage';
+import {
+  getPreferredAttachmentUrl,
+  isLocalBlobAttachmentUrl,
+} from '../../utils/attachmentUrl';
 
 export type WorkspaceAccentColor = 'pink' | 'orange' | 'emerald' | 'indigo';
 
@@ -160,32 +165,56 @@ export const ImageWorkspaceCanvas = memo(
     emptyState,
     extraHeaderContent,
   }: ImageWorkspaceCanvasProps) => {
+    const carouselEnabled = !!carousel;
+    const isMultiImageMode = carouselEnabled && activeAttachments.length > 1;
+    const currentCarouselAttachment =
+      carouselEnabled && isMultiImageMode ? activeAttachments[carousel!.carouselIndex] : null;
+    const currentSourceAttachment =
+      currentCarouselAttachment ||
+      activeAttachments.find(
+        (attachment) =>
+          attachment.url === activeImageUrl ||
+          attachment.tempUrl === activeImageUrl ||
+          attachment.cloudUrl === activeImageUrl ||
+          attachment.fileUri === activeImageUrl
+      ) ||
+      (activeAttachments.length === 1 ? activeAttachments[0] : undefined);
+    const currentAttachmentUrl = currentSourceAttachment
+      ? getPreferredAttachmentUrl(currentSourceAttachment)
+      : null;
+    const activeImageUrlForDisplay =
+      isLocalBlobAttachmentUrl(activeImageUrl) && currentSourceAttachment?.file
+        ? null
+        : activeImageUrl;
+    const currentDisplayUrl =
+      currentAttachmentUrl || (currentCarouselAttachment ? null : activeImageUrlForDisplay);
+    const canRenderCurrentImage = Boolean(
+      currentDisplayUrl ||
+        (currentSourceAttachment?.file && currentSourceAttachment.mimeType.startsWith('image/'))
+    );
+
     const cursor = isCompareMode
       ? 'default'
       : isDragging
         ? 'grabbing'
-        : activeImageUrl
+        : canRenderCurrentImage
           ? 'grab'
           : 'default';
-
-    const carouselEnabled = !!carousel;
-    const isMultiImageMode = carouselEnabled && activeAttachments.length > 1;
-    const currentDisplayUrl =
-      carouselEnabled && isMultiImageMode && activeAttachments[carousel!.carouselIndex]
-        ? activeAttachments[carousel!.carouselIndex].url ||
-          activeAttachments[carousel!.carouselIndex].tempUrl ||
-          carousel!.getStableUrl(activeAttachments[carousel!.carouselIndex])
-        : activeImageUrl;
 
     const carouselItems = useMemo<CarouselMediaItem[]>(() => {
       if (!carouselEnabled) return [];
       const altFor = carousel!.altFor || ((idx: number) => `缩略图 ${idx + 1}`);
       return activeAttachments.map((att, idx) => {
-        const thumbUrl = att.url || att.tempUrl || carousel!.getStableUrl(att);
+        const thumbUrl = getPreferredAttachmentUrl(att);
         return {
           id: att.id || `${idx}`,
-          url: thumbUrl,
-          thumbUrl,
+          url: thumbUrl || null,
+          thumbUrl: thumbUrl || null,
+          source: {
+            ...att,
+            attachmentId: att.id,
+            url: thumbUrl || undefined,
+          },
           alt: altFor(idx),
         };
       });
@@ -270,7 +299,7 @@ export const ImageWorkspaceCanvas = memo(
                 style={{ maxHeight: '80vh', maxWidth: '80vw' }}
               />
             </div>
-          ) : currentDisplayUrl ? (
+          ) : canRenderCurrentImage ? (
             <>
               {carouselEnabled && (
                 <ImageCarouselArrows
@@ -283,8 +312,13 @@ export const ImageWorkspaceCanvas = memo(
                 className="relative shadow-2xl group transition-transform duration-75 ease-out"
                 style={canvasStyle}
               >
-                <img
-                  src={currentDisplayUrl}
+                <CachedImage
+                  source={{
+                    ...currentSourceAttachment,
+                    attachmentId: currentSourceAttachment?.id,
+                    url: currentDisplayUrl || undefined,
+                  }}
+                  src={currentDisplayUrl || null}
                   className="max-w-none rounded-lg border border-slate-800 pointer-events-none"
                   style={
                     carouselEnabled

@@ -282,10 +282,10 @@
           "description": "结合类目和关键词数据判断市场容量与进入窗口",
           "icon": "🌍",
           "iconColor": "bg-violet-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "data-analysis",
           "inputMapping": "站点：{{input-text-select.output.text}}\n选品需求：{{input-brief-select.output.text}}\n\n类目匹配：{{tool-category-search-select.output.rawText}}\n\n类目 Top100：{{tool-category-report-select.output.rawText}}\n\n类目关键词：{{tool-category-keywords-select.output.rawText}}\n\n网页线索：{{tool-read-webpage-select.output.content}}",
-          "instructions": "请判断市场是否值得进入，并输出：1) 市场容量与需求强度；2) 关键词机会层级；3) 是否存在明显季节性或热点驱动；4) 进入窗口评分（1-10）；5) 需要警惕的市场风险。"
+          "instructions": "请判断市场是否值得进入，并输出：1) 市场容量与需求强度；2) 关键词机会层级；3) 是否存在明显季节性或热点驱动；4) 进入窗口评分（1-10）；5) 需要警惕的市场风险。",
+          "agentPresetKey": "amazon-product-researcher"
         }
       },
       {
@@ -301,10 +301,10 @@
           "description": "结合商品样本和关键词排名判断竞争壁垒",
           "icon": "🛡️",
           "iconColor": "bg-red-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "data-analysis",
           "inputMapping": "站点：{{input-text-select.output.text}}\n选品需求：{{input-brief-select.output.text}}\n\n商品搜索结果：{{tool-product-search-select.output.rawText}}\n\n商品详情：{{tool-product-detail-select.output.rawText}}\n\n流量词：{{tool-product-traffic-select.output.rawText}}\n\n竞品关键词：{{tool-competitor-keywords-select.output.rawText}}",
-          "instructions": "请输出竞争格局分析：1) 头部品牌与价格带；2) 评论和评分门槛；3) 关键词拥挤度与自然位次压力；4) 可切入差异化方向；5) 竞争难度评分（1-10）。"
+          "instructions": "请输出竞争格局分析：1) 头部品牌与价格带；2) 评论和评分门槛；3) 关键词拥挤度与自然位次压力；4) 可切入差异化方向；5) 竞争难度评分（1-10）。",
+          "agentPresetKey": "competitor-analyst"
         }
       },
       {
@@ -320,10 +320,10 @@
           "description": "根据销量、价格和约束条件做粗测算",
           "icon": "💹",
           "iconColor": "bg-emerald-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "data-analysis",
           "inputMapping": "站点：{{input-text-select.output.text}}\n选品需求：{{input-brief-select.output.text}}\n\n类目 Top100：{{tool-category-report-select.output.rawText}}\n\n商品详情：{{tool-product-detail-select.output.rawText}}\n\n流量词：{{tool-product-traffic-select.output.rawText}}",
-          "instructions": "请基于现有销量、价格和用户约束，做粗粒度利润与风险测算：1) 合理售价与销量区间；2) 预估广告/履约/退货压力；3) ROI 与回本周期区间；4) 高风险假设；5) 是否建议继续验证。"
+          "instructions": "请基于现有销量、价格和用户约束，做粗粒度利润与风险测算：1) 合理售价与销量区间；2) 预估广告/履约/退货压力；3) ROI 与回本周期区间；4) 高风险假设；5) 是否建议继续验证。",
+          "agentPresetKey": "amazon-product-researcher"
         }
       },
       {
@@ -355,10 +355,10 @@
           "description": "输出是否进入、验证计划与执行建议",
           "icon": "🧠",
           "iconColor": "bg-indigo-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "data-analysis",
           "inputMapping": "站点：{{input-text-select.output.text}}\n选品需求：{{input-brief-select.output.text}}\n\n专项分析汇总：{{merge-analysis-select.output.text}}\n\nMCP 数据底稿：{{merge-research-select.output.text}}",
-          "instructions": "请输出最终选品决策报告：1) 是否建议进入；2) 进入优先级评分与理由；3) 首轮验证动作（关键词、供应链、成本、样品）；4) 预算与节奏建议；5) 明确的 go / no-go 条件。要求细致，不要只给一句结论。"
+          "instructions": "请输出最终选品决策报告：1) 是否建议进入；2) 进入优先级评分与理由；3) 首轮验证动作（关键词、供应链、成本、样品）；4) 预算与节奏建议；5) 明确的 go / no-go 条件。要求细致，不要只给一句结论。",
+          "agentPresetKey": "amazon-product-researcher"
         }
       },
       {

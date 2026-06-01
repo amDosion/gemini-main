@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Star } from 'lucide-react';
-import { Message, Role, Attachment } from '../../types/types';
+import { Message, Attachment } from '../../types/types';
 import { useHistoryListActions } from '../../hooks/useHistoryListActions';
 import { isHistoryActionSurface } from '../../utils/historyActionSurface';
 import { safeCopyToClipboard } from '../../utils/safeOps';
@@ -15,6 +15,9 @@ import {
   type ImageHistoryAccent,
   type ImageHistorySidebarOptions,
   ACCENT_CLASSES,
+  getImageHistoryAttachmentPreviewUrl,
+  getImageHistoryAuthorLabel,
+  selectImageHistoryPrimaryPreviewAttachment,
 } from './imageHistorySidebarHelpers';
 import { ImageHistoryHoverPreviewPanel } from './ImageHistoryHoverPreviewPanel';
 import { HistoryActionMenuPortal } from './HistoryActionMenuPortal';
@@ -47,6 +50,7 @@ export function useImageHistorySidebar({
   secondaryPromptCopyTitle = '复制增强提示词',
   secondaryPromptBadgeText = '含增强提示词',
   fallbackSelection = 'last',
+  disableFallbackSelection = false,
   getDisplayAttachments,
   getAttachmentUrl,
   extractPrompts,
@@ -99,9 +103,14 @@ export function useImageHistorySidebar({
     (message: Message): ImageHistoryPreviewAttachment[] => {
       return getDisplayAttachments(message.attachments)
         .map((attachment, index) => {
-          const url = getAttachmentUrl(attachment) || '';
+          const id = attachment.id || `${message.id}-${index}`;
+          const url = getImageHistoryAttachmentPreviewUrl(
+            attachment,
+            id,
+            getAttachmentUrl(attachment)
+          );
           return {
-            id: attachment.id || `${message.id}-${index}`,
+            id,
             url,
           };
         })
@@ -141,6 +150,15 @@ export function useImageHistorySidebar({
     stopPreviewResize();
     setOpenActionMenu(null);
     setActionMenuPosition(null);
+    setHoverPreview(null);
+    setHoverPreviewPosition(null);
+    setHoverPreviewSize(null);
+    setCopiedPreviewMessageId(null);
+  }, [clearHidePreviewTimer, stopPreviewResize]);
+
+  const closeHoverPreviewOnly = useCallback(() => {
+    clearHidePreviewTimer();
+    stopPreviewResize();
     setHoverPreview(null);
     setHoverPreviewPosition(null);
     setHoverPreviewSize(null);
@@ -207,7 +225,7 @@ export function useImageHistorySidebar({
       setHoverPreview({
         messageId: message.id,
         role: message.role,
-        authorLabel: message.role === Role.USER ? 'You' : modelLabel,
+        authorLabel: getImageHistoryAuthorLabel(message, modelLabel),
         anchorX,
         anchorY,
         originalPrompt,
@@ -417,6 +435,9 @@ export function useImageHistorySidebar({
     if (selectedMessageId && filteredItems.some((message) => message.id === selectedMessageId)) {
       return;
     }
+    if (disableFallbackSelection) {
+      return;
+    }
     const fallbackIndex = fallbackSelection === 'first' ? 0 : filteredItems.length - 1;
     const fallback = filteredItems[fallbackIndex];
     if (fallback) {
@@ -427,11 +448,14 @@ export function useImageHistorySidebar({
         message: fallback,
         displayAttachments,
         previewAttachments,
-        firstImage: previewAttachments[0]?.url,
+        firstImage:
+          selectImageHistoryPrimaryPreviewAttachment(displayAttachments, previewAttachments)
+            ?.displayUrl || undefined,
       });
     }
   }, [
     fallbackSelection,
+    disableFallbackSelection,
     filteredItems,
     getDisplayAttachments,
     getPreviewAttachments,
@@ -446,8 +470,8 @@ export function useImageHistorySidebar({
     const handleHistoryNavigation = (event: KeyboardEvent) => {
       if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
 
-      const target = event.target as HTMLElement | null;
-      if (target) {
+      const target = event.target;
+      if (target instanceof HTMLElement) {
         const tagName = target.tagName;
         const isFormInput = tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
         const isEditable =
@@ -477,7 +501,9 @@ export function useImageHistorySidebar({
         message: nextMessage,
         displayAttachments,
         previewAttachments,
-        firstImage: previewAttachments[0]?.url,
+        firstImage:
+          selectImageHistoryPrimaryPreviewAttachment(displayAttachments, previewAttachments)
+            ?.displayUrl || undefined,
       });
     };
 
@@ -560,6 +586,7 @@ export function useImageHistorySidebar({
             extractPrompts={extractPrompts}
             showHoverPreview={showHoverPreview}
             scheduleHideHoverPreview={scheduleHideHoverPreview}
+            closeHoverPreviewOnly={closeHoverPreviewOnly}
             closeHoverPreview={closeHoverPreview}
             onSelectedMessageIdChange={onSelectedMessageIdChange}
             onSelectItem={onSelectItem}
@@ -580,6 +607,7 @@ export function useImageHistorySidebar({
             openActionMenu={openActionMenu}
             actionMenuPosition={actionMenuPosition}
             actionMenuPanelRef={actionMenuPanelRef}
+            closeHoverPreviewOnly={closeHoverPreviewOnly}
             closeHoverPreview={closeHoverPreview}
             closeActionMenu={() => {
               setOpenActionMenu(null);
@@ -626,6 +654,7 @@ export function useImageHistorySidebar({
       actionMenuPosition,
       clearHidePreviewTimer,
       closeHoverPreview,
+      closeHoverPreviewOnly,
       copiedPreviewMessageId,
       deleteItem,
       emptyText,

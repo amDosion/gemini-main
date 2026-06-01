@@ -9,6 +9,8 @@ import type { ModeControlsSchema } from '../hooks/useModeControlsSchema';
 // Shared Component Props
 // ============================================
 
+export type ThinkingLevel = 'auto' | 'minimal' | 'low' | 'medium' | 'high';
+
 export interface ToggleButtonProps {
   enabled: boolean;
   onToggle: () => void;
@@ -114,11 +116,23 @@ export interface ImageGenControlsProps {
   setOutputCompressionQuality?: (v: number) => void;
   enhancePrompt?: boolean;
   setEnhancePrompt?: (v: boolean) => void;
+  quality?: string;
+  setQuality?: (v: string) => void;
+  background?: string;
+  setBackground?: (v: string) => void;
+  moderation?: string;
+  setModeration?: (v: string) => void;
+  outputFormat?: string;
+  setOutputFormat?: (v: string) => void;
 }
 
 export interface ImageEditControlsProps {
   providerId: string;
   mode?: AppMode | 'image-edit';
+  currentModel?: ModelConfig;
+  controlsSchema?: ModeControlsSchema | null;
+  controlsSchemaLoading?: boolean;
+  controlsSchemaError?: string | null;
   /** 传递 controls 状态对象 */
   controls?: ControlsState;
   /** 可用模型列表（用于增强提示词模型选择） */
@@ -188,6 +202,8 @@ export interface ImageOutpaintControlsProps {
 export interface VideoGenControlsProps {
   providerId: string;
   currentModel?: ModelConfig;
+  availableModels?: ModelConfig[];
+  onModelSelect?: (id: string) => void;
   /** 传递 controls 状态对象 */
   controls?: ControlsState;
   controlsSchema?: ModeControlsSchema | null;
@@ -200,6 +216,8 @@ export interface VideoGenControlsProps {
   setResolution?: (v: string) => void;
   videoSeconds?: string;
   setVideoSeconds?: (v: string) => void;
+  videoInputStrategy?: string;
+  setVideoInputStrategy?: (v: string) => void;
   videoExtensionCount?: number;
   setVideoExtensionCount?: (v: number) => void;
   storyboardShotSeconds?: number;
@@ -316,6 +334,8 @@ export interface ControlsState {
   setResolution: (v: string) => void;
   videoSeconds: string;
   setVideoSeconds: (v: string) => void;
+  videoInputStrategy: string;
+  setVideoInputStrategy: (v: string) => void;
   videoExtensionCount: number;
   setVideoExtensionCount: (v: number) => void;
   storyboardShotSeconds: number;
@@ -336,6 +356,14 @@ export interface ControlsState {
   setNumberOfImages: (v: number) => void;
   style: string;
   setStyle: (v: string) => void;
+  quality: string;
+  setQuality: (v: string) => void;
+  background: string;
+  setBackground: (v: string) => void;
+  moderation: string;
+  setModeration: (v: string) => void;
+  outputFormat: string;
+  setOutputFormat: (v: string) => void;
 
   // Advanced Settings
   showAdvanced: boolean;
@@ -357,12 +385,18 @@ export interface ControlsState {
   setEnhancePrompt: (v: boolean) => void;
   enhancePromptModel: string;
   setEnhancePromptModel: (v: string) => void;
+  enhancePromptThinkingLevel: ThinkingLevel;
+  setEnhancePromptThinkingLevel: (v: ThinkingLevel) => void;
 
   // TongYi Specific Parameters
   promptExtend: boolean;
   setPromptExtend: (v: boolean) => void;
   addMagicSuffix: boolean;
   setAddMagicSuffix: (v: boolean) => void;
+  thinkingMode: boolean;
+  setThinkingMode: (v: boolean) => void;
+  enableSequential: boolean;
+  setEnableSequential: (v: boolean) => void;
 
   // Out-Painting (旧参数，保留向后兼容)
   outPaintingMode: 'scale' | 'offset';

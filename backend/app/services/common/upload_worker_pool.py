@@ -30,6 +30,7 @@ from ...utils.url_security import (
     validate_outbound_http_url,
 )
 from ...utils.attachment_handler import is_base64_url
+from .upload_task_scope import resolve_upload_task_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +128,7 @@ class UploadWorkerPool:
             if self._worker_task is None or self._worker_task.done():
                 self._running = True
                 self._worker_task = asyncio.create_task(self._worker_loop())
-                logger.warning("[WorkerPool] ✅ Worker 已启动（按需）")
+                logger.info("[WorkerPool] Worker started on demand")
 
     async def _has_pending_tasks(self) -> bool:
         """检查数据库中是否还有 pending/uploading 任务"""
@@ -152,38 +153,37 @@ class UploadWorkerPool:
         不再预创建 Worker，Worker 会在任务入队时按需启动
         """
         if self._running:
-            logger.warning("[WorkerPool] Worker pool already running")
+            logger.info("[WorkerPool] Worker pool already running")
             return
 
-        # 使用 WARNING 级别确保日志可见
-        logger.warning("=" * 80)
-        logger.warning("[WorkerPool] STARTING UPLOAD WORKER POOL (ON-DEMAND MODE)...")
-        logger.warning("=" * 80)
+        logger.info("=" * 80)
+        logger.info("[WorkerPool] STARTING UPLOAD WORKER POOL (ON-DEMAND MODE)...")
+        logger.info("=" * 80)
 
         # 连接 Redis
-        logger.warning(f"[WorkerPool] Connecting to Redis: {settings.redis_host}:{settings.redis_port}")
+        logger.info(f"[WorkerPool] Connecting to Redis: {settings.redis_host}:{settings.redis_port}")
         try:
             await redis_queue.connect()
-            logger.warning("[WorkerPool] Redis connected successfully")
+            logger.info("[WorkerPool] Redis connected successfully")
         except Exception as e:
             logger.error(f"[WorkerPool] Redis connection failed: {e}")
             raise
 
         # 恢复中断任务
-        logger.warning("[WorkerPool] Recovering interrupted tasks...")
+        logger.info("[WorkerPool] Recovering interrupted tasks...")
         recovered_count = await self._recover_tasks()
-        logger.warning(f"[WorkerPool] Recovered {recovered_count} tasks")
+        logger.info(f"[WorkerPool] Recovered {recovered_count} tasks")
 
         # 如果有 pending 任务，启动 Worker
         if await self._has_pending_tasks():
-            logger.warning("[WorkerPool] Found pending tasks, starting worker...")
+            logger.info("[WorkerPool] Found pending tasks, starting worker...")
             await self.ensure_worker_running()
         else:
-            logger.warning("[WorkerPool] No pending tasks, worker will start on-demand")
+            logger.info("[WorkerPool] No pending tasks, worker will start on-demand")
 
-        logger.warning("=" * 80)
-        logger.warning("[WorkerPool] WORKER POOL READY (ON-DEMAND MODE)")
-        logger.warning("=" * 80)
+        logger.info("=" * 80)
+        logger.info("[WorkerPool] WORKER POOL READY (ON-DEMAND MODE)")
+        logger.info("=" * 80)
 
         # ✅ 设置 _pool_running 标志，确保 reconciler 可以运行
         self._pool_running = True
@@ -195,13 +195,13 @@ class UploadWorkerPool:
             import time
             self._reconciler = asyncio.create_task(self._reconcile_loop())
             self._reconciler_started_at = time.time()  # 记录启动时间
-            logger.warning(
+            logger.info(
                 f"[WorkerPool] Reconciler started (interval={self._reconcile_interval_s}s, limit={self._reconcile_limit})"
             )
 
     async def stop(self):
         """停止 Worker 池"""
-        logger.warning("[WorkerPool] Stopping worker pool...")
+        logger.info("[WorkerPool] Stopping worker pool...")
         self._running = False
         self._pool_running = False
         self._reconciler_started_at = None  # 清除启动时间
@@ -224,7 +224,7 @@ class UploadWorkerPool:
         # 连接由应用级别的全局连接池管理，在应用关闭时统一关闭
         # await redis_queue.disconnect()  # 已移除
 
-        logger.warning("[WorkerPool] Worker pool stopped (Redis connection maintained by global pool)")
+        logger.info("[WorkerPool] Worker pool stopped (Redis connection maintained by global pool)")
 
     async def _reconcile_loop(self):
         """周期性补偿入队（只处理 pending，不动 uploading）。"""
@@ -419,7 +419,7 @@ class UploadWorkerPool:
         - 空闲超时后检查数据库，无 pending 任务则退出
         """
         worker_name = "Worker-0"
-        logger.warning(f"[{worker_name}] Started (on-demand mode), processing tasks...")
+        logger.info(f"[{worker_name}] Started (on-demand mode), processing tasks...")
 
         idle_count = 0
         max_idle_count = self.idle_timeout // 5  # 5秒一次检查，idle_timeout=10秒 → 2次
@@ -436,7 +436,7 @@ class UploadWorkerPool:
                     # 检查是否还有 pending 任务（数据库中）
                     if idle_count >= max_idle_count:
                         if not await self._has_pending_tasks():
-                            logger.warning(f"[{worker_name}] 队列为空且无 pending 任务，Worker 自动退出")
+                            logger.info(f"[{worker_name}] 队列为空且无 pending 任务，Worker 自动退出")
                             break
                         else:
                             # 有 pending 任务但不在队列中，可能需要 reconcile，继续等待
@@ -447,7 +447,7 @@ class UploadWorkerPool:
                 idle_count = 0
 
                 # ========== 收到任务 ==========
-                logger.warning(f"[{worker_name}] ✅ Got task: {task_id}")
+                logger.info(f"[{worker_name}] Got task: {task_id}")
                 await redis_queue.append_task_log(
                     task_id,
                     level="info",
@@ -615,7 +615,12 @@ class UploadWorkerPool:
             log_print(f"[{worker_name}] ⚙️ 获取存储配置...")
             log_print(f"    - storage_id: {task.storage_id or 'None'}")
             log_print(f"    - session_id: {task.session_id or 'None'}")
-            config = self._get_storage_config(db, task.storage_id, task.session_id)
+            config = self._get_storage_config(
+                db,
+                task.storage_id,
+                task.session_id,
+                user_id=resolve_upload_task_user_id(db, task),
+            )
             if not config:
                 error_msg = (
                     f"存储配置不可用。"
@@ -721,16 +726,7 @@ class UploadWorkerPool:
 
         lookup_db = SessionLocal()
         try:
-            resolved_user_id = ""
-            if task.attachment_id:
-                attachment = lookup_db.query(MessageAttachment).filter(
-                    MessageAttachment.id == task.attachment_id
-                ).first()
-                resolved_user_id = str(getattr(attachment, "user_id", "") or "").strip()
-
-            if not resolved_user_id and task.session_id:
-                session = lookup_db.query(ChatSession).filter(ChatSession.id == task.session_id).first()
-                resolved_user_id = str(getattr(session, "user_id", "") or "").strip()
+            resolved_user_id = resolve_upload_task_user_id(lookup_db, task)
 
             if not resolved_user_id:
                 raise Exception("Unable to resolve user for Google provider media upload task")
@@ -917,7 +913,13 @@ class UploadWorkerPool:
         
         return mime_type, base64_str
 
-    def _get_storage_config(self, db, storage_id: Optional[str], session_id: Optional[str] = None):
+    def _get_storage_config(
+        self,
+        db,
+        storage_id: Optional[str],
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ):
         """获取存储配置（自动解密敏感字段）"""
         if storage_id:
             config = db.query(StorageConfig).filter(StorageConfig.id == storage_id).first()
@@ -928,8 +930,7 @@ class UploadWorkerPool:
                 logger.warning(f"[UploadWorkerPool] 指定的存储配置已禁用: {storage_id}")
                 return None
         else:
-            user_id = None
-            if session_id:
+            if not user_id and session_id:
                 session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
                 if session:
                     user_id = session.user_id
@@ -1022,7 +1023,13 @@ class UploadWorkerPool:
         if task.session_id and task.message_id and task.attachment_id:
             log_print(f"[{worker_name}] 🔄 更新会话附件 URL...")
             await self._update_session_attachment(
-                db, task.session_id, task.message_id, task.attachment_id, url, worker_name
+                db,
+                task.session_id,
+                task.message_id,
+                task.attachment_id,
+                url,
+                worker_name,
+                task_user_id=resolve_upload_task_user_id(db, task),
             )
 
         # 更新 Redis 统计
@@ -1143,7 +1150,14 @@ class UploadWorkerPool:
                 pass
 
     async def _update_session_attachment(
-        self, db, session_id: str, message_id: str, attachment_id: str, url: str, worker_name: str
+        self,
+        db,
+        session_id: str,
+        message_id: str,
+        attachment_id: str,
+        url: str,
+        worker_name: str,
+        task_user_id: Optional[str] = None,
     ):
         """
         更新会话附件 (v3 架构)
@@ -1157,15 +1171,30 @@ class UploadWorkerPool:
         ).first()
         expected_user_id = str(getattr(session, "user_id", "") or "").strip()
         ownership_source = "chat_session"
+        if task_user_id and expected_user_id and task_user_id != expected_user_id:
+            log_print(
+                f"[{worker_name}] ⚠️ 任务用户与会话用户不匹配，跳过附件更新: "
+                f"task_user={task_user_id}, session_user={expected_user_id}, session={session_id}",
+                "WARNING",
+            )
+            return
 
         if not expected_user_id:
             workflow_execution = db.query(WorkflowExecution).filter(
                 WorkflowExecution.id == session_id
             ).first()
             expected_user_id = str(getattr(workflow_execution, "user_id", "") or "").strip()
+            if task_user_id and expected_user_id and task_user_id != expected_user_id:
+                log_print(
+                    f"[{worker_name}] ⚠️ 任务用户与工作流用户不匹配，跳过附件更新: "
+                    f"task_user={task_user_id}, workflow_user={expected_user_id}, execution={session_id}",
+                    "WARNING",
+                )
+                return
             if expected_user_id:
                 ownership_source = "workflow_execution"
             else:
+                expected_user_id = task_user_id or ""
                 ownership_source = "attachment_fallback"
                 log_print(
                     f"[{worker_name}] ⚠️ 未找到 chat_session/workflow_execution，回退到附件记录匹配: session={session_id}",

@@ -6,12 +6,17 @@
 
 import React from 'react';
 import { AlertCircle, FolderOpen, Image as ImageIcon, Layers, Star, Wand2 } from 'lucide-react';
-import { Message } from '../../../types/types';
+import { Attachment, Message } from '../../../types/types';
 import type { ActionMenuAnchorBase } from '../../../hooks/useActionMenu';
+import { CachedImage } from '../../common/CachedImage';
+import { HISTORY_THUMBNAIL_CACHE_PROPS } from '../../common/historyThumbnailCache';
+import { getPreferredImageAttachmentUrl } from '../../../utils/attachmentUrl';
+import { getImageHistoryAttachmentPreviewUrl } from '../../common/imageHistorySidebarHelpers';
 
 export interface ExpandHistoryRowProps {
   msg: Message;
   firstImage: string | undefined;
+  firstImageAttachment?: Attachment;
   count: number;
   isSelected: boolean;
   originalPrompt: string;
@@ -37,6 +42,7 @@ export interface ExpandHistoryRowProps {
 const ExpandHistoryRowComponent: React.FC<ExpandHistoryRowProps> = ({
   msg,
   firstImage,
+  firstImageAttachment,
   count,
   isSelected,
   originalPrompt,
@@ -53,6 +59,15 @@ const ExpandHistoryRowComponent: React.FC<ExpandHistoryRowProps> = ({
   closeActionMenu,
   openActionMenuBase,
 }) => {
+  const firstImagePreviewId = firstImageAttachment?.id || `${msg.id}-0`;
+  const resolvedFirstImage = firstImageAttachment
+    ? getImageHistoryAttachmentPreviewUrl(
+        firstImageAttachment,
+        firstImagePreviewId,
+        getPreferredImageAttachmentUrl(firstImageAttachment) || firstImage
+      )
+    : firstImage;
+
   return (
     <div
       ref={(el) => {
@@ -85,12 +100,17 @@ const ExpandHistoryRowComponent: React.FC<ExpandHistoryRowProps> = ({
             <div className="w-full h-full flex items-center justify-center text-red-400 bg-red-900/10">
               <AlertCircle size={20} />
             </div>
-          ) : firstImage ? (
+          ) : resolvedFirstImage ? (
             <>
-              <img
-                src={firstImage}
+              <CachedImage
+                source={{
+                  ...firstImageAttachment,
+                  attachmentId: firstImagePreviewId,
+                  url: resolvedFirstImage,
+                }}
+                src={resolvedFirstImage}
+                {...HISTORY_THUMBNAIL_CACHE_PROPS}
                 className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                loading="lazy"
                 alt="Expanded image"
               />
               {count > 1 && (
@@ -168,15 +188,4 @@ const ExpandHistoryRowComponent: React.FC<ExpandHistoryRowProps> = ({
   );
 };
 
-export const ExpandHistoryRow = React.memo(
-  ExpandHistoryRowComponent,
-  (prev, next) =>
-    prev.msg.id === next.msg.id &&
-    prev.isSelected === next.isSelected &&
-    prev.favorited === next.favorited &&
-    prev.isActionMenuOpen === next.isActionMenuOpen &&
-    prev.firstImage === next.firstImage &&
-    prev.count === next.count &&
-    prev.originalPrompt === next.originalPrompt &&
-    prev.optimizedPrompt === next.optimizedPrompt
-);
+export const ExpandHistoryRow = ExpandHistoryRowComponent;

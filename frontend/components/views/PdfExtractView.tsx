@@ -24,6 +24,7 @@ import {
   Send,
 } from 'lucide-react';
 import { apiClient } from '../../services/apiClient';
+import { useClipboardAttachments } from '../../hooks/useClipboardAttachments';
 import { GenViewLayout } from '../common/GenViewLayout';
 import {
   PdfEmptyState,
@@ -79,6 +80,19 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
   // ✅ 参数面板状态
   const [prompt, setPrompt] = useState('Extract details from this document.');
   const [activeAttachments, setActiveAttachments] = useState<Attachment[]>([]);
+  const {
+    handlePaste: handleAttachmentPaste,
+    appendFiles,
+  } = useClipboardAttachments({
+    mode: 'pdf-extract',
+    attachments: activeAttachments,
+    onAttachmentsChange: setActiveAttachments,
+    maxAttachments: 1,
+    acceptedTypes: '.pdf,application/pdf',
+    replaceExisting: true,
+    createObjectUrl: false,
+    disabled: loadingState === 'loading',
+  });
 
   useEffect(() => {
     let isMounted = true;
@@ -407,6 +421,7 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
                 e.target.style.height = 'auto';
                 e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
               }}
+              onPaste={handleAttachmentPaste}
               onKeyDown={handleKeyDown}
               placeholder={activeAttachments.length === 0 ? '请先上传 PDF 文件...' : '提取指令...'}
               className="w-full min-h-[40px] max-h-[150px] bg-slate-800/80 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 overflow-y-auto"
@@ -421,16 +436,7 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
                   accept=".pdf,application/pdf"
                   className="hidden"
                   onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      const newAtt: Attachment = {
-                        id: `att-${Date.now()}`,
-                        name: file.name,
-                        mimeType: file.type,
-                        file: file,
-                      };
-                      setActiveAttachments([newAtt]);
-                    }
+                    if (e.target.files) appendFiles(e.target.files);
                     e.target.value = '';
                   }}
                 />
@@ -475,6 +481,8 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
       selectedTemplate,
       activeAttachments,
       prompt,
+      appendFiles,
+      handleAttachmentPaste,
       handleKeyDown,
       handleGenerate,
       resetParams,

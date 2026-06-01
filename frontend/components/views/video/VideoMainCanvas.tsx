@@ -18,9 +18,11 @@ import {
 } from 'lucide-react';
 import type { AppMode, Attachment, ChatOptions, Message, ModelConfig } from '../../../types/types';
 import type { ControlsState } from '../../../controls/types';
+import type { ModeControlsSchema } from '../../../hooks/useModeControlsSchema';
 import { ModeControlsCoordinator } from '../../../coordinators/ModeControlsCoordinator';
 import ChatEditInputArea from '../../chat/ChatEditInputArea';
 import { ViewSideParamsPanel } from '../../common/ViewSideParamsPanel';
+import { RetainedVideo } from '../../common/RetainedMedia';
 
 export interface VideoMainCanvasProps {
   // workspace state
@@ -56,7 +58,10 @@ export interface VideoMainCanvasProps {
   videoMode: AppMode;
   resolvedProviderId: string;
   activeModelConfig?: ModelConfig;
+  visibleModels?: ModelConfig[];
+  onModelSelect?: (id: string) => void;
   controls: ControlsState;
+  controlsSchema?: ModeControlsSchema | null;
   resetParams: () => void;
   // input area
   handleSend: (
@@ -107,7 +112,10 @@ const VideoMainCanvasComponent: React.FC<VideoMainCanvasProps> = ({
   videoMode,
   resolvedProviderId,
   activeModelConfig,
+  visibleModels,
+  onModelSelect,
   controls,
+  controlsSchema,
   resetParams,
   handleSend,
   onStop,
@@ -177,7 +185,7 @@ const VideoMainCanvasComponent: React.FC<VideoMainCanvasProps> = ({
             className="relative w-full max-w-5xl rounded-[28px] bg-slate-900/80 backdrop-blur-sm border border-slate-800/60 shadow-2xl overflow-hidden z-10"
           >
             <div className="relative group aspect-video bg-black flex items-center justify-center">
-              <video
+              <RetainedVideo
                 ref={activeVideoRef}
                 data-testid="video-main-player"
                 src={activeVideoUrl}
@@ -228,7 +236,7 @@ const VideoMainCanvasComponent: React.FC<VideoMainCanvasProps> = ({
                     default
                   />
                 )}
-              </video>
+              </RetainedVideo>
 
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-black/40 opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
 
@@ -393,7 +401,10 @@ const VideoMainCanvasComponent: React.FC<VideoMainCanvasProps> = ({
             mode={videoMode}
             providerId={resolvedProviderId}
             currentModel={activeModelConfig}
+            availableModels={visibleModels}
+            onModelSelect={onModelSelect}
             controls={controls}
+            controlsSchema={controlsSchema}
           />
         }
         editAreaContent={
@@ -411,6 +422,7 @@ const VideoMainCanvasComponent: React.FC<VideoMainCanvasProps> = ({
             initialPrompt={initialPrompt}
             providerId={resolvedProviderId}
             controls={controls}
+            controlsSchema={controlsSchema}
             externalDisabled={Boolean(videoControlsStatusMessage)}
             externalDisabledReason={videoControlsStatusMessage}
           />

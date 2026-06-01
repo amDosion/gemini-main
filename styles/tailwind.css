@@ -1,3 +1,76 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer components {
+  .header-provider-select,
+  .header-model-select {
+    max-width: 100%;
+  }
+
+  .header-provider-select .ant-select-selector,
+  .header-model-select .ant-select-selector {
+    width: 100% !important;
+  }
+
+  .header-provider-select .ant-select-selector,
+  .header-model-select .ant-select-selector {
+    min-height: 34px;
+    border-color: transparent !important;
+    background: rgb(15 23 42 / 0.72) !important;
+    color: rgb(226 232 240) !important;
+    box-shadow: none !important;
+  }
+
+  .header-provider-select:hover .ant-select-selector,
+  .header-model-select:hover .ant-select-selector,
+  .header-provider-select.ant-select-focused .ant-select-selector,
+  .header-model-select.ant-select-focused .ant-select-selector {
+    border-color: rgb(51 65 85) !important;
+    background: rgb(30 41 59 / 0.82) !important;
+  }
+
+  .header-provider-select .ant-select-selection-placeholder,
+  .header-model-select .ant-select-selection-placeholder,
+  .header-provider-select .ant-select-arrow,
+  .header-model-select .ant-select-arrow {
+    color: rgb(148 163 184) !important;
+  }
+
+  .header-provider-select .ant-select-selection-item,
+  .header-model-select .ant-select-selection-item {
+    overflow: visible !important;
+    text-overflow: clip !important;
+    color: rgb(226 232 240) !important;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .header-select-popup {
+    border: 1px solid rgb(51 65 85);
+    background: rgb(15 23 42) !important;
+    padding: 0 !important;
+  }
+
+  .header-select-popup .ant-select-item {
+    color: rgb(203 213 225);
+  }
+
+  .header-select-popup .ant-select-item-option-content {
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
+
+  .header-select-popup .ant-select-item-option-active,
+  .header-select-popup .ant-select-item-option-selected {
+    background: rgb(30 41 59) !important;
+  }
+
+  .header-select-popup .ant-select-item-option-selected .ant-select-item-option-state {
+    color: rgb(129 140 248);
+  }
+
+  .header-select-popup .ant-select-item-empty {
+    color: rgb(100 116 139);
+  }
+}

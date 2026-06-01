@@ -2,6 +2,7 @@ import type { Node, Edge } from 'reactflow';
 import { CustomNode } from './CustomNode';
 import { NodeType } from './nodeTypeConfigs';
 import type { AgentDef, WorkflowNodeData } from './types';
+import { buildAgentNodeBindingPatch } from './agentNodeBinding';
 import { isPlainObject } from './workflowResultUtils';
 import { getDefaultNodePortLayout, resolveNodePortLayout } from './workflowPorts';
 
@@ -15,6 +16,14 @@ export interface DisconnectHandleEventDetail {
 export interface WorkflowNodeActionEventDetail {
   editorScopeId: string;
   nodeId: string;
+}
+
+export interface WorkflowImageGalleryRequestDetail {
+  editorScopeId: string;
+  nodeId?: string;
+  imageUrls?: string[];
+  initialIndex?: number;
+  title?: string;
 }
 
 export interface WorkflowRemoveEdgeRequestDetail {
@@ -197,6 +206,7 @@ export const getDefaultNodeConfig = (type: NodeType): Partial<WorkflowNodeData> 
   if (type === 'human') {
     baseConfig = {
       approvalPrompt: '',
+      autoApprove: false,
     };
   }
 
@@ -648,19 +658,11 @@ export const applyAgentBindingsToNodes = (
       return node;
     }
 
-    const matchedId = String(matched.id || '').trim();
-    const matchedName = String(matched.name || '').trim();
-    const matchedProviderId = String(matched.providerId || '').trim();
-    const matchedModelId = String(matched.modelId || '').trim();
-
     return {
       ...node,
       data: {
         ...data,
-        agentId: currentAgentId || matchedId,
-        agentName: currentAgentName || matchedName,
-        agentProviderId: String(data.agentProviderId || '').trim() || matchedProviderId,
-        agentModelId: String(data.agentModelId || '').trim() || matchedModelId,
+        ...buildAgentNodeBindingPatch(matched, data),
       } as WorkflowNodeData,
     };
   });

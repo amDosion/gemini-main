@@ -47,6 +47,7 @@ from ...services.common.video_mode_contract import (
     normalize_video_generation_request_params,
     resolve_runtime_mode_controls_schema,
 )
+from ...services.common.video_result_derivatives import safe_persist_video_last_frame_derivative
 from ...utils.sse import build_safe_error_chunk, create_sse_response, encode_sse_data
 from ...utils.error_handler import classify_provider_error_code
 from ...utils.message_utils import get_message_table_class_by_name, get_table_name_for_mode
@@ -76,21 +77,61 @@ _MEDIA_METADATA_KEYS = (
     "subtitle_attachment_ids",
     "tracked_feature",
     "tracking_overlay_text",
+    "last_frame_image_url",
+    "last_frame_attachment_id",
+    "derived_assets",
+    "openai_response_id",
 )
+
+_IMAGE_RESULT_METHODS = {"generate_image", "edit_image", "expand_image", "virtual_tryon"}
+
+
+_MEDIA_METADATA_ALIASES = {
+    "enhanced_prompt": ("enhanced_prompt", "enhancedPrompt"),
+    "text_response": ("text_response", "textResponse", "text"),
+    "openai_response_id": ("openai_response_id", "openaiResponseId"),
+}
+
+
+def _first_media_image_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    images = payload.get("images")
+    if not isinstance(images, list):
+        return {}
+    for image in images:
+        if isinstance(image, dict):
+            return image
+    return {}
+
+
+def _media_payload_value(payload: Dict[str, Any], key: str) -> Any:
+    aliases = _MEDIA_METADATA_ALIASES.get(key, (key,))
+    for alias in aliases:
+        if payload.get(alias) is not None:
+            return payload.get(alias)
+
+    first_image = _first_media_image_payload(payload)
+    for alias in aliases:
+        if first_image.get(alias) is not None:
+            return first_image.get(alias)
+    return None
 
 
 def _mode_message_content(prompt: str, payload: Dict[str, Any]) -> str:
-    enhanced_prompt = str(payload.get("enhanced_prompt") or payload.get("enhancedPrompt") or "").strip()
+    original_prompt = str(prompt or "").strip()
+    enhanced_prompt = str(_media_payload_value(payload, "enhanced_prompt") or "").strip()
     if enhanced_prompt:
-        return f"📝 {prompt}\n✨ {enhanced_prompt}"
-    return prompt
+        if original_prompt:
+            return f"📝 {original_prompt}\n✨ {enhanced_prompt}"
+        return f"✨ {enhanced_prompt}"
+    return original_prompt
 
 
 def _media_metadata_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     metadata: Dict[str, Any] = {}
     for key in _MEDIA_METADATA_KEYS:
-        if key in payload and payload[key] is not None:
-            metadata[key] = payload[key]
+        value = _media_payload_value(payload, key)
+        if value is not None:
+            metadata[key] = value
     return metadata
 
 
@@ -427,6 +468,7 @@ class ModeOptions(BaseModel):
     mask_mode: Optional[str] = None
     segmentation_classes: Optional[List[int]] = None
     duration_seconds: Optional[int] = None
+    video_input_strategy: Optional[str] = None
     video_extension_count: Optional[int] = None
     storyboard_shot_seconds: Optional[int] = None
     generate_audio: Optional[bool] = None
@@ -446,10 +488,16 @@ class ModeOptions(BaseModel):
     provider_file_uri: Optional[str] = None
     gcs_uri: Optional[str] = None
     delete_target: Optional[str] = None
+    pdf_extract_template: Optional[str] = None
+    pdf_additional_instructions: Optional[str] = None
     # Image generation options
     size: Optional[str] = None
     quality: Optional[str] = None
     style: Optional[str] = None
+    background: Optional[str] = None
+    moderation: Optional[str] = None
+    output_format: Optional[str] = None
+    output_compression: Optional[int] = None
     resolution: Optional[str] = None
     seconds: Optional[str] = None
     number_of_images: Optional[int] = None
@@ -474,9 +522,12 @@ class ModeOptions(BaseModel):
     output_compression_quality: Optional[int] = None
     enhance_prompt: Optional[bool] = None
     enhance_prompt_model: Optional[str] = None
+    enhance_prompt_thinking_level: Optional[str] = None
     # TongYi 专用参数
     prompt_extend: Optional[bool] = None  # AI 增强提示词
     add_magic_suffix: Optional[bool] = None  # 魔法词组
+    thinking_mode: Optional[bool] = None  # Wan 2.7 Image 思考模式
+    enable_sequential: Optional[bool] = None  # Wan 2.7 Image 组图模式
     # Outpainting 参数（image-outpainting 模式）
     outpaint_mode: Optional[str] = None  # 扩图模式：ratio | scale | offset | upscale
     x_scale: Optional[float] = None  # 水平缩放倍数 (scale 模式)
@@ -606,6 +657,16 @@ def _resolve_video_generation_error_status_code(error: Exception) -> int:
     if isinstance(error, ValueError):
         return 400
     return classify_provider_error_code(str(error))
+
+
+def _resolve_image_generation_error_status_code(error: Exception) -> int:
+    if isinstance(error, ValueError):
+        return 400
+    return classify_provider_error_code(str(error))
+
+
+def _is_retryable_provider_status(status_code: int) -> bool:
+    return status_code in {408, 429, 500, 502, 503, 504}
 
 
 def _build_stream_error_done_chunk() -> Dict[str, Any]:
@@ -1489,6 +1550,12 @@ async def handle_mode(
                 params["mode"] = params.pop("outpaint_mode")
                 logger.debug(f"[Modes]     - expand_image mode: {params['mode']}")
 
+        if method_name == "extract_pdf_data":
+            if "pdf_extract_template" in params and "template_type" not in params:
+                params["template_type"] = params.pop("pdf_extract_template")
+            if "pdf_additional_instructions" in params and "additional_instructions" not in params:
+                params["additional_instructions"] = params.pop("pdf_additional_instructions")
+
         # **新增**：处理 Edit 模式的 CONTINUITY LOGIC
         # 如果提供了 active_image_url，使用 AttachmentService 解析
         if method_name == "edit_image" and request_body.options and request_body.options.active_image_url:
@@ -1572,6 +1639,9 @@ async def handle_mode(
                     method_name=method_name,
                     params=params,
                     attachments=request_body.attachments,
+                    provider=provider,
+                    mode=mode,
+                    model_id=request_body.model_id,
                 )
                 if method_name == "generate_video":
                     if "source_video" in video_params:
@@ -1751,7 +1821,7 @@ async def handle_mode(
                 )
             
             # 对于图片生成/编辑/扩图模式，需要返回友好的错误信息
-            if method_name in ["generate_image", "edit_image", "expand_image"]:
+            if method_name in _IMAGE_RESULT_METHODS:
                 # 检查是否是 API 相关错误
                 from ...services.gemini.base.imagen_common import APIError
                 from ...services.gemini.base.image_edit_common import NotSupportedError
@@ -1774,13 +1844,15 @@ async def handle_mode(
 
                 if isinstance(method_error, APIError):
                     error_message = str(method_error)
+                    status_code = _resolve_image_generation_error_status_code(method_error)
                     # 提取原始错误信息（如果是 API Key 过期等）
                     if hasattr(method_error, 'original_error'):
                         orig_error = method_error.original_error
                         if orig_error and 'API key' in str(orig_error):
                             error_message = "API Key 已过期或无效，请更新 API Key"
+                            status_code = 401
                     raise HTTPException(
-                        status_code=400,
+                        status_code=status_code,
                         detail=_build_mode_error_detail(
                             code="image_generation_failed",
                             message=f"图片生成失败: {error_message}",
@@ -1789,12 +1861,13 @@ async def handle_mode(
                                 "mode": mode,
                                 "service_method": method_name,
                             },
-                            retryable=False,
+                            retryable=_is_retryable_provider_status(status_code),
                         )
                     )
                 else:
+                    status_code = _resolve_image_generation_error_status_code(method_error)
                     raise HTTPException(
-                        status_code=500,
+                        status_code=status_code,
                         detail=_build_mode_error_detail(
                             code="image_generation_failed",
                             message=f"图片生成失败: {str(method_error)}",
@@ -1803,7 +1876,7 @@ async def handle_mode(
                                 "mode": mode,
                                 "service_method": method_name,
                             },
-                            retryable=False,
+                            retryable=_is_retryable_provider_status(status_code),
                         )
                     )
             elif method_name == "generate_video":
@@ -1840,7 +1913,7 @@ async def handle_mode(
 
         # ✅ 7. **新增**：处理图片生成和编辑的结果（使用 AttachmentService）
         # 对于 image-gen, image-edit, image-outpainting 模式，处理返回的图片
-        if method_name in ["generate_image", "edit_image", "expand_image"]:
+        if method_name in _IMAGE_RESULT_METHODS:
             logger.info(f"[Modes] 🔄 [步骤7] 处理图片生成/编辑结果...")
             attachment_service = AttachmentService(db)
             
@@ -1887,6 +1960,7 @@ async def handle_mode(
                         enhanced_prompt = img.get("enhanced_prompt")
                         thoughts = img.get("thoughts")
                         text = img.get("text")
+                        openai_response_id = img.get("openai_response_id") or img.get("openaiResponseId")
                     else:
                         ai_url = img.url if hasattr(img, "url") else None
                         mime_type = img.mime_type if hasattr(img, "mime_type") else "image/png"
@@ -1894,6 +1968,7 @@ async def handle_mode(
                         enhanced_prompt = img.enhanced_prompt if hasattr(img, "enhanced_prompt") else None
                         thoughts = getattr(img, "thoughts", None)
                         text = getattr(img, "text", None)
+                        openai_response_id = getattr(img, "openai_response_id", None)
 
                     if not ai_url:
                         logger.warning(f"[Modes] ⚠️ 第 {idx+1} 张图片缺少URL，跳过")
@@ -1911,11 +1986,55 @@ async def handle_mode(
                     else:
                         prefix = "edited"
 
-                    # Provider 已创建 attachment → 短路,绕过 gather 队列
+                    # Provider 已创建 attachment → 短路,绕过 gather 队列。
+                    # 但短路前必须确认附件行确实存在;否则历史 reload 只有
+                    # message_index,没有 message_attachments,图片会丢失。
                     if isinstance(img, dict) and (img.get("attachment_id") or img.get("attachmentId")):
-                        logger.info(f"[Modes] ✅ [步骤7] 第 {idx+1} 张图片跳过持久化: provider 已返回 attachment_id")
-                        entries.append((idx, "short_circuit", img))
-                        continue
+                        provider_attachment_id = str(img.get("attachment_id") or img.get("attachmentId") or "").strip()
+                        from ...models.db_models import MessageAttachment
+
+                        provider_attachment = (
+                            db.query(MessageAttachment)
+                            .filter(
+                                MessageAttachment.id == provider_attachment_id,
+                                MessageAttachment.user_id == user_id,
+                                MessageAttachment.session_id == session_id,
+                                MessageAttachment.message_id == message_id,
+                            )
+                            .first()
+                        )
+                        if provider_attachment:
+                            logger.info(f"[Modes] ✅ [步骤7] 第 {idx+1} 张图片跳过持久化: provider 已返回 attachment_id")
+                            entries.append((idx, "short_circuit", img))
+                            continue
+
+                        if is_base64_url(ai_url) or is_http_url(ai_url):
+                            logger.warning(
+                                "[Modes] ⚠️ 第 %s 张图片 provider 返回 attachment_id=%s,但数据库无附件行;回退到路由持久化",
+                                idx + 1,
+                                provider_attachment_id,
+                            )
+                        else:
+                            logger.error(
+                                "[Modes] ❌ 第 %s 张图片 provider 返回 attachment_id=%s,但数据库无附件行且 URL 不可持久化",
+                                idx + 1,
+                                provider_attachment_id,
+                            )
+                            raise HTTPException(
+                                status_code=500,
+                                detail=_build_mode_error_detail(
+                                    code="attachment_persistence_failed",
+                                    message="Provider returned an attachment id without a matching persisted attachment row.",
+                                    details={
+                                        "provider": provider,
+                                        "mode": mode,
+                                        "service_method": method_name,
+                                        "attachment_id": provider_attachment_id,
+                                        "image_index": idx,
+                                    },
+                                    retryable=True,
+                                ),
+                            )
 
                     persist_kwargs: Dict[str, Any] = {
                         "ai_url": ai_url,
@@ -1932,6 +2051,7 @@ async def handle_mode(
                         "enhanced_prompt": enhanced_prompt,
                         "thoughts": thoughts,
                         "text": text,
+                        "openai_response_id": openai_response_id,
                     }
                     entries.append((idx, "persist", (persist_kwargs, extras)))
 
@@ -1956,13 +2076,13 @@ async def handle_mode(
                         processed_images.append(payload)
                         continue
                     # kind == "persist"
-                    _entry, result = next(persist_iter)
+                    _entry, persist_result = next(persist_iter)
                     _persist_kwargs, extras = payload
-                    if isinstance(result, Exception) or result is None:
-                        if isinstance(result, Exception):
+                    if isinstance(persist_result, Exception) or persist_result is None:
+                        if isinstance(persist_result, Exception):
                             logger.error(
                                 "[Modes] 第 %s 张图片持久化抛出异常: %s",
-                                idx + 1, result,
+                                idx + 1, persist_result,
                             )
                         else:
                             logger.error("[Modes] 第 %s 张图片持久化失败", idx + 1)
@@ -1981,8 +2101,8 @@ async def handle_mode(
                             ),
                         )
                     else:
-                        logger.info(f"[Modes] ✅ [步骤7] 第 {idx+1} 张图片处理完成 (attachment_id={result['attachment_id']})")
-                        image_result = dict(result)
+                        logger.info(f"[Modes] ✅ [步骤7] 第 {idx+1} 张图片处理完成 (attachment_id={persist_result['attachment_id']})")
+                        image_result = dict(persist_result)
 
                     enhanced_prompt = extras.get("enhanced_prompt")
                     thoughts = extras.get("thoughts")
@@ -1996,6 +2116,9 @@ async def handle_mode(
                     if text:
                         image_result["text"] = text
                         logger.debug(f"[Modes]     - text: {text[:100]}..." if len(text) > 100 else f"[Modes]     - text: {text}")
+                    openai_response_id = extras.get("openai_response_id")
+                    if openai_response_id:
+                        image_result["openai_response_id"] = openai_response_id
 
                     processed_images.append(image_result)
                 
@@ -2003,7 +2126,7 @@ async def handle_mode(
                 if isinstance(result, dict):
                     result["images"] = processed_images
                 else:
-                    result = processed_images
+                    result = {"images": processed_images}
                 
                 logger.info(f"[Modes] ✅ [步骤7] 所有图片处理完成: {len(processed_images)} 张")
                 persisted = await _persist_generated_media_message(
@@ -2015,7 +2138,7 @@ async def handle_mode(
                     mode=mode,
                     prompt=request_body.prompt,
                     model_id=request_body.model_id,
-                    payload=result if isinstance(result, dict) else {},
+                    payload=result,
                 )
                 if not persisted:
                     raise HTTPException(
@@ -2157,6 +2280,26 @@ async def handle_mode(
                     result = {
                         **(result if isinstance(result, dict) else {}),
                         "sidecar_files": processed_sidecars,
+                    }
+
+            if session_id and message_id and isinstance(result, dict):
+                last_frame_asset = await safe_persist_video_last_frame_derivative(
+                    attachment_service,
+                    video_payload=result,
+                    source_url=attachment_source_url or None,
+                    session_id=session_id,
+                    message_id=message_id,
+                    user_id=user_id,
+                )
+                if last_frame_asset:
+                    existing_derived_assets = result.get("derived_assets") or result.get("derivedAssets") or []
+                    if not isinstance(existing_derived_assets, list):
+                        existing_derived_assets = []
+                    result = {
+                        **result,
+                        "last_frame_image_url": last_frame_asset["url"],
+                        "last_frame_attachment_id": last_frame_asset["attachment_id"],
+                        "derived_assets": [*existing_derived_assets, last_frame_asset],
                     }
 
             if session_id and message_id and isinstance(result, dict) and (result.get("attachment_id") or result.get("attachmentId") or result.get("url")):

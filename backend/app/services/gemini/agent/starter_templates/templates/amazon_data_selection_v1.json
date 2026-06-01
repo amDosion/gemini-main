@@ -75,11 +75,13 @@
           "description": "识别字段映射并输出可用于筛选的结构化摘要",
           "icon": "🧩",
           "iconColor": "bg-indigo-500",
-          "agentName": "数据报表分析师",
           "agentTaskType": "data-analysis",
           "agentFileUrl": "{{input-file-select-data.output.fileUrl}}",
           "inputMapping": "筛选约束：{{input-text-select-data.output.text}}\\n文件地址：{{input-file-select-data.output.fileUrl}}",
-          "instructions": "请输出：\n1. 字段映射（销量/价格/毛利/评分/评论数）\n2. 缺失字段与可替代字段\n3. 可直接用于后续筛选的结构化摘要。"
+          "instructions": "请输出：\n1. 字段映射（销量/价格/毛利/评分/评论数）\n2. 缺失字段与可替代字段\n3. 可直接用于后续筛选的结构化摘要。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -111,9 +113,12 @@
           "description": "筛选高需求且趋势向上的候选",
           "icon": "📈",
           "iconColor": "bg-blue-500",
-          "agentName": "亚马逊选品分析师",
           "inputMapping": "结构化摘要：{{agent-schema-select-data.output.text}}\\n筛选约束：{{input-text-select-data.output.text}}",
-          "instructions": "请输出需求维度候选清单：\n1. 高需求候选 Top N\n2. 需求趋势依据\n3. 季节性与波动风险。"
+          "instructions": "请输出需求维度候选清单：\n1. 高需求候选 Top N\n2. 需求趋势依据\n3. 季节性与波动风险。",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.4,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-product-researcher"
         }
       },
       {
@@ -129,9 +134,12 @@
           "description": "筛选竞争可切入的候选",
           "icon": "🎯",
           "iconColor": "bg-red-500",
-          "agentName": "竞品分析专家",
           "inputMapping": "结构化摘要：{{agent-schema-select-data.output.text}}\\n筛选约束：{{input-text-select-data.output.text}}",
-          "instructions": "请输出竞争维度候选清单：\n1. 竞争强度分级\n2. 可差异化切入点\n3. 进入门槛风险。"
+          "instructions": "请输出竞争维度候选清单：\n1. 竞争强度分级\n2. 可差异化切入点\n3. 进入门槛风险。",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.4,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "competitor-analyst"
         }
       },
       {
@@ -147,9 +155,12 @@
           "description": "筛选毛利和现金流更健康的候选",
           "icon": "🧮",
           "iconColor": "bg-violet-500",
-          "agentName": "数据报表分析师",
           "inputMapping": "筛选约束：{{input-text-select-data.output.text}}\\n结构化摘要：{{agent-schema-select-data.output.text}}",
-          "instructions": "请输出利润维度候选清单：\n1. 毛利率/净利率筛选结果\n2. 广告成本敏感性分析\n3. 现金流与备货风险。"
+          "instructions": "请输出利润维度候选清单：\n1. 毛利率/净利率筛选结果\n2. 广告成本敏感性分析\n3. 现金流与备货风险。",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -181,9 +192,12 @@
           "description": "输出可执行的选品优先级与试单计划",
           "icon": "🧠",
           "iconColor": "bg-indigo-500",
-          "agentName": "运营策略顾问",
           "inputMapping": "三维筛选汇总：{{merge-select-data.output.text}}",
-          "instructions": "请输出最终选品决策：\n1. 推荐 Top 3 候选（含评分）\n2. 试单数量和预算建议\n3. 30 天验证指标与淘汰阈值。"
+          "instructions": "请输出最终选品决策：\n1. 推荐 Top 3 候选（含评分）\n2. 试单数量和预算建议\n3. 30 天验证指标与淘汰阈值。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {

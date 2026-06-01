@@ -37,7 +37,7 @@ class CacheManagerImpl {
     const entry = this.store.get(domain);
     if (!entry) return null;
     if (Date.now() - entry.timestamp > entry.ttl) {
-      this.store.delete(domain);
+      this.remove(domain);
       return null;
     }
     return entry.data as T;
@@ -73,7 +73,7 @@ class CacheManagerImpl {
     // 通知所有订阅者
     for (const [domain, listeners] of this.listeners) {
       for (const listener of listeners) {
-        listener(null);
+        this.notifyListener(listener, null);
       }
     }
   }
@@ -86,8 +86,18 @@ class CacheManagerImpl {
         keysToDelete.push(key);
       }
     }
+    const notifiedKeys = new Set<string>();
     for (const key of keysToDelete) {
       this.remove(key);
+      notifiedKeys.add(key);
+    }
+    for (const [domain, listeners] of this.listeners) {
+      if (!domain.startsWith(prefix) || notifiedKeys.has(domain)) {
+        continue;
+      }
+      for (const listener of listeners) {
+        this.notifyListener(listener, null);
+      }
     }
   }
 
@@ -127,7 +137,15 @@ class CacheManagerImpl {
     const listeners = this.listeners.get(domain);
     if (!listeners) return;
     for (const listener of listeners) {
+      this.notifyListener(listener, data);
+    }
+  }
+
+  private notifyListener(listener: Listener, data: unknown): void {
+    try {
       listener(data);
+    } catch {
+      // Cache cleanup and updates are best-effort; one subscriber must not block others.
     }
   }
 
@@ -139,7 +157,7 @@ class CacheManagerImpl {
     for (const [key, entry] of this.store.entries()) {
       if (!key.startsWith(prefix)) continue;
       if (Date.now() - entry.timestamp > entry.ttl) {
-        this.store.delete(key);
+        this.remove(key);
         continue;
       }
       result.push([key, entry.data as T]);
@@ -153,7 +171,7 @@ class CacheManagerImpl {
     for (const [key, entry] of this.store.entries()) {
       if (!key.startsWith(prefix)) continue;
       if (Date.now() - entry.timestamp > entry.ttl) {
-        this.store.delete(key);
+        this.remove(key);
         continue;
       }
       count++;
@@ -202,9 +220,11 @@ export const CACHE_DOMAINS = {
   MODELS: 'models',
   MODE_MODELS: 'modeModels',
   MODEL_CATALOG: 'modelCatalog',
+  MODE_CONTROLS_SCHEMA: 'modeControlsSchema:',
+  ENHANCE_PROMPT_MODELS: 'enhancePromptModels:',
+  AGENT_REGISTRY: 'agentRegistry:',
   ACTIVE_PERSONA_ID: 'activePersonaId',
   PROVIDER_TEMPLATES: 'providerTemplates',
   CURRENT_SESSION_ID: 'currentSessionId',
   LLM_INSTANCES: 'llmInstances:',
-  PREVIEW_OBJECT_URL: 'preview:',
 } as const;

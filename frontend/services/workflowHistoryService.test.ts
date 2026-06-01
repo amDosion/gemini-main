@@ -49,6 +49,27 @@ describe('workflowHistoryService', () => {
     });
   });
 
+  it('filters browser-local blob urls from preview image payloads', async () => {
+    requestJsonMock.mockResolvedValue({
+      images: [
+        { dataUrl: 'blob:https://gemini.dicry.cn:18443/stale-workflow-preview' },
+        { dataUrl: '/api/workflows/history/exec-blob/images/1' },
+        { dataUrl: 'data:image/png;base64,AAA=' },
+      ],
+      skippedCount: 0,
+      count: 3,
+    });
+
+    await expect(fetchWorkflowPreviewImagesWithMeta('exec-blob')).resolves.toEqual({
+      imageUrls: [
+        '/api/workflows/history/exec-blob/images/1',
+        'data:image/png;base64,AAA=',
+      ],
+      skippedCount: 0,
+      count: 3,
+    });
+  });
+
   it('normalizes metadata with fallback count', async () => {
     requestJsonMock.mockResolvedValue({
       images: [{ dataUrl: 'data:image/png;base64,AAA=' }],

@@ -123,7 +123,8 @@ class EditPromptOptimizer:
         self,
         prompt: str,
         image: Union[str, bytes, "Image.Image"],
-        enable_rewrite: bool = True
+        enable_rewrite: bool = True,
+        model: Optional[str] = None,
     ) -> EditPromptOptimizeResult:
         """
         优化编辑 Prompt
@@ -152,7 +153,7 @@ class EditPromptOptimizer:
             image_data = self._encode_image(image)
 
             # 调用 VL 模型
-            optimized = await self._rewrite_with_vl(prompt, image_data)
+            optimized = await self._rewrite_with_vl(prompt, image_data, model=model)
 
             logger.info(f"[EditPromptOptimizer] 优化成功: len={len(optimized)}")
 
@@ -212,7 +213,12 @@ class EditPromptOptimizer:
 
         raise ValueError(f"不支持的图像类型: {type(image)}")
 
-    async def _rewrite_with_vl(self, prompt: str, image_data: str) -> str:
+    async def _rewrite_with_vl(
+        self,
+        prompt: str,
+        image_data: str,
+        model: Optional[str] = None,
+    ) -> str:
         """
         调用视觉语言模型进行编辑 Prompt 优化
 
@@ -229,8 +235,11 @@ class EditPromptOptimizer:
             {"type": "text", "text": f"User Input: {prompt}\n\nRewritten Prompt:"}
         ]
 
+        selected_model = (model or self.model).strip() or self.model
+        logger.info("[EditPromptOptimizer] 使用模型: %s", selected_model)
+
         payload = {
-            "model": self.model,
+            "model": selected_model,
             "messages": [
                 {"role": "system", "content": EDIT_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content}
@@ -244,6 +253,7 @@ class EditPromptOptimizer:
             "Content-Type": "application/json",
         }
 
+        last_error: Optional[str] = None
         for attempt in range(self.max_retries):
             try:
                 response = await self.client.post(
@@ -254,6 +264,7 @@ class EditPromptOptimizer:
 
                 if response.status_code != 200:
                     error_text = response.text
+                    last_error = error_text
                     logger.warning(f"[EditPromptOptimizer] API 错误 (attempt {attempt + 1}): {error_text}")
                     continue
 
@@ -266,11 +277,13 @@ class EditPromptOptimizer:
                     return optimized
 
             except Exception as e:
+                last_error = str(e)
                 logger.warning(f"[EditPromptOptimizer] 请求失败 (attempt {attempt + 1}): {str(e)}")
                 if attempt == self.max_retries - 1:
                     raise
 
-        raise Exception("编辑 Prompt 优化失败，已达最大重试次数")
+        detail = f": {last_error}" if last_error else ""
+        raise Exception(f"编辑 Prompt 优化失败，已达最大重试次数{detail}")
 
     def _parse_response(self, content: str) -> str:
         """

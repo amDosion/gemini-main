@@ -13,12 +13,13 @@ import {
   Layers,
   Ratio,
   FileImage,
-  Sparkles,
   ChevronUp,
   ChevronDown,
   Dices,
 } from 'lucide-react';
 import { ImageGenControlsProps } from '../../types';
+import PromptEnhanceControl from '../../shared/PromptEnhanceControl';
+import ThinkingControl from '../../shared/ThinkingControl';
 import { useEnhancePromptModels } from '../../../hooks/useEnhancePromptModels';
 import {
   getPixelResolutionFromSchema,
@@ -130,7 +131,7 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
   const setOutputCompressionQuality =
     controls?.setOutputCompressionQuality ?? propSetOutputCompressionQuality ?? (() => {});
   const enhancePrompt = controls?.enhancePrompt ?? propEnhancePrompt ?? defaultEnhancePrompt;
-  const enhancePromptModels = useEnhancePromptModels();
+  const enhancePromptModels = useEnhancePromptModels(providerId);
   const enhancePromptModel = controls?.enhancePromptModel ?? '';
   const setEnhancePromptModel = controls?.setEnhancePromptModel;
   const setEnhancePrompt = controls?.setEnhancePrompt ?? propSetEnhancePrompt ?? (() => {});
@@ -139,6 +140,8 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
   // controls=undefined 时静默 noop（click 无反馈）
   const enableThinking = controls?.enableThinking ?? false;
   const setEnableThinking = controls?.setEnableThinking ?? (() => {});
+  const enhancePromptThinkingLevel = controls?.enhancePromptThinkingLevel ?? 'auto';
+  const setEnhancePromptThinkingLevel = controls?.setEnhancePromptThinkingLevel;
 
   const availableRatios = useMemo(() => {
     return schema?.aspectRatios ?? [];
@@ -404,64 +407,21 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
               />
             </div>
 
-            {/* 增强提示词 - Switch 开关 */}
-            <div className="flex items-center justify-between py-1">
-              <div className="flex items-center gap-2">
-                <Sparkles size={12} className="text-pink-400" />
-                <span className="text-xs text-slate-300">AI 增强提示词</span>
-              </div>
-              <div
-                onClick={() => setEnhancePrompt(!enhancePrompt)}
-                className={`w-10 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-200 ${
-                  enhancePrompt ? 'bg-pink-600' : 'bg-slate-600'
-                }`}
-              >
-                <div
-                  className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
-                    enhancePrompt ? 'translate-x-4' : 'translate-x-0'
-                  }`}
-                />
-              </div>
-            </div>
+            <PromptEnhanceControl
+              enabled={enhancePrompt}
+              onEnabledChange={setEnhancePrompt}
+              modelId={enhancePromptModel}
+              onModelIdChange={setEnhancePromptModel}
+              modelOptions={enhancePromptModels}
+              allowAutoModel
+              thinkingLevel={enhancePromptThinkingLevel}
+              onThinkingLevelChange={setEnhancePromptThinkingLevel}
+            />
 
-            {/* 增强提示词模型选择（仅开启时显示） */}
-            {enhancePrompt && (
-              <div className="space-y-2">
-                <span className="text-xs text-slate-300">增强提示词模型</span>
-                <select
-                  value={enhancePromptModel}
-                  onChange={(e) => setEnhancePromptModel?.(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-pink-500/50"
-                >
-                  <option value="">自动选择</option>
-                  {enhancePromptModels.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.name || model.id}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* 思考过程 - Switch 开关 */}
-            <div className="flex items-center justify-between py-1">
-              <div className="flex items-center gap-2">
-                <Sparkles size={12} className="text-cyan-400" />
-                <span className="text-xs text-slate-300">显示思考过程</span>
-              </div>
-              <div
-                onClick={() => setEnableThinking(!enableThinking)}
-                className={`w-10 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-200 ${
-                  enableThinking ? 'bg-cyan-600' : 'bg-slate-600'
-                }`}
-              >
-                <div
-                  className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
-                    enableThinking ? 'translate-x-4' : 'translate-x-0'
-                  }`}
-                />
-              </div>
-            </div>
+            <ThinkingControl
+              enabled={enableThinking}
+              onEnabledChange={setEnableThinking}
+            />
           </div>
         )}
       </div>

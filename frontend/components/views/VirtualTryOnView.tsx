@@ -29,6 +29,12 @@ import {
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { GenViewLayout } from '../common/GenViewLayout';
+import { CachedImage } from '../common/CachedImage';
+import {
+  getPreferredImageAttachmentUrl,
+  isLocalBlobAttachmentUrl,
+} from '../../utils/attachmentUrl';
+import { getImageHistoryAttachmentPreviewUrl } from '../common/imageHistorySidebarHelpers';
 import { useToastContext } from '../../contexts/ToastContext';
 import { processUserAttachments, fileToBase64 } from '../../hooks/handlers/attachmentUtils';
 import { useModeControlsSchema } from '../../hooks/useModeControlsSchema';
@@ -61,6 +67,20 @@ const getAttachmentStableKey = (attachment: Attachment): string => {
   ].filter((part): part is string => Boolean(part && part.length > 0));
 
   return parts.join('|');
+};
+
+const getDisplayImageAttachment = (
+  attachment: Attachment,
+  fallbackId: string
+): Attachment | null => {
+  const sourceAttachment = attachment.id ? attachment : { ...attachment, id: fallbackId };
+  const url = getImageHistoryAttachmentPreviewUrl(
+    sourceAttachment,
+    fallbackId,
+    getPreferredImageAttachmentUrl(sourceAttachment)
+  );
+  if (!url) return null;
+  return url === sourceAttachment.url ? sourceAttachment : { ...sourceAttachment, url };
 };
 
 export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
@@ -140,9 +160,16 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
   }, [selectedMsgId, historyBatches]);
 
   // ✅ 当前批次的所有图片（支持多张）
-  const displayImages = useMemo(() => {
-    return (activeBatchMessage?.attachments || []).filter((att) => att.url && att.url.length > 0);
-  }, [activeBatchMessage?.attachments]);
+	  const displayImages = useMemo(() => {
+	    return (activeBatchMessage?.attachments || [])
+	      .map((attachment, index) =>
+	        getDisplayImageAttachment(
+	          attachment,
+	          `${activeBatchMessage?.id || 'tryon'}-${index}`
+	        )
+	      )
+	      .filter((attachment): attachment is Attachment => Boolean(attachment));
+  }, [activeBatchMessage?.attachments, activeBatchMessage?.id]);
 
   const isBatchError = activeBatchMessage?.isError;
 
@@ -318,14 +345,22 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
                 {msg.content && <p className="mb-2">{msg.content}</p>}
 
                 {/* 附件显示 */}
-                {msg.attachments
-                  ?.filter((att) => att.url && att.url.length > 0)
+	                {msg.attachments
+	                  ?.map((attachment, index) =>
+	                    getDisplayImageAttachment(attachment, `${msg.id}-${index}`)
+	                  )
+	                  .filter((att): att is Attachment => Boolean(att))
                   .map((att, idx) => (
                     <div
                       key={`${msg.id}:${getAttachmentStableKey(att)}`}
                       className="relative group mt-1 rounded-lg overflow-hidden border border-slate-700 hover:border-slate-500"
                     >
-                      <img
+                      <CachedImage
+                        source={{
+                          ...att,
+                          attachmentId: att.id,
+                          url: att.url,
+                        }}
                         src={att.url}
                         className="w-full h-24 object-cover bg-slate-900"
                         alt={
@@ -452,54 +487,63 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
                         : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-2 place-items-start'
                 }`}
               >
-                {displayImages.map((att, idx) => (
-                  <div
-                    key={`${activeBatchMessage?.id ?? 'active'}:${getAttachmentStableKey(att)}`}
-                    className={`relative rounded-2xl overflow-hidden shadow-2xl group border border-slate-800/50 bg-slate-900 animate-[fadeIn_0.5s_ease-out] mx-auto ${
-                      displayImages.length === 1 ? 'max-w-full' : 'w-full'
-                    }`}
-                    style={{ animationDelay: `${idx * 100}ms` }}
-                  >
-                    {att.url ? (
-                      <img
-                        src={att.url}
-                        className={`block cursor-pointer ${
-                          displayImages.length === 1
-                            ? 'max-h-[70vh] w-auto object-contain'
-                            : 'w-full h-auto object-cover'
-                        }`}
-                        onClick={() => onImageClick(att.url!)}
-                        alt={`试衣结果 ${idx + 1}`}
-                      />
-                    ) : (
-                      <div className="w-full h-64 flex items-center justify-center text-slate-600 bg-slate-900">
-                        <Shirt size={48} className="opacity-50" />
-                      </div>
-                    )}
-                    {/* 悬浮操作按钮 */}
-                    <div className="absolute top-4 right-4 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
-                      <button
-                        onClick={() => onImageClick(att.url!)}
-                        className="p-2.5 bg-black/60 hover:bg-black/80 text-white rounded-xl backdrop-blur border border-white/10 shadow-lg"
-                        title="全屏"
-                      >
-                        <Maximize2 size={18} />
-                      </button>
-                      <button
-                        onClick={async () => {
-                          await downloadSourceUrlInBrowser({
-                            sourceUrl: att.url!,
-                            fileName: `tryon-${Date.now()}-${idx + 1}.jpg`,
-                          });
-                        }}
-                        className="p-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-lg"
-                        title="下载"
-                      >
-                        <Download size={18} />
-                      </button>
+                {displayImages.map((att, idx) => {
+                  const canUseUrlActions = Boolean(att.url && !isLocalBlobAttachmentUrl(att.url));
+                  return (
+                    <div
+                      key={`${activeBatchMessage?.id ?? 'active'}:${getAttachmentStableKey(att)}`}
+                      className={`relative rounded-2xl overflow-hidden shadow-2xl group border border-slate-800/50 bg-slate-900 animate-[fadeIn_0.5s_ease-out] mx-auto ${
+                        displayImages.length === 1 ? 'max-w-full' : 'w-full'
+                      }`}
+                      style={{ animationDelay: `${idx * 100}ms` }}
+                    >
+                      {att.url || att.file ? (
+                        <CachedImage
+                          source={{
+                            ...att,
+                            attachmentId: att.id,
+                            url: att.url,
+                          }}
+                          src={att.url || null}
+                          className={`block ${canUseUrlActions ? 'cursor-pointer' : ''} ${
+                            displayImages.length === 1
+                              ? 'max-h-[70vh] w-auto object-contain'
+                              : 'w-full h-auto object-cover'
+                          }`}
+                          onClick={canUseUrlActions ? () => onImageClick(att.url!) : undefined}
+                          alt={`试衣结果 ${idx + 1}`}
+                        />
+                      ) : (
+                        <div className="w-full h-64 flex items-center justify-center text-slate-600 bg-slate-900">
+                          <Shirt size={48} className="opacity-50" />
+                        </div>
+                      )}
+                      {canUseUrlActions && (
+                        <div className="absolute top-4 right-4 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
+                          <button
+                            onClick={() => onImageClick(att.url!)}
+                            className="p-2.5 bg-black/60 hover:bg-black/80 text-white rounded-xl backdrop-blur border border-white/10 shadow-lg"
+                            title="全屏"
+                          >
+                            <Maximize2 size={18} />
+                          </button>
+                          <button
+                            onClick={async () => {
+                              await downloadSourceUrlInBrowser({
+                                sourceUrl: att.url!,
+                                fileName: `tryon-${Date.now()}-${idx + 1}.jpg`,
+                              });
+                            }}
+                            className="p-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-lg"
+                            title="下载"
+                          >
+                            <Download size={18} />
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               // 空状态
@@ -558,7 +602,12 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
                   className="hidden"
                 />
                 {personImageUrl ? (
-                  <img src={personImageUrl} alt="人物图" className="w-full h-full object-contain" />
+                  <CachedImage
+                    source={{ url: personImageUrl, mimeType: 'image/png' }}
+                    src={personImageUrl}
+                    alt="人物图"
+                    className="w-full h-full object-contain"
+                  />
                 ) : (
                   <div className="flex flex-col items-center gap-2 text-slate-500">
                     <Upload size={24} />
@@ -597,7 +646,8 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
                   className="hidden"
                 />
                 {garmentImageUrl ? (
-                  <img
+                  <CachedImage
+                    source={{ url: garmentImageUrl, mimeType: 'image/png' }}
                     src={garmentImageUrl}
                     alt="服装图"
                     className="w-full h-full object-contain"

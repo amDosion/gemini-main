@@ -19,7 +19,11 @@ import {
   getAttachmentPreviewGridClass,
   getAttachmentPreviewButtonClass,
   getAttachmentPreviewImageClass,
+  resolveImageHistoryRowSourceAttachment,
+  getImageHistoryStablePreviewUrl,
 } from './imageHistorySidebarHelpers';
+import { CachedImage } from './CachedImage';
+import { HISTORY_THUMBNAIL_CACHE_PROPS } from './historyThumbnailCache';
 
 export interface ImageHistoryHoverPreviewPanelProps {
   hoverPreview: ImageHistoryHoverPreview;
@@ -43,6 +47,8 @@ export interface ImageHistoryHoverPreviewPanelProps {
     displayAttachments: Attachment[];
     previewAttachments: ImageHistoryPreviewAttachment[];
     attachment: ImageHistoryPreviewAttachment;
+    sourceAttachment: Attachment | null;
+    displayUrl: string;
     index: number;
   }) => void;
   onSelectItem: (payload: {
@@ -50,6 +56,7 @@ export interface ImageHistoryHoverPreviewPanelProps {
     displayAttachments: Attachment[];
     previewAttachments: ImageHistoryPreviewAttachment[];
     firstImage?: string;
+    firstImageSourceAttachment?: Attachment | null;
   }) => void;
   handlePreviewResizeMouseDown: (event: React.MouseEvent<HTMLButtonElement>) => void;
   isResizingPreview: boolean;
@@ -78,6 +85,10 @@ export const ImageHistoryHoverPreviewPanel: React.FC<ImageHistoryHoverPreviewPan
   isResizingPreview,
 }) => {
   if (typeof document === 'undefined') return null;
+  const selectedPreviewMessage = items.find((item) => item.id === hoverPreview.messageId);
+  const selectedDisplayAttachments = selectedPreviewMessage
+    ? getDisplayAttachments(selectedPreviewMessage.attachments)
+    : [];
   return createPortal(
     <div
       ref={hoverPreviewPanelRef}
@@ -170,52 +181,74 @@ export const ImageHistoryHoverPreviewPanel: React.FC<ImageHistoryHoverPreviewPan
                     : ''
                 }`}
               >
-                {hoverPreview.attachments.map((attachment, index) => (
-                  <button
-                    key={attachment.id}
-                    type="button"
-                    className={`relative rounded-md overflow-hidden border transition-colors bg-slate-900/80 flex items-center justify-center ${getAttachmentPreviewButtonClass(hoverPreview.attachments.length)} ${
-                      activeImageUrl === attachment.url
-                        ? tone.activeThumb
-                        : 'border-slate-700 hover:border-slate-500'
-                    }`}
-                    onClick={() => {
-                      const selectedMessage = items.find(
-                        (item) => item.id === hoverPreview.messageId
-                      );
-                      onSelectedMessageIdChange?.(hoverPreview.messageId);
-                      if (selectedMessage) {
-                        const displayAttachments = getDisplayAttachments(
-                          selectedMessage.attachments
+                {hoverPreview.attachments.map((attachment, index) => {
+                  const sourceAttachment = resolveImageHistoryRowSourceAttachment(
+                    selectedDisplayAttachments,
+                    attachment,
+                    attachment.url
+                  );
+                  const displayUrl =
+                    getImageHistoryStablePreviewUrl(selectedDisplayAttachments, attachment) ||
+                    attachment.url;
+                  const displayAttachment =
+                    displayUrl === attachment.url ? attachment : { ...attachment, url: displayUrl };
+
+                  return (
+                    <button
+                      key={attachment.id}
+                      type="button"
+                      className={`relative rounded-md overflow-hidden border transition-colors bg-slate-900/80 flex items-center justify-center ${getAttachmentPreviewButtonClass(hoverPreview.attachments.length)} ${
+                        activeImageUrl === displayUrl
+                          ? tone.activeThumb
+                          : 'border-slate-700 hover:border-slate-500'
+                      }`}
+                      onClick={() => {
+                        const selectedMessage = items.find(
+                          (item) => item.id === hoverPreview.messageId
                         );
-                        const payload = {
-                          message: selectedMessage,
-                          displayAttachments,
-                          previewAttachments: hoverPreview.attachments,
-                          attachment,
-                          index,
-                        };
-                        if (onSelectPreviewAttachment) {
-                          onSelectPreviewAttachment(payload);
-                        } else {
-                          onSelectItem({
+                        onSelectedMessageIdChange?.(hoverPreview.messageId);
+                        if (selectedMessage) {
+                          const displayAttachments = getDisplayAttachments(
+                            selectedMessage.attachments
+                          );
+                          const payload = {
                             message: selectedMessage,
                             displayAttachments,
                             previewAttachments: hoverPreview.attachments,
-                            firstImage: attachment.url,
-                          });
+                            attachment: displayAttachment,
+                            sourceAttachment,
+                            displayUrl,
+                            index,
+                          };
+                          if (onSelectPreviewAttachment) {
+                            onSelectPreviewAttachment(payload);
+                          } else {
+                            onSelectItem({
+                              message: selectedMessage,
+                              displayAttachments,
+                              previewAttachments: hoverPreview.attachments,
+                              firstImage: displayUrl,
+                              firstImageSourceAttachment: sourceAttachment,
+                            });
+                          }
                         }
-                      }
-                    }}
-                    title="在画布中查看该图片"
-                  >
-                    <img
-                      src={attachment.url}
-                      className={getAttachmentPreviewImageClass(hoverPreview.attachments.length)}
-                      alt="History attachment"
-                    />
-                  </button>
-                ))}
+                      }}
+                      title="在画布中查看该图片"
+                    >
+                      <CachedImage
+                        source={{
+                          ...sourceAttachment,
+                          attachmentId: sourceAttachment?.id || attachment.id,
+                          url: displayUrl,
+                        }}
+                        src={displayUrl}
+                        {...HISTORY_THUMBNAIL_CACHE_PROPS}
+                        className={getAttachmentPreviewImageClass(hoverPreview.attachments.length)}
+                        alt="History attachment"
+                      />
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

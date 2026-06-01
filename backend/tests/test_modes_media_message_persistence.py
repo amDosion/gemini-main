@@ -103,3 +103,49 @@ async def test_persist_generated_media_message_creates_missing_session() -> None
     assert session.title == "new session prompt"
     assert db.query(MessageIndex).filter_by(id="model-1").count() == 1
     assert db.query(MessagesVideoGen).filter_by(id="model-1").count() == 1
+
+
+@pytest.mark.asyncio
+async def test_persist_generated_media_message_uses_first_image_metadata_fallback() -> None:
+    db = _session()
+    db.add(
+        ChatSession(
+            id="session-1",
+            user_id="user-1",
+            title="Existing Image Session",
+            created_at=1,
+            mode="image-gen",
+        )
+    )
+    db.commit()
+
+    persisted = await _persist_generated_media_message(
+        db,
+        None,
+        user_id="user-1",
+        session_id="session-1",
+        message_id="model-1",
+        mode="image-gen",
+        prompt="draw a product photo",
+        model_id="imagen-3.0-generate-002",
+        payload={
+            "images": [
+                {
+                    "attachment_id": "att-1",
+                    "enhanced_prompt": "draw a polished studio product photo",
+                    "thoughts": [{"text": "use soft light"}],
+                    "text": "Generated one image.",
+                }
+            ]
+        },
+    )
+
+    assert persisted is True
+    from app.models.db_models import MessagesImageGen
+
+    message = db.query(MessagesImageGen).filter_by(id="model-1").one()
+    assert message.content == "📝 draw a product photo\n✨ draw a polished studio product photo"
+    metadata = json.loads(message.metadata_json)
+    assert metadata["enhanced_prompt"] == "draw a polished studio product photo"
+    assert metadata["thoughts"] == [{"text": "use soft light"}]
+    assert metadata["text_response"] == "Generated one image."

@@ -1,18 +1,56 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { AppMode, ChatSession, Message, Role } from '../types/types';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { AppMode, Attachment, ChatSession, Message, Role } from '../types/types';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../services/db';
 // cleanAttachmentsForDb removed — backend authoritative cleansing in
 // routers/user/sessions.py upsert path (Sprint 2 PR-1, commit b0bd8ee)
 import { useCacheStatus, CacheStatusInfo } from './useCacheStatus';
 import { apiClient } from '../services/apiClient';
-import { cacheManager, CACHE_DOMAINS } from '../services/CacheManager';
-import { useCacheSubscription, useCacheUpdater } from './useCacheSubscription';
+import { useCacheSubscription } from './useCacheSubscription';
+import {
+  getCurrentSessionIdCacheKey,
+  getSessionListCacheKey,
+  getSessionMode,
+  peekCurrentSessionIdForMode,
+  readCachedSessionsForMode,
+  readCurrentSessionIdForMode,
+  readSessionHasMoreForMode,
+  removeSessionFromCaches,
+  selectCurrentSessionIdForMode,
+  filterSessionsForMode,
+  updateCachedSessionsForMode,
+  upsertSessionInCaches,
+  writeCachedSessionsForMode,
+  writeCurrentSessionIdForMode,
+  writeSessionHasMoreForMode,
+} from '../services/sessionCache';
+import { normalizeChatSession } from '../services/sessionNormalizer';
+import {
+  getPrivateCacheUserScope,
+} from '../services/privateCacheScope';
+import {
+  capturePrivateCacheLifecycleSnapshot,
+  isPrivateCacheLifecycleSnapshotCurrent,
+} from '../services/privateCacheInvalidation';
+import { usePrivateCacheScopeRevision } from './usePrivateCacheScopeRevision';
+export { recoverSessionAttachmentUrl } from '../services/sessionNormalizer';
 
 type UpdateSessionMessagesStrategy = 'replace' | 'merge-by-id';
+const SESSION_PAGE_SIZE = 20;
 
 interface UpdateSessionMessagesOptions {
   strategy?: UpdateSessionMessagesStrategy;
+}
+
+interface RefreshSessionsOptions {
+  force?: boolean;
+}
+
+interface SessionsPageResponse {
+  sessions: ChatSession[];
+  total?: number | null;
+  hasMore: boolean;
+  nextCursor?: string | null;
 }
 
 const mergeMessagesById = (existingMessages: Message[], incomingMessages: Message[]): Message[] => {
@@ -37,55 +75,57 @@ const mergeMessagesById = (existingMessages: Message[], incomingMessages: Messag
   return merged;
 };
 
-// Set long TTL for sessions - they are long-lived data
-cacheManager.setTTL(CACHE_DOMAINS.SESSIONS, 30 * 60 * 1000); // 30 minutes
-cacheManager.setTTL(CACHE_DOMAINS.CURRENT_SESSION_ID, 30 * 60 * 1000); // 30 minutes
+const hasOutOfModeSessions = (mode: AppMode, sessions: ChatSession[]): boolean =>
+  sessions.some((session) => getSessionMode(normalizeChatSession(session)) !== mode);
 
 export const useSessions = (
   appMode: AppMode,
   initialData?: {
     sessions: ChatSession[];
+    sessionsMode?: AppMode;
     sessionsHasMore?: boolean;
   }
 ) => {
-  // ✅ 使用 initialData 初始化状态（如果提供）
-  // ✅ Sprint 3 Phase B: per-mode 隔离——initialData.sessions 来自 /api/init 全量列表，
-  // 这里按当前 appMode 过滤，作为首屏；切 mode 后由 effect 重新调用 db.getSessions(mode)
-  const initialSessions = initialData?.sessions
-    ? initialData.sessions.filter((s) => (s.mode || 'chat') === appMode)
-    : undefined;
   // ✅ 使用 ref 跟踪上一次的 appMode，用于检测 mode 切换
   const prevAppModeRef = useRef<AppMode>(appMode);
+  const appModeRef = useRef<AppMode>(appMode);
+  const privateCacheUserScope = getPrivateCacheUserScope();
 
-  // ✅ Sessions and currentSessionId now use CacheManager
-  const sessions = useCacheSubscription<ChatSession[]>(CACHE_DOMAINS.SESSIONS, []);
-  const { set: setSessions, update: updateSessions } = useCacheUpdater<ChatSession[]>(
-    CACHE_DOMAINS.SESSIONS,
-    []
+  const sessionListCacheKey = useMemo(
+    () => getSessionListCacheKey(appMode),
+    [appMode, privateCacheUserScope]
+  );
+  const currentSessionIdCacheKey = useMemo(
+    () => getCurrentSessionIdCacheKey(appMode),
+    [appMode, privateCacheUserScope]
   );
 
-  const currentSessionId = useCacheSubscription<string | null>(
-    CACHE_DOMAINS.CURRENT_SESSION_ID,
-    null
+  // ✅ Sessions and currentSessionId use only per-mode cache partitions.
+  const rawModeSessions = useCacheSubscription<ChatSession[]>(sessionListCacheKey, []);
+  const sessions = useMemo(
+    () => filterSessionsForMode(appMode, rawModeSessions),
+    [appMode, rawModeSessions]
   );
-  const { set: setCurrentSessionId } = useCacheUpdater<string | null>(
-    CACHE_DOMAINS.CURRENT_SESSION_ID,
-    null
-  );
+
+  const rawCurrentSessionId = useCacheSubscription<string | null>(currentSessionIdCacheKey, null);
+  const currentSessionId = useMemo(() => {
+    if (!rawCurrentSessionId) {
+      return null;
+    }
+    const guardedSessionId = peekCurrentSessionIdForMode(appMode);
+    return guardedSessionId === rawCurrentSessionId ? rawCurrentSessionId : guardedSessionId;
+  }, [appMode, rawCurrentSessionId, sessions]);
 
   // ✅ UI state remains as useState
   const [isLoading, setIsLoading] = useState(false);
   const [hasMoreSessions, setHasMoreSessions] = useState(false); // ✅ 是否还有更多会话
   const [isLoadingMore, setIsLoadingMore] = useState(false); // ✅ 是否正在加载更多
 
-  // ✅ B-3 / C-3: per-mode in-memory cache + race-guard
-  // - modeCacheRef: 最近一次 fetch 结果 + 时间戳,refresh 命中且未 stale 直接复用
-  // - refreshSeqRef: 单调 token,setSessions 前比对避免旧 mode 的 resolve 覆盖新 mode 数据
-  const modeCacheRef = useRef<
-    Partial<Record<AppMode, { sessions: ChatSession[]; timestamp: number }>>
-  >({});
+  // ✅ B-3 / C-3: race-guard. Per-mode data cache is global via sessionCache.
   const refreshSeqRef = useRef(0);
-  const MODE_CACHE_TTL_MS = 5_000;
+  const activeRefreshModeRef = useRef<AppMode | null>(null);
+  const activeRefreshScopeRef = useRef<string | null>(null);
+  const emptyModeRepairAttemptRef = useRef<Partial<Record<AppMode, boolean>>>({});
 
   // ✅ 使用 ref 标记是否已经从 initialData 初始化过，避免无限循环
   const isInitializedFromPropsRef = useRef(false);
@@ -96,53 +136,113 @@ export const useSessions = (
   } | null>(null);
 
   // 缓存状态 Hook（不传递 refreshFn，避免循环依赖）
-  const cacheStatus = useCacheStatus('sessions');
+  const cacheStatus = useCacheStatus(sessionListCacheKey);
+
+  const applyModeSessions = useCallback(
+    (mode: AppMode, nextSessions: ChatSession[], fallbackHasMore = false) => {
+      writeCachedSessionsForMode(mode, nextSessions);
+      const nextSessionId = selectCurrentSessionIdForMode(mode, nextSessions);
+      writeCurrentSessionIdForMode(mode, nextSessionId);
+
+      const cachedHasMore = readSessionHasMoreForMode(mode);
+      setHasMoreSessions(cachedHasMore ?? fallbackHasMore);
+      setIsLoading(false);
+    },
+    []
+  );
+
+  useEffect(() => {
+    appModeRef.current = appMode;
+  }, [appMode]);
+
+  const setCurrentSessionId = useCallback(
+    (sessionId: string | null) => {
+      if (sessionId) {
+        const modeSessions = readCachedSessionsForMode(appMode) ?? sessions;
+        const belongsToMode = modeSessions.some((session) => session.id === sessionId);
+        if (!belongsToMode) {
+          return;
+        }
+      }
+      writeCurrentSessionIdForMode(appMode, sessionId);
+    },
+    [appMode, sessions]
+  );
+
+  const selectLatestSessionForMode = useCallback((mode: AppMode) => {
+    const modeSessions = readCachedSessionsForMode(mode) ?? [];
+    const latestSession = [...modeSessions].sort((a, b) => b.createdAt - a.createdAt)[0];
+    writeCurrentSessionIdForMode(mode, latestSession?.id ?? null);
+    return Boolean(latestSession);
+  }, []);
+
+  useEffect(() => {
+    if (sessions.length === 0) {
+      return;
+    }
+
+    const hasValidCurrentSession =
+      currentSessionId !== null && sessions.some((session) => session.id === currentSessionId);
+    if (hasValidCurrentSession) {
+      return;
+    }
+
+    const latestSession = [...sessions].sort((a, b) => b.createdAt - a.createdAt)[0];
+    if (latestSession) {
+      writeCurrentSessionIdForMode(appMode, latestSession.id);
+    }
+  }, [appMode, currentSessionId, sessions]);
+
+  const updateSessionsForCurrentMode = useCallback(
+    (updater: (prev: ChatSession[]) => ChatSession[]) => {
+      updateCachedSessionsForMode(appMode, updater);
+    },
+    [appMode]
+  );
 
   const prepareSessions = useCallback((sourceSessions: ChatSession[]) => {
-    const recoveredSessions = sourceSessions.map((session) => {
-      if (!session.messages || session.messages.length === 0) {
-        return session;
-      }
-
-      const recoveredMessages = session.messages.map((message) => {
-        if (!message.attachments || message.attachments.length === 0) {
-          return message;
-        }
-
-        const recoveredAttachments = message.attachments.map((att) => {
-          // 检查 url 是否是 Blob URL（页面刷新后已失效）
-          if (att.url && att.url.startsWith('blob:')) {
-            // 如果有 tempUrl（云存储 URL），使用它替代失效的 Blob URL
-            if (att.tempUrl && att.tempUrl.startsWith('http')) {
-              return {
-                ...att,
-                url: att.tempUrl, // 替换为云存储 URL
-                uploadStatus: 'completed' as const,
-              };
-            } else {
-              // 没有有效的 tempUrl，保持原状（可能需要重新生成）
-              return att;
-            }
-          }
-
-          // 其他类型的 URL（Base64, HTTP）不需要恢复
-          return att;
-        });
-
-        return {
-          ...message,
-          attachments: recoveredAttachments,
-        };
-      });
-
-      return {
-        ...session,
-        messages: recoveredMessages,
-      };
-    });
+    const recoveredSessions = sourceSessions.map(normalizeChatSession);
 
     return [...recoveredSessions].sort((a, b) => b.createdAt - a.createdAt);
   }, []);
+
+  const fetchSessionsPage = useCallback(async (mode: AppMode, offset: number) => {
+    const params = new URLSearchParams({
+      offset: String(offset),
+      limit: String(SESSION_PAGE_SIZE),
+      mode,
+    });
+    return apiClient.get<SessionsPageResponse>(`/api/init/sessions/more?${params.toString()}`);
+  }, []);
+
+  const fetchFirstSessionsPage = useCallback(async (mode: AppMode) => {
+    const result = (await fetchSessionsPage(mode, 0)) || {
+      sessions: [],
+      total: 0,
+      hasMore: false,
+      nextCursor: null,
+    };
+    const resultSessions = result.sessions || [];
+
+    if (!hasOutOfModeSessions(mode, resultSessions)) {
+      return result;
+    }
+
+    try {
+      const fallbackSessions = await db.getSessions(mode);
+      return {
+        sessions: fallbackSessions,
+        total: fallbackSessions.length,
+        hasMore: false,
+        nextCursor: null,
+      };
+    } catch {
+      return {
+        ...result,
+        sessions: filterSessionsForMode(mode, resultSessions),
+      };
+    }
+  }, [fetchSessionsPage]);
 
   // ✅ 保存 cacheStatus 的方法到 ref
   useEffect(() => {
@@ -153,92 +253,99 @@ export const useSessions = (
 
   // 刷新会话列表（强制从后端获取，按当前 appMode 过滤）
   // ✅ B-3 / C-3: race-guard + per-mode cache
-  const refreshSessions = useCallback(async () => {
+  const refreshSessions = useCallback(async (options: RefreshSessionsOptions = {}) => {
     const requestedMode = appMode;
-    const now = Date.now();
+    const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
+    const requestScope = lifecycleSnapshot.userScope;
+    const force = Boolean(options.force);
 
-    // 命中近期缓存(<5s)且 mode 一致,直接复用,不发请求
-    const cached = modeCacheRef.current[requestedMode];
-    if (cached && now - cached.timestamp < MODE_CACHE_TTL_MS) {
-      setSessions(cached.sessions);
-      const currentId = cacheManager.get<string | null>(CACHE_DOMAINS.CURRENT_SESSION_ID);
-      if (cached.sessions.length > 0) {
-        if (currentId === null) {
-          setCurrentSessionId(cached.sessions[0].id);
-        }
-      } else {
-        setCurrentSessionId(null);
+    if (!force) {
+      const cached = readCachedSessionsForMode(requestedMode);
+      if (cached !== null) {
+        applyModeSessions(requestedMode, cached);
+        cacheStatusRef.current?.updateStatus(true, false, Date.now());
+        return;
       }
+    }
+
+    if (
+      activeRefreshModeRef.current === requestedMode &&
+      activeRefreshScopeRef.current === requestScope
+    ) {
       return;
     }
+    activeRefreshModeRef.current = requestedMode;
+    activeRefreshScopeRef.current = requestScope;
 
     // 单调 token: 旧 fetch resolve 时若 seq 不匹配则丢弃
     const seq = ++refreshSeqRef.current;
 
     try {
       setIsLoading(true);
-      const result = await db.getSessions(requestedMode);
+      const result = await fetchFirstSessionsPage(requestedMode);
 
       // race-guard: mode 已切换或有更新的 fetch,丢弃本次结果
-      if (seq !== refreshSeqRef.current || requestedMode !== appMode) {
+      if (
+        seq !== refreshSeqRef.current ||
+        requestedMode !== appModeRef.current ||
+        !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
+      ) {
         return;
       }
 
-      const preparedSessions = prepareSessions(result);
-      modeCacheRef.current[requestedMode] = {
-        sessions: preparedSessions,
-        timestamp: Date.now(),
-      };
-      setSessions(preparedSessions);
-      // Use updater to read current value for conditional logic
-      const currentId = cacheManager.get<string | null>(CACHE_DOMAINS.CURRENT_SESSION_ID);
-      if (preparedSessions.length > 0) {
-        if (currentId === null) {
-          setCurrentSessionId(preparedSessions[0].id);
-        }
-      } else {
-        setCurrentSessionId(null);
-      }
-      // ✅ 使用 ref 调用 updateStatus，避免依赖 cacheStatus
-      const cacheMeta = result as ChatSession[] & {
-        fromCache?: boolean;
-        isStale?: boolean;
-        timestamp?: number;
-      };
-      cacheStatusRef.current?.updateStatus(
-        cacheMeta.fromCache ?? false,
-        cacheMeta.isStale ?? false,
-        cacheMeta.timestamp ?? 0
+      const preparedSessions = prepareSessions(
+        (result.sessions || []).map((session) => ({
+          ...session,
+          messages: session.messages || [],
+        }))
       );
+      writeSessionHasMoreForMode(requestedMode, !!result.hasMore);
+      applyModeSessions(requestedMode, preparedSessions, !!result.hasMore);
+      // ✅ 使用 ref 调用 updateStatus，避免依赖 cacheStatus
+      cacheStatusRef.current?.updateStatus(false, false, Date.now());
     } finally {
+      if (
+        activeRefreshModeRef.current === requestedMode &&
+        activeRefreshScopeRef.current === requestScope
+      ) {
+        activeRefreshModeRef.current = null;
+        activeRefreshScopeRef.current = null;
+      }
       // 仅当本次请求仍是最新时清 loading
-      if (seq === refreshSeqRef.current) {
+      if (seq === refreshSeqRef.current && requestedMode === appModeRef.current) {
         setIsLoading(false);
       }
     }
-  }, [appMode, prepareSessions, setSessions, setCurrentSessionId]); // ✅ 移除 cacheStatus 依赖
-
-  // ✅ 从 initialData 中获取 sessionsHasMore
-  useEffect(() => {
-    if (initialData?.sessionsHasMore !== undefined) {
-      setHasMoreSessions(initialData.sessionsHasMore);
-    }
-  }, [initialData?.sessionsHasMore]);
+  }, [appMode, applyModeSessions, fetchFirstSessionsPage, prepareSessions]); // ✅ 移除 cacheStatus 依赖
 
   // ✅ 滚动加载更多会话
   const isLoadingMoreRef = useRef(false);
+
+  usePrivateCacheScopeRevision(() => {
+    refreshSeqRef.current += 1;
+    activeRefreshModeRef.current = null;
+    activeRefreshScopeRef.current = null;
+    emptyModeRepairAttemptRef.current = {};
+    isLoadingMoreRef.current = false;
+    setIsLoading(false);
+    setHasMoreSessions(false);
+    setIsLoadingMore(false);
+  });
+
   const loadMoreSessions = useCallback(async () => {
     if (isLoadingMoreRef.current || isLoadingMore || !hasMoreSessions) return;
 
     try {
+      const requestedMode = appMode;
+      const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
       isLoadingMoreRef.current = true;
       setIsLoadingMore(true);
       const offset = sessions.length;
-      const result = await apiClient.get<{
-        sessions: ChatSession[];
-        total: number;
-        hasMore: boolean;
-      }>(`/api/init/sessions/more?offset=${offset}&limit=20`);
+      const result = await fetchSessionsPage(requestedMode, offset);
+
+      if (!isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)) {
+        return;
+      }
 
       if (result.sessions.length > 0) {
         // ✅ 滚动加载的会话 messages 为空数组，需要准备
@@ -248,11 +355,20 @@ export const useSessions = (
             messages: s.messages || [], // 确保 messages 存在
           }))
         );
-        updateSessions((prev) => [...prev, ...preparedSessions]);
-        setHasMoreSessions(result.hasMore);
+        updateCachedSessionsForMode(requestedMode, (prev) => [
+          ...prev,
+          ...preparedSessions,
+        ]);
+        writeSessionHasMoreForMode(requestedMode, result.hasMore);
+        if (requestedMode === appModeRef.current) {
+          setHasMoreSessions(result.hasMore);
+        }
       } else {
         // ✅ 业务返回空数组 → 真没了
-        setHasMoreSessions(false);
+        writeSessionHasMoreForMode(requestedMode, false);
+        if (requestedMode === appModeRef.current) {
+          setHasMoreSessions(false);
+        }
       }
     } catch (error) {
       // ✅ C-6: 网络错误不要永久关闭分页;保持 hasMore=true 允许重试
@@ -260,46 +376,90 @@ export const useSessions = (
       isLoadingMoreRef.current = false;
       setIsLoadingMore(false);
     }
-  }, [sessions.length, hasMoreSessions, isLoadingMore, prepareSessions, updateSessions]);
+  }, [
+    appMode,
+    sessions.length,
+    hasMoreSessions,
+    isLoadingMore,
+    fetchSessionsPage,
+    prepareSessions,
+  ]);
 
   // ? 处理 initialData：恢复 Blob URL 和设置 currentSessionId
   // ?? 优先使用 initData.sessions，缺失时回退到 /sessions
   // ✅ Sprint 3 Phase B: 只在首次（isInitializedFromPropsRef 未置位）执行；
-  // 之后 appMode 切换由专门的 mode-switch effect 处理，避免两个 effect 竞争 setSessions
+  // 之后 appMode 切换由专门的 mode-switch effect 处理，避免两个 effect 竞争 mode cache 写入
   useEffect(() => {
     if (isInitializedFromPropsRef.current) {
       return;
     }
 
-    if (initialSessions === undefined) {
-      setSessions([]);
-      setCurrentSessionId(null);
+    if (initialData?.sessions === undefined) {
       return;
     }
 
-    if (initialSessions.length > 0) {
-      // 标记为已初始化
-      isInitializedFromPropsRef.current = true;
-
-      const preparedSessions = prepareSessions(initialSessions);
-      setSessions(preparedSessions);
-
-      // Restore the most recent session if available
-      if (preparedSessions.length > 0) {
-        const currentId = cacheManager.get<string | null>(CACHE_DOMAINS.CURRENT_SESSION_ID);
-        if (currentId === null) {
-          setCurrentSessionId(preparedSessions[0].id);
-        }
-      } else {
-        setCurrentSessionId(null);
-      }
-      return;
-    }
-
-    // 初始会话为空时，回退到 sessions API
     isInitializedFromPropsRef.current = true;
+    const declaredMode = initialData.sessionsMode;
+    const preparedSessions = prepareSessions(initialData.sessions);
+
+    if (declaredMode) {
+      const declaredModeSessions = preparedSessions.filter(
+        (session) => (session.mode || 'chat') === declaredMode
+      );
+      writeCachedSessionsForMode(declaredMode, declaredModeSessions);
+      if (initialData.sessionsHasMore !== undefined) {
+        writeSessionHasMoreForMode(declaredMode, initialData.sessionsHasMore);
+      }
+
+      if (declaredMode === appMode) {
+        applyModeSessions(
+          appMode,
+          declaredModeSessions,
+          initialData.sessionsHasMore ?? false
+        );
+        return;
+      }
+
+      const cachedCurrentModeSessions = readCachedSessionsForMode(appMode);
+      if (cachedCurrentModeSessions !== null) {
+        applyModeSessions(appMode, cachedCurrentModeSessions);
+        return;
+      }
+
+      writeCurrentSessionIdForMode(appMode, null);
+      setHasMoreSessions(false);
+      refreshSessions();
+      return;
+    }
+
+    const cachedCurrentModeSessions = readCachedSessionsForMode(appMode);
+    if (cachedCurrentModeSessions !== null) {
+      applyModeSessions(appMode, cachedCurrentModeSessions);
+      return;
+    }
+
+    const provisionalSessions = preparedSessions.filter(
+      (session) => (session.mode || 'chat') === appMode
+    );
+    if (provisionalSessions.length === 0) {
+      writeCurrentSessionIdForMode(appMode, null);
+      setHasMoreSessions(false);
+      refreshSessions();
+      return;
+    }
+
+    applyModeSessions(appMode, provisionalSessions, false);
+    setHasMoreSessions(false);
     refreshSessions();
-  }, [initialSessions, prepareSessions]); // ✅ 移除 refreshSessions 依赖，避免无限循环
+  }, [
+    appMode,
+    applyModeSessions,
+    initialData?.sessions,
+    initialData?.sessionsMode,
+    initialData?.sessionsHasMore,
+    prepareSessions,
+    refreshSessions,
+  ]);
 
   const prepareSessionForDb = useCallback((session: ChatSession): ChatSession => {
     if (!session.messages || session.messages.length === 0) {
@@ -356,7 +516,7 @@ export const useSessions = (
         personaId: personaId, // 保存当前激活的 persona
       };
 
-      updateSessions((prev) => [newSession, ...prev]);
+      updateSessionsForCurrentMode((prev) => [newSession, ...prev]);
       setCurrentSessionId(newSession.id);
 
       // Save to database (async, non-blocking)
@@ -364,7 +524,7 @@ export const useSessions = (
 
       return newSession;
     },
-    [appMode, saveSessionToDb, updateSessions, setCurrentSessionId]
+    [appMode, saveSessionToDb, updateSessionsForCurrentMode, setCurrentSessionId]
   );
 
   // ✅ Sprint 3 Phase B: 监听 appMode 变化——切 mode 时重置 currentSessionId 并按新 mode 重拉列表
@@ -379,15 +539,61 @@ export const useSessions = (
       return;
     }
     prevAppModeRef.current = appMode;
-    setCurrentSessionId(null);
+    const cachedSessions = readCachedSessionsForMode(appMode);
+    if (cachedSessions !== null) {
+      applyModeSessions(appMode, cachedSessions);
+      return;
+    }
+    writeCurrentSessionIdForMode(appMode, null);
     refreshSessionsRef.current();
-  }, [appMode]);
+  }, [appMode, applyModeSessions]);
+
+  useEffect(() => {
+    if (!isInitializedFromPropsRef.current) {
+      return;
+    }
+
+    if (sessions.length > 0) {
+      emptyModeRepairAttemptRef.current[appMode] = false;
+      return;
+    }
+
+    if (currentSessionId || isLoading) {
+      return;
+    }
+
+    const repairTimer = globalThis.setTimeout(() => {
+      const cachedSessions = readCachedSessionsForMode(appMode);
+      const cachedCurrentSessionId = readCurrentSessionIdForMode(appMode);
+
+      if (cachedSessions !== null || cachedCurrentSessionId) {
+        return;
+      }
+
+      if (
+        activeRefreshModeRef.current === appMode &&
+        activeRefreshScopeRef.current === getPrivateCacheUserScope()
+      ) {
+        return;
+      }
+
+      if (emptyModeRepairAttemptRef.current[appMode]) {
+        return;
+      }
+
+      emptyModeRepairAttemptRef.current[appMode] = true;
+      refreshSessionsRef.current();
+    }, 0);
+
+    return () => globalThis.clearTimeout(repairTimer);
+  }, [appMode, currentSessionId, isLoading, sessions.length]);
 
   const updateSessionMessages = useCallback(
     (sessionId: string, newMessages: Message[], options?: UpdateSessionMessagesOptions) => {
       const strategy = options?.strategy || 'replace';
+      let movedSession: ChatSession | null = null;
 
-      updateSessions((prev) => {
+      updateSessionsForCurrentMode((prev) => {
         const updated = prev.map((s) => {
           if (s.id === sessionId) {
             const nextMessages =
@@ -416,6 +622,10 @@ export const useSessions = (
             // Save to database (async, non-blocking)
             saveSessionToDb(updatedSession);
 
+            if (currentMode !== appMode) {
+              movedSession = updatedSession;
+            }
+
             return updatedSession;
           }
           return s;
@@ -423,18 +633,21 @@ export const useSessions = (
 
         return updated;
       });
+
+      if (movedSession) {
+        upsertSessionInCaches(movedSession);
+      }
     },
-    [saveSessionToDb, updateSessions]
+    [appMode, saveSessionToDb, updateSessionsForCurrentMode]
   );
 
   const deleteSession = useCallback(
     async (sessionId: string) => {
-      // Remove from memory and get remaining sessions
-      let remainingSessions: ChatSession[] = [];
-      updateSessions((prev) => {
-        remainingSessions = prev.filter((s) => s.id !== sessionId);
-        return remainingSessions;
-      });
+      const currentModeSessions = readCachedSessionsForMode(appMode) ?? sessions;
+      removeSessionFromCaches(sessionId);
+      const remainingSessions =
+        readCachedSessionsForMode(appMode) ??
+        currentModeSessions.filter((session) => session.id !== sessionId);
 
       // If deleting current session, switch to another or clear
       if (currentSessionId === sessionId) {
@@ -444,12 +657,12 @@ export const useSessions = (
       // Delete from database
       await deleteSessionFromDb(sessionId);
     },
-    [currentSessionId, deleteSessionFromDb, updateSessions, setCurrentSessionId]
+    [appMode, currentSessionId, deleteSessionFromDb, sessions, setCurrentSessionId]
   );
 
   const updateSessionPersona = useCallback(
     (sessionId: string, personaId: string) => {
-      updateSessions((prev) => {
+      updateSessionsForCurrentMode((prev) => {
         const updated = prev.map((s) => {
           if (s.id === sessionId) {
             const updatedSession = { ...s, personaId };
@@ -465,12 +678,12 @@ export const useSessions = (
         return updated;
       });
     },
-    [saveSessionToDb, updateSessions]
+    [saveSessionToDb, updateSessionsForCurrentMode]
   );
 
   const updateSessionTitle = useCallback(
     (sessionId: string, newTitle: string) => {
-      updateSessions((prev) => {
+      updateSessionsForCurrentMode((prev) => {
         const updated = prev.map((s) => {
           if (s.id === sessionId) {
             const updatedSession = { ...s, title: newTitle };
@@ -486,7 +699,7 @@ export const useSessions = (
         return updated;
       });
     },
-    [saveSessionToDb, updateSessions]
+    [saveSessionToDb, updateSessionsForCurrentMode]
   );
 
   const getSession = useCallback(
@@ -500,6 +713,7 @@ export const useSessions = (
     sessions,
     currentSessionId,
     setCurrentSessionId,
+    selectLatestSessionForMode,
     createNewSession,
     updateSessionMessages,
     updateSessionPersona,

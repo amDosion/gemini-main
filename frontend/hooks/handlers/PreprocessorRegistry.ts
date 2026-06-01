@@ -6,7 +6,7 @@
  * 修复问题6：使用 Promise.allSettled 支持部分失败处理
  *
  * Chat 模式附件处理：
- * - 将 Blob URL 转换为 Base64 Data URL（确保后端可访问）
+ * - 将 File/Blob URL 转换为 Base64 Data URL（确保后端可访问）
  * - 尝试上传到 Google Files API（可选，失败时降级到 Base64）
  * - 移除不可序列化的 File 对象
  */
@@ -116,7 +116,7 @@ export class GoogleFileUploadPreprocessor implements Preprocessor {
   
   /**
    * 处理单个附件：
-   * 1. 将 Blob URL 转换为 Base64 Data URL（后端可直接解析 inline_data）
+   * 1. 将 File/Blob URL 转换为 Base64 Data URL（后端可直接解析 inline_data）
    * 2. 移除 File 对象（不可 JSON 序列化）
    *
    * 注意：Google Files API 上传路由（POST /api/upload/google）尚未实现，
@@ -129,9 +129,9 @@ export class GoogleFileUploadPreprocessor implements Preprocessor {
   ): Promise<Attachment> {
     let processed = { ...attachment };
 
-    // Step 1: 确保 url 是 Base64 Data URL（后端可访问）
+    // Step 1: 确保 file-only/blob url 附件有 Base64 Data URL（后端可访问）
     // Blob URL 只在浏览器内有效，后端无法访问
-    if (processed.file && processed.url?.startsWith('blob:')) {
+    if (processed.file && (!processed.url || processed.url.startsWith('blob:'))) {
       try {
         const base64Url = await fileToBase64(processed.file);
         processed.url = base64Url;

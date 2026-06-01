@@ -58,8 +58,12 @@
           "description": "生成主图/场景图/卖点图三路提示词方案",
           "icon": "🎨",
           "iconColor": "bg-purple-500",
-          "agentName": "产品图片设计师",
-          "instructions": "请基于需求文本输出三类文生图提示词：\n1. Amazon 白底主图提示词（无文字无水印）\n2. 使用场景图提示词（强调使用场景与氛围）\n3. 卖点特写图提示词（突出材质/细节/功能）\n\n输出格式：\n- 主图提示词：...\n- 场景图提示词：...\n- 卖点图提示词：..."
+          "instructions": "请基于需求文本输出三类文生图提示词：\n1. Amazon 白底主图提示词（无文字无水印）\n2. 使用场景图提示词（强调使用场景与氛围）\n3. 卖点特写图提示词（突出材质/细节/功能）\n\n输出格式：\n- 主图提示词：...\n- 场景图提示词：...\n- 卖点图提示词：...",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.7,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentPresetKey": "product-image-designer"
         }
       },
       {
@@ -91,12 +95,19 @@
           "description": "主图智能体生成白底主图",
           "icon": "🖼️",
           "iconColor": "bg-pink-500",
-          "agentName": "产品图片设计师",
           "agentTaskType": "image-gen",
           "agentAspectRatio": "1:1",
           "agentNumberOfImages": 1,
           "inputMapping": "{{agent-creative-brief.output.text}}\\n\\n请严格执行：输出 Amazon 主图，纯白背景，主体占比 85% 以上，无文字无水印。",
-          "instructions": "先优化提示词，再执行文生图，确保主体完整且适合电商主图。"
+          "instructions": "先优化提示词，再执行文生图，确保主体完整且适合电商主图。",
+          "agentTemperature": 0.7,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "product-image-designer"
         }
       },
       {
@@ -112,12 +123,19 @@
           "description": "场景智能体生成场景卖点图",
           "icon": "🏞️",
           "iconColor": "bg-indigo-500",
-          "agentName": "产品图片设计师",
           "agentTaskType": "image-gen",
           "agentAspectRatio": "3:4",
           "agentNumberOfImages": 1,
           "inputMapping": "{{agent-creative-brief.output.text}}\\n\\n请严格执行：输出产品使用场景图，画面真实自然，突出核心卖点。",
-          "instructions": "保持产品主体一致，强化真实使用场景与氛围。"
+          "instructions": "保持产品主体一致，强化真实使用场景与氛围。",
+          "agentTemperature": 0.7,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "product-image-designer"
         }
       },
       {
@@ -133,12 +151,19 @@
           "description": "卖点智能体生成细节特写图",
           "icon": "🔍",
           "iconColor": "bg-violet-500",
-          "agentName": "产品图片设计师",
           "agentTaskType": "image-gen",
           "agentAspectRatio": "1:1",
           "agentNumberOfImages": 1,
           "inputMapping": "{{agent-creative-brief.output.text}}\\n\\n请严格执行：输出产品细节特写图，强调材质、结构和做工。",
-          "instructions": "聚焦卖点细节与材质纹理，保持画面干净。"
+          "instructions": "聚焦卖点细节与材质纹理，保持画面干净。",
+          "agentTemperature": 0.7,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "product-image-designer"
         }
       },
       {
@@ -170,9 +195,13 @@
           "description": "输出可落地的选图与迭代建议",
           "icon": "✅",
           "iconColor": "bg-emerald-500",
-          "agentName": "图片编辑优化师",
           "inputMapping": "并行生成结果摘要：{{merge-img-generate.output.text}}\\n创意规划：{{agent-creative-brief.output.text}}",
-          "instructions": "请基于已生成图片直接做交付审阅（不要再索要输入）：\n1. 按主图/场景图/卖点图各推荐 1-2 张\n2. 标注是否满足 Amazon 图片规范\n3. 输出二次迭代提示词（如需）\n4. 给出最终交付清单"
+          "instructions": "请基于已生成图片直接做交付审阅（不要再索要输入）：\n1. 按主图/场景图/卖点图各推荐 1-2 张\n2. 标注是否满足 Amazon 图片规范\n3. 输出二次迭代提示词（如需）\n4. 给出最终交付清单",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {

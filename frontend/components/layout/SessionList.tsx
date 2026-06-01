@@ -25,6 +25,7 @@ export interface SessionListProps {
   hasMoreSessions?: boolean;
   isLoadingMore?: boolean;
   loadMoreSessions?: () => void;
+  appMode?: AppMode;
   /** 可选：选中会话后的额外回调（如移动端关闭侧边栏） */
   onSessionSelected?: () => void;
 }
@@ -60,6 +61,7 @@ export const SessionList: React.FC<SessionListProps> = ({
   hasMoreSessions = false,
   isLoadingMore = false,
   loadMoreSessions,
+  appMode,
   onSessionSelected,
 }) => {
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
@@ -70,11 +72,16 @@ export const SessionList: React.FC<SessionListProps> = ({
   const [searchInput, setSearchInput] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
 
+  const modeSessions = useMemo(() => {
+    if (!appMode) return sessions;
+    return sessions.filter((session) => (session.mode || 'chat') === appMode);
+  }, [appMode, sessions]);
+
   const filteredSessions = useMemo(() => {
-    if (!searchQuery.trim()) return sessions;
+    if (!searchQuery.trim()) return modeSessions;
     const q = searchQuery.toLowerCase();
-    return sessions.filter(s => s.title.toLowerCase().includes(q));
-  }, [sessions, searchQuery]);
+    return modeSessions.filter(s => s.title.toLowerCase().includes(q));
+  }, [modeSessions, searchQuery]);
 
   const handleSearch = () => setSearchQuery(searchInput);
   const handleClearSearch = () => { setSearchInput(''); setSearchQuery(''); };
@@ -240,7 +247,7 @@ export const SessionList: React.FC<SessionListProps> = ({
           );
         })}
 
-        {sessions.length === 0 ? (
+        {modeSessions.length === 0 ? (
           <div className="text-center text-slate-600 text-sm py-10 italic">No history yet.</div>
         ) : filteredSessions.length === 0 && (
           <div className="text-center text-slate-600 text-sm py-10 italic">No matching conversations.</div>
@@ -253,7 +260,7 @@ export const SessionList: React.FC<SessionListProps> = ({
             )}
           </div>
         )}
-        {!searchQuery && !hasMoreSessions && sessions.length > 0 && (
+        {!searchQuery && !hasMoreSessions && modeSessions.length > 0 && (
           <div className="py-4 text-center text-xs text-slate-600">已加载全部会话</div>
         )}
       </div>

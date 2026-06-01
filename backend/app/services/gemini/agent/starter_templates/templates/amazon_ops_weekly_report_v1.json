@@ -75,11 +75,13 @@
           "description": "识别字段口径与异常，统一复盘口径",
           "icon": "🧪",
           "iconColor": "bg-sky-500",
-          "agentName": "数据报表分析师",
           "agentTaskType": "data-analysis",
           "agentFileUrl": "{{input-file-ops-weekly.output.fileUrl}}",
           "inputMapping": "文件：{{input-file-ops-weekly.output.fileUrl}}\n目标：{{input-text-ops-weekly.output.text}}",
-          "instructions": "输出字段映射、异常值、缺失值、可用性结论（pass/fail）。"
+          "instructions": "输出字段映射、异常值、缺失值、可用性结论（pass/fail）。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -112,11 +114,13 @@
           "description": "输出高低效词、否定词与扩量词",
           "icon": "📊",
           "iconColor": "bg-blue-500",
-          "agentName": "亚马逊广告分析师",
           "agentTaskType": "data-analysis",
           "agentFileUrl": "{{input-file-ops-weekly.output.fileUrl}}",
           "inputMapping": "质检结果：{{agent-ops-weekly-intake.output.text}}\n目标：{{input-text-ops-weekly.output.text}}",
-          "instructions": "输出 P0/P1 广告动作，含阈值、风险、预计影响。"
+          "instructions": "输出 P0/P1 广告动作，含阈值、风险、预计影响。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-ad-analyst"
         }
       },
       {
@@ -132,9 +136,12 @@
           "description": "输出标题/五点/主图改进建议",
           "icon": "✍️",
           "iconColor": "bg-emerald-500",
-          "agentName": "Listing优化专家",
           "inputMapping": "质检结果：{{agent-ops-weekly-intake.output.text}}\n目标：{{input-text-ops-weekly.output.text}}",
-          "instructions": "输出可直接执行的优化项：修改内容、优先级、验收指标。"
+          "instructions": "输出可直接执行的优化项：修改内容、优先级、验收指标。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.6,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "listing-optimizer"
         }
       },
       {
@@ -150,9 +157,12 @@
           "description": "提炼差评原因与服务改进策略",
           "icon": "💬",
           "iconColor": "bg-amber-500",
-          "agentName": "客户沟通专家",
           "inputMapping": "质检结果：{{agent-ops-weekly-intake.output.text}}\n目标：{{input-text-ops-weekly.output.text}}",
-          "instructions": "输出高频问题、标准回复模板、售后改进动作。"
+          "instructions": "输出高频问题、标准回复模板、售后改进动作。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "customer-communication-specialist"
         }
       },
       {
@@ -184,9 +194,12 @@
           "description": "识别冲突建议并统一优先级",
           "icon": "🛡️",
           "iconColor": "bg-indigo-500",
-          "agentName": "运营策略顾问",
           "inputMapping": "并行复盘：{{merge-ops-weekly.output.text}}",
-          "instructions": "输出冲突点、修正意见、P0/P1/P2 排序与负责人建议。"
+          "instructions": "输出冲突点、修正意见、P0/P1/P2 排序与负责人建议。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {

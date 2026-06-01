@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
+import { cacheManager, CACHE_DOMAINS } from '../services/CacheManager';
 import { requestJson } from '../services/http';
+import {
+  capturePrivateCacheLifecycleSnapshot,
+  isPrivateCacheLifecycleSnapshotCurrent,
+  registerPrivateCacheResetHandler,
+} from '../services/privateCacheInvalidation';
+import {
+  getPrivateCacheUserScope,
+  scopedPrivateCacheKey,
+} from '../services/privateCacheScope';
+import { usePrivateCacheLifecycleRevision } from './usePrivateCacheScopeRevision';
 
 type ResolutionMap = Record<string, Record<string, string>>;
 type OptionValue = string | number | boolean;
@@ -115,19 +126,25 @@ type ControlsApiResponse = {
   schema?: Record<string, unknown>;
 };
 
-const schemaCache = new Map<string, ModeControlsSchema>();
+const MODE_CONTROLS_SCHEMA_CACHE_TTL_MS = 30 * 60 * 1000;
+cacheManager.setTTL(CACHE_DOMAINS.MODE_CONTROLS_SCHEMA, MODE_CONTROLS_SCHEMA_CACHE_TTL_MS);
+
 // In-flight 请求去重：多个组件同 mount 时共享同一 Promise，避免并发重复 fetch
 // （修复用户反馈：image-gen/controls 同 model_id 重复 2 次）
 const inFlightSchemaRequests = new Map<string, Promise<ModeControlsSchema>>();
+let schemaCacheGeneration = 0;
 
 /**
- * 清空 schema 模块级 cache + in-flight Map。
- * 应在 logout / 切换用户 profile 后调用，避免跨用户 cache 污染（用户 B 看到 A 的 schema）。
+ * 清空 user-scope schema cache + in-flight Map。
+ * 应在 logout / 切换用户 profile 后调用，避免跨用户 cache 污染。
  */
 export const clearSchemaCacheForLogout = (): void => {
-  schemaCache.clear();
+  schemaCacheGeneration += 1;
+  cacheManager.clearDomain(CACHE_DOMAINS.MODE_CONTROLS_SCHEMA);
   inFlightSchemaRequests.clear();
 };
+
+registerPrivateCacheResetHandler(clearSchemaCacheForLogout);
 
 const FALLBACK_VIDEO_RESOLUTION_MAP: ResolutionMap = {
   '720p': {
@@ -562,8 +579,17 @@ function normalizeSchema(raw: Record<string, unknown> | undefined): ModeControls
   };
 }
 
-function buildCacheKey(providerId: string, mode: string, modelId?: string): string {
-  return `${providerId}::${mode}::${modelId || ''}`;
+function buildCacheKey(
+  providerId: string,
+  mode: string,
+  modelId?: string,
+  userScope?: string
+): string {
+  return scopedPrivateCacheKey(
+    CACHE_DOMAINS.MODE_CONTROLS_SCHEMA,
+    `${providerId}::${mode}::${modelId || ''}`,
+    userScope
+  );
 }
 
 export function getPixelResolutionFromSchema(
@@ -594,16 +620,22 @@ export function useModeControlsSchema(
   options?: UseModeControlsSchemaOptions
 ) {
   const enabled = options?.enabled ?? true;
+  const privateCacheUserScope = getPrivateCacheUserScope();
   const cacheKey = useMemo(
-    () => buildCacheKey(providerId || '', mode, modelId),
-    [providerId, mode, modelId]
+    () => buildCacheKey(providerId || '', mode, modelId, privateCacheUserScope),
+    [providerId, mode, modelId, privateCacheUserScope]
   );
 
   const [schema, setSchema] = useState<ModeControlsSchema | null>(
-    providerId ? schemaCache.get(cacheKey) || null : null
+    providerId ? cacheManager.get<ModeControlsSchema>(cacheKey) || null : null
   );
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  usePrivateCacheLifecycleRevision(() => {
+    setSchema(null);
+    setLoading(false);
+    setError(null);
+  }, { includeCacheReset: true });
 
   useEffect(() => {
     if (!providerId || !enabled) {
@@ -616,7 +648,7 @@ export function useModeControlsSchema(
       return;
     }
 
-    const cached = schemaCache.get(cacheKey);
+    const cached = cacheManager.get<ModeControlsSchema>(cacheKey);
     if (cached) {
       setSchema(cached);
       setLoading(false);
@@ -625,6 +657,7 @@ export function useModeControlsSchema(
     }
 
     let active = true;
+    const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
     setLoading(true);
 
     // In-flight 去重：若同 cacheKey 已有 Promise，复用而不再 fetch
@@ -632,6 +665,7 @@ export function useModeControlsSchema(
     // 改为本地 `active` flag 控制 setState（保留原 cleanup 语义）
     let fetchPromise = inFlightSchemaRequests.get(cacheKey);
     if (!fetchPromise) {
+      const generationAtStart = schemaCacheGeneration;
       const params = new URLSearchParams();
       if (modelId) {
         params.set('model_id', modelId);
@@ -650,30 +684,43 @@ export function useModeControlsSchema(
           if (!normalized) {
             throw new Error('Invalid controls schema payload');
           }
-          schemaCache.set(cacheKey, normalized);
+          if (
+            generationAtStart === schemaCacheGeneration &&
+            isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
+          ) {
+            cacheManager.set(cacheKey, normalized);
+          }
           return normalized;
         })
         .finally(() => {
           // 完成后从 in-flight 移除；下一次未命中 cache 才会重新发起
-          inFlightSchemaRequests.delete(cacheKey);
+          if (inFlightSchemaRequests.get(cacheKey) === fetchPromise) {
+            inFlightSchemaRequests.delete(cacheKey);
+          }
         });
       inFlightSchemaRequests.set(cacheKey, fetchPromise);
     }
 
     fetchPromise
       .then((normalized) => {
-        if (!active) return;
+        if (!active || !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)) return;
         setSchema(normalized);
         setError(null);
       })
       .catch((err: unknown) => {
-        if (!active || isAbortRequestError(err)) return;
+        if (
+          !active ||
+          !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot) ||
+          isAbortRequestError(err)
+        ) {
+          return;
+        }
         const message = err instanceof Error ? err.message : 'Failed to fetch controls schema';
         setError(message || 'Failed to fetch controls schema');
         setSchema(null);
       })
       .finally(() => {
-        if (!active) return;
+        if (!active || !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)) return;
         setLoading(false);
       });
 

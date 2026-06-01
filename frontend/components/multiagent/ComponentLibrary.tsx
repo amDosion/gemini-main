@@ -4,21 +4,11 @@
 
 import React, { useState, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
-import { NodeType, nodeTypeConfigs } from './nodeTypeConfigs';
+import { NodeType, nodeCategories } from './nodeTypeConfigs';
 
 interface ComponentLibraryProps {
   onDragStart?: (event: React.DragEvent, nodeType: NodeType, payload?: Record<string, any>) => void;
 }
-
-const nodeCategories: Array<{ key: string; title: string; nodes: NodeType[] }> = [
-  {
-    key: 'flow',
-    title: '流程控制',
-    nodes: ['start', 'end', 'input_text', 'input_image', 'input_video', 'input_audio', 'input_file', 'condition', 'merge', 'loop'] as NodeType[],
-  },
-  { key: 'agent', title: '智能体', nodes: ['agent', 'tool', 'human'] as NodeType[] },
-  { key: 'orchestration', title: '编排模式', nodes: ['router', 'parallel'] as NodeType[] },
-];
 
 export const ComponentLibrary: React.FC<ComponentLibraryProps> = ({ onDragStart }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -36,14 +26,13 @@ export const ComponentLibrary: React.FC<ComponentLibraryProps> = ({ onDragStart 
   const filteredNodeCategories = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
     return nodeCategories.reduce((acc, category) => {
-      const filtered = category.nodes.filter((nodeType) => {
+      const filtered = category.items.filter((config) => {
         if (!query) return true;
-        const config = nodeTypeConfigs[nodeType];
         return config.label.toLowerCase().includes(query) || config.description.toLowerCase().includes(query);
       });
-      if (filtered.length > 0) acc.push({ ...category, nodes: filtered });
+      if (filtered.length > 0) acc.push({ ...category, items: filtered });
       return acc;
-    }, [] as Array<{ key: string; title: string; nodes: NodeType[] }>);
+    }, [] as typeof nodeCategories);
   }, [searchQuery]);
 
   if (isCollapsed) {
@@ -64,7 +53,7 @@ export const ComponentLibrary: React.FC<ComponentLibraryProps> = ({ onDragStart 
 
   return (
     <div className="w-[220px] bg-slate-900 border-r border-slate-800 flex flex-col h-full overflow-hidden transition-[width] duration-200 ease-out">
-      <div className="p-3 border-b border-slate-800">
+      <div className="p-3 border-b border-slate-800 bg-slate-900/50 shrink-0">
         <div className="flex items-center gap-2">
           <div className="shrink-0 text-xs font-semibold text-slate-400">组件库</div>
           <div className="relative min-w-0 flex-1">
@@ -102,11 +91,11 @@ export const ComponentLibrary: React.FC<ComponentLibraryProps> = ({ onDragStart 
 
       <div className="flex-1 overflow-y-auto p-2.5 space-y-4">
         {filteredNodeCategories.map((category) => (
-          <div key={category.key}>
-            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5 px-1">{category.title}</div>
+          <div key={category.name}>
+            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5 px-1">{category.name}</div>
             <div className="space-y-1">
-              {category.nodes.map((nodeType) => {
-                const config = nodeTypeConfigs[nodeType];
+              {category.items.map((config) => {
+                const nodeType = config.type;
                 return (
                   <div
                     key={nodeType}

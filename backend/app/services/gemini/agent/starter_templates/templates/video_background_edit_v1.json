@@ -23,7 +23,10 @@
       {
         "id": "start-video-background-edit",
         "type": "start",
-        "position": { "x": 80, "y": 260 },
+        "position": {
+          "x": 80,
+          "y": 260
+        },
         "data": {
           "type": "start",
           "label": "开始",
@@ -35,7 +38,10 @@
       {
         "id": "input-video-background-edit",
         "type": "input_video",
-        "position": { "x": 300, "y": 120 },
+        "position": {
+          "x": 300,
+          "y": 120
+        },
         "data": {
           "type": "input_video",
           "label": "原视频",
@@ -48,7 +54,10 @@
       {
         "id": "input-mask-background-edit",
         "type": "input_image",
-        "position": { "x": 300, "y": 260 },
+        "position": {
+          "x": 300,
+          "y": 260
+        },
         "data": {
           "type": "input_image",
           "label": "掩码图",
@@ -61,7 +70,10 @@
       {
         "id": "input-text-background-edit",
         "type": "input_text",
-        "position": { "x": 300, "y": 400 },
+        "position": {
+          "x": 300,
+          "y": 400
+        },
         "data": {
           "type": "input_text",
           "label": "背景目标",
@@ -74,31 +86,38 @@
       {
         "id": "agent-video-background-edit",
         "type": "agent",
-        "position": { "x": 660, "y": 260 },
+        "position": {
+          "x": 660,
+          "y": 260
+        },
         "data": {
           "type": "agent",
           "label": "背景替换",
           "description": "使用 Google Veo 视频编辑能力替换背景",
           "icon": "🏞️",
           "iconColor": "bg-fuchsia-500",
-          "inlineProviderId": "google",
-          "inlineModelId": "veo-2.0-generate-001",
-          "inlineAgentName": "Google Veo Background Editor",
           "agentTaskType": "video-gen",
           "agentAspectRatio": "16:9",
-          "agentResolutionTier": "1K",
+          "agentResolutionTier": "720p",
           "agentVideoDurationSeconds": 8,
+          "agentVideoInputStrategy": "masked_video_edit",
           "agentSourceVideoUrl": "{{input-video-background-edit.output}}",
           "agentVideoMaskImageUrl": "{{input-mask-background-edit.output.imageUrl}}",
-          "agentVideoMaskMode": "REMOVE",
+          "agentVideoMaskMode": "INSERT",
           "inputMapping": "原视频：{{input-video-background-edit.output.videoUrl}}\\n掩码图：{{input-mask-background-edit.output.imageUrl}}\\n背景替换需求：{{input-text-background-edit.output.text}}\\n\\n请只在掩码指定的背景区域进行替换，主体动作、位置、镜头运动和前景细节必须保持稳定。新背景要与原视频的透视、光线方向、景深和运动模糊一致。",
-          "instructions": "你是视频背景编辑节点。必须保留主体、动作节奏、机位和前景结构，仅重建背景。避免背景闪烁、边缘抖动、主体穿帮、颜色污染和明显抠图痕迹。只返回编辑后的视频结果。"
+          "instructions": "你是视频背景编辑节点。必须保留主体、动作节奏、机位和前景结构，仅重建背景。避免背景闪烁、边缘抖动、主体穿帮、颜色污染和明显抠图痕迹。只返回编辑后的视频结果。",
+          "modelOverrideProviderId": "google",
+          "modelOverrideModelId": "veo-2.0-generate-001",
+          "agentPresetKey": "google-veo-background-editor"
         }
       },
       {
         "id": "end-video-background-edit",
         "type": "end",
-        "position": { "x": 980, "y": 260 },
+        "position": {
+          "x": 980,
+          "y": 260
+        },
         "data": {
           "type": "end",
           "label": "结束",
@@ -109,11 +128,31 @@
       }
     ],
     "edges": [
-      { "id": "edge-video-background-edit-1", "source": "start-video-background-edit", "target": "input-video-background-edit" },
-      { "id": "edge-video-background-edit-2", "source": "input-video-background-edit", "target": "input-mask-background-edit" },
-      { "id": "edge-video-background-edit-3", "source": "input-mask-background-edit", "target": "input-text-background-edit" },
-      { "id": "edge-video-background-edit-4", "source": "input-text-background-edit", "target": "agent-video-background-edit" },
-      { "id": "edge-video-background-edit-5", "source": "agent-video-background-edit", "target": "end-video-background-edit" }
+      {
+        "id": "edge-video-background-edit-1",
+        "source": "start-video-background-edit",
+        "target": "input-video-background-edit"
+      },
+      {
+        "id": "edge-video-background-edit-2",
+        "source": "input-video-background-edit",
+        "target": "input-mask-background-edit"
+      },
+      {
+        "id": "edge-video-background-edit-3",
+        "source": "input-mask-background-edit",
+        "target": "input-text-background-edit"
+      },
+      {
+        "id": "edge-video-background-edit-4",
+        "source": "input-text-background-edit",
+        "target": "agent-video-background-edit"
+      },
+      {
+        "id": "edge-video-background-edit-5",
+        "source": "agent-video-background-edit",
+        "target": "end-video-background-edit"
+      }
     ]
   }
 }

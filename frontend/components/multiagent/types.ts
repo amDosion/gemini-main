@@ -31,6 +31,7 @@ export interface WorkflowNodeData {
   type?: string;
   agentId?: string;
   agentName?: string;
+  agentPresetKey?: string;
   inlineUseActiveProfile?: boolean;
   inlineProviderId?: string;
   inlineModelId?: string;
@@ -53,7 +54,7 @@ export interface WorkflowNodeData {
   agentPreferLatestModel?: boolean; // 优先自动选择最新可用模型
   agentAspectRatio?: string;   // 图片宽高比
   agentImageSize?: string;     // 图片尺寸
-  agentResolutionTier?: string; // 分辨率档位：1K / 2K / 4K
+  agentResolutionTier?: string; // 图片分辨率档位或视频分辨率：1K / 2K / 4K / 720p / 1080p / 4k
   agentNumberOfImages?: number; // 图片数量
   agentImageStyle?: string;    // 图片风格
   agentNegativePrompt?: string; // 反向提示词
@@ -62,12 +63,14 @@ export interface WorkflowNodeData {
   agentAddMagicSuffix?: boolean; // 启用提示词魔法后缀（provider支持时生效）
   agentVideoDurationSeconds?: number; // 视频时长（秒）
   agentVideoExtensionCount?: number; // 官方视频延长次数
+  agentVideoInputStrategy?: string; // 文生视频 / 首帧 / 首尾帧 / 续写等输入方式
   agentContinueFromPreviousVideo?: boolean; // 续接上一个视频结果
   agentContinueFromPreviousLastFrame?: boolean; // 使用上一段最后一帧作为下一段首帧
   agentSourceVideoUrl?: string; // 显式指定续接视频 URL
   agentLastFrameImageUrl?: string; // 显式指定末帧图片
   agentVideoMaskImageUrl?: string; // 视频编辑掩码图 URL
   agentVideoMaskMode?: string; // 视频编辑掩码模式
+  agentAudioUrl?: string; // 驱动音频 URL
   agentGenerateAudio?: boolean; // 生成视频原生音频
   agentSubtitleMode?: string; // 字幕模式
   agentSubtitleLanguage?: string; // 字幕语言
@@ -80,7 +83,9 @@ export interface WorkflowNodeData {
   agentOutputMimeType?: string; // 输出 MIME 类型
   agentReferenceImageUrl?: string; // 参考图片 URL（图生图）
   agentFileUrl?: string;       // 文件 URL（数据分析）
+  agentEditMode?: string;      // 图片编辑模式
   agentEditPrompt?: string;    // 编辑指令（图片编辑）
+  agentOutputLanguage?: string; // 图片编辑输出语言
   agentPreserveProductIdentity?: boolean;
   agentImageEditMaxRetries?: number;
   agentProductMatchThreshold?: number;
@@ -124,6 +129,7 @@ export interface WorkflowNodeData {
   // Tool-specific parameters (table_analyze)
   toolAnalysisType?: string;
   approvalPrompt?: string;
+  autoApprove?: boolean;
   // Start node runtime input
   startTask?: string;
   startImageUrl?: string;
@@ -254,17 +260,32 @@ export interface AgentDef {
       imageEdit?: {
         editMode?: string;
         aspectRatio?: string;
+        imageSize?: string;
         resolutionTier?: string;
         numberOfImages?: number;
         outputMimeType?: string;
         promptExtend?: boolean;
+        addMagicSuffix?: boolean;
+        preserveProductIdentity?: boolean;
+        productMatchThreshold?: number;
+        maxRetries?: number;
+        outputLanguage?: string;
       };
       videoGeneration?: {
         aspectRatio?: string;
         resolution?: string;
         durationSeconds?: number;
+        videoExtensionCount?: number;
         continueFromPreviousVideo?: boolean;
         continueFromPreviousLastFrame?: boolean;
+        generateAudio?: boolean;
+        subtitleMode?: string;
+        subtitleLanguage?: string;
+        subtitleScript?: string;
+        storyboardPrompt?: string;
+        negativePrompt?: string;
+        seed?: number;
+        promptExtend?: boolean;
       };
       audioGeneration?: {
         voice?: string;

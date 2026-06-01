@@ -7,25 +7,25 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
 
-ALLOWED_AGENT_DEFAULT_TASK_TYPES = {
-    "chat",
-    "image-gen",
-    "image-edit",
-    "video-gen",
-    "audio-gen",
-    "vision-understand",
-    "data-analysis",
-}
+from .workflow_contract import (
+    ALLOWED_AUDIO_OUTPUT_FORMATS,
+    ALLOWED_IMAGE_OUTPUT_MIME_TYPES,
+    ALLOWED_OUTPUT_FORMATS,
+    ALLOWED_VIDEO_ASPECT_RATIOS,
+    ALLOWED_VIDEO_INPUT_STRATEGIES,
+    ALLOWED_VIDEO_MASK_MODES,
+    ALLOWED_VIDEO_SUBTITLE_MODES,
+    ALLOWED_WORKFLOW_AGENT_TASK_TYPES,
+    ALLOWED_WORKFLOW_NODE_TYPES,
+    is_active_inline_provider_token,
+    is_auto_inline_model_token,
+    normalize_workflow_agent_task_type,
+    normalize_workflow_image_edit_mode,
+    normalize_workflow_video_mask_mode,
+    normalize_workflow_video_resolution,
+)
 
-ALLOWED_WORKFLOW_AGENT_TASK_TYPES = {
-    "chat",
-    "image-gen",
-    "image-edit",
-    "video-gen",
-    "audio-gen",
-    "vision-understand",
-    "data-analysis",
-}
+ALLOWED_AGENT_DEFAULT_TASK_TYPES = ALLOWED_WORKFLOW_AGENT_TASK_TYPES
 ALLOWED_WORKFLOW_ANALYSIS_TYPES = {
     "comprehensive",
     "statistics",
@@ -33,69 +33,18 @@ ALLOWED_WORKFLOW_ANALYSIS_TYPES = {
     "trends",
     "distribution",
 }
-ALLOWED_IMAGE_OUTPUT_MIME_TYPES = {"image/png", "image/jpeg", "image/webp"}
-ALLOWED_AUDIO_OUTPUT_FORMATS = {"mp3", "wav", "opus", "aac", "flac", "pcm"}
-ALLOWED_OUTPUT_FORMATS = {"text", "json", "markdown"}
-ALLOWED_IMAGE_EDIT_MODES = {
-    "image-chat-edit",
-    "image-mask-edit",
-    "image-inpainting",
-    "image-background-edit",
-    "image-recontext",
-    "image-outpainting",
-}
-ALLOWED_VIDEO_ASPECT_RATIOS = {"16:9", "9:16"}
-ACTIVE_INLINE_PROVIDER_TOKENS = {
-    "__active__",
-    "__current__",
-    "active",
-    "current",
-    "active-profile",
-    "current-profile",
-}
-AUTO_INLINE_MODEL_TOKENS = {
-    "",
-    "__auto__",
-    "__active__",
-    "auto",
-    "active",
-    "current",
-    "active-profile",
-    "current-profile",
-}
 
 
 def _is_active_inline_provider_token(value: Any) -> bool:
-    return str(value or "").strip().lower() in ACTIVE_INLINE_PROVIDER_TOKENS
+    return is_active_inline_provider_token(value)
 
 
 def _is_auto_inline_model_token(value: Any) -> bool:
-    return str(value or "").strip().lower() in AUTO_INLINE_MODEL_TOKENS
+    return is_auto_inline_model_token(value)
 
 
 def _normalize_agent_task_type(raw_value: Any) -> str:
-    raw = str(raw_value or "").strip().lower().replace("_", "-")
-    aliases = {
-        "vision-analyze": "vision-understand",
-        "image-analyze": "vision-understand",
-        "image-understand": "vision-understand",
-        "table-analysis": "data-analysis",
-        "video": "video-gen",
-        "video-generate": "video-gen",
-        "video-generation": "video-gen",
-        "audio": "audio-gen",
-        "speech": "audio-gen",
-        "tts": "audio-gen",
-        "speech-gen": "audio-gen",
-        "speech-generate": "audio-gen",
-        "speech-generation": "audio-gen",
-        "audio-generate": "audio-gen",
-        "audio-generation": "audio-gen",
-    }
-    normalized = aliases.get(raw, raw)
-    if normalized in ALLOWED_WORKFLOW_AGENT_TASK_TYPES:
-        return normalized
-    return "chat"
+    return normalize_workflow_agent_task_type(raw_value, fallback="chat")
 
 
 def _normalize_analysis_type(raw_value: Any) -> str:
@@ -191,30 +140,7 @@ def _normalize_string_list(value: Any, *, max_items: int = 12) -> List[str]:
 
 
 def _normalize_video_resolution(value: Any) -> Optional[str]:
-    raw = str(value or "").strip()
-    if not raw:
-        return None
-
-    normalized = raw.lower().replace(" ", "").replace("*", "x").replace("×", "x")
-    mapping = {
-        "1k": "1K",
-        "720p": "1K",
-        "1280": "1K",
-        "1280x720": "1K",
-        "720x1280": "1K",
-        "2k": "2K",
-        "1080p": "2K",
-        "1920": "2K",
-        "1920x1080": "2K",
-        "1080x1920": "2K",
-        "4k": "2K",
-        "2160p": "2K",
-    }
-    if normalized in mapping:
-        return mapping[normalized]
-    if raw in {"1K", "2K"}:
-        return raw
-    return None
+    return normalize_workflow_video_resolution(value)
 
 
 def _normalize_workflow_input_payload(raw_input: Dict[str, Any]) -> Dict[str, Any]:
@@ -323,10 +249,7 @@ def _normalize_workflow_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any
 
         for field_name in ("toolEditMode", "agentEditMode"):
             if field_name in data:
-                normalized_mode = _normalize_optional_choice(
-                    str(data.get(field_name) or "").replace("_", "-"),
-                    allowed=ALLOWED_IMAGE_EDIT_MODES,
-                )
+                normalized_mode = normalize_workflow_image_edit_mode(data.get(field_name))
                 if normalized_mode is None:
                     data.pop(field_name, None)
                 else:
@@ -357,6 +280,14 @@ def _normalize_workflow_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any
                         data.pop(field_name, None)
                     else:
                         data[field_name] = parsed_duration
+
+            for field_name in ("agentVideoExtensionCount", "agent_video_extension_count"):
+                if field_name in data:
+                    parsed_extension_count = _clamp_optional_int(data.get(field_name), minimum=0, maximum=20)
+                    if parsed_extension_count is None:
+                        data.pop(field_name, None)
+                    else:
+                        data[field_name] = parsed_extension_count
 
             for field_name in (
                 "agentVideoAspectRatio",
@@ -396,9 +327,76 @@ def _normalize_workflow_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any
                 "agent_continue_from_previous_video",
                 "agentContinueFromPreviousLastFrame",
                 "agent_continue_from_previous_last_frame",
+                "agentGenerateAudio",
+                "agent_generate_audio",
+                "agentPromptExtend",
+                "agent_prompt_extend",
             ):
                 if field_name in data:
                     data[field_name] = _coerce_optional_bool(data.get(field_name), default=False)
+
+            for field_name in ("agentSubtitleMode", "agent_subtitle_mode"):
+                if field_name in data:
+                    normalized_subtitle_mode = _normalize_optional_choice(
+                        data.get(field_name),
+                        allowed=ALLOWED_VIDEO_SUBTITLE_MODES,
+                    )
+                    if normalized_subtitle_mode is None:
+                        data.pop(field_name, None)
+                    else:
+                        data[field_name] = normalized_subtitle_mode
+
+            for field_name in ("agentVideoMaskMode", "agent_video_mask_mode"):
+                if field_name in data:
+                    normalized_mask_mode = normalize_workflow_video_mask_mode(data.get(field_name))
+                    if normalized_mask_mode is None:
+                        data.pop(field_name, None)
+                    else:
+                        data[field_name] = normalized_mask_mode
+
+            for field_name in ("agentVideoInputStrategy", "agent_video_input_strategy"):
+                if field_name in data:
+                    normalized_strategy = _normalize_optional_choice(
+                        data.get(field_name),
+                        allowed=ALLOWED_VIDEO_INPUT_STRATEGIES,
+                    )
+                    if normalized_strategy is None:
+                        data.pop(field_name, None)
+                    else:
+                        data[field_name] = normalized_strategy
+
+            for field_name, max_length in (
+                ("agentSubtitleLanguage", 32),
+                ("agent_subtitle_language", 32),
+                ("agentSubtitleScript", 4000),
+                ("agent_subtitle_script", 4000),
+                ("agentStoryboardPrompt", 4000),
+                ("agent_storyboard_prompt", 4000),
+                ("agentNegativePrompt", 4000),
+                ("agent_negative_prompt", 4000),
+                ("agentSourceVideoUrl", 2048),
+                ("agent_source_video_url", 2048),
+                ("agentLastFrameImageUrl", 2048),
+                ("agent_last_frame_image_url", 2048),
+                ("agentVideoMaskImageUrl", 2048),
+                ("agent_video_mask_image_url", 2048),
+                ("agentAudioUrl", 2048),
+                ("agent_audio_url", 2048),
+            ):
+                if field_name in data:
+                    normalized_text = _normalize_optional_string(data.get(field_name), max_length=max_length)
+                    if normalized_text is None:
+                        data.pop(field_name, None)
+                    else:
+                        data[field_name] = normalized_text
+
+            for field_name in ("agentSeed", "agent_seed"):
+                if field_name in data:
+                    parsed_seed = _clamp_optional_int(data.get(field_name), minimum=-1, maximum=2147483647)
+                    if parsed_seed is None:
+                        data.pop(field_name, None)
+                    else:
+                        data[field_name] = parsed_seed
 
         if normalized_task_type == "audio-gen":
             for field_name in (
@@ -444,24 +442,7 @@ def _normalize_workflow_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any
 
 
 def _normalize_agent_default_task_type(value: Any) -> str:
-    raw = str(value or "").strip().lower().replace("_", "-")
-    aliases = {
-        "image-understand": "vision-understand",
-        "vision-analyze": "vision-understand",
-        "image-analyze": "vision-understand",
-        "video": "video-gen",
-        "video-generate": "video-gen",
-        "video-generation": "video-gen",
-        "audio": "audio-gen",
-        "speech": "audio-gen",
-        "tts": "audio-gen",
-        "speech-gen": "audio-gen",
-        "speech-generate": "audio-gen",
-        "speech-generation": "audio-gen",
-        "audio-generate": "audio-gen",
-        "audio-generation": "audio-gen",
-    }
-    return aliases.get(raw, raw)
+    return normalize_workflow_agent_task_type(value, fallback="")
 
 
 def _validate_and_normalize_agent_card(raw_agent_card: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -512,6 +493,90 @@ def _validate_and_normalize_agent_card(raw_agent_card: Optional[Dict[str, Any]])
             if normalized_output_format in {"text", "json", "markdown"}:
                 data_defaults["outputFormat"] = normalized_output_format
 
+    image_edit_defaults = defaults.get("imageEdit")
+    if image_edit_defaults is not None:
+        if not isinstance(image_edit_defaults, dict):
+            raise HTTPException(status_code=400, detail="agentCard.defaults.imageEdit must be an object")
+
+        edit_mode = image_edit_defaults.get("editMode")
+        if edit_mode is not None:
+            normalized_edit_mode = normalize_workflow_image_edit_mode(edit_mode)
+            if normalized_edit_mode is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="agentCard.defaults.imageEdit.editMode is not supported",
+                )
+            image_edit_defaults["editMode"] = normalized_edit_mode
+
+        for field_name, max_length in (
+            ("aspectRatio", 32),
+            ("imageSize", 32),
+            ("resolutionTier", 32),
+            ("outputLanguage", 32),
+        ):
+            if field_name in image_edit_defaults:
+                normalized_text = _normalize_optional_string(
+                    image_edit_defaults.get(field_name),
+                    max_length=max_length,
+                )
+                if normalized_text is None:
+                    image_edit_defaults.pop(field_name, None)
+                else:
+                    image_edit_defaults[field_name] = normalized_text
+
+        number_of_images = image_edit_defaults.get("numberOfImages", image_edit_defaults.get("number_of_images"))
+        if number_of_images is not None:
+            parsed_number = _clamp_optional_int(number_of_images, minimum=1, maximum=8)
+            if parsed_number is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="agentCard.defaults.imageEdit.numberOfImages must be an integer between 1 and 8",
+                )
+            image_edit_defaults["numberOfImages"] = parsed_number
+
+        output_mime_type = image_edit_defaults.get("outputMimeType", image_edit_defaults.get("output_mime_type"))
+        if output_mime_type is not None:
+            normalized_mime_type = _normalize_optional_choice(
+                output_mime_type,
+                allowed=ALLOWED_IMAGE_OUTPUT_MIME_TYPES,
+            )
+            if normalized_mime_type is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="agentCard.defaults.imageEdit.outputMimeType must be image/png, image/jpeg, or image/webp",
+                )
+            image_edit_defaults["outputMimeType"] = normalized_mime_type
+
+        for field_name in ("promptExtend", "addMagicSuffix", "preserveProductIdentity"):
+            if field_name in image_edit_defaults:
+                image_edit_defaults[field_name] = _coerce_optional_bool(
+                    image_edit_defaults.get(field_name),
+                    default=False,
+                )
+
+        product_match_threshold = image_edit_defaults.get(
+            "productMatchThreshold",
+            image_edit_defaults.get("product_match_threshold"),
+        )
+        if product_match_threshold is not None:
+            parsed_threshold = _clamp_optional_int(product_match_threshold, minimum=50, maximum=95)
+            if parsed_threshold is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="agentCard.defaults.imageEdit.productMatchThreshold must be an integer between 50 and 95",
+                )
+            image_edit_defaults["productMatchThreshold"] = parsed_threshold
+
+        max_retries = image_edit_defaults.get("maxRetries", image_edit_defaults.get("max_retries"))
+        if max_retries is not None:
+            parsed_retries = _clamp_optional_int(max_retries, minimum=0, maximum=3)
+            if parsed_retries is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="agentCard.defaults.imageEdit.maxRetries must be an integer between 0 and 3",
+                )
+            image_edit_defaults["maxRetries"] = parsed_retries
+
     video_defaults = defaults.get("videoGeneration")
     if video_defaults is not None:
         if not isinstance(video_defaults, dict):
@@ -536,7 +601,7 @@ def _validate_and_normalize_agent_card(raw_agent_card: Optional[Dict[str, Any]])
             if normalized_resolution is None:
                 raise HTTPException(
                     status_code=400,
-                    detail="agentCard.defaults.videoGeneration.resolution must be 1K/2K or a supported alias",
+                    detail="agentCard.defaults.videoGeneration.resolution must be 720p/1080p/4k or a supported alias",
                 )
             video_defaults["resolution"] = normalized_resolution
 
@@ -563,6 +628,77 @@ def _validate_and_normalize_agent_card(raw_agent_card: Optional[Dict[str, Any]])
                 continue_from_previous_last_frame,
                 default=False,
             )
+
+        video_extension_count = video_defaults.get("videoExtensionCount", video_defaults.get("video_extension_count"))
+        if video_extension_count is not None:
+            parsed_extension_count = _clamp_optional_int(video_extension_count, minimum=0, maximum=20)
+            if parsed_extension_count is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="agentCard.defaults.videoGeneration.videoExtensionCount must be an integer between 0 and 20",
+                )
+            video_defaults["videoExtensionCount"] = parsed_extension_count
+
+        video_input_strategy = video_defaults.get(
+            "videoInputStrategy",
+            video_defaults.get("video_input_strategy"),
+        )
+        if video_input_strategy is not None:
+            normalized_strategy = _normalize_optional_choice(
+                video_input_strategy,
+                allowed=ALLOWED_VIDEO_INPUT_STRATEGIES,
+            )
+            if normalized_strategy is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="agentCard.defaults.videoGeneration.videoInputStrategy is not supported",
+                )
+            video_defaults["videoInputStrategy"] = normalized_strategy
+
+        generate_audio = video_defaults.get("generateAudio", video_defaults.get("generate_audio"))
+        if generate_audio is not None:
+            video_defaults["generateAudio"] = _coerce_optional_bool(generate_audio, default=False)
+
+        prompt_extend = video_defaults.get("promptExtend", video_defaults.get("prompt_extend"))
+        if prompt_extend is not None:
+            video_defaults["promptExtend"] = _coerce_optional_bool(prompt_extend, default=False)
+
+        subtitle_mode = video_defaults.get("subtitleMode", video_defaults.get("subtitle_mode"))
+        if subtitle_mode is not None:
+            normalized_subtitle_mode = _normalize_optional_choice(
+                subtitle_mode,
+                allowed=ALLOWED_VIDEO_SUBTITLE_MODES,
+            )
+            if normalized_subtitle_mode is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="agentCard.defaults.videoGeneration.subtitleMode must be none/vtt/srt/both",
+                )
+            video_defaults["subtitleMode"] = normalized_subtitle_mode
+
+        for field_name, max_length in (
+            ("subtitleLanguage", 32),
+            ("subtitleScript", 4000),
+            ("storyboardPrompt", 4000),
+            ("negativePrompt", 4000),
+            ("audioUrl", 2048),
+        ):
+            if field_name in video_defaults:
+                normalized_text = _normalize_optional_string(video_defaults.get(field_name), max_length=max_length)
+                if normalized_text is None:
+                    video_defaults.pop(field_name, None)
+                else:
+                    video_defaults[field_name] = normalized_text
+
+        seed = video_defaults.get("seed")
+        if seed is not None:
+            parsed_seed = _clamp_optional_int(seed, minimum=-1, maximum=2147483647)
+            if parsed_seed is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="agentCard.defaults.videoGeneration.seed must be an integer",
+                )
+            video_defaults["seed"] = parsed_seed
 
     audio_defaults = defaults.get("audioGeneration")
     legacy_audio_defaults = defaults.get("speechGeneration")
@@ -697,10 +833,13 @@ def _validate_workflow_execute_payload(nodes: List[Dict[str, Any]], edges: List[
         data = (node or {}).get("data")
         node_type = ""
         if isinstance(data, dict):
-            node_type = str(data.get("type") or "").strip().lower()
+            node_type = str(data.get("type") or "").strip().lower().replace("-", "_")
         if not node_type:
-            node_type = str((node or {}).get("type") or "").strip().lower()
+            node_type = str((node or {}).get("type") or "").strip().lower().replace("-", "_")
         node_types[node_id] = node_type
+
+        if node_type not in ALLOWED_WORKFLOW_NODE_TYPES:
+            return f"Unsupported workflow node type: {node_type or '<empty>'}"
 
         if node_type == "agent":
             node_data = data if isinstance(data, dict) else {}
@@ -744,6 +883,20 @@ def _validate_workflow_execute_payload(nodes: List[Dict[str, Any]], edges: List[
                     f"智能体节点[{node_id}] 必须配置 agentId / agentName，"
                     "或提供 inlineProviderId + inlineModelId，"
                     "或启用 inlineUseActiveProfile"
+                )
+        elif node_type == "human":
+            node_data = data if isinstance(data, dict) else {}
+            has_explicit_auto_approve = "autoApprove" in node_data or "auto_approve" in node_data
+            auto_approve_value = node_data.get("autoApprove", node_data.get("auto_approve"))
+            auto_approve = (
+                auto_approve_value
+                if isinstance(auto_approve_value, bool)
+                else str(auto_approve_value or "").strip().lower() in {"1", "true", "yes", "on"}
+            )
+            if not (has_explicit_auto_approve and auto_approve):
+                return (
+                    f"人工审核节点[{node_id}] 当前没有真实人工确认流程，"
+                    "必须显式配置 autoApprove=true 后才能执行"
                 )
 
     unique_node_ids = set(node_ids)

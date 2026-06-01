@@ -28,15 +28,21 @@ def test_google_video_contract_exposes_extension_duration_matrix_and_slots() -> 
     }
     assert "8" in matrix
     assert matrix["8"][0]["total_seconds"] == 8
-    assert matrix["8"][-1]["total_seconds"] == 36
-    assert contract["extension_constraints"]["max_source_video_seconds"] == 30
-    assert contract["extension_constraints"]["max_output_video_seconds"] == 37
-    assert contract["extension_constraints"]["max_extension_count"] == 4
+    assert matrix["8"][-1]["total_seconds"] == 148
+    assert contract["extension_constraints"]["max_source_video_seconds"] == 141
+    assert contract["extension_constraints"]["max_output_video_seconds"] == 148
+    assert contract["extension_constraints"]["max_extension_count"] == 20
 
     slot_map = {slot["name"]: slot for slot in contract["attachment_slots"]}
     assert slot_map["source_image"]["enabled"] is True
     assert slot_map["last_frame_image"]["enabled"] is True
     assert slot_map["reference_images"]["max_items"] == 3
+    assert [strategy["label"] for strategy in contract["input_strategies"]] == [
+        "文生视频",
+        "图生视频",
+        "首尾帧生视频",
+        "视频延长",
+    ]
     assert contract["field_policies"]["enhance_prompt"]["mandatory"] is True
     assert contract["field_policies"]["subtitle_mode"]["single_sidecar_format"] is True
     assert contract["field_policies"]["storyboard_prompt"]["deprecated_companion_fields"] == [

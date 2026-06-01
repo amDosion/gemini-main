@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyAgentBindingsToNodes,
   getDefaultNodeConfig,
   NODE_DEFAULT_FOCUS_FIELD_BY_TYPE,
   normalizeWorkflowInputForExecute,
@@ -9,6 +10,82 @@ import {
 } from './workflowEditorUtils';
 
 describe('workflowEditorUtils media support', () => {
+  it('hydrates media agent bindings without downgrading authored task types to chat', () => {
+    const imageAgent = {
+      id: 'image-agent',
+      name: 'Image Agent',
+      description: '',
+      providerId: 'google',
+      modelId: 'imagen-3.0-generate-002',
+      systemPrompt: '',
+      temperature: 0.7,
+      maxTokens: 4096,
+      icon: '🎨',
+      color: '#d946ef',
+      status: 'active',
+      agentCard: {
+        defaults: {
+          defaultTaskType: 'image-gen',
+          imageGeneration: {
+            aspectRatio: '1:1',
+            numberOfImages: 1,
+          },
+        },
+      },
+    };
+
+    const hydrated = applyAgentBindingsToNodes([
+      {
+        id: 'generate',
+        type: 'agent',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'agent',
+          label: '主图生成',
+          description: '',
+          icon: '🎨',
+          iconColor: '#d946ef',
+          agentId: 'image-agent',
+          agentName: 'Image Agent',
+          agentTaskType: 'image-gen',
+        },
+      },
+      {
+        id: 'plan',
+        type: 'agent',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'agent',
+          label: '创意规划',
+          description: '',
+          icon: '🎨',
+          iconColor: '#d946ef',
+          agentId: 'image-agent',
+          agentName: 'Image Agent',
+          agentTaskType: 'chat',
+        },
+      },
+      {
+        id: 'blank',
+        type: 'agent',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'agent',
+          label: '主图生成',
+          description: '',
+          icon: '🎨',
+          iconColor: '#d946ef',
+          agentId: 'image-agent',
+          agentName: 'Image Agent',
+        },
+      },
+    ], [imageAgent as any]);
+
+    expect(hydrated.find((node) => node.id === 'generate')?.data.agentTaskType).toBe('image-gen');
+    expect(hydrated.find((node) => node.id === 'plan')?.data.agentTaskType).toBe('chat');
+    expect(hydrated.find((node) => node.id === 'blank')?.data.agentTaskType).toBe('image-gen');
+  });
+
   it('provides bounded defaults and focus fields for audio/video input nodes', () => {
     expect(getDefaultNodeConfig('input_video')).toMatchObject({
       startVideoUrl: '',
@@ -45,6 +122,7 @@ describe('workflowEditorUtils media support', () => {
       agentAspectRatio: '9:16',
       agentResolutionTier: '4K',
       agentVideoDurationSeconds: 99,
+      agentVideoMaskMode: 'remove-static',
       startVideoUrl: 'https://cdn.example.com/video.mp4',
       startVideoUrls: ['https://cdn.example.com/video.mp4'],
     })).toMatchObject({
@@ -53,9 +131,19 @@ describe('workflowEditorUtils media support', () => {
       agentAspectRatio: '9:16',
       agentResolutionTier: '4k',
       agentVideoDurationSeconds: 20,
+      agentVideoMaskMode: 'REMOVE_STATIC',
       startVideoUrl: 'https://cdn.example.com/video.mp4',
       startVideoUrls: ['https://cdn.example.com/video.mp4'],
     });
+  });
+
+  it('removes workflow image edit modes that are not executable image-edit variants', () => {
+    const normalized = normalizeWorkflowNodeDataForExecute({
+      agentTaskType: 'image-edit',
+      agentEditMode: 'virtual-try-on',
+    });
+
+    expect(normalized).not.toHaveProperty('agentEditMode');
   });
 
   it('preserves and clamps audio task node fields', () => {

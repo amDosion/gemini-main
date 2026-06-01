@@ -377,6 +377,49 @@ def extract_first_video_url(engine: Any, payload: Any) -> Optional[str]:
     return None
 
 
+def extract_first_audio_url(engine: Any, payload: Any) -> Optional[str]:
+    candidates: List[Any] = []
+
+    if isinstance(payload, dict):
+        direct_candidates = [
+            payload.get("audioUrl"),
+            payload.get("audio_url"),
+        ]
+        payload_mime_type = str(payload.get("mimeType") or payload.get("mime_type") or "").strip().lower()
+        if payload_mime_type.startswith("audio/") and payload.get("url") is not None:
+            direct_candidates.append(payload.get("url"))
+        for item in direct_candidates:
+            if item is not None:
+                candidates.append(item)
+        for key in ("audioUrls", "audio_urls", "audios", "resultPreviewAudioUrls"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                candidates.extend(value)
+            elif value is not None:
+                candidates.append(value)
+
+    if not candidates:
+        candidates = [payload]
+
+    for candidate in candidates:
+        if isinstance(candidate, dict):
+            nested = (
+                candidate.get("audioUrl")
+                or candidate.get("audio_url")
+                or candidate.get("url")
+            )
+            normalized = engine._normalize_possible_result_media_url(nested)
+            if normalized:
+                return normalized
+            continue
+
+        normalized = engine._normalize_possible_result_media_url(candidate)
+        if normalized:
+            return normalized
+
+    return None
+
+
 def build_source_video_payload(engine: Any, payload: Any) -> Any:
     def _pack_video_payload(raw_payload: Dict[str, Any]) -> Any:
         video_url = engine._extract_first_video_url(raw_payload)

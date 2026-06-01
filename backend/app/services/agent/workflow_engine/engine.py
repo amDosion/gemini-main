@@ -160,6 +160,7 @@ from .agent_execution import (
 from .payload_media import (
     build_source_video_payload as workflow_build_source_video_payload,
     extract_all_image_urls as workflow_extract_all_image_urls,
+    extract_first_audio_url as workflow_extract_first_audio_url,
     extract_first_image_url as workflow_extract_first_image_url,
     extract_first_video_url as workflow_extract_first_video_url,
     extract_result_image_urls as workflow_extract_result_image_urls,
@@ -205,25 +206,6 @@ from .text_utils import (
 from ....core.config import settings
 
 logger = logging.getLogger(__name__)
-
-ACTIVE_INLINE_PROVIDER_TOKENS = {
-    "__active__",
-    "__current__",
-    "active",
-    "current",
-    "active-profile",
-    "current-profile",
-}
-AUTO_INLINE_MODEL_TOKENS = {
-    "",
-    "__auto__",
-    "__active__",
-    "auto",
-    "active",
-    "current",
-    "active-profile",
-    "current-profile",
-}
 
 try:
     import pandas as pd  # type: ignore
@@ -362,6 +344,7 @@ class WorkflowEngine:
     _extract_result_image_urls = workflow_extract_result_image_urls
     _extract_first_image_url = workflow_extract_first_image_url
     _extract_first_video_url = workflow_extract_first_video_url
+    _extract_first_audio_url = workflow_extract_first_audio_url
     _resolve_agent_reference_image_url = workflow_resolve_agent_reference_image_url
     _resolve_agent_source_video_input = workflow_resolve_agent_source_video_input
     _resolve_agent_source_video_url = workflow_resolve_agent_source_video_url

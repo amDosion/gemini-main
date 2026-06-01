@@ -1,9 +1,12 @@
 import { requestJson } from './http';
+import {
+  isSafeWorkflowPreviewMediaUrl,
+  normalizeWorkflowPreviewImageUrls,
+} from './workflowPreviewUrlPolicy';
 
 const REQUEST_FAILED_STATUS_RE = /^Request failed:\s*(\d+)$/;
 const PREVIEW_FETCH_FAILED_MESSAGE = '加载图片预览失败';
 const MEDIA_PREVIEW_FETCH_FAILED_MESSAGE = '加载媒体预览失败';
-const INLINE_MEDIA_DATA_URL_MAX_CHARS = 4096;
 
 export type WorkflowHistoryMediaKind = 'audio' | 'video';
 
@@ -84,23 +87,8 @@ const toNonNegativeInteger = (value: unknown, fallback: number): number => {
 
 const extractPreviewImageUrls = (payload: WorkflowPreviewPayload | null | undefined): string[] => {
   const previewItems = Array.isArray(payload?.images) ? payload.images : [];
-  return previewItems
-    .map((item: { dataUrl?: string }) => item?.dataUrl)
-    .filter((url: unknown): url is string => typeof url === 'string' && url.trim().length > 0);
-};
-
-const isSafeWorkflowMediaPreviewUrl = (value: unknown): value is string => {
-  if (typeof value !== 'string') return false;
-  const trimmed = value.trim();
-  if (!trimmed) return false;
-  const lowered = trimmed.toLowerCase();
-  if (lowered.startsWith('data:audio/') || lowered.startsWith('data:video/')) {
-    return trimmed.length <= INLINE_MEDIA_DATA_URL_MAX_CHARS;
-  }
-  return (
-    lowered.startsWith('/api/') ||
-    lowered.startsWith('https://') ||
-    lowered.startsWith('http://')
+  return normalizeWorkflowPreviewImageUrls(
+    previewItems.map((item: { dataUrl?: string }) => item?.dataUrl)
   );
 };
 
@@ -118,7 +106,7 @@ const extractPreviewMediaItems = (
   const previewItems = Array.isArray(payload?.items) ? payload.items : [];
   return previewItems
     .map((item, index) => {
-      const previewUrl = isSafeWorkflowMediaPreviewUrl(item?.previewUrl) ? item.previewUrl.trim() : '';
+      const previewUrl = isSafeWorkflowPreviewMediaUrl(item?.previewUrl) ? item.previewUrl.trim() : '';
       if (!previewUrl) {
         return null;
       }

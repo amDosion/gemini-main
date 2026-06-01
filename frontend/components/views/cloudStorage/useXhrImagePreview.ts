@@ -1,16 +1,24 @@
-import { MutableRefObject, useEffect, useMemo, useState } from 'react';
+import { MutableRefObject, useCallback, useEffect, useMemo, useState } from 'react';
 import { downloadBlobWithXhr, type DownloadBlobResult } from '../../../services/httpProgress';
 import {
-  cachePreviewBlobObjectUrl,
+  evictCachedPreviewObjectUrl,
   getCachedPreviewObjectUrl,
-  getCachedPreviewObjectUrlSync,
   savePreviewBlobToCache
 } from '../../../services/previewCache';
+import {
+  capturePrivateCacheLifecycleSnapshot,
+  isPrivateCacheLifecycleSnapshotCurrent
+} from '../../../services/privateCacheInvalidation';
+import {
+  getPrivateCacheScopeSegment
+} from '../../../services/privateCacheScope';
 import {
   isSafeStoragePreviewCandidateUrl,
   isStoragePreviewProxyUrl
 } from '../../../services/storagePreviewService';
 import { getErrorMessage } from '../../../utils/errorMessage';
+import { usePrivateCacheScopeRevision } from '../../../hooks/usePrivateCacheScopeRevision';
+import { useRetainedBlobObjectUrlState } from '../../../hooks/useRetainedBlobObjectUrlState';
 
 export interface PreviewLoadFailure {
   url: string;
@@ -50,6 +58,9 @@ const buildPreviewCacheKey = (candidateUrl: string, resetKey: string): string =>
   const normalizedResetKey = String(resetKey || '').trim();
   return normalizedResetKey ? `${normalizedCandidate}::${normalizedResetKey}` : normalizedCandidate;
 };
+
+const buildPreviewRequestKey = (cacheKey: string): string =>
+  `${getPrivateCacheScopeSegment()}:${cacheKey}`;
 
 const removeQueuedPreviewDownload = (requestKey: string): void => {
   const queueIndex = queuedPreviewDownloadKeys.indexOf(requestKey);
@@ -192,11 +203,18 @@ export const useXhrImagePreview = (
   failedPreviewUrlsRef: MutableRefObject<Set<string>>,
   resetKey: string,
   options: UseXhrImagePreviewOptions = {}
-): { src: string | null; exhausted: boolean; lastFailure: PreviewLoadFailure | null } => {
+): {
+  src: string | null;
+  exhausted: boolean;
+  lastFailure: PreviewLoadFailure | null;
+  recoverFromImageError: (failedSrc?: string | null) => boolean;
+} => {
   const { enabled = true } = options;
-  const [src, setSrc] = useState<string | null>(null);
+  const scopeVersion = usePrivateCacheScopeRevision();
+  const [src, setRetainedSrc] = useRetainedBlobObjectUrlState(null);
   const [exhausted, setExhausted] = useState(false);
   const [lastFailure, setLastFailure] = useState<PreviewLoadFailure | null>(null);
+  const [reloadRevision, setReloadRevision] = useState(0);
   const safeCandidates = useMemo(() => {
     const uniqueCandidates = new Set<string>();
     candidates.forEach((candidate) => {
@@ -208,24 +226,54 @@ export const useXhrImagePreview = (
     });
     return Array.from(uniqueCandidates);
   }, [candidates]);
-  const immediateCachedSrc = useMemo(
-    () =>
-      safeCandidates
-        .map((candidate) => getCachedPreviewObjectUrlSync(buildPreviewCacheKey(candidate, resetKey)))
-        .find((candidate): candidate is string => typeof candidate === 'string' && candidate.length > 0) || null,
-    [safeCandidates, resetKey]
+  const recoverFromImageError = useCallback(
+    (failedSrc?: string | null): boolean => {
+      const normalizedFailedSrc = String(failedSrc || '').trim();
+      if (
+        !normalizedFailedSrc ||
+        normalizedFailedSrc !== src ||
+        !normalizedFailedSrc.toLowerCase().startsWith('blob:')
+      ) {
+        return false;
+      }
+
+      const didEvict = safeCandidates.some((candidate) =>
+        evictCachedPreviewObjectUrl(buildPreviewCacheKey(candidate, resetKey), normalizedFailedSrc)
+      );
+      if (!didEvict) return false;
+
+      setRetainedSrc(null);
+      setExhausted(false);
+      setLastFailure(null);
+      setReloadRevision((current) => current + 1);
+      return true;
+    },
+    [resetKey, safeCandidates, setRetainedSrc, src]
   );
 
   useEffect(() => {
     let cancelled = false;
     let pendingRelease: (() => void) | null = null;
+    const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
+    const isCurrent = () =>
+      !cancelled && isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot);
+
+    const readPersistentCachedPreview = async (): Promise<string | null> => {
+      for (const candidate of safeCandidates) {
+        if (failedPreviewUrlsRef.current.has(candidate)) {
+          continue;
+        }
+
+        const cacheKey = buildPreviewCacheKey(candidate, resetKey);
+        const cachedObjectUrl = await getCachedPreviewObjectUrl(cacheKey, { allowMemory: false });
+        if (!isCurrent()) return null;
+        if (cachedObjectUrl) return cachedObjectUrl;
+      }
+      return null;
+    };
 
     const loadPreview = async () => {
-      if (immediateCachedSrc) {
-        setSrc(immediateCachedSrc);
-      } else {
-        setSrc(null);
-      }
+      setRetainedSrc(null);
       setExhausted(false);
       setLastFailure(null);
       for (const candidate of safeCandidates) {
@@ -234,24 +282,27 @@ export const useXhrImagePreview = (
         }
 
         const cacheKey = buildPreviewCacheKey(candidate, resetKey);
-        const cachedObjectUrl = await getCachedPreviewObjectUrl(cacheKey);
+        const cachedObjectUrl = await getCachedPreviewObjectUrl(cacheKey, { allowMemory: false });
+        if (!isCurrent()) return;
         if (cachedObjectUrl) {
-          if (cancelled) return;
-          setSrc(cachedObjectUrl);
+          setRetainedSrc(cachedObjectUrl);
           return;
         }
-        if (cancelled) return;
 
         try {
-          const requestHandle = acquirePreviewBlobDownload(candidate, cacheKey);
+          const requestHandle = acquirePreviewBlobDownload(candidate, buildPreviewRequestKey(cacheKey));
           pendingRelease = requestHandle.release;
           const { blob, headers } = await requestHandle.promise;
-          await savePreviewBlobToCache(cacheKey, blob, headers['content-type'] || null);
-          const objectUrl = cachePreviewBlobObjectUrl(cacheKey, blob) || URL.createObjectURL(blob);
-          if (cancelled) return;
-          setSrc(objectUrl);
+          if (!isCurrent()) return;
+          const cachedObjectUrl = await savePreviewBlobToCache(cacheKey, blob, headers['content-type'] || null);
+          if (!isCurrent()) return;
+          if (!cachedObjectUrl) {
+            throw new Error('Preview cache did not return an object URL');
+          }
+          setRetainedSrc(cachedObjectUrl);
           return;
         } catch (error) {
+          if (!isCurrent()) return;
           const httpStatus = parsePreviewErrorHttpStatus(error);
           const message = getErrorMessage(error);
           failedPreviewUrlsRef.current.add(candidate);
@@ -271,17 +322,22 @@ export const useXhrImagePreview = (
     };
 
     if (safeCandidates.length === 0) {
-      setSrc(null);
+      setRetainedSrc(null);
       setExhausted(true);
       setLastFailure(null);
       return () => undefined;
     }
 
     if (!enabled) {
-      setSrc(immediateCachedSrc);
       setExhausted(false);
       setLastFailure(null);
-      return () => undefined;
+      void readPersistentCachedPreview().then((cachedObjectUrl) => {
+        if (!isCurrent()) return;
+        setRetainedSrc(cachedObjectUrl);
+      });
+      return () => {
+        cancelled = true;
+      };
     }
 
     void loadPreview();
@@ -290,7 +346,15 @@ export const useXhrImagePreview = (
       pendingRelease?.();
       pendingRelease = null;
     };
-  }, [enabled, failedPreviewUrlsRef, immediateCachedSrc, resetKey, safeCandidates]);
+  }, [
+    enabled,
+    failedPreviewUrlsRef,
+    reloadRevision,
+    resetKey,
+    safeCandidates,
+    scopeVersion,
+    setRetainedSrc
+  ]);
 
-  return { src, exhausted, lastFailure };
+  return { src, exhausted, lastFailure, recoverFromImageError };
 };

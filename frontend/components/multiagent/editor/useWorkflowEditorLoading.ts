@@ -51,6 +51,69 @@ type SetNodes = (
 ) => void;
 type SetEdges = (updater: Edge[] | ((prev: Edge[]) => Edge[])) => void;
 
+const toPreviewStringList = (items: unknown): string[] =>
+  Array.isArray(items) ? items.map((item) => String(item || '').trim()).filter(Boolean) : [];
+
+const mergeWorkflowEndResult = ({
+  rawResult,
+  nodeType,
+  existingResult,
+  finalResult,
+  previewImages,
+  previewAudioUrls,
+  previewVideoUrls,
+}: {
+  rawResult: unknown;
+  nodeType: string;
+  existingResult: unknown;
+  finalResult: unknown;
+  previewImages: string[];
+  previewAudioUrls: string[];
+  previewVideoUrls: string[];
+}) => {
+  const normalizedNodeType = String(nodeType || '').toLowerCase();
+  if (normalizedNodeType !== 'end') {
+    return rawResult;
+  }
+  const mergedFinalResult =
+    finalResult !== undefined && finalResult !== null
+      ? mergePreviewImagesIntoResult(finalResult, extractImageUrls(rawResult))
+      : rawResult;
+  let mergedWithPreview = mergePreviewImagesIntoResult(mergedFinalResult, previewImages);
+  if (previewAudioUrls.length > 0) {
+    mergedWithPreview = mergePreviewMediaIntoResult(mergedWithPreview, 'audio', previewAudioUrls);
+  }
+  if (previewVideoUrls.length > 0) {
+    mergedWithPreview = mergePreviewMediaIntoResult(mergedWithPreview, 'video', previewVideoUrls);
+  }
+  const existingImages = extractImageUrls(existingResult);
+  const existingAudioUrls = extractAudioUrls(existingResult);
+  const existingVideoUrls = extractVideoUrls(existingResult);
+  if (
+    existingImages.length === 0 &&
+    existingAudioUrls.length === 0 &&
+    existingVideoUrls.length === 0
+  ) {
+    return mergedWithPreview;
+  }
+  let mergedExistingResult = mergePreviewImagesIntoResult(mergedWithPreview, existingImages);
+  if (existingAudioUrls.length > 0) {
+    mergedExistingResult = mergePreviewMediaIntoResult(
+      mergedExistingResult,
+      'audio',
+      existingAudioUrls
+    );
+  }
+  if (existingVideoUrls.length > 0) {
+    mergedExistingResult = mergePreviewMediaIntoResult(
+      mergedExistingResult,
+      'video',
+      existingVideoUrls
+    );
+  }
+  return mergedExistingResult;
+};
+
 export interface UseWorkflowEditorLoadingArgs {
   executionStatus?: ExecutionStatus;
   loadedWorkflow?: {
@@ -60,6 +123,7 @@ export interface UseWorkflowEditorLoadingArgs {
     edges: WorkflowEdge[];
     prompt?: string;
     input?: Record<string, any>;
+    executionStatus?: ExecutionStatus;
   } | null;
   nodes: Node<WorkflowNodeData>[];
   setNodes: SetNodes;
@@ -82,7 +146,6 @@ export interface UseWorkflowEditorLoadingArgs {
   setFinalCompletedAt: React.Dispatch<React.SetStateAction<number | null>>;
   setFinalRuntime: React.Dispatch<React.SetStateAction<string>>;
   setFinalRuntimeHints: React.Dispatch<React.SetStateAction<string[]>>;
-  setShowResultPanel: React.Dispatch<React.SetStateAction<boolean>>;
   addLog: AddLog;
 }
 
@@ -108,7 +171,6 @@ export const useWorkflowEditorLoading = ({
   setFinalCompletedAt,
   setFinalRuntime,
   setFinalRuntimeHints,
-  setShowResultPanel,
   addLog,
 }: UseWorkflowEditorLoadingArgs): void => {
   useEffect(() => {
@@ -116,67 +178,20 @@ export const useWorkflowEditorLoading = ({
       return;
     }
 
-    const previewImages = Array.isArray(executionStatus.resultPreviewImageUrls)
-      ? executionStatus.resultPreviewImageUrls
-      : [];
-    const previewAudioUrls = Array.isArray(executionStatus.resultPreviewAudioUrls)
-      ? executionStatus.resultPreviewAudioUrls
-      : [];
-    const previewVideoUrls = Array.isArray(executionStatus.resultPreviewVideoUrls)
-      ? executionStatus.resultPreviewVideoUrls
-      : [];
+    const previewImages = toPreviewStringList(executionStatus.resultPreviewImageUrls);
+    const previewAudioUrls = toPreviewStringList(executionStatus.resultPreviewAudioUrls);
+    const previewVideoUrls = toPreviewStringList(executionStatus.resultPreviewVideoUrls);
     const finalResult = executionStatus.finalResult;
-    const mergeNodeResult = (rawResult: unknown, nodeType: string, existingResult: unknown) => {
-      const normalizedNodeType = String(nodeType || '').toLowerCase();
-      if (normalizedNodeType !== 'end') {
-        return rawResult;
-      }
-      const mergedFinalResult =
-        finalResult !== undefined && finalResult !== null
-          ? mergePreviewImagesIntoResult(finalResult, extractImageUrls(rawResult))
-          : rawResult;
-      let mergedWithPreview = mergePreviewImagesIntoResult(mergedFinalResult, previewImages);
-      if (previewAudioUrls.length > 0) {
-        mergedWithPreview = mergePreviewMediaIntoResult(
-          mergedWithPreview,
-          'audio',
-          previewAudioUrls
-        );
-      }
-      if (previewVideoUrls.length > 0) {
-        mergedWithPreview = mergePreviewMediaIntoResult(
-          mergedWithPreview,
-          'video',
-          previewVideoUrls
-        );
-      }
-      const existingImages = extractImageUrls(existingResult);
-      const existingAudioUrls = extractAudioUrls(existingResult);
-      const existingVideoUrls = extractVideoUrls(existingResult);
-      if (
-        existingImages.length === 0 &&
-        existingAudioUrls.length === 0 &&
-        existingVideoUrls.length === 0
-      ) {
-        return mergedWithPreview;
-      }
-      let mergedExistingResult = mergePreviewImagesIntoResult(mergedWithPreview, existingImages);
-      if (existingAudioUrls.length > 0) {
-        mergedExistingResult = mergePreviewMediaIntoResult(
-          mergedExistingResult,
-          'audio',
-          existingAudioUrls
-        );
-      }
-      if (existingVideoUrls.length > 0) {
-        mergedExistingResult = mergePreviewMediaIntoResult(
-          mergedExistingResult,
-          'video',
-          existingVideoUrls
-        );
-      }
-      return mergedExistingResult;
-    };
+    const mergeNodeResult = (rawResult: unknown, nodeType: string, existingResult: unknown) =>
+      mergeWorkflowEndResult({
+        rawResult,
+        nodeType,
+        existingResult,
+        finalResult,
+        previewImages,
+        previewAudioUrls,
+        previewVideoUrls,
+      });
 
     setNodes((nds) =>
       nds.map((node) => {
@@ -245,12 +260,6 @@ export const useWorkflowEditorLoading = ({
       return;
     }
 
-    const signature = `${executionStatus?.executionId || ''}:${executionStatus?.completedAt || ''}:${status}`;
-    if (signature === lastResultSignatureRef.current) {
-      return;
-    }
-    lastResultSignatureRef.current = signature;
-
     const statusPreviewImages = Array.isArray(executionStatus?.resultPreviewImageUrls)
       ? executionStatus.resultPreviewImageUrls
           .map((item) => String(item || '').trim())
@@ -266,6 +275,17 @@ export const useWorkflowEditorLoading = ({
           .map((item) => String(item || '').trim())
           .filter(Boolean)
       : [];
+    const previewSignature = [
+      statusPreviewImages.join('|'),
+      statusPreviewAudioUrls.join('|'),
+      statusPreviewVideoUrls.join('|'),
+    ].join('::');
+    const signature = `${executionStatus?.executionId || ''}:${executionStatus?.completedAt || ''}:${status}:${previewSignature}`;
+    if (signature === lastResultSignatureRef.current) {
+      return;
+    }
+    lastResultSignatureRef.current = signature;
+
     let mergedFinalResult = mergePreviewImagesIntoResult(
       executionStatus?.finalResult ?? null,
       statusPreviewImages
@@ -293,7 +313,6 @@ export const useWorkflowEditorLoading = ({
         ? executionStatus.runtimeHints.map((hint) => String(hint || '').trim()).filter(Boolean)
         : []
     );
-    setShowResultPanel(true);
   }, [
     executionStatus?.executionId,
     executionStatus?.completedAt,
@@ -312,7 +331,6 @@ export const useWorkflowEditorLoading = ({
     setFinalResult,
     setFinalRuntime,
     setFinalRuntimeHints,
-    setShowResultPanel,
   ]);
 
   useEffect(() => {
@@ -360,38 +378,107 @@ export const useWorkflowEditorLoading = ({
       typeof loadedInput.fileUrl === 'string' ? [loadedInput.fileUrl.trim()] : []
     );
     const loadedFileUrl = loadedFileUrls[0] || '';
-    const hydratedNodes = normalizedNodesWithPortLayout.map((node) => {
-      const nodeType = (node?.data?.type || node?.type || '').toLowerCase();
-      if (!['start', 'input_text', 'input_image', 'input_file'].includes(nodeType)) {
+    const loadedExecutionStatus = loadedWorkflow.executionStatus;
+    const loadedPreviewImages = toPreviewStringList(loadedExecutionStatus?.resultPreviewImageUrls);
+    const loadedPreviewAudioUrls = toPreviewStringList(
+      loadedExecutionStatus?.resultPreviewAudioUrls
+    );
+    const loadedPreviewVideoUrls = toPreviewStringList(
+      loadedExecutionStatus?.resultPreviewVideoUrls
+    );
+    const applyLoadedExecutionState = (node: Node<WorkflowNodeData>) => {
+      if (!loadedExecutionStatus) {
         return node;
       }
+
+      const nodeType = String(node?.data?.type || node?.type || '')
+        .trim()
+        .toLowerCase();
       const nextData: Record<string, any> = { ...node.data };
-      if (nodeType === 'start' || nodeType === 'input_text') {
-        nextData.startTask = String(node.data?.startTask || loadedPrompt || '');
+      const nodeStatus = loadedExecutionStatus.nodeStatuses?.[node.id];
+      if (nodeStatus) {
+        nextData.status = nodeStatus;
       }
-      if (nodeType === 'start' || nodeType === 'input_image') {
-        const nodeImageUrls = mergeUniqueStringList(
-          normalizeStringList(node.data?.startImageUrls),
-          node.data?.startImageUrl ? [String(node.data.startImageUrl).trim()] : [],
-          loadedImageUrls
-        );
-        nextData.startImageUrl = nodeImageUrls[0] || '';
-        nextData.startImageUrls = nodeImageUrls;
+      const nodeProgress = loadedExecutionStatus.nodeProgress?.[node.id];
+      if (nodeProgress !== undefined) {
+        nextData.progress = nodeProgress;
       }
-      if (nodeType === 'start' || nodeType === 'input_file') {
-        const nodeFileUrls = mergeUniqueStringList(
-          normalizeStringList(node.data?.startFileUrls),
-          node.data?.startFileUrl ? [String(node.data.startFileUrl).trim()] : [],
-          loadedFileUrls
-        );
-        nextData.startFileUrl = nodeFileUrls[0] || '';
-        nextData.startFileUrls = nodeFileUrls;
+
+      const nodeResult = loadedExecutionStatus.nodeResults?.[node.id];
+      if (nodeResult !== undefined && nodeResult !== null) {
+        nextData.result = mergeWorkflowEndResult({
+          rawResult: nodeResult,
+          nodeType,
+          existingResult: node.data?.result,
+          finalResult: loadedExecutionStatus.finalResult,
+          previewImages: loadedPreviewImages,
+          previewAudioUrls: loadedPreviewAudioUrls,
+          previewVideoUrls: loadedPreviewVideoUrls,
+        });
+      } else if (
+        nodeType === 'end' &&
+        loadedExecutionStatus.finalResult !== undefined &&
+        loadedExecutionStatus.finalResult !== null
+      ) {
+        nextData.result = mergeWorkflowEndResult({
+          rawResult: loadedExecutionStatus.finalResult,
+          nodeType,
+          existingResult: node.data?.result,
+          finalResult: loadedExecutionStatus.finalResult,
+          previewImages: loadedPreviewImages,
+          previewAudioUrls: loadedPreviewAudioUrls,
+          previewVideoUrls: loadedPreviewVideoUrls,
+        });
       }
+
+      const nodeError = loadedExecutionStatus.nodeErrors?.[node.id];
+      if (nodeError) {
+        nextData.error = nodeError;
+      }
+      const nodeRuntime = loadedExecutionStatus.nodeRuntimes?.[node.id];
+      if (nodeRuntime) {
+        nextData.runtime = nodeRuntime;
+      }
+
       return {
         ...node,
         data: nextData,
       };
-    });
+    };
+    const hydratedNodes = normalizedNodesWithPortLayout
+      .map((node) => {
+        const nodeType = (node?.data?.type || node?.type || '').toLowerCase();
+        if (!['start', 'input_text', 'input_image', 'input_file'].includes(nodeType)) {
+          return node;
+        }
+        const nextData: Record<string, any> = { ...node.data };
+        if (nodeType === 'start' || nodeType === 'input_text') {
+          nextData.startTask = String(node.data?.startTask || loadedPrompt || '');
+        }
+        if (nodeType === 'start' || nodeType === 'input_image') {
+          const nodeImageUrls = mergeUniqueStringList(
+            normalizeStringList(node.data?.startImageUrls),
+            node.data?.startImageUrl ? [String(node.data.startImageUrl).trim()] : [],
+            loadedImageUrls
+          );
+          nextData.startImageUrl = nodeImageUrls[0] || '';
+          nextData.startImageUrls = nodeImageUrls;
+        }
+        if (nodeType === 'start' || nodeType === 'input_file') {
+          const nodeFileUrls = mergeUniqueStringList(
+            normalizeStringList(node.data?.startFileUrls),
+            node.data?.startFileUrl ? [String(node.data.startFileUrl).trim()] : [],
+            loadedFileUrls
+          );
+          nextData.startFileUrl = nodeFileUrls[0] || '';
+          nextData.startFileUrls = nodeFileUrls;
+        }
+        return {
+          ...node,
+          data: nextData,
+        };
+      })
+      .map((node) => applyLoadedExecutionState(node as Node<WorkflowNodeData>));
 
     let cancelled = false;
     void (async () => {

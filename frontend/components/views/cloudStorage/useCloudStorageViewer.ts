@@ -37,6 +37,7 @@ interface UseCloudStorageViewerResult {
   currentViewerImageSrc: string | null;
   currentViewerImageExhausted: boolean;
   currentViewerVideoSrc: string | null;
+  handleViewerImagePreviewError: (failedSrc?: string | null) => boolean;
   handleViewerPreviewError: () => void;
 }
 
@@ -95,11 +96,16 @@ export function useCloudStorageViewer({
     () => (currentViewerKind === 'image' ? currentViewerPreviewCandidates : []),
     [currentViewerKind, currentViewerPreviewCandidates]
   );
-  const { src: currentViewerImageSrc, exhausted: currentViewerImageExhausted } = useXhrImagePreview(
+  const currentViewerImagePreview = useXhrImagePreview(
     currentViewerImageCandidates,
     failedPreviewUrlsRef,
     `${currentViewerFile?.path || ''}:${currentViewerFile?.url || ''}:${currentViewerFile?.previewUrl || ''}:${storageRevision ?? ''}`
   );
+  const {
+    src: currentViewerImageSrc,
+    exhausted: currentViewerImageExhausted,
+    recoverFromImageError: handleViewerImagePreviewError
+  } = currentViewerImagePreview;
 
   useEffect(() => {
     if (currentViewerKind !== 'video') {
@@ -180,6 +186,7 @@ export function useCloudStorageViewer({
     currentViewerImageSrc,
     currentViewerImageExhausted,
     currentViewerVideoSrc,
+    handleViewerImagePreviewError,
     handleViewerPreviewError
   };
 }

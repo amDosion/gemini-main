@@ -23,6 +23,7 @@
 import React, { memo, useMemo } from 'react';
 import { Crop, AlertCircle, Wand2, Loader2 } from 'lucide-react';
 import { Attachment } from '../../../types/types';
+import { CachedImage } from '../../common/CachedImage';
 import { ImageCompare } from '../../common/ImageCompare';
 import { ImageCanvasControls } from '../../common/ImageCanvasControls';
 import {
@@ -32,6 +33,7 @@ import {
   getMaskModeDisplayLabel,
 } from '../../../utils/maskHelpers';
 import { MaskToolbar } from './MaskToolbar';
+import { MaskPreviewImage } from './MaskPreviewImage';
 
 export type MaskCanvasPainterProps = {
   loadingState: string;
@@ -246,9 +248,14 @@ export const MaskCanvasPainter = memo(
               className="relative shadow-2xl group transition-transform duration-75 ease-out"
               style={canvasStyle}
             >
-              <img
+              <CachedImage
                 ref={imageRef}
+                source={{
+                  url: activeImageUrl,
+                  mimeType: 'image/png',
+                }}
                 src={activeImageUrl}
+                rawFallbackDelayMs={300}
                 className="max-w-none rounded-lg border border-slate-800"
                 style={{ maxHeight: '80vh', maxWidth: '80vw' }}
                 alt="Main Canvas"
@@ -256,7 +263,7 @@ export const MaskCanvasPainter = memo(
               {/* 自动 Mask 主画布反馈层 */}
               {isAutoMaskMode && maskPreviewUrl && (
                 <div className="absolute inset-0 rounded-lg pointer-events-none overflow-hidden">
-                  <img
+                  <MaskPreviewImage
                     src={maskPreviewUrl}
                     alt={`${maskModeLabel} Mask 覆盖层`}
                     className="absolute inset-0 w-full h-full object-fill opacity-60"
@@ -498,7 +505,7 @@ export const MaskCanvasPainter = memo(
                   {isAutoMaskMode ? `${maskModeLabel} Mask` : 'Mask Preview'}
                 </div>
                 <div className="relative w-24 h-24 rounded-lg overflow-hidden border border-slate-600 bg-black">
-                  <img
+                  <MaskPreviewImage
                     src={maskPreviewUrl}
                     alt="Mask Preview"
                     className="w-full h-full object-contain"

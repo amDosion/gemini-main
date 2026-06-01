@@ -58,8 +58,16 @@ def assemble_messages_v3(
 
         # 附加附件
         atts = attachments_by_message.get(idx.id, [])
+        openai_response_id = (
+            msg_dict.get('openai_response_id')
+            or msg_dict.get('openaiResponseId')
+        )
         if atts:
-            msg_dict['attachments'] = [att.to_dict() for att in atts]
+            attachment_dicts = [att.to_dict() for att in atts]
+            if openai_response_id:
+                for attachment in attachment_dicts:
+                    attachment.setdefault('openai_response_id', openai_response_id)
+            msg_dict['attachments'] = attachment_dicts
         else:
             msg_dict['attachments'] = []
 

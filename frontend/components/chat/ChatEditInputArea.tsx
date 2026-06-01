@@ -10,10 +10,21 @@
  * - 根据模式显示不同的按钮文本和图标
  */
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { ChatOptions, Attachment, AppMode, Message } from '../../types/types';
+import { ChatOptions, Attachment, AppMode, Message, ModelConfig } from '../../types/types';
 import { Wand2, Image as ImageIcon, Paperclip, X, Expand, Crop, Sparkles, Send, Mic } from 'lucide-react';
 import { processUserAttachments } from '../../hooks/handlers/attachmentUtils';
+import { useClipboardAttachments } from '../../hooks/useClipboardAttachments';
+import { ModeControlsSchema, useModeControlsSchema } from '../../hooks/useModeControlsSchema';
+import {
+  getUnsupportedParams,
+  supportsBooleanParam,
+} from '../../controls/shared/modeControlSchemaUtils';
 import { AttachmentPreview } from './input/AttachmentPreview';
+import {
+  applyDefaultVideoAttachmentRoles,
+  getVideoAttachmentRoleOptions,
+} from './input/videoAttachmentRoleOptions';
+import { getPreferredAttachmentUrl } from '../../utils/attachmentUrl';
 import { ControlsState } from '../../controls/types';
 import { useToastContext } from '../../contexts/ToastContext';
 
@@ -36,6 +47,8 @@ interface ChatEditInputAreaProps {
   initialPrompt?: string;
   initialAttachments?: Attachment[];
   providerId?: string;
+  currentModel?: ModelConfig;
+  controlsSchema?: ModeControlsSchema | null;
   /** controls 状态（由父 View 通过 useControlsState 创建，与参数面板共享同一实例） */
   controls: ControlsState;
   // 可选：自定义按钮文本和图标（如果不提供，会根据 mode 自动选择）
@@ -115,6 +128,29 @@ const getModeButtonConfig = (mode: AppMode, hasAttachmentsOrImage: boolean) => {
   };
 };
 
+const SCHEMA_BACKED_IMAGE_EDIT_MODES = new Set<AppMode>([
+  'image-chat-edit',
+  'image-mask-edit',
+  'image-inpainting',
+  'image-background-edit',
+  'image-recontext',
+  'image-outpainting',
+  'virtual-try-on',
+]);
+
+const IMAGE_COUNT_OPTION_MODES = new Set<AppMode>([
+  'image-chat-edit',
+  'image-mask-edit',
+  'image-inpainting',
+  'image-background-edit',
+  'image-recontext',
+  'image-outpainting',
+  'virtual-try-on',
+]);
+
+const VIDEO_EXTENSION_PROMPT_PLACEHOLDER =
+  '全局/基础视频提示词：描述主体、风格、镜头和约束；延长分镜只写每段变化...';
+
 const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
   onSend,
   isLoading,
@@ -130,6 +166,8 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
   initialPrompt,
   initialAttachments,
   providerId = 'google',
+  currentModel,
+  controlsSchema,
   controls,
   buttonText,
   buttonIcon,
@@ -144,6 +182,58 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
   const attachmentLimit = maxAttachments;
   const requiresAttachmentForMode = !['video-gen', 'audio-gen'].includes(mode);
   const requiresPromptForMode = mode !== 'image-outpainting';
+  const supportsAttachments = mode !== 'audio-gen';
+  const normalizedProviderId = (providerId || '').trim().toLowerCase();
+  const shouldUseImageEditSchema =
+    ['openai', 'tongyi'].includes(normalizedProviderId) && SCHEMA_BACKED_IMAGE_EDIT_MODES.has(mode);
+  const fetchedImageEditSchema = useModeControlsSchema(
+    providerId,
+    mode,
+    currentModel?.id,
+    {
+      enabled: shouldUseImageEditSchema && controlsSchema === undefined,
+    },
+  );
+  const effectiveControlsSchema =
+    controlsSchema === undefined ? fetchedImageEditSchema.schema : controlsSchema;
+  const attachmentAccept = useMemo(() => {
+    if (mode !== 'video-gen') {
+      return 'image/*';
+    }
+
+    const accepts = ['image/*', 'video/*'];
+    const supportsAudio = effectiveControlsSchema?.videoContract?.attachmentSlots?.some(
+      (slot) => slot.enabled !== false && slot.kind === 'audio'
+    );
+    if (supportsAudio) {
+      accepts.push('audio/*');
+    }
+    return accepts.join(',');
+  }, [effectiveControlsSchema, mode]);
+  const shouldUseOpenAIImageEditSchema =
+    normalizedProviderId === 'openai' && SCHEMA_BACKED_IMAGE_EDIT_MODES.has(mode);
+  const openAIParamOptions = shouldUseOpenAIImageEditSchema
+    ? effectiveControlsSchema?.paramOptions ?? {}
+    : {};
+  const tongyiUnsupportedParams = useMemo(
+    () =>
+      normalizedProviderId === 'tongyi'
+        ? getUnsupportedParams(effectiveControlsSchema)
+        : new Set<string>(),
+    [effectiveControlsSchema, normalizedProviderId]
+  );
+  const supportsTongyiNegativePrompt = !tongyiUnsupportedParams.has('negative_prompt');
+  const supportsTongyiPromptExtend = !tongyiUnsupportedParams.has('prompt_extend');
+  const supportsTongyiThinkingMode =
+    !tongyiUnsupportedParams.has('thinking_mode') &&
+    supportsBooleanParam(effectiveControlsSchema, 'thinking_mode');
+  const supportsOpenAIQualityControls = Boolean(openAIParamOptions.quality?.length);
+  const supportsOpenAIBackgroundControls = Boolean(openAIParamOptions.background?.length);
+  const supportsOpenAIModerationControls = Boolean(openAIParamOptions.moderation?.length);
+  const supportsOpenAIOutputFormatControls = Boolean(openAIParamOptions.output_format?.length);
+  const supportsOpenAICompressionControls = Boolean(
+    effectiveControlsSchema?.numericRanges?.output_compression_quality
+  );
 
   // 提示词状态（仅此组件内部管理）
   const [prompt, setPrompt] = useState(initialPrompt || '');
@@ -157,51 +247,54 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
   useEffect(() => {
     if (initialAttachments !== undefined && initialAttachments.length > 0) {
       onAttachmentsChange(initialAttachments);
-      const firstUrl = initialAttachments[0].url || initialAttachments[0].tempUrl || null;
+      const firstUrl = getPreferredAttachmentUrl(initialAttachments[0]);
       onActiveImageUrlChange(firstUrl);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // 只在挂载时执行一次
+
+  const { handlePaste: handleAttachmentPaste, appendFiles } = useClipboardAttachments({
+    mode,
+    attachments: activeAttachments,
+    onAttachmentsChange,
+    maxAttachments: attachmentLimit,
+    acceptedTypes: attachmentAccept,
+    disabled: isLoading || !supportsAttachments,
+    onError: showError,
+  });
+
+  const getAttachmentRoleOptions = useCallback(
+    (attachment: Attachment) => {
+      if (mode !== 'video-gen') return [];
+      return getVideoAttachmentRoleOptions(effectiveControlsSchema, attachment);
+    },
+    [effectiveControlsSchema, mode]
+  );
+
+  const handleAttachmentRoleChange = useCallback(
+    (attachmentId: string, role: string) => {
+      onAttachmentsChange(
+        activeAttachments.map((attachment) =>
+          attachment.id === attachmentId
+            ? {
+                ...attachment,
+                role,
+              }
+            : attachment
+        )
+      );
+    },
+    [activeAttachments, onAttachmentsChange]
+  );
 
   // 文件上传处理（✅ 支持多文件选择）
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    // 计算还能添加多少个附件
-    const remainingSlots = attachmentLimit - activeAttachments.length;
-    if (remainingSlots <= 0) {
-      showError(`最多只能上传 ${attachmentLimit} 个参考文件`);
-      if (e.target) e.target.value = '';
-      return;
-    }
-
-    // 只取允许数量的文件
-    const filesToAdd = Array.from(files).slice(0, remainingSlots);
-
-    // 创建新附件数组
-    const newAttachments: Attachment[] = filesToAdd.map((file, index) => {
-      const url = URL.createObjectURL(file);
-      return {
-        id: `att-${Date.now()}-${index}`,
-        name: file.name,
-        mimeType: file.type,
-        url: url,
-        tempUrl: url,
-        file: file,
-      };
-    });
-
-    // ✅ 追加到现有附件（而不是替换）
-    onAttachmentsChange([...activeAttachments, ...newAttachments]);
-
-    // 提示用户如果有文件被忽略
-    if (files.length > remainingSlots) {
-      showError(`已添加 ${remainingSlots} 个参考文件，超出部分已忽略（最多 ${attachmentLimit} 个）`);
-    }
-
+    appendFiles(files);
     if (e.target) e.target.value = '';
-  }, [activeAttachments, attachmentLimit, onAttachmentsChange, showError]);
+  }, [appendFiles]);
 
   // 删除附件
   const removeAttachment = useCallback((id: string) => {
@@ -271,25 +364,40 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
       }
 
       // ✅ 互斥逻辑：有附件用附件，没附件用画布图片
+      const requestAttachments =
+        mode === 'video-gen'
+          ? applyDefaultVideoAttachmentRoles(effectiveControlsSchema, activeAttachments)
+          : activeAttachments;
+
       const finalAttachments = await processUserAttachments(
-        activeAttachments, // 用户上传的附件
+        requestAttachments, // 用户上传的附件
         activeAttachments.length > 0 ? null : activeImageUrl, // 有附件时不用画布图片
         messages,
         sessionId,
         getFilePrefix(mode)
       );
 
+      if (requiresAttachmentForMode && finalAttachments.length === 0) {
+        showError('未能读取当前图片，请重新选择历史图片或重新上传附件');
+        return;
+      }
 
       const effectiveNumberOfImages =
         mode === 'image-outpainting' && controls.outpaintMode === 'upscale'
           ? 1
           : controls.numberOfImages;
+      const openAIContinuationResponseId =
+        normalizedProviderId === 'openai' &&
+        SCHEMA_BACKED_IMAGE_EDIT_MODES.has(mode) &&
+        activeAttachments.length === 0
+          ? activeCanvasAttachment?.openaiResponseId
+          : undefined;
       const supportsOutputMimeOptions = ![
         'image-recontext',
         'product-recontext',
         'video-gen',
         'audio-gen',
-      ].includes(mode);
+      ].includes(mode) && normalizedProviderId !== 'openai' && !supportsOpenAIOutputFormatControls;
 
       // 构建 ChatOptions
       const options: ChatOptions = {
@@ -301,6 +409,7 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
               aspectRatio: controls.aspectRatio,
               resolution: controls.resolution,
               seconds: controls.videoSeconds,
+              videoInputStrategy: controls.videoInputStrategy || undefined,
               videoExtensionCount: controls.videoExtensionCount > 0 ? controls.videoExtensionCount : undefined,
               storyboardShotSeconds: controls.storyboardShotSeconds,
               generateAudio: controls.generateAudio,
@@ -320,8 +429,11 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
               imageAspectRatio: controls.aspectRatio,
               imageResolution: controls.resolution,
             }),
-        numberOfImages: effectiveNumberOfImages,
-        negativePrompt: controls.negativePrompt || undefined,
+        ...(IMAGE_COUNT_OPTION_MODES.has(mode) ? { numberOfImages: effectiveNumberOfImages } : {}),
+        negativePrompt:
+          normalizedProviderId === 'tongyi' && !supportsTongyiNegativePrompt
+            ? undefined
+            : controls.negativePrompt || undefined,
         seed: controls.seed !== -1 ? controls.seed : undefined,
         ...(supportsOutputMimeOptions
           ? {
@@ -334,6 +446,30 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
           : {}),
         enhancePrompt: controls.enhancePrompt,
         enhancePromptModel: controls.enhancePromptModel || undefined,
+        enhancePromptThinkingLevel: controls.enhancePrompt
+          ? controls.enhancePromptThinkingLevel
+          : undefined,
+        ...(supportsOpenAIQualityControls ? { quality: controls.quality } : {}),
+        ...(supportsOpenAIBackgroundControls ? { background: controls.background } : {}),
+        ...(supportsOpenAIModerationControls ? { moderation: controls.moderation } : {}),
+        ...(supportsOpenAIOutputFormatControls
+          ? {
+              outputFormat: controls.outputFormat,
+              ...((controls.outputFormat === 'jpeg' || controls.outputFormat === 'webp') &&
+              supportsOpenAICompressionControls
+                ? { outputCompressionQuality: controls.outputCompressionQuality }
+                : {}),
+            }
+          : {}),
+        ...(openAIContinuationResponseId
+          ? { openaiPreviousResponseId: openAIContinuationResponseId }
+          : {}),
+        ...(normalizedProviderId === 'tongyi' && SCHEMA_BACKED_IMAGE_EDIT_MODES.has(mode) && supportsTongyiPromptExtend
+          ? { promptExtend: controls.promptExtend }
+          : {}),
+        ...(normalizedProviderId === 'tongyi' && SCHEMA_BACKED_IMAGE_EDIT_MODES.has(mode) && supportsTongyiThinkingMode
+          ? { thinkingMode: controls.thinkingMode }
+          : {}),
       };
 
       // ✅ Mask 编辑模式特有参数
@@ -385,7 +521,11 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
     isLoading,
     activeAttachments,
     activeImageUrl,
+    activeCanvasAttachment,
+    effectiveControlsSchema,
     messages,
+    mode,
+    normalizedProviderId,
     sessionId,
     controls,
     onSend,
@@ -395,6 +535,14 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
     requiresPromptForMode,
     externalDisabled,
     externalDisabledReason,
+    supportsOpenAIBackgroundControls,
+    supportsOpenAICompressionControls,
+    supportsOpenAIModerationControls,
+    supportsOpenAIOutputFormatControls,
+    supportsOpenAIQualityControls,
+    supportsTongyiNegativePrompt,
+    supportsTongyiPromptExtend,
+    supportsTongyiThinkingMode,
   ]);
 
   // 键盘快捷键
@@ -413,17 +561,16 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
   const finalButtonText = buttonText || modeConfig.text;
   const finalLoadingText = loadingText || modeConfig.loadingText;
   const finalButtonIcon = buttonIcon || modeConfig.icon;
-  const finalPlaceholder = placeholder || modeConfig.placeholder;
+  const isVideoExtensionEnabled = mode === 'video-gen' && controls.videoExtensionCount > 0;
+  const finalPlaceholder =
+    placeholder || (isVideoExtensionEnabled ? VIDEO_EXTENSION_PROMPT_PLACEHOLDER : modeConfig.placeholder);
 
-  // 判断是否支持附件（audio-gen 不支持，video-gen 支持可选参考图）
-  const supportsAttachments = mode !== 'audio-gen';
   // 判断是否必须有附件（video-gen 参考图可选）
   const isDisabled =
     (requiresPromptForMode && !prompt.trim()) ||
     isLoading ||
     externalDisabled ||
     (requiresAttachmentForMode && activeAttachments.length === 0 && !activeImageUrl);
-  const attachmentAccept = mode === 'video-gen' ? 'image/*,video/*' : 'image/*';
   const attachmentTitle = mode === 'video-gen'
     ? (activeAttachments.length >= attachmentLimit ? `已达到最大数量 (${attachmentLimit})` : '点击上传图片或视频（支持多选，作为视频参考）')
     : (activeAttachments.length >= attachmentLimit ? `已达到最大数量 (${attachmentLimit})` : '点击上传图片（支持多选）');
@@ -435,6 +582,8 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
         <AttachmentPreview
           attachments={activeAttachments}
           removeAttachment={removeAttachment}
+          getRoleOptions={mode === 'video-gen' ? getAttachmentRoleOptions : undefined}
+          onRoleChange={mode === 'video-gen' ? handleAttachmentRoleChange : undefined}
         />
       )}
 
@@ -447,6 +596,7 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
           e.target.style.height = 'auto';
           e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
         }}
+        onPaste={handleAttachmentPaste}
         onKeyDown={handleKeyDown}
         placeholder={finalPlaceholder}
         className="w-full min-h-[40px] max-h-[150px] bg-slate-800/80 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 overflow-y-auto"

@@ -47,6 +47,7 @@ type ModeControlsCoordinatorProps = {
   providerId: string;
   currentModel?: ModelConfig;
   availableModels?: ModelConfig[];
+  onModelSelect?: (id: string) => void;
   /** 传递 controls 状态对象 */
   controls?: ControlsState;
   /** 最大图片数量（image-gen 模式） */
@@ -68,6 +69,7 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
     providerId,
     currentModel,
     availableModels,
+    onModelSelect,
     controls,
     maxImageCount,
     ...controlProps
@@ -133,6 +135,7 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
       return (
         <Controls.ImageEditControls
           mode={mode}
+          currentModel={currentModel}
           controls={controls}
           availableModels={availableModels}
           maxImageCount={maxImageCount}
@@ -145,7 +148,11 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
     case 'image-mask-edit':
       return (
         <Controls.ImageMaskEditControls
+          mode={mode}
+          currentModel={currentModel}
           controls={controls}
+          availableModels={availableModels}
+          maxImageCount={maxImageCount}
           {...(controlProps as ImageMaskEditControlsProps)}
           providerId={providerId}
         />
@@ -154,7 +161,11 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
     case 'image-outpainting':
       return (
         <Controls.ImageOutpaintControls
+          mode={mode}
+          currentModel={currentModel}
           controls={controls}
+          availableModels={availableModels}
+          maxImageCount={maxImageCount}
           {...(controlProps as ImageOutpaintControlsProps)}
           providerId={providerId}
         />
@@ -164,6 +175,8 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
       return (
         <Controls.VideoGenControls
           currentModel={currentModel}
+          availableModels={availableModels}
+          onModelSelect={onModelSelect}
           controls={controls}
           {...(controlProps as VideoGenControlsProps)}
           {...schemaProps}
@@ -186,7 +199,11 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
     case 'virtual-try-on':
       return (
         <Controls.VirtualTryOnControls
+          mode={mode}
+          currentModel={currentModel}
           controls={controls}
+          availableModels={availableModels}
+          maxImageCount={maxImageCount}
           {...(controlProps as VirtualTryOnControlsProps)}
           providerId={providerId}
         />

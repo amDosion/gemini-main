@@ -1,5 +1,5 @@
 /**
- * 内嵌模式导航组件
+ * 应用模式导航组件
  *
  * 说明：
  * - modeCatalog 只描述 provider/profile 模型集合下的模式可用模型情况
@@ -68,6 +68,32 @@ const MODE_COLOR_MAP: Record<string, { bg: string; text: string }> = {
   'pdf-extract': { bg: 'bg-purple-600', text: 'text-purple-400' },
 };
 
+const GeminiBrandMark: React.FC = () => (
+  <svg
+    role="img"
+    aria-label="Gemini"
+    viewBox="0 0 48 48"
+    className="h-7 w-7 drop-shadow-[0_0_12px_rgba(129,140,248,0.45)]"
+  >
+    <defs>
+      <linearGradient id="inline-gemini-brand-gradient" x1="9" x2="39" y1="39" y2="9">
+        <stop offset="0%" stopColor="#7DD3FC" />
+        <stop offset="48%" stopColor="#A78BFA" />
+        <stop offset="100%" stopColor="#F0ABFC" />
+      </linearGradient>
+    </defs>
+    <path
+      fill="url(#inline-gemini-brand-gradient)"
+      d="M24 3.5c2.7 10.4 10.1 17.8 20.5 20.5C34.1 26.7 26.7 34.1 24 44.5 21.3 34.1 13.9 26.7 3.5 24 13.9 21.3 21.3 13.9 24 3.5Z"
+    />
+    <path
+      fill="rgba(255,255,255,0.72)"
+      d="M24 11.2c1.7 6.6 6.2 11.1 12.8 12.8-6.6 1.7-11.1 6.2-12.8 12.8-1.7-6.6-6.2-11.1-12.8-12.8 6.6-1.7 11.1-6.2 12.8-12.8Z"
+      opacity="0.2"
+    />
+  </svg>
+);
+
 export const InlineModeNavigation: React.FC<InlineModeNavigationProps> = ({
   currentMode,
   setMode,
@@ -81,98 +107,52 @@ export const InlineModeNavigation: React.FC<InlineModeNavigationProps> = ({
     return modeCatalog.filter((mode) => mode.visibleInNavigation !== false);
   }, [modeCatalog]);
 
-  type NavEntry =
-    | { type: 'mode'; mode: ModeCatalogItem }
-    | { type: 'action'; id: 'settings' | 'persona' | 'cloud' };
-
-  const navEntries = useMemo<NavEntry[]>(() => {
-    const entries: NavEntry[] = [];
-    let personaInserted = false;
-
-    navModes.forEach((mode) => {
-      entries.push({ type: 'mode', mode });
-      if (mode.id === 'pdf-extract') {
-        entries.push({ type: 'action', id: 'persona' });
-        personaInserted = true;
-      }
-    });
-
-    if (!personaInserted) {
-      entries.push({ type: 'action', id: 'persona' });
-    }
-    entries.push({ type: 'action', id: 'cloud' });
-    entries.push({ type: 'action', id: 'settings' });
-
-    return entries;
-  }, [navModes]);
+  const utilityActions: Array<{
+    id: string;
+    label: string;
+    title: string;
+    Icon: LucideIcon;
+    onClick: () => void;
+    active?: boolean;
+  }> = [
+    {
+      id: 'persona',
+      label: 'Persona',
+      title: 'AI Persona & Roles',
+      Icon: UserCircle2,
+      onClick: onOpenPersonaView,
+      active: isPersonaViewOpen,
+    },
+    {
+      id: 'cloud',
+      label: 'Cloud',
+      title: 'Cloud Drive',
+      Icon: Cloud,
+      onClick: onOpenCloudStorage,
+    },
+    {
+      id: 'settings',
+      label: 'Setting',
+      title: 'Setting',
+      Icon: Settings,
+      onClick: () => onOpenSettings('profiles'),
+    },
+  ];
 
   return (
-    <div className="flex-shrink-0 border-l border-slate-800 bg-slate-900/30 flex flex-col h-full overflow-hidden">
-      <div className="px-3 py-3 border-b border-slate-800/50">
-        <div className="flex items-center gap-2">
-          <LayoutGrid size={14} className="text-indigo-400" />
-          <span className="text-xs font-bold text-white">模式切换</span>
-        </div>
+    <div className="flex h-full w-full flex-col overflow-hidden border-r border-slate-800 bg-slate-950">
+      <div className="flex h-14 shrink-0 items-center justify-center border-b border-slate-800/70 px-2">
+        <GeminiBrandMark />
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
         {navModes.length === 0 && (
-          <div className="px-2 py-3 text-[11px] text-slate-500">
+          <div className="px-2 py-3 text-center text-[11px] leading-tight text-slate-500">
             暂无可用模式
           </div>
         )}
 
-        {navEntries.map((entry) => {
-          if (entry.type === 'action') {
-            if (entry.id === 'settings') {
-              return (
-                <button
-                  key="action-settings"
-                  type="button"
-                  onClick={() => onOpenSettings('profiles')}
-                  title="Setting"
-                  className="w-full flex flex-col items-center justify-center gap-1 px-2 py-2 rounded-lg text-[11px] transition-all text-slate-400 hover:bg-slate-800 hover:text-white"
-                >
-                  <Settings size={15} />
-                  <span className="w-full text-center leading-tight">Setting</span>
-                </button>
-              );
-            }
-
-            if (entry.id === 'cloud') {
-              return (
-                <button
-                  key="action-cloud"
-                  type="button"
-                  onClick={onOpenCloudStorage}
-                  title="Cloud Drive"
-                  className="w-full flex flex-col items-center justify-center gap-1 px-2 py-2 rounded-lg text-[11px] transition-all text-slate-400 hover:bg-slate-800 hover:text-white"
-                >
-                  <Cloud size={15} />
-                  <span className="w-full text-center leading-tight">Cloud</span>
-                </button>
-              );
-            }
-
-            return (
-              <button
-                key="action-persona"
-                type="button"
-                onClick={onOpenPersonaView}
-                title="AI Persona & Roles"
-                className={`w-full flex flex-col items-center justify-center gap-1 px-2 py-2 rounded-lg text-[11px] transition-all ${
-                  isPersonaViewOpen
-                    ? 'bg-indigo-500/20 text-indigo-400'
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                }`}
-              >
-                <UserCircle2 size={15} />
-                <span className="w-full text-center leading-tight">Persona</span>
-              </button>
-            );
-          }
-
-          const { mode } = entry;
+        {navModes.map((mode) => {
           const isActive = currentMode === mode.id;
           const hasModels = mode.hasModels;
           const colors = MODE_COLOR_MAP[mode.id] || MODE_COLOR_MAP.chat;
@@ -186,7 +166,7 @@ export const InlineModeNavigation: React.FC<InlineModeNavigationProps> = ({
               key={mode.id}
               onClick={() => setMode(mode.id as AppMode)}
               title={buttonTitle}
-              className={`w-full flex flex-col items-center justify-center gap-1 px-2 py-2 rounded-lg text-[11px] transition-all ${
+              className={`flex min-h-[52px] w-full flex-col items-center justify-center gap-1 rounded-md px-2 py-2 text-[11px] transition-colors ${
                 isActive
                   ? `${colors.bg} text-white`
                   : !hasModels
@@ -195,10 +175,29 @@ export const InlineModeNavigation: React.FC<InlineModeNavigationProps> = ({
               }`}
             >
               <Icon size={15} />
-              <span className="w-full text-center leading-tight">{mode.label}</span>
+              <span className="block w-full truncate text-center leading-tight">{mode.label}</span>
             </button>
           );
         })}
+      </div>
+
+      <div className="shrink-0 border-t border-slate-800/70 p-2 space-y-1">
+        {utilityActions.map(({ id, label, title, Icon, onClick, active }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={onClick}
+            title={title}
+            className={`flex min-h-[46px] w-full flex-col items-center justify-center gap-1 rounded-md px-2 py-2 text-[11px] transition-colors ${
+              active
+                ? 'bg-indigo-500/20 text-indigo-300'
+                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+            }`}
+          >
+            <Icon size={15} />
+            <span className="block w-full truncate text-center leading-tight">{label}</span>
+          </button>
+        ))}
       </div>
     </div>
   );

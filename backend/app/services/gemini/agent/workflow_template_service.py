@@ -8,8 +8,9 @@ Workflow Template Service - 工作流模板服务
 - 模板版本管理
 """
 
-import logging
+import copy
 import json
+import logging
 import time
 import uuid
 from typing import Dict, Any, List, Optional
@@ -17,6 +18,13 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ....models.db_models import WorkflowTemplate, WorkflowTemplateCategory
+from ....models.db_models import AgentRegistry
+from ...agent.agent_seed_service import (
+    SEED_AGENT_KEYS_BY_NAME,
+    ensure_seed_agents,
+    get_default_seed_agents,
+)
+from ...agent.workflow_payload_normalizer import _validate_workflow_execute_payload
 from ...common.reference_image_catalog import (
     is_placeholder_reference_image_url,
     pick_reference_image,
@@ -352,7 +360,7 @@ class WorkflowTemplateService:
 
     def _collect_template_binding_payload(self, config: Dict[str, Any]) -> Dict[str, Any]:
         binding_modes: List[str] = []
-        legacy_name_binding_node_ids: List[str] = []
+        legacy_inline_binding_node_ids: List[str] = []
 
         for node in config.get("nodes", []):
             if not isinstance(node, dict):
@@ -404,10 +412,10 @@ class WorkflowTemplateService:
 
             if mode not in binding_modes:
                 binding_modes.append(mode)
-            if mode == "registry-name":
+            if mode.startswith("inline-"):
                 node_id = str(node.get("id") or "").strip()
                 if node_id:
-                    legacy_name_binding_node_ids.append(node_id)
+                    legacy_inline_binding_node_ids.append(node_id)
 
         effective_modes = [mode for mode in binding_modes if mode != "unbound"]
         if len(effective_modes) > 1:
@@ -421,7 +429,7 @@ class WorkflowTemplateService:
 
         return {
             "binding_strategy": binding_strategy,
-            "legacy_name_binding_node_ids": legacy_name_binding_node_ids,
+            "legacy_inline_binding_node_ids": legacy_inline_binding_node_ids,
         }
 
     def _build_template_analysis_payload(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -432,18 +440,18 @@ class WorkflowTemplateService:
 
         starter_key = self._extract_starter_key(config)
         copied_from_starter_key = str(meta.get("copiedFromStarterKey") or "").strip()
-        legacy_name_binding_node_ids = binding_payload["legacy_name_binding_node_ids"]
+        legacy_inline_binding_node_ids = binding_payload["legacy_inline_binding_node_ids"]
         is_legacy_starter_copy = bool(
             not starter_key
             and copied_from_starter_key
-            and legacy_name_binding_node_ids
+            and legacy_inline_binding_node_ids
         )
 
         legacy_flags: List[str] = []
         legacy_reason: Optional[str] = None
         if is_legacy_starter_copy:
-            legacy_flags.append("starter-copy-agent-name-binding")
-            legacy_reason = "Copied from starter and still binds registry agents by agentName."
+            legacy_flags.append("starter-copy-inline-agent")
+            legacy_reason = "Copied from an older starter and still embeds inline agent definitions."
 
         return {
             "taskTypes": task_payload["task_types"],
@@ -484,6 +492,131 @@ class WorkflowTemplateService:
             "runtime_scope": "provider-neutral",
             "runtime_label": "Provider-neutral",
         }
+
+    def _extract_agent_seed_key(self, agent_payload: Dict[str, Any]) -> str:
+        agent_card = agent_payload.get("agent_card")
+        if isinstance(agent_card, dict):
+            metadata = agent_card.get("metadata")
+            if isinstance(metadata, dict):
+                seed_key = str(metadata.get("seedKey") or metadata.get("seed_key") or "").strip()
+                if seed_key:
+                    return seed_key
+        return str(agent_payload.get("seed_key") or agent_payload.get("seedKey") or "").strip()
+
+    def _load_user_seed_agent_bindings(self, user_id: str) -> Dict[str, Dict[str, str]]:
+        bindings: Dict[str, Dict[str, str]] = {}
+        agents = self.db.query(AgentRegistry).filter(
+            AgentRegistry.user_id == user_id,
+            AgentRegistry.agent_type == "seed",
+            AgentRegistry.status == "active",
+        ).all()
+        seed_key_by_name: Dict[str, str] = {}
+        for seed in get_default_seed_agents():
+            name = str(seed.get("name") or "").strip().lower()
+            seed_key = self._extract_agent_seed_key(seed)
+            if name and seed_key:
+                seed_key_by_name[name] = seed_key
+
+        for agent in agents:
+            agent_payload = agent.to_dict()
+            seed_key = self._extract_agent_seed_key(agent_payload)
+            if not seed_key:
+                seed_key = seed_key_by_name.get(str(agent.name or "").strip().lower(), "")
+            if not seed_key:
+                continue
+            bindings[seed_key] = {
+                "agentId": str(agent.id or "").strip(),
+                "agentName": str(agent.name or "").strip(),
+            }
+        return bindings
+
+    def _load_user_agent_bindings_by_name(self, user_id: str) -> Dict[str, Dict[str, str]]:
+        bindings: Dict[str, Dict[str, str]] = {}
+        agents = self.db.query(AgentRegistry).filter(
+            AgentRegistry.user_id == user_id,
+            AgentRegistry.status == "active",
+        ).all()
+        for agent in agents:
+            name = str(agent.name or "").strip()
+            if not name:
+                continue
+            bindings[name.lower()] = {
+                "agentId": str(agent.id or "").strip(),
+                "agentName": name,
+            }
+        return bindings
+
+    def bind_template_config_to_user_agents(
+        self,
+        *,
+        config: Dict[str, Any],
+        user_id: str,
+        require_all: bool = False,
+    ) -> Dict[str, Any]:
+        bound_config = copy.deepcopy(config if isinstance(config, dict) else {})
+        seed_bindings = self._load_user_seed_agent_bindings(user_id)
+        name_bindings = self._load_user_agent_bindings_by_name(user_id)
+        missing_bindings: List[Dict[str, str]] = []
+
+        for node in bound_config.get("nodes", []):
+            if not isinstance(node, dict):
+                continue
+            node_data = node.get("data") if isinstance(node.get("data"), dict) else {}
+            node_type = str(
+                node_data.get("type")
+                or node.get("type")
+                or ""
+            ).strip().lower().replace("-", "_")
+            if node_type != "agent":
+                continue
+            preset_key = str(
+                node_data.get("agentPresetKey")
+                or node_data.get("agent_preset_key")
+                or ""
+            ).strip()
+            existing_agent_id = str(node_data.get("agentId") or node_data.get("agent_id") or "").strip()
+            agent_name = str(node_data.get("agentName") or node_data.get("agent_name") or "").strip()
+            mapped_preset_key = str(SEED_AGENT_KEYS_BY_NAME.get(agent_name) or "").strip()
+
+            binding: Optional[Dict[str, str]] = None
+            if preset_key:
+                binding = seed_bindings.get(preset_key)
+            elif mapped_preset_key:
+                binding = seed_bindings.get(mapped_preset_key)
+                if binding:
+                    node_data["agentPresetKey"] = mapped_preset_key
+            elif not existing_agent_id and agent_name:
+                binding = name_bindings.get(agent_name.lower())
+            elif existing_agent_id:
+                continue
+
+            if not binding:
+                if require_all:
+                    missing_bindings.append({
+                        "node_id": str(node.get("id") or ""),
+                        "agent_preset_key": preset_key,
+                        "agent_name": agent_name,
+                    })
+                continue
+            node_data["agentId"] = binding["agentId"]
+            node_data["agentName"] = binding["agentName"]
+            node["data"] = node_data
+
+        if missing_bindings:
+            raise ValueError(f"Template agent bindings are missing from Agent manager: {missing_bindings}")
+        return bound_config
+
+    def _bind_starter_config_to_user_agents(
+        self,
+        *,
+        config: Dict[str, Any],
+        user_id: str,
+    ) -> Dict[str, Any]:
+        return self.bind_template_config_to_user_agents(
+            config=config,
+            user_id=user_id,
+            require_all=True,
+        )
 
     def _sanitize_non_starter_template_config(
         self,
@@ -527,6 +660,25 @@ class WorkflowTemplateService:
 
         normalized["_templateMeta"] = next_meta
         return self._apply_template_analysis_meta(normalized)
+
+    def prepare_imported_template_config(
+        self,
+        *,
+        config: Dict[str, Any],
+        user_id: str,
+        workflow_type: str,
+        tags: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        bound_config = self.bind_template_config_to_user_agents(
+            config=config,
+            user_id=user_id,
+            require_all=True,
+        )
+        return self._sanitize_non_starter_template_config(
+            config=bound_config,
+            workflow_type=workflow_type,
+            tags=tags,
+        )
 
     def _load_template_config(self, template: WorkflowTemplate) -> Dict[str, Any]:
         try:
@@ -677,6 +829,62 @@ class WorkflowTemplateService:
         template.updated_at = now
         template.version = int(template.version or 1) + 1
         return True
+
+    def _strip_template_runtime_meta(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = copy.deepcopy(config if isinstance(config, dict) else {})
+        meta = normalized.get("_templateMeta")
+        if isinstance(meta, dict):
+            for key in (
+                "sampleResult",
+                "sampleResultSummary",
+                "sampleResultUpdatedAt",
+                "sampleExecutionId",
+            ):
+                meta.pop(key, None)
+        return normalized
+
+    def _preserve_template_runtime_meta(
+        self,
+        *,
+        next_config: Dict[str, Any],
+        existing_config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        merged = copy.deepcopy(next_config if isinstance(next_config, dict) else {})
+        existing_meta = (
+            existing_config.get("_templateMeta")
+            if isinstance(existing_config.get("_templateMeta"), dict)
+            else {}
+        )
+        if not existing_meta:
+            return merged
+
+        next_meta = merged.get("_templateMeta")
+        if not isinstance(next_meta, dict):
+            next_meta = {}
+
+        for key in (
+            "sampleResult",
+            "sampleResultSummary",
+            "sampleResultUpdatedAt",
+            "sampleExecutionId",
+        ):
+            if key in existing_meta:
+                next_meta[key] = existing_meta[key]
+
+        merged["_templateMeta"] = next_meta
+        return merged
+
+    def _starter_config_matches_definition(
+        self,
+        existing_config: Dict[str, Any],
+        definition_config: Dict[str, Any],
+    ) -> bool:
+        existing_normalized = self._normalize_config(existing_config)
+        definition_normalized = self._normalize_config(definition_config)
+        return (
+            self._strip_template_runtime_meta(existing_normalized)
+            == self._strip_template_runtime_meta(definition_normalized)
+        )
 
     def _serialize_category(self, category: WorkflowTemplateCategory) -> Dict[str, Any]:
         payload = category.to_dict()
@@ -870,48 +1078,10 @@ class WorkflowTemplateService:
         edges = config.get("edges")
         if not isinstance(nodes, list) or not isinstance(edges, list):
             raise ValueError("Template config must contain nodes[] and edges[]")
-        if not nodes:
-            raise ValueError("Template config nodes cannot be empty")
 
-        node_ids: List[str] = []
-        seen = set()
-        for node in nodes:
-            node_id = str((node or {}).get("id") or "").strip()
-            if not node_id:
-                raise ValueError("Template config contains node without id")
-            if node_id in seen:
-                raise ValueError(f"Template config contains duplicate node id: {node_id}")
-            seen.add(node_id)
-            node_ids.append(node_id)
-
-        node_set = set(node_ids)
-        start_count = 0
-        end_count = 0
-        for node in nodes:
-            node_data = (node or {}).get("data") if isinstance(node, dict) else {}
-            node_type = ""
-            if isinstance(node_data, dict):
-                node_type = str(node_data.get("type") or "").strip()
-            if not node_type:
-                node_type = str((node or {}).get("type") or "").strip()
-            normalized_type = node_type.lower().replace("-", "_")
-            if normalized_type == "start":
-                start_count += 1
-            elif normalized_type == "end":
-                end_count += 1
-
-        if start_count != 1:
-            raise ValueError("Template config must contain exactly one start node")
-        if end_count != 1:
-            raise ValueError("Template config must contain exactly one end node")
-
-        for edge in edges:
-            source = str((edge or {}).get("source") or "").strip()
-            target = str((edge or {}).get("target") or "").strip()
-            if not source or not target:
-                raise ValueError("Template config contains edge without source/target")
-            if source not in node_set or target not in node_set:
-                raise ValueError(f"Template edge references unknown node: {source} -> {target}")
+        validation_error = _validate_workflow_execute_payload(nodes, edges)
+        if validation_error:
+            raise ValueError(validation_error)
 
     def _serialize_template(self, template: WorkflowTemplate) -> Dict[str, Any]:
         payload = template.to_dict()
@@ -1010,6 +1180,8 @@ class WorkflowTemplateService:
             except Exception:
                 return default
 
+        ensure_seed_agents(self.db, user_id, seeds=get_default_seed_agents())
+
         existing_templates = self.db.query(WorkflowTemplate).filter(
             WorkflowTemplate.user_id == user_id
         ).all()
@@ -1050,6 +1222,11 @@ class WorkflowTemplateService:
                 workflow_type=definition.get("workflow_type", "graph"),
                 tags=definition.get("tags", []),
             )
+            config = self._bind_starter_config_to_user_agents(
+                config=config,
+                user_id=user_id,
+            )
+            config = self._apply_template_analysis_meta(config)
             template_meta = config.get("_templateMeta") if isinstance(config.get("_templateMeta"), dict) else {}
             raw_sample_input = definition.get("sample_input")
             sample_input = raw_sample_input if isinstance(raw_sample_input, dict) else None
@@ -1080,7 +1257,20 @@ class WorkflowTemplateService:
             existing_entry = canonical_entry
             if existing_entry:
                 existing_version = _safe_version(existing_entry.get("starter_version"), default=1)
-                if existing_version >= starter_version:
+                existing_config = (
+                    existing_entry.get("config")
+                    if isinstance(existing_entry.get("config"), dict)
+                    else {}
+                )
+                definition_config = self._preserve_template_runtime_meta(
+                    next_config=config,
+                    existing_config=existing_config,
+                )
+                config_matches_definition = self._starter_config_matches_definition(
+                    existing_config=existing_config,
+                    definition_config=definition_config,
+                )
+                if existing_version >= starter_version and config_matches_definition:
                     continue
 
                 target_template: WorkflowTemplate = existing_entry["template"]
@@ -1088,7 +1278,7 @@ class WorkflowTemplateService:
                 target_template.description = definition.get("description")
                 target_template.category = definition.get("category", "general")
                 target_template.workflow_type = definition.get("workflow_type", "graph")
-                target_template.config_json = json.dumps(config, ensure_ascii=False)
+                target_template.config_json = json.dumps(definition_config, ensure_ascii=False)
                 target_template.updated_at = now
                 target_template.version = int(target_template.version or 1) + 1
                 updated_count += 1
@@ -1120,6 +1310,11 @@ class WorkflowTemplateService:
                     workflow_type=matched_template.workflow_type or definition.get("workflow_type", "graph"),
                     tags=definition.get("tags", []),
                 )
+                backfilled_config = self._bind_starter_config_to_user_agents(
+                    config=backfilled_config,
+                    user_id=user_id,
+                )
+                backfilled_config = self._apply_template_analysis_meta(backfilled_config)
                 backfilled_meta = (
                     backfilled_config.get("_templateMeta")
                     if isinstance(backfilled_config.get("_templateMeta"), dict)

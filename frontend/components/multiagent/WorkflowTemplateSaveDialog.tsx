@@ -19,6 +19,7 @@ import {
   listWorkflowTemplateCategories,
 } from '../../services/workflowTemplateCategoryService';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { formatWorkflowValidationError, validateWorkflow } from './workflowUtils';
 
 export interface WorkflowTemplateSaveTarget {
   id: string;
@@ -300,6 +301,11 @@ export const WorkflowTemplateSaveDialog: React.FC<WorkflowTemplateSaveDialogProp
     }
     if (!category.trim()) {
       setError('请选择模板分类');
+      return;
+    }
+    const validation = validateWorkflow(nodes, edges);
+    if (!validation.isValid) {
+      setError(formatWorkflowValidationError(validation));
       return;
     }
 

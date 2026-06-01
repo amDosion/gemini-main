@@ -10,6 +10,7 @@ export interface FetchWithTimeoutOptions extends RequestInit {
   timeoutMs?: number;
   withAuth?: boolean;
   skipAuth?: boolean;
+  includeBearer?: boolean;
   timeoutMessage?: TimeoutMessage;
   abortMessage?: string;
 }
@@ -145,6 +146,7 @@ export async function fetchWithTimeout(
     timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
     withAuth = false,
     skipAuth = false,
+    includeBearer = false,
     timeoutMessage,
     abortMessage = 'Request cancelled by user',
     signal: externalSignal,
@@ -179,7 +181,8 @@ export async function fetchWithTimeout(
   try {
     return await fetch(input, {
       ...requestInit,
-      headers: withAuth ? withAuthorization(headers, { skipAuth }) : headers,
+      headers: withAuth && includeBearer ? withAuthorization(headers, { skipAuth }) : headers,
+      credentials: withAuth ? requestInit.credentials ?? 'include' : requestInit.credentials,
       signal: controller.signal,
     });
   } catch (error) {

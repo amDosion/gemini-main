@@ -7,7 +7,8 @@
  * 注意：为确保对比效果正确，两张图片会被统一缩放到相同的显示区域
  */
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
+import { CachedImage } from './CachedImage';
 
 export interface ImageCompareProps {
   /** 原图 URL */
@@ -60,30 +61,6 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({
     emerald: '#10b981',
     indigo: '#6366f1',
   };
-
-  // 加载图片尺寸
-  useEffect(() => {
-    const loadImageDimensions = async () => {
-      const loadImage = (src: string): Promise<{ width: number; height: number }> => {
-        return new Promise((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-          img.onerror = reject;
-          img.src = src;
-        });
-      };
-
-      const [before, after] = await Promise.all([
-        loadImage(beforeImage),
-        loadImage(afterImage),
-      ]).catch(() => [null, null] as const);
-      if (before && after) {
-        setImageDimensions({ before, after });
-      }
-    };
-
-    loadImageDimensions();
-  }, [beforeImage, afterImage]);
 
   // 计算统一的显示比例（以结果图为基准）
   const getUnifiedAspectRatio = useCallback(() => {
@@ -152,6 +129,31 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({
     e.stopPropagation();
   }, []);
 
+  const updateImageDimension = useCallback(
+    (kind: 'before' | 'after', element: HTMLImageElement) => {
+      setImageDimensions((current) => ({
+        ...current,
+        [kind]: {
+          width: element.naturalWidth || 1,
+          height: element.naturalHeight || 1,
+        },
+      }));
+    },
+    []
+  );
+
+  const handleBeforeImageLoad = useCallback(
+    (e: React.SyntheticEvent<HTMLImageElement, Event>) =>
+      updateImageDimension('before', e.currentTarget),
+    [updateImageDimension]
+  );
+
+  const handleAfterImageLoad = useCallback(
+    (e: React.SyntheticEvent<HTMLImageElement, Event>) =>
+      updateImageDimension('after', e.currentTarget),
+    [updateImageDimension]
+  );
+
   // 检查比例是否一致（允许 5% 误差）
   const aspectRatioMismatch = useCallback(() => {
     if (!imageDimensions.before || !imageDimensions.after) return false;
@@ -180,20 +182,25 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({
         ...style 
       }}
     >
-      <img
-        src={afterImage}
-        alt=""
-        aria-hidden="true"
-        data-testid="image-compare-sizer"
-        className="block opacity-0 pointer-events-none select-none"
-        style={{
-          maxWidth: 'inherit',
-          maxHeight: 'inherit',
-          width: 'auto',
-          height: 'auto',
-        }}
-        draggable={false}
-      />
+      {afterImage && (
+        <CachedImage
+          source={{ url: afterImage, mimeType: 'image/png' }}
+          src={afterImage}
+          alt=""
+          aria-hidden="true"
+          data-testid="image-compare-sizer"
+          className="block opacity-0 pointer-events-none select-none"
+          onLoad={handleAfterImageLoad}
+          rawFallbackDelayMs={0}
+          style={{
+            maxWidth: 'inherit',
+            maxHeight: 'inherit',
+            width: 'auto',
+            height: 'auto',
+          }}
+          draggable={false}
+        />
+      )}
 
       {/* 比例不一致提示 */}
       {aspectRatioMismatch() && (
@@ -203,12 +210,16 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({
       )}
 
       {/* 结果图（底层，完整显示） */}
-      <img
-        src={afterImage}
-        alt={afterLabel}
-        className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-        draggable={false}
-      />
+      {afterImage && (
+        <CachedImage
+          source={{ url: afterImage, mimeType: 'image/png' }}
+          src={afterImage}
+          alt={afterLabel}
+          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+          rawFallbackDelayMs={0}
+          draggable={false}
+        />
+      )}
 
       {/* 原图（上层，裁剪显示） */}
       <div
@@ -216,17 +227,22 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({
         className="absolute inset-0 overflow-hidden pointer-events-none"
         style={{ width: `${sliderPosition}%`, opacity: beforeOpacity / 100 }}
       >
-        <img
-          src={beforeImage}
-          alt={beforeLabel}
-          className="absolute inset-0 h-full object-cover"
-          style={{ 
-            width: `${sliderPosition > 0 ? 100 / (sliderPosition / 100) : 10000}%`, 
-            maxWidth: 'none',
-            objectPosition: 'left center'
-          }}
-          draggable={false}
-        />
+        {beforeImage && (
+          <CachedImage
+            source={{ url: beforeImage, mimeType: 'image/png' }}
+            src={beforeImage}
+            alt={beforeLabel}
+            className="absolute inset-0 h-full object-cover"
+            onLoad={handleBeforeImageLoad}
+            rawFallbackDelayMs={0}
+            style={{
+              width: `${sliderPosition > 0 ? 100 / (sliderPosition / 100) : 10000}%`,
+              maxWidth: 'none',
+              objectPosition: 'left center',
+            }}
+            draggable={false}
+          />
+        )}
       </div>
 
       {/* 分割线 */}

@@ -35,9 +35,9 @@ interface WorkflowEditorTopBarProps {
   canDeleteSelectedNode: boolean;
   onAutoLayout: () => void;
   canAutoLayout: boolean;
-  onToggleResultPanel: () => void;
-  canToggleResultPanel: boolean;
-  showResultPanel: boolean;
+  onOpenResult: () => void;
+  canOpenResult: boolean;
+  isResultActive: boolean;
   onExportImage: () => void | Promise<void>;
   canExportImage: boolean;
   isExportingImage: boolean;
@@ -68,9 +68,9 @@ export const WorkflowEditorTopBar: React.FC<WorkflowEditorTopBarProps> = ({
   canDeleteSelectedNode,
   onAutoLayout,
   canAutoLayout,
-  onToggleResultPanel,
-  canToggleResultPanel,
-  showResultPanel,
+  onOpenResult,
+  canOpenResult,
+  isResultActive,
   onExportImage,
   canExportImage,
   isExportingImage,
@@ -169,14 +169,14 @@ export const WorkflowEditorTopBar: React.FC<WorkflowEditorTopBarProps> = ({
               <LayoutGrid size={13} /> 自动排版
             </button>
             <button
-              onClick={onToggleResultPanel}
-              disabled={!canToggleResultPanel}
+              onClick={onOpenResult}
+              disabled={!canOpenResult}
               className={`${groupedButtonClass} ${
-                showResultPanel
+                isResultActive
                   ? 'bg-indigo-600/20 text-indigo-300'
                   : 'text-slate-400'
               }`}
-              title="查看最终结果"
+              title="定位结束节点结果"
             >
               <Eye size={13} /> 结果
             </button>

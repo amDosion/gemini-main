@@ -1,5 +1,5 @@
 {
-  "version": "2026-03-02-v2",
+  "version": "2026-05-27-openai-sora-video-v1",
   "providers": {
     "google": {
       "modes": {
@@ -1685,6 +1685,194 @@
             },
             {
               "match": {
+                "starts_with": "qwen-image-2.0"
+              },
+              "constraints": {
+                "max_image_count": 6
+              },
+              "param_options": {
+                "number_of_images": [
+                  {
+                    "label": "1",
+                    "value": 1
+                  },
+                  {
+                    "label": "2",
+                    "value": 2
+                  },
+                  {
+                    "label": "3",
+                    "value": 3
+                  },
+                  {
+                    "label": "4",
+                    "value": 4
+                  },
+                  {
+                    "label": "5",
+                    "value": 5
+                  },
+                  {
+                    "label": "6",
+                    "value": 6
+                  }
+                ]
+              }
+            },
+            {
+              "match": {
+                "contains": "wan2.7-image"
+              },
+              "defaults": {
+                "resolution": "2K",
+                "thinking_mode": true,
+                "enable_sequential": false
+              },
+              "constraints": {
+                "max_image_count": 12,
+                "unsupported_params": [
+                  "negative_prompt",
+                  "prompt_extend",
+                  "add_magic_suffix",
+                  "style"
+                ]
+              },
+              "resolution_tiers": [
+                {
+                  "label": "1K",
+                  "value": "1K",
+                  "baseResolution": "1024×1024"
+                },
+                {
+                  "label": "2K",
+                  "value": "2K",
+                  "baseResolution": "2048×2048"
+                }
+              ],
+              "resolution_map": {
+                "1K": {
+                  "1:1": "1024*1024",
+                  "2:3": "832*1248",
+                  "3:2": "1248*832",
+                  "3:4": "864*1152",
+                  "4:3": "1152*864",
+                  "9:16": "720*1280",
+                  "16:9": "1280*720",
+                  "21:9": "1344*576"
+                },
+                "2K": {
+                  "1:1": "2048*2048",
+                  "2:3": "1664*2496",
+                  "3:2": "2496*1664",
+                  "3:4": "1728*2304",
+                  "4:3": "2304*1728",
+                  "9:16": "1536*2730",
+                  "16:9": "2730*1536",
+                  "21:9": "2688*1152"
+                }
+              },
+              "param_options": {
+                "number_of_images": [
+                  {
+                    "label": "1",
+                    "value": 1
+                  },
+                  {
+                    "label": "2",
+                    "value": 2
+                  },
+                  {
+                    "label": "3",
+                    "value": 3
+                  },
+                  {
+                    "label": "4",
+                    "value": 4
+                  },
+                  {
+                    "label": "5",
+                    "value": 5
+                  },
+                  {
+                    "label": "6",
+                    "value": 6
+                  },
+                  {
+                    "label": "7",
+                    "value": 7
+                  },
+                  {
+                    "label": "8",
+                    "value": 8
+                  },
+                  {
+                    "label": "9",
+                    "value": 9
+                  },
+                  {
+                    "label": "10",
+                    "value": 10
+                  },
+                  {
+                    "label": "11",
+                    "value": 11
+                  },
+                  {
+                    "label": "12",
+                    "value": 12
+                  }
+                ],
+                "thinking_mode": [
+                  {
+                    "label": "开启",
+                    "value": true
+                  },
+                  {
+                    "label": "关闭",
+                    "value": false
+                  }
+                ],
+                "enable_sequential": [
+                  {
+                    "label": "开启",
+                    "value": true
+                  },
+                  {
+                    "label": "关闭",
+                    "value": false
+                  }
+                ]
+              }
+            },
+            {
+              "match": {
+                "starts_with": "wan2.7-image-pro"
+              },
+              "resolution_tiers": [
+                {
+                  "label": "1K",
+                  "value": "1K",
+                  "baseResolution": "1024×1024"
+                },
+                {
+                  "label": "2K",
+                  "value": "2K",
+                  "baseResolution": "2048×2048"
+                },
+                {
+                  "label": "4K",
+                  "value": "4K",
+                  "baseResolution": "4096×4096"
+                }
+              ],
+              "resolution_map": {
+                "4K": {
+                  "1:1": "4096*4096"
+                }
+              }
+            },
+            {
+              "match": {
                 "contains": "wan2.6-image"
               },
               "defaults": {
@@ -1907,6 +2095,120 @@
               "21:9": "1512*648"
             }
           },
+          "model_variants": [
+            {
+              "match": {
+                "contains_any": [
+                  "qwen-image-2.0",
+                  "qwen-image-edit-plus",
+                  "qwen-image-edit-max"
+                ]
+              },
+              "constraints": {
+                "max_image_count": 6
+              },
+              "param_options": {
+                "number_of_images": [
+                  {
+                    "label": "1",
+                    "value": 1
+                  },
+                  {
+                    "label": "2",
+                    "value": 2
+                  },
+                  {
+                    "label": "3",
+                    "value": 3
+                  },
+                  {
+                    "label": "4",
+                    "value": 4
+                  },
+                  {
+                    "label": "5",
+                    "value": 5
+                  },
+                  {
+                    "label": "6",
+                    "value": 6
+                  }
+                ]
+              }
+            },
+            {
+              "match": {
+                "contains": "wan2.7-image"
+              },
+              "defaults": {
+                "resolution": "2K"
+              },
+              "constraints": {
+                "max_image_count": 4,
+                "unsupported_params": [
+                  "negative_prompt",
+                  "prompt_extend",
+                  "add_magic_suffix",
+                  "style",
+                  "thinking_mode"
+                ]
+              },
+              "resolution_tiers": [
+                {
+                  "label": "1K",
+                  "value": "1K",
+                  "baseResolution": "1024×1024"
+                },
+                {
+                  "label": "2K",
+                  "value": "2K",
+                  "baseResolution": "2048×2048"
+                }
+              ],
+              "resolution_map": {
+                "1K": {
+                  "1:1": "1024*1024",
+                  "2:3": "832*1248",
+                  "3:2": "1248*832",
+                  "3:4": "864*1152",
+                  "4:3": "1152*864",
+                  "9:16": "720*1280",
+                  "16:9": "1280*720",
+                  "21:9": "1344*576"
+                },
+                "2K": {
+                  "1:1": "2048*2048",
+                  "2:3": "1664*2496",
+                  "3:2": "2496*1664",
+                  "3:4": "1728*2304",
+                  "4:3": "2304*1728",
+                  "9:16": "1536*2730",
+                  "16:9": "2730*1536",
+                  "21:9": "2688*1152"
+                }
+              },
+              "param_options": {
+                "number_of_images": [
+                  {
+                    "label": "1",
+                    "value": 1
+                  },
+                  {
+                    "label": "2",
+                    "value": 2
+                  },
+                  {
+                    "label": "3",
+                    "value": 3
+                  },
+                  {
+                    "label": "4",
+                    "value": 4
+                  }
+                ]
+              }
+            }
+          ],
           "param_options": {
             "number_of_images": [
               {
@@ -2080,54 +2382,534 @@
           "model_variants": [
             {
               "match": {
-                "contains": "sora-2-pro"
+                "contains_any": [
+                  "wan2.7-t2v",
+                  "happyhorse-1.0-t2v"
+                ]
               },
+              "defaults": {
+                "aspect_ratio": "16:9",
+                "resolution": "1080p",
+                "seconds": "5",
+                "enhance_prompt": true,
+                "negative_prompt": "",
+                "seed": -1
+              },
+              "aspect_ratios": [
+                {
+                  "label": "16:9 Landscape",
+                  "value": "16:9"
+                },
+                {
+                  "label": "9:16 Portrait",
+                  "value": "9:16"
+                },
+                {
+                  "label": "1:1 Square",
+                  "value": "1:1"
+                },
+                {
+                  "label": "4:3 Landscape",
+                  "value": "4:3"
+                },
+                {
+                  "label": "3:4 Portrait",
+                  "value": "3:4"
+                }
+              ],
               "resolution_tiers": [
                 {
-                  "label": "720p (HD)",
-                  "value": "1K",
+                  "label": "720p HD",
+                  "value": "720p",
                   "baseResolution": "1280×720"
                 },
                 {
-                  "label": "1792×1024",
-                  "value": "2K",
-                  "baseResolution": "1792×1024"
+                  "label": "1080p Full HD",
+                  "value": "1080p",
+                  "baseResolution": "1920×1080"
                 }
               ],
               "resolution_map": {
-                "2K": {
-                  "16:9": "1792*1024",
-                  "9:16": "1024*1792"
+                "720p": {
+                  "16:9": "1280*720",
+                  "9:16": "720*1280",
+                  "1:1": "960*960",
+                  "4:3": "1104*832",
+                  "3:4": "832*1104"
+                },
+                "1080p": {
+                  "16:9": "1920*1080",
+                  "9:16": "1080*1920",
+                  "1:1": "1440*1440",
+                  "4:3": "1648*1248",
+                  "3:4": "1248*1648"
                 }
+              },
+              "param_options": {
+                "seconds": [
+                  {
+                    "label": "2s",
+                    "value": "2"
+                  },
+                  {
+                    "label": "5s",
+                    "value": "5"
+                  },
+                  {
+                    "label": "8s",
+                    "value": "8"
+                  },
+                  {
+                    "label": "10s",
+                    "value": "10"
+                  },
+                  {
+                    "label": "15s",
+                    "value": "15"
+                  }
+                ]
+              },
+              "numeric_ranges": {
+                "seed": {
+                  "min": -1,
+                  "max": 2147483647,
+                  "step": 1
+                }
+              }
+            },
+            {
+              "match": {
+                "contains": "happyhorse-1.0-t2v"
+              },
+              "param_options": {
+                "seconds": [
+                  {
+                    "label": "3s",
+                    "value": "3"
+                  },
+                  {
+                    "label": "5s",
+                    "value": "5"
+                  },
+                  {
+                    "label": "8s",
+                    "value": "8"
+                  },
+                  {
+                    "label": "10s",
+                    "value": "10"
+                  },
+                  {
+                    "label": "15s",
+                    "value": "15"
+                  }
+                ]
+              }
+            },
+            {
+              "match": {
+                "contains_any": [
+                  "wan2.7-i2v",
+                  "happyhorse-1.0-i2v"
+                ]
+              },
+              "defaults": {
+                "resolution": "1080p",
+                "seconds": "5",
+                "enhance_prompt": true,
+                "negative_prompt": "",
+                "seed": -1
+              },
+              "constraints": {
+                "unsupported_params": [
+                  "aspect_ratio"
+                ]
+              },
+              "resolution_tiers": [
+                {
+                  "label": "720p HD",
+                  "value": "720p",
+                  "baseResolution": "保持输入素材近似比例"
+                },
+                {
+                  "label": "1080p Full HD",
+                  "value": "1080p",
+                  "baseResolution": "保持输入素材近似比例"
+                }
+              ],
+              "param_options": {
+                "seconds": [
+                  {
+                    "label": "2s",
+                    "value": "2"
+                  },
+                  {
+                    "label": "5s",
+                    "value": "5"
+                  },
+                  {
+                    "label": "8s",
+                    "value": "8"
+                  },
+                  {
+                    "label": "10s",
+                    "value": "10"
+                  },
+                  {
+                    "label": "12s",
+                    "value": "12"
+                  },
+                  {
+                    "label": "15s",
+                    "value": "15"
+                  }
+                ]
+              },
+              "numeric_ranges": {
+                "seed": {
+                  "min": -1,
+                  "max": 2147483647,
+                  "step": 1
+                }
+              }
+            },
+            {
+              "match": {
+                "contains": "happyhorse-1.0-i2v"
+              },
+              "param_options": {
+                "seconds": [
+                  {
+                    "label": "3s",
+                    "value": "3"
+                  },
+                  {
+                    "label": "5s",
+                    "value": "5"
+                  },
+                  {
+                    "label": "8s",
+                    "value": "8"
+                  },
+                  {
+                    "label": "10s",
+                    "value": "10"
+                  },
+                  {
+                    "label": "12s",
+                    "value": "12"
+                  },
+                  {
+                    "label": "15s",
+                    "value": "15"
+                  }
+                ]
+              }
+            },
+            {
+              "match": {
+                "contains_any": [
+                  "wan2.7-r2v",
+                  "happyhorse-1.0-r2v"
+                ]
+              },
+              "defaults": {
+                "aspect_ratio": "16:9",
+                "resolution": "1080p",
+                "seconds": "5",
+                "enhance_prompt": true,
+                "negative_prompt": "",
+                "seed": -1
+              },
+              "aspect_ratios": [
+                {
+                  "label": "16:9 Landscape",
+                  "value": "16:9"
+                },
+                {
+                  "label": "9:16 Portrait",
+                  "value": "9:16"
+                },
+                {
+                  "label": "1:1 Square",
+                  "value": "1:1"
+                },
+                {
+                  "label": "4:3 Landscape",
+                  "value": "4:3"
+                },
+                {
+                  "label": "3:4 Portrait",
+                  "value": "3:4"
+                }
+              ],
+              "resolution_tiers": [
+                {
+                  "label": "720p HD",
+                  "value": "720p",
+                  "baseResolution": "1280×720"
+                },
+                {
+                  "label": "1080p Full HD",
+                  "value": "1080p",
+                  "baseResolution": "1920×1080"
+                }
+              ],
+              "resolution_map": {
+                "720p": {
+                  "16:9": "1280*720",
+                  "9:16": "720*1280",
+                  "1:1": "960*960",
+                  "4:3": "1104*832",
+                  "3:4": "832*1104"
+                },
+                "1080p": {
+                  "16:9": "1920*1080",
+                  "9:16": "1080*1920",
+                  "1:1": "1440*1440",
+                  "4:3": "1648*1248",
+                  "3:4": "1248*1648"
+                }
+              },
+              "param_options": {
+                "seconds": [
+                  {
+                    "label": "2s",
+                    "value": "2"
+                  },
+                  {
+                    "label": "5s",
+                    "value": "5"
+                  },
+                  {
+                    "label": "8s",
+                    "value": "8"
+                  },
+                  {
+                    "label": "10s",
+                    "value": "10"
+                  },
+                  {
+                    "label": "15s",
+                    "value": "15"
+                  }
+                ]
+              },
+              "numeric_ranges": {
+                "seed": {
+                  "min": -1,
+                  "max": 2147483647,
+                  "step": 1
+                }
+              }
+            },
+            {
+              "match": {
+                "contains": "happyhorse-1.0-r2v"
+              },
+              "param_options": {
+                "seconds": [
+                  {
+                    "label": "3s",
+                    "value": "3"
+                  },
+                  {
+                    "label": "5s",
+                    "value": "5"
+                  },
+                  {
+                    "label": "8s",
+                    "value": "8"
+                  },
+                  {
+                    "label": "10s",
+                    "value": "10"
+                  },
+                  {
+                    "label": "15s",
+                    "value": "15"
+                  }
+                ]
+              }
+            },
+            {
+              "match": {
+                "contains_any": [
+                  "wan2.7-videoedit",
+                  "wan2.7-video-edit",
+                  "happyhorse-1.0-video-edit",
+                  "happyhorse-1.0-videoedit"
+                ]
+              },
+              "defaults": {
+                "aspect_ratio": "source",
+                "resolution": "1080p",
+                "seconds": "0",
+                "enhance_prompt": true,
+                "negative_prompt": "",
+                "seed": -1
+              },
+              "aspect_ratios": [
+                {
+                  "label": "跟随输入视频",
+                  "value": "source"
+                },
+                {
+                  "label": "16:9 Landscape",
+                  "value": "16:9"
+                },
+                {
+                  "label": "9:16 Portrait",
+                  "value": "9:16"
+                },
+                {
+                  "label": "1:1 Square",
+                  "value": "1:1"
+                },
+                {
+                  "label": "4:3 Landscape",
+                  "value": "4:3"
+                },
+                {
+                  "label": "3:4 Portrait",
+                  "value": "3:4"
+                }
+              ],
+              "resolution_tiers": [
+                {
+                  "label": "720p HD",
+                  "value": "720p",
+                  "baseResolution": "1280×720"
+                },
+                {
+                  "label": "1080p Full HD",
+                  "value": "1080p",
+                  "baseResolution": "1920×1080"
+                }
+              ],
+              "resolution_map": {
+                "720p": {
+                  "16:9": "1280*720",
+                  "9:16": "720*1280",
+                  "1:1": "960*960",
+                  "4:3": "1104*832",
+                  "3:4": "832*1104"
+                },
+                "1080p": {
+                  "16:9": "1920*1080",
+                  "9:16": "1080*1920",
+                  "1:1": "1440*1440",
+                  "4:3": "1648*1248",
+                  "3:4": "1248*1648"
+                }
+              },
+              "param_options": {
+                "seconds": [
+                  {
+                    "label": "保持原时长",
+                    "value": "0"
+                  },
+                  {
+                    "label": "2s",
+                    "value": "2"
+                  },
+                  {
+                    "label": "5s",
+                    "value": "5"
+                  },
+                  {
+                    "label": "8s",
+                    "value": "8"
+                  },
+                  {
+                    "label": "10s",
+                    "value": "10"
+                  }
+                ]
+              },
+              "numeric_ranges": {
+                "seed": {
+                  "min": -1,
+                  "max": 2147483647,
+                  "step": 1
+                }
+              }
+            },
+            {
+              "match": {
+                "contains_any": [
+                  "happyhorse-1.0-video-edit",
+                  "happyhorse-1.0-videoedit"
+                ]
+              },
+              "param_options": {
+                "seconds": [
+                  {
+                    "label": "保持原时长",
+                    "value": "0"
+                  },
+                  {
+                    "label": "3s",
+                    "value": "3"
+                  },
+                  {
+                    "label": "5s",
+                    "value": "5"
+                  },
+                  {
+                    "label": "8s",
+                    "value": "8"
+                  },
+                  {
+                    "label": "10s",
+                    "value": "10"
+                  },
+                  {
+                    "label": "15s",
+                    "value": "15"
+                  }
+                ]
               }
             }
           ]
         },
         "audio-gen": {
           "defaults": {
-            "voice": "Puck"
+            "voice": "Cherry"
           },
           "param_options": {
             "voice": [
               {
-                "label": "Puck",
-                "value": "Puck"
+                "label": "Cherry",
+                "value": "Cherry"
               },
               {
-                "label": "Charon",
-                "value": "Charon"
+                "label": "Serena",
+                "value": "Serena"
               },
               {
-                "label": "Kore",
-                "value": "Kore"
+                "label": "Ethan",
+                "value": "Ethan"
               },
               {
-                "label": "Fenrir",
-                "value": "Fenrir"
+                "label": "Chelsie",
+                "value": "Chelsie"
               },
               {
-                "label": "Aoede",
-                "value": "Aoede"
+                "label": "Momo",
+                "value": "Momo"
+              },
+              {
+                "label": "Vivian",
+                "value": "Vivian"
+              },
+              {
+                "label": "Moon",
+                "value": "Moon"
+              },
+              {
+                "label": "Kai",
+                "value": "Kai"
               }
             ]
           }
@@ -2277,6 +3059,7 @@
         "image-gen": {
           "defaults": {
             "aspect_ratio": "1:1",
+            "resolution": "1K",
             "number_of_images": 1
           },
           "constraints": {
@@ -2288,12 +3071,12 @@
               "value": "1:1"
             },
             {
-              "label": "Portrait (1024x1792)",
-              "value": "9:16"
+              "label": "3:2 Landscape",
+              "value": "3:2"
             },
             {
-              "label": "Landscape (1792x1024)",
-              "value": "16:9"
+              "label": "2:3 Portrait",
+              "value": "2:3"
             }
           ],
           "resolution_tiers": [],
@@ -2305,20 +3088,269 @@
                 "value": 1
               }
             ]
-          }
+          },
+          "model_variants": [
+            {
+              "match": {
+                "contains_any": [
+                  "gpt-image",
+                  "chatgpt-image"
+                ]
+              },
+              "defaults": {
+                "aspect_ratio": "1:1",
+                "resolution": "1K",
+                "number_of_images": 1,
+                "quality": "auto",
+                "background": "auto",
+                "moderation": "auto",
+                "output_format": "png",
+                "output_compression_quality": 100
+              },
+              "constraints": {
+                "max_image_count": 10
+              },
+              "resolution_tiers": [
+                {
+                  "label": "Auto",
+                  "value": "auto",
+                  "baseResolution": "Model-selected"
+                },
+                {
+                  "label": "1K",
+                  "value": "1K",
+                  "baseResolution": "1024x1024"
+                }
+              ],
+              "resolution_map": {
+                "auto": {
+                  "1:1": "auto",
+                  "3:2": "auto",
+                  "2:3": "auto"
+                },
+                "1K": {
+                  "1:1": "1024x1024",
+                  "3:2": "1536x1024",
+                  "2:3": "1024x1536"
+                }
+              },
+              "param_options": {
+                "number_of_images": [
+                  {
+                    "label": "1",
+                    "value": 1
+                  },
+                  {
+                    "label": "2",
+                    "value": 2
+                  },
+                  {
+                    "label": "3",
+                    "value": 3
+                  },
+                  {
+                    "label": "4",
+                    "value": 4
+                  },
+                  {
+                    "label": "5",
+                    "value": 5
+                  },
+                  {
+                    "label": "6",
+                    "value": 6
+                  },
+                  {
+                    "label": "7",
+                    "value": 7
+                  },
+                  {
+                    "label": "8",
+                    "value": 8
+                  },
+                  {
+                    "label": "9",
+                    "value": 9
+                  },
+                  {
+                    "label": "10",
+                    "value": 10
+                  }
+                ],
+                "quality": [
+                  {
+                    "label": "Auto",
+                    "value": "auto"
+                  },
+                  {
+                    "label": "Low",
+                    "value": "low"
+                  },
+                  {
+                    "label": "Medium",
+                    "value": "medium"
+                  },
+                  {
+                    "label": "High",
+                    "value": "high"
+                  }
+                ],
+                "background": [
+                  {
+                    "label": "Auto",
+                    "value": "auto"
+                  },
+                  {
+                    "label": "Opaque",
+                    "value": "opaque"
+                  },
+                  {
+                    "label": "Transparent",
+                    "value": "transparent"
+                  }
+                ],
+                "moderation": [
+                  {
+                    "label": "Auto",
+                    "value": "auto"
+                  },
+                  {
+                    "label": "Low",
+                    "value": "low"
+                  }
+                ],
+                "output_format": [
+                  {
+                    "label": "PNG",
+                    "value": "png"
+                  },
+                  {
+                    "label": "JPEG",
+                    "value": "jpeg"
+                  },
+                  {
+                    "label": "WebP",
+                    "value": "webp"
+                  }
+                ]
+              },
+              "numeric_ranges": {
+                "output_compression_quality": {
+                  "min": 0,
+                  "max": 100,
+                  "step": 1
+                }
+              }
+            },
+            {
+              "match": {
+                "starts_with": "gpt-image-2"
+              },
+              "defaults": {
+                "resolution": "auto",
+                "quality": "high",
+                "output_format": "png",
+                "enhance_prompt": false
+              },
+              "aspect_ratios": [
+                {
+                  "label": "1:1 Square",
+                  "value": "1:1"
+                },
+                {
+                  "label": "4:3 Landscape",
+                  "value": "4:3"
+                },
+                {
+                  "label": "3:4 Portrait",
+                  "value": "3:4"
+                },
+                {
+                  "label": "16:9 Widescreen",
+                  "value": "16:9"
+                },
+                {
+                  "label": "9:16 Vertical",
+                  "value": "9:16"
+                }
+              ],
+              "resolution_tiers": [
+                {
+                  "label": "Auto",
+                  "value": "auto",
+                  "baseResolution": "Model-selected"
+                },
+                {
+                  "label": "1K",
+                  "value": "1K",
+                  "baseResolution": "1024x1024 / 1152x864"
+                },
+                {
+                  "label": "2K",
+                  "value": "2K",
+                  "baseResolution": "2048x2048 / 2048x1152"
+                },
+                {
+                  "label": "Max",
+                  "value": "max",
+                  "baseResolution": "Ratio-dependent maximum"
+                }
+              ],
+              "resolution_map": {
+                "auto": {
+                  "1:1": "auto",
+                  "4:3": "auto",
+                  "3:4": "auto",
+                  "16:9": "auto",
+                  "9:16": "auto"
+                },
+                "1K": {
+                  "1:1": "1024x1024",
+                  "4:3": "1152x864",
+                  "3:4": "864x1152",
+                  "16:9": "1280x720",
+                  "9:16": "720x1280"
+                },
+                "2K": {
+                  "1:1": "2048x2048",
+                  "4:3": "2048x1536",
+                  "3:4": "1536x2048",
+                  "16:9": "2048x1152",
+                  "9:16": "1152x2048"
+                },
+                "max": {
+                  "1:1": "2880x2880",
+                  "4:3": "2880x2160",
+                  "3:4": "2160x2880",
+                  "16:9": "3840x2160",
+                  "9:16": "2160x3840"
+                }
+              },
+              "param_options": {
+                "quality": [],
+                "background": [],
+                "moderation": [],
+                "output_format": []
+              },
+              "numeric_ranges": {
+                "output_compression_quality": null
+              }
+            }
+          ]
         },
         "image-edit": {
           "defaults": {
             "aspect_ratio": "1:1",
             "resolution": "1K",
             "number_of_images": 1,
-            "output_mime_type": "image/png",
-            "output_compression_quality": 100,
-            "seed": -1,
-            "negative_prompt": ""
+            "quality": "auto",
+            "background": "auto",
+            "moderation": "auto",
+            "output_format": "png",
+            "output_compression_quality": 100
           },
           "constraints": {
-            "max_image_count": 4
+            "max_image_count": 10
           },
           "aspect_ratios": [
             {
@@ -2326,123 +3358,36 @@
               "value": "1:1"
             },
             {
-              "label": "1:4 Extreme Portrait",
-              "value": "1:4"
-            },
-            {
-              "label": "1:8 Ultra Portrait",
-              "value": "1:8"
-            },
-            {
-              "label": "2:3 Portrait",
-              "value": "2:3"
-            },
-            {
               "label": "3:2 Landscape",
               "value": "3:2"
             },
             {
-              "label": "3:4 Portrait",
-              "value": "3:4"
-            },
-            {
-              "label": "4:1 Extreme Landscape",
-              "value": "4:1"
-            },
-            {
-              "label": "4:3 Landscape",
-              "value": "4:3"
-            },
-            {
-              "label": "4:5 Portrait",
-              "value": "4:5"
-            },
-            {
-              "label": "5:4 Landscape",
-              "value": "5:4"
-            },
-            {
-              "label": "8:1 Ultra Landscape",
-              "value": "8:1"
-            },
-            {
-              "label": "9:16 Portrait",
-              "value": "9:16"
-            },
-            {
-              "label": "16:9 Landscape",
-              "value": "16:9"
-            },
-            {
-              "label": "21:9 Ultrawide",
-              "value": "21:9"
+              "label": "2:3 Portrait",
+              "value": "2:3"
             }
           ],
           "resolution_tiers": [
             {
-              "label": "1K Standard (1024×1024 base)",
+              "label": "Auto",
+              "value": "auto",
+              "baseResolution": "Model-selected"
+            },
+            {
+              "label": "1K",
               "value": "1K",
-              "baseResolution": "1024×1024"
-            },
-            {
-              "label": "2K High (2048×2048 base)",
-              "value": "2K",
-              "baseResolution": "2048×2048"
-            },
-            {
-              "label": "4K Ultra (4096×4096 base)",
-              "value": "4K",
-              "baseResolution": "4096×4096"
+              "baseResolution": "1024x1024"
             }
           ],
           "resolution_map": {
+            "auto": {
+              "1:1": "auto",
+              "3:2": "auto",
+              "2:3": "auto"
+            },
             "1K": {
-              "1:1": "1024*1024",
-              "1:4": "512*2048",
-              "1:8": "384*3072",
-              "2:3": "848*1264",
-              "3:2": "1264*848",
-              "3:4": "896*1200",
-              "4:1": "2048*512",
-              "4:3": "1200*896",
-              "4:5": "928*1152",
-              "5:4": "1152*928",
-              "8:1": "3072*384",
-              "9:16": "768*1376",
-              "16:9": "1376*768",
-              "21:9": "1584*672"
-            },
-            "2K": {
-              "1:1": "2048*2048",
-              "1:4": "1024*4096",
-              "1:8": "768*6144",
-              "2:3": "1696*2528",
-              "3:2": "2528*1696",
-              "3:4": "1792*2400",
-              "4:1": "4096*1024",
-              "4:3": "2400*1792",
-              "4:5": "1856*2304",
-              "5:4": "2304*1856",
-              "8:1": "6144*768",
-              "9:16": "1536*2752",
-              "16:9": "2752*1536",
-              "21:9": "3168*1344"
-            },
-            "4K": {
-              "1:1": "4096*4096",
-              "1:4": "2048*8192",
-              "1:8": "1536*12288",
-              "2:3": "3392*5056",
-              "3:2": "5056*3392",
-              "3:4": "3584*4800",
-              "4:1": "8192*2048",
-              "4:3": "4800*3584",
-              "4:5": "3712*4608",
-              "5:4": "4608*3712",
-              "8:1": "12288*1536",
-              "9:16": "3072*5504",
-              "16:9": "5504*3072",
-              "21:9": "6336*2688"
+              "1:1": "1024x1024",
+              "3:2": "1536x1024",
+              "2:3": "1024x1536"
             }
           },
           "param_options": {
@@ -2462,31 +3407,192 @@
               {
                 "label": "4",
                 "value": 4
+              },
+              {
+                "label": "5",
+                "value": 5
+              },
+              {
+                "label": "6",
+                "value": 6
+              },
+              {
+                "label": "7",
+                "value": 7
+              },
+              {
+                "label": "8",
+                "value": 8
+              },
+              {
+                "label": "9",
+                "value": 9
+              },
+              {
+                "label": "10",
+                "value": 10
               }
             ],
-            "output_mime_type": [
+            "quality": [
+              {
+                "label": "Auto",
+                "value": "auto"
+              },
+              {
+                "label": "Low",
+                "value": "low"
+              },
+              {
+                "label": "Medium",
+                "value": "medium"
+              },
+              {
+                "label": "High",
+                "value": "high"
+              }
+            ],
+            "background": [
+              {
+                "label": "Auto",
+                "value": "auto"
+              },
+              {
+                "label": "Opaque",
+                "value": "opaque"
+              },
+              {
+                "label": "Transparent",
+                "value": "transparent"
+              }
+            ],
+            "moderation": [
+              {
+                "label": "Auto",
+                "value": "auto"
+              },
+              {
+                "label": "Low",
+                "value": "low"
+              }
+            ],
+            "output_format": [
               {
                 "label": "PNG",
-                "value": "image/png"
+                "value": "png"
               },
               {
                 "label": "JPEG",
-                "value": "image/jpeg"
+                "value": "jpeg"
+              },
+              {
+                "label": "WebP",
+                "value": "webp"
               }
             ]
           },
           "numeric_ranges": {
-            "seed": {
-              "min": -1,
-              "max": 2147483647,
-              "step": 1
-            },
             "output_compression_quality": {
-              "min": 1,
+              "min": 0,
               "max": 100,
               "step": 1
             }
-          }
+          },
+          "model_variants": [
+            {
+              "match": {
+                "starts_with": "gpt-image-2"
+              },
+              "defaults": {
+                "resolution": "auto",
+                "quality": "high",
+                "output_format": "png",
+                "enhance_prompt": false
+              },
+              "aspect_ratios": [
+                {
+                  "label": "1:1 Square",
+                  "value": "1:1"
+                },
+                {
+                  "label": "4:3 Landscape",
+                  "value": "4:3"
+                },
+                {
+                  "label": "3:4 Portrait",
+                  "value": "3:4"
+                },
+                {
+                  "label": "16:9 Widescreen",
+                  "value": "16:9"
+                },
+                {
+                  "label": "9:16 Vertical",
+                  "value": "9:16"
+                }
+              ],
+              "resolution_tiers": [
+                {
+                  "label": "Auto",
+                  "value": "auto",
+                  "baseResolution": "Model-selected"
+                },
+                {
+                  "label": "1K",
+                  "value": "1K",
+                  "baseResolution": "1024x1024 / 1152x864"
+                },
+                {
+                  "label": "2K",
+                  "value": "2K",
+                  "baseResolution": "2048x2048 / 2048x1152"
+                },
+                {
+                  "label": "Max",
+                  "value": "max",
+                  "baseResolution": "Ratio-dependent maximum"
+                }
+              ],
+              "resolution_map": {
+                "auto": {
+                  "1:1": "auto",
+                  "4:3": "auto",
+                  "3:4": "auto",
+                  "16:9": "auto",
+                  "9:16": "auto"
+                },
+                "1K": {
+                  "1:1": "1024x1024",
+                  "4:3": "1152x864",
+                  "3:4": "864x1152",
+                  "16:9": "1280x720",
+                  "9:16": "720x1280"
+                },
+                "2K": {
+                  "1:1": "2048x2048",
+                  "4:3": "2048x1536",
+                  "3:4": "1536x2048",
+                  "16:9": "2048x1152",
+                  "9:16": "1152x2048"
+                },
+                "max": {
+                  "1:1": "2880x2880",
+                  "4:3": "2880x2160",
+                  "3:4": "2160x2880",
+                  "16:9": "3840x2160",
+                  "9:16": "2160x3840"
+                }
+              },
+              "param_options": {
+                "quality": [],
+                "background": [],
+                "moderation": [],
+                "output_format": []
+              },
+              "numeric_ranges": {
+                "output_compression_quality": null
+              }
+            }
+          ]
         },
         "image-outpainting": {
           "defaults": {
@@ -2696,6 +3802,18 @@
             "aspect_ratio": "16:9",
             "resolution": "1K",
             "seconds": "4"
+          },
+          "constraints": {
+            "unsupported_params": [
+              "negative_prompt",
+              "seed",
+              "generate_audio",
+              "subtitle_mode",
+              "subtitle_language",
+              "subtitle_script",
+              "storyboard_prompt",
+              "storyboard_segments"
+            ]
           },
           "aspect_ratios": [
             {

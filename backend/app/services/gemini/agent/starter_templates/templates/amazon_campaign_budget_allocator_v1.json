@@ -76,11 +76,13 @@
           "description": "建立活动层效率与预算使用基线",
           "icon": "🧩",
           "iconColor": "bg-indigo-500",
-          "agentName": "亚马逊广告分析师",
           "agentTaskType": "data-analysis",
           "agentFileUrl": "{{input-file-campaign-budget.output.fileUrl}}",
           "inputMapping": "预算约束：{{input-text-campaign-budget.output.text}}\\n报表文件：{{input-file-campaign-budget.output.fileUrl}}",
-          "instructions": "请输出活动层基线：\n1. 高效活动/低效活动分组\n2. 预算耗尽风险\n3. 花费集中度\n4. 可重分配预算池。"
+          "instructions": "请输出活动层基线：\n1. 高效活动/低效活动分组\n2. 预算耗尽风险\n3. 花费集中度\n4. 可重分配预算池。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-ad-analyst"
         }
       },
       {
@@ -112,9 +114,12 @@
           "description": "向高效率活动倾斜预算",
           "icon": "📈",
           "iconColor": "bg-emerald-500",
-          "agentName": "亚马逊广告分析师",
           "inputMapping": "基线分析：{{agent-baseline-campaign-budget.output.text}}\\n预算约束：{{input-text-campaign-budget.output.text}}",
-          "instructions": "请输出效率优先预算方案：\n1. 建议增配活动\n2. 建议降配活动\n3. 预计 ACoS 与订单变化。"
+          "instructions": "请输出效率优先预算方案：\n1. 建议增配活动\n2. 建议降配活动\n3. 预计 ACoS 与订单变化。",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-ad-analyst"
         }
       },
       {
@@ -130,9 +135,12 @@
           "description": "按品牌词/类目词/竞品词重构预算结构",
           "icon": "📊",
           "iconColor": "bg-blue-500",
-          "agentName": "关键词研究专家",
           "inputMapping": "基线分析：{{agent-baseline-campaign-budget.output.text}}\\n预算约束：{{input-text-campaign-budget.output.text}}",
-          "instructions": "请输出结构化分配方案：\n1. 品牌词预算占比\n2. 非品牌词预算占比\n3. 竞品拦截预算占比\n4. 预算切换触发条件。"
+          "instructions": "请输出结构化分配方案：\n1. 品牌词预算占比\n2. 非品牌词预算占比\n3. 竞品拦截预算占比\n4. 预算切换触发条件。",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "keyword-researcher"
         }
       },
       {
@@ -148,9 +156,12 @@
           "description": "校验预算变更风险与稳定性",
           "icon": "🛡️",
           "iconColor": "bg-violet-500",
-          "agentName": "数据报表分析师",
           "inputMapping": "基线分析：{{agent-baseline-campaign-budget.output.text}}",
-          "instructions": "请输出风险校验：\n1. 数据波动风险\n2. 样本不足风险\n3. 执行顺序建议\n4. 监控指标与报警阈值。"
+          "instructions": "请输出风险校验：\n1. 数据波动风险\n2. 样本不足风险\n3. 执行顺序建议\n4. 监控指标与报警阈值。",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -182,9 +193,12 @@
           "description": "输出可执行的 7 天预算动作计划",
           "icon": "✅",
           "iconColor": "bg-indigo-500",
-          "agentName": "运营策略顾问",
           "inputMapping": "预算方案汇总：{{merge-campaign-budget.output.text}}",
-          "instructions": "请输出 7 天执行排期：\n1. Day1-Day7 每日预算动作\n2. 优先级（P0/P1/P2）\n3. 复盘节奏与回滚条件。"
+          "instructions": "请输出 7 天执行排期：\n1. Day1-Day7 每日预算动作\n2. 优先级（P0/P1/P2）\n3. 复盘节奏与回滚条件。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {

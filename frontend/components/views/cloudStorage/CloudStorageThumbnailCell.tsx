@@ -9,11 +9,13 @@ import {
   getNextStoragePreviewIndex
 } from '../../../services/storagePreviewService';
 import {
-  createGeneratedThumb,
   getFileExtension,
   getFileKind
 } from './filePresentation';
 import { useXhrImagePreview } from './useXhrImagePreview';
+import { CloudStoragePreviewImage } from './CloudStoragePreviewImage';
+import { CloudStorageGeneratedThumbnail } from './CloudStorageGeneratedThumbnail';
+import { RetainedVideo } from '../../common/RetainedMedia';
 
 interface CloudStorageThumbnailCellProps {
   item: StorageBrowseItem;
@@ -51,13 +53,13 @@ export const CloudStorageThumbnailCell: React.FC<CloudStorageThumbnailCellProps>
   );
   const [videoPreviewIndex, setVideoPreviewIndex] = useState(0);
   const [videoPreviewExhausted, setVideoPreviewExhausted] = useState(false);
-  const generatedThumb = useMemo(() => createGeneratedThumb(kind, ext), [kind, ext]);
-  const { src: imagePreviewSrc, exhausted: imagePreviewExhausted } = useXhrImagePreview(
+  const imagePreview = useXhrImagePreview(
     kind === 'image' ? previewCandidates : [],
     failedPreviewUrlsRef,
     `${item.path}:${item.url || ''}:${item.previewUrl || ''}:${storageRevision ?? ''}`,
     { enabled: imagePreviewEnabled }
   );
+  const { src: imagePreviewSrc, exhausted: imagePreviewExhausted } = imagePreview;
 
   useEffect(() => {
     if (kind !== 'image' && kind !== 'video') {
@@ -156,26 +158,26 @@ export const CloudStorageThumbnailCell: React.FC<CloudStorageThumbnailCellProps>
       )}
 
       {kind === 'image' && imagePreviewSrc && (
-        <img
+        <CloudStoragePreviewImage
           src={imagePreviewSrc}
           alt={item.name}
+          onRecoverPreviewError={imagePreview.recoverFromImageError}
           className="h-full w-full rounded-xl border border-slate-700 bg-slate-900 object-contain p-1"
-          loading="lazy"
         />
       )}
 
       {kind === 'image' && !imagePreviewSrc && !imagePreviewExhausted && (
-        <img
-          src={generatedThumb}
+        <CloudStorageGeneratedThumbnail
+          kind={kind}
+          ext={ext}
           alt={`${kind} thumbnail loading`}
           className="h-full w-full rounded-xl border border-slate-700 bg-slate-900 object-contain p-1 opacity-80"
-          loading="lazy"
         />
       )}
 
       {kind === 'video' && videoPreviewEnabled && videoPreviewUrl && (
         <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-700 bg-black">
-          <video
+          <RetainedVideo
             ref={videoElementRef}
             src={videoPreviewUrl}
             className={`h-full w-full bg-black object-contain transition-opacity duration-150 ${
@@ -190,11 +192,11 @@ export const CloudStorageThumbnailCell: React.FC<CloudStorageThumbnailCellProps>
             onError={handleVideoPreviewError}
           />
           {!videoFrameReady && (
-            <img
-              src={generatedThumb}
+            <CloudStorageGeneratedThumbnail
+              kind={kind}
+              ext={ext}
               alt={`${kind} thumbnail loading`}
               className="absolute inset-0 h-full w-full rounded-xl bg-slate-900 object-contain p-1 opacity-80"
-              loading="lazy"
             />
           )}
           <div className="absolute inset-0 flex items-center justify-center bg-black/20">
@@ -207,11 +209,11 @@ export const CloudStorageThumbnailCell: React.FC<CloudStorageThumbnailCellProps>
         (kind === 'video' && (!videoPreviewEnabled || !videoPreviewUrl)) ||
         (kind !== 'directory' && kind !== 'image' && kind !== 'video')) && (
         <div className="relative h-full w-full">
-          <img
-            src={generatedThumb}
+          <CloudStorageGeneratedThumbnail
+            kind={kind}
+            ext={ext}
             alt={`${kind} thumbnail`}
             className="h-full w-full rounded-xl border border-slate-700 bg-slate-900 object-contain p-1"
-            loading="lazy"
           />
           {kind === 'video' && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/10">

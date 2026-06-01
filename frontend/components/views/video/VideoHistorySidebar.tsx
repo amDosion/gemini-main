@@ -129,6 +129,7 @@ export const VideoHistorySidebar: React.FC<VideoHistorySidebarProps> = ({
           openActionMenu={openActionMenu}
           actionMenuPosition={actionMenuPosition}
           actionMenuPanelRef={actionMenuPanelRef}
+          closeHoverPreviewOnly={closeHoverPreview}
           closeHoverPreview={closeHoverPreview}
           closeActionMenu={closeActionMenu}
           isFavorite={isFavorite}

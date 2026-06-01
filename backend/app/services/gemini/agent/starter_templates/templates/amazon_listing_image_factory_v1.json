@@ -60,9 +60,12 @@
           "description": "输出四类图片的提示词方案",
           "icon": "💡",
           "iconColor": "bg-amber-500",
-          "agentName": "电商文案创作师",
           "inputMapping": "产品与卖点输入：{{input-text-listing-image-factory.output.text}}",
-          "instructions": "请输出四类图片提示词：\n1. 主图（白底合规）\n2. 场景图（使用场景）\n3. 细节图（材质工艺）\n4. 对比图（差异化卖点）。"
+          "instructions": "请输出四类图片提示词：\n1. 主图（白底合规）\n2. 场景图（使用场景）\n3. 细节图（材质工艺）\n4. 对比图（差异化卖点）。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.8,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ecommerce-copywriter"
         }
       },
       {
@@ -94,12 +97,19 @@
           "description": "生成 Amazon 白底主图",
           "icon": "🖼️",
           "iconColor": "bg-pink-500",
-          "agentName": "产品图片设计师",
           "agentTaskType": "image-gen",
           "agentAspectRatio": "1:1",
           "agentNumberOfImages": 1,
           "inputMapping": "{{agent-copy-brief-listing-image.output.text}}\\n\\n请执行主图生成：白底、无文字、无水印、主体完整。",
-          "instructions": "先优化提示词再生成图片，确保主图合规。"
+          "instructions": "先优化提示词再生成图片，确保主图合规。",
+          "agentTemperature": 0.7,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "product-image-designer"
         }
       },
       {
@@ -115,12 +125,19 @@
           "description": "生成真实使用场景图",
           "icon": "🏞️",
           "iconColor": "bg-indigo-500",
-          "agentName": "产品图片设计师",
           "agentTaskType": "image-gen",
           "agentAspectRatio": "3:4",
           "agentNumberOfImages": 1,
           "inputMapping": "{{agent-copy-brief-listing-image.output.text}}\\n\\n请执行场景图生成：场景真实，卖点明确。",
-          "instructions": "保持产品主体一致，强化使用场景。"
+          "instructions": "保持产品主体一致，强化使用场景。",
+          "agentTemperature": 0.7,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "product-image-designer"
         }
       },
       {
@@ -136,12 +153,19 @@
           "description": "生成材质与工艺细节图",
           "icon": "🔍",
           "iconColor": "bg-violet-500",
-          "agentName": "产品图片设计师",
           "agentTaskType": "image-gen",
           "agentAspectRatio": "1:1",
           "agentNumberOfImages": 1,
           "inputMapping": "{{agent-copy-brief-listing-image.output.text}}\\n\\n请执行细节图生成：突出材质、结构、做工。",
-          "instructions": "聚焦卖点细节，画面干净。"
+          "instructions": "聚焦卖点细节，画面干净。",
+          "agentTemperature": 0.7,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "product-image-designer"
         }
       },
       {
@@ -157,12 +181,19 @@
           "description": "生成差异化对比卖点图",
           "icon": "📌",
           "iconColor": "bg-teal-500",
-          "agentName": "产品图片设计师",
           "agentTaskType": "image-gen",
           "agentAspectRatio": "4:3",
           "agentNumberOfImages": 1,
           "inputMapping": "{{agent-copy-brief-listing-image.output.text}}\\n\\n请执行对比图生成：体现核心差异化优势，突出购买理由。",
-          "instructions": "对比要清晰，不要加入违规元素。"
+          "instructions": "对比要清晰，不要加入违规元素。",
+          "agentTemperature": 0.7,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "product-image-designer"
         }
       },
       {
@@ -194,9 +225,13 @@
           "description": "输出最终交付清单与迭代建议",
           "icon": "✅",
           "iconColor": "bg-emerald-500",
-          "agentName": "图片编辑优化师",
           "inputMapping": "四类素材摘要：{{merge-listing-image-factory.output.text}}",
-          "instructions": "请做交付审阅（不要再索要输入）：\n1. 每类推荐图\n2. 合规风险标注\n3. 二次迭代提示词\n4. 最终交付清单。"
+          "instructions": "请做交付审阅（不要再索要输入）：\n1. 每类推荐图\n2. 合规风险标注\n3. 二次迭代提示词\n4. 最终交付清单。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {

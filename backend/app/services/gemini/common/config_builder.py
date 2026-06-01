@@ -5,7 +5,7 @@ Handles building of generation configurations for Google API.
 """
 
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -20,12 +20,59 @@ except ImportError:
 class ConfigBuilder:
     """
     Builds generation configurations for Google API.
-    
+
     Handles:
     - Basic generation parameters (temperature, max_tokens, etc.)
     - Tool configurations (search, code execution, grounding)
     - Thinking mode configuration
     """
+
+    _THINKING_LEVEL_ALIASES = {
+        "minimal": "MINIMAL",
+        "min": "MINIMAL",
+        "low": "LOW",
+        "medium": "MEDIUM",
+        "med": "MEDIUM",
+        "high": "HIGH",
+    }
+
+    @staticmethod
+    def normalize_thinking_level_name(thinking_level: Any) -> Optional[str]:
+        """Return the SDK enum member name for a frontend thinking level."""
+        if thinking_level is None:
+            return None
+
+        raw_level = str(thinking_level).strip()
+        if not raw_level:
+            return None
+
+        normalized = raw_level.lower().replace("-", "_")
+        if normalized in {"auto", "default", "unspecified", "thinking_level_unspecified"}:
+            return None
+
+        level_name = ConfigBuilder._THINKING_LEVEL_ALIASES.get(normalized)
+        if not level_name:
+            logger.warning("[Config Builder] Invalid thinking_level: %s, skipping", thinking_level)
+            return None
+
+        return level_name
+
+    @staticmethod
+    def build_thinking_config(enable_thinking: bool = False, thinking_level: Any = None) -> Any:
+        """Build google-genai ThinkingConfig with optional thinking level."""
+        if not enable_thinking:
+            return None
+        if not GENAI_TYPES_AVAILABLE:
+            raise RuntimeError("google.genai.types not available")
+
+        thinking_params: Dict[str, Any] = {"include_thoughts": True}
+        level_name = ConfigBuilder.normalize_thinking_level_name(thinking_level)
+        if level_name:
+            thinking_level_enum = getattr(genai_types.ThinkingLevel, level_name, None)
+            if thinking_level_enum is not None:
+                thinking_params["thinking_level"] = thinking_level_enum
+
+        return genai_types.ThinkingConfig(**thinking_params)
     
     @staticmethod
     def build_generate_config(**kwargs) -> Dict[str, Any]:
@@ -220,8 +267,9 @@ class ConfigBuilder:
         
         # ✅ Thinking Mode 配置
         if enable_thinking:
-            thinking_config = genai_types.ThinkingConfig(
-                include_thoughts=True  # 返回思考摘要
+            thinking_config = ConfigBuilder.build_thinking_config(
+                enable_thinking=True,
+                thinking_level=kwargs.get("thinking_level") or kwargs.get("thinkingLevel"),
             )
             config_params['thinking_config'] = thinking_config
             logger.info("[Config Builder] Enabled Thinking Mode with thought summaries")

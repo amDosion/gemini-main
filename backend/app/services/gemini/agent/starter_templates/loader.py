@@ -26,6 +26,72 @@ _REQUIRED_TOP_LEVEL_KEYS = {
 }
 
 
+def _safe_string(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _validate_starter_template_agent_bindings(
+    definition: Dict[str, Any],
+    source_path: Path,
+) -> None:
+    config = definition.get("config") if isinstance(definition.get("config"), dict) else {}
+    nodes = config.get("nodes") if isinstance(config.get("nodes"), list) else []
+
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        data = node.get("data") if isinstance(node.get("data"), dict) else {}
+        node_type = _safe_string(data.get("type") or node.get("type")).lower().replace("-", "_")
+        if node_type != "agent":
+            continue
+
+        node_id = _safe_string(node.get("id")) or "<missing>"
+        has_registry_binding = bool(
+            _safe_string(data.get("agentId") or data.get("agent_id"))
+            or _safe_string(data.get("agentName") or data.get("agent_name"))
+        )
+        has_preset_binding = bool(
+            _safe_string(data.get("agentPresetKey") or data.get("agent_preset_key"))
+        )
+        inline_keys = [
+            key
+            for key in (
+                "inlineUseActiveProfile",
+                "inline_use_active_profile",
+                "inlineProviderId",
+                "inline_provider_id",
+                "inlineModelId",
+                "inline_model_id",
+                "inlineProfileId",
+                "inline_profile_id",
+                "inlineAgentName",
+                "inline_agent_name",
+                "inlineSystemPrompt",
+                "inline_system_prompt",
+            )
+            if key in data and _safe_string(data.get(key))
+        ]
+        if inline_keys:
+            raise ValueError(
+                f"{source_path.name}: agent node {node_id} uses legacy inline agent fields: {inline_keys}"
+            )
+
+        if has_registry_binding:
+            raise ValueError(
+                f"{source_path.name}: agent node {node_id} must use agentPresetKey in starter source"
+            )
+
+        if not has_preset_binding:
+            raise ValueError(
+                f"{source_path.name}: agent node {node_id} must declare agentPresetKey"
+            )
+
+        if not _safe_string(data.get("agentTaskType") or data.get("agent_task_type")):
+            raise ValueError(
+                f"{source_path.name}: agent node {node_id} must declare agentTaskType"
+            )
+
+
 def _validate_definition(definition: Dict[str, Any], source_path: Path) -> Dict[str, Any]:
     missing = [key for key in _REQUIRED_TOP_LEVEL_KEYS if key not in definition]
     if missing:
@@ -43,6 +109,7 @@ def _validate_definition(definition: Dict[str, Any], source_path: Path) -> Dict[
     if not isinstance(nodes, list) or not isinstance(edges, list):
         raise ValueError(f"{source_path.name}: config must contain nodes[] and edges[]")
 
+    _validate_starter_template_agent_bindings(definition, source_path)
     return definition
 
 

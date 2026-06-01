@@ -9,6 +9,7 @@ import {
 import { uploadFormDataWithXhr } from '../../services/httpProgress';
 import { GroundingMetadata, ResearchRequiredAction, ToolCall, ToolResult } from '../../types/types';
 import { getErrorMessage } from '../../utils/errorMessage';
+import { getPreferredAttachmentUrl } from '../../utils/attachmentUrl';
 import {
   DELTA_TOOL_CALL_TYPES,
   DELTA_TOOL_RESULT_TYPES,
@@ -64,7 +65,7 @@ export class DeepResearchHandler extends BaseHandler {
         for (const attachment of attachments) {
           let fileBlob: Blob;
 
-          const sourceUrl = attachment.url || attachment.tempUrl;
+          const sourceUrl = getPreferredAttachmentUrl(attachment);
           if (!sourceUrl) {
             throw new Error(`附件缺少可读取 URL: ${attachment.name || attachment.id}`);
           }

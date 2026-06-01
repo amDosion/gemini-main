@@ -75,9 +75,13 @@
           "description": "拆分多路素材生成策略与英文文案主线",
           "icon": "🧠",
           "iconColor": "bg-violet-500",
-          "agentName": "产品图片设计师",
           "inputMapping": "参考图：{{input-image-reference-studio.output.imageUrl}}\n目标：{{input-text-reference-studio.output.text}}",
-          "instructions": "只输出英文创意规划，不生成图片；需包含 Hero/Lifestyle/Model/Flatlay 4 路构图与文案方向。"
+          "instructions": "只输出英文创意规划，不生成图片；需包含 Hero/Lifestyle/Model/Flatlay 4 路构图与文案方向。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.7,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentPresetKey": "product-image-designer"
         }
       },
       {
@@ -110,7 +114,6 @@
           "description": "保留结构，替换颜色并生成英文卖点文案",
           "icon": "🎨",
           "iconColor": "bg-rose-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentEditMode": "image-chat-edit",
           "agentAspectRatio": "1:1",
@@ -122,7 +125,16 @@
           "agentProductMatchThreshold": 74,
           "agentOutputLanguage": "en",
           "inputMapping": "{{agent-reference-studio-plan.output.text}}\n\nRoute A: Colorway variant hero. Keep structure unchanged, generate premium color variants and English callout copy.",
-          "instructions": "English-only copy. Keep text in top margin / corner zones. Never overlap model face or core product body."
+          "instructions": "English-only copy. Keep text in top margin / corner zones. Never overlap model face or core product body.",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -138,7 +150,6 @@
           "description": "真人模特 + 产品主体 + 英文主文案",
           "icon": "🧍",
           "iconColor": "bg-teal-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentEditMode": "image-chat-edit",
           "agentAspectRatio": "4:5",
@@ -150,7 +161,16 @@
           "agentProductMatchThreshold": 72,
           "agentOutputLanguage": "en",
           "inputMapping": "{{agent-reference-studio-plan.output.text}}\n\nRoute B: Model-focused ad visual. Real model interaction + product clarity + 2 short English badges.",
-          "instructions": "English-only copy. Text layout must avoid covering model face, hands, and product silhouette."
+          "instructions": "English-only copy. Text layout must avoid covering model face, hands, and product silhouette.",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -166,7 +186,6 @@
           "description": "真实使用场景 + 品牌氛围",
           "icon": "🏞️",
           "iconColor": "bg-emerald-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentEditMode": "image-chat-edit",
           "agentAspectRatio": "1:1",
@@ -178,7 +197,16 @@
           "agentProductMatchThreshold": 72,
           "agentOutputLanguage": "en",
           "inputMapping": "{{agent-reference-studio-plan.output.text}}\n\nRoute C: Lifestyle scene image for Amazon secondary slot. Natural environment, product usage moment, clean English headline.",
-          "instructions": "English-only copy. Keep composition balanced and avoid text-body overlap."
+          "instructions": "English-only copy. Keep composition balanced and avoid text-body overlap.",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -194,7 +222,6 @@
           "description": "高质感平铺 + 英文文案引导线",
           "icon": "🪄",
           "iconColor": "bg-amber-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentEditMode": "image-chat-edit",
           "agentAspectRatio": "1:1",
@@ -206,7 +233,16 @@
           "agentProductMatchThreshold": 74,
           "agentOutputLanguage": "en",
           "inputMapping": "{{agent-reference-studio-plan.output.text}}\n\nRoute D: Premium flat-lay infographic with elegant English headline, badges, and callout lines.",
-          "instructions": "English-only copy. Typography hierarchy and safe margins are mandatory."
+          "instructions": "English-only copy. Typography hierarchy and safe margins are mandatory.",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -238,9 +274,13 @@
           "description": "输出可交付清单、失败分支与重试提示词",
           "icon": "✅",
           "iconColor": "bg-indigo-500",
-          "agentName": "图片编辑优化师",
           "inputMapping": "并行结果：{{merge-reference-studio.output.text}}",
-          "instructions": "Return in English only. Provide route-by-route pass/fail table, winner picks, retry prompts for failed routes, and final launch checklist."
+          "instructions": "Return in English only. Provide route-by-route pass/fail table, winner picks, retry prompts for failed routes, and final launch checklist.",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {

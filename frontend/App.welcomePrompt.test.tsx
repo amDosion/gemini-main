@@ -10,6 +10,9 @@ const {
   setCurrentModelIdMock,
   setIsModelMenuOpenMock,
   createNewSessionMock,
+  selectLatestSessionForModeMock,
+  refreshSessionsMock,
+  setIsSettingsOpenMock,
   handleModeSwitchMock,
   showErrorMock,
   showWarningMock,
@@ -20,6 +23,9 @@ const {
   setCurrentModelIdMock: vi.fn(),
   setIsModelMenuOpenMock: vi.fn(),
   createNewSessionMock: vi.fn(),
+  selectLatestSessionForModeMock: vi.fn(),
+  refreshSessionsMock: vi.fn(),
+  setIsSettingsOpenMock: vi.fn(),
   handleModeSwitchMock: vi.fn(),
   showErrorMock: vi.fn(),
   showWarningMock: vi.fn(),
@@ -46,25 +52,59 @@ vi.mock('./contexts/ToastContext', async () => {
 vi.mock('./components', async () => {
   const ReactModule = await import('react');
 
-  const ChatView = (props: { onPromptSelect: (text: string, mode: string, modelId: string, requiredCap: string) => void }) => {
+  const ChatView = (props: {
+    onPromptSelect: (text: string, mode: string, modelId: string, requiredCap: string) => void;
+    onSend: (text: string, options: any, attachments: any[], mode: any) => void;
+  }) => {
     ReactModule.useEffect(() => {
       props.onPromptSelect('welcome prompt', 'chat', 'model-target', 'search');
     }, []);
-    return ReactModule.createElement('div', null, 'chat-view');
+    return ReactModule.createElement(
+      'div',
+      null,
+      'chat-view',
+      ReactModule.createElement(
+        'button',
+        {
+          onClick: () =>
+            props.onSend(
+              'expand prompt',
+              { outpaintMode: 'ratio' },
+              [
+                {
+                  id: 'attachment-1',
+                  name: 'source.png',
+                  mimeType: 'image/png',
+                  url: 'data:image/png;base64,AAAA',
+                },
+              ],
+              'image-outpainting'
+            ),
+          'data-testid': 'send-google-expand',
+        },
+        'send google expand'
+      )
+    );
   };
 
   return {
     AppLayout: ({
       children,
       onNewChat,
+      setAppMode,
+      workspaceTabs,
     }: {
       children: React.ReactNode;
       onNewChat: () => void;
+      setAppMode?: (mode: string) => void;
+      workspaceTabs?: React.ReactNode;
     }) =>
       ReactModule.createElement(
         'div',
         null,
         ReactModule.createElement('button', { onClick: onNewChat, 'data-testid': 'new-session' }, 'new session'),
+        ReactModule.createElement('button', { onClick: () => setAppMode?.('image-gen'), 'data-testid': 'mode-nav-image-gen' }, 'mode nav image gen'),
+        ReactModule.createElement('div', { 'data-testid': 'workspace-tabs' }, workspaceTabs),
         children
       ),
     ChatView,
@@ -73,6 +113,35 @@ vi.mock('./components', async () => {
     LoadingSpinner: () => null,
     ErrorView: () => null,
     WelcomeScreen: () => null,
+  };
+});
+
+vi.mock('./components/layout/WorkspaceTagViews', async () => {
+  const ReactModule = await import('react');
+  return {
+    WorkspaceTagViews: ({
+      activeMode,
+      onSelectMode,
+      onReloadMode,
+    }: {
+      activeMode: string;
+      onSelectMode: (mode: string) => void;
+      onReloadMode?: (mode: string) => void;
+    }) =>
+      ReactModule.createElement(
+        ReactModule.Fragment,
+        null,
+        ReactModule.createElement(
+          'button',
+          { onClick: () => onSelectMode('image-gen'), 'data-testid': 'workspace-tab-image-gen' },
+          'tag image gen'
+        ),
+        ReactModule.createElement(
+          'button',
+          { onClick: () => onReloadMode?.(activeMode), 'data-testid': 'workspace-tab-reload' },
+          'reload tab'
+        )
+      ),
   };
 });
 
@@ -105,7 +174,7 @@ vi.mock('./hooks', () => {
         baseUrl: '',
       },
       isSettingsOpen: false,
-      setIsSettingsOpen: vi.fn(),
+      setIsSettingsOpen: setIsSettingsOpenMock,
       profiles: [],
       activeProfileId: 'profile-1',
       activeProfile: {
@@ -140,8 +209,9 @@ vi.mock('./hooks', () => {
       updateSessionPersona: vi.fn(),
       updateSessionTitle: vi.fn(),
       deleteSession: vi.fn(),
+      selectLatestSessionForMode: selectLatestSessionForModeMock,
       cacheStatus: { isFromCache: false, isStale: false, isRefreshing: false, timestamp: Date.now(), refresh: vi.fn(), updateStatus: vi.fn() },
-      refreshSessions: vi.fn(),
+      refreshSessions: refreshSessionsMock,
       hasMoreSessions: false,
       isLoadingMore: false,
       loadMoreSessions: vi.fn(),
@@ -234,6 +304,9 @@ describe('App welcome prompt quick send model selection', () => {
     setCurrentModelIdMock.mockReset();
     setIsModelMenuOpenMock.mockReset();
     createNewSessionMock.mockReset();
+    selectLatestSessionForModeMock.mockReset();
+    refreshSessionsMock.mockReset();
+    setIsSettingsOpenMock.mockReset();
     handleModeSwitchMock.mockReset();
     showErrorMock.mockReset();
     showWarningMock.mockReset();
@@ -248,6 +321,7 @@ describe('App welcome prompt quick send model selection', () => {
       mode: 'chat',
     });
     startTelemetrySpanMock.mockReturnValue({ end: telemetryEndMock });
+    selectLatestSessionForModeMock.mockReturnValue(true);
   });
 
   it('uses the prompt-specified model for the first send before currentModelId state updates', async () => {
@@ -289,5 +363,81 @@ describe('App welcome prompt quick send model selection', () => {
 
     expect(createNewSessionMock).toHaveBeenCalledTimes(1);
     expect(handleModeSwitchMock).not.toHaveBeenCalledWith('chat');
+  });
+
+  it('selects the latest session for left mode navigation but preserves tag-view session cache', async () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(sendMessageMock).toHaveBeenCalled();
+    });
+
+    selectLatestSessionForModeMock.mockClear();
+    handleModeSwitchMock.mockClear();
+
+    fireEvent.click(screen.getByTestId('mode-nav-image-gen'));
+
+    expect(selectLatestSessionForModeMock).toHaveBeenCalledWith('image-gen');
+    expect(handleModeSwitchMock).toHaveBeenCalledWith('image-gen');
+
+    selectLatestSessionForModeMock.mockClear();
+    handleModeSwitchMock.mockClear();
+
+    fireEvent.click(screen.getByTestId('workspace-tab-image-gen'));
+
+    expect(selectLatestSessionForModeMock).not.toHaveBeenCalled();
+    expect(handleModeSwitchMock).toHaveBeenCalledWith('image-gen');
+  });
+
+  it('reloads the active workspace tab with a forced session refresh', async () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(sendMessageMock).toHaveBeenCalled();
+    });
+
+    refreshSessionsMock.mockClear();
+
+    fireEvent.click(screen.getByTestId('workspace-tab-reload'));
+
+    expect(refreshSessionsMock).toHaveBeenCalledWith({ force: true });
+  });
+
+  it('does not require a DashScope key before sending Google image outpainting', async () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(sendMessageMock).toHaveBeenCalled();
+    });
+
+    sendMessageMock.mockClear();
+    showWarningMock.mockClear();
+    setIsSettingsOpenMock.mockClear();
+
+    fireEvent.click(screen.getByTestId('send-google-expand'));
+
+    await waitFor(() => {
+      expect(sendMessageMock).toHaveBeenCalledTimes(1);
+    });
+
+    const sentMode = sendMessageMock.mock.calls[0]?.[3];
+
+    expect(sentMode).toBe('image-outpainting');
+    expect(showWarningMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('DashScope API Key is required')
+    );
+    expect(setIsSettingsOpenMock).not.toHaveBeenCalled();
   });
 });

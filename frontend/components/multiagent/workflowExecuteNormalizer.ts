@@ -9,17 +9,19 @@
  */
 
 import type { WorkflowNodeData } from './types';
+import {
+  WORKFLOW_AUDIO_OUTPUT_FORMATS,
+  WORKFLOW_IMAGE_OUTPUT_MIME_TYPES,
+  WORKFLOW_OUTPUT_FORMATS,
+  WORKFLOW_VIDEO_ASPECT_RATIOS,
+  WORKFLOW_VIDEO_INPUT_STRATEGIES,
+  WORKFLOW_VIDEO_SUBTITLE_MODES,
+  normalizeWorkflowAgentTaskType,
+  normalizeWorkflowImageEditMode,
+  normalizeWorkflowVideoMaskMode,
+  normalizeWorkflowVideoResolution,
+} from './workflowContract';
 import { isPlainObject } from './workflowResultUtils';
-
-const WORKFLOW_ALLOWED_AGENT_TASK_TYPES = new Set([
-  'chat',
-  'image-gen',
-  'image-edit',
-  'video-gen',
-  'audio-gen',
-  'vision-understand',
-  'data-analysis',
-]);
 
 const WORKFLOW_ALLOWED_ANALYSIS_TYPES = new Set([
   'comprehensive',
@@ -29,27 +31,17 @@ const WORKFLOW_ALLOWED_ANALYSIS_TYPES = new Set([
   'distribution',
 ]);
 
-const WORKFLOW_ALLOWED_IMAGE_EDIT_MODES = new Set([
-  'image-chat-edit',
-  'image-mask-edit',
-  'image-inpainting',
-  'image-background-edit',
-  'image-recontext',
-  'image-outpainting',
-  'virtual-try-on',
-]);
+const WORKFLOW_ALLOWED_IMAGE_OUTPUT_MIME_TYPES = new Set<string>(WORKFLOW_IMAGE_OUTPUT_MIME_TYPES);
 
-const WORKFLOW_ALLOWED_IMAGE_OUTPUT_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+const WORKFLOW_ALLOWED_AUDIO_OUTPUT_FORMATS = new Set<string>(WORKFLOW_AUDIO_OUTPUT_FORMATS);
 
-const WORKFLOW_ALLOWED_AUDIO_OUTPUT_FORMATS = new Set(['mp3', 'wav', 'opus', 'aac', 'flac', 'pcm']);
+const WORKFLOW_ALLOWED_VIDEO_ASPECT_RATIOS = new Set<string>(WORKFLOW_VIDEO_ASPECT_RATIOS);
 
-const WORKFLOW_ALLOWED_VIDEO_ASPECT_RATIOS = new Set(['16:9', '9:16']);
+const WORKFLOW_ALLOWED_VIDEO_SUBTITLE_MODES = new Set<string>(WORKFLOW_VIDEO_SUBTITLE_MODES);
 
-const WORKFLOW_ALLOWED_VIDEO_RESOLUTIONS = new Set(['720p', '1080p', '4k']);
+const WORKFLOW_ALLOWED_VIDEO_INPUT_STRATEGIES = new Set<string>(WORKFLOW_VIDEO_INPUT_STRATEGIES);
 
-const WORKFLOW_ALLOWED_VIDEO_SUBTITLE_MODES = new Set(['none', 'vtt', 'srt', 'both']);
-
-const WORKFLOW_ALLOWED_OUTPUT_FORMATS = new Set(['text', 'json', 'markdown']);
+const WORKFLOW_ALLOWED_OUTPUT_FORMATS = new Set<string>(WORKFLOW_OUTPUT_FORMATS);
 
 const normalizeWorkflowStringList = (value: unknown, maxItems = 12): string[] => {
   if (!Array.isArray(value)) return [];
@@ -94,61 +86,8 @@ const normalizeOptionalString = (value: unknown, maxLength = 128): string | null
   return text.length > maxLength ? text.slice(0, maxLength) : text;
 };
 
-const normalizeVideoResolutionForExecute = (value: unknown): string | null => {
-  const raw = String(value || '').trim();
-  if (!raw) return null;
-
-  const normalized = raw.toLowerCase().replace(/\s+/g, '').replace(/\*/g, 'x').replace(/×/g, 'x');
-  const aliases: Record<string, string> = {
-    '1k': '720p',
-    '720p': '720p',
-    '1280': '720p',
-    '1280x720': '720p',
-    '720x1280': '720p',
-    '2k': '1080p',
-    '1080p': '1080p',
-    '1920': '1080p',
-    '1920x1080': '1080p',
-    '1080x1920': '1080p',
-    '4k': '4k',
-    '2160p': '4k',
-    '3840x2160': '4k',
-    '2160x3840': '4k',
-  };
-
-  if (normalized in aliases) {
-    return aliases[normalized];
-  }
-  if (WORKFLOW_ALLOWED_VIDEO_RESOLUTIONS.has(normalized)) {
-    return normalized;
-  }
-  return null;
-};
-
 const normalizeAgentTaskTypeForExecute = (value: unknown): string => {
-  const raw = String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/_/g, '-');
-  const aliases: Record<string, string> = {
-    'vision-analyze': 'vision-understand',
-    'image-analyze': 'vision-understand',
-    'image-understand': 'vision-understand',
-    'table-analysis': 'data-analysis',
-    video: 'video-gen',
-    'video-generate': 'video-gen',
-    'video-generation': 'video-gen',
-    audio: 'audio-gen',
-    speech: 'audio-gen',
-    tts: 'audio-gen',
-    'speech-gen': 'audio-gen',
-    'speech-generate': 'audio-gen',
-    'speech-generation': 'audio-gen',
-    'audio-generate': 'audio-gen',
-    'audio-generation': 'audio-gen',
-  };
-  const normalized = aliases[raw] || raw;
-  return WORKFLOW_ALLOWED_AGENT_TASK_TYPES.has(normalized) ? normalized : 'chat';
+  return normalizeWorkflowAgentTaskType(value, 'chat') || 'chat';
 };
 
 const normalizeAnalysisTypeForExecute = (value: unknown): string => {
@@ -169,12 +108,7 @@ const normalizeAnalysisTypeForExecute = (value: unknown): string => {
 };
 
 const normalizeImageEditModeForExecute = (value: unknown): string | null => {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/_/g, '-');
-  if (!normalized) return null;
-  return WORKFLOW_ALLOWED_IMAGE_EDIT_MODES.has(normalized) ? normalized : null;
+  return normalizeWorkflowImageEditMode(value);
 };
 
 const normalizeNodeSizeForExecute = (
@@ -433,7 +367,7 @@ export const normalizeWorkflowNodeDataForExecute = (
       'agent_resolution_tier',
     ]) {
       if (data[fieldName] === undefined) continue;
-      const normalized = normalizeVideoResolutionForExecute(data[fieldName]);
+      const normalized = normalizeWorkflowVideoResolution(data[fieldName]);
       if (!normalized) {
         delete data[fieldName];
       } else {
@@ -460,6 +394,19 @@ export const normalizeWorkflowNodeDataForExecute = (
       const normalized = normalizeOptionalChoice(
         data[fieldName],
         WORKFLOW_ALLOWED_VIDEO_SUBTITLE_MODES
+      );
+      if (!normalized) {
+        delete data[fieldName];
+      } else {
+        data[fieldName] = normalized;
+      }
+    }
+
+    for (const fieldName of ['agentVideoInputStrategy', 'agent_video_input_strategy']) {
+      if (data[fieldName] === undefined) continue;
+      const normalized = normalizeOptionalChoice(
+        data[fieldName],
+        WORKFLOW_ALLOWED_VIDEO_INPUT_STRATEGIES
       );
       if (!normalized) {
         delete data[fieldName];
@@ -500,6 +447,8 @@ export const normalizeWorkflowNodeDataForExecute = (
       'agent_last_frame_image_url',
       'agentVideoMaskImageUrl',
       'agent_video_mask_image_url',
+      'agentAudioUrl',
+      'agent_audio_url',
     ]) {
       if (data[fieldName] === undefined) continue;
       const normalized = normalizeOptionalString(data[fieldName], 2048);
@@ -512,7 +461,7 @@ export const normalizeWorkflowNodeDataForExecute = (
 
     for (const fieldName of ['agentVideoMaskMode', 'agent_video_mask_mode']) {
       if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalString(data[fieldName], 64);
+      const normalized = normalizeWorkflowVideoMaskMode(data[fieldName]);
       if (!normalized) {
         delete data[fieldName];
       } else {
@@ -570,7 +519,7 @@ export const normalizeWorkflowNodeDataForExecute = (
       'tool_video_resolution',
     ]) {
       if (data[fieldName] === undefined) continue;
-      const normalized = normalizeVideoResolutionForExecute(data[fieldName]);
+      const normalized = normalizeWorkflowVideoResolution(data[fieldName]);
       if (!normalized) {
         delete data[fieldName];
       } else {
@@ -629,7 +578,7 @@ export const normalizeWorkflowNodeDataForExecute = (
 
     for (const fieldName of ['toolVideoMaskMode', 'tool_video_mask_mode']) {
       if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalString(data[fieldName], 64);
+      const normalized = normalizeWorkflowVideoMaskMode(data[fieldName]);
       if (!normalized) {
         delete data[fieldName];
       } else {
@@ -699,4 +648,3 @@ export const normalizeWorkflowNodeDataForExecute = (
 
   return data;
 };
-

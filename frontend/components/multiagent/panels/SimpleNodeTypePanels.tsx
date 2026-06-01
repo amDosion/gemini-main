@@ -175,5 +175,17 @@ export const HumanNodePanel: React.FC<BasePanelProps> = ({ nodeData, updateNodeD
         placeholder="请确认输出是否满足业务规则..."
       />
     </div>
+    <label className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+      <input
+        type="checkbox"
+        checked={nodeData.autoApprove === true}
+        onChange={(e) => updateNodeData({ autoApprove: e.target.checked })}
+        data-field-key="autoApprove"
+        className="mt-0.5 h-4 w-4 rounded border-amber-400/50 bg-slate-900 text-amber-500 focus:ring-amber-500/30"
+      />
+      <span>
+        显式自动通过。当前还没有真实人工确认流程，未开启时该节点不能执行或保存为模板。
+      </span>
+    </label>
   </div>
 );

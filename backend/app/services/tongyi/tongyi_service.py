@@ -29,6 +29,21 @@ from ...utils.attachment_handler import is_http_url
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_EDIT_PROMPT_OPTIMIZE_MODEL = "qwen-vl-max-latest"
+
+
+def _is_tongyi_vision_prompt_model(model_id: str) -> bool:
+    lower_id = str(model_id or "").strip().lower()
+    if not lower_id:
+        return False
+    return (
+        "qwen-vl" in lower_id
+        or "qwen2-vl" in lower_id
+        or "qwen2.5-vl" in lower_id
+        or "qwen3-vl" in lower_id
+        or "-vl-" in lower_id
+    )
+
 
 class TongyiService(BaseProviderService):
     """
@@ -75,6 +90,9 @@ class TongyiService(BaseProviderService):
         self._image_generation_service = None  # 直接使用 ImageGenerationService
         self._image_edit_service = None
         self._image_expand_service = None
+        self._video_generation_service = None
+        self._speech_generation_service = None
+        self._virtual_tryon_service = None
         self._model_manager = None
         
         logger.info("[TongyiService] 协调者初始化完成: api_key=***")
@@ -87,6 +105,50 @@ class TongyiService(BaseProviderService):
 
     def _sanitize_chat_kwargs(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
         return {k: v for k, v in kwargs.items() if k not in self._CHAT_ROUTING_KWARGS}
+
+    @staticmethod
+    def _get_bool_option(kwargs: Dict[str, Any], *keys: str, default: bool = False) -> bool:
+        for key in keys:
+            if key not in kwargs:
+                continue
+            value = kwargs.get(key)
+            if value is None:
+                continue
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str):
+                return value.strip().lower() in {"1", "true", "yes", "on"}
+            return bool(value)
+        return default
+
+    @staticmethod
+    def _get_optional_bool_option(kwargs: Dict[str, Any], *keys: str) -> Optional[bool]:
+        for key in keys:
+            if key not in kwargs:
+                continue
+            value = kwargs.get(key)
+            if value is None:
+                continue
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str):
+                return value.strip().lower() in {"1", "true", "yes", "on"}
+            return bool(value)
+        return None
+
+    def _resolve_edit_prompt_optimize_model(self, model_hint: Any) -> Optional[str]:
+        selected_model = str(model_hint or "").strip()
+        if not selected_model:
+            return None
+        if _is_tongyi_vision_prompt_model(selected_model):
+            return selected_model
+
+        logger.warning(
+            "[TongyiService.edit_image] 增强提示词模型 %s 不适合图像编辑，回退到 %s",
+            selected_model,
+            DEFAULT_EDIT_PROMPT_OPTIMIZE_MODEL,
+        )
+        return DEFAULT_EDIT_PROMPT_OPTIMIZE_MODEL
 
     def _get_primary_chat_provider(self, connection_mode: Optional[str] = None):
         target_mode = connection_mode or self.connection_mode
@@ -301,7 +363,18 @@ class TongyiService(BaseProviderService):
         logger.info(f"[TongyiService]     - prompt: {prompt[:100] + '...' if len(prompt) > 100 else prompt}")
         logger.info(f"[TongyiService]     - prompt长度: {len(prompt)}")
         for key, value in kwargs.items():
-            if key in ['aspectRatio', 'aspect_ratio', 'imageResolution', 'resolution', 'numberOfImages', 'num_images', 'imageStyle', 'style']:
+            if key in [
+                'aspectRatio',
+                'aspect_ratio',
+                'imageResolution',
+                'resolution',
+                'numberOfImages',
+                'num_images',
+                'imageStyle',
+                'style',
+                'enableSequential',
+                'enable_sequential',
+            ]:
                 logger.info(f"[TongyiService]     - {key}: {value}")
         
         logger.info(f"[TongyiService] 🔄 [步骤1] 初始化 ImageGenerationService...")
@@ -316,28 +389,73 @@ class TongyiService(BaseProviderService):
         logger.info(f"[TongyiService] 🔄 [步骤2] 构建 ImageGenerationRequest...")
         from .image_generation import ImageGenerationRequest
         
-        # 处理 promptExtend -> enable_prompt_optimize
-        enable_prompt_optimize = kwargs.get("promptExtend") or kwargs.get("enable_prompt_optimize", False)
+        is_wan27_image = str(model or "").lower().startswith("wan2.7-image")
+        enable_prompt_optimize = self._get_bool_option(
+            kwargs,
+            "promptExtend",
+            "prompt_extend",
+            "enable_prompt_optimize",
+            "enhancePrompt",
+            "enhance_prompt",
+            default=False,
+        )
         # 处理 addMagicSuffix -> add_magic_suffix
         add_magic_suffix = kwargs.get("addMagicSuffix") if kwargs.get("addMagicSuffix") is not None else kwargs.get("add_magic_suffix", True)
+        thinking_mode = self._get_optional_bool_option(kwargs, "thinkingMode", "thinking_mode")
+        enable_sequential = (
+            is_wan27_image
+            and self._get_bool_option(
+                kwargs,
+                "enableSequential",
+                "enable_sequential",
+                "sequentialMode",
+                "sequential_mode",
+                default=False,
+            )
+        )
+        if is_wan27_image:
+            add_magic_suffix = False
+        if thinking_mode is None and is_wan27_image:
+            thinking_mode = True
+        if enable_sequential:
+            thinking_mode = None
         
         request = ImageGenerationRequest(
             model_id=model,
             prompt=prompt,
             aspect_ratio=kwargs.get("aspectRatio") or kwargs.get("aspect_ratio", "1:1"),
-            resolution=kwargs.get("imageResolution") or kwargs.get("resolution", "1.25K"),
-            num_images=kwargs.get("numberOfImages") or kwargs.get("num_images", 1),
+            resolution=(
+                kwargs.get("imageResolution")
+                or kwargs.get("image_resolution")
+                or kwargs.get("resolution", "1.25K")
+            ),
+            num_images=(
+                kwargs.get("number_of_images")
+                or kwargs.get("numberOfImages")
+                or kwargs.get("num_images")
+                or kwargs.get("n")
+                or 1
+            ),
             negative_prompt=kwargs.get("negativePrompt") or kwargs.get("negative_prompt"),
             seed=kwargs.get("seed"),
-            style=kwargs.get("imageStyle") or kwargs.get("style"),
+            style=kwargs.get("imageStyle") or kwargs.get("image_style") or kwargs.get("style"),
             enable_prompt_optimize=enable_prompt_optimize,
-            add_magic_suffix=add_magic_suffix
+            add_magic_suffix=add_magic_suffix,
+            prompt_optimize_model=(
+                kwargs.get("enhancePromptModel")
+                or kwargs.get("enhance_prompt_model")
+                or kwargs.get("promptOptimizeModel")
+                or kwargs.get("prompt_optimize_model")
+            ),
+            thinking_mode=thinking_mode,
+            enable_sequential=enable_sequential,
         )
         logger.info(f"[TongyiService] ✅ [步骤2] 请求参数构建完成:")
         logger.info(f"[TongyiService]     - model_id: {request.model_id}")
         logger.info(f"[TongyiService]     - aspect_ratio: {request.aspect_ratio}")
         logger.info(f"[TongyiService]     - resolution: {request.resolution}")
         logger.info(f"[TongyiService]     - num_images: {request.num_images}")
+        logger.info(f"[TongyiService]     - enable_sequential: {request.enable_sequential}")
 
         # 直接调用 ImageGenerationService
         logger.info(f"[TongyiService] 🔄 [步骤3] 调用 ImageGenerationService.generate()...")
@@ -421,17 +539,47 @@ class TongyiService(BaseProviderService):
         # 构建编辑选项
         from .image_edit import ImageEditOptions
         
-        # 处理 promptExtend -> enable_prompt_optimize
-        enable_prompt_optimize = kwargs.get("promptExtend") or kwargs.get("enable_prompt_optimize", False)
-        
+        is_wan27_image = str(model or "").lower().startswith("wan2.7-image")
+        enable_prompt_optimize = self._get_bool_option(
+            kwargs,
+            "promptExtend",
+            "prompt_extend",
+            "enable_prompt_optimize",
+            "enhancePrompt",
+            "enhance_prompt",
+            default=False,
+        )
         options = ImageEditOptions(
-            n=kwargs.get("number_of_images") or kwargs.get("numberOfImages", 1),
+            n=(
+                kwargs.get("number_of_images")
+                or kwargs.get("numberOfImages")
+                or kwargs.get("num_images")
+                or kwargs.get("n")
+                or 1
+            ),
             negative_prompt=kwargs.get("negative_prompt") or kwargs.get("negativePrompt"),
-            size=kwargs.get("size"),
+            size=(
+                kwargs.get("size")
+                or kwargs.get("imageResolution")
+                or kwargs.get("image_resolution")
+                or kwargs.get("resolution")
+            ),
+            aspect_ratio=kwargs.get("aspectRatio") or kwargs.get("aspect_ratio", "1:1"),
             watermark=kwargs.get("watermark", False),
             seed=kwargs.get("seed"),
-            prompt_extend=kwargs.get("prompt_extend", True),
-            enable_prompt_optimize=enable_prompt_optimize
+            prompt_extend=False if is_wan27_image else self._get_bool_option(
+                kwargs,
+                "promptExtend",
+                "prompt_extend",
+                default=False,
+            ),
+            enable_prompt_optimize=enable_prompt_optimize,
+            prompt_optimize_model=self._resolve_edit_prompt_optimize_model(
+                kwargs.get("enhancePromptModel")
+                or kwargs.get("enhance_prompt_model")
+                or kwargs.get("promptOptimizeModel")
+                or kwargs.get("prompt_optimize_model")
+            ),
         )
         
         # 调用编辑服务
@@ -444,12 +592,23 @@ class TongyiService(BaseProviderService):
         
         # 转换为统一格式
         if result.success:
-            return [{
-                "url": result.url,
-                "mime_type": result.mime_type
-            }]
+            result_urls = list(getattr(result, "urls", None) or [])
+            if not result_urls and getattr(result, "url", None):
+                result_urls = [result.url]
+
+            formatted_results = []
+            for url in result_urls:
+                formatted_result = {
+                    "url": url,
+                    "mime_type": getattr(result, "mime_type", "image/png")
+                }
+                optimized_prompt = getattr(result, "optimized_prompt", None)
+                if optimized_prompt:
+                    formatted_result["enhanced_prompt"] = optimized_prompt
+                formatted_results.append(formatted_result)
+            return formatted_results
         else:
-            raise Exception(f"Image editing failed: {result.error}")
+            raise Exception(f"Image editing failed: {getattr(result, 'error', None)}")
     
     async def expand_image(
         self,
@@ -535,36 +694,74 @@ class TongyiService(BaseProviderService):
         **kwargs
     ) -> Dict[str, Any]:
         """
-        生成视频（Tongyi 暂不支持，抛出 NotImplementedError）
+        生成视频（委托给 DashScope video-synthesis 异步任务）
         
         Args:
             prompt: 提示词
             model: 模型名称
             **kwargs: 额外参数
         
-        Raises:
-            NotImplementedError: Tongyi 暂不支持视频生成
+        Returns:
+            统一视频结果字典
         """
-        raise NotImplementedError("Tongyi does not support video generation yet")
+        if self._video_generation_service is None:
+            from .video_generation import TongyiVideoGenerationService
+            self._video_generation_service = TongyiVideoGenerationService(api_key=self.api_key)
+        return await self._video_generation_service.generate_video(prompt, model, **kwargs)
     
     async def generate_speech(
         self,
         text: str,
-        voice: str,
+        voice: str = "Cherry",
         **kwargs
     ) -> Dict[str, Any]:
         """
-        生成语音（Tongyi 暂不支持，抛出 NotImplementedError）
+        生成语音（委托给 DashScope Qwen TTS 非实时合成）
         
         Args:
             text: 文本
             voice: 语音名称
             **kwargs: 额外参数
         
-        Raises:
-            NotImplementedError: Tongyi 暂不支持语音生成
+        Returns:
+            统一音频结果字典
         """
-        raise NotImplementedError("Tongyi does not support speech generation yet")
+        if self._speech_generation_service is None:
+            from .speech_generation import TongyiSpeechGenerationService
+            self._speech_generation_service = TongyiSpeechGenerationService(api_key=self.api_key)
+        return await self._speech_generation_service.generate_speech(
+            text=text,
+            model=kwargs.get("model") or kwargs.get("model_id") or "qwen-tts",
+            voice=voice or "Cherry",
+            language_type=kwargs.get("language_type") or kwargs.get("languageType"),
+            instructions=kwargs.get("instructions"),
+            optimize_instructions=kwargs.get("optimize_instructions") or kwargs.get("optimizeInstructions"),
+        )
+
+    async def virtual_tryon(
+        self,
+        prompt: str,
+        model: str,
+        reference_images: Dict[str, Any],
+        **kwargs
+    ) -> List[Dict[str, Any]]:
+        """
+        虚拟试衣（委托给 DashScope OutfitAnyone-Plus）。
+
+        约定与 Google/OpenAI 模式一致：第一个附件是人物图，第二个附件是服装图。
+        """
+        _ = prompt
+        if self._virtual_tryon_service is None:
+            from .virtual_tryon import TongyiVirtualTryOnService
+            self._virtual_tryon_service = TongyiVirtualTryOnService(api_key=self.api_key)
+
+        result = await self._virtual_tryon_service.virtual_tryon(
+            reference_images,
+            model=model or "aitryon-plus",
+            resolution=kwargs.get("resolution", -1),
+            restore_face=self._get_bool_option(kwargs, "restore_face", "restoreFace", default=True),
+        )
+        return [result]
 
     async def layered_design(
         self,

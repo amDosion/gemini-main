@@ -76,9 +76,12 @@
           "description": "从任务目标中提炼核心卖点与视觉优先级",
           "icon": "💡",
           "iconColor": "bg-amber-500",
-          "agentName": "电商文案创作师",
           "inputMapping": "用户编辑目标：{{input-text-understand-edit.output.text}}",
-          "instructions": "请输出电商图片可视化卖点：\n1. 核心卖点（3-5 条）\n2. 每条卖点的视觉呈现建议\n3. 禁止弱化的关键信息"
+          "instructions": "请输出电商图片可视化卖点：\n1. 核心卖点（3-5 条）\n2. 每条卖点的视觉呈现建议\n3. 禁止弱化的关键信息",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.8,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ecommerce-copywriter"
         }
       },
       {
@@ -94,11 +97,15 @@
           "description": "分析参考图主体、背景和风险点",
           "icon": "🧠",
           "iconColor": "bg-indigo-500",
-          "agentName": "图片视觉理解师",
           "agentTaskType": "vision-understand",
           "agentReferenceImageUrl": "{{input-image-understand-edit.output.imageUrl}}",
           "inputMapping": "编辑目标：{{input-text-understand-edit.output.text}}\\n卖点提炼：{{agent-selling-point-extract.output.text}}\\n参考图：{{input-image-understand-edit.output.imageUrl}}\\n\\n请完成参考图理解：\\n1. 主体识别\\n2. 可保留元素\\n3. 需规避元素\\n4. 输出可编辑约束。",
-          "instructions": "必须基于附件图片本身进行视觉识别，不得依据文件名或 URL 猜测品类。"
+          "instructions": "必须基于附件图片本身进行视觉识别，不得依据文件名或 URL 猜测品类。",
+          "agentTemperature": 0.2,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentOutputFormat": "json",
+          "agentPresetKey": "image-vision-analyst"
         }
       },
       {
@@ -130,9 +137,13 @@
           "description": "基于图片理解生成主图专用 edit prompt",
           "icon": "🧾",
           "iconColor": "bg-fuchsia-500",
-          "agentName": "图片编辑优化师",
           "inputMapping": "图片理解：{{agent-image-understand.output.text}}\n卖点提炼：{{agent-selling-point-extract.output.text}}\n用户目标：{{input-text-understand-edit.output.text}}\n\n请仅输出主图图生图 editPrompt（英文）：白底、合规、主体不变、禁文本覆盖主体。",
-          "instructions": "只输出可执行的英文 editPrompt，不要解释，不要 Markdown。"
+          "instructions": "只输出可执行的英文 editPrompt，不要解释，不要 Markdown。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -148,9 +159,13 @@
           "description": "基于图片理解生成场景图专用 edit prompt",
           "icon": "🏞️",
           "iconColor": "bg-sky-500",
-          "agentName": "图片编辑优化师",
           "inputMapping": "图片理解：{{agent-image-understand.output.text}}\n卖点提炼：{{agent-selling-point-extract.output.text}}\n用户目标：{{input-text-understand-edit.output.text}}\n\n请仅输出场景图图生图 editPrompt（英文）：真实场景、主体一致、构图自然、文案避开主体。",
-          "instructions": "只输出可执行的英文 editPrompt，不要解释，不要 Markdown。"
+          "instructions": "只输出可执行的英文 editPrompt，不要解释，不要 Markdown。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -166,9 +181,13 @@
           "description": "基于图片理解生成卖点图专用 edit prompt",
           "icon": "🔬",
           "iconColor": "bg-rose-500",
-          "agentName": "图片编辑优化师",
           "inputMapping": "图片理解：{{agent-image-understand.output.text}}\n卖点提炼：{{agent-selling-point-extract.output.text}}\n用户目标：{{input-text-understand-edit.output.text}}\n\n请仅输出卖点图图生图 editPrompt（英文）：突出材质工艺、局部细节清晰、标注线条不遮挡主体。",
-          "instructions": "只输出可执行的英文 editPrompt，不要解释，不要 Markdown。"
+          "instructions": "只输出可执行的英文 editPrompt，不要解释，不要 Markdown。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -184,12 +203,25 @@
           "description": "主图智能体图生图精修",
           "icon": "🪄",
           "iconColor": "bg-purple-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentReferenceImageUrl": "{{input-image-understand-edit.output.imageUrl}}",
           "agentNumberOfImages": 1,
           "inputMapping": "主图 editPrompt：{{agent-main-prompt-understand.output.text}}\\n参考图：{{input-image-understand-edit.output.imageUrl}}\\n\\n请直接输出编辑后的图片，不要返回文本。",
-          "instructions": "执行 image-chat-edit，确保主图合规并保持主体一致。"
+          "instructions": "执行 image-chat-edit，确保主图合规并保持主体一致。",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentEditMode": "image-chat-edit",
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentImageEditMaxRetries": 2,
+          "agentPreserveProductIdentity": true,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -205,12 +237,25 @@
           "description": "场景智能体图生图精修",
           "icon": "🏞️",
           "iconColor": "bg-indigo-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentReferenceImageUrl": "{{input-image-understand-edit.output.imageUrl}}",
           "agentNumberOfImages": 1,
           "inputMapping": "场景图 editPrompt：{{agent-scene-prompt-understand.output.text}}\\n参考图：{{input-image-understand-edit.output.imageUrl}}\\n\\n请直接输出编辑后的图片，不要返回文本。",
-          "instructions": "执行 image-chat-edit，增强真实场景感并保持主体一致。"
+          "instructions": "执行 image-chat-edit，增强真实场景感并保持主体一致。",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentEditMode": "image-chat-edit",
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentImageEditMaxRetries": 2,
+          "agentPreserveProductIdentity": true,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -226,12 +271,25 @@
           "description": "卖点智能体图生图精修",
           "icon": "🔍",
           "iconColor": "bg-violet-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentReferenceImageUrl": "{{input-image-understand-edit.output.imageUrl}}",
           "agentNumberOfImages": 1,
           "inputMapping": "卖点图 editPrompt：{{agent-detail-prompt-understand.output.text}}\\n参考图：{{input-image-understand-edit.output.imageUrl}}\\n\\n请直接输出编辑后的图片，不要返回文本。",
-          "instructions": "执行 image-chat-edit，聚焦卖点细节和材质纹理。"
+          "instructions": "执行 image-chat-edit，聚焦卖点细节和材质纹理。",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentEditMode": "image-chat-edit",
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentImageEditMaxRetries": 2,
+          "agentPreserveProductIdentity": true,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -263,9 +321,13 @@
           "description": "输出最终交付图和返修清单",
           "icon": "✅",
           "iconColor": "bg-emerald-500",
-          "agentName": "图片编辑优化师",
           "inputMapping": "三路图生图结果摘要：{{merge-understand-edit.output.text}}\\n主图提示词：{{agent-main-prompt-understand.output.text}}\\n场景提示词：{{agent-scene-prompt-understand.output.text}}\\n卖点提示词：{{agent-detail-prompt-understand.output.text}}",
-          "instructions": "请按主图/场景图/卖点图输出最终交付建议（不要再索要图片或数据）：\n1. 每类推荐结果\n2. 不合规风险说明\n3. 返修项与原因\n4. 下一轮可执行提示词"
+          "instructions": "请按主图/场景图/卖点图输出最终交付建议（不要再索要图片或数据）：\n1. 每类推荐结果\n2. 不合规风险说明\n3. 返修项与原因\n4. 下一轮可执行提示词",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {

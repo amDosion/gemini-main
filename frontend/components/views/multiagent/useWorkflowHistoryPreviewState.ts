@@ -9,11 +9,22 @@ import {
 } from 'react';
 import { removeRecordKey, upsertBoundedRecord } from '../../../services/boundedRecordCache';
 import {
-  fetchWorkflowPreviewImagesWithMeta,
-  fetchWorkflowPreviewMediaWithMeta,
   type WorkflowHistoryMediaKind,
   type WorkflowHistoryMediaPreviewItem,
 } from '../../../services/workflowHistoryService';
+import {
+  getWorkflowPreviewImagesWithCache,
+  getWorkflowPreviewMediaWithCache,
+  readWorkflowPreviewImagesCacheEntry,
+  readWorkflowPreviewMediaCacheEntry,
+  removeWorkflowPreviewImagesCacheEntry,
+  removeWorkflowPreviewMediaCacheEntry,
+} from '../../../services/workflowPreviewCache';
+import {
+  capturePrivateCacheLifecycleSnapshot,
+  isPrivateCacheLifecycleSnapshotCurrent,
+} from '../../../services/privateCacheInvalidation';
+import { usePrivateCacheLifecycleRevision } from '../../../hooks/usePrivateCacheScopeRevision';
 import { PREVIEW_IMAGE_MAX_ENTRIES } from '../../multiagent/workflowResultUtils';
 import type { WorkflowHistoryItem } from './types';
 import { isWorkflowExecutionAbortError } from './workflowExecutionErrors';
@@ -125,11 +136,27 @@ export const useWorkflowHistoryPreviewState = ({
   const historyPreviewRequestSeqRef = useRef(0);
   const historyPreviewControllerRef = useRef<AbortController | null>(null);
 
+  const resetLocalPreviewState = useCallback(() => {
+    historyPreviewRequestSeqRef.current += 1;
+    const historyPreviewController = historyPreviewControllerRef.current;
+    if (historyPreviewController) {
+      historyPreviewController.abort();
+      releaseRequestController(historyPreviewController);
+      historyPreviewControllerRef.current = null;
+    }
+    setPreviewingHistoryId(null);
+    setExpandedPreviewHistoryId(null);
+    setHistoryPreviewImages({});
+    setHistoryPreviewMedia({});
+  }, [releaseRequestController]);
+
   const removeHistoryPreviewImageCache = useCallback((executionId: string) => {
+    removeWorkflowPreviewImagesCacheEntry(executionId);
     setHistoryPreviewImages((prev) => removeRecordKey(prev, executionId));
   }, []);
 
   const removeHistoryPreviewMediaCache = useCallback((executionId: string) => {
+    removeWorkflowPreviewMediaCacheEntry(executionId);
     setHistoryPreviewMedia((prev) => removeRecordKey(prev, executionId));
   }, []);
 
@@ -146,11 +173,22 @@ export const useWorkflowHistoryPreviewState = ({
     if (summaryImageCount <= 0) {
       return [];
     }
+    const sharedImages = readWorkflowPreviewImagesCacheEntry(executionId);
+    if (sharedImages) {
+      const imageUrls = Array.isArray(sharedImages.imageUrls) ? sharedImages.imageUrls : [];
+      setHistoryPreviewImages((prev) => upsertBoundedRecord({
+        record: prev,
+        key: executionId,
+        value: imageUrls,
+        maxEntries: HISTORY_PREVIEW_CACHE_MAX_ENTRIES,
+        protectedKeys: [expandedPreviewHistoryId, executionId],
+      }));
+      return imageUrls;
+    }
     try {
-      const { imageUrls, skippedCount, count } = await fetchWorkflowPreviewImagesWithMeta(
+      const { imageUrls, skippedCount, count } = await getWorkflowPreviewImagesWithCache(
         executionId,
-        HISTORY_PREVIEW_IMAGE_FETCH_LIMIT,
-        signal
+        HISTORY_PREVIEW_IMAGE_FETCH_LIMIT
       );
       if (!isMountedRef.current || signal.aborted || isStaleRequest()) {
         return null;
@@ -196,22 +234,46 @@ export const useWorkflowHistoryPreviewState = ({
         videoUrls: [],
       };
     }
+    const sharedAudio = summaryAudioCount > 0
+      ? readWorkflowPreviewMediaCacheEntry(executionId, 'audio')
+      : null;
+    const sharedVideo = summaryVideoCount > 0
+      ? readWorkflowPreviewMediaCacheEntry(executionId, 'video')
+      : null;
+    if (
+      (summaryAudioCount <= 0 || sharedAudio) &&
+      (summaryVideoCount <= 0 || sharedVideo)
+    ) {
+      const nextMediaState = {
+        audioItems: sharedAudio?.items || [],
+        videoItems: sharedVideo?.items || [],
+      };
+      setHistoryPreviewMedia((prev) => upsertBoundedRecord({
+        record: prev,
+        key: executionId,
+        value: nextMediaState,
+        maxEntries: HISTORY_PREVIEW_CACHE_MAX_ENTRIES,
+        protectedKeys: [expandedPreviewHistoryId, executionId],
+      }));
+      return {
+        audioUrls: toBoundedPreviewMediaUrls(nextMediaState.audioItems),
+        videoUrls: toBoundedPreviewMediaUrls(nextMediaState.videoItems),
+      };
+    }
     try {
       const [audioResult, videoResult] = await Promise.all([
         summaryAudioCount > 0
-          ? fetchWorkflowPreviewMediaWithMeta(
+          ? getWorkflowPreviewMediaWithCache(
             executionId,
             'audio',
-            HISTORY_PREVIEW_MEDIA_FETCH_LIMIT,
-            signal
+            HISTORY_PREVIEW_MEDIA_FETCH_LIMIT
           )
           : Promise.resolve({ mediaType: 'audio' as const, items: [], skippedCount: 0, count: 0 }),
         summaryVideoCount > 0
-          ? fetchWorkflowPreviewMediaWithMeta(
+          ? getWorkflowPreviewMediaWithCache(
             executionId,
             'video',
-            HISTORY_PREVIEW_MEDIA_FETCH_LIMIT,
-            signal
+            HISTORY_PREVIEW_MEDIA_FETCH_LIMIT
           )
           : Promise.resolve({ mediaType: 'video' as const, items: [], skippedCount: 0, count: 0 }),
       ]);
@@ -249,6 +311,7 @@ export const useWorkflowHistoryPreviewState = ({
     if (!item?.id) return;
     historyPreviewRequestSeqRef.current += 1;
     const requestSeq = historyPreviewRequestSeqRef.current;
+    const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
 
     const previousController = historyPreviewControllerRef.current;
     if (previousController) {
@@ -266,13 +329,42 @@ export const useWorkflowHistoryPreviewState = ({
       return;
     }
 
-    const cachedImages = historyPreviewImages[item.id];
-    const cachedMedia = historyPreviewMedia[item.id];
+    const sharedImages = item.resultImageCount > 0
+      ? readWorkflowPreviewImagesCacheEntry(item.id)
+      : null;
+    const sharedAudio = item.resultAudioCount > 0
+      ? readWorkflowPreviewMediaCacheEntry(item.id, 'audio')
+      : null;
+    const sharedVideo = item.resultVideoCount > 0
+      ? readWorkflowPreviewMediaCacheEntry(item.id, 'video')
+      : null;
     const hasCachedPreview = (
       hasPreviewCacheEntry(historyPreviewImages, item.id) ||
-      hasPreviewCacheEntry(historyPreviewMedia, item.id)
+      hasPreviewCacheEntry(historyPreviewMedia, item.id) ||
+      Boolean(sharedImages || sharedAudio || sharedVideo)
     );
     if (hasCachedPreview) {
+      if (sharedImages && !hasPreviewCacheEntry(historyPreviewImages, item.id)) {
+        setHistoryPreviewImages((prev) => upsertBoundedRecord({
+          record: prev,
+          key: item.id,
+          value: sharedImages.imageUrls,
+          maxEntries: HISTORY_PREVIEW_CACHE_MAX_ENTRIES,
+          protectedKeys: [expandedPreviewHistoryId, item.id],
+        }));
+      }
+      if ((sharedAudio || sharedVideo) && !hasPreviewCacheEntry(historyPreviewMedia, item.id)) {
+        setHistoryPreviewMedia((prev) => upsertBoundedRecord({
+          record: prev,
+          key: item.id,
+          value: {
+            audioItems: sharedAudio?.items || [],
+            videoItems: sharedVideo?.items || [],
+          },
+          maxEntries: HISTORY_PREVIEW_CACHE_MAX_ENTRIES,
+          protectedKeys: [expandedPreviewHistoryId, item.id],
+        }));
+      }
       setExpandedPreviewHistoryId(item.id);
       return;
     }
@@ -281,7 +373,8 @@ export const useWorkflowHistoryPreviewState = ({
     historyPreviewControllerRef.current = controller;
     const isStaleRequest = () =>
       requestSeq !== historyPreviewRequestSeqRef.current ||
-      historyPreviewControllerRef.current !== controller;
+      historyPreviewControllerRef.current !== controller ||
+      !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot);
 
     if (isMountedRef.current) {
       setPreviewingHistoryId(item.id);
@@ -292,26 +385,23 @@ export const useWorkflowHistoryPreviewState = ({
       const shouldLoadVideo = item.resultVideoCount > 0;
       const [imageResult, audioResult, videoResult] = await Promise.all([
         shouldLoadImages
-          ? fetchWorkflowPreviewImagesWithMeta(
+          ? getWorkflowPreviewImagesWithCache(
             item.id,
-            HISTORY_PREVIEW_IMAGE_FETCH_LIMIT,
-            controller.signal
+            HISTORY_PREVIEW_IMAGE_FETCH_LIMIT
           )
           : Promise.resolve({ imageUrls: [], skippedCount: 0, count: 0 }),
         shouldLoadAudio
-          ? fetchWorkflowPreviewMediaWithMeta(
+          ? getWorkflowPreviewMediaWithCache(
             item.id,
             'audio',
-            HISTORY_PREVIEW_MEDIA_FETCH_LIMIT,
-            controller.signal
+            HISTORY_PREVIEW_MEDIA_FETCH_LIMIT
           )
           : Promise.resolve({ mediaType: 'audio' as const, items: [], skippedCount: 0, count: 0 }),
         shouldLoadVideo
-          ? fetchWorkflowPreviewMediaWithMeta(
+          ? getWorkflowPreviewMediaWithCache(
             item.id,
             'video',
-            HISTORY_PREVIEW_MEDIA_FETCH_LIMIT,
-            controller.signal
+            HISTORY_PREVIEW_MEDIA_FETCH_LIMIT
           )
           : Promise.resolve({ mediaType: 'video' as const, items: [], skippedCount: 0, count: 0 }),
       ]);
@@ -381,6 +471,8 @@ export const useWorkflowHistoryPreviewState = ({
     releaseRequestController(historyPreviewController);
     historyPreviewControllerRef.current = null;
   }, [releaseRequestController]);
+
+  usePrivateCacheLifecycleRevision(resetLocalPreviewState, { includeCacheReset: true });
 
   return {
     historyPreviewImages,

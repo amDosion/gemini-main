@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
 import {
   Crop,
@@ -20,10 +20,14 @@ import { ThinkingBlock } from '../message/ThinkingBlock';
 import { useToastContext } from '../../contexts/ToastContext';
 import { useControlsState } from '../../hooks/useControlsState';
 import { useImageCarousel } from '../../hooks/useImageCarousel';
+import { useAutoSelectGeneratedImageResult } from '../../hooks/useAutoSelectGeneratedImageResult';
 import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
 import ChatEditInputArea from '../chat/ChatEditInputArea';
 import { extractImageHistoryPrompts, useImageHistorySidebar } from '../common/ImageHistorySidebar';
+import { getPreferredImageAttachmentUrl, isTemporaryAttachmentUrl } from '../../utils/attachmentUrl';
 import { useThinkingBlock } from '../../hooks/useThinkingBlock';
+import { useStableAttachmentImageUrl } from '../../hooks/useStableAttachmentImageUrl';
+import { buildMessagesMediaSignature } from '../../utils/messageMediaSignature';
 
 interface ImageEditViewProps {
   messages: Message[];
@@ -43,29 +47,7 @@ interface ImageEditViewProps {
   onDeleteMessage?: (messageId: string) => void;
 }
 
-// 优化：使用 React.memo 配合自定义比较函数，防止不必要的重新渲染
-// Optimization: Use React.memo with a custom comparison function to prevent unnecessary re-renders
-const arePropsEqual = (prevProps: ImageEditViewProps, nextProps: ImageEditViewProps) => {
-  // 仅比较 activeModelConfig 的 ID，避免因对象引用变化而重新渲染
-  // Only compare the ID of activeModelConfig to prevent re-renders due to object reference changes
-  if (prevProps.activeModelConfig?.id !== nextProps.activeModelConfig?.id) {
-    return false;
-  }
-
-  // 比较其他关键 props
-  // Compare other critical props
-  if (prevProps.loadingState !== nextProps.loadingState) return false;
-  if (prevProps.messages !== nextProps.messages) return false;
-  if (prevProps.sessionId !== nextProps.sessionId) return false;
-  if (prevProps.providerId !== nextProps.providerId) return false;
-
-  // 如果所有关键 props 都相等，则不重新渲染
-  // If all critical props are equal, do not re-render
-  return true;
-};
-
-export const ImageEditView = memo(
-  ({
+export const ImageEditView: React.FC<ImageEditViewProps> = ({
     messages,
     setAppMode,
     onImageClick,
@@ -81,7 +63,7 @@ export const ImageEditView = memo(
     providerId,
     sessionId: currentSessionId, // ✅ 接收 sessionId
     onDeleteMessage,
-  }: ImageEditViewProps) => {
+  }) => {
     const { showError } = useToastContext();
 
     // State for reference image
@@ -94,6 +76,9 @@ export const ImageEditView = memo(
 
     // ✅ 包装 setActiveAttachments 以添加调试日志
     const handleAttachmentsChange = useCallback((newAtts: Attachment[]) => {
+      if (newAtts.length > 0) {
+        setSelectedHistoryMsgId(null);
+      }
       setActiveAttachments(newAtts);
     }, []);
 
@@ -107,54 +92,10 @@ export const ImageEditView = memo(
       displayedContent: displayedThinkingContent,
     } = useThinkingBlock(messages, loadingState);
 
-    // ✅ 多图 URL 缓存（支持多图预览）
-    // 使用 Map 缓存每个文件的 Blob URL，避免重复创建和提前 revoke
-    const canvasObjectUrlMapRef = useRef<Map<File, string>>(new Map());
-
-    const getStableCanvasUrlFromAttachment = useCallback((att: Attachment) => {
-      // ✅ 调试日志
-
-      if (att.file) {
-        const file = att.file;
-        const cachedUrl = canvasObjectUrlMapRef.current.get(file);
-        if (cachedUrl) {
-          return cachedUrl;
-        }
-        // 为新文件创建 Blob URL 并缓存
-        const newUrl = URL.createObjectURL(file);
-        canvasObjectUrlMapRef.current.set(file, newUrl);
-        return newUrl;
-      }
-      const result = att.url || att.tempUrl || null;
-      return result;
-    }, []);
-
-    // ✅ 清理不再使用的 Blob URLs（当附件变化时）
-    useEffect(() => {
-      const currentFiles = new Set(activeAttachments.map((att) => att.file).filter(Boolean));
-      const urlMap = canvasObjectUrlMapRef.current;
-
-      // 清理不在当前附件列表中的文件 URL
-      for (const [file, url] of urlMap.entries()) {
-        if (!currentFiles.has(file)) {
-          URL.revokeObjectURL(url);
-          urlMap.delete(file);
-        }
-      }
-    }, [activeAttachments]);
-
-    // 组件卸载时清理所有 Blob URLs
-    useEffect(() => {
-      return () => {
-        for (const url of canvasObjectUrlMapRef.current.values()) {
-          URL.revokeObjectURL(url);
-        }
-        canvasObjectUrlMapRef.current.clear();
-      };
-    }, []);
-
-    // Track last processed message to auto-update view
-    const [lastProcessedMsgId, setLastProcessedMsgId] = useState<string | null>(null);
+    const getStableCanvasUrlFromAttachment = useStableAttachmentImageUrl(activeAttachments, {
+      createFileObjectUrls: false,
+    });
+    const messagesMediaSignature = buildMessagesMediaSignature(messages);
 
     // 对比模式状态
     const [isCompareMode, setIsCompareMode] = useState(false);
@@ -177,15 +118,15 @@ export const ImageEditView = memo(
     const canvas = useImageCanvas({ minZoom: 0.1, maxZoom: 5, zoomStep: 0.2 });
 
     const selectedCanvasMessage = useMemo(() => {
-      if (activeAttachments.length > 0) return null;
       if (selectedHistoryMsgId) {
         return messages.find((msg) => msg.id === selectedHistoryMsgId) || null;
       }
+      if (activeAttachments.length > 0) return null;
       return (
         [...messages].reverse().find((msg) =>
           (msg.attachments || []).some((att) => {
             const stableUrl = getStableCanvasUrlFromAttachment(att);
-            return Boolean(att.url || att.tempUrl || stableUrl);
+            return Boolean(stableUrl);
           })
         ) || null
       );
@@ -193,26 +134,38 @@ export const ImageEditView = memo(
       activeAttachments.length,
       getStableCanvasUrlFromAttachment,
       messages,
+      messagesMediaSignature,
       selectedHistoryMsgId,
     ]);
 
     const canvasDisplayAttachments = useMemo(() => {
+      if (selectedCanvasMessage) {
+        return (selectedCanvasMessage.attachments || []).filter((att) => {
+          const stableUrl = getStableCanvasUrlFromAttachment(att);
+          return Boolean(stableUrl);
+        });
+      }
       if (activeAttachments.length > 0) {
         return activeAttachments;
       }
-      return (selectedCanvasMessage?.attachments || []).filter((att) => {
-        const stableUrl = getStableCanvasUrlFromAttachment(att);
-        return Boolean(att.url || att.tempUrl || stableUrl);
-      });
-    }, [activeAttachments, getStableCanvasUrlFromAttachment, selectedCanvasMessage?.attachments]);
+      return [];
+    }, [
+      activeAttachments,
+      getStableCanvasUrlFromAttachment,
+      messagesMediaSignature,
+      selectedCanvasMessage?.attachments,
+    ]);
 
     const canvasCarouselResetKey = useMemo(() => {
+      if (selectedCanvasMessage) {
+        return selectedCanvasMessage.id;
+      }
       if (activeAttachments.length > 0) {
         return activeAttachments
-          .map((att) => att.id || att.url || att.tempUrl || att.name)
+          .map((att) => att.id || getPreferredImageAttachmentUrl(att) || att.name)
           .join('|');
       }
-      return selectedCanvasMessage?.id || null;
+      return null;
     }, [activeAttachments, selectedCanvasMessage?.id]);
 
     const {
@@ -233,9 +186,9 @@ export const ImageEditView = memo(
       if (!currentAttachment) return;
 
       const currentUrl =
+        getStableCanvasUrlFromAttachment(currentAttachment) ||
         currentAttachment.url ||
-        currentAttachment.tempUrl ||
-        getStableCanvasUrlFromAttachment(currentAttachment);
+        currentAttachment.tempUrl;
       if (!currentUrl) return;
 
       if (currentUrl !== activeImageUrl) {
@@ -250,6 +203,7 @@ export const ImageEditView = memo(
       canvasDisplayAttachments,
       carouselIndex,
       getStableCanvasUrlFromAttachment,
+      messagesMediaSignature,
     ]);
 
     // Reset View when image changes
@@ -258,7 +212,7 @@ export const ImageEditView = memo(
       setIsCompareMode(false);
     }, [activeImageUrl]);
 
-    // 注意：Blob URL 清理现在由 canvasObjectUrlMapRef 的 useEffect 统一管理
+    // Blob URL 生命周期由 useStableAttachmentImageUrl 统一管理。
 
     // 获取当前 AI 结果对应的用户上传原图（用于对比）
     const compareSourceImageUrl = useMemo(() => {
@@ -294,6 +248,7 @@ export const ImageEditView = memo(
       canvasDisplayAttachments.length,
       getStableCanvasUrlFromAttachment,
       messages,
+      messagesMediaSignature,
       selectedCanvasMessage,
     ]);
 
@@ -333,49 +288,39 @@ export const ImageEditView = memo(
         const lastUserMsg = [...messages]
           .reverse()
           .find((m) => m.role === Role.USER && m.attachments?.length);
-        if (lastUserMsg && lastUserMsg.attachments?.[0]?.url) {
+        const lastUserAttachment = lastUserMsg?.attachments?.[0];
+        const lastUserUrl = lastUserAttachment
+          ? getStableCanvasUrlFromAttachment(lastUserAttachment)
+          : null;
+        if (lastUserAttachment && lastUserUrl) {
           setCarouselInitialIndex(0);
-          setActiveImageUrl(lastUserMsg.attachments[0].url);
+          setActiveImageUrl(lastUserUrl);
           // ✅ 同时保存完整的附件对象（包含元数据）
-          setActiveCanvasAttachment(lastUserMsg.attachments[0]);
+          setActiveCanvasAttachment(lastUserAttachment);
         } else {
           // 如果没有用户消息，从模型消息中获取（编辑后的图片）
           const lastModelMsg = [...messages]
             .reverse()
             .find((m) => m.role === Role.MODEL && m.attachments?.length);
-          if (lastModelMsg && lastModelMsg.attachments?.[0]?.url) {
+          const lastModelAttachment = lastModelMsg?.attachments?.[0];
+          const lastModelUrl = lastModelAttachment
+            ? getStableCanvasUrlFromAttachment(lastModelAttachment)
+            : null;
+          if (lastModelAttachment && lastModelUrl) {
             setCarouselInitialIndex(0);
-            setActiveImageUrl(lastModelMsg.attachments[0].url);
+            setActiveImageUrl(lastModelUrl);
             // ✅ 同时保存完整的附件对象（包含元数据）
-            setActiveCanvasAttachment(lastModelMsg.attachments[0]);
+            setActiveCanvasAttachment(lastModelAttachment);
           }
         }
       }
-
-      // 2. New Generation Complete: Auto-switch to result
-      if (loadingState === 'idle' && messages.length > 0) {
-        const lastMsg = messages[messages.length - 1];
-        // Check if this is a new message we haven't handled yet
-        if (lastMsg.id !== lastProcessedMsgId) {
-          // If it's a model response with an image
-          if (
-            lastMsg.role === Role.MODEL &&
-            lastMsg.attachments &&
-            lastMsg.attachments.length > 0 &&
-            lastMsg.attachments[0].url
-          ) {
-            setCarouselInitialIndex(0);
-            setActiveImageUrl(lastMsg.attachments[0].url);
-            // ✅ 同时保存完整的附件对象（包含元数据）
-            setActiveCanvasAttachment(lastMsg.attachments[0]);
-            setLastProcessedMsgId(lastMsg.id);
-          } else if (lastMsg.isError) {
-            // Just mark processed so we don't check again
-            setLastProcessedMsgId(lastMsg.id);
-          }
-        }
-      }
-    }, [messages, activeAttachments.length, loadingState, lastProcessedMsgId, activeImageUrl]);
+    }, [
+      messages,
+      messagesMediaSignature,
+      activeAttachments.length,
+      activeImageUrl,
+      getStableCanvasUrlFromAttachment,
+    ]);
 
     // 注意：handleGenerate 和 handleKeyDown 现在由 ChatEditInputArea 管理
 
@@ -395,10 +340,7 @@ export const ImageEditView = memo(
 
     const getHistoryAttachmentUrl = useCallback(
       (attachment: Attachment) => {
-        const stableUrl = getStableCanvasUrlFromAttachment(attachment);
-        if (attachment.url && attachment.url.length > 0) return attachment.url;
-        if (attachment.tempUrl && attachment.tempUrl.length > 0) return attachment.tempUrl;
-        return stableUrl;
+        return getStableCanvasUrlFromAttachment(attachment);
       },
       [getStableCanvasUrlFromAttachment]
     );
@@ -412,13 +354,54 @@ export const ImageEditView = memo(
       [getHistoryAttachmentUrl]
     );
 
+    const resolveHistoryCanvasUrl = useCallback(
+      (sourceAttachment: Attachment | null | undefined, previewUrl: string | null | undefined) => {
+        const stableUrl = sourceAttachment ? getStableCanvasUrlFromAttachment(sourceAttachment) : null;
+        if (stableUrl) return stableUrl;
+
+        const normalizedPreviewUrl = (previewUrl || '').trim();
+        if (normalizedPreviewUrl && !isTemporaryAttachmentUrl(normalizedPreviewUrl)) {
+          return normalizedPreviewUrl;
+        }
+        return null;
+      },
+      [getStableCanvasUrlFromAttachment]
+    );
+
+    const handleSelectGeneratedResult = useCallback(
+      ({
+        message,
+        firstAttachment,
+        firstUrl,
+      }: {
+        message: Message;
+        firstAttachment: Attachment;
+        firstUrl: string;
+      }) => {
+        setSelectedHistoryMsgId(message.id);
+        setCarouselInitialIndex(0);
+        handleCarouselSelect(0);
+        setActiveImageUrl(firstUrl);
+        setActiveCanvasAttachment(firstAttachment);
+      },
+      [handleCarouselSelect]
+    );
+
+    useAutoSelectGeneratedImageResult({
+      messages,
+      loadingState,
+      getDisplayAttachments: getMessageDisplayAttachments,
+      getAttachmentUrl: getHistoryAttachmentUrl,
+      onSelectResult: handleSelectGeneratedResult,
+    });
+
     const historyMessages = useMemo(() => {
       return messages.filter((msg) => {
         const isPlaceholder =
           !msg.content && (!msg.attachments || msg.attachments.length === 0) && !msg.isError;
         return !isPlaceholder;
       });
-    }, [messages]);
+    }, [messages, messagesMediaSignature]);
 
     const loadingHistoryContent = useMemo(() => {
       if (loadingState === 'idle') return null;
@@ -484,6 +467,7 @@ export const ImageEditView = memo(
       activeImageUrl,
       selectedMessageId: selectedHistoryMsgId,
       onSelectedMessageIdChange: setSelectedHistoryMsgId,
+      disableFallbackSelection: activeAttachments.length > 0 || loadingState !== 'idle',
       onMobileHistoryOpenChange: setIsMobileHistoryOpen,
       modelLabel: activeModelConfig?.name || 'AI',
       accent: 'pink',
@@ -492,19 +476,29 @@ export const ImageEditView = memo(
       getAttachmentUrl: getHistoryAttachmentUrl,
       extractPrompts: extractImageHistoryPrompts,
       loadingContent: loadingHistoryContent,
-      onSelectItem: ({ message, firstImage }) => {
+      onSelectItem: ({ message, firstImage, firstImageSourceAttachment }) => {
         setSelectedHistoryMsgId(message.id);
         setCarouselInitialIndex(0);
         handleCarouselSelect(0);
-        if (firstImage) {
-          setActiveImageUrl(firstImage);
+        const nextUrl = resolveHistoryCanvasUrl(firstImageSourceAttachment, firstImage);
+        if (nextUrl) {
+          setActiveImageUrl(nextUrl);
+          if (firstImageSourceAttachment) {
+            setActiveCanvasAttachment(firstImageSourceAttachment);
+          }
         }
       },
-      onSelectPreviewAttachment: ({ message, attachment, index }) => {
+      onSelectPreviewAttachment: ({ message, attachment, sourceAttachment, displayUrl, index }) => {
         setSelectedHistoryMsgId(message.id);
         setCarouselInitialIndex(index);
         handleCarouselSelect(index);
-        setActiveImageUrl(attachment.url);
+        const nextUrl = resolveHistoryCanvasUrl(sourceAttachment, displayUrl || attachment.url);
+        if (nextUrl) {
+          setActiveImageUrl(nextUrl);
+          if (sourceAttachment) {
+            setActiveCanvasAttachment(sourceAttachment);
+          }
+        }
       },
     });
 
@@ -579,6 +573,7 @@ export const ImageEditView = memo(
               <ModeControlsCoordinator
                 mode={editMode}
                 providerId={providerId || 'google'}
+                currentModel={activeModelConfig}
                 controls={controls}
                 availableModels={allVisibleModels}
               />
@@ -600,6 +595,7 @@ export const ImageEditView = memo(
               initialPrompt={initialPrompt}
               initialAttachments={initialAttachments}
               providerId={providerId}
+              currentModel={activeModelConfig}
               controls={controls}
             />
           </div>
@@ -627,6 +623,8 @@ export const ImageEditView = memo(
         initialPrompt,
         initialAttachments,
         providerId,
+        activeModelConfig,
+        allVisibleModels,
         resetParams,
         carouselIndex,
         handleCarouselPrev,
@@ -648,6 +646,4 @@ export const ImageEditView = memo(
         main={mainContent}
       />
     );
-  },
-  arePropsEqual
-);
+  };

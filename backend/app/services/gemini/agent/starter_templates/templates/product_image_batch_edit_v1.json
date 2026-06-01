@@ -104,12 +104,25 @@
           "description": "分支 #1 智能体图生图",
           "icon": "🪄",
           "iconColor": "bg-purple-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentReferenceImageUrl": "{{input-image-batch-1.output.imageUrl}}",
           "agentNumberOfImages": 1,
           "inputMapping": "{{input-text-batch-1.output.text}}\\n\\n请输出电商主图编辑结果：白底、主体清晰、无无关文字。",
-          "instructions": "执行 image-chat-edit，主图分支优先保证合规与清晰度。"
+          "instructions": "执行 image-chat-edit，主图分支优先保证合规与清晰度。",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentEditMode": "image-chat-edit",
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentImageEditMaxRetries": 2,
+          "agentPreserveProductIdentity": true,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -157,12 +170,25 @@
           "description": "分支 #2 智能体图生图",
           "icon": "🏞️",
           "iconColor": "bg-indigo-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentReferenceImageUrl": "{{input-image-batch-2.output.imageUrl}}",
           "agentNumberOfImages": 1,
           "inputMapping": "{{input-text-batch-2.output.text}}\\n\\n请输出场景化编辑结果，保持主体一致并增强真实使用感。",
-          "instructions": "执行 image-chat-edit，场景分支强调真实氛围与产品一致性。"
+          "instructions": "执行 image-chat-edit，场景分支强调真实氛围与产品一致性。",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentEditMode": "image-chat-edit",
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentImageEditMaxRetries": 2,
+          "agentPreserveProductIdentity": true,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -210,12 +236,25 @@
           "description": "分支 #3 智能体图生图",
           "icon": "🔍",
           "iconColor": "bg-violet-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentReferenceImageUrl": "{{input-image-batch-3.output.imageUrl}}",
           "agentNumberOfImages": 1,
           "inputMapping": "{{input-text-batch-3.output.text}}\\n\\n请输出卖点特写编辑结果，突出材质、工艺和细节。",
-          "instructions": "执行 image-chat-edit，卖点分支强调细节与材质表现。"
+          "instructions": "执行 image-chat-edit，卖点分支强调细节与材质表现。",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentEditMode": "image-chat-edit",
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentImageEditMaxRetries": 2,
+          "agentPreserveProductIdentity": true,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -247,9 +286,13 @@
           "description": "输出每张图的交付建议和问题清单",
           "icon": "✅",
           "iconColor": "bg-emerald-500",
-          "agentName": "图片编辑优化师",
           "inputMapping": "批量分支结果摘要：{{merge-batch-edit.output.text}}",
-          "instructions": "请对三个分支结果逐一评估并输出（不要再索要输入）：\n1. 每个分支最优图推荐\n2. 每张图的合规风险和质量问题\n3. 需要返工的图及原因\n4. 批量交付清单（可直接下载）"
+          "instructions": "请对三个分支结果逐一评估并输出（不要再索要输入）：\n1. 每个分支最优图推荐\n2. 每张图的合规风险和质量问题\n3. 需要返工的图及原因\n4. 批量交付清单（可直接下载）",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {

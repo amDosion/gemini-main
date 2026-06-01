@@ -6,11 +6,12 @@
  */
 import React, { useEffect, useMemo } from 'react';
 import {
-  ChevronUp, ChevronDown, FileImage, Layers,
+  ChevronUp, ChevronDown, FileImage,
   SlidersHorizontal, Sparkles, X
 } from 'lucide-react';
 import { ImageMaskEditControlsProps } from '../../types';
 import { useModeControlsSchema } from '../../../hooks/useModeControlsSchema';
+import ImageCountSliderControl from '../../shared/ImageCountSliderControl';
 
 export const ImageMaskEditControls: React.FC<ImageMaskEditControlsProps> = ({
   providerId = 'google',
@@ -50,6 +51,16 @@ export const ImageMaskEditControls: React.FC<ImageMaskEditControlsProps> = ({
         .filter((value): value is number => typeof value === 'number'),
     [schema]
   );
+  const schemaMaxImageCount =
+    typeof schema?.constraints?.max_image_count === 'number'
+      ? schema.constraints.max_image_count
+      : Math.max(...imageCountOptions, 1);
+  const validImageCountOptions = useMemo(
+    () => imageCountOptions.filter((value) => value <= schemaMaxImageCount),
+    [imageCountOptions, schemaMaxImageCount]
+  );
+  const minImageCount = validImageCountOptions[0] ?? 1;
+  const maxImageCount = validImageCountOptions[validImageCountOptions.length - 1] ?? schemaMaxImageCount;
   const outputMimeOptions = useMemo(
     () =>
       (schema?.paramOptions?.output_mime_type ?? []).filter(
@@ -121,10 +132,10 @@ export const ImageMaskEditControls: React.FC<ImageMaskEditControlsProps> = ({
   }, [editMode, editModeOptions, setEditMode]);
 
   useEffect(() => {
-    if (imageCountOptions.length > 0 && !imageCountOptions.includes(numberOfImages)) {
-      setNumberOfImages(imageCountOptions[0]);
+    if (validImageCountOptions.length > 0 && !validImageCountOptions.includes(numberOfImages)) {
+      setNumberOfImages(validImageCountOptions[0]);
     }
-  }, [numberOfImages, imageCountOptions, setNumberOfImages]);
+  }, [numberOfImages, validImageCountOptions, setNumberOfImages]);
 
   useEffect(() => {
     const validMimeTypes = outputMimeOptions
@@ -162,27 +173,13 @@ export const ImageMaskEditControls: React.FC<ImageMaskEditControlsProps> = ({
       </div>
 
       {/* 生成数量 */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <Layers size={12} className="text-emerald-400" />
-          <span className="text-xs text-slate-300">生成数量</span>
-        </div>
-        <div className="flex gap-2">
-          {imageCountOptions.map((count) => (
-            <button
-              key={count}
-              onClick={() => setNumberOfImages(count)}
-              className={`flex-1 py-2 text-xs font-medium rounded-lg transition-all ${
-                numberOfImages === count
-                  ? 'bg-emerald-600 text-white'
-                  : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
-              }`}
-            >
-              {count}
-            </button>
-          ))}
-        </div>
-      </div>
+      <ImageCountSliderControl
+        value={numberOfImages}
+        onChange={setNumberOfImages}
+        min={minImageCount}
+        max={maxImageCount}
+        label="生成数量"
+      />
 
       {/* ==================== 高级参数折叠区 ==================== */}
       {controls && (

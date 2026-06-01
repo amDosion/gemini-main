@@ -158,7 +158,8 @@ class GenerationPromptOptimizer:
         self,
         prompt: str,
         enable_rewrite: bool = True,
-        add_magic_suffix: bool = True
+        add_magic_suffix: bool = True,
+        model: Optional[str] = None
     ) -> PromptOptimizeResult:
         """
         优化文生图 Prompt
@@ -193,7 +194,7 @@ class GenerationPromptOptimizer:
 
         # 调用 LLM 进行改写
         try:
-            optimized = await self._rewrite_with_llm(prompt, language)
+            optimized = await self._rewrite_with_llm(prompt, language, model=model)
 
             # 添加魔法词组
             if magic_suffix and add_magic_suffix:
@@ -229,7 +230,12 @@ class GenerationPromptOptimizer:
                 error=str(e)
             )
 
-    async def _rewrite_with_llm(self, prompt: str, language: str) -> str:
+    async def _rewrite_with_llm(
+        self,
+        prompt: str,
+        language: str,
+        model: Optional[str] = None,
+    ) -> str:
         """
         调用 LLM 进行 Prompt 改写
 
@@ -247,8 +253,10 @@ class GenerationPromptOptimizer:
         else:
             user_content = f"User Input: {prompt}\n\nRewritten Prompt:"
 
+        selected_model = (model or self.config.model).strip() or self.config.model
+
         payload = {
-            "model": self.config.model,
+            "model": selected_model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content}

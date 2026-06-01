@@ -26,7 +26,12 @@ import {
   ACCENT_CLASSES,
   USER_SELECTED_CLASS,
   USER_IDLE_CLASS,
+  getImageHistoryAuthorLabel,
+  getImageHistoryStablePreviewUrl,
+  selectImageHistoryPrimaryPreviewAttachment,
 } from './imageHistorySidebarHelpers';
+import { CachedImage } from './CachedImage';
+import { HISTORY_THUMBNAIL_CACHE_PROPS } from './historyThumbnailCache';
 
 export interface ImageHistoryListRowProps {
   message: Message;
@@ -49,6 +54,7 @@ export interface ImageHistoryListRowProps {
     previewAttachments: ImageHistoryPreviewAttachment[]
   ) => void;
   scheduleHideHoverPreview: () => void;
+  closeHoverPreviewOnly: () => void;
   closeHoverPreview: () => void;
   onSelectedMessageIdChange?: (messageId: string | null) => void;
   onSelectItem: (payload: {
@@ -56,6 +62,7 @@ export interface ImageHistoryListRowProps {
     displayAttachments: Attachment[];
     previewAttachments: ImageHistoryPreviewAttachment[];
     firstImage?: string;
+    firstImageSourceAttachment?: Attachment | null;
   }) => void;
   onMobileHistoryOpenChange?: (open: boolean) => void;
   setOpenActionMenu: React.Dispatch<React.SetStateAction<ImageHistoryActionMenuAnchor | null>>;
@@ -79,6 +86,7 @@ const ImageHistoryListRowComponent: React.FC<ImageHistoryListRowProps> = ({
   extractPrompts,
   showHoverPreview,
   scheduleHideHoverPreview,
+  closeHoverPreviewOnly,
   closeHoverPreview,
   onSelectedMessageIdChange,
   onSelectItem,
@@ -88,16 +96,26 @@ const ImageHistoryListRowComponent: React.FC<ImageHistoryListRowProps> = ({
 }) => {
   const displayAttachments = getDisplayAttachments(message.attachments);
   const previewAttachments = getPreviewAttachments(message);
-  const firstImage = previewAttachments[0]?.url;
+  const primaryPreview = selectImageHistoryPrimaryPreviewAttachment(
+    displayAttachments,
+    previewAttachments
+  );
+  const previewDisplayUrls = previewAttachments.map((attachment) => {
+    return getImageHistoryStablePreviewUrl(displayAttachments, attachment) || attachment.url;
+  });
+  const firstImageDisplayUrl = primaryPreview?.displayUrl;
+  const firstImageAttachment = primaryPreview?.sourceAttachment ?? null;
+  const firstImagePreviewAttachment = primaryPreview?.attachment;
   const count = previewAttachments.length;
   const isUserMessage = message.role === Role.USER;
+  const authorLabel = getImageHistoryAuthorLabel(message, modelLabel);
   const { originalPrompt, enhancedPrompt } = extractPrompts(message);
   const favorited = isFavorite(message.id);
   const isActionMenuOpen = openActionMenu?.messageId === message.id;
   const isSelected = selectedMessageId
     ? selectedMessageId === message.id
     : Boolean(
-        activeImageUrl && previewAttachments.some((attachment) => attachment.url === activeImageUrl)
+        activeImageUrl && previewDisplayUrls.some((url) => url === activeImageUrl)
       );
 
   const itemToneClass = isUserMessage
@@ -125,7 +143,13 @@ const ImageHistoryListRowComponent: React.FC<ImageHistoryListRowProps> = ({
         onMouseLeave={scheduleHideHoverPreview}
         onClick={() => {
           onSelectedMessageIdChange?.(message.id);
-          onSelectItem({ message, displayAttachments, previewAttachments, firstImage });
+          onSelectItem({
+            message,
+            displayAttachments,
+            previewAttachments,
+            firstImage: firstImageDisplayUrl,
+            firstImageSourceAttachment: firstImageAttachment,
+          });
           if (window.innerWidth < 768) {
             onMobileHistoryOpenChange?.(false);
           }
@@ -152,12 +176,17 @@ const ImageHistoryListRowComponent: React.FC<ImageHistoryListRowProps> = ({
             <div className="w-full h-full flex items-center justify-center text-red-400 bg-red-900/10">
               <AlertCircle size={18} />
             </div>
-          ) : firstImage ? (
+          ) : firstImageDisplayUrl ? (
             <>
-              <img
-                src={firstImage}
+              <CachedImage
+                source={{
+                  ...firstImageAttachment,
+                  attachmentId: firstImageAttachment?.id || firstImagePreviewAttachment?.id,
+                  url: firstImageDisplayUrl,
+                }}
+                src={firstImageDisplayUrl}
+                {...HISTORY_THUMBNAIL_CACHE_PROPS}
                 className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                loading="lazy"
                 alt="History preview"
               />
               {count > 1 && (
@@ -178,7 +207,7 @@ const ImageHistoryListRowComponent: React.FC<ImageHistoryListRowProps> = ({
             <span
               className={`text-[10px] font-medium ${isUserMessage ? 'text-blue-300' : tone.modelLabel}`}
             >
-              {isUserMessage ? 'You' : modelLabel}
+              {authorLabel}
             </span>
             <span className="text-[10px] text-slate-500">
               {new Date(message.timestamp).toLocaleTimeString([], {
@@ -227,12 +256,12 @@ const ImageHistoryListRowComponent: React.FC<ImageHistoryListRowProps> = ({
             data-history-action-trigger={message.id}
             onMouseEnter={(event) => {
               event.stopPropagation();
-              closeHoverPreview();
+              closeHoverPreviewOnly();
             }}
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              closeHoverPreview();
+              closeHoverPreviewOnly();
               const rect = event.currentTarget.getBoundingClientRect();
               setOpenActionMenu((prev) =>
                 prev?.messageId === message.id
@@ -254,19 +283,4 @@ const ImageHistoryListRowComponent: React.FC<ImageHistoryListRowProps> = ({
   );
 };
 
-export const ImageHistoryListRow = React.memo(
-  ImageHistoryListRowComponent,
-  (prev, next) =>
-    prev.message.id === next.message.id &&
-    prev.message === next.message &&
-    prev.tone === next.tone &&
-    prev.modelLabel === next.modelLabel &&
-    prev.secondaryPromptBadgeText === next.secondaryPromptBadgeText &&
-    prev.selectedMessageId === next.selectedMessageId &&
-    prev.activeImageUrl === next.activeImageUrl &&
-    prev.openActionMenu === next.openActionMenu &&
-    prev.isFavorite === next.isFavorite &&
-    prev.getDisplayAttachments === next.getDisplayAttachments &&
-    prev.getPreviewAttachments === next.getPreviewAttachments &&
-    prev.extractPrompts === next.extractPrompts
-);
+export const ImageHistoryListRow = ImageHistoryListRowComponent;

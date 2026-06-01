@@ -3,6 +3,7 @@ import { InitData } from '../types/types';
 import { apiClient } from '../services/apiClient';
 import { LLMFactory } from '../services/LLMFactory';
 import { reportError } from '../utils/globalErrorHandler';
+import { usePrivateCacheScopeRevision } from './usePrivateCacheScopeRevision';
 
 /**
  * Return interface for the useInitData hook.
@@ -37,21 +38,29 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
   const [error, setError] = useState<Error | null>(null);
   const [isConfigReady, setIsConfigReady] = useState<boolean>(false);
   const [retryTrigger, setRetryTrigger] = useState(0);
+  const scopeVersion = usePrivateCacheScopeRevision();
 
   // Use ref to track if component is mounted
   const isMountedRef = useRef(true);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const requestRunRef = useRef(0);
 
   const retry = useCallback(() => {
     setRetryTrigger((count) => count + 1);
   }, []);
 
   useEffect(() => {
+    const runId = requestRunRef.current + 1;
+    requestRunRef.current = runId;
+    const isCurrentRun = () => isMountedRef.current && requestRunRef.current === runId;
+
     // Reset mounted flag on mount
     isMountedRef.current = true;
 
     // ✅ 条件加载：只有在 shouldLoad 为 true 时才加载数据
     if (!shouldLoad) {
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
       // 不需要加载数据，重置状态
       setCriticalData(null);
       setNonCriticalData(null);
@@ -67,21 +76,25 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
         abortControllerRef.current.abort();
       }
 
+      setCriticalData(null);
+      setNonCriticalData(null);
+      setIsConfigReady(false);
       setIsLoading(true);
       setError(null); // Clear previous error
 
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         // Create new AbortController for this attempt
         abortControllerRef.current = new AbortController();
+        const requestSignal = abortControllerRef.current.signal;
 
         try {
           // ✅ 步骤 1：先加载关键数据（阻塞渲染）
           const critical = await apiClient.get<Partial<InitData>>('/api/init/critical', {
-            signal: abortControllerRef.current?.signal,
+            signal: requestSignal,
           });
 
           // Check if component is still mounted before updating state
-          if (!isMountedRef.current) {
+          if (!isCurrentRun()) {
             return;
           }
 
@@ -97,16 +110,16 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
           // C-2 + B-6: 传递 abort signal,组件卸载后取消;失败 reportError 而非静默吞
           apiClient
             .get<Partial<InitData>>('/api/init/non-critical', {
-              signal: abortControllerRef.current?.signal,
+              signal: requestSignal,
             })
             .then((nonCritical) => {
-              if (isMountedRef.current) {
+              if (isCurrentRun()) {
                 setNonCriticalData(nonCritical);
               }
             })
             .catch((err) => {
               // AbortError 和组件卸载后的请求都正常忽略
-              if (err?.name === 'AbortError' || !isMountedRef.current) {
+              if (err?.name === 'AbortError' || !isCurrentRun()) {
                 return;
               }
               reportError('useInitData.non-critical', err);
@@ -119,7 +132,7 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
           return;
         } catch (e) {
           // Check if component is still mounted
-          if (!isMountedRef.current) {
+          if (!isCurrentRun()) {
             return;
           }
 
@@ -146,6 +159,9 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
           if (attempt < MAX_RETRIES) {
             const delay = BASE_RETRY_DELAY * Math.pow(2, attempt);
             await new Promise((resolve) => setTimeout(resolve, delay));
+            if (!isCurrentRun()) {
+              return;
+            }
           } else {
             setError(error);
             setIsConfigReady(true); // ✅ 重试耗尽后设置为 true，让 UI 显示错误
@@ -155,7 +171,7 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
     };
 
     fetchData().finally(() => {
-      if (isMountedRef.current) {
+      if (isCurrentRun()) {
         setIsLoading(false);
         // ✅ 不在这里设置 isConfigReady，因为此时 criticalData 可能还没更新
         // isConfigReady 已在 setCriticalData 之后设置
@@ -165,11 +181,14 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
     // Cleanup function
     return () => {
       isMountedRef.current = false;
+      if (requestRunRef.current === runId) {
+        requestRunRef.current += 1;
+      }
       // 不 abort fetch：React StrictMode 双 mount 触发 cleanup → abort → re-mount
       // 重 fetch，在 Network tab 看到 (canceled)。fetch 内部已用 isMountedRef
       // guard 防 setState-after-unmount；abortControllerRef 仅用于 retry 时 cancel 前一次。
     };
-  }, [shouldLoad, retryTrigger]); // ✅ 修改依赖：shouldLoad 替代 isAuthenticated
+  }, [shouldLoad, retryTrigger, scopeVersion]); // scopeVersion 保证跨用户切换时重载 init data
 
   // ✅ 合并关键数据和非关键数据
   const initData = useMemo(() => {
@@ -179,6 +198,7 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
       ...nonCriticalData,
       // 如果非关键数据还未加载，使用空数组作为默认值
       sessions: nonCriticalData?.sessions || [],
+      sessionsMode: nonCriticalData?.sessionsMode,
       personas: nonCriticalData?.personas || [],
       storageConfigs: nonCriticalData?.storageConfigs || [],
       activeStorageId: nonCriticalData?.activeStorageId || null,

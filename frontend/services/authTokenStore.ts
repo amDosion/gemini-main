@@ -1,40 +1,46 @@
 const ACCESS_TOKEN_KEY = 'access_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 
-function getStorage(): Storage | null {
+let accessTokenMemory: string | null = null;
+
+function getBrowserStorage(name: 'localStorage' | 'sessionStorage'): Storage | null {
   if (typeof window === 'undefined') {
     return null;
   }
 
   try {
-    return window.localStorage;
+    return window[name];
   } catch {
     return null;
   }
 }
 
+function removeLegacyToken(key: string): void {
+  getBrowserStorage('localStorage')?.removeItem(key);
+  getBrowserStorage('sessionStorage')?.removeItem(key);
+}
+
+export function clearLegacyAuthTokens(): void {
+  removeLegacyToken(ACCESS_TOKEN_KEY);
+  removeLegacyToken(REFRESH_TOKEN_KEY);
+}
+
 export function getAccessToken(): string | null {
-  return getStorage()?.getItem(ACCESS_TOKEN_KEY) ?? null;
+  return accessTokenMemory;
 }
 
 export function setAccessToken(token: string): void {
-  getStorage()?.setItem(ACCESS_TOKEN_KEY, token);
+  accessTokenMemory = token;
+  removeLegacyToken(ACCESS_TOKEN_KEY);
 }
 
 export function removeAccessToken(): void {
-  getStorage()?.removeItem(ACCESS_TOKEN_KEY);
-}
-
-export function getRefreshToken(): string | null {
-  return getStorage()?.getItem(REFRESH_TOKEN_KEY) ?? null;
-}
-
-export function setRefreshToken(token: string): void {
-  getStorage()?.setItem(REFRESH_TOKEN_KEY, token);
+  accessTokenMemory = null;
+  removeLegacyToken(ACCESS_TOKEN_KEY);
 }
 
 export function removeRefreshToken(): void {
-  getStorage()?.removeItem(REFRESH_TOKEN_KEY);
+  removeLegacyToken(REFRESH_TOKEN_KEY);
 }
 
 export function getAuthorizationHeader(token: string | null = getAccessToken()): Record<string, string> {
@@ -57,3 +63,4 @@ export function withAuthorization(
   return finalHeaders;
 }
 
+clearLegacyAuthTokens();

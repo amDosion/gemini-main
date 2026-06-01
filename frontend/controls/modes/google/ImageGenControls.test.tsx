@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const schemaWithoutOutputMime = vi.hoisted(() => ({
   defaults: {
@@ -42,6 +42,10 @@ vi.mock('../../../hooks/useEnhancePromptModels', () => ({
 }));
 
 import { ImageGenControls } from './ImageGenControls';
+
+afterEach(() => {
+  cleanup();
+});
 
 describe('Google ImageGenControls', () => {
   it('hides output format controls when the schema does not support output MIME options', () => {
@@ -93,5 +97,64 @@ describe('Google ImageGenControls', () => {
 
     expect(screen.queryByText('输出格式')).not.toBeInTheDocument();
     expect(screen.queryByText('压缩质量')).not.toBeInTheDocument();
+  });
+
+  it('shows thinking level on the prompt enhancement model, not the generated image model', () => {
+    const controls = {
+      style: 'None',
+      setStyle: vi.fn(),
+      numberOfImages: 1,
+      setNumberOfImages: vi.fn(),
+      aspectRatio: '1:1',
+      setAspectRatio: vi.fn(),
+      resolution: '1K',
+      setResolution: vi.fn(),
+      showAdvanced: true,
+      setShowAdvanced: vi.fn(),
+      negativePrompt: '',
+      setNegativePrompt: vi.fn(),
+      seed: -1,
+      setSeed: vi.fn(),
+      outputMimeType: 'image/png',
+      setOutputMimeType: vi.fn(),
+      outputCompressionQuality: 100,
+      setOutputCompressionQuality: vi.fn(),
+      enhancePrompt: true,
+      setEnhancePrompt: vi.fn(),
+      enhancePromptModel: '',
+      setEnhancePromptModel: vi.fn(),
+      enhancePromptThinkingLevel: 'medium',
+      setEnhancePromptThinkingLevel: vi.fn(),
+      enableThinking: true,
+      setEnableThinking: vi.fn(),
+    };
+
+    render(
+      <ImageGenControls
+        providerId="google"
+        currentModel={{
+          id: 'gemini-3-pro-image-preview',
+          name: 'Gemini 3 Pro Image',
+          description: '',
+          capabilities: {
+            vision: true,
+            search: false,
+            reasoning: true,
+            coding: false,
+          },
+        }}
+        controls={controls as any}
+        maxImageCount={10}
+      />
+    );
+
+    expect(screen.getByRole('switch', { name: '显示思考过程' })).toBeInTheDocument();
+    expect(screen.getByLabelText('思考等级')).toHaveValue('medium');
+
+    fireEvent.change(screen.getByLabelText('思考等级'), {
+      target: { value: 'high' },
+    });
+
+    expect(controls.setEnhancePromptThinkingLevel).toHaveBeenCalledWith('high');
   });
 });

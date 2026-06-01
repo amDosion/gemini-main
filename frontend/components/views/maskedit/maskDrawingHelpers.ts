@@ -8,6 +8,10 @@
 
 import type React from 'react';
 import { fileToBase64 } from '../../../hooks/handlers/attachmentUtils';
+import {
+  createManagedMediaObjectUrl,
+  revokeManagedMediaObjectUrl,
+} from '../../../services/mediaCache';
 import type { SelectionRect } from '../../../utils/maskHelpers';
 
 export const getOrCreateMaskCanvas = (
@@ -73,19 +77,20 @@ export const updateMaskCanvasUrl = ({
 
   if (hasBrushContentRef.current) {
     if (maskPreviewBlobUrlRef.current) {
-      URL.revokeObjectURL(maskPreviewBlobUrlRef.current);
+      revokeManagedMediaObjectUrl(maskPreviewBlobUrlRef.current);
       maskPreviewBlobUrlRef.current = null;
     }
     canvas.toBlob((blob) => {
       if (blob) {
-        const url = URL.createObjectURL(blob);
+        const url = createManagedMediaObjectUrl(blob);
+        if (!url) return;
         maskPreviewBlobUrlRef.current = url;
         setMaskCanvasUrl(url);
       }
     }, 'image/png');
   } else {
     if (maskPreviewBlobUrlRef.current) {
-      URL.revokeObjectURL(maskPreviewBlobUrlRef.current);
+      revokeManagedMediaObjectUrl(maskPreviewBlobUrlRef.current);
       maskPreviewBlobUrlRef.current = null;
     }
     setMaskCanvasUrl(null);
@@ -305,9 +310,10 @@ export const generateMaskFromSelections = ({
       return;
     }
     if (maskPreviewUrlRef.current) {
-      URL.revokeObjectURL(maskPreviewUrlRef.current);
+      revokeManagedMediaObjectUrl(maskPreviewUrlRef.current);
     }
-    const url = URL.createObjectURL(blob);
+    const url = createManagedMediaObjectUrl(blob);
+    if (!url) return;
     maskPreviewUrlRef.current = url;
     setMaskPreviewUrl(url);
 

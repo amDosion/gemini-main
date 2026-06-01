@@ -27,6 +27,7 @@ export interface HistoryActionMenuPortalProps {
   openActionMenu: HistoryActionMenuAnchor;
   actionMenuPosition: HistoryActionMenuPosition | null;
   actionMenuPanelRef: React.RefObject<HTMLDivElement | null>;
+  closeHoverPreviewOnly: () => void;
   closeHoverPreview: () => void;
   closeActionMenu: () => void;
   isFavorite: (messageId: string) => boolean;
@@ -42,6 +43,7 @@ export const HistoryActionMenuPortal: React.FC<HistoryActionMenuPortalProps> = (
   openActionMenu,
   actionMenuPosition,
   actionMenuPanelRef,
+  closeHoverPreviewOnly,
   closeHoverPreview,
   closeActionMenu,
   isFavorite,
@@ -57,7 +59,7 @@ export const HistoryActionMenuPortal: React.FC<HistoryActionMenuPortalProps> = (
       ref={actionMenuPanelRef}
       data-history-action-menu
       className={`fixed ${zClass} inline-flex flex-col gap-1 rounded-lg border border-slate-700 bg-slate-950/95 shadow-2xl backdrop-blur-md p-1`}
-      onMouseEnter={closeHoverPreview}
+      onMouseEnter={closeHoverPreviewOnly}
       style={{
         top: actionMenuPosition?.top ?? openActionMenu.anchorY,
         left: actionMenuPosition?.left ?? openActionMenu.anchorX,

@@ -10,6 +10,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Download, Filter, X, Info, AlertTriangle, XCircle } from 'lucide-react';
+import { downloadBlobInBrowser } from '../../services/downloadService';
 
 export type LogLevel = 'info' | 'warn' | 'error';
 
@@ -94,14 +95,10 @@ export const ExecutionLogPanel: React.FC<ExecutionLogPanelProps> = ({
       .join('\n');
 
     const blob = new Blob([logText], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `workflow-logs-${Date.now()}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadBlobInBrowser({
+      blob,
+      fileName: `workflow-logs-${Date.now()}.txt`,
+    });
   };
 
   if (!isOpen) {

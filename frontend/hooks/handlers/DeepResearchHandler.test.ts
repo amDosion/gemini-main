@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../services/httpProgress', () => ({
+  uploadFormDataWithXhr: vi.fn(async () => ({ file_search_store_name: 'store_uploaded' })),
+}));
+
 import { DeepResearchHandler } from './DeepResearchHandler';
+import { uploadFormDataWithXhr } from '../../services/httpProgress';
 import type { ExecutionContext } from './types';
 
 class MockEventSource {
@@ -158,6 +164,95 @@ describe('DeepResearchHandler', () => {
       (item) => item.researchInteractionId === 'interaction_new_123'
     );
     expect(startUpdate).toBeTruthy();
+  });
+
+  it('uploads deep-research attachments from durable URLs before stale blob URLs', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/storage/local-files/2026/05/31/research.pdf') {
+        return new Response(new Blob(['pdf'], { type: 'application/pdf' }), { status: 200 });
+      }
+      if (url === '/api/research/stream/start') {
+        return new Response(JSON.stringify({ interactionId: 'interaction_attachment_001' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url === '/api/research/stream/cancel/interaction_attachment_001') {
+        return new Response(
+          JSON.stringify({ interactionId: 'interaction_attachment_001', status: 'cancelled' }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const cancelFnRef: { current: (() => void) | null } = { current: null };
+    const context: ExecutionContext = {
+      sessionId: 's-attachment',
+      userMessageId: 'u-attachment',
+      modelMessageId: 'm-attachment',
+      mode: 'chat',
+      text: '请研究附件',
+      attachments: [
+        {
+          id: 'research-file',
+          name: 'research.pdf',
+          mimeType: 'application/pdf',
+          url: 'blob:https://gemini.dicry.cn:18443/revoked-research-file',
+          tempUrl: 'data:application/pdf;base64,abc',
+          cloudUrl: '/api/storage/local-files/2026/05/31/research.pdf',
+          uploadStatus: 'completed',
+        },
+      ],
+      currentModel: {
+        id: 'gemini-2.5-pro',
+        name: 'Gemini 2.5 Pro',
+        description: 'test',
+        capabilities: { vision: true, search: true, reasoning: true, coding: true },
+      },
+      options: {
+        enableSearch: false,
+        enableThinking: false,
+        enableCodeExecution: false,
+        enableDeepResearch: true,
+        deepResearchAgentId: 'deep-research-pro-preview-12-2025',
+        imageAspectRatio: '1:1',
+        imageResolution: '1024x1024',
+      },
+      protocol: 'google',
+      llmService: {} as any,
+      storageService: {} as any,
+      pollingManager: {
+        startPolling: vi.fn(async () => undefined),
+        stopPolling: vi.fn(),
+        cleanup: vi.fn(),
+      },
+      registerCancel: (fn) => {
+        cancelFnRef.current = fn;
+      },
+    };
+
+    const handler = new DeepResearchHandler();
+    const executionPromise = handler.execute(context);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    cancelFnRef.current?.();
+    await executionPromise;
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/storage/local-files/2026/05/31/research.pdf');
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      'blob:https://gemini.dicry.cn:18443/revoked-research-file'
+    );
+    expect(uploadFormDataWithXhr).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: '/api/file-search/upload',
+        withCredentials: true,
+      })
+    );
   });
 
   it('handles structured content.delta tool events and status_update required_action', async () => {

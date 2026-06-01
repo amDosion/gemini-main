@@ -1,12 +1,15 @@
 
 import React from 'react';
-import { Header } from './Header';
+import { Layout } from 'antd';
+import { Header as AppHeader } from './Header';
 import { ChatSession, ModelConfig, AppMode, ModeCatalogItem } from '../../types/types';
 import { ConfigProfile } from '../../services/db';
 import { CacheStatusInfo } from '../../hooks/useCacheStatus';
 import type { User, ChangePasswordData } from '../../services/auth';
 import InlineModeNavigation from './InlineModeNavigation';
 import { SessionProvider } from '../../contexts/SessionContext';
+
+const { Sider, Header: LayoutHeader, Content } = Layout;
 
 interface AppLayoutProps {
     children: React.ReactNode;
@@ -46,6 +49,7 @@ interface AppLayoutProps {
     onChangePassword: (data: ChangePasswordData) => Promise<void>;
     // Settings Injection
     settings?: React.ReactNode;
+    workspaceTabs?: React.ReactNode;
     // Mode Navigation
     showModeNavigation?: boolean;
     setAppMode?: (mode: AppMode) => void;
@@ -70,52 +74,66 @@ export const AppLayout: React.FC<AppLayoutProps> = (props) => {
             isLoadingMore={props.isLoadingMore}
             loadMoreSessions={props.loadMoreSessions}
         >
-            <div className="flex h-screen w-screen bg-background text-slate-100 overflow-hidden font-sans">
-                {/* Main Content Container — full width now (no global sidebar) */}
-                <div className="flex-1 flex flex-col h-full relative min-w-0 bg-slate-950">
-                    <Header
-                        isSidebarOpen={false}
-                        setIsSidebarOpen={() => {}}
-                        isLoadingModels={props.isLoadingModels}
-                        isModelMenuOpen={props.isModelMenuOpen}
-                        setIsModelMenuOpen={props.setIsModelMenuOpen}
-                        activeModelConfig={props.activeModelConfig}
-                        configApiKey={props.configApiKey}
-                        visibleModels={props.visibleModels}
-                        currentModelId={props.currentModelId}
-                        onModelSelect={props.onModelSelect}
-                        onOpenSettings={props.onOpenSettings}
-                        appMode={props.appMode}
-                        profiles={props.profiles}
-                        activeProfileId={props.activeProfileId}
-                        onActivateProfile={props.onActivateProfile}
-                        currentUser={props.currentUser}
-                        onChangePassword={props.onChangePassword}
-                        onLogout={props.onLogout}
-                    />
+            <Layout
+                data-testid="app-shell"
+                className="h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 font-sans"
+            >
+                {props.showModeNavigation && props.setAppMode && (
+                    <Sider
+                        role="complementary"
+                        aria-label="应用导航"
+                        width={104}
+                        theme="dark"
+                        className="!h-screen !overflow-hidden !bg-slate-950 !border-r !border-slate-800"
+                    >
+                        <InlineModeNavigation
+                            currentMode={props.appMode}
+                            setMode={props.setAppMode}
+                            modeCatalog={props.modeCatalog}
+                            onOpenSettings={props.onOpenSettings}
+                            onOpenCloudStorage={props.onOpenCloudStorage}
+                            isPersonaViewOpen={props.isPersonaViewOpen}
+                            onOpenPersonaView={props.onOpenPersonaView}
+                        />
+                    </Sider>
+                )}
 
-                    <div className="flex-1 flex overflow-hidden relative">
-                        {/* Center Workspace */}
-                        <div className="flex-1 flex flex-col min-w-0 h-full relative">
+                <Layout className="h-screen min-w-0 bg-slate-950">
+                    <LayoutHeader className="!h-14 !p-0 !leading-normal !bg-transparent">
+                        <AppHeader
+                            isSidebarOpen={false}
+                            setIsSidebarOpen={() => {}}
+                            isLoadingModels={props.isLoadingModels}
+                            isModelMenuOpen={props.isModelMenuOpen}
+                            setIsModelMenuOpen={props.setIsModelMenuOpen}
+                            activeModelConfig={props.activeModelConfig}
+                            configApiKey={props.configApiKey}
+                            visibleModels={props.visibleModels}
+                            currentModelId={props.currentModelId}
+                            onModelSelect={props.onModelSelect}
+                            onOpenSettings={props.onOpenSettings}
+                            appMode={props.appMode}
+                            profiles={props.profiles}
+                            activeProfileId={props.activeProfileId}
+                            onActivateProfile={props.onActivateProfile}
+                            currentUser={props.currentUser}
+                            onChangePassword={props.onChangePassword}
+                            onLogout={props.onLogout}
+                        />
+                    </LayoutHeader>
+                    {props.workspaceTabs}
+
+                    <Content
+                        data-testid="app-content"
+                        className="min-h-0 overflow-hidden bg-slate-950"
+                    >
+                        <div className="flex h-full min-w-0 flex-col relative">
                             {props.children}
                             {props.settings}
                         </div>
-
-                        {/* Mode Navigation */}
-                        {props.showModeNavigation && props.setAppMode && (
-                            <InlineModeNavigation
-                                currentMode={props.appMode}
-                                setMode={props.setAppMode}
-                                modeCatalog={props.modeCatalog}
-                                onOpenSettings={props.onOpenSettings}
-                                onOpenCloudStorage={props.onOpenCloudStorage}
-                                isPersonaViewOpen={props.isPersonaViewOpen}
-                                onOpenPersonaView={props.onOpenPersonaView}
-                            />
-                        )}
-                    </div>
-                </div>
-            </div>
+                    </Content>
+                </Layout>
+            </Layout>
         </SessionProvider>
     );
 };

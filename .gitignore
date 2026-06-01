@@ -82,6 +82,7 @@ queue/
 CLAUDE.md
 GEMINI.md
 AGENTS.md
+SERVICES.md
 
 # Swarm / agent temporary docs (keep only docs/BE-*.md and docs/ANALYSIS-*.md)
 docs/advanced-features.md
@@ -110,6 +111,7 @@ docs/tasks.md
 
 # Logs
 *.log
+*.pid
 
 # Misc
 star.txt

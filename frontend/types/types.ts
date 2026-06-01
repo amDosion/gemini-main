@@ -150,6 +150,7 @@ export interface Attachment {
   googleFileExpiry?: number; // Google 文件过期时间戳
   // AI 增强提示词相关字段
   enhancedPrompt?: string; // 增强后的提示词（当启用 enhance_prompt 时返回）
+  openaiResponseId?: string; // OpenAI Responses API response id
 }
 
 export interface Message {
@@ -168,6 +169,12 @@ export interface Message {
   thoughts?: Array<{ type: 'text' | 'image'; content: string }>; // 思考过程（thoughts）
   textResponse?: string; // 文本响应
   enhancedPrompt?: string; // AI 增强后的提示词
+  modelId?: string; // 生成这条模型响应时使用的模型 ID
+  modelName?: string; // 生成这条模型响应时使用的模型显示名
+  modeModelId?: string; // 后端 mode metadata 中记录的模型 ID
+  model_id?: string; // 兼容未经过 case conversion 的后端字段
+  model_name?: string; // 兼容未经过 case conversion 的后端字段
+  mode_model_id?: string; // 兼容未经过 case conversion 的后端字段
   continuationStrategy?: string; // 视频续接策略
   videoExtensionCount?: number; // 目标延长次数
   videoExtensionApplied?: number; // 实际延长次数
@@ -248,6 +255,7 @@ export interface ChatOptions {
   aspectRatio?: string;
   resolution?: string;
   seconds?: string;
+  videoInputStrategy?: string;
   videoExtensionCount?: number;
   storyboardShotSeconds?: number;
   generateAudio?: boolean;
@@ -268,6 +276,12 @@ export interface ChatOptions {
   googleCacheMode?: 'none' | 'exact' | 'semantic'; // Added Google Cache Mode
   numberOfImages?: number; // Added for Imagen
   imageStyle?: string;
+  quality?: string;
+  background?: string;
+  moderation?: string;
+  outputFormat?: string;
+  outputCompression?: number;
+  openaiPreviousResponseId?: string;
   voiceName?: string;
   outPainting?: OutPaintingOptions;
   loraConfig?: LoraConfig; // Added for WanX 2.5
@@ -299,6 +313,7 @@ export interface ChatOptions {
 
   enhancePrompt?: boolean; // Let AI improve the prompt (Google Imagen)
   enhancePromptModel?: string; // Model for prompt enhancement
+  enhancePromptThinkingLevel?: 'auto' | 'minimal' | 'low' | 'medium' | 'high';
   // Mask Edit 特有参数
   editMode?: string; // 编辑模式 (EDIT_MODE_INPAINT_INSERTION, EDIT_MODE_INPAINT_REMOVAL, etc.)
   maskDilation?: number; // 掩码膨胀系数 (0.0-1.0)
@@ -312,6 +327,8 @@ export interface ChatOptions {
   // TongYi 专用参数
   promptExtend?: boolean; // AI 增强提示词 (TongYi)
   addMagicSuffix?: boolean; // 魔法词组 (TongYi)
+  thinkingMode?: boolean; // Wan 2.7 Image 思考模式 (TongYi)
+  enableSequential?: boolean; // Wan 2.7 Image 组图模式 (TongYi)
   prompt?: string; // Prompt text for image generation/editing
   modelId?: string; // Model ID for specific operations
   platform?: string; // Platform identifier (e.g., 'gemini', 'vertex_ai')
@@ -394,6 +411,7 @@ export interface InitData {
 
   // Session related
   sessions: ChatSession[];
+  sessionsMode?: AppMode; // mode-scoped session page returned by init/non-critical
   sessionsTotal?: number; // ✅ 总会话数量（用于分页）
   sessionsHasMore?: boolean; // ✅ 是否还有更多会话（用于滚动加载）
 

@@ -77,8 +77,11 @@
           "description": "产出结构化回复草稿",
           "icon": "✍️",
           "iconColor": "bg-pink-500",
-          "agentName": "电商文案创作师",
-          "inputMapping": "需求：{{input-cs.output.text}}"
+          "inputMapping": "需求：{{input-cs.output.text}}",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.8,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ecommerce-copywriter"
         }
       },
       {
@@ -94,8 +97,11 @@
           "description": "检查政策风险与措辞边界",
           "icon": "🛡️",
           "iconColor": "bg-sky-500",
-          "agentName": "亚马逊合规审核师",
-          "inputMapping": "需求：{{input-cs.output.text}}"
+          "inputMapping": "需求：{{input-cs.output.text}}",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.2,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-compliance-reviewer"
         }
       },
       {
@@ -111,8 +117,11 @@
           "description": "给出沟通与升级策略",
           "icon": "🧠",
           "iconColor": "bg-indigo-500",
-          "agentName": "运营策略顾问",
-          "inputMapping": "需求：{{input-cs.output.text}}"
+          "inputMapping": "需求：{{input-cs.output.text}}",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {
@@ -144,9 +153,12 @@
           "description": "输出可发送版本与后续动作",
           "icon": "✅",
           "iconColor": "bg-emerald-500",
-          "agentName": "电商文案创作师",
           "inputMapping": "汇总：{{merge-cs.output.text}}",
-          "instructions": "输出最终客户回复、内部处理步骤和升级条件。"
+          "instructions": "输出最终客户回复、内部处理步骤和升级条件。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.8,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ecommerce-copywriter"
         }
       },
       {

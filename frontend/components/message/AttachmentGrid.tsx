@@ -2,6 +2,9 @@
 import React from 'react';
 import { Attachment } from '../../types/types';
 import { Download, Maximize2, FileText, Music, Video as VideoIcon, Edit, File } from 'lucide-react';
+import { CachedImage } from '../common/CachedImage';
+import { RetainedAudio, RetainedVideo } from '../common/RetainedMedia';
+import { getRenderableAttachmentUrl } from '../../utils/attachmentUrl';
 
 interface AttachmentGridProps {
   attachments: Attachment[];
@@ -13,6 +16,8 @@ const getAttachmentKey = (attachment: Attachment): string => {
   const segments = [
     attachment.id,
     attachment.url,
+    attachment.tempUrl,
+    attachment.cloudUrl,
     attachment.fileUri,
     attachment.name,
     attachment.mimeType,
@@ -34,6 +39,10 @@ export const AttachmentGrid: React.FC<AttachmentGridProps> = ({ attachments, onI
     document.body.removeChild(link);
   };
 
+  const getDisplayUrl = (attachment: Attachment): string | null => {
+    return getRenderableAttachmentUrl(attachment);
+  };
+
   const handleEdit = (e: React.MouseEvent, url: string, attachment?: Attachment) => {
       e.stopPropagation();
       onEditImage?.(url, attachment);
@@ -47,12 +56,12 @@ export const AttachmentGrid: React.FC<AttachmentGridProps> = ({ attachments, onI
   // 1. Single Video (Hero Layout)
   if (isSingleVideo) {
       const att = attachments[0];
-      const url = att.url || att.fileUri;
+      const url = getDisplayUrl(att);
       if (!url) return null;
       
       return (
         <div className="mt-3 rounded-xl overflow-hidden border border-slate-600/50 shadow-2xl bg-black max-w-full">
-            <video src={url} controls className="w-full max-h-[180px]" autoPlay muted />
+            <RetainedVideo src={url} controls className="w-full max-h-[180px]" autoPlay muted />
             <div className="p-2 bg-slate-900/80 flex items-center justify-between text-xs text-slate-400 px-3">
                 <span className="flex items-center gap-1"><VideoIcon size={12}/> Generated Video</span>
                 <button onClick={(e) => handleDownload(e, url, att.name)} className="hover:text-white flex items-center gap-1">
@@ -66,7 +75,7 @@ export const AttachmentGrid: React.FC<AttachmentGridProps> = ({ attachments, onI
   // 2. Single Audio (Player Layout)
   if (isSingleAudio) {
       const att = attachments[0];
-      const url = att.url || att.fileUri;
+      const url = getDisplayUrl(att);
       if (!url) return null;
 
       return (
@@ -76,7 +85,7 @@ export const AttachmentGrid: React.FC<AttachmentGridProps> = ({ attachments, onI
             </div>
             <div className="flex-1 min-w-0">
                  <div className="text-sm font-medium text-slate-200 mb-1">Generated Audio</div>
-                 <audio src={url} controls className="h-8 w-full" />
+                 <RetainedAudio src={url} controls className="h-8 w-full" />
             </div>
             <button onClick={(e) => handleDownload(e, url, att.name)} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-colors">
                 <Download size={18}/>
@@ -104,14 +113,12 @@ export const AttachmentGrid: React.FC<AttachmentGridProps> = ({ attachments, onI
         const isVideo = att.mimeType.startsWith('video/');
         const isAudio = att.mimeType.startsWith('audio/');
         const isPdf = att.mimeType.includes('pdf');
-        const url = att.url || att.fileUri;
+        const url = getDisplayUrl(att);
 
         if (!url) return null;
 
         if (isImage) {
-            // ✅ 修复：使用 URL 优先级降级策略（url -> tempUrl -> fileUri）
-            const displayUrl = att.url || att.tempUrl || att.fileUri;
-            if (!displayUrl) return null;
+            const displayUrl = url;
             
             return (
                 <div key={attachmentKey} className="flex flex-col rounded-lg overflow-hidden border border-slate-700/60 shadow-md bg-slate-900/80 w-[96px]">
@@ -128,8 +135,15 @@ export const AttachmentGrid: React.FC<AttachmentGridProps> = ({ attachments, onI
                         }
                       }}
                     >
-                      <img
+                      <CachedImage
                         src={displayUrl}
+                        source={{
+                          ...att,
+                          attachmentId: att.id,
+                          url: displayUrl,
+                          mimeType: att.mimeType,
+                          name: att.name,
+                        }}
                         alt={att.name}
                         className="w-full h-full object-cover transition-transform duration-300 group-hover/img:scale-105"
                       />
@@ -162,21 +176,17 @@ export const AttachmentGrid: React.FC<AttachmentGridProps> = ({ attachments, onI
                 </div>
             );
         } else if (isVideo) {
-            // ✅ 修复：视频也使用 URL 优先级降级策略
-            const displayUrl = att.url || att.tempUrl || att.fileUri;
-            if (!displayUrl) return null;
+            const displayUrl = url;
             
             return (
                 <div key={attachmentKey} className="flex flex-col rounded-lg overflow-hidden border border-slate-700/60 shadow-md bg-slate-900/80 w-[96px]">
                     <div className="w-full h-[64px] bg-black">
-                      <video src={displayUrl} controls className="w-full h-full object-cover" />
+                      <RetainedVideo src={displayUrl} controls className="w-full h-full object-cover" />
                     </div>
                 </div>
             );
         } else if (isAudio) {
-            // ✅ 修复：音频也使用 URL 优先级降级策略
-            const displayUrl = att.url || att.tempUrl || att.fileUri;
-            if (!displayUrl) return null;
+            const displayUrl = url;
             
              return (
                 <div key={attachmentKey} className="flex flex-col rounded-lg overflow-hidden border border-slate-700/60 shadow-md bg-slate-900/80 w-[96px]">
@@ -184,7 +194,7 @@ export const AttachmentGrid: React.FC<AttachmentGridProps> = ({ attachments, onI
                       <div className="p-1.5 rounded-full bg-slate-800 text-yellow-400"><Music size={14} /></div>
                     </div>
                     <div className="px-2 pb-2">
-                      <audio src={displayUrl} controls className="h-6 w-full" />
+                      <RetainedAudio src={displayUrl} controls className="h-6 w-full" />
                     </div>
                 </div>
             );

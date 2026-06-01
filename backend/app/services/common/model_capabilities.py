@@ -192,6 +192,10 @@ def get_qwen_capabilities(model_id: str) -> Capabilities:
     reasoning = False
     coding = False
 
+    # Dedicated media generation models are not chat/search models.
+    if "tts" in lower_id or "speech" in lower_id or lower_id == "aitryon-plus" or lower_id == "image-out-painting":
+        return Capabilities(vision=lower_id in {"aitryon-plus", "image-out-painting"})
+
     # Vision models: -vl- or ends with -vl
     if "-vl-" in lower_id or lower_id.endswith("-vl"):
         vision = True
@@ -243,8 +247,17 @@ def get_openai_capabilities(model_id: str) -> Capabilities:
     reasoning = False
     coding = False
 
+    # Video generation models
+    if lower_id.startswith("sora"):
+        return Capabilities(vision=True)
+
     # Image generation models
-    if lower_id.startswith("dall-e") or lower_id.startswith("dalle"):
+    if (
+        lower_id.startswith("gpt-image")
+        or lower_id.startswith("chatgpt-image")
+        or lower_id.startswith("dall-e")
+        or lower_id.startswith("dalle")
+    ):
         return Capabilities(vision=True)
 
     # TTS/Audio models
@@ -616,6 +629,11 @@ def get_model_description(provider: str, model_id: str) -> str:
             return f"Tongyi AI model: {model_id}"
     
     # Default
+    if provider.lower() == "openai" and lower_id.startswith("sora"):
+        if "pro" in lower_id:
+            return "Advanced OpenAI video generation and editing model"
+        return "OpenAI video generation model with text and image inputs"
+
     return f"{provider.capitalize()} AI model: {model_id}"
 
 
@@ -693,16 +711,7 @@ _ROUTE_IMPLEMENTED_MODES = {
 }
 
 # Known unsupported provider/mode combos.
-_KNOWN_UNSUPPORTED: Dict[Tuple[str, str], Tuple[str, str]] = {
-    ("tongyi", "video-gen"): (
-        "mode_not_implemented",
-        "Tongyi provider does not support video generation yet.",
-    ),
-    ("tongyi", "audio-gen"): (
-        "mode_not_implemented",
-        "Tongyi provider does not support audio generation yet.",
-    ),
-}
+_KNOWN_UNSUPPORTED: Dict[Tuple[str, str], Tuple[str, str]] = {}
 
 # Google modes that require Vertex AI configuration.
 _GOOGLE_VERTEX_REQUIRED_MODES = {

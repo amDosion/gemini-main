@@ -75,9 +75,12 @@
           "description": "输出主图/场景图/细节图三类编辑提示词",
           "icon": "💡",
           "iconColor": "bg-amber-500",
-          "agentName": "电商文案创作师",
           "inputMapping": "编辑需求：{{input-text-reference-edit-studio.output.text}}",
-          "instructions": "请输出三类图生图提示词：\n1. 主图编辑提示词\n2. 场景图编辑提示词\n3. 细节图编辑提示词\n并附上每类图的质量检查点。"
+          "instructions": "请输出三类图生图提示词：\n1. 主图编辑提示词\n2. 场景图编辑提示词\n3. 细节图编辑提示词\n并附上每类图的质量检查点。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.8,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ecommerce-copywriter"
         }
       },
       {
@@ -109,12 +112,25 @@
           "description": "编辑为白底主图版本",
           "icon": "🪄",
           "iconColor": "bg-pink-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentReferenceImageUrl": "{{input-image-reference-edit-studio.output.imageUrl}}",
           "agentNumberOfImages": 1,
           "inputMapping": "{{agent-brief-reference-edit-studio.output.text}}\\n\\n执行主图编辑：主体保持一致，白底，无文字。",
-          "instructions": "优先保证主体一致性和边缘质量，输出可直接上架的主图。"
+          "instructions": "优先保证主体一致性和边缘质量，输出可直接上架的主图。",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentEditMode": "image-chat-edit",
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentImageEditMaxRetries": 2,
+          "agentPreserveProductIdentity": true,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -130,12 +146,25 @@
           "description": "编辑为真实使用场景版本",
           "icon": "🏞️",
           "iconColor": "bg-indigo-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentReferenceImageUrl": "{{input-image-reference-edit-studio.output.imageUrl}}",
           "agentNumberOfImages": 1,
           "inputMapping": "{{agent-brief-reference-edit-studio.output.text}}\\n\\n执行场景图编辑：保留产品主体，强化使用情境。",
-          "instructions": "保持产品外观一致，避免产生违规元素。"
+          "instructions": "保持产品外观一致，避免产生违规元素。",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentEditMode": "image-chat-edit",
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentImageEditMaxRetries": 2,
+          "agentPreserveProductIdentity": true,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -151,12 +180,25 @@
           "description": "编辑为材质与工艺细节版本",
           "icon": "🔍",
           "iconColor": "bg-violet-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentReferenceImageUrl": "{{input-image-reference-edit-studio.output.imageUrl}}",
           "agentNumberOfImages": 1,
           "inputMapping": "{{agent-brief-reference-edit-studio.output.text}}\\n\\n执行细节图编辑：突出材质、纹理和结构细节。",
-          "instructions": "强调细节清晰度与真实感，禁止不实夸大。"
+          "instructions": "强调细节清晰度与真实感，禁止不实夸大。",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentEditMode": "image-chat-edit",
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentImageEditMaxRetries": 2,
+          "agentPreserveProductIdentity": true,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -188,9 +230,12 @@
           "description": "输出最终交付建议与复用提示词",
           "icon": "✅",
           "iconColor": "bg-emerald-500",
-          "agentName": "运营策略顾问",
           "inputMapping": "编辑结果汇总：{{merge-reference-edit-studio.output.text}}",
-          "instructions": "请输出：\n1. 最终推荐图列表\n2. 各图用途建议\n3. 二次迭代提示词\n4. 上线前审核清单。"
+          "instructions": "请输出：\n1. 最终推荐图列表\n2. 各图用途建议\n3. 二次迭代提示词\n4. 上线前审核清单。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {

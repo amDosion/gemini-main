@@ -13,6 +13,7 @@ from typing import List
 from openai import AsyncOpenAI
 
 from ..common.model_capabilities import ModelConfig, build_model_config
+from ..common.tongyi_model_catalog import get_static_tongyi_media_model_entries
 
 logger = logging.getLogger(__name__)
 
@@ -177,14 +178,38 @@ class ModelManager:
         else:
             logger.warning("[Tongyi ModelManager] ❌ [Tier 2] 未能从JSON文件加载任何模型")
 
+        # ==================== Tier 3: Static media catalog ====================
+        # DashScope's compatible /models endpoint and the optional Bailian JSON do
+        # not consistently expose newly released Wan/HappyHorse media models. Keep
+        # these provider-owned image/video models in a local catalog so verify/live
+        # paths and normal profile paths expose the same capabilities.
+        static_media_entries = get_static_tongyi_media_model_entries()
+        static_media_by_id = {entry["id"]: entry for entry in static_media_entries}
+        static_count_before = len(all_model_ids)
+        all_model_ids.update(static_media_by_id.keys())
+        static_added = len(all_model_ids) - static_count_before
+        logger.info(
+            "[Tongyi ModelManager] ✅ [Tier 3] 静态媒体模型目录添加 %s 个新模型，总目录 %s 个",
+            static_added,
+            len(static_media_entries),
+        )
+
         # ==================== Build ModelConfig Objects ====================
         if all_model_ids:
             sorted_model_ids = sorted(list(all_model_ids))
-            model_configs = [build_model_config("tongyi", model_id) for model_id in sorted_model_ids]
+            model_configs = [
+                build_model_config(
+                    "tongyi",
+                    model_id,
+                    display_name=static_media_by_id.get(model_id, {}).get("name"),
+                )
+                for model_id in sorted_model_ids
+            ]
             logger.info(f"[Tongyi ModelManager] ✅ 最终合并列表: {len(model_configs)} 个模型")
             logger.info(f"[Tongyi ModelManager]   - 来源统计:")
             logger.info(f"[Tongyi ModelManager]     * API获取: {len(api_model_ids) if 'api_model_ids' in locals() else 0} 个")
             logger.info(f"[Tongyi ModelManager]     * JSON文件: {len(official_model_ids)} 个")
+            logger.info(f"[Tongyi ModelManager]     * 静态媒体目录: {len(static_media_entries)} 个")
             logger.info(f"[Tongyi ModelManager]     * 合并去重后: {len(model_configs)} 个")
             logger.info("[Tongyi ModelManager] ========== 模型列表获取完成 ==========")
             return model_configs

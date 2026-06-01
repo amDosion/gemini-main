@@ -39,14 +39,36 @@ export class ImageOutpaintingHandler extends BaseHandler {
       attachmentId?: string;
       uploadStatus?: string;
       taskId?: string;
+      cloudUrl?: string;
+      sessionId?: string;
+      messageId?: string;
+      userId?: string;
+      size?: number;
+      enhancedPrompt?: string;
+      openaiResponseId?: string;
     }) => ({
       id: res.attachmentId || `outpaint-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       mimeType: res.mimeType || 'image/png',
       name: res.filename || `outpainted-${Date.now()}.png`,
       url: res.url,
       uploadStatus: (res.uploadStatus || 'pending') as 'pending' | 'uploading' | 'completed' | 'failed',
-      uploadTaskId: res.taskId
+      uploadTaskId: res.taskId,
+      cloudUrl: res.cloudUrl,
+      sessionId: res.sessionId,
+      messageId: res.messageId,
+      userId: res.userId,
+      size: res.size,
+      enhancedPrompt: res.enhancedPrompt,
+      openaiResponseId: res.openaiResponseId,
     } as Attachment));
+
+    const enhancedPrompt = results.find((res: { enhancedPrompt?: string }) => res.enhancedPrompt)?.enhancedPrompt;
+    const firstResult = results[0] as {
+      thoughts?: Array<{ type: 'text' | 'image'; content: string }>;
+      text?: string;
+    } | undefined;
+    const thoughts = firstResult?.thoughts || [];
+    const textResponse = firstResult?.text;
 
     // ✅ 后端已创建附件记录和上传任务（AI 返回的结果图片）
     const uploadTask = async () => ({
@@ -55,9 +77,12 @@ export class ImageOutpaintingHandler extends BaseHandler {
     });
 
     return {
-      content: 'Image expanded.',
+      content: context.text,
       attachments: displayAttachments,
       uploadTask: uploadTask(),
+      thoughts: thoughts.length > 0 ? thoughts : undefined,
+      textResponse,
+      enhancedPrompt,
     };
   }
 }
@@ -93,13 +118,15 @@ export class VirtualTryOnHandler extends BaseHandler {
       attachmentId?: string;
       uploadStatus?: string;
       taskId?: string;
+      openaiResponseId?: string;
     }) => ({
       id: res.attachmentId || `vto-${Date.now()}`,
       mimeType: res.mimeType || 'image/png',
       name: res.filename || `tryon-${Date.now()}.png`,
       url: res.url,
       uploadStatus: (res.uploadStatus || 'pending') as 'pending' | 'uploading' | 'completed' | 'failed',
-      uploadTaskId: res.taskId
+      uploadTaskId: res.taskId,
+      openaiResponseId: res.openaiResponseId,
     } as Attachment));
 
     // ✅ 与 ImageEditHandler 保持一致：处理用户上传的附件（人物图、服装图）
@@ -244,6 +271,25 @@ export class VideoGenHandler extends BaseHandler {
           kind: sidecar.kind || 'subtitle',
         });
       }
+      for (const asset of result.derivedAssets || []) {
+        if (!asset?.url || (asset.kind && asset.kind !== 'video_last_frame')) {
+          continue;
+        }
+        displayAttachments.push({
+          id: asset.attachmentId || uuidv4(),
+          mimeType: asset.mimeType || 'image/png',
+          name: asset.filename || `video-last-frame-${Date.now()}.png`,
+          url: asset.url,
+          role: asset.role || 'last_frame',
+          kind: asset.kind || 'video_last_frame',
+          uploadStatus: (asset.uploadStatus || 'pending') as 'pending' | 'uploading' | 'completed' | 'failed',
+          uploadTaskId: asset.taskId,
+          cloudUrl: asset.cloudUrl,
+          messageId: asset.messageId,
+          sessionId: asset.sessionId,
+          userId: asset.userId,
+        });
+      }
       const subtitleAttachmentIds = displayAttachments
         .filter((attachment) => attachment.kind === 'subtitle' || attachment.mimeType === 'text/vtt' || attachment.mimeType === 'application/x-subrip')
         .map((attachment) => attachment.id)
@@ -300,9 +346,21 @@ export class AudioGenHandler extends BaseHandler {
 
 export class PdfExtractHandler extends BaseHandler {
   protected async doExecute(context: ExecutionContext): Promise<HandlerResult> {
-    // Simplified PDF extraction - returns text content
+    const pdfOptions = {
+      ...context.options,
+      frontendSessionId: context.sessionId,
+      sessionId: context.sessionId,
+      messageId: context.modelMessageId,
+    };
+
+    const result = await context.llmService.extractPdfData(
+      context.text,
+      context.attachments,
+      pdfOptions
+    );
+
     return {
-      content: `PDF extraction completed for ${context.attachments.length} file(s)`,
+      content: typeof result === 'string' ? result : JSON.stringify(result),
       attachments: [],
     };
   }

@@ -6,7 +6,6 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from 'react';
-import { getAccessToken } from '../../../services/apiClient';
 import { requestJson } from '../../../services/http';
 import {
   DEFAULT_WORKFLOW_EXECUTION_POLICY,
@@ -183,10 +182,6 @@ export const useWorkflowExecutionController = ({
             },
           ],
         });
-
-        const token = getAccessToken();
-        if (token) {
-        }
 
         const normalizedProviderId = String(providerId || '').trim();
         if (!normalizedProviderId) {

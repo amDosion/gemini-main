@@ -1,14 +1,19 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
 import { Layers } from 'lucide-react';
 import { useImageCanvas } from '../../hooks/useImageCanvas';
 import { GenViewLayout } from '../common/GenViewLayout';
 import { useToastContext } from '../../contexts/ToastContext';
 import { useControlsState } from '../../hooks/useControlsState';
+import { useAutoSelectGeneratedImageResult } from '../../hooks/useAutoSelectGeneratedImageResult';
 import { useThinkingBlock } from '../../hooks/useThinkingBlock';
 import { useMaskIO } from '../../hooks/useMaskIO';
 import { MaskEditSidebar } from './maskedit/MaskEditSidebar';
 import { MaskEditMain } from './maskedit/MaskEditMain';
+import { getPreferredImageAttachmentUrl } from '../../utils/attachmentUrl';
+import { useStableAttachmentImageUrl } from '../../hooks/useStableAttachmentImageUrl';
+import { revokeManagedMediaObjectUrl } from '../../services/mediaCache';
+import { buildMessagesMediaSignature } from '../../utils/messageMediaSignature';
 import {
   drawOnMaskCanvas as drawOnMaskCanvasPure,
   generateMaskFromSelections as generateMaskFromSelectionsPure,
@@ -41,24 +46,11 @@ interface ImageMaskEditViewProps {
   sessionId?: string | null;
 }
 
-// 复用 ImageEditView 的比较函数
-const arePropsEqual = (prevProps: ImageMaskEditViewProps, nextProps: ImageMaskEditViewProps) => {
-  if (prevProps.activeModelConfig?.id !== nextProps.activeModelConfig?.id) {
-    return false;
-  }
-  if (prevProps.loadingState !== nextProps.loadingState) return false;
-  if (prevProps.messages !== nextProps.messages) return false;
-  if (prevProps.sessionId !== nextProps.sessionId) return false;
-  if (prevProps.providerId !== nextProps.providerId) return false;
-  return true;
-};
-
 // MaskTool / MaskMode / SelectionRect / 3 helper 已抽离到 utils/maskHelpers（Step 1, 3）
 // ImageEditMainCanvas 已抽离至 mask/MaskCanvasPainter + mask/MaskToolbar（Step 4-5）
 // handleMaskModeChange / handleImportMask / handleClearMask 抽离至 hooks/useMaskIO（Step 3）
 
-export const ImageMaskEditView = memo(
-  ({
+export const ImageMaskEditView: React.FC<ImageMaskEditViewProps> = ({
     messages,
     setAppMode,
     onImageClick,
@@ -73,12 +65,12 @@ export const ImageMaskEditView = memo(
     onExpandImage,
     providerId,
     sessionId: currentSessionId,
-  }: ImageMaskEditViewProps) => {
+  }) => {
     const { showError } = useToastContext();
     const scrollRef = useRef<HTMLDivElement>(null);
 
     // Mounted flag：用于 generateMaskFromSelections 中 canvas.toBlob 异步回调，
-    // 若组件已卸载则丢弃后续 URL.createObjectURL，避免 blob URL 泄漏。
+    // 若组件已卸载则丢弃后续 object URL 创建，避免 blob URL 泄漏。
     const isMountedRef = useRef(true);
     useEffect(() => {
       isMountedRef.current = true;
@@ -115,36 +107,22 @@ export const ImageMaskEditView = memo(
       displayedContent: displayedThinkingContent,
     } = useThinkingBlock(messages, loadingState);
 
-    // Stable canvas URL
-    const canvasObjectUrlRef = useRef<string | null>(null);
-    const canvasObjectUrlFileRef = useRef<File | null>(null);
+    const getStableCanvasUrlFromAttachment = useStableAttachmentImageUrl([], {
+      retainedObjectUrl: activeImageUrl,
+      createFileObjectUrls: true,
+    });
+    const messagesMediaSignature = buildMessagesMediaSignature(messages);
 
-    const getStableCanvasUrlFromAttachment = useCallback((att: Attachment) => {
-      if (att.file) {
-        const file = att.file;
-        if (!canvasObjectUrlRef.current || canvasObjectUrlFileRef.current !== file) {
-          if (canvasObjectUrlRef.current) URL.revokeObjectURL(canvasObjectUrlRef.current);
-          canvasObjectUrlRef.current = URL.createObjectURL(file);
-          canvasObjectUrlFileRef.current = file;
-        }
-        return canvasObjectUrlRef.current;
-      }
-      return att.url || att.tempUrl || null;
-    }, []);
-
-    useEffect(() => {
-      return () => {
-        if (canvasObjectUrlRef.current) {
-          URL.revokeObjectURL(canvasObjectUrlRef.current);
-          canvasObjectUrlRef.current = null;
-          canvasObjectUrlFileRef.current = null;
-        }
-      };
-    }, []);
-
-    const [lastProcessedMsgId, setLastProcessedMsgId] = useState<string | null>(null);
     const [isCompareMode, setIsCompareMode] = useState(false);
     const canvas = useImageCanvas({ minZoom: 0.1, maxZoom: 5, zoomStep: 0.2 });
+    const getDisplayableImageAttachments = useCallback((attachments?: Attachment[]) => {
+      return (attachments ?? []).filter((att) =>
+        Boolean(att.file || getPreferredImageAttachmentUrl(att))
+      );
+    }, []);
+    const handleSelectGeneratedResult = useCallback(({ firstUrl }: { firstUrl: string }) => {
+      setActiveImageUrl(firstUrl);
+    }, []);
 
     // ✅ Mask 工具状态（默认 select 矩形选择工具）
     const [activeMaskTool, setActiveMaskTool] = useState<MaskTool>('select');
@@ -455,7 +433,7 @@ export const ImageMaskEditView = memo(
         // 手动模式下，既没有选区也没有画笔数据时，清除 mask 预览
         // 注意：自动 mask 模式下，maskPreviewUrl 由 API 返回设置，不应在此清除
         if (maskPreviewUrlRef.current) {
-          URL.revokeObjectURL(maskPreviewUrlRef.current);
+          revokeManagedMediaObjectUrl(maskPreviewUrlRef.current);
           maskPreviewUrlRef.current = null;
         }
         setMaskPreviewUrl(null);
@@ -484,11 +462,11 @@ export const ImageMaskEditView = memo(
       return () => {
         // 清理 maskCanvasUrl 的 blob URL
         if (maskPreviewBlobUrlRef.current) {
-          URL.revokeObjectURL(maskPreviewBlobUrlRef.current);
+          revokeManagedMediaObjectUrl(maskPreviewBlobUrlRef.current);
         }
         // 清理 maskPreviewUrl 的 blob URL
         if (maskPreviewUrlRef.current) {
-          URL.revokeObjectURL(maskPreviewUrlRef.current);
+          revokeManagedMediaObjectUrl(maskPreviewUrlRef.current);
         }
         // 取消未完成的 RAF
         if (rafIdRef.current !== null) {
@@ -504,20 +482,13 @@ export const ImageMaskEditView = memo(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeImageUrl]); // canvas.resetView 是稳定的函数，不需要作为依赖
 
-    useEffect(() => {
-      if (canvasObjectUrlRef.current && activeImageUrl !== canvasObjectUrlRef.current) {
-        URL.revokeObjectURL(canvasObjectUrlRef.current);
-        canvasObjectUrlRef.current = null;
-        canvasObjectUrlFileRef.current = null;
-      }
-    }, [activeImageUrl]);
-
     const originalImageUrl = useMemo(() => {
       const lastUserMsg = [...messages]
         .reverse()
         .find((m) => m.role === Role.USER && m.attachments?.length);
-      return lastUserMsg?.attachments?.[0]?.url || null;
-    }, [messages]);
+      const attachment = lastUserMsg?.attachments?.[0];
+      return attachment ? getStableCanvasUrlFromAttachment(attachment) : null;
+    }, [getStableCanvasUrlFromAttachment, messages, messagesMediaSignature]);
 
     useEffect(() => {
       if (initialAttachments && initialAttachments.length > 0) {
@@ -541,42 +512,45 @@ export const ImageMaskEditView = memo(
           behavior: 'smooth',
         });
       });
-    }, [messages, activeAttachments]);
+    }, [messages, messagesMediaSignature, activeAttachments]);
 
     useEffect(() => {
       if (activeAttachments.length === 0 && !activeImageUrl) {
         const lastUserMsg = [...messages]
           .reverse()
           .find((m) => m.role === Role.USER && m.attachments?.length);
-        if (lastUserMsg && lastUserMsg.attachments?.[0]?.url) {
-          setActiveImageUrl(lastUserMsg.attachments[0].url);
+        const lastUserUrl = lastUserMsg?.attachments?.[0]
+          ? getStableCanvasUrlFromAttachment(lastUserMsg.attachments[0])
+          : null;
+        if (lastUserMsg && lastUserUrl) {
+          setActiveImageUrl(lastUserUrl);
         } else {
           const lastModelMsg = [...messages]
             .reverse()
             .find((m) => m.role === Role.MODEL && m.attachments?.length);
-          if (lastModelMsg && lastModelMsg.attachments?.[0]?.url) {
-            setActiveImageUrl(lastModelMsg.attachments[0].url);
+          const lastModelUrl = lastModelMsg?.attachments?.[0]
+            ? getStableCanvasUrlFromAttachment(lastModelMsg.attachments[0])
+            : null;
+          if (lastModelMsg && lastModelUrl) {
+            setActiveImageUrl(lastModelUrl);
           }
         }
       }
+    }, [
+      messages,
+      messagesMediaSignature,
+      activeAttachments.length,
+      activeImageUrl,
+      getStableCanvasUrlFromAttachment,
+    ]);
 
-      if (loadingState === 'idle' && messages.length > 0) {
-        const lastMsg = messages[messages.length - 1];
-        if (lastMsg.id !== lastProcessedMsgId) {
-          if (
-            lastMsg.role === Role.MODEL &&
-            lastMsg.attachments &&
-            lastMsg.attachments.length > 0 &&
-            lastMsg.attachments[0].url
-          ) {
-            setActiveImageUrl(lastMsg.attachments[0].url);
-            setLastProcessedMsgId(lastMsg.id);
-          } else if (lastMsg.isError) {
-            setLastProcessedMsgId(lastMsg.id);
-          }
-        }
-      }
-    }, [messages, activeAttachments.length, loadingState, lastProcessedMsgId, activeImageUrl]);
+    useAutoSelectGeneratedImageResult({
+      messages,
+      loadingState,
+      getDisplayAttachments: getDisplayableImageAttachments,
+      getAttachmentUrl: getStableCanvasUrlFromAttachment,
+      onSelectResult: handleSelectGeneratedResult,
+    });
 
     // ✅ ChatEditInputArea 已处理 raw 附件；Mask 模式在这里追加官方 SDK 需要的 mask reference。
     const handleSend = useCallback(
@@ -624,6 +598,7 @@ export const ImageMaskEditView = memo(
           loadingState={loadingState}
           activeImageUrl={activeImageUrl}
           setActiveImageUrl={setActiveImageUrl}
+          setActiveAttachments={setActiveAttachments}
           displayedThinkingContent={displayedThinkingContent}
           isThinkingOpen={isThinkingOpen}
           setIsThinkingOpen={setIsThinkingOpen}
@@ -774,6 +749,4 @@ export const ImageMaskEditView = memo(
         main={mainContent}
       />
     );
-  },
-  arePropsEqual
-);
+  };

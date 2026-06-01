@@ -21,7 +21,10 @@
       {
         "id": "start-video-understand",
         "type": "start",
-        "position": { "x": 80, "y": 240 },
+        "position": {
+          "x": 80,
+          "y": 240
+        },
         "data": {
           "type": "start",
           "label": "开始",
@@ -33,7 +36,10 @@
       {
         "id": "input-video-understand",
         "type": "input_video",
-        "position": { "x": 300, "y": 160 },
+        "position": {
+          "x": 300,
+          "y": 160
+        },
         "data": {
           "type": "input_video",
           "label": "视频输入",
@@ -46,7 +52,10 @@
       {
         "id": "input-text-video-understand",
         "type": "input_text",
-        "position": { "x": 300, "y": 320 },
+        "position": {
+          "x": 300,
+          "y": 320
+        },
         "data": {
           "type": "input_text",
           "label": "分析目标",
@@ -59,7 +68,10 @@
       {
         "id": "tool-video-understand",
         "type": "tool",
-        "position": { "x": 620, "y": 240 },
+        "position": {
+          "x": 620,
+          "y": 240
+        },
         "data": {
           "type": "tool",
           "label": "视频理解",
@@ -76,7 +88,10 @@
       {
         "id": "end-video-understand",
         "type": "end",
-        "position": { "x": 900, "y": 240 },
+        "position": {
+          "x": 900,
+          "y": 240
+        },
         "data": {
           "type": "end",
           "label": "结束",
@@ -87,10 +102,26 @@
       }
     ],
     "edges": [
-      { "id": "edge-video-understand-1", "source": "start-video-understand", "target": "input-video-understand" },
-      { "id": "edge-video-understand-2", "source": "input-video-understand", "target": "input-text-video-understand" },
-      { "id": "edge-video-understand-3", "source": "input-text-video-understand", "target": "tool-video-understand" },
-      { "id": "edge-video-understand-4", "source": "tool-video-understand", "target": "end-video-understand" }
+      {
+        "id": "edge-video-understand-1",
+        "source": "start-video-understand",
+        "target": "input-video-understand"
+      },
+      {
+        "id": "edge-video-understand-2",
+        "source": "input-video-understand",
+        "target": "input-text-video-understand"
+      },
+      {
+        "id": "edge-video-understand-3",
+        "source": "input-text-video-understand",
+        "target": "tool-video-understand"
+      },
+      {
+        "id": "edge-video-understand-4",
+        "source": "tool-video-understand",
+        "target": "end-video-understand"
+      }
     ]
   }
 }

@@ -16,6 +16,9 @@ import { HistoryActionMenuPortal } from '../common/HistoryActionMenuPortal';
 import { HoverPromptPreviewPortal } from '../common/HoverPromptPreviewPortal';
 import { ExpandHistoryRow } from './expand/ExpandHistoryRow';
 import { ExpandMainCanvas } from './expand/ExpandMainCanvas';
+import { getPreferredGoogleExpandModelId } from '../../utils/googleExpandModelSelection';
+import { getPreferredImageAttachmentUrl } from '../../utils/attachmentUrl';
+import { useStableAttachmentImageUrl } from '../../hooks/useStableAttachmentImageUrl';
 
 const extractHistoryPrompts = (
   msg: Message
@@ -65,6 +68,7 @@ interface ImageExpandViewProps {
   onSend: (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => void;
   onStop: () => void;
   activeModelConfig?: ModelConfig;
+  onModelSelect?: (id: string) => void;
   visibleModels?: ModelConfig[]; // 新增
   allVisibleModels?: ModelConfig[]; // 新增：完整模型列表
   initialAttachments?: Attachment[];
@@ -81,6 +85,7 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
   onSend,
   onStop,
   activeModelConfig,
+  onModelSelect,
   visibleModels = [],
   allVisibleModels = [], // 新增
   initialAttachments,
@@ -128,32 +133,10 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
   const copiedResetTimerRef = useRef<number | null>(null);
   const historyItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // Stable canvas URL (avoid relying on InputArea-managed Blob URLs that may be revoked)
-  const canvasObjectUrlRef = useRef<string | null>(null);
-  const canvasObjectUrlFileRef = useRef<File | null>(null);
-
-  const getStableCanvasUrlFromAttachment = useCallback((att: Attachment) => {
-    if (att.file) {
-      const file = att.file;
-      if (!canvasObjectUrlRef.current || canvasObjectUrlFileRef.current !== file) {
-        if (canvasObjectUrlRef.current) URL.revokeObjectURL(canvasObjectUrlRef.current);
-        canvasObjectUrlRef.current = URL.createObjectURL(file);
-        canvasObjectUrlFileRef.current = file;
-      }
-      return canvasObjectUrlRef.current;
-    }
-    return att.url || att.tempUrl || null;
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (canvasObjectUrlRef.current) {
-        URL.revokeObjectURL(canvasObjectUrlRef.current);
-        canvasObjectUrlRef.current = null;
-        canvasObjectUrlFileRef.current = null;
-      }
-    };
-  }, []);
+  const getStableCanvasUrlFromAttachment = useStableAttachmentImageUrl([], {
+    retainedObjectUrl: activeImageUrl,
+    createFileObjectUrls: true,
+  });
 
   // Track last processed message to auto-update view
   const [lastProcessedMsgId, setLastProcessedMsgId] = useState<string | null>(null);
@@ -194,9 +177,21 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
   }, [selectedMsgId, filteredHistoryBatches]);
 
   // ✅ 新增：当前批次的所有图片
-  const displayImages = useMemo(() => {
-    return (activeBatchMessage?.attachments || []).filter((att) => att.url && att.url.length > 0);
-  }, [activeBatchMessage?.attachments]);
+	  const displayImages = useMemo(() => {
+	    return (activeBatchMessage?.attachments || [])
+	      .filter((att) => Boolean(att.file || getPreferredImageAttachmentUrl(att)))
+	      .map((att, index) => {
+	        const fallbackId = att.id || `${activeBatchMessage?.id || 'image-expand'}-${index}`;
+	        const sourceAttachment = att.id ? att : { ...att, id: fallbackId };
+	        const displayUrl = getPreferredImageAttachmentUrl(sourceAttachment);
+	        if (displayUrl) {
+	          return displayUrl === sourceAttachment.url
+	            ? sourceAttachment
+	            : { ...sourceAttachment, url: displayUrl };
+	        }
+	        return sourceAttachment;
+	      });
+	  }, [activeBatchMessage?.attachments, activeBatchMessage?.id]);
 
   // ── Hover preview helpers（view wrappers）──
 
@@ -213,6 +208,11 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
     closeActionMenu();
     setCopiedPreviewMessageId(null);
   }, [closeHoverPreviewBase, closeActionMenu]);
+
+  const closeHoverPreviewOnly = useCallback(() => {
+    closeHoverPreviewBase();
+    setCopiedPreviewMessageId(null);
+  }, [closeHoverPreviewBase]);
 
   // ✅ 新增：当新生成开始时，清除选中状态
   useEffect(() => {
@@ -323,6 +323,23 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
   const expandMode: AppMode = 'image-outpainting';
   const controls = useControlsState(expandMode, activeModelConfig);
 
+  const preferredGoogleExpandModelId = useMemo(() => {
+    if (providerId !== 'google') {
+      return null;
+    }
+    return getPreferredGoogleExpandModelId(controls.outpaintMode, visibleModels);
+  }, [controls.outpaintMode, providerId, visibleModels]);
+
+  useEffect(() => {
+    if (!preferredGoogleExpandModelId || !onModelSelect) {
+      return;
+    }
+
+    if (activeModelConfig?.id !== preferredGoogleExpandModelId) {
+      onModelSelect(preferredGoogleExpandModelId);
+    }
+  }, [activeModelConfig?.id, onModelSelect, preferredGoogleExpandModelId]);
+
   // 重置参数
   const resetParams = useCallback(() => {
     controls.setAspectRatio('1:1');
@@ -336,12 +353,17 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
 
   const carouselItems = useMemo<CarouselMediaItem[]>(
     () =>
-      displayImages.map((att, idx) => ({
-        id: att.id || `${idx}`,
-        url: att.url || null,
-        thumbUrl: att.url || null,
-        alt: `缩略图 ${idx + 1}`,
-      })),
+	      displayImages.map((att, idx) => ({
+	        id: att.id || `${idx}`,
+	        url: att.url || null,
+	        thumbUrl: att.url || null,
+	        source: {
+	          ...att,
+	          attachmentId: att.id,
+	          url: att.url || undefined,
+	        },
+	        alt: `缩略图 ${idx + 1}`,
+	      })),
     [displayImages]
   );
 
@@ -366,22 +388,13 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
     setIsCompareMode(false);
   }, [activeImageUrl, carouselIndex]);
 
-  // Release any prior canvas object URL once we switch away from it (e.g. to a generated result)
-  useEffect(() => {
-    if (canvasObjectUrlRef.current && activeImageUrl !== canvasObjectUrlRef.current) {
-      URL.revokeObjectURL(canvasObjectUrlRef.current);
-      canvasObjectUrlRef.current = null;
-      canvasObjectUrlFileRef.current = null;
-    }
-  }, [activeImageUrl]);
-
   // 获取原图 URL（用于对比）
   const originalImageUrl = useMemo(() => {
     const lastUserMsg = [...messages]
       .reverse()
       .find((m) => m.role === Role.USER && m.attachments?.length);
     const att = lastUserMsg?.attachments?.[0];
-    return att?.url || att?.tempUrl || null;
+    return getPreferredImageAttachmentUrl(att);
   }, [messages]);
 
   // Sync initial attachments
@@ -413,8 +426,9 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
       const lastModelMsg = [...messages]
         .reverse()
         .find((m) => m.role === Role.MODEL && m.attachments?.length);
-      if (lastModelMsg && lastModelMsg.attachments?.[0]?.url) {
-        setActiveImageUrl(lastModelMsg.attachments[0].url);
+      const firstUrl = getPreferredImageAttachmentUrl(lastModelMsg?.attachments?.[0]);
+      if (firstUrl) {
+        setActiveImageUrl(firstUrl);
       }
     }
 
@@ -424,13 +438,9 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
       // Check if this is a new message we haven't handled yet
       if (lastMsg.id !== lastProcessedMsgId) {
         // If it's a model response with an image
-        if (
-          lastMsg.role === Role.MODEL &&
-          lastMsg.attachments &&
-          lastMsg.attachments.length > 0 &&
-          lastMsg.attachments[0].url
-        ) {
-          setActiveImageUrl(lastMsg.attachments[0].url);
+        const firstResultUrl = getPreferredImageAttachmentUrl(lastMsg.attachments?.[0]);
+        if (lastMsg.role === Role.MODEL && firstResultUrl) {
+          setActiveImageUrl(firstResultUrl);
           setLastProcessedMsgId(lastMsg.id);
         } else if (lastMsg.isError) {
           setLastProcessedMsgId(lastMsg.id);
@@ -449,8 +459,7 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
 
   // ✅ 统一历史列表：左图右提示词 + 收藏/操作/悬浮预览
   // sidebarContent: 原 useMemo 的 deps 在每次 hover/选中变化时都会失效，
-  // memo 本身收益微乎其微；下游 ExpandHistoryRow 内部已通过 React.memo + 自定义比较器
-  // 拦截不必要的重渲染。此处保留 plain JSX 转发。
+  // memo 本身收益微乎其微；此处保留 plain JSX 转发，保证附件上传状态原地更新时缩略图能刷新。
   const sidebarContent = (
     <div className="p-3 space-y-2.5">
       {filteredHistoryBatches.map((msg) => {
@@ -459,7 +468,8 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
           <ExpandHistoryRow
             key={msg.id}
             msg={msg}
-            firstImage={msg.attachments?.[0]?.url}
+            firstImage={getPreferredImageAttachmentUrl(msg.attachments?.[0]) || undefined}
+            firstImageAttachment={msg.attachments?.[0]}
             count={msg.attachments?.length || 0}
             isSelected={activeBatchMessage?.id === msg.id}
             originalPrompt={originalPrompt}
@@ -490,6 +500,7 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
           openActionMenu={openActionMenu}
           actionMenuPosition={actionMenuPosition}
           actionMenuPanelRef={actionMenuPanelRef}
+          closeHoverPreviewOnly={closeHoverPreviewOnly}
           closeHoverPreview={closeHoverPreview}
           closeActionMenu={closeActionMenu}
           isFavorite={isFavorite}

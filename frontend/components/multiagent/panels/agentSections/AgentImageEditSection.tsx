@@ -6,12 +6,11 @@
  */
 
 import React from 'react';
-import { Upload, X } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import { CustomNodeData } from '../../CustomNode';
 import { getResolutionLabel } from '../../workflowResolution';
-import { fileToBase64 } from '../../../../hooks/handlers/attachmentUtils';
-import { reportError } from '../../../../utils/globalErrorHandler';
 import { readInlineFilesAsDataUrls, reportInlineUploadError } from '../../uploadHandlers';
+import { InlineReferenceImagePreview } from '../InlineReferenceImagePreview';
 
 export interface AgentImageEditSectionProps {
   nodeData: CustomNodeData;
@@ -39,21 +38,11 @@ export const AgentImageEditSection: React.FC<AgentImageEditSectionProps> = ({
         <label className="block text-xs text-slate-500 mb-1">
           参考图片 <span className="text-red-400">*</span>
         </label>
-        {_hasRef && nodeData.agentReferenceImageUrl?.startsWith('data:') && (
-          <div className="mb-2 relative group">
-            <img
-              src={nodeData.agentReferenceImageUrl}
-              alt="参考图片"
-              className="w-full h-24 object-cover rounded border border-purple-500/30"
-            />
-            <button
-              onClick={() => updateNodeData({ agentReferenceImageUrl: '' })}
-              className="absolute top-1 right-1 p-0.5 bg-red-500/80 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              <X size={10} />
-            </button>
-          </div>
-        )}
+        <InlineReferenceImagePreview
+          imageUrl={nodeData.agentReferenceImageUrl}
+          borderClassName="border-purple-500/30"
+          onClear={() => updateNodeData({ agentReferenceImageUrl: '' })}
+        />
         <label className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 border border-dashed border-purple-500/40 rounded-lg cursor-pointer hover:border-purple-500/60 transition-colors">
           <Upload size={12} className="text-purple-400" />
           <span className="text-xs text-purple-300">{_hasRef ? '更换图片' : '上传参考图片'}</span>

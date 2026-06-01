@@ -63,10 +63,10 @@
           "description": "自动使用当前活跃配置里可用的语音生成模型",
           "icon": "🎙️",
           "iconColor": "bg-amber-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "audio-gen",
           "inputMapping": "{{input-text-audio-gen.output.text}}",
-          "instructions": "输出可直接试听的语音结果，语速自然，适合产品介绍或旁白场景。"
+          "instructions": "输出可直接试听的语音结果，语速自然，适合产品介绍或旁白场景。",
+          "agentPresetKey": "voiceover-producer"
         }
       },
       {

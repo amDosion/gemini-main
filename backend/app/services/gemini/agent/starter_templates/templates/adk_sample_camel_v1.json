@@ -61,8 +61,11 @@
           "description": "拆分为关键词/Listing/投放子任务",
           "icon": "🧩",
           "iconColor": "bg-violet-500",
-          "agentName": "多店铺运营整合师",
-          "instructions": "将任务拆解为可并行执行的子任务，并明确目标与约束。"
+          "instructions": "将任务拆解为可并行执行的子任务，并明确目标与约束。",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.35,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "multi-store-ops-integrator"
         }
       },
       {
@@ -94,8 +97,11 @@
           "description": "提炼关键词策略",
           "icon": "🔑",
           "iconColor": "bg-amber-500",
-          "agentName": "关键词研究专家",
-          "inputMapping": "分解结果：{{agent-decompose-camel.output.text}}"
+          "inputMapping": "分解结果：{{agent-decompose-camel.output.text}}",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "keyword-researcher"
         }
       },
       {
@@ -111,8 +117,11 @@
           "description": "生成标题/五点/描述",
           "icon": "✍️",
           "iconColor": "bg-emerald-500",
-          "agentName": "Listing优化专家",
-          "inputMapping": "分解结果：{{agent-decompose-camel.output.text}}"
+          "inputMapping": "分解结果：{{agent-decompose-camel.output.text}}",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.6,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "listing-optimizer"
         }
       },
       {
@@ -128,8 +137,11 @@
           "description": "产出广告动作建议",
           "icon": "📊",
           "iconColor": "bg-blue-500",
-          "agentName": "亚马逊广告分析师",
-          "inputMapping": "分解结果：{{agent-decompose-camel.output.text}}"
+          "inputMapping": "分解结果：{{agent-decompose-camel.output.text}}",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-ad-analyst"
         }
       },
       {
@@ -161,9 +173,12 @@
           "description": "输出统一节奏与落地计划",
           "icon": "✅",
           "iconColor": "bg-emerald-500",
-          "agentName": "运营策略顾问",
           "inputMapping": "并行汇总：{{merge-camel.output.text}}",
-          "instructions": "输出周计划：任务优先级、执行顺序、风险回滚。"
+          "instructions": "输出周计划：任务优先级、执行顺序、风险回滚。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {

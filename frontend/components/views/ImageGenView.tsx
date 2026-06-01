@@ -12,12 +12,20 @@ import { GenViewLayout } from '../common/GenViewLayout';
 import { ImageResultCanvas } from '../common/ImageResultCanvas';
 import { type CarouselMediaItem } from '../common/ImageCarouselControls';
 import { ThinkingBlock } from '../message/ThinkingBlock';
+import { AttachmentPreview } from '../chat/input/AttachmentPreview';
 import { useControlsState } from '../../hooks/useControlsState';
 import { useModeControlsSchema } from '../../hooks/useModeControlsSchema';
+import {
+  getUnsupportedParams,
+  supportsBooleanParam,
+} from '../../controls/shared/modeControlSchemaUtils';
 import { useImageCanvas } from '../../hooks/useImageCanvas';
 import { useImageCarousel } from '../../hooks/useImageCarousel';
+import { processUserAttachments } from '../../hooks/handlers/attachmentUtils';
+import { useClipboardAttachments } from '../../hooks/useClipboardAttachments';
 import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
 import { useImageHistorySidebar } from '../common/ImageHistorySidebar';
+import { getPreferredImageAttachmentUrl, revokeAttachmentObjectUrls } from '../../utils/attachmentUrl';
 import { useThinkingBlock } from '../../hooks/useThinkingBlock';
 
 interface ImageGenViewProps {
@@ -107,9 +115,40 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
 
   // ✅ 本地 UI 状态
   const [prompt, setPrompt] = useState(initialPrompt || '');
+  const [activeAttachments, setActiveAttachments] = useState<Attachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const activeAttachmentsRef = useRef<Attachment[]>(activeAttachments);
 
   const isLoading = loadingState !== 'idle';
+
+  useEffect(() => {
+    activeAttachmentsRef.current = activeAttachments;
+  }, [activeAttachments]);
+
+  useEffect(() => {
+    return () => {
+      activeAttachmentsRef.current.forEach((attachment) => {
+        revokeAttachmentObjectUrls(attachment);
+      });
+    };
+  }, []);
+
+  const removeReferenceAttachment = useCallback((id: string) => {
+    setActiveAttachments((current) => {
+      const attachmentToRemove = current.find((attachment) => attachment.id === id);
+      revokeAttachmentObjectUrls(attachmentToRemove);
+      return current.filter((attachment) => attachment.id !== id);
+    });
+  }, []);
+
+  const { handlePaste: handleAttachmentPaste } = useClipboardAttachments({
+    mode: 'image-gen',
+    attachments: activeAttachments,
+    onAttachmentsChange: setActiveAttachments,
+    maxAttachments: 10,
+    acceptedTypes: 'image/*',
+    disabled: isLoading,
+  });
 
   // ✅ 思考过程状态 — 由 useThinkingBlock 提供（含 typewriter + isOpen 控制）
   const {
@@ -130,17 +169,36 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
     { enabled: !!activeModelConfig?.id }
   );
   const schemaMaxCount = (genSchema?.constraints as Record<string, unknown>)?.max_image_count;
-  const maxImageCount = isOpenAI ? 1 : typeof schemaMaxCount === 'number' ? schemaMaxCount : 4;
+  const maxImageCount = typeof schemaMaxCount === 'number' ? schemaMaxCount : isOpenAI ? 1 : 4;
   const supportsOutputMimeControls = Boolean(genSchema?.paramOptions?.output_mime_type?.length);
+  const supportsOutputFormatControls = Boolean(genSchema?.paramOptions?.output_format?.length);
+  const supportsOpenAiQualityControls = Boolean(genSchema?.paramOptions?.quality?.length);
+  const supportsOpenAiBackgroundControls = Boolean(genSchema?.paramOptions?.background?.length);
+  const supportsOpenAiModerationControls = Boolean(genSchema?.paramOptions?.moderation?.length);
+  const supportsOpenAiCompressionControls = Boolean(
+    genSchema?.numericRanges?.output_compression_quality
+  );
+  const unsupportedParams = useMemo(() => getUnsupportedParams(genSchema), [genSchema]);
+  const supportsImageStyle = !unsupportedParams.has('style');
+  const supportsNegativePrompt = !unsupportedParams.has('negative_prompt');
+  const supportsPromptExtend = !unsupportedParams.has('prompt_extend');
+  const supportsAddMagicSuffix = !unsupportedParams.has('add_magic_suffix');
+  const supportsThinkingMode =
+    !unsupportedParams.has('thinking_mode') && supportsBooleanParam(genSchema, 'thinking_mode');
+  const supportsEnableSequential =
+    providerId === 'tongyi' &&
+    !unsupportedParams.has('enable_sequential') &&
+    supportsBooleanParam(genSchema, 'enable_sequential');
+  const effectiveMaxImageCount =
+    supportsEnableSequential && !controls.enableSequential
+      ? Math.min(maxImageCount, 4)
+      : maxImageCount;
 
-  // ✅ OpenAI 只支持 1 张图片
   useEffect(() => {
-    if (isOpenAI && controls.numberOfImages !== 1) {
-      controls.setNumberOfImages(1);
-    } else if (controls.numberOfImages > maxImageCount) {
-      controls.setNumberOfImages(maxImageCount);
+    if (controls.numberOfImages > effectiveMaxImageCount) {
+      controls.setNumberOfImages(effectiveMaxImageCount);
     }
-  }, [isOpenAI, controls.numberOfImages, maxImageCount, controls]);
+  }, [controls.numberOfImages, effectiveMaxImageCount, controls]);
 
   // ✅ 重置参数
   const resetParams = useCallback(() => {
@@ -152,7 +210,12 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
     controls.setSeed(-1);
     controls.setOutputMimeType('image/png');
     controls.setOutputCompressionQuality(100);
+    controls.setQuality('auto');
+    controls.setBackground('auto');
+    controls.setModeration('auto');
+    controls.setOutputFormat('png');
     controls.setEnhancePrompt(false);
+    controls.setEnableSequential(false);
   }, [controls]);
 
   const prevLoadingStateRef = useRef(loadingState);
@@ -189,35 +252,52 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
     return historyBatches[0];
   }, [selectedMsgId, historyBatches]);
 
-  const getGeneratedAttachmentUrl = useCallback((attachment: Attachment) => {
-    if (attachment.url && attachment.url.length > 0) return attachment.url;
-    if (attachment.tempUrl && attachment.tempUrl.length > 0) return attachment.tempUrl;
-    return null;
-  }, []);
-
-  const getDisplayImageAttachments = useCallback(
-    (attachments?: Attachment[]) => {
-      return (attachments || []).filter((attachment) =>
-        Boolean(getGeneratedAttachmentUrl(attachment))
-      );
-    },
-    [getGeneratedAttachmentUrl]
+  const getGeneratedAttachmentUrl = useCallback(
+    (attachment: Attachment) => getPreferredImageAttachmentUrl(attachment),
+    []
   );
 
-  const displayImages = useMemo(() => {
-    return getDisplayImageAttachments(activeBatchMessage?.attachments).filter(
-      (att) => att.url && att.url.length > 0
-    );
-  }, [activeBatchMessage?.attachments, getDisplayImageAttachments]);
+	  const getDisplayImageAttachments = useCallback(
+	    (attachments?: Attachment[]) => {
+	      return (attachments || []).filter((attachment) =>
+	        Boolean(attachment.file || getGeneratedAttachmentUrl(attachment))
+	      );
+	    },
+	    [getGeneratedAttachmentUrl]
+	  );
+
+	  const displayImages = useMemo(() => {
+	    return getDisplayImageAttachments(activeBatchMessage?.attachments).map((att, index) => {
+	      const fallbackId = att.id || `${activeBatchMessage?.id || 'image-gen'}-${index}`;
+	      const sourceAttachment = att.id ? att : { ...att, id: fallbackId };
+	      const displayUrl = getGeneratedAttachmentUrl(sourceAttachment);
+	      if (displayUrl) {
+	        return displayUrl === sourceAttachment.url
+	          ? sourceAttachment
+	          : { ...sourceAttachment, url: displayUrl };
+	      }
+	      return sourceAttachment;
+	    });
+	  }, [
+	    activeBatchMessage?.attachments,
+	    activeBatchMessage?.id,
+	    getDisplayImageAttachments,
+	    getGeneratedAttachmentUrl,
+	  ]);
 
   const carouselItems = useMemo<CarouselMediaItem[]>(
     () =>
-      displayImages.map((att, idx) => ({
-        id: att.id || `${idx}`,
-        url: att.url || null,
-        thumbUrl: att.url || null,
-        alt: `缩略图 ${idx + 1}`,
-      })),
+	      displayImages.map((att, idx) => ({
+	        id: att.id || `${idx}`,
+	        url: att.url || null,
+	        thumbUrl: att.url || null,
+	        source: {
+	          ...att,
+	          attachmentId: att.id,
+	          url: att.url || undefined,
+	        },
+	        alt: `缩略图 ${idx + 1}`,
+	      })),
     [displayImages]
   );
 
@@ -243,7 +323,7 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
   const isBatchError = activeBatchMessage?.isError;
 
   // ✅ 生成处理函数
-  const handleGenerate = useCallback(() => {
+  const handleGenerate = useCallback(async () => {
     if (!prompt.trim() || isLoading) return;
 
     const options: ChatOptions = {
@@ -253,10 +333,10 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
       // 基础参数
       imageAspectRatio: controls.aspectRatio,
       imageResolution: controls.resolution,
-      numberOfImages: controls.numberOfImages,
-      imageStyle: controls.style !== 'None' ? controls.style : undefined,
+      numberOfImages: Math.min(controls.numberOfImages, effectiveMaxImageCount),
+      imageStyle: supportsImageStyle && controls.style !== 'None' ? controls.style : undefined,
       // Google Imagen 高级参数
-      negativePrompt: controls.negativePrompt || undefined,
+      negativePrompt: supportsNegativePrompt ? controls.negativePrompt || undefined : undefined,
       seed: controls.seed !== -1 ? controls.seed : undefined,
       ...(supportsOutputMimeControls
         ? {
@@ -267,16 +347,72 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
               : {}),
           }
         : {}),
+      ...(supportsOpenAiQualityControls ? { quality: controls.quality } : {}),
+      ...(supportsOpenAiBackgroundControls ? { background: controls.background } : {}),
+      ...(supportsOpenAiModerationControls ? { moderation: controls.moderation } : {}),
+      ...(supportsOutputFormatControls
+        ? {
+            outputFormat: controls.outputFormat,
+            ...((controls.outputFormat === 'jpeg' || controls.outputFormat === 'webp') &&
+            supportsOpenAiCompressionControls
+              ? { outputCompressionQuality: controls.outputCompressionQuality }
+              : {}),
+          }
+        : {}),
       enhancePrompt: controls.enhancePrompt,
       enhancePromptModel: controls.enhancePromptModel || undefined,
+      enhancePromptThinkingLevel: controls.enhancePrompt
+        ? controls.enhancePromptThinkingLevel
+        : undefined,
       // TongYi 专用参数
-      promptExtend: controls.promptExtend,
-      addMagicSuffix: controls.addMagicSuffix,
+      ...(providerId === 'tongyi' && supportsPromptExtend
+        ? { promptExtend: controls.promptExtend }
+        : {}),
+      ...(providerId === 'tongyi' && supportsAddMagicSuffix
+        ? { addMagicSuffix: controls.addMagicSuffix }
+        : {}),
+      ...(providerId === 'tongyi' && supportsEnableSequential
+        ? { enableSequential: controls.enableSequential }
+        : {}),
+      ...(providerId === 'tongyi' && supportsThinkingMode && !controls.enableSequential
+        ? { thinkingMode: controls.thinkingMode }
+        : {}),
     };
 
-    onSend(prompt, options, [], 'image-gen');
+    const finalAttachments = await processUserAttachments(
+      activeAttachments,
+      null,
+      messages,
+      sessionId || null,
+      'reference'
+    );
+
+    onSend(prompt, options, finalAttachments, 'image-gen');
     setPrompt(''); // 发送后清空提示词
-  }, [prompt, controls, isLoading, onSend, supportsOutputMimeControls]);
+    setActiveAttachments([]);
+  }, [
+    activeAttachments,
+    controls,
+    isLoading,
+    messages,
+    onSend,
+    prompt,
+    sessionId,
+    supportsOutputMimeControls,
+    supportsOutputFormatControls,
+    supportsOpenAiBackgroundControls,
+    supportsOpenAiCompressionControls,
+    supportsOpenAiModerationControls,
+    supportsOpenAiQualityControls,
+    supportsAddMagicSuffix,
+    supportsImageStyle,
+    supportsNegativePrompt,
+    supportsPromptExtend,
+    supportsThinkingMode,
+    supportsEnableSequential,
+    effectiveMaxImageCount,
+    providerId,
+  ]);
 
   // ✅ 键盘快捷键
   const handleKeyDown = useCallback(
@@ -305,7 +441,7 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
     emptyText: 'No generation history.',
     fallbackSelection: 'first',
     getDisplayAttachments: getDisplayImageAttachments,
-    getAttachmentUrl: getGeneratedAttachmentUrl,
+	    getAttachmentUrl: getGeneratedAttachmentUrl,
     extractPrompts: extractHistoryPrompts,
     onSelectItem: ({ message }) => {
       setSelectedMsgId(message.id);
@@ -425,6 +561,10 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
 
           {/* 底部固定区：提示词 + 生成按钮 */}
           <div className="border-t border-slate-800 p-3 space-y-2 bg-slate-900/80">
+            <AttachmentPreview
+              attachments={activeAttachments}
+              removeAttachment={removeReferenceAttachment}
+            />
             {/* 提示词输入 - 自动调整高度 */}
             <textarea
               ref={textareaRef}
@@ -435,6 +575,7 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
                 e.target.style.height = 'auto';
                 e.target.style.height = Math.min(e.target.scrollHeight, 300) + 'px';
               }}
+              onPaste={handleAttachmentPaste}
               onKeyDown={handleKeyDown}
               placeholder="描述你想要生成的图片..."
               className="w-full min-h-[80px] max-h-[300px] bg-slate-800/80 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 overflow-y-auto"
@@ -469,13 +610,16 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
       displayedThinkingContent,
       isThinkingOpen,
       activeBatchMessage,
+      activeAttachments,
       onImageClick,
       onEditImage,
       onExpandImage,
       prompt,
       controls,
       handleGenerate,
+      handleAttachmentPaste,
       handleKeyDown,
+      removeReferenceAttachment,
       maxImageCount,
       resetParams,
       providerId,

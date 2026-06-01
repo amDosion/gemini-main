@@ -129,6 +129,31 @@ describe('PropertiesPanel media task support', () => {
                 video_extension_require_resolution_values: ['720p'],
               },
               video_contract: {
+                attachment_slots: [
+                  {
+                    name: 'source_image',
+                    label: '首帧',
+                    kind: 'image',
+                    roles: ['first_frame'],
+                    enabled: true,
+                  },
+                  {
+                    name: 'driving_audio',
+                    label: '驱动音频',
+                    kind: 'audio',
+                    roles: ['driving_audio'],
+                    enabled: true,
+                  },
+                ],
+                input_strategies: [
+                  { id: 'text_to_video', label: '文生视频', requires: [] },
+                  { id: 'first_frame_to_video', label: '首帧生成', requires: ['source_image'] },
+                  {
+                    id: 'video_continuation_to_last_frame',
+                    label: '末帧续写',
+                    requires: ['source_video'],
+                  },
+                ],
                 field_policies: {
                   enhance_prompt: {
                     mandatory: true,
@@ -199,6 +224,8 @@ describe('PropertiesPanel media task support', () => {
           agentProviderId: 'google',
           agentModelId: 'veo-3.1',
           agentContinueFromPreviousLastFrame: true,
+          agentVideoInputStrategy: 'video_continuation_to_last_frame',
+          agentAudioUrl: 'https://cdn.example.com/voice.mp3',
         }) as any}
         onClose={vi.fn()}
         onUpdateNode={vi.fn()}
@@ -219,6 +246,43 @@ describe('PropertiesPanel media task support', () => {
     expect(screen.getByDisplayValue('720p (1280×720)')).toBeInTheDocument();
     expect(screen.getByDisplayValue('8s')).toBeInTheDocument();
     expect(screen.getByLabelText('以上一段最后一帧作为首帧')).toBeChecked();
+    expect(screen.getByLabelText('输入方式')).toHaveValue('video_continuation_to_last_frame');
+    expect(screen.getByDisplayValue('https://cdn.example.com/voice.mp3')).toBeInTheDocument();
+  });
+
+  it('updates workflow video input strategy and driving audio url', async () => {
+    const onUpdateNode = vi.fn();
+
+    render(
+      <PropertiesPanel
+        selectedNode={buildNode('agent', {
+          agentTaskType: 'video-gen',
+          agentProviderId: 'google',
+          agentModelId: 'veo-3.1',
+          agentVideoInputStrategy: 'text_to_video',
+        }) as any}
+        onClose={vi.fn()}
+        onUpdateNode={onUpdateNode}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('输入方式')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText('输入方式'), {
+      target: { value: 'first_frame_to_video' },
+    });
+    expect(onUpdateNode).toHaveBeenLastCalledWith('node-agent', expect.objectContaining({
+      agentVideoInputStrategy: 'first_frame_to_video',
+    }));
+
+    fireEvent.change(screen.getByLabelText('驱动音频 URL（可选）'), {
+      target: { value: 'https://cdn.example.com/voice.mp3' },
+    });
+    expect(onUpdateNode).toHaveBeenLastCalledWith('node-agent', expect.objectContaining({
+      agentAudioUrl: 'https://cdn.example.com/voice.mp3',
+    }));
   });
 
   it('keeps video continuation strategies mutually exclusive', async () => {
@@ -519,10 +583,9 @@ describe('PropertiesPanel media task support', () => {
     expect(screen.getAllByText(/任务类型/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/音色/).length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole('button', { name: /清理重复字段 2/ }));
+    fireEvent.click(screen.getByRole('button', { name: /清理重复字段 1/ }));
 
     expect(onUpdateNode).toHaveBeenCalledWith('node-agent', {
-      agentTaskType: undefined,
       agentOutputFormat: undefined,
     });
   });

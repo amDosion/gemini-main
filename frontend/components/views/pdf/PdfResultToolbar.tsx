@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Copy, Check, Download, Table, Code, FileText, Globe } from 'lucide-react';
 import { PdfExtractionResult } from '../../../types/types';
+import { downloadBlobInBrowser } from '../../../services/downloadService';
 
 export type ViewMode = 'table' | 'json' | 'markdown' | 'html';
 
@@ -21,14 +22,10 @@ export const PdfResultToolbar: React.FC<PdfResultToolbarProps> = ({
     if (!result.data) return;
     const dataStr = JSON.stringify(result.data, null, 2);
     const blob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `extracted-${result.templateType || 'data'}-${Date.now()}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    downloadBlobInBrowser({
+      blob,
+      fileName: `extracted-${result.templateType || 'data'}-${Date.now()}.json`,
+    });
   };
 
   const copyJson = () => {

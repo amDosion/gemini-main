@@ -10,7 +10,6 @@
 import React, { useEffect, useMemo } from 'react';
 import {
   Ratio,
-  Layers,
   ChevronUp,
   ChevronDown,
   FileImage,
@@ -25,6 +24,7 @@ import {
 } from 'lucide-react';
 import { ImageOutpaintControlsProps } from '../../types';
 import { useModeControlsSchema } from '../../../hooks/useModeControlsSchema';
+import ImageCountSliderControl from '../../shared/ImageCountSliderControl';
 
 const MODE_META: Record<string, { label: string; icon: React.ComponentType<any>; description: string }> = {
   ratio: { label: '按比例', icon: Ratio, description: '扩展到目标宽高比' },
@@ -76,6 +76,18 @@ export const ImageOutpaintControls: React.FC<ImageOutpaintControlsProps> = ({
         .filter((value): value is number => typeof value === 'number'),
     [schema]
   );
+  const schemaMaxImageCount =
+    typeof schema?.constraints?.max_image_count === 'number'
+      ? schema.constraints.max_image_count
+      : maxImageCount;
+  const maxSelectableImageCount = Math.min(maxImageCount, schemaMaxImageCount);
+  const validNumberOfImageOptions = useMemo(
+    () => numberOfImageOptions.filter((value) => value <= maxSelectableImageCount),
+    [maxSelectableImageCount, numberOfImageOptions]
+  );
+  const minImageCount = validNumberOfImageOptions[0] ?? 1;
+  const maxImageCountForSlider =
+    validNumberOfImageOptions[validNumberOfImageOptions.length - 1] ?? maxSelectableImageCount;
   const outputMimeOptions = useMemo(
     () => (schema?.paramOptions?.output_mime_type ?? []).filter((option) => typeof option.value === 'string'),
     [schema]
@@ -174,10 +186,16 @@ export const ImageOutpaintControls: React.FC<ImageOutpaintControlsProps> = ({
   }, [aspectRatio, availableRatios, setAspectRatio]);
 
   useEffect(() => {
-    if (numberOfImageOptions.length > 0 && !numberOfImageOptions.includes(numberOfImages)) {
-      setNumberOfImages(numberOfImageOptions[0]);
+    if (outpaintMode === 'upscale') {
+      if (numberOfImages !== 1) {
+        setNumberOfImages(1);
+      }
+      return;
     }
-  }, [numberOfImages, numberOfImageOptions, setNumberOfImages]);
+    if (validNumberOfImageOptions.length > 0 && !validNumberOfImageOptions.includes(numberOfImages)) {
+      setNumberOfImages(validNumberOfImageOptions[0]);
+    }
+  }, [numberOfImages, outpaintMode, setNumberOfImages, validNumberOfImageOptions]);
 
   useEffect(() => {
     const validUpscaleFactors = upscaleOptions
@@ -426,28 +444,14 @@ export const ImageOutpaintControls: React.FC<ImageOutpaintControlsProps> = ({
         </div>
       )}
 
-      {outpaintMode !== 'upscale' && maxImageCount > 1 && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Layers size={12} className="text-blue-400" />
-            <span className="text-xs text-slate-300">生成数量</span>
-          </div>
-          <div className="flex gap-2">
-            {numberOfImageOptions.filter((n) => n <= maxImageCount).map((num) => (
-              <button
-                key={num}
-                onClick={() => setNumberOfImages(num)}
-                className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                  numberOfImages === num
-                    ? 'bg-orange-600 text-white'
-                    : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
-                }`}
-              >
-                {num}
-              </button>
-            ))}
-          </div>
-        </div>
+      {outpaintMode !== 'upscale' && (
+        <ImageCountSliderControl
+          value={numberOfImages}
+          onChange={setNumberOfImages}
+          min={minImageCount}
+          max={maxImageCountForSlider}
+          label="生成数量"
+        />
       )}
 
       {controls && outpaintMode !== 'upscale' && (

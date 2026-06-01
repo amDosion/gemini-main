@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -34,6 +34,19 @@ const schemaWithMaskEditModes = {
     mask_dilation: { min: 0, max: 1, step: 0.01 },
     guidance_scale: { min: 1, max: 20, step: 0.5 },
     output_compression_quality: { min: 1, max: 100, step: 1 },
+  },
+};
+
+const schemaWithMaskCountOptions = {
+  ...schemaWithMaskEditModes,
+  paramOptions: {
+    ...schemaWithMaskEditModes.paramOptions,
+    number_of_images: [
+      { label: '1', value: 1 },
+      { label: '2', value: 2 },
+      { label: '3', value: 3 },
+      { label: '4', value: 4 },
+    ],
   },
 };
 
@@ -92,5 +105,34 @@ describe('Google ImageMaskEditControls', () => {
     await waitFor(() => {
       expect(setEditMode).toHaveBeenCalledWith('EDIT_MODE_INPAINT_INSERTION');
     });
+  });
+
+  it('uses the shared image count slider for mask generation count', () => {
+    const setNumberOfImages = vi.fn();
+    useModeControlsSchemaMock.mockReturnValue({
+      schema: schemaWithMaskCountOptions,
+      loading: false,
+      error: null,
+    });
+
+    render(
+      <ImageMaskEditControls
+        providerId="google"
+        editMode="EDIT_MODE_INPAINT_INSERTION"
+        setEditMode={vi.fn()}
+        numberOfImages={3}
+        setNumberOfImages={setNumberOfImages}
+        outputMimeType="image/png"
+        setOutputMimeType={vi.fn()}
+      />
+    );
+
+    const slider = screen.getByRole('slider', { name: '生成数量' });
+    expect(slider).toHaveAttribute('min', '1');
+    expect(slider).toHaveAttribute('max', '4');
+    expect(slider).toHaveValue('3');
+
+    fireEvent.change(slider, { target: { value: '4' } });
+    expect(setNumberOfImages).toHaveBeenCalledWith(4);
   });
 });

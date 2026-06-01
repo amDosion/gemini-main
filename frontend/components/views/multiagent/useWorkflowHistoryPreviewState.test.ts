@@ -3,6 +3,8 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkflowHistoryItem } from './types';
 import { useWorkflowHistoryPreviewState } from './useWorkflowHistoryPreviewState';
+import { setPrivateCacheUserScope } from '../../../services/privateCacheScope';
+import { __resetWorkflowPreviewCacheForTest } from '../../../services/workflowPreviewCache';
 
 const {
   fetchWorkflowPreviewImagesWithMetaMock,
@@ -41,6 +43,8 @@ describe('useWorkflowHistoryPreviewState', () => {
   beforeEach(() => {
     fetchWorkflowPreviewImagesWithMetaMock.mockReset();
     fetchWorkflowPreviewMediaWithMetaMock.mockReset();
+    __resetWorkflowPreviewCacheForTest();
+    setPrivateCacheUserScope(null);
   });
 
   it('consumes detail-preview metadata with explicit limit and warns on skipped images', async () => {
@@ -77,8 +81,7 @@ describe('useWorkflowHistoryPreviewState', () => {
 
     expect(fetchWorkflowPreviewImagesWithMetaMock).toHaveBeenCalledWith(
       'exec-meta',
-      40,
-      controller.signal
+      40
     );
     expect(previewImagesForDetail).toEqual(['preview-exec-meta']);
     expect(result.current.historyPreviewImages['exec-meta']).toEqual(['preview-exec-meta']);
@@ -114,8 +117,7 @@ describe('useWorkflowHistoryPreviewState', () => {
 
     expect(fetchWorkflowPreviewImagesWithMetaMock).toHaveBeenCalledWith(
       'exec-toggle',
-      40,
-      expect.any(AbortSignal)
+      40
     );
     expect(result.current.expandedPreviewHistoryId).toBe('exec-toggle');
     expect(result.current.historyPreviewImages['exec-toggle']).toEqual(['preview-exec-toggle']);
@@ -230,8 +232,7 @@ describe('useWorkflowHistoryPreviewState', () => {
     expect(fetchWorkflowPreviewMediaWithMetaMock).toHaveBeenCalledWith(
       'exec-video',
       'video',
-      12,
-      expect.any(AbortSignal)
+      12
     );
     expect(result.current.historyPreviewMedia['exec-video']?.videoItems).toHaveLength(1);
     expect(result.current.expandedPreviewHistoryId).toBe('exec-video');
@@ -360,14 +361,12 @@ describe('useWorkflowHistoryPreviewState', () => {
     expect(fetchWorkflowPreviewMediaWithMetaMock).toHaveBeenCalledWith(
       'exec-media',
       'audio',
-      12,
-      controller.signal
+      12
     );
     expect(fetchWorkflowPreviewMediaWithMetaMock).toHaveBeenCalledWith(
       'exec-media',
       'video',
-      12,
-      controller.signal
+      12
     );
     expect(previewMediaForDetail).toEqual({
       audioUrls: ['/api/workflows/history/exec-media/audio/items/1'],

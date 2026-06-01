@@ -4,7 +4,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { fileToBase64, isBlobUrl } from '../../hooks/handlers/attachmentUtils';
 import { Paperclip, StopCircle, Send, Youtube, Link as LinkIcon, X, Check, Upload } from 'lucide-react';
 import { useDragDrop } from '../../hooks/useDragDrop';
+import { useClipboardAttachments } from '../../hooks/useClipboardAttachments';
 import { isThinkingCapableModel } from '../../utils/modelSuitability';
+import { revokeAttachmentObjectUrls } from '../../utils/attachmentUrl';
 
 // Sub-components
 import { AttachmentPreview } from './input/AttachmentPreview';
@@ -52,6 +54,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
 }) => {
   const [input, setInput] = useState('');
   const [localAttachments, setLocalAttachments] = useState<Attachment[]>([]);
+  const attachmentAccept = 'image/*,video/*,audio/*,application/pdf,text/plain,text/csv,text/html,application/json';
   
   // Refs for input components
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -71,6 +74,14 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
       setLocalAttachments(newAtts);
     }
   };
+
+  const { handlePaste: handleAttachmentPaste, appendFiles } = useClipboardAttachments({
+    mode,
+    attachments,
+    onAttachmentsChange: updateAttachments,
+    acceptedTypes: attachmentAccept,
+    disabled: isLoading,
+  });
 
   // Use centralized controls state hook
   const controls = useControlsState(mode, currentModel);
@@ -102,39 +113,13 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     const files = e.target.files;
     if (!files) return;
 
-    const newAttachments: Attachment[] = [];
-    for (const file of Array.from(files)) {
-      const blobUrl = URL.createObjectURL(file);
-      const attachmentId = uuidv4();
-      const attachment: Attachment = {
-        id: attachmentId,
-        file: file,
-        mimeType: file.type,
-        name: file.name,
-        url: blobUrl,
-        tempUrl: blobUrl,
-        uploadStatus: 'pending'
-      };
-      newAttachments.push(attachment);
-    }
-
-    updateAttachments([...attachments, ...newAttachments]);
+    appendFiles(files);
     if (e.target) e.target.value = '';
   };
 
   // 拖放功能
   const handleFilesDropped = (files: File[]) => {
-    const dataTransfer = new DataTransfer();
-    files.forEach(file => dataTransfer.items.add(file));
-    
-    const event = {
-      target: {
-        files: dataTransfer.files,
-        value: ''
-      }
-    } as React.ChangeEvent<HTMLInputElement>;
-    
-    handleFileSelect(event);
+    appendFiles(files);
   };
 
   const dragDrop = useDragDrop({
@@ -205,9 +190,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
 
   const removeAttachment = (id: string) => {
     const attachmentToRemove = attachments.find(att => att.id === id);
-    if (attachmentToRemove?.tempUrl) {
-      URL.revokeObjectURL(attachmentToRemove.tempUrl);
-    }
+    revokeAttachmentObjectUrls(attachmentToRemove);
     updateAttachments(attachments.filter(att => att.id !== id));
   };
 
@@ -216,9 +199,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
   useEffect(() => {
     return () => {
       attachmentsRef.current.forEach(att => {
-        if (att.tempUrl) {
-          URL.revokeObjectURL(att.tempUrl);
-        }
+        revokeAttachmentObjectUrls(att);
       });
     };
   }, []);
@@ -230,7 +211,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     // 在发送前将 Blob URL 转换为 Base64 Data URL
     const processedAttachments = await Promise.all(
       attachments.map(async (att) => {
-        if (att.file && isBlobUrl(att.url)) {
+        if (att.file && (!att.url || isBlobUrl(att.url))) {
           try {
             const base64Url = await fileToBase64(att.file);
             return { ...att, url: base64Url, tempUrl: base64Url };
@@ -354,7 +335,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
           onChange={handleFileSelect} 
           className="hidden" 
           multiple={true}
-          accept="image/*,video/*,audio/*,application/pdf,text/plain,text/csv,text/html,application/json"
+          accept={attachmentAccept}
         />
         
         <button 
@@ -417,6 +398,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
             ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onPaste={handleAttachmentPaste}
             onScroll={handleScroll}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {

@@ -7,7 +7,7 @@ OpenAI 服务模块
 
 子服务（由 OpenAIService 委托）：
 - ChatHandler: 聊天服务
-- ImageGenerator: 图像生成服务 (DALL-E)
+- ImageGenerator: 图像生成服务 (GPT Image)
 - VideoGenerator: 视频生成服务 (Sora)
 - SpeechGenerator: 语音合成服务 (TTS)
 - ModelManager: 模型管理服务

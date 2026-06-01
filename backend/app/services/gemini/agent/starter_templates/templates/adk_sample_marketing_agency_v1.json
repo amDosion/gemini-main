@@ -77,11 +77,25 @@
           "description": "理解原图并输出多路编辑策略",
           "icon": "🧠",
           "iconColor": "bg-violet-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentReferenceImageUrl": "{{input-image-marketing.output.imageUrl}}",
           "inputMapping": "目标：{{input-text-marketing.output.text}}\n参考图：{{input-image-marketing.output.imageUrl}}\n\n请输出三路图生图策略：模特图、场景图、卖点文案图。",
-          "instructions": "只给出可执行编辑规划，强调主体一致性与电商可用性。"
+          "instructions": "只给出可执行编辑规划，强调主体一致性与电商可用性。",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentEditMode": "image-chat-edit",
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentNumberOfImages": 1,
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentImageEditMaxRetries": 2,
+          "agentPreserveProductIdentity": true,
+          "agentProductMatchThreshold": 72,
+          "agentOutputLanguage": "en",
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -113,13 +127,25 @@
           "description": "基于参考图生成模特展示图",
           "icon": "🧍",
           "iconColor": "bg-fuchsia-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentReferenceImageUrl": "{{input-image-marketing.output.imageUrl}}",
           "agentNumberOfImages": 2,
           "agentOutputLanguage": "en",
           "inputMapping": "编辑规划：{{agent-plan-marketing.output.text}}\n请执行模特图分支，输出英文卖点文案且不遮挡主体。",
-          "instructions": "必须保持产品主体一致；文本布局避开主体关键区域。"
+          "instructions": "必须保持产品主体一致；文本布局避开主体关键区域。",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentEditMode": "image-chat-edit",
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentImageEditMaxRetries": 2,
+          "agentPreserveProductIdentity": true,
+          "agentProductMatchThreshold": 72,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -135,12 +161,24 @@
           "description": "生成真实使用场景营销图",
           "icon": "🏞️",
           "iconColor": "bg-indigo-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentReferenceImageUrl": "{{input-image-marketing.output.imageUrl}}",
           "agentNumberOfImages": 2,
           "agentOutputLanguage": "en",
-          "inputMapping": "编辑规划：{{agent-plan-marketing.output.text}}\n请执行场景图分支，场景自然、卖点清晰。"
+          "inputMapping": "编辑规划：{{agent-plan-marketing.output.text}}\n请执行场景图分支，场景自然、卖点清晰。",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentEditMode": "image-chat-edit",
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentImageEditMaxRetries": 2,
+          "agentPreserveProductIdentity": true,
+          "agentProductMatchThreshold": 72,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -156,13 +194,25 @@
           "description": "生成带排版卖点文案图",
           "icon": "💡",
           "iconColor": "bg-amber-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentReferenceImageUrl": "{{input-image-marketing.output.imageUrl}}",
           "agentNumberOfImages": 2,
           "agentOutputLanguage": "en",
           "inputMapping": "编辑规划：{{agent-plan-marketing.output.text}}\n请执行卖点图分支，英文文案排版需避开主体。",
-          "instructions": "卖点标题+短描述，信息层次清晰，避免文字遮挡产品主体。"
+          "instructions": "卖点标题+短描述，信息层次清晰，避免文字遮挡产品主体。",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentEditMode": "image-chat-edit",
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentImageEditMaxRetries": 2,
+          "agentPreserveProductIdentity": true,
+          "agentProductMatchThreshold": 72,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -194,9 +244,13 @@
           "description": "输出可交付版本与迭代建议",
           "icon": "✅",
           "iconColor": "bg-emerald-500",
-          "agentName": "图片编辑优化师",
           "inputMapping": "汇总结果：{{merge-marketing.output.text}}",
-          "instructions": "输出最终交付清单（各分支推荐图、风险点、可选迭代提示词）。"
+          "instructions": "输出最终交付清单（各分支推荐图、风险点、可选迭代提示词）。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {

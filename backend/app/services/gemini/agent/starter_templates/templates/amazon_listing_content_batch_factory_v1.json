@@ -76,11 +76,13 @@
           "description": "读取文件并结构化为可生成文案的产品条目",
           "icon": "🧮",
           "iconColor": "bg-indigo-500",
-          "agentName": "数据报表分析师",
           "agentTaskType": "data-analysis",
           "agentFileUrl": "{{input-file-listing-batch-factory.output.fileUrl}}",
           "inputMapping": "文件：{{input-file-listing-batch-factory.output.fileUrl}}\n约束：{{input-text-listing-batch-factory.output.text}}",
-          "instructions": "请输出结构化条目（按产品/ASIN）：核心卖点、目标人群、关键词种子、差异化信息、风险词。若字段缺失，标注缺失项并给出默认回填策略。"
+          "instructions": "请输出结构化条目（按产品/ASIN）：核心卖点、目标人群、关键词种子、差异化信息、风险词。若字段缺失，标注缺失项并给出默认回填策略。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -112,9 +114,12 @@
           "description": "批量产出 SEO 标题",
           "icon": "🏷️",
           "iconColor": "bg-blue-500",
-          "agentName": "Listing优化专家",
           "inputMapping": "结构化条目：{{agent-intake-listing-batch-factory.output.text}}\n约束：{{input-text-listing-batch-factory.output.text}}",
-          "instructions": "仅输出英文。按产品输出 3 个标题候选（主标题+备选），遵守字符上限并避免夸张承诺。"
+          "instructions": "仅输出英文。按产品输出 3 个标题候选（主标题+备选），遵守字符上限并避免夸张承诺。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.6,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "listing-optimizer"
         }
       },
       {
@@ -130,9 +135,12 @@
           "description": "批量产出五点描述",
           "icon": "📌",
           "iconColor": "bg-emerald-500",
-          "agentName": "电商文案创作师",
           "inputMapping": "结构化条目：{{agent-intake-listing-batch-factory.output.text}}\n约束：{{input-text-listing-batch-factory.output.text}}",
-          "instructions": "仅输出英文。每个产品输出 5 bullets：先利益点再证据，避免重复，遵守合规表达。"
+          "instructions": "仅输出英文。每个产品输出 5 bullets：先利益点再证据，避免重复，遵守合规表达。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.8,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ecommerce-copywriter"
         }
       },
       {
@@ -148,9 +156,12 @@
           "description": "批量产出产品描述与场景文案",
           "icon": "🧾",
           "iconColor": "bg-violet-500",
-          "agentName": "电商文案创作师",
           "inputMapping": "结构化条目：{{agent-intake-listing-batch-factory.output.text}}\n约束：{{input-text-listing-batch-factory.output.text}}",
-          "instructions": "仅输出英文。每个产品输出 1 版可直接上架的 Description，突出场景、痛点与差异化。"
+          "instructions": "仅输出英文。每个产品输出 1 版可直接上架的 Description，突出场景、痛点与差异化。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.8,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ecommerce-copywriter"
         }
       },
       {
@@ -166,9 +177,12 @@
           "description": "批量产出后台搜索词建议",
           "icon": "🔎",
           "iconColor": "bg-orange-500",
-          "agentName": "Listing优化专家",
           "inputMapping": "结构化条目：{{agent-intake-listing-batch-factory.output.text}}\n约束：{{input-text-listing-batch-factory.output.text}}",
-          "instructions": "仅输出英文。每个产品输出 backend search terms（去重、无品牌侵权词、无标点垃圾词），并给出优先级。"
+          "instructions": "仅输出英文。每个产品输出 backend search terms（去重、无品牌侵权词、无标点垃圾词），并给出优先级。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.6,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "listing-optimizer"
         }
       },
       {
@@ -200,9 +214,12 @@
           "description": "校验文案一致性并生成执行清单",
           "icon": "✅",
           "iconColor": "bg-emerald-500",
-          "agentName": "运营策略顾问",
           "inputMapping": "汇总文案：{{merge-listing-batch-factory.output.text}}",
-          "instructions": "仅输出英文。按产品输出：1) Title/Bullets/Description/SearchTerms 质检结果；2) 需修正项；3) 可直接上架版本；4) A/B 测试建议。"
+          "instructions": "仅输出英文。按产品输出：1) Title/Bullets/Description/SearchTerms 质检结果；2) 需修正项；3) 可直接上架版本；4) A/B 测试建议。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {

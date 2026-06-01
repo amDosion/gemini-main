@@ -3,6 +3,12 @@ import { ChatSession, Message, ModelConfig, AppMode } from '../types/types';
 import { llmService } from '../services/llmService';
 import { apiClient } from '../services/apiClient';
 import { skipModeRestoreFlag } from '../contexts/SessionContext';
+import { upsertSessionInCaches } from '../services/sessionCache';
+import { normalizeChatSession } from '../services/sessionNormalizer';
+import {
+  capturePrivateCacheLifecycleSnapshot,
+  isPrivateCacheLifecycleSnapshotCurrent,
+} from '../services/privateCacheInvalidation';
 
 interface UseSessionSyncProps {
   currentSessionId: string | null;
@@ -119,6 +125,7 @@ export const useSessionSync = ({
               const requestSeq = fetchRequestSeqRef.current;
               cancelInFlightFetch();
               const abortController = new AbortController();
+              const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
               fetchAbortControllerRef.current = abortController;
               loadingMessagesRef.current.add(currentSessionId);
               loadingSessionIdRef.current = currentSessionId;
@@ -127,13 +134,16 @@ export const useSessionSync = ({
                 .get<ChatSession>(`/api/sessions/${currentSessionId}`, {
                   signal: abortController.signal,
                 })
-                .then((fullSession) => {
+                .then((rawFullSession) => {
                   const isStaleRequest =
                     requestSeq !== fetchRequestSeqRef.current ||
-                    currentSessionIdRef.current !== currentSessionId;
+                    currentSessionIdRef.current !== currentSessionId ||
+                    !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot);
                   if (isStaleRequest) {
                     return;
                   }
+
+                  const fullSession = normalizeChatSession(rawFullSession);
 
                   // ✅ 更新 sessionsRef 中的会话数据
                   const sessionIndex = sessionsRef.current.findIndex(
@@ -145,6 +155,7 @@ export const useSessionSync = ({
                     updatedSessions[sessionIndex] = fullSession;
                     sessionsRef.current = updatedSessions;
                   }
+                  upsertSessionInCaches(fullSession);
 
                   // ✅ 设置消息和模式
                   const fullMessages = fullSession.messages || [];
@@ -177,7 +188,8 @@ export const useSessionSync = ({
                   const isAbortError = err?.name === 'AbortError' || abortController.signal.aborted;
                   const isStaleRequest =
                     requestSeq !== fetchRequestSeqRef.current ||
-                    currentSessionIdRef.current !== currentSessionId;
+                    currentSessionIdRef.current !== currentSessionId ||
+                    !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot);
                   if (isAbortError || isStaleRequest) {
                     return;
                   }
@@ -208,5 +220,5 @@ export const useSessionSync = ({
         }
       }
     }
-  }, [activeModelConfig, cancelInFlightFetch, currentSessionId, setMessages, setAppMode]);
+  }, [activeModelConfig, cancelInFlightFetch, currentSessionId, sessions, setMessages, setAppMode]);
 };

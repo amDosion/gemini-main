@@ -6,7 +6,7 @@
  * all requests to the unified backend endpoints:
  * - All modes (including chat): /api/modes/{provider}/{mode}
  *
- * All requests use the new unified authentication (JWT Bearer token).
+ * All same-origin browser requests use httpOnly Cookie auth first.
  *
  * 统一模式处理:
  * - 所有模式都通过 executeMode(mode, ...) 方法统一处理
@@ -25,7 +25,6 @@ import {
 } from './interfaces';
 import { createParser, type EventSourceMessage, type ParseError } from 'eventsource-parser';
 import { ModelConfig, Message, Attachment, ChatOptions } from '../../types/types';
-import { withAuthorization } from '../authTokenStore';
 import { fetchWithTimeout, parseHttpError, readJsonResponse } from '../http';
 import {
   MODE_OPTION_KEYS,
@@ -75,6 +74,7 @@ export class UnifiedProviderClient implements ILLMProvider {
       const url = queryString ? `/api/models/${this.id}?${queryString}` : `/api/models/${this.id}`;
       const response = await fetchWithTimeout(url, {
         withAuth: true,
+        skipAuth: true,
         timeoutMs: 30000,
         timeoutMessage: `Request to ${this.id} API timed out after 30 seconds. Please check your network connection and try again.`,
       });
@@ -174,8 +174,7 @@ export class UnifiedProviderClient implements ILLMProvider {
       //   requestBody.apiKey = apiKey;
       // }
 
-      // ✅ 构建请求头，添加 Authorization header
-      const headers = withAuthorization({
+      const headers = new Headers({
         'Content-Type': 'application/json',
       });
 
@@ -201,6 +200,7 @@ export class UnifiedProviderClient implements ILLMProvider {
           method: 'POST',
           headers,
           body: JSON.stringify(requestBody),
+          credentials: 'include',
           signal: controller.signal,
         });
 
@@ -411,8 +411,7 @@ export class UnifiedProviderClient implements ILLMProvider {
         }
       }
 
-      // ✅ 构建请求头，添加 Authorization header
-      const headers = withAuthorization({
+      const headers = new Headers({
         'Content-Type': 'application/json',
       });
 
@@ -425,6 +424,8 @@ export class UnifiedProviderClient implements ILLMProvider {
         method: 'POST',
         headers,
         body: JSON.stringify(requestBody),
+        withAuth: true,
+        skipAuth: true,
         timeoutMs: 0,
       });
 
@@ -461,6 +462,7 @@ export class UnifiedProviderClient implements ILLMProvider {
               thoughts: img.thoughts, // ✅ 修复断点2：传递 thinking 数据
               text: img.text, // ✅ 修复断点2：传递文本响应
               enhancedPrompt: img.enhancedPrompt, // ✅ 传递增强后的提示词（如果存在）
+              openaiResponseId: img.openaiResponseId, // OpenAI Responses API 多轮图片编辑
               // ✅ 新增：传递完整的附件元数据（后端 CaseConversionMiddleware 会自动转换 snake_case → camelCase）
               messageId: img.messageId, // 关联的消息 ID
               sessionId: img.sessionId, // 关联的会话 ID
@@ -730,13 +732,11 @@ export class UnifiedProviderClient implements ILLMProvider {
         formData.append('baseUrl', baseUrl);
       }
 
-      // ✅ 构建请求头，添加 Authorization header
-      const headers = withAuthorization();
-
       const response = await fetchWithTimeout(`/api/upload/${this.id}`, {
         method: 'POST',
-        headers,
         body: formData,
+        withAuth: true,
+        skipAuth: true,
         timeoutMs: 120000,
       });
 

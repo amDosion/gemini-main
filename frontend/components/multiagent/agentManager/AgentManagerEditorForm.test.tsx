@@ -49,9 +49,11 @@ const providers: ProviderModels[] = [
     models: [],
     allModels: [
       { id: 'veo-3.1', name: 'Veo 3.1', supportedTasks: ['video-gen'] },
+      { id: 'gemini-2.5-flash-image', name: 'Gemini Image', supportedTasks: ['image-edit'] },
     ],
     defaultModelsByTask: {
       'video-gen': 'veo-3.1',
+      'image-edit': 'gemini-2.5-flash-image',
     },
   },
 ];
@@ -72,7 +74,7 @@ describe('AgentManagerEditorForm media defaults', () => {
               defaultTaskType: 'video-gen',
               videoGeneration: {
                 aspectRatio: '16:9',
-                resolution: '2K',
+                resolution: '1080p',
                 durationSeconds: 8,
                 continueFromPreviousLastFrame: true,
               },
@@ -90,9 +92,124 @@ describe('AgentManagerEditorForm media defaults', () => {
 
     expect(screen.getByDisplayValue('🎬 视频生成')).toBeInTheDocument();
     expect(screen.getByDisplayValue('16:9 横屏')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('2K')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('1080p')).toBeInTheDocument();
     expect(screen.getByDisplayValue('8')).toBeInTheDocument();
     expect(screen.getByLabelText('顺序视频节点时以上一段最后一帧作为首帧')).toBeChecked();
+  });
+
+  it('edits image-edit defaults that workflow template agents already support', () => {
+    const onChange = vi.fn();
+    const initialAgent = buildAgent({
+      providerId: 'google',
+      modelId: 'gemini-2.5-flash-image',
+      agentCard: {
+        defaults: {
+          defaultTaskType: 'image-edit',
+          imageEdit: {
+            editMode: 'image-chat-edit',
+            preserveProductIdentity: true,
+            productMatchThreshold: 72,
+            maxRetries: 2,
+            outputLanguage: 'en',
+            addMagicSuffix: true,
+          },
+        },
+      },
+    });
+    const ControlledForm = () => {
+      const [agent, setAgent] = React.useState(initialAgent);
+      return (
+        <AgentManagerEditorForm
+          editing={agent}
+          isNew={false}
+          saving={false}
+          providers={providers}
+          onCancel={vi.fn()}
+          onSave={vi.fn()}
+          onChange={(next) => {
+            onChange(next);
+            setAgent(next);
+          }}
+        />
+      );
+    };
+
+    render(<ControlledForm />);
+
+    expect(screen.getByLabelText('保留商品主体一致性')).toBeChecked();
+    fireEvent.change(screen.getByLabelText('商品一致性阈值'), { target: { value: '80' } });
+    fireEvent.change(screen.getByLabelText('编辑重试次数'), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText('输出语言'), { target: { value: 'zh' } });
+
+    const nextAgent = onChange.mock.calls.at(-1)?.[0] as AgentDef;
+    expect(nextAgent.agentCard?.defaults?.imageEdit).toMatchObject({
+      productMatchThreshold: 80,
+      maxRetries: 3,
+      outputLanguage: 'zh',
+      preserveProductIdentity: true,
+    });
+  });
+
+  it('edits advanced video defaults that workflow template agents already support', () => {
+    const onChange = vi.fn();
+    const initialAgent = buildAgent({
+      providerId: 'google',
+      modelId: 'veo-3.1',
+      agentCard: {
+        defaults: {
+          defaultTaskType: 'video-gen',
+          videoGeneration: {
+            aspectRatio: '16:9',
+            resolution: '1080p',
+            durationSeconds: 8,
+            videoExtensionCount: 1,
+            generateAudio: false,
+            subtitleMode: 'none',
+            subtitleLanguage: 'zh-CN',
+            negativePrompt: 'no blur',
+            storyboardPrompt: 'Shot 1',
+            promptExtend: true,
+          },
+        },
+      },
+    });
+    const ControlledForm = () => {
+      const [agent, setAgent] = React.useState(initialAgent);
+      return (
+        <AgentManagerEditorForm
+          editing={agent}
+          isNew={false}
+          saving={false}
+          providers={providers}
+          onCancel={vi.fn()}
+          onSave={vi.fn()}
+          onChange={(next) => {
+            onChange(next);
+            setAgent(next);
+          }}
+        />
+      );
+    };
+
+    render(<ControlledForm />);
+
+    expect(screen.getByLabelText('生成原生音频')).not.toBeChecked();
+    fireEvent.change(screen.getByLabelText('视频延长次数'), { target: { value: '2' } });
+    fireEvent.click(screen.getByLabelText('生成原生音频'));
+    fireEvent.change(screen.getByLabelText('字幕模式'), { target: { value: 'srt' } });
+    fireEvent.change(screen.getByLabelText('字幕语言'), { target: { value: 'en-US' } });
+    fireEvent.change(screen.getByLabelText('反向提示词'), { target: { value: 'no text' } });
+    fireEvent.change(screen.getByLabelText('分镜提示词'), { target: { value: 'Shot 2' } });
+
+    const nextAgent = onChange.mock.calls.at(-1)?.[0] as AgentDef;
+    expect(nextAgent.agentCard?.defaults?.videoGeneration).toMatchObject({
+      videoExtensionCount: 2,
+      generateAudio: true,
+      subtitleMode: 'srt',
+      subtitleLanguage: 'en-US',
+      negativePrompt: 'no text',
+      storyboardPrompt: 'Shot 2',
+    });
   });
 
   it('keeps agent video chaining defaults mutually exclusive', () => {

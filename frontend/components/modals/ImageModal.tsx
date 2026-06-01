@@ -2,6 +2,7 @@
 import React, { useEffect } from 'react';
 import { X, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
+import { CachedImage } from '../common/CachedImage';
 
 interface ImageModalProps {
   isOpen: boolean;
@@ -86,9 +87,13 @@ const ImageModal: React.FC<ImageModalProps> = ({
 
       {/* Main Image Container */}
       <div className="relative w-full h-full flex items-center justify-center p-4 md:p-12" onClick={e => e.stopPropagation()}>
-        <img 
-          src={imageUrl} 
-          alt="Full screen preview" 
+        <CachedImage
+          src={imageUrl}
+          source={{
+            url: imageUrl,
+            mimeType: 'image/png',
+          }}
+          alt="Full screen preview"
           className="max-w-full max-h-full object-contain rounded-sm shadow-2xl animate-[fadeIn_0.3s_ease-out]"
         />
         

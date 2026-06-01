@@ -4,14 +4,14 @@ import type { AgentDef } from '../types';
 import { createDefaultAgentCard } from '../agentRegistryService';
 import {
   AgentTaskType,
+  AGENT_TASK_TYPES,
   ProviderModels,
   formatModelTaskHint,
-  modelSupportsTask,
-  pickProviderDefaultModel,
+  resolveProviderTaskModelSelection,
 } from '../providerModelUtils';
 
 const ICONS = ['🤖', '🧠', '📝', '🔍', '💡', '🎯', '📊', '🛠️', '🎨', '📚', '🌐', '⚡', '✨', '🔬'];
-const ALLOWED_TASK_TYPES: AgentTaskType[] = ['chat', 'image-gen', 'image-edit', 'video-gen', 'audio-gen', 'vision-understand', 'data-analysis'];
+const ALLOWED_TASK_TYPES: AgentTaskType[] = AGENT_TASK_TYPES;
 
 interface AgentManagerEditorFormProps {
   editing: AgentDef;
@@ -32,8 +32,6 @@ export const AgentManagerEditorForm: React.FC<AgentManagerEditorFormProps> = ({
   onSave,
   onChange,
 }) => {
-  const currentProvider = providers.find((provider) => provider.providerId === editing.providerId);
-  const providerAllModels = currentProvider?.allModels || currentProvider?.models || [];
   const baseDefaults = createDefaultAgentCard().defaults;
 
   const currentCard = editing.agentCard || createDefaultAgentCard();
@@ -43,12 +41,17 @@ export const AgentManagerEditorForm: React.FC<AgentManagerEditorFormProps> = ({
     ? (defaultTaskType as AgentTaskType)
     : 'chat';
 
-  const compatibleModels = providerAllModels.filter((model) => modelSupportsTask(model, normalizedTaskType));
-  const selectedModel = providerAllModels.find((model) => model.id === editing.modelId);
-  const selectedModelCompatible = modelSupportsTask(selectedModel, normalizedTaskType);
-  const currentModels = compatibleModels;
+  const modelSelection = resolveProviderTaskModelSelection({
+    providers,
+    providerId: editing.providerId,
+    modelId: editing.modelId,
+    taskType: normalizedTaskType,
+  });
+  const selectedModelCompatible = modelSelection.selectedModelSupportsTask;
+  const selectedModel = modelSelection.selectedModel;
+  const currentModels = modelSelection.selectedModels;
   const currentModelValue = selectedModelCompatible ? editing.modelId : '';
-  const hasCompatibleModels = compatibleModels.length > 0;
+  const hasCompatibleModels = modelSelection.compatibleModels.length > 0;
   const canSave = Boolean(
     editing.name.trim() &&
     editing.providerId &&
@@ -79,9 +82,11 @@ export const AgentManagerEditorForm: React.FC<AgentManagerEditorFormProps> = ({
   };
 
   const pickCompatibleModelId = (provider: ProviderModels | undefined, taskType: AgentTaskType): string => {
-    const modelPool = provider?.allModels || provider?.models || [];
-    const compatible = modelPool.filter((model) => modelSupportsTask(model, taskType));
-    return pickProviderDefaultModel(provider, taskType)?.id || compatible[0]?.id || '';
+    return resolveProviderTaskModelSelection({
+      providers,
+      providerId: provider?.providerId || '',
+      taskType,
+    }).pickCompatibleModel()?.id || '';
   };
 
   return (
@@ -201,7 +206,7 @@ export const AgentManagerEditorForm: React.FC<AgentManagerEditorFormProps> = ({
             </select>
           )}
           {editing.modelId && <div className="mt-1 text-[10px] text-slate-500 font-mono">{editing.modelId}</div>}
-          {compatibleModels.length === 0 && providerAllModels.length > 0 && (
+          {modelSelection.compatibleModels.length === 0 && modelSelection.providerModels.length > 0 && (
             <div className="mt-1 text-[10px] text-amber-300">
               当前任务类型没有兼容模型，请切换提供商或任务类型。
             </div>
@@ -283,9 +288,14 @@ export const AgentManagerEditorForm: React.FC<AgentManagerEditorFormProps> = ({
                 }
                 onChange({
                   ...editing,
-                  modelId: modelSupportsTask(selectedModel, nextTaskType)
+                  modelId: resolveProviderTaskModelSelection({
+                    providers,
+                    providerId: editing.providerId,
+                    modelId: editing.modelId,
+                    taskType: nextTaskType,
+                  }).selectedModelSupportsTask
                     ? editing.modelId
-                    : pickCompatibleModelId(currentProvider, nextTaskType),
+                    : pickCompatibleModelId(modelSelection.selectedProvider, nextTaskType),
                   agentCard: {
                     ...currentCard,
                     defaults: nextDefaults,
@@ -386,53 +396,134 @@ export const AgentManagerEditorForm: React.FC<AgentManagerEditorFormProps> = ({
 
           {defaultTaskType === 'image-edit' && (
             <div className="grid grid-cols-2 gap-2">
-              <input
-                value={imageEditDefaults.editMode || 'image-chat-edit'}
-                onChange={(event) => patchAgentCard({
-                  imageEdit: {
-                    ...imageEditDefaults,
-                    editMode: event.target.value,
-                  },
-                })}
-                className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs focus:outline-none focus:border-teal-500/50"
-                placeholder="编辑模式"
-              />
-              <input
-                value={imageEditDefaults.aspectRatio || ''}
-                onChange={(event) => patchAgentCard({
-                  imageEdit: {
-                    ...imageEditDefaults,
-                    aspectRatio: event.target.value,
-                  },
-                })}
-                className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs focus:outline-none focus:border-teal-500/50"
-                placeholder="宽高比 (可空)"
-              />
-              <input
-                value={imageEditDefaults.resolutionTier || '1K'}
-                onChange={(event) => patchAgentCard({
-                  imageEdit: {
-                    ...imageEditDefaults,
-                    resolutionTier: event.target.value,
-                  },
-                })}
-                className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs focus:outline-none focus:border-teal-500/50"
-                placeholder="分辨率档位 (1K)"
-              />
-              <input
-                type="number"
-                min={1}
-                max={4}
-                value={imageEditDefaults.numberOfImages ?? 1}
-                onChange={(event) => patchAgentCard({
-                  imageEdit: {
-                    ...imageEditDefaults,
-                    numberOfImages: Math.max(1, Number(event.target.value) || 1),
-                  },
-                })}
-                className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs focus:outline-none focus:border-teal-500/50"
-                placeholder="数量"
-              />
+              <label className="space-y-1 text-xs text-slate-400">
+                <span>编辑模式</span>
+                <input
+                  value={imageEditDefaults.editMode || 'image-chat-edit'}
+                  onChange={(event) => patchAgentCard({
+                    imageEdit: {
+                      ...imageEditDefaults,
+                      editMode: event.target.value,
+                    },
+                  })}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
+                />
+              </label>
+              <label className="space-y-1 text-xs text-slate-400">
+                <span>宽高比</span>
+                <input
+                  value={imageEditDefaults.aspectRatio || ''}
+                  onChange={(event) => patchAgentCard({
+                    imageEdit: {
+                      ...imageEditDefaults,
+                      aspectRatio: event.target.value,
+                    },
+                  })}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
+                  placeholder="可空"
+                />
+              </label>
+              <label className="space-y-1 text-xs text-slate-400">
+                <span>图片尺寸</span>
+                <input
+                  value={imageEditDefaults.imageSize || '1K'}
+                  onChange={(event) => patchAgentCard({
+                    imageEdit: {
+                      ...imageEditDefaults,
+                      imageSize: event.target.value,
+                    },
+                  })}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
+                />
+              </label>
+              <label className="space-y-1 text-xs text-slate-400">
+                <span>分辨率档位</span>
+                <input
+                  value={imageEditDefaults.resolutionTier || '1K'}
+                  onChange={(event) => patchAgentCard({
+                    imageEdit: {
+                      ...imageEditDefaults,
+                      resolutionTier: event.target.value,
+                    },
+                  })}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
+                />
+              </label>
+              <label className="space-y-1 text-xs text-slate-400">
+                <span>图片数量</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={4}
+                  value={imageEditDefaults.numberOfImages ?? 1}
+                  onChange={(event) => patchAgentCard({
+                    imageEdit: {
+                      ...imageEditDefaults,
+                      numberOfImages: Math.max(1, Number(event.target.value) || 1),
+                    },
+                  })}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
+                />
+              </label>
+              <label className="space-y-1 text-xs text-slate-400">
+                <span>输出 MIME</span>
+                <input
+                  value={imageEditDefaults.outputMimeType || 'image/png'}
+                  onChange={(event) => patchAgentCard({
+                    imageEdit: {
+                      ...imageEditDefaults,
+                      outputMimeType: event.target.value,
+                    },
+                  })}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
+                />
+              </label>
+              <label className="space-y-1 text-xs text-slate-400">
+                <span>商品一致性阈值</span>
+                <input
+                  type="number"
+                  min={50}
+                  max={95}
+                  value={imageEditDefaults.productMatchThreshold ?? 72}
+                  onChange={(event) => patchAgentCard({
+                    imageEdit: {
+                      ...imageEditDefaults,
+                      productMatchThreshold: Math.max(50, Math.min(95, Number(event.target.value) || 72)),
+                    },
+                  })}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
+                />
+              </label>
+              <label className="space-y-1 text-xs text-slate-400">
+                <span>编辑重试次数</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={3}
+                  value={imageEditDefaults.maxRetries ?? 2}
+                  onChange={(event) => patchAgentCard({
+                    imageEdit: {
+                      ...imageEditDefaults,
+                      maxRetries: Math.max(0, Math.min(3, Number(event.target.value) || 0)),
+                    },
+                  })}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
+                />
+              </label>
+              <label className="col-span-2 space-y-1 text-xs text-slate-400">
+                <span>输出语言</span>
+                <input
+                  value={imageEditDefaults.outputLanguage || ''}
+                  onChange={(event) => patchAgentCard({
+                    imageEdit: {
+                      ...imageEditDefaults,
+                      outputLanguage: event.target.value,
+                    },
+                  })}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
+                  placeholder="例如 en / zh"
+                />
+              </label>
               <label className="col-span-2 flex items-center gap-2 text-xs text-slate-300">
                 <input
                   type="checkbox"
@@ -447,51 +538,150 @@ export const AgentManagerEditorForm: React.FC<AgentManagerEditorFormProps> = ({
                 />
                 启用编辑提示词优化（provider 支持时生效）
               </label>
+              <label className="col-span-2 flex items-center gap-2 text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={imageEditDefaults.addMagicSuffix !== false}
+                  onChange={(event) => patchAgentCard({
+                    imageEdit: {
+                      ...imageEditDefaults,
+                      addMagicSuffix: event.target.checked,
+                    },
+                  })}
+                  className="accent-teal-500"
+                />
+                启用提示词增强后缀（provider 支持时生效）
+              </label>
+              <label className="col-span-2 flex items-center gap-2 text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={Boolean(imageEditDefaults.preserveProductIdentity)}
+                  onChange={(event) => patchAgentCard({
+                    imageEdit: {
+                      ...imageEditDefaults,
+                      preserveProductIdentity: event.target.checked,
+                    },
+                  })}
+                  className="accent-teal-500"
+                />
+                保留商品主体一致性
+              </label>
             </div>
           )}
 
           {defaultTaskType === 'video-gen' && (
             <div className="grid grid-cols-2 gap-2">
-              <select
-                value={videoGenerationDefaults.aspectRatio || '16:9'}
-                onChange={(event) => patchAgentCard({
-                  videoGeneration: {
-                    ...videoGenerationDefaults,
-                    aspectRatio: event.target.value,
-                  },
-                })}
-                className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs focus:outline-none focus:border-teal-500/50"
-              >
-                <option value="16:9">16:9 横屏</option>
-                <option value="9:16">9:16 竖屏</option>
-              </select>
-              <select
-                value={videoGenerationDefaults.resolution || '2K'}
-                onChange={(event) => patchAgentCard({
-                  videoGeneration: {
-                    ...videoGenerationDefaults,
-                    resolution: event.target.value,
-                  },
-                })}
-                className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs focus:outline-none focus:border-teal-500/50"
-              >
-                <option value="1K">1K</option>
-                <option value="2K">2K</option>
-              </select>
-              <input
-                type="number"
-                min={1}
-                max={20}
-                value={videoGenerationDefaults.durationSeconds ?? 5}
-                onChange={(event) => patchAgentCard({
-                  videoGeneration: {
-                    ...videoGenerationDefaults,
-                    durationSeconds: Math.max(1, Math.min(20, Number(event.target.value) || 5)),
-                  },
-                })}
-                className="col-span-2 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs focus:outline-none focus:border-teal-500/50"
-                placeholder="时长 (秒)"
-              />
+              <label className="space-y-1 text-xs text-slate-400">
+                <span>视频宽高比</span>
+                <select
+                  value={videoGenerationDefaults.aspectRatio || '16:9'}
+                  onChange={(event) => patchAgentCard({
+                    videoGeneration: {
+                      ...videoGenerationDefaults,
+                      aspectRatio: event.target.value,
+                    },
+                  })}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
+                >
+                  <option value="16:9">16:9 横屏</option>
+                  <option value="9:16">9:16 竖屏</option>
+                </select>
+              </label>
+              <label className="space-y-1 text-xs text-slate-400">
+                <span>视频分辨率</span>
+                <select
+                  value={videoGenerationDefaults.resolution || '1080p'}
+                  onChange={(event) => patchAgentCard({
+                    videoGeneration: {
+                      ...videoGenerationDefaults,
+                      resolution: event.target.value,
+                    },
+                  })}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
+                >
+                  <option value="720p">720p</option>
+                  <option value="1080p">1080p</option>
+                  <option value="4k">4k</option>
+                </select>
+              </label>
+              <label className="space-y-1 text-xs text-slate-400">
+                <span>视频时长</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={videoGenerationDefaults.durationSeconds ?? 5}
+                  onChange={(event) => patchAgentCard({
+                    videoGeneration: {
+                      ...videoGenerationDefaults,
+                      durationSeconds: Math.max(1, Math.min(20, Number(event.target.value) || 5)),
+                    },
+                  })}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
+                />
+              </label>
+              <label className="space-y-1 text-xs text-slate-400">
+                <span>视频延长次数</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={20}
+                  value={videoGenerationDefaults.videoExtensionCount ?? 0}
+                  onChange={(event) => patchAgentCard({
+                    videoGeneration: {
+                      ...videoGenerationDefaults,
+                      videoExtensionCount: Math.max(0, Math.min(20, Number(event.target.value) || 0)),
+                    },
+                  })}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
+                />
+              </label>
+              <label className="space-y-1 text-xs text-slate-400">
+                <span>字幕模式</span>
+                <select
+                  value={videoGenerationDefaults.subtitleMode || 'none'}
+                  onChange={(event) => patchAgentCard({
+                    videoGeneration: {
+                      ...videoGenerationDefaults,
+                      subtitleMode: event.target.value,
+                    },
+                  })}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
+                >
+                  <option value="none">none</option>
+                  <option value="vtt">vtt</option>
+                  <option value="srt">srt</option>
+                  <option value="both">both</option>
+                </select>
+              </label>
+              <label className="space-y-1 text-xs text-slate-400">
+                <span>字幕语言</span>
+                <input
+                  value={videoGenerationDefaults.subtitleLanguage || ''}
+                  onChange={(event) => patchAgentCard({
+                    videoGeneration: {
+                      ...videoGenerationDefaults,
+                      subtitleLanguage: event.target.value,
+                    },
+                  })}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
+                  placeholder="例如 zh-CN"
+                />
+              </label>
+              <label className="space-y-1 text-xs text-slate-400">
+                <span>随机种子</span>
+                <input
+                  type="number"
+                  value={videoGenerationDefaults.seed ?? -1}
+                  onChange={(event) => patchAgentCard({
+                    videoGeneration: {
+                      ...videoGenerationDefaults,
+                      seed: Number(event.target.value),
+                    },
+                  })}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
+                />
+              </label>
               <label className="col-span-2 flex items-center gap-2 text-xs text-slate-300">
                 <input
                   type="checkbox"
@@ -521,6 +711,76 @@ export const AgentManagerEditorForm: React.FC<AgentManagerEditorFormProps> = ({
                   className="accent-fuchsia-500"
                 />
                 顺序视频节点时以上一段最后一帧作为首帧
+              </label>
+              <label className="col-span-2 flex items-center gap-2 text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={videoGenerationDefaults.generateAudio !== false}
+                  onChange={(event) => patchAgentCard({
+                    videoGeneration: {
+                      ...videoGenerationDefaults,
+                      generateAudio: event.target.checked,
+                    },
+                  })}
+                  className="accent-fuchsia-500"
+                />
+                生成原生音频
+              </label>
+              <label className="col-span-2 flex items-center gap-2 text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={Boolean(videoGenerationDefaults.promptExtend)}
+                  onChange={(event) => patchAgentCard({
+                    videoGeneration: {
+                      ...videoGenerationDefaults,
+                      promptExtend: event.target.checked,
+                    },
+                  })}
+                  className="accent-fuchsia-500"
+                />
+                启用视频提示词优化
+              </label>
+              <label className="col-span-2 space-y-1 text-xs text-slate-400">
+                <span>字幕脚本</span>
+                <textarea
+                  value={videoGenerationDefaults.subtitleScript || ''}
+                  onChange={(event) => patchAgentCard({
+                    videoGeneration: {
+                      ...videoGenerationDefaults,
+                      subtitleScript: event.target.value,
+                    },
+                  })}
+                  rows={2}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50 resize-none"
+                />
+              </label>
+              <label className="col-span-2 space-y-1 text-xs text-slate-400">
+                <span>反向提示词</span>
+                <textarea
+                  value={videoGenerationDefaults.negativePrompt || ''}
+                  onChange={(event) => patchAgentCard({
+                    videoGeneration: {
+                      ...videoGenerationDefaults,
+                      negativePrompt: event.target.value,
+                    },
+                  })}
+                  rows={2}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50 resize-none"
+                />
+              </label>
+              <label className="col-span-2 space-y-1 text-xs text-slate-400">
+                <span>分镜提示词</span>
+                <textarea
+                  value={videoGenerationDefaults.storyboardPrompt || ''}
+                  onChange={(event) => patchAgentCard({
+                    videoGeneration: {
+                      ...videoGenerationDefaults,
+                      storyboardPrompt: event.target.value,
+                    },
+                  })}
+                  rows={2}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50 resize-none"
+                />
               </label>
             </div>
           )}

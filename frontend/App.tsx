@@ -29,6 +29,7 @@ import {
   openPersonaPanel,
 } from './appHandlers';
 import { AppRoutes } from './components/AppRoutes';
+import { WorkspaceTagViews } from './components/layout/WorkspaceTagViews';
 
 // Import Auth Components
 import { LoginPage, RegisterPage } from './components/auth';
@@ -55,11 +56,27 @@ import { resolveModelForModeSend } from './utils/modeModelSelection';
 import { apiClient } from './services/apiClient';
 import { authService } from './services/auth';
 
+const STUDIO_APP_MODES = new Set<AppMode>([
+  'image-gen',
+  'image-chat-edit',
+  'image-mask-edit',
+  'image-inpainting',
+  'image-background-edit',
+  'image-recontext',
+  'image-outpainting',
+  'video-gen',
+  'audio-gen',
+  'pdf-extract',
+  'virtual-try-on',
+]);
+
+const isStudioAppMode = (mode: AppMode): boolean => STUDIO_APP_MODES.has(mode);
+
 const AppContent: React.FC = () => {
   // --- Router Hooks ---
   const navigate = useNavigate();
   const location = useLocation();
-  const { showError, showWarning } = useToastContext();
+  const { showError } = useToastContext();
 
   // --- Auth State (使用真实认证) ---
   const {
@@ -99,8 +116,20 @@ const AppContent: React.FC = () => {
 
   // App Mode State
   const [appMode, setAppMode] = useState<AppMode>('chat');
+  const [openWorkspaceModes, setOpenWorkspaceModes] = useState<AppMode[]>(['chat']);
+  const [workspaceReloadKeys, setWorkspaceReloadKeys] = useState<Partial<Record<AppMode, number>>>({});
+  const [lastStudioMode, setLastStudioMode] = useState<AppMode>('image-gen');
   const [initialAttachments, setInitialAttachments] = useState<Attachment[] | undefined>(undefined);
   const [initialPrompt, setInitialPrompt] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    setOpenWorkspaceModes((current) => (
+      current.includes(appMode) ? current : [...current, appMode]
+    ));
+    if (isStudioAppMode(appMode)) {
+      setLastStudioMode(appMode);
+    }
+  }, [appMode]);
 
   useEffect(() => {
     setIsCloudStorageBrowserOpen(false);
@@ -286,6 +315,7 @@ const AppContent: React.FC = () => {
     updateSessionPersona,
     updateSessionTitle, // ✅ 新增
     deleteSession,
+    selectLatestSessionForMode,
     // 缓存相关
     cacheStatus,
     refreshSessions,
@@ -298,6 +328,7 @@ const AppContent: React.FC = () => {
     nonCriticalData
       ? {
           sessions: nonCriticalData.sessions || [],
+          sessionsMode: nonCriticalData.sessionsMode,
           sessionsHasMore: nonCriticalData.sessionsHasMore,
         }
       : undefined
@@ -319,6 +350,8 @@ const AppContent: React.FC = () => {
 
   // --- 消息过滤 ---
   const currentViewMessages = useViewMessages(messages, appMode);
+  const chatViewMessages = useViewMessages(messages, 'chat');
+  const multiAgentViewMessages = useViewMessages(messages, 'multi-agent');
 
   // --- 图片导航 ---
   const {
@@ -352,6 +385,84 @@ const AppContent: React.FC = () => {
       }
     },
     [appMode, baseHandleModeSwitch]
+  );
+
+  const handleWorkspaceModeSelect = useCallback(
+    (mode: AppMode) => {
+      setOpenWorkspaceModes((current) => (
+        current.includes(mode) ? current : [...current, mode]
+      ));
+      handleModeSwitch(mode);
+    },
+    [handleModeSwitch]
+  );
+
+  const handleModeNavigationSelect = useCallback(
+    (mode: AppMode) => {
+      setOpenWorkspaceModes((current) => (
+        current.includes(mode) ? current : [...current, mode]
+      ));
+      const hasCachedLatest = selectLatestSessionForMode(mode);
+      handleModeSwitch(mode);
+      if (mode === appMode && !hasCachedLatest) {
+        refreshSessions();
+      }
+    },
+    [appMode, handleModeSwitch, refreshSessions, selectLatestSessionForMode]
+  );
+
+  const handleWorkspaceModesClose = useCallback(
+    (modes: AppMode[]) => {
+      const closeSet = new Set(modes);
+      if (openWorkspaceModes.length <= 1 || closeSet.size === 0) {
+        return;
+      }
+
+      const nextOpenModes = openWorkspaceModes.filter((item) => !closeSet.has(item));
+      if (nextOpenModes.length === 0 || nextOpenModes.length === openWorkspaceModes.length) {
+        return;
+      }
+
+      setOpenWorkspaceModes(nextOpenModes);
+
+      if (closeSet.has(appMode)) {
+        const modeIndex = openWorkspaceModes.indexOf(appMode);
+        const previousOpenMode = [...openWorkspaceModes.slice(0, modeIndex)]
+          .reverse()
+          .find((item) => !closeSet.has(item));
+        const nextOpenMode = openWorkspaceModes
+          .slice(modeIndex + 1)
+          .find((item) => !closeSet.has(item));
+        const nextActiveMode =
+          previousOpenMode ||
+          nextOpenMode ||
+          nextOpenModes[0] ||
+          'chat';
+        handleModeSwitch(nextActiveMode);
+      }
+    },
+    [appMode, handleModeSwitch, openWorkspaceModes]
+  );
+
+  const handleWorkspaceModeClose = useCallback(
+    (mode: AppMode) => {
+      handleWorkspaceModesClose([mode]);
+    },
+    [handleWorkspaceModesClose]
+  );
+
+  const handleWorkspaceModeReload = useCallback(
+    (mode: AppMode) => {
+      setWorkspaceReloadKeys((current) => ({
+        ...current,
+        [mode]: (current[mode] || 0) + 1,
+      }));
+
+      if (mode === appMode) {
+        refreshSessions({ force: true });
+      }
+    },
+    [appMode, refreshSessions]
   );
 
   // ✅ B-7: 50ms debounce — 路由抖动期间(连续多次 location 变化)只创建一个 span。
@@ -438,18 +549,6 @@ const AppContent: React.FC = () => {
         return;
       }
 
-      if (
-        mode === 'image-outpainting' &&
-        !config.dashscopeApiKey &&
-        config.providerId !== 'tongyi'
-      ) {
-        showWarning(
-          "DashScope API Key is required for 'Expand Image'. Please configure it in Settings."
-        );
-        setIsSettingsOpen(true);
-        return;
-      }
-
       // ✅ 如果没有当前会话，自动创建一个新会话，并立即使用新会话 id 发送首条消息
       // ✅ Sprint 3 Phase B: 防御性——若当前 session 的 mode 与本次发送的 mode 不一致
       // （理论上切 mode 会重置 currentSessionId，不应触发；保留以防异步边界条件），
@@ -523,12 +622,10 @@ const AppContent: React.FC = () => {
     [
       config.apiKey,
       config.providerId,
-      config.dashscopeApiKey,
       config.protocol,
       currentSessionId,
       sessions,
       showError,
-      showWarning,
       createNewSession,
       activePersonaId,
       activePersona,
@@ -550,22 +647,22 @@ const AppContent: React.FC = () => {
     messages,
     visibleModels,
     activeModelConfig,
-    setAppMode: handleModeSwitch, // ✅ 使用 handleModeSwitch 确保模型选择逻辑正确
+    setAppMode: handleWorkspaceModeSelect, // ✅ 使用 workspace-aware 切换，确保打开对应 tag
     setCurrentModelId,
     setInitialAttachments,
     setInitialPrompt,
   });
 
   // 欢迎屏 prompt 选择 — 抽离至 ./appHandlers
-  // Wave 2 #36: useCallback 包装,deps 仅为已稳定的 useCallback 引用 (handleModelSelect / handleModeSwitch / onSend)。
+  // Wave 2 #36: useCallback 包装,deps 仅为已稳定的 useCallback 引用 (handleModelSelect / handleWorkspaceModeSelect / onSend)。
   const handleWelcomePrompt = useCallback(
     (text: string, mode: AppMode, modelId: string, requiredCap: string) =>
       submitWelcomePrompt(text, mode, modelId, requiredCap, {
         handleModelSelect,
-        handleModeSwitch,
+        handleModeSwitch: handleWorkspaceModeSelect,
         onSend,
       }),
-    [handleModelSelect, handleModeSwitch, onSend]
+    [handleModelSelect, handleWorkspaceModeSelect, onSend]
   );
 
   // 3 个 open 面板 handler — 抽离至 ./appHandlers（deps 内联，setter 引用稳定无需 useCallback deps）
@@ -593,45 +690,21 @@ const AppContent: React.FC = () => {
     [setMessages, updateSessionMessages]
   );
 
-  const renderView = () => {
-    if (isCloudStorageBrowserOpen) {
-      return (
-        <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
-          <CloudStorageView
-            activeStorageId={activeStorageId}
-            storageConfigs={storageConfigs}
-            onClose={() => setIsCloudStorageBrowserOpen(false)}
-          />
-        </Suspense>
-      );
-    }
-
-    if (isPersonaViewOpen) {
-      return (
-        <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
-          <PersonaManagementView
-            personas={personas}
-            activePersonaId={activePersonaId}
-            onSelectPersona={handlePersonaSelect}
-            onCreatePersona={createPersona}
-            onUpdatePersona={updatePersona}
-            onDeletePersona={deletePersona}
-            onRefreshPersonas={refreshPersonas}
-            onClose={() => setIsPersonaViewOpen(false)}
-          />
-        </Suspense>
-      );
-    }
+  const renderWorkspaceViewStack = () => {
+    const hasChatView = openWorkspaceModes.includes('chat');
+    const hasMultiAgentView = openWorkspaceModes.includes('multi-agent');
+    const hasStudioView = openWorkspaceModes.some(isStudioAppMode);
+    const activeStudioMode = isStudioAppMode(appMode) ? appMode : lastStudioMode;
 
     const commonProps = {
-      messages: currentViewMessages,
-      setAppMode: handleModeSwitch,
+      setAppMode: handleWorkspaceModeSelect,
       onImageClick: handleImageClick, // ✅ 使用稳定的引用
       loadingState,
       onSend,
       onStop: stopGeneration,
       onSubmitResearchAction: submitResearchAction,
       activeModelConfig,
+      onModelSelect: handleModelSelect,
       onEditImage: handleEditImage,
       onExpandImage: handleExpandImage, // Pass the new handler
       providerId: config.providerId,
@@ -642,51 +715,104 @@ const AppContent: React.FC = () => {
       apiKey: config.apiKey, // ✅ 传递 apiKey 用于调用 API
     };
 
-    if (appMode === 'multi-agent') {
+    return (
+      <>
+        {hasChatView && (
+          <div
+            key={`chat-${workspaceReloadKeys.chat || 0}`}
+            style={{ display: appMode === 'chat' ? 'contents' : 'none' }}
+          >
+            <ChatView
+              {...commonProps}
+              messages={chatViewMessages}
+              isLoadingModels={isLoadingModels}
+              visibleModels={visibleModels}
+              allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
+              apiKey={config.apiKey ?? ''}
+              protocol={config.protocol ?? null}
+              onPromptSelect={handleWelcomePrompt}
+              onOpenSettings={() => handleOpenSettings('profiles')}
+              appMode="chat"
+            />
+          </div>
+        )}
+
+        {hasMultiAgentView && (
+          <div
+            key={`multi-agent-${workspaceReloadKeys['multi-agent'] || 0}`}
+            style={{ display: appMode === 'multi-agent' ? 'contents' : 'none' }}
+          >
+            <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
+              <MultiAgentView
+                {...commonProps}
+                messages={multiAgentViewMessages}
+                setAppMode={handleWorkspaceModeSelect}
+                isLoadingModels={isLoadingModels}
+                visibleModels={visibleModels}
+                allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
+                apiKey={config.apiKey ?? ''}
+                protocol={config.protocol ?? null}
+                onPromptSelect={handleWelcomePrompt}
+                onOpenSettings={() => handleOpenSettings('profiles')}
+                appMode="multi-agent"
+              />
+            </Suspense>
+          </div>
+        )}
+
+        {hasStudioView && (
+          <div style={{ display: isStudioAppMode(appMode) ? 'contents' : 'none' }}>
+            <StudioView
+              {...commonProps}
+              setAppMode={handleWorkspaceModeSelect}
+              messages={messages}
+              mode={activeStudioMode}
+              modeReloadKeys={workspaceReloadKeys}
+              visibleModels={visibleModels}
+              allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
+              initialPrompt={initialPrompt}
+              initialAttachments={initialAttachments}
+              onDeleteMessage={handleDeleteMessage}
+            />
+          </div>
+        )}
+      </>
+    );
+  };
+
+  const renderView = () => {
+    if (isCloudStorageBrowserOpen || isPersonaViewOpen) {
       return (
-        <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
-          <MultiAgentView
-            {...commonProps}
-            isLoadingModels={isLoadingModels}
-            visibleModels={visibleModels}
-            allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
-            apiKey={config.apiKey ?? ''}
-            protocol={config.protocol ?? null}
-            onPromptSelect={handleWelcomePrompt}
-            onOpenSettings={() => handleOpenSettings('profiles')}
-            appMode={appMode}
-          />
-        </Suspense>
-      );
-    } else if (appMode === 'chat') {
-      // ✅ ChatView 保持同步加载（默认模式）
-      return (
-        <ChatView
-          {...commonProps}
-          isLoadingModels={isLoadingModels}
-          visibleModels={visibleModels}
-          allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
-          apiKey={config.apiKey ?? ''}
-          protocol={config.protocol ?? null}
-          onPromptSelect={handleWelcomePrompt}
-          onOpenSettings={() => handleOpenSettings('profiles')}
-          appMode={appMode}
-        />
-      );
-    } else {
-      return (
-        <StudioView
-          {...commonProps}
-          messages={messages}
-          mode={appMode}
-          visibleModels={visibleModels}
-          allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
-          initialPrompt={initialPrompt}
-          initialAttachments={initialAttachments}
-          onDeleteMessage={handleDeleteMessage}
-        />
+        <>
+          <div className="hidden">{renderWorkspaceViewStack()}</div>
+          {isCloudStorageBrowserOpen && (
+            <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
+              <CloudStorageView
+                activeStorageId={activeStorageId}
+                storageConfigs={storageConfigs}
+                onClose={() => setIsCloudStorageBrowserOpen(false)}
+              />
+            </Suspense>
+          )}
+          {isPersonaViewOpen && (
+            <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
+              <PersonaManagementView
+                personas={personas}
+                activePersonaId={activePersonaId}
+                onSelectPersona={handlePersonaSelect}
+                onCreatePersona={createPersona}
+                onUpdatePersona={updatePersona}
+                onDeletePersona={deletePersona}
+                onRefreshPersonas={refreshPersonas}
+                onClose={() => setIsPersonaViewOpen(false)}
+              />
+            </Suspense>
+          )}
+        </>
       );
     }
+
+    return renderWorkspaceViewStack();
   };
 
   // --- 准备 SettingsModal（需要在所有地方都能访问） ---
@@ -785,8 +911,19 @@ const AppContent: React.FC = () => {
         onOpenPersonaView={handleOpenPersonaView}
         settings={settingsModal}
         showModeNavigation={true}
-        setAppMode={handleModeSwitch}
+        setAppMode={handleModeNavigationSelect}
         modeCatalog={modeCatalog}
+        workspaceTabs={
+          <WorkspaceTagViews
+            activeMode={appMode}
+            openModes={openWorkspaceModes}
+            modeCatalog={modeCatalog}
+            onSelectMode={handleWorkspaceModeSelect}
+            onCloseMode={handleWorkspaceModeClose}
+            onCloseModes={handleWorkspaceModesClose}
+            onReloadMode={handleWorkspaceModeReload}
+          />
+        }
       >
         {renderView()}
       </AppLayout>

@@ -312,6 +312,8 @@ export const useChat = (
         attachments: [],
         timestamp: Date.now(),
         mode: mode,
+        modelId: currentModel.id,
+        modelName: currentModel.name,
         responseKind: handlerMode === 'deep-research' ? 'deep-research' : 'chat',
         researchStatus:
           handlerMode === 'deep-research'

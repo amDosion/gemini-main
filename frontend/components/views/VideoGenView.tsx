@@ -27,6 +27,7 @@ interface VideoGenViewProps {
   activeModelConfig?: ModelConfig;
   visibleModels?: ModelConfig[];
   allVisibleModels?: ModelConfig[];
+  onModelSelect?: (id: string) => void;
   initialPrompt?: string;
   providerId?: string;
   sessionId?: string | null;
@@ -46,6 +47,7 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
   activeModelConfig,
   visibleModels = [],
   allVisibleModels = [],
+  onModelSelect,
   initialPrompt,
   providerId,
   sessionId,
@@ -730,7 +732,10 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
       videoMode={videoMode}
       resolvedProviderId={resolvedProviderId}
       activeModelConfig={activeModelConfig}
+      visibleModels={visibleModels}
+      onModelSelect={onModelSelect}
       controls={controls}
+      controlsSchema={videoControlsSchema}
       resetParams={resetParams}
       handleSend={handleSend}
       onStop={onStop}

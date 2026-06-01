@@ -76,9 +76,12 @@
           "description": "提炼卖点并生成5路图生图提示词",
           "icon": "💡",
           "iconColor": "bg-amber-500",
-          "agentName": "电商文案创作师",
           "inputMapping": "Reference image: {{input-image-model-scene-copy.output.imageUrl}}\\nCopy brief: {{input-text-model-scene-copy.output.text}}",
-          "instructions": "Return 5 image-edit prompt routes in ENGLISH ONLY:\nA) hero model visual\nB) lifestyle scene visual\nC) vertical mobile visual\nD) square social visual\nE) luxury flat-lay selling-point copy visual.\nHard constraints for every route:\n1. Keep product identity intact (shape/material/logo details stay consistent with reference)\n2. Route A-D require real human model; Route E is product-only flat lay with elegant props\n3. One headline (<=6 words) + two badges (<=4 words each), all in English\n4. Text safe zones: headline at top margin (5-15% from top), badges at top-left/top-right corners\n5. Keep center safe area (35-75% width, 20-85% height) free from text, never cover face/body/product main area.\nFor Route E, include tasteful callout lines and premium e-commerce layout. You may reference luxury style patterns but DO NOT copy any sample wording verbatim.\nOutput format per route: route name, final prompt, headline, badge1, badge2, layout notes."
+          "instructions": "Return 5 image-edit prompt routes in ENGLISH ONLY:\nA) hero model visual\nB) lifestyle scene visual\nC) vertical mobile visual\nD) square social visual\nE) luxury flat-lay selling-point copy visual.\nHard constraints for every route:\n1. Keep product identity intact (shape/material/logo details stay consistent with reference)\n2. Route A-D require real human model; Route E is product-only flat lay with elegant props\n3. One headline (<=6 words) + two badges (<=4 words each), all in English\n4. Text safe zones: headline at top margin (5-15% from top), badges at top-left/top-right corners\n5. Keep center safe area (35-75% width, 20-85% height) free from text, never cover face/body/product main area.\nFor Route E, include tasteful callout lines and premium e-commerce layout. You may reference luxury style patterns but DO NOT copy any sample wording verbatim.\nOutput format per route: route name, final prompt, headline, badge1, badge2, layout notes.",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.8,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ecommerce-copywriter"
         }
       },
       {
@@ -110,7 +113,6 @@
           "description": "电商主视觉：模特+主文案+卖点角标",
           "icon": "🌟",
           "iconColor": "bg-pink-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentEditMode": "image-chat-edit",
           "agentAspectRatio": "3:4",
@@ -122,7 +124,16 @@
           "agentProductMatchThreshold": 72,
           "agentOutputLanguage": "en",
           "inputMapping": "{{agent-plan-model-scene-copy.output.text}}\\n\\nRoute A: Generate a hero ecommerce visual. Real model uses/holds product. English headline + 2 English badges only. Place text in top margin/corners. Do NOT cover face, torso, or product body.",
-          "instructions": "English-only copy. Layout safety is mandatory. Model and product must stay unobstructed."
+          "instructions": "English-only copy. Layout safety is mandatory. Model and product must stay unobstructed.",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -138,7 +149,6 @@
           "description": "生活化场景：模特真实使用+卖点文案",
           "icon": "🏞️",
           "iconColor": "bg-indigo-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentEditMode": "image-chat-edit",
           "agentAspectRatio": "4:3",
@@ -150,7 +160,16 @@
           "agentProductMatchThreshold": 72,
           "agentOutputLanguage": "en",
           "inputMapping": "{{agent-plan-model-scene-copy.output.text}}\\n\\nRoute B: Lifestyle scene image with real model naturally using product. English headline + 2 English badges only. Keep text at top/side safe zones and away from subject and product.",
-          "instructions": "English-only copy. Keep readability high and never overlay text on key subject/product pixels."
+          "instructions": "English-only copy. Keep readability high and never overlay text on key subject/product pixels.",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -166,7 +185,6 @@
           "description": "竖版素材：模特+主卖点文案",
           "icon": "📱",
           "iconColor": "bg-violet-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentEditMode": "image-chat-edit",
           "agentAspectRatio": "9:16",
@@ -178,7 +196,16 @@
           "agentProductMatchThreshold": 72,
           "agentOutputLanguage": "en",
           "inputMapping": "{{agent-plan-model-scene-copy.output.text}}\\n\\nRoute C: Vertical mobile ad creative. Model-focused, product clear. English headline + 2 English badges. Text only at top margin and top corners, with enough spacing.",
-          "instructions": "English-only copy. Mobile-first readability. Avoid covering model face, hands, and product silhouette."
+          "instructions": "English-only copy. Mobile-first readability. Avoid covering model face, hands, and product silhouette.",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -194,7 +221,6 @@
           "description": "方图风格：模特+差异化卖点文案",
           "icon": "🧩",
           "iconColor": "bg-teal-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentEditMode": "image-chat-edit",
           "agentAspectRatio": "1:1",
@@ -206,7 +232,16 @@
           "agentProductMatchThreshold": 72,
           "agentOutputLanguage": "en",
           "inputMapping": "{{agent-plan-model-scene-copy.output.text}}\\n\\nRoute D: Square social/ad creative. Real model + product in frame. English headline + 2 English badges. Keep copy in non-overlapping corner/top zones.",
-          "instructions": "English-only copy. Clear hierarchy and non-overlap with subject/product are mandatory."
+          "instructions": "English-only copy. Clear hierarchy and non-overlap with subject/product are mandatory.",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -222,7 +257,6 @@
           "description": "高端平铺构图：产品主体 + 卖点文案 + 引导线",
           "icon": "🪄",
           "iconColor": "bg-amber-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentEditMode": "image-chat-edit",
           "agentAspectRatio": "1:1",
@@ -234,7 +268,16 @@
           "agentProductMatchThreshold": 74,
           "agentOutputLanguage": "en",
           "inputMapping": "{{agent-plan-model-scene-copy.output.text}}\\n\\nRoute E: Create a professionally designed Amazon secondary image using a premium flat-lay style. Keep the product exactly recognizable from reference, add elegant English headline + 2 badges + subtle callout lines, and apply optional color-variant styling (e.g., white/champagne/pink accents) without changing product structure.",
-          "instructions": "English-only copy. Keep text away from the product body. Luxury composition, balanced spacing, and production-ready typography hierarchy are mandatory."
+          "instructions": "English-only copy. Keep text away from the product body. Luxury composition, balanced spacing, and production-ready typography hierarchy are mandatory.",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -266,9 +309,13 @@
           "description": "输出可交付版本与二次优化建议",
           "icon": "✅",
           "iconColor": "bg-emerald-500",
-          "agentName": "图片编辑优化师",
           "inputMapping": "并行结果：{{merge-model-scene-copy.output.text}}",
-          "instructions": "Review all branch outputs and report in English only.\nHard rules:\n1) Do NOT ask any follow-up questions.\n2) Do NOT request extra context or files.\n3) If one branch is weak/missing, mark it as FAILED and still finish the full report.\nReturn final deliverables directly in this exact structure:\n- Route scoreboard table (hero / lifestyle / mobile / square / flatlay-copy): quality score 0-100, text overlap risk, pass/fail.\n- Winner list by use-case.\n- Retry prompts only for failed/non-compliant branches.\n- Final launch-ready checklist (max 5 bullets)."
+          "instructions": "Review all branch outputs and report in English only.\nHard rules:\n1) Do NOT ask any follow-up questions.\n2) Do NOT request extra context or files.\n3) If one branch is weak/missing, mark it as FAILED and still finish the full report.\nReturn final deliverables directly in this exact structure:\n- Route scoreboard table (hero / lifestyle / mobile / square / flatlay-copy): quality score 0-100, text overlap risk, pass/fail.\n- Winner list by use-case.\n- Retry prompts only for failed/non-compliant branches.\n- Final launch-ready checklist (max 5 bullets).",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {

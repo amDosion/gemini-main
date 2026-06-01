@@ -138,13 +138,27 @@ export const useWorkflowResultMedia = ({
       const audioUrls = extractAudioUrls(payload);
       const videoUrls = extractVideoUrls(payload);
       const thoughtItems = extractThoughtContent(payload);
-      const mergedUrls = [
-        ...imageUrls.filter((imageUrl) => !String(imageUrl).startsWith('data:image/')),
-        ...audioUrls.filter((audioUrl) => !String(audioUrl).startsWith('data:audio/')),
-        ...videoUrls.filter((videoUrl) => !String(videoUrl).startsWith('data:video/')),
-        ...extractUrlContent(payload),
-      ];
-      const urls = Array.from(new Set(mergedUrls));
+      const renderedMediaUrls = new Set<string>();
+      imageUrls.forEach((imageUrl) => {
+        if (isDirectlyRenderableImageUrl(imageUrl)) {
+          renderedMediaUrls.add(String(imageUrl).trim());
+        }
+      });
+      audioUrls.forEach((audioUrl) => {
+        if (isDirectlyRenderableAudioUrl(audioUrl)) {
+          renderedMediaUrls.add(String(audioUrl).trim());
+        }
+      });
+      videoUrls.forEach((videoUrl) => {
+        if (isDirectlyRenderableVideoUrl(videoUrl)) {
+          renderedMediaUrls.add(String(videoUrl).trim());
+        }
+      });
+      const urls = Array.from(
+        new Set(
+          extractUrlContent(payload).filter((url) => !renderedMediaUrls.has(String(url).trim()))
+        )
+      );
       if (
         !text &&
         imageUrls.length === 0 &&

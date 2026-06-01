@@ -60,8 +60,11 @@
           "description": "生成可落地的多风格提示词矩阵",
           "icon": "✨",
           "iconColor": "bg-violet-500",
-          "agentName": "电商文案创作师",
-          "instructions": "请把用户输入增强为 4 组可直接用于文生图的提示词：\n1. Amazon 主图（纯白背景，主体清晰）\n2. 场景生活图（体现使用场景）\n3. 卖点细节图（突出材质/工艺）\n4. UGC 风格图（真实生活感）\n\n每组输出都要包含：主体、环境、光线、构图、禁止元素。"
+          "instructions": "请把用户输入增强为 4 组可直接用于文生图的提示词：\n1. Amazon 主图（纯白背景，主体清晰）\n2. 场景生活图（体现使用场景）\n3. 卖点细节图（突出材质/工艺）\n4. UGC 风格图（真实生活感）\n\n每组输出都要包含：主体、环境、光线、构图、禁止元素。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.8,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ecommerce-copywriter"
         }
       },
       {
@@ -93,12 +96,19 @@
           "description": "主图智能体输出合规主图素材",
           "icon": "🖼️",
           "iconColor": "bg-pink-500",
-          "agentName": "产品图片设计师",
           "agentTaskType": "image-gen",
           "agentAspectRatio": "1:1",
           "agentNumberOfImages": 1,
           "inputMapping": "{{agent-prompt-enhance.output.text}}\\n\\n请执行主图路线：纯白背景、主体占比 85%+、无文字水印。",
-          "instructions": "先优化提示词，再输出可直接用于主图的生成结果。"
+          "instructions": "先优化提示词，再输出可直接用于主图的生成结果。",
+          "agentTemperature": 0.7,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "product-image-designer"
         }
       },
       {
@@ -114,12 +124,19 @@
           "description": "场景智能体输出生活化场景图",
           "icon": "🏞️",
           "iconColor": "bg-indigo-500",
-          "agentName": "产品图片设计师",
           "agentTaskType": "image-gen",
           "agentAspectRatio": "3:4",
           "agentNumberOfImages": 1,
           "inputMapping": "{{agent-prompt-enhance.output.text}}\\n\\n请执行场景路线：真实生活感、产品主体保持清晰。",
-          "instructions": "保持主体一致，突出场景代入感与卖点表达。"
+          "instructions": "保持主体一致，突出场景代入感与卖点表达。",
+          "agentTemperature": 0.7,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "product-image-designer"
         }
       },
       {
@@ -135,12 +152,19 @@
           "description": "卖点智能体输出细节卖点图",
           "icon": "🔍",
           "iconColor": "bg-violet-500",
-          "agentName": "产品图片设计师",
           "agentTaskType": "image-gen",
           "agentAspectRatio": "1:1",
           "agentNumberOfImages": 1,
           "inputMapping": "{{agent-prompt-enhance.output.text}}\\n\\n请执行卖点路线：特写镜头，突出材质和工艺细节。",
-          "instructions": "聚焦细节与质感，避免冗余背景干扰。"
+          "instructions": "聚焦细节与质感，避免冗余背景干扰。",
+          "agentTemperature": 0.7,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "product-image-designer"
         }
       },
       {
@@ -156,12 +180,19 @@
           "description": "UGC 智能体输出真实感社媒素材",
           "icon": "📱",
           "iconColor": "bg-amber-500",
-          "agentName": "产品图片设计师",
           "agentTaskType": "image-gen",
           "agentAspectRatio": "3:4",
           "agentNumberOfImages": 1,
           "inputMapping": "{{agent-prompt-enhance.output.text}}\\n\\n请执行 UGC 路线：像用户真实拍摄，保留产品主体和自然光感。",
-          "instructions": "输出接近真实用户拍摄的社媒风格图片。"
+          "instructions": "输出接近真实用户拍摄的社媒风格图片。",
+          "agentTemperature": 0.7,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "product-image-designer"
         }
       },
       {
@@ -193,9 +224,13 @@
           "description": "输出最终交付清单和二次迭代建议",
           "icon": "✅",
           "iconColor": "bg-emerald-500",
-          "agentName": "图片编辑优化师",
           "inputMapping": "四路文生图结果摘要：{{merge-prompt-matrix.output.text}}",
-          "instructions": "请按主图/场景图/卖点图/UGC 四个类型输出交付审阅（不要再索要输入）：\n1. 每类推荐结果与理由\n2. 不合规风险（如主图规范、清晰度）\n3. 二次迭代提示词（可选）\n4. 最终交付清单"
+          "instructions": "请按主图/场景图/卖点图/UGC 四个类型输出交付审阅（不要再索要输入）：\n1. 每类推荐结果与理由\n2. 不合规风险（如主图规范、清晰度）\n3. 二次迭代提示词（可选）\n4. 最终交付清单",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {

@@ -1,4 +1,4 @@
-import type { WorkflowEdge, WorkflowNode } from '../../multiagent/types';
+import type { ExecutionStatus, WorkflowEdge, WorkflowNode } from '../../multiagent/types';
 
 export interface WorkflowHistoryItem {
   id: string;
@@ -37,4 +37,5 @@ export interface WorkflowLoadRequest {
   input?: Record<string, any>;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
+  executionStatus?: ExecutionStatus;
 }

@@ -23,6 +23,8 @@ import {
   resolveTemplateOriginLabel,
   resolveTemplateRuntimeLabel,
 } from '../workflowTemplateTypes';
+import { CachedImage } from '../../common/CachedImage';
+import { RetainedAudio, RetainedVideo } from '../../common/RetainedMedia';
 
 interface TemplatePreviewPanelProps {
   selectedTemplate: WorkflowTemplate | null;
@@ -154,8 +156,8 @@ export const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({
           )}
           {selectedTemplate.isLegacyStarterCopy && (
             <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-100">
-              这是遗留 Starter 副本：仍在通过 `agentName` 绑定旧 Seed Agent。建议复制官方新版
-              Starter，或改成 `agentId / inlineUseActiveProfile`。
+              这是遗留 Starter 副本：仍嵌入旧版 inline Agent 定义。建议复制官方新版
+              Starter，或改成 `agentId / agentName` 绑定统一 Agent。
             </div>
           )}
 
@@ -228,8 +230,9 @@ export const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({
                     className={`grid gap-2 ${selectedTemplateSampleImageUrls.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}
                   >
                     {selectedTemplateSampleImageUrls.map((imageUrl, index) => (
-                      <img
+                      <CachedImage
                         key={`${selectedTemplate.id}-sample-image-${index}`}
+                        source={{ url: imageUrl, name: `template-sample-${index + 1}` }}
                         src={imageUrl}
                         alt={`template-sample-${index + 1}`}
                         className="w-full h-24 rounded border border-slate-700 object-cover bg-slate-950/70"
@@ -245,7 +248,7 @@ export const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({
                     </div>
                     <div className="space-y-2">
                       {selectedTemplateSampleVideoUrls.map((videoUrl, index) => (
-                        <video
+                        <RetainedVideo
                           key={`${selectedTemplate.id}-sample-video-${index}`}
                           src={videoUrl}
                           controls
@@ -263,7 +266,7 @@ export const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({
                     </div>
                     <div className="space-y-2">
                       {selectedTemplateSampleAudioUrls.map((audioUrl, index) => (
-                        <audio
+                        <RetainedAudio
                           key={`${selectedTemplate.id}-sample-audio-${index}`}
                           src={audioUrl}
                           controls

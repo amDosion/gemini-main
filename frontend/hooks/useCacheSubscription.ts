@@ -8,6 +8,16 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { cacheManager } from '../services/CacheManager';
+import { usePrivateCacheScopeRevision } from './usePrivateCacheScopeRevision';
+
+interface CacheSubscriptionState<T> {
+  domain: string;
+  data: T;
+}
+
+function readCacheDomain<T>(domain: string, fallback: T): T {
+  return cacheManager.get<T>(domain) ?? fallback;
+}
 
 /**
  * 订阅 CacheManager 中某个 domain 的数据
@@ -18,20 +28,29 @@ import { cacheManager } from '../services/CacheManager';
  * subscribe callback 内读 fallbackRef.current。
  */
 export function useCacheSubscription<T>(domain: string, fallback: T): T {
-  const [data, setData] = useState<T>(() => cacheManager.get<T>(domain) ?? fallback);
+  const [state, setState] = useState<CacheSubscriptionState<T>>(() => ({
+    domain,
+    data: readCacheDomain(domain, fallback),
+  }));
   const fallbackRef = useRef<T>(fallback);
   fallbackRef.current = fallback;
 
+  const data = state.domain === domain
+    ? state.data
+    : readCacheDomain(domain, fallback);
+
   useEffect(() => {
-    const current = cacheManager.get<T>(domain);
-    if (current !== null) {
-      setData(current);
-    }
+    const current = readCacheDomain(domain, fallbackRef.current);
+    setState({ domain, data: current });
     const unsubscribe = cacheManager.subscribe<T>(domain, (newData) => {
-      setData(newData ?? fallbackRef.current);
+      setState({ domain, data: newData ?? fallbackRef.current });
     });
     return unsubscribe;
   }, [domain]);
+
+  usePrivateCacheScopeRevision(() => {
+    setState({ domain, data: readCacheDomain(domain, fallbackRef.current) });
+  });
 
   return data;
 }

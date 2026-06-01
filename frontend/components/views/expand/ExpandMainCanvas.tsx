@@ -11,6 +11,7 @@ import { ImageCanvasControls } from '../../common/ImageCanvasControls';
 import { ImageResultCanvas } from '../../common/ImageResultCanvas';
 import { type CarouselMediaItem } from '../../common/ImageCarouselControls';
 import { ImageCompare } from '../../common/ImageCompare';
+import { CachedImage } from '../../common/CachedImage';
 import ChatEditInputArea from '../../chat/ChatEditInputArea';
 import { ModeControlsCoordinator } from '../../../coordinators/ModeControlsCoordinator';
 import { Message, AppMode, Attachment, ChatOptions } from '../../../types/types';
@@ -86,6 +87,20 @@ export const ExpandMainCanvas: React.FC<ExpandMainCanvasProps> = ({
   activeAttachments,
   setActiveAttachments,
 }) => {
+  const activeSourceAttachment =
+    activeAttachments.find(
+      (attachment) =>
+        attachment.url === activeImageUrl ||
+        attachment.tempUrl === activeImageUrl ||
+        attachment.fileUri === activeImageUrl
+    ) ||
+    initialAttachments?.find(
+      (attachment) =>
+        attachment.url === activeImageUrl ||
+        attachment.tempUrl === activeImageUrl ||
+        attachment.fileUri === activeImageUrl
+    );
+
   return (
     <div className="flex-1 flex flex-row h-full">
       <ImageResultCanvas
@@ -145,7 +160,12 @@ export const ExpandMainCanvas: React.FC<ExpandMainCanvasProps> = ({
                 onMouseUp={canvas.handleMouseUp}
                 onMouseLeave={canvas.handleMouseUp}
               >
-                <img
+                <CachedImage
+                  source={{
+                    ...activeSourceAttachment,
+                    attachmentId: activeSourceAttachment?.id,
+                    url: activeImageUrl,
+                  }}
                   src={activeImageUrl}
                   className="max-w-none rounded-lg border border-slate-800 pointer-events-none"
                   style={{ maxHeight: '80vh', maxWidth: '80vw' }}

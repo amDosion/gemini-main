@@ -32,6 +32,7 @@ import {
   type CarouselMediaItem,
   type CarouselAccentTone,
 } from './ImageCarouselControls';
+import { CachedImage } from './CachedImage';
 
 type ResultAccentColor = 'pink' | 'orange' | 'emerald' | 'indigo';
 
@@ -175,6 +176,9 @@ export const ImageResultCanvas = memo(
     const isCompareMode = controlsExtra?.isCompareMode ?? false;
     const currentImage = displayImages[carouselIndex];
     const currentUrl = currentImage?.url || null;
+    const canRenderCurrentImage = Boolean(
+      currentUrl || (currentImage?.file && currentImage.mimeType?.startsWith('image/'))
+    );
 
     const loadingWrapperClass = `flex flex-col items-center gap-6 p-8 rounded-3xl bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 shadow-2xl${
       loadingWrapperExtraClass ? ` ${loadingWrapperExtraClass}` : ''
@@ -265,12 +269,17 @@ export const ImageResultCanvas = memo(
                 <div className="relative group max-w-full max-h-full flex items-center justify-center">
                   {compareSlot && isCompareMode ? (
                     compareSlot
-                  ) : currentUrl ? (
-                    <img
-                      src={currentUrl}
+                  ) : canRenderCurrentImage ? (
+                    <CachedImage
+                      source={{
+                        ...currentImage,
+                        attachmentId: currentImage?.id,
+                        url: currentUrl || undefined,
+                      }}
+                      src={currentUrl || null}
                       className="block max-h-[70vh] max-w-full object-contain rounded-2xl shadow-2xl border border-slate-800/50 select-none"
                       style={canvas.canvasStyle}
-                      onDoubleClick={() => onImageClick(currentUrl)}
+                      onDoubleClick={currentUrl ? () => onImageClick(currentUrl) : undefined}
                       alt={altFor ? altFor(carouselIndex) : `图片 ${carouselIndex + 1}`}
                       draggable={false}
                     />

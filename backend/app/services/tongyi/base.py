@@ -132,6 +132,80 @@ WAN_V2_RESOLUTIONS: Dict[str, Dict[str, str]] = {
 }
 
 # ============================================
+# Wan 2.7 Image 分辨率
+# ============================================
+# 官方文档: wan2.7-image-pro 文生图（无图片输入、非组图）支持 1K/2K/4K；
+# 图像编辑和组图最高 2K。为保留前端比例控制，1K/2K 使用像素值方式。
+
+WAN27_1K_RESOLUTIONS: Dict[str, str] = Z_IMAGE_1K_RESOLUTIONS
+WAN27_2K_RESOLUTIONS: Dict[str, str] = Z_IMAGE_2K_RESOLUTIONS
+
+WAN27_RESOLUTIONS: Dict[str, Dict[str, str]] = {
+    "1K": WAN27_1K_RESOLUTIONS,
+    "2K": WAN27_2K_RESOLUTIONS,
+}
+
+WAN27_STANDARD_MAX_IMAGES = 4
+WAN27_SEQUENTIAL_MAX_IMAGES = 12
+QWEN_IMAGE_20_MAX_IMAGES = 6
+QWEN_IMAGE_EDIT_VARIANT_MAX_IMAGES = 6
+TONGYI_DEFAULT_MAX_IMAGES = 4
+
+
+def is_wan27_image_model(model_id: str) -> bool:
+    return model_id.lower().startswith("wan2.7-image")
+
+
+def clamp_image_count(value: int, max_count: int, *, min_count: int = 1) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = min_count
+    return max(min_count, min(parsed, max_count))
+
+
+def get_qwen_image_max_output_count(model_id: str) -> int:
+    model = str(model_id or "").lower()
+    if model.startswith("qwen-image-2.0"):
+        return QWEN_IMAGE_20_MAX_IMAGES
+    if model.startswith("qwen-image-edit-plus") or model.startswith("qwen-image-edit-max"):
+        return QWEN_IMAGE_EDIT_VARIANT_MAX_IMAGES
+    return TONGYI_DEFAULT_MAX_IMAGES
+
+
+def get_wan27_size(
+    aspect_ratio: str,
+    resolution_tier: str,
+    model_id: str,
+    *,
+    has_image_input: bool = False,
+    image_count: int = 1,
+) -> str:
+    """
+    Resolve Wan 2.7 Image size according to the API's mode-specific limits.
+
+    - wan2.7-image-pro: 4K is allowed only for text-to-image, single output.
+    - wan2.7-image: supports 1K/2K only.
+    - image input and multi-image scenarios are capped to 2K.
+    """
+    tier = str(resolution_tier or "2K").upper()
+    model_lower = model_id.lower()
+    can_use_4k = (
+        model_lower.startswith("wan2.7-image-pro")
+        and tier == "4K"
+        and not has_image_input
+        and image_count == 1
+    )
+    if can_use_4k:
+        return "4K"
+
+    if tier == "4K" or tier not in WAN27_RESOLUTIONS:
+        tier = "2K"
+
+    tier_map = WAN27_RESOLUTIONS.get(tier, WAN27_2K_RESOLUTIONS)
+    return tier_map.get(aspect_ratio, tier_map.get("1:1", "2048*2048"))
+
+# ============================================
 # Qwen-Image-Plus 分辨率（固定的5种）
 # ============================================
 
@@ -171,6 +245,10 @@ def get_pixel_resolution(
     if "z-image" in model_lower:
         tier_map = Z_IMAGE_RESOLUTIONS.get(resolution_tier, Z_IMAGE_1280_RESOLUTIONS)
         return tier_map.get(aspect_ratio, tier_map.get("1:1", "1280*1280"))
+
+    # Wan 2.7 Image
+    if is_wan27_image_model(model_id):
+        return get_wan27_size(aspect_ratio, resolution_tier, model_id)
 
     # WanV2 系列 (-t2i 后缀的文生图模型)
     if "-t2i" in model_lower or "wan" in model_lower or "wanx" in model_lower:

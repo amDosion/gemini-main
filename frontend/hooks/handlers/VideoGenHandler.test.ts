@@ -114,4 +114,36 @@ describe('VideoGenHandler', () => {
     expect(result.attachments[1]?.language).toBe('zh-CN');
     expect(result.subtitleAttachmentIds).toEqual(['att-vtt']);
   });
+
+  it('appends generated video last-frame derivatives returned by the backend', async () => {
+    vi.mocked(llmService.generateVideo).mockResolvedValue({
+      url: 'https://cdn.example.com/video.mp4',
+      mimeType: 'video/mp4',
+      attachmentId: 'att-video',
+      uploadStatus: 'completed',
+      derivedAssets: [
+        {
+          kind: 'video_last_frame',
+          role: 'last_frame',
+          url: '/api/temp-images/att-frame',
+          attachmentId: 'att-frame',
+          mimeType: 'image/png',
+          filename: 'video-last-frame.png',
+          uploadStatus: 'pending',
+        },
+      ],
+    } as any);
+
+    const handler = new VideoGenHandler();
+    const result = await handler.execute(baseContext);
+
+    expect(result.attachments).toHaveLength(2);
+    expect(result.attachments[1]).toMatchObject({
+      id: 'att-frame',
+      mimeType: 'image/png',
+      role: 'last_frame',
+      kind: 'video_last_frame',
+      url: '/api/temp-images/att-frame',
+    });
+  });
 });

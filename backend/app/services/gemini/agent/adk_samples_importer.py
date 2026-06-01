@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from ....models.db_models import WorkflowTemplate
 from ...agent.agent_seed_service import ensure_seed_agents, get_default_seed_agents
+from .workflow_template_service import WorkflowTemplateService
 
 logger = logging.getLogger(__name__)
 
@@ -650,6 +651,11 @@ class ADKSamplesImporter:
             raise ValueError("Template name cannot be empty")
 
         config_payload = self._build_template_config(template_id=template_id, template_info=template_info)
+        config_payload = WorkflowTemplateService(self.db).prepare_imported_template_config(
+            config=config_payload,
+            user_id=user_id,
+            workflow_type=template_info["workflow_type"],
+        )
         now = int(time.time() * 1000)
 
         existing = self.db.query(WorkflowTemplate).filter(

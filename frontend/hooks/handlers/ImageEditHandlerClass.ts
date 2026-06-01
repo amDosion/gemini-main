@@ -3,9 +3,9 @@ import { ExecutionContext, HandlerResult } from './types';
 import { Attachment } from '../../types/types';
 import { ImageGenerationResult } from '../../services/providers/interfaces';
 import { llmService } from '../../services/llmService';
-import { isHttpUrl } from './attachmentUtils';
 import { storageUpload } from '../../services/storage/storageUpload';
 import { v4 as uuidv4 } from 'uuid';
+import { getPreferredAttachmentUrl, isTemporaryAttachmentUrl } from '../../utils/attachmentUrl';
 
 export class ImageEditHandler extends BaseHandler {
   protected async doExecute(context: ExecutionContext): Promise<HandlerResult> {
@@ -108,6 +108,7 @@ export class ImageEditHandler extends BaseHandler {
         sessionId: res.sessionId, // 会话 ID
         userId: res.userId, // 用户 ID
         createdAt: res.createdAt, // 创建时间戳
+        openaiResponseId: res.openaiResponseId,
       } as Attachment;
     });
 
@@ -125,9 +126,19 @@ export class ImageEditHandler extends BaseHandler {
       // 但后端现在使用 AttachmentService.process_user_upload() 统一处理
       const dbUserAttachments = await Promise.all(
         context.attachments.map(async (att) => {
+          const preferredUrl = getPreferredAttachmentUrl(att);
           // 如果已经上传到云存储，直接返回
-          if (att.uploadStatus === 'completed' && att.url?.startsWith('http')) {
-            return att;
+          if (
+            att.uploadStatus === 'completed' &&
+            preferredUrl &&
+            !isTemporaryAttachmentUrl(preferredUrl)
+          ) {
+            return {
+              ...att,
+              url: preferredUrl,
+              cloudUrl: att.cloudUrl || preferredUrl,
+              uploadStatus: 'completed' as const,
+            };
           }
 
           // ✅ 如果有 File 对象，上传到后端（后端会统一处理）
@@ -145,8 +156,7 @@ export class ImageEditHandler extends BaseHandler {
               // 注意：这个返回的附件会保存到数据库（后端 PR-1 b0bd8ee 在 upsert 时
               // 权威清洗 Blob URL,落库时 url=""+status="pending"）。
               // 但当前会话的 messages 状态会保留原始 Blob URL（因为 setMessages 在 updateSessionMessages 之前调用）
-              const originalUrl = att.url || att.tempUrl;
-              const isBlobUrl = originalUrl?.startsWith('blob:');
+              const originalUrl = preferredUrl || att.url || att.tempUrl;
 
               return {
                 ...att,

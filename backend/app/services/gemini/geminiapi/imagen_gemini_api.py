@@ -13,6 +13,7 @@ from typing import Dict, Any, List, Optional
 
 from ..base.imagen_base import BaseImageGenerator
 from ..client_pool import get_client_pool
+from ..common.config_builder import ConfigBuilder
 from ....core.sdk_executor import run_in_sdk_thread
 from ..base.imagen_common import (
     validate_aspect_ratio,
@@ -226,6 +227,10 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
         number_of_images = min(max(kwargs.get('number_of_images', 1), 1), 8)
         enhance_prompt = kwargs.get('enhance_prompt', False)
         enhance_prompt_model = kwargs.get('enhance_prompt_model')
+        enhance_prompt_thinking_level = (
+            kwargs.get('enhance_prompt_thinking_level')
+            or kwargs.get('enhancePromptThinkingLevel')
+        )
 
         image_style = kwargs.get('image_style')
         effective_prompt = prompt
@@ -236,7 +241,11 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
         enhanced_prompt_text = None
         if enhance_prompt:
             try:
-                enhanced = await self._enhance_prompt(effective_prompt, enhance_prompt_model)
+                enhanced = await self._enhance_prompt(
+                    effective_prompt,
+                    enhance_prompt_model,
+                    thinking_level=enhance_prompt_thinking_level,
+                )
                 if enhanced:
                     logger.info(f"[GeminiAPIImageGenerator] ✅ Enhanced prompt (len={len(enhanced)})")
                     enhanced_prompt_text = enhanced
@@ -339,20 +348,31 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
                             })
         return images
 
-    async def _enhance_prompt(self, prompt: str, model_hint: str = None) -> str:
+    async def _enhance_prompt(
+        self,
+        prompt: str,
+        model_hint: str = None,
+        thinking_level: Optional[str] = None,
+    ) -> str:
         """Two-stage prompt enhancement using a text model."""
         enhance_model = model_hint or 'gemini-2.5-flash'
         self._ensure_initialized()
         try:
-            response = self._client.models.generate_content(
-                model=enhance_model,
-                contents=[
+            request_kwargs: Dict[str, Any] = {
+                "model": enhance_model,
+                "contents": [
                     f"You are a professional image generation prompt enhancer. "
                     f"Rewrite the following prompt to be more direct, specific, and visually actionable. "
                     f"Return ONLY the enhanced prompt text, no explanations.\n\n"
                     f"Original prompt: {prompt}"
                 ],
-            )
+            }
+            if ConfigBuilder.normalize_thinking_level_name(thinking_level):
+                request_kwargs["config"] = ConfigBuilder.build_generate_config_with_tools(
+                    enable_thinking=True,
+                    thinking_level=thinking_level,
+                )
+            response = self._client.models.generate_content(**request_kwargs)
             if response.text:
                 return response.text.strip()
         except Exception as e:

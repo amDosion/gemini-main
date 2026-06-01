@@ -22,14 +22,15 @@ async def execute_agent_node(
     input_packets: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     from ....models.db_models import AgentRegistry
+    from sqlalchemy import func
 
-    agent_id = node_data.get("agent_id") or node_data.get("agentId") or ""
-    agent_name = node_data.get("agent_name") or node_data.get("agentName") or ""
+    agent_id = str(node_data.get("agent_id") or node_data.get("agentId") or "").strip()
+    agent_name = str(node_data.get("agent_name") or node_data.get("agentName") or "").strip()
     agent = None
     user_id = engine._get_workflow_user_id()
 
     if agent_id:
-        cache_key = (user_id, str(agent_id).strip())
+        cache_key = (user_id, agent_id)
         agent = engine._agent_cache_by_id.get(cache_key)
         if not agent:
             query = engine.db.query(AgentRegistry).filter(
@@ -43,15 +44,17 @@ async def execute_agent_node(
                 engine._agent_cache_by_id[cache_key] = agent
 
     if not agent and agent_name:
-        normalized_name = str(agent_name or "").strip().lower()
+        normalized_name = agent_name.lower()
         cache_key = (user_id, normalized_name)
         agent = engine._agent_cache_by_name.get(cache_key)
-        if not agent and user_id:
-            agent = engine.db.query(AgentRegistry).filter(
-                AgentRegistry.user_id == user_id,
-                AgentRegistry.name == agent_name,
+        if not agent:
+            query = engine.db.query(AgentRegistry).filter(
+                func.lower(AgentRegistry.name) == normalized_name,
                 AgentRegistry.status == "active",
-            ).first()
+            )
+            if user_id:
+                query = query.filter(AgentRegistry.user_id == user_id)
+            agent = query.first()
             if agent:
                 engine._agent_cache_by_name[cache_key] = agent
 
@@ -209,21 +212,6 @@ async def execute_agent_node(
         or "chat"
     ).strip()
     normalized_agent_task_type = str(agent_task_type or "").strip().lower().replace("_", "-")
-
-    if not has_explicit_task_type and normalized_agent_task_type == "image-edit":
-        reference_image_hint = (
-            node_data.get("agentReferenceImageUrl")
-            or node_data.get("agent_reference_image_url")
-            or ""
-        )
-        if not str(reference_image_hint or "").strip():
-            logger.info(
-                "[WorkflowEngine] Agent '%s' node '%s' defaulted to image-edit without reference image; fallback to chat",
-                agent.name,
-                node_id,
-            )
-            agent_task_type = "chat"
-            normalized_agent_task_type = "chat"
 
     explicit_reference_image_url = (
         node_data.get("agentReferenceImageUrl")
@@ -494,14 +482,17 @@ async def execute_agent_node(
 
         latest_input = previous_text
         if normalized_agent_task_type == "image-edit":
-            ref_url = (
-                node_data.get("agentReferenceImageUrl")
-                or node_data.get("agent_reference_image_url")
-                or ""
+            reference_image_url = engine._resolve_agent_reference_image_url(
+                node_data=node_data,
+                context=context,
+                initial_input=initial_input,
+                input_packets=input_packets,
             )
-            if ref_url and ref_url.strip():
-                resolved_ref = context.resolve_template(ref_url) if "{{" in ref_url else ref_url
-                tool_args["image_url"] = str(resolved_ref).strip()
+            if not reference_image_url:
+                raise ValueError(
+                    f"图片编辑节点 {node_id} 缺少参考图，请配置 agentReferenceImageUrl 或在上游提供 imageUrl"
+                )
+            tool_args["image_url"] = str(reference_image_url).strip()
             edit_prompt = (
                 node_data.get("agentEditPrompt")
                 or node_data.get("agent_edit_prompt")
@@ -611,10 +602,12 @@ async def execute_agent_node(
             "resolution": "resolution",
             "durationSeconds": "duration_seconds",
             "videoExtensionCount": "video_extension_count",
+            "videoInputStrategy": "video_input_strategy",
             "negativePrompt": "negative_prompt",
             "seed": "seed",
             "promptExtend": "prompt_extend",
             "generateAudio": "generate_audio",
+            "audioUrl": "audio_url",
             "subtitleMode": "subtitle_mode",
             "subtitleLanguage": "subtitle_language",
             "subtitleScript": "subtitle_script",
@@ -644,6 +637,8 @@ async def execute_agent_node(
             "agent_video_duration_seconds": "duration_seconds",
             "agentVideoExtensionCount": "video_extension_count",
             "agent_video_extension_count": "video_extension_count",
+            "agentVideoInputStrategy": "video_input_strategy",
+            "agent_video_input_strategy": "video_input_strategy",
             "agentNegativePrompt": "negative_prompt",
             "agent_negative_prompt": "negative_prompt",
             "agentSeed": "seed",
@@ -652,6 +647,8 @@ async def execute_agent_node(
             "agent_prompt_extend": "prompt_extend",
             "agentGenerateAudio": "generate_audio",
             "agent_generate_audio": "generate_audio",
+            "agentAudioUrl": "audio_url",
+            "agent_audio_url": "audio_url",
             "agentSubtitleMode": "subtitle_mode",
             "agent_subtitle_mode": "subtitle_mode",
             "agentSubtitleLanguage": "subtitle_language",
@@ -719,6 +716,22 @@ async def execute_agent_node(
             normalized_video_mask = engine._extract_first_image_url(resolved_video_mask)
             if normalized_video_mask:
                 tool_args["video_mask_image"] = normalized_video_mask
+        raw_audio_url = (
+            node_data.get("agentAudioUrl")
+            or node_data.get("agent_audio_url")
+            or ""
+        )
+        if str(raw_audio_url or "").strip():
+            resolved_audio = (
+                context.resolve_template(raw_audio_url)
+                if isinstance(raw_audio_url, str) and "{{" in raw_audio_url
+                else raw_audio_url
+            )
+            normalized_audio = engine._extract_first_audio_url(resolved_audio)
+            if normalized_audio:
+                tool_args["audio_url"] = normalized_audio
+            elif isinstance(resolved_audio, str) and resolved_audio.strip():
+                tool_args["audio_url"] = resolved_audio.strip()
         if engine._to_bool(tool_args.get("continue_from_previous_last_frame"), default=False):
             tool_args["use_last_frame_bridge"] = True
 

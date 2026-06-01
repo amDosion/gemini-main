@@ -6,8 +6,11 @@
 
 import React from 'react';
 import { AlertCircle, Bot, Crop, Layers, Sparkles, User } from 'lucide-react';
-import { Message, Role, ModelConfig } from '../../../types/types';
+import { Attachment, Message, Role, ModelConfig } from '../../../types/types';
 import { ThinkingBlock } from '../../message/ThinkingBlock';
+import { CachedImage } from '../../common/CachedImage';
+import { getPreferredImageAttachmentUrl } from '../../../utils/attachmentUrl';
+import { getImageHistoryAttachmentPreviewUrl } from '../../common/imageHistorySidebarHelpers';
 
 export interface MaskEditSidebarProps {
   scrollRef: React.RefObject<HTMLDivElement | null>;
@@ -16,6 +19,7 @@ export interface MaskEditSidebarProps {
   loadingState: string;
   activeImageUrl: string | null;
   setActiveImageUrl: React.Dispatch<React.SetStateAction<string | null>>;
+  setActiveAttachments: React.Dispatch<React.SetStateAction<Attachment[]>>;
   displayedThinkingContent: string;
   isThinkingOpen: boolean;
   setIsThinkingOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -28,6 +32,7 @@ export const MaskEditSidebar: React.FC<MaskEditSidebarProps> = ({
   loadingState,
   activeImageUrl,
   setActiveImageUrl,
+  setActiveAttachments,
   displayedThinkingContent,
   isThinkingOpen,
   setIsThinkingOpen,
@@ -56,30 +61,46 @@ export const MaskEditSidebar: React.FC<MaskEditSidebarProps> = ({
               }`}
             >
               {msg.content && <p className="mb-2">{msg.content}</p>}
-              {msg.attachments
-                ?.filter((att) => att.url && att.url.length > 0)
-                .map((att, idx) => (
+              {msg.attachments?.map((att, idx) => {
+                const previewId = att.id || `${msg.id}-${idx}`;
+                const sourceAttachment = att.id ? att : { ...att, id: previewId };
+                const imageUrl = getImageHistoryAttachmentPreviewUrl(
+                  sourceAttachment,
+                  previewId,
+                  getPreferredImageAttachmentUrl(sourceAttachment)
+                );
+                if (!imageUrl) return null;
+                return (
                   <div
                     key={idx}
-                    onClick={() => setActiveImageUrl(att.url || null)}
+                    onClick={() => {
+                      setActiveAttachments([sourceAttachment]);
+                      setActiveImageUrl(imageUrl);
+                    }}
                     className={`relative group mt-1 rounded-lg overflow-hidden border cursor-pointer transition-all ${
-                      activeImageUrl === att.url
+                      activeImageUrl === imageUrl
                         ? 'ring-2 ring-purple-500 border-transparent'
                         : 'border-slate-700 hover:border-slate-500'
                     }`}
                   >
-                    <img
-                      src={att.url}
+                    <CachedImage
+                      source={{
+                        ...sourceAttachment,
+                        attachmentId: previewId,
+                        url: imageUrl,
+                      }}
+                      src={imageUrl}
                       className="w-full h-32 object-cover bg-slate-900"
                       alt="thumbnail"
                     />
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                      {activeImageUrl === att.url && (
+                      {activeImageUrl === imageUrl && (
                         <div className="bg-purple-500 w-2 h-2 rounded-full absolute top-2 right-2 shadow-sm" />
                       )}
                     </div>
                   </div>
-                ))}
+                );
+              })}
               {msg.isError && (
                 <div className="flex items-center gap-2 text-red-400 text-xs mt-1">
                   <AlertCircle size={12} /> Error generating

@@ -3,9 +3,14 @@ import { ApiProtocol } from '../types/types';
 import { llmService } from '../services/llmService';
 import { configService, ActiveAppConfig, FullSettings } from '../services/configurationService';
 import { ConfigProfile } from '../services/db';
-import { getAccessToken } from '../services/apiClient';
 import { getErrorMessage } from '../utils/errorMessage';
 import { debounce } from '../utils/debounce';
+import { clearEnhancePromptModelsCache } from './useEnhancePromptModels';
+import {
+  capturePrivateCacheLifecycleSnapshot,
+  isPrivateCacheLifecycleSnapshotCurrent,
+} from '../services/privateCacheInvalidation';
+import { usePrivateCacheScopeRevision } from './usePrivateCacheScopeRevision';
 
 export interface AppConfig extends ActiveAppConfig {
   dashscopeApiKey: string;
@@ -96,24 +101,40 @@ export const useSettings = (initialData?: {
   const profileCacheFingerprintRef = useRef(
     buildProfileCacheFingerprint(initialData?.activeProfile || null)
   );
+  const refreshSeqRef = useRef(0);
+  const latestInitialDataRef = useRef<typeof initialData>(initialData);
+  const appliedInitialDataRef = useRef<typeof initialData>(initialData);
 
-  // ✅ 修复：使用 ref 追踪是否已从 initialData 初始化，避免覆盖后续的状态更新
-  const isInitializedFromDataRef = useRef(false);
-
-  // ✅ 修复：只在首次加载时从 initialData 设置 fullSettings，不覆盖后续更新
   useEffect(() => {
-    // 只在以下情况下初始化：
-    // 1. initialData 存在
-    // 2. fullSettings 为 null（首次加载）
-    // 3. 尚未从 initialData 初始化过
-    if (initialData && !fullSettings && !isInitializedFromDataRef.current) {
+    latestInitialDataRef.current = initialData;
+  }, [initialData]);
+
+  usePrivateCacheScopeRevision(() => {
+    refreshSeqRef.current += 1;
+    appliedInitialDataRef.current = latestInitialDataRef.current;
+    profileCacheFingerprintRef.current = buildProfileCacheFingerprint(null);
+    setFullSettings(null);
+    setCacheTimestamp(null);
+    llmService.setConfig('', '', null, '');
+    llmService.clearModelCache();
+    clearEnhancePromptModelsCache();
+  });
+
+  // ✅ 只接收当前用户 scope 下的新 initialData；scope 切换后同一个旧对象不会被重新灌回
+  useEffect(() => {
+    if (
+      initialData &&
+      !fullSettings &&
+      appliedInitialDataRef.current !== initialData
+    ) {
       setFullSettings({
         profiles: initialData.profiles,
         activeProfileId: initialData.activeProfileId,
         activeProfile: initialData.activeProfile,
         dashscopeKey: initialData.dashscopeKey,
       });
-      isInitializedFromDataRef.current = true;
+      appliedInitialDataRef.current = initialData;
+      profileCacheFingerprintRef.current = buildProfileCacheFingerprint(initialData.activeProfile);
     }
   }, [initialData, fullSettings]);
 
@@ -175,6 +196,7 @@ export const useSettings = (initialData?: {
   const invalidateProviderCaches = async (providerIds: Array<string | null | undefined>) => {
     // 当前页内存缓存立刻清理
     llmService.clearModelCache();
+    clearEnhancePromptModelsCache();
 
     const targets = Array.from(
       new Set(providerIds.map((id) => String(id || '').trim()).filter(Boolean))
@@ -200,8 +222,19 @@ export const useSettings = (initialData?: {
 
   // Declare refreshSettings function without authentication checks
   const refreshSettings = useCallback(async () => {
+    const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
+    const seq = ++refreshSeqRef.current;
+
     try {
       const data = await configService.getFullSettings();
+
+      if (
+        seq !== refreshSeqRef.current ||
+        !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
+      ) {
+        return;
+      }
+
       setFullSettings(data);
       setCacheTimestamp(Date.now()); // Update timestamp after successful fetch
 
@@ -210,6 +243,7 @@ export const useSettings = (initialData?: {
       const profileChanged = profileCacheFingerprintRef.current !== nextFingerprint;
       if (profileChanged) {
         llmService.clearModelCache();
+        clearEnhancePromptModelsCache();
         profileCacheFingerprintRef.current = nextFingerprint;
       }
 
@@ -255,12 +289,6 @@ export const useSettings = (initialData?: {
   // Check cache expiry on window focus
   useEffect(() => {
     const handleFocus = () => {
-      // ✅ 检查用户是否已登录（通过检查 token）
-      if (!getAccessToken()) {
-        // 用户未登录，不刷新设置
-        return;
-      }
-
       // Only refresh if cache is expired and we have settings loaded
       if (fullSettings && isCacheExpired(cacheTimestamp)) {
         refreshSettings();
@@ -279,8 +307,6 @@ export const useSettings = (initialData?: {
     channelRef.current = createSyncChannel();
 
     channelRef.current.onmessage(() => {
-      // 静默同步：收到通知即刷新（仅在已登录状态下）
-      if (!getAccessToken()) return;
       if (debouncedRefreshRef.current) {
         debouncedRefreshRef.current();
       } else {
@@ -347,6 +373,7 @@ export const useSettings = (initialData?: {
     // 当前激活配置发生变化时，先清理模型缓存，避免 Header 仍显示旧模型列表
     if (autoActivate || activeProfileId === profile.id) {
       llmService.clearModelCache();
+      clearEnhancePromptModelsCache();
     }
 
     try {
@@ -426,6 +453,7 @@ export const useSettings = (initialData?: {
       profileForLlm.providerId
     );
     llmService.clearModelCache();
+    clearEnhancePromptModelsCache();
     profileCacheFingerprintRef.current = buildProfileCacheFingerprint(profileForLlm);
 
     try {

@@ -77,11 +77,13 @@
           "description": "识别字段并输出标准化分析底稿",
           "icon": "🧩",
           "iconColor": "bg-indigo-500",
-          "agentName": "数据报表分析师",
           "agentTaskType": "data-analysis",
           "agentFileUrl": "{{input-file-data.output.fileUrl}}",
           "inputMapping": "目标：{{input-text-data.output.text}}\n文件：{{input-file-data.output.fileUrl}}",
-          "instructions": "自动识别表头和字段别名，统一映射并输出底稿。"
+          "instructions": "自动识别表头和字段别名，统一映射并输出底稿。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -113,9 +115,12 @@
           "description": "核对字段映射与统计口径",
           "icon": "📈",
           "iconColor": "bg-cyan-500",
-          "agentName": "数据报表分析师",
           "inputMapping": "底稿：{{agent-parse-data.output.text}}",
-          "instructions": "输出数据可靠性评分、异常和样本风险。"
+          "instructions": "输出数据可靠性评分、异常和样本风险。",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -131,8 +136,11 @@
           "description": "审阅否定词/加投词与预算建议",
           "icon": "📊",
           "iconColor": "bg-blue-500",
-          "agentName": "亚马逊广告分析师",
-          "inputMapping": "底稿：{{agent-parse-data.output.text}}\n目标：{{input-text-data.output.text}}"
+          "inputMapping": "底稿：{{agent-parse-data.output.text}}\n目标：{{input-text-data.output.text}}",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-ad-analyst"
         }
       },
       {
@@ -148,8 +156,11 @@
           "description": "结合目标给出执行节奏",
           "icon": "🧮",
           "iconColor": "bg-violet-500",
-          "agentName": "运营策略顾问",
-          "inputMapping": "底稿：{{agent-parse-data.output.text}}\n目标：{{input-text-data.output.text}}"
+          "inputMapping": "底稿：{{agent-parse-data.output.text}}\n目标：{{input-text-data.output.text}}",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {
@@ -181,9 +192,12 @@
           "description": "输出可执行动作 + 阈值 + 回滚条件",
           "icon": "✅",
           "iconColor": "bg-emerald-500",
-          "agentName": "运营策略顾问",
           "inputMapping": "并行汇总：{{merge-data.output.text}}",
-          "instructions": "输出可执行清单：否定词、加投词、预算动作、风险阈值。"
+          "instructions": "输出可执行清单：否定词、加投词、预算动作、风险阈值。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {

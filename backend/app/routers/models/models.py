@@ -35,6 +35,8 @@ from ...services.common.google_model_catalog import (
     get_static_google_vertex_model_ids_for_mode,
     is_deprecated_google_vertex_image_model,
 )
+from ...services.common.tongyi_model_catalog import get_static_tongyi_media_model_entries
+from ...services.common.openai_model_catalog import get_static_openai_media_model_entries
 from ...core.mode_method_mapper import get_mode_catalog
 from ..system.admin import require_admin_user
 
@@ -42,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/models", tags=["models"])
 
-MODEL_CAPABILITY_CACHE_VERSION = "2026-03-05-v2"
+MODEL_CAPABILITY_CACHE_VERSION = "2026-05-27-tongyi-media-mode-routing-v1"
 UNSUPPORTED_GENERAL_MODEL_KEYWORDS = [
     "embedding",
     "aqa",
@@ -52,6 +54,16 @@ UNSUPPORTED_GENERAL_MODEL_KEYWORDS = [
     "transcription",
     "whisper",
 ]
+MODE_DEFAULT_MODEL_IDS = {
+    "image-gen": "gpt-image-2",
+    "image-chat-edit": "gpt-image-2",
+    "image-edit": "gpt-image-2",
+    "video-gen": "sora-2",
+    # The Google Expand panel defaults to ratio outpainting. That must start on
+    # the Imagen edit/capability model; upscale has its own sub-mode/model.
+    "image-outpainting": "imagen-3.0-capability-001",
+    "image-upscale": "imagen-4.0-upscale-preview",
+}
 
 
 # Simple in-memory cache
@@ -68,6 +80,29 @@ _model_cache: TTLCache = TTLCache(maxsize=200, ttl=_cache_ttl)
 
 # ==================== Helper Functions ====================
 
+def _extract_hidden_model_ids(profile: Any) -> set[str]:
+    if not profile or not hasattr(profile, "hidden_models"):
+        return set()
+    raw_hidden = profile.hidden_models
+    if not isinstance(raw_hidden, list):
+        return set()
+    return {
+        model_id
+        for model_id in raw_hidden
+        if isinstance(model_id, str) and model_id
+    }
+
+
+def _apply_hidden_model_filter(
+    models: List[ModelConfig],
+    hidden_ids: set[str],
+    include_hidden: bool = False,
+) -> List[ModelConfig]:
+    if include_hidden or not hidden_ids:
+        return models
+    return [model for model in models if model.id not in hidden_ids]
+
+
 def _matches_model_list(model_id: str, model_list: list) -> bool:
     """检查模型是否匹配静态模型列表（支持前缀匹配）"""
     lower_id = model_id.lower()
@@ -82,6 +117,73 @@ def _matches_model_list(model_id: str, model_list: list) -> bool:
 def _is_gemini_image_model_id(model_id: str) -> bool:
     lower_id = model_id.lower()
     return lower_id.startswith("gemini-") and "image" in lower_id
+
+
+def _is_openai_gpt_image_model_id(model_id: str) -> bool:
+    lower_id = model_id.lower()
+    return lower_id.startswith("gpt-image") or lower_id.startswith("chatgpt-image")
+
+
+def _is_tongyi_image_generation_model_id(model_id: str) -> bool:
+    lower_id = model_id.lower()
+    if lower_id.startswith("qwen-image-edit"):
+        return False
+    return (
+        lower_id.startswith("qwen-image")
+        or lower_id.startswith("wan2.7-image")
+        or lower_id.startswith("wanx")
+        or "-t2i" in lower_id
+        or "z-image" in lower_id
+    )
+
+
+def _is_tongyi_image_edit_model_id(model_id: str) -> bool:
+    lower_id = model_id.lower()
+    return (
+        lower_id.startswith("qwen-image-edit")
+        or lower_id.startswith("qwen-image-2.0")
+        or lower_id.startswith("wan2.7-image")
+        or lower_id == "wan2.6-image"
+    )
+
+
+def _is_tongyi_outpainting_model_id(model_id: str) -> bool:
+    return model_id.lower() == "image-out-painting"
+
+
+def _is_tongyi_virtual_tryon_model_id(model_id: str) -> bool:
+    lower_id = model_id.lower()
+    return lower_id == "aitryon-plus" or "tryon" in lower_id or "try-on" in lower_id
+
+
+def _is_tongyi_supported_audio_model_id(model_id: str) -> bool:
+    lower_id = model_id.lower()
+    if "realtime" in lower_id or lower_id.startswith(("qwen3-tts-vc", "qwen3-tts-vd")):
+        return False
+    return (
+        lower_id.startswith("qwen-tts")
+        or lower_id.startswith("qwen3-tts-flash")
+        or lower_id.startswith("qwen3-tts-instruct-flash")
+    )
+
+
+def _is_tongyi_generation_only_image_model_id(model_id: str) -> bool:
+    return (
+        _is_tongyi_image_generation_model_id(model_id)
+        and not _is_tongyi_image_edit_model_id(model_id)
+    )
+
+
+def _is_tongyi_video_generation_model_id(model_id: str) -> bool:
+    lower_id = model_id.lower()
+    return (
+        "happyhorse" in lower_id
+        or lower_id.startswith("wan2.7-t2v")
+        or lower_id.startswith("wan2.7-i2v")
+        or lower_id.startswith("wan2.7-r2v")
+        or lower_id.startswith("wan2.7-videoedit")
+        or lower_id.startswith("wan2.7-video-edit")
+    )
 
 
 def filter_models_by_mode(models: List[ModelConfig], mode: str) -> List[ModelConfig]:
@@ -109,12 +211,18 @@ def filter_models_by_mode(models: List[ModelConfig], mode: str) -> List[ModelCon
         should_include = False
 
         if mode == 'video-gen':
-            # 视频生成：包含 veo, sora, luma, video
-            should_include = any(keyword in model_id for keyword in ['veo', 'sora', 'luma', 'video'])
+            # 视频生成：包含 veo, sora, luma, video 以及 DashScope Wan/HappyHorse 视频模型
+            should_include = (
+                any(keyword in model_id for keyword in ['veo', 'sora', 'luma', 'video'])
+                or _is_tongyi_video_generation_model_id(model.id)
+            )
 
         elif mode == 'audio-gen':
-            # 音频生成：包含 tts, audio, speech
-            should_include = any(keyword in model_id for keyword in ['tts', 'audio', 'speech'])
+            # 音频生成：Tongyi 只暴露当前后端可执行的非实时 Qwen TTS。
+            if model_id.startswith("qwen") or model_id.startswith("minimax/"):
+                should_include = _is_tongyi_supported_audio_model_id(model.id)
+            else:
+                should_include = any(keyword in model_id for keyword in ['tts', 'audio', 'speech'])
 
         elif mode == 'image-gen':
             # 纯文生图模式：排除编辑、放大、分割、试衣、重构模型
@@ -137,15 +245,22 @@ def filter_models_by_mode(models: List[ModelConfig], mode: str) -> List[ModelCon
                 else:
                     # 专门的图像生成模型
                     is_specialized = any(keyword in model_id for keyword in [
-                        'dall', 'wanx', 'flux', 'midjourney', '-t2i', 'z-image'
+                        'gpt-image', 'chatgpt-image', 'flux', 'midjourney'
                     ]) or ('imagen' in model_id and 'generate' in model_id)
+                    is_tongyi_image_generation = _is_tongyi_image_generation_model_id(model.id)
                     # ✅ 支持 Grok Imagine 模型 (排除 edit 和 video)
                     is_grok_imagine = 'imagine' in model_id and 'edit' not in model_id and 'video' not in model_id
                     # ✅ 支持 Gemini Image 模型
                     is_gemini_image = 'gemini' in model_id and 'image' in model_id
                     # ✅ 支持 Nano-Banana 系列
                     is_nano_banana = 'nano-banana' in model_id
-                    should_include = is_specialized or is_gemini_image or is_nano_banana or is_grok_imagine
+                    should_include = (
+                        is_specialized
+                        or is_tongyi_image_generation
+                        or is_gemini_image
+                        or is_nano_banana
+                        or is_grok_imagine
+                    )
 
         elif mode == 'image-upscale':
             # 图像放大模式：只包含放大模型
@@ -163,15 +278,22 @@ def filter_models_by_mode(models: List[ModelConfig], mode: str) -> List[ModelCon
             )
 
         elif mode == 'image-outpainting':
-            # 图像扩展模式由静态 JSON 显式声明，避免把普通 vision/segmentation 模型混入。
-            should_include = model.id in mode_static_model_ids
+            # Google uses explicit Vertex expand models; OpenAI uses GPT Image edit
+            # semantics for prompt-driven image extension.
+            should_include = (
+                model.id in mode_static_model_ids
+                or _is_openai_gpt_image_model_id(model.id)
+                or _is_tongyi_outpainting_model_id(model.id)
+            )
 
         elif mode == 'image-recontext':
             # Recontext 不能继续暴露 Imagen edit/capability 模型；它会走 inpaint 并要求 mask。
             # 官方迁移目标为 gemini-2.5-flash-image。
             should_include = (
                 model.id in mode_static_model_ids or
-                _is_gemini_image_model_id(model.id)
+                _is_gemini_image_model_id(model.id) or
+                _is_openai_gpt_image_model_id(model.id) or
+                _is_tongyi_image_edit_model_id(model.id)
             )
 
         elif mode == 'image-background-edit':
@@ -180,7 +302,9 @@ def filter_models_by_mode(models: List[ModelConfig], mode: str) -> List[ModelCon
             # Gemini image models here; those belong to chat-edit/recontext.
             should_include = (
                 model.id in mode_static_model_ids or
-                _matches_model_list(model.id, IMAGEN_EDIT_MODELS)
+                _matches_model_list(model.id, IMAGEN_EDIT_MODELS) or
+                _is_openai_gpt_image_model_id(model.id) or
+                _is_tongyi_image_edit_model_id(model.id)
             )
 
         elif mode == 'image-mask-edit':
@@ -189,7 +313,9 @@ def filter_models_by_mode(models: List[ModelConfig], mode: str) -> List[ModelCon
             # through chat/generate_content and cannot preserve mask semantics.
             should_include = (
                 model.id in mode_static_model_ids or
-                _matches_model_list(model.id, IMAGEN_EDIT_MODELS)
+                _matches_model_list(model.id, IMAGEN_EDIT_MODELS) or
+                _is_openai_gpt_image_model_id(model.id) or
+                _is_tongyi_image_edit_model_id(model.id)
             )
 
         elif mode in ['image-edit', 'image-chat-edit', 'image-inpainting']:
@@ -197,13 +323,27 @@ def filter_models_by_mode(models: List[ModelConfig], mode: str) -> List[ModelCon
             # ✅ 优先包含 Imagen 编辑专用模型
             if _matches_model_list(model.id, IMAGEN_EDIT_MODELS):
                 should_include = True
-            elif 'veo' in model_id or not caps.vision:
+            elif _is_tongyi_image_edit_model_id(model.id):
+                should_include = True
+            elif 'gpt-image' in model_id or 'chatgpt-image' in model_id:
+                should_include = True
+            elif (
+                'veo' in model_id
+                or 'sora' in model_id
+                or _is_tongyi_outpainting_model_id(model.id)
+                or _is_tongyi_virtual_tryon_model_id(model.id)
+                or _is_tongyi_video_generation_model_id(model.id)
+                or _is_tongyi_supported_audio_model_id(model.id)
+                or model_id.startswith("qwen")
+                or not caps.vision
+            ):
                 should_include = False
             else:
                 # 排除纯文生图模型
                 is_text_to_image_only = any([
                     'wanx' in model_id, '-t2i' in model_id, 'z-image-turbo' in model_id,
                     'dall' in model_id, 'flux' in model_id, 'midjourney' in model_id,
+                    _is_tongyi_generation_only_image_model_id(model.id),
                     _matches_model_list(model.id, IMAGEN_GENERATE_MODELS),
                     _matches_model_list(model.id, IMAGE_UPSCALE_MODELS),
                 ])
@@ -215,25 +355,39 @@ def filter_models_by_mode(models: List[ModelConfig], mode: str) -> List[ModelCon
                 should_include = True
             elif 'try-on' in model_id or 'tryon' in model_id:
                 should_include = True
+            elif _is_tongyi_virtual_tryon_model_id(model.id):
+                should_include = True
+            elif _is_openai_gpt_image_model_id(model.id):
+                should_include = True
             else:
                 # 回退到有视觉能力的模型
-                should_include = (caps.vision and 'veo' not in model_id and
-                                 not _matches_model_list(model.id, IMAGE_UPSCALE_MODELS) and
-                                 not _matches_model_list(model.id, IMAGE_SEGMENTATION_MODELS))
+                should_include = (
+                    caps.vision
+                    and 'veo' not in model_id
+                    and 'sora' not in model_id
+                    and not model_id.startswith("qwen")
+                    and not _is_tongyi_outpainting_model_id(model.id)
+                    and not _is_tongyi_image_generation_model_id(model.id)
+                    and not _is_tongyi_video_generation_model_id(model.id)
+                    and not _matches_model_list(model.id, IMAGE_UPSCALE_MODELS)
+                    and not _matches_model_list(model.id, IMAGE_SEGMENTATION_MODELS)
+                )
 
         elif mode == 'pdf-extract':
             # PDF 提取：排除专用媒体生成模型
-            excluded_keywords = ['veo', 'tts', 'wanx', 'wan2', 'imagen', '-t2i', 'z-image',
-                               'segmentation', 'upscale', 'try-on']
+            excluded_keywords = ['veo', 'sora', 'tts', 'wanx', 'wan2', 'qwen-image', 'imagen', 'gpt-image', 'chatgpt-image', 'dall', '-t2i', 'z-image',
+                               'segmentation', 'upscale', 'try-on', 'happyhorse']
             is_media = any(keyword in model_id for keyword in excluded_keywords)
+            is_media = is_media or _is_tongyi_video_generation_model_id(model.id)
             is_unsupported_general = any(keyword in model_id for keyword in UNSUPPORTED_GENERAL_MODEL_KEYWORDS)
             should_include = not is_media and not is_unsupported_general
 
         elif mode in ['chat', 'multi-agent'] or not mode:
             # 标准聊天：排除所有专用媒体模型
-            excluded_keywords = ['veo', 'tts', 'wanx', 'wan2', '-t2i', 'z-image', 'imagen',
-                               'segmentation', 'upscale', 'try-on', 'recontext']
+            excluded_keywords = ['veo', 'sora', 'tts', 'wanx', 'wan2', 'qwen-image', 'gpt-image', 'chatgpt-image', 'dall', '-t2i', 'z-image', 'imagen',
+                               'segmentation', 'upscale', 'try-on', 'recontext', 'happyhorse']
             is_media = any(keyword in model_id for keyword in excluded_keywords)
+            is_media = is_media or _is_tongyi_video_generation_model_id(model.id)
             is_unsupported_general = any(keyword in model_id for keyword in UNSUPPORTED_GENERAL_MODEL_KEYWORDS)
             should_include = not is_media and not is_unsupported_general
 
@@ -507,15 +661,62 @@ def _merge_google_vertex_static_models(provider: str, models: List[ModelConfig])
     if provider != "google":
         return models
 
-    existing_ids = {m.id for m in models}
-    merged = list(models)
+    existing_by_id = {m.id: m for m in models}
+    merged: List[ModelConfig] = []
+    used_ids: set[str] = set()
 
     for model_id in get_static_google_vertex_models():
-        if model_id in existing_ids:
-            continue
-        merged.append(build_model_config("google", model_id))
-        existing_ids.add(model_id)
+        if model_id in existing_by_id:
+            merged.append(existing_by_id[model_id])
+        else:
+            merged.append(build_model_config("google", model_id))
+        used_ids.add(model_id)
 
+    for model in models:
+        if model.id in used_ids:
+            continue
+        merged.append(model)
+
+    return merged
+
+
+def _merge_tongyi_static_media_models(provider: str, models: List[ModelConfig]) -> List[ModelConfig]:
+    if provider not in {"tongyi", "qwen"}:
+        return models
+
+    existing_by_id = {m.id: m for m in models}
+    merged: List[ModelConfig] = list(models)
+    for entry in get_static_tongyi_media_model_entries():
+        model_id = entry["id"]
+        if model_id in existing_by_id:
+            continue
+        merged.append(
+            build_model_config(
+                "tongyi",
+                model_id,
+                display_name=entry.get("name") or model_id,
+            )
+        )
+    return merged
+
+
+def _merge_openai_static_media_models(provider: str, models: List[ModelConfig]) -> List[ModelConfig]:
+    if provider != "openai":
+        return models
+
+    existing_by_id = {m.id: m for m in models}
+    merged: List[ModelConfig] = list(models)
+    for entry in get_static_openai_media_model_entries():
+        model_id = entry["id"]
+        if model_id in existing_by_id:
+            continue
+        merged.append(
+            build_model_config(
+                "openai",
+                model_id,
+                display_name=entry.get("name") or model_id,
+            )
+        )
     return merged
 
 
@@ -534,7 +735,11 @@ def _build_mode_catalog(
             **item,
             "has_models": len(available_models) > 0,
             "available_model_count": len(available_models),
-            "default_model_id": _select_default_model_id(available_models, preferred_model_ids),
+            "default_model_id": _select_default_model_id_for_mode(
+                available_models,
+                preferred_model_ids,
+                filter_mode,
+            ),
         })
     return catalog_items
 
@@ -582,6 +787,21 @@ def _select_default_model_id(
     return filtered_models[0].id
 
 
+def _select_default_model_id_for_mode(
+    filtered_models: List[ModelConfig],
+    preferred_model_ids: List[str],
+    mode: Optional[str],
+) -> Optional[str]:
+    if not filtered_models:
+        return None
+
+    mode_default_id = MODE_DEFAULT_MODEL_IDS.get(str(mode or ""))
+    if mode_default_id and any(model.id == mode_default_id for model in filtered_models):
+        return mode_default_id
+
+    return _select_default_model_id(filtered_models, preferred_model_ids)
+
+
 def _resolve_mode_filtered_models(
     models: List[ModelConfig],
     mode: Optional[str],
@@ -619,7 +839,11 @@ def _resolve_mode_view(
         preferred_model_ids=preferred_model_ids,
     )
     filtered_models = _resolve_mode_filtered_models(models, mode)
-    default_model_id = _select_default_model_id(filtered_models, preferred_model_ids)
+    default_model_id = _select_default_model_id_for_mode(
+        filtered_models,
+        preferred_model_ids,
+        mode,
+    )
     return mode_catalog, filtered_models, default_model_id
 
 
@@ -675,6 +899,7 @@ def clear_cache(provider: Optional[str] = None) -> None:
 async def get_available_models(
     provider: str,
     use_cache: bool = Query(True, description="Whether to use cached models"),
+    include_hidden: bool = Query(False, description="Include models hidden from the primary model selector"),
     api_key: Optional[str] = Query(None, description="Override API key for verification requests"),
     base_url: Optional[str] = Query(None, description="Override base URL for verification requests"),
     mode: Optional[str] = Query(None, description="Filter models by app mode (chat, image-edit, image-gen, etc.)"),
@@ -708,7 +933,10 @@ async def get_available_models(
         if is_verify_request and use_cache:
             use_cache = False
 
-        logger.info(f"[Models] Getting models for {provider}, user={user_id}, use_cache={use_cache}")
+        logger.info(
+            f"[Models] Getting models for {provider}, user={user_id}, "
+            f"use_cache={use_cache}, include_hidden={include_hidden}"
+        )
         start_time = time.time()
 
         from ...services.common.cache_service import CacheService
@@ -760,6 +988,10 @@ async def get_available_models(
                     raw_saved_models=vertex_config.saved_models,
                     source=f"vertex:{vertex_config.id}"
                 )
+
+            models = _merge_google_vertex_static_models(provider, models)
+            models = _merge_tongyi_static_media_models(provider, models)
+            models = _merge_openai_static_media_models(provider, models)
             
             # 转换为字典格式（用于缓存）
             models_dict = [model.model_dump() for model in models]
@@ -795,15 +1027,24 @@ async def get_available_models(
         effective_profile = _get_effective_profile(provider, db, user_id)
         vertex_config = _get_vertex_ai_config(db, user_id) if provider == "google" else None
         preferred_model_ids = _build_preferred_model_ids(provider, effective_profile, vertex_config)
-        # 过滤用户隐藏的模型（Verify 请求跳过，显示全部模型供选择）
-        hidden_ids = set()
-        if not is_verify_request and effective_profile and hasattr(effective_profile, 'hidden_models') and effective_profile.hidden_models:
-            raw_hidden = effective_profile.hidden_models
-            if isinstance(raw_hidden, list):
-                hidden_ids = set(raw_hidden)
-            if hidden_ids:
-                models = [m for m in models if m.id not in hidden_ids]
-                logger.debug(f"[Models] Filtered {len(hidden_ids)} hidden models, {len(models)} remaining")
+        # 过滤用户隐藏的模型。增强提示词等工具模型池可显式 include_hidden，
+        # 主模型下拉仍保持 hidden 过滤。
+        hidden_ids = _extract_hidden_model_ids(effective_profile)
+        if not is_verify_request and hidden_ids:
+            before_hidden_filter = len(models)
+            models = _apply_hidden_model_filter(
+                models,
+                hidden_ids=hidden_ids,
+                include_hidden=include_hidden,
+            )
+            if include_hidden:
+                logger.debug(
+                    f"[Models] Include hidden models enabled: kept {before_hidden_filter} models"
+                )
+            else:
+                logger.debug(
+                    f"[Models] Filtered {len(hidden_ids)} hidden models, {len(models)} remaining"
+                )
 
         all_provider_models = models
 

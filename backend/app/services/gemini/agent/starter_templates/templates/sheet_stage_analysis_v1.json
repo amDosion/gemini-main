@@ -131,10 +131,10 @@
           "description": "整理字段结构、核心指标和可直接复用的字段字典",
           "icon": "🗂️",
           "iconColor": "bg-cyan-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "data-analysis",
           "inputMapping": "分析目标：{{input-text-sheet-stage-analysis.output.text}}\n\nProfile 结构化数据：{{tool-profile-sheet-stage-analysis.output.result.data.payload}}\n\n字段列表：{{tool-profile-sheet-stage-analysis.output.result.data.payload.analysis.columns}}\n\n数值摘要：{{tool-profile-sheet-stage-analysis.output.result.data.payload.analysis.numeric_summary}}",
-          "instructions": "请输出详细字段字典、关键指标层次、可能的主键/时间字段、需要额外澄清的业务口径。"
+          "instructions": "请输出详细字段字典、关键指标层次、可能的主键/时间字段、需要额外澄清的业务口径。",
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -150,10 +150,10 @@
           "description": "聚焦缺失、异常、离群和可信度问题",
           "icon": "🧪",
           "iconColor": "bg-rose-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "data-analysis",
           "inputMapping": "分析目标：{{input-text-sheet-stage-analysis.output.text}}\n\nProfile 结构化数据：{{tool-profile-sheet-stage-analysis.output.result.data.payload}}\n\n质量旗标：{{tool-profile-sheet-stage-analysis.output.result.data.payload.analysis.quality_flags}}\n\n异常摘要：{{tool-profile-sheet-stage-analysis.output.result.data.payload.analysis.outlier_summary}}\n\n相关性：{{tool-profile-sheet-stage-analysis.output.result.data.payload.analysis.correlation_summary}}",
-          "instructions": "请输出风险清单：高风险字段、异常模式、需要优先修复的数据问题、对后续分析结论的影响。"
+          "instructions": "请输出风险清单：高风险字段、异常模式、需要优先修复的数据问题、对后续分析结论的影响。",
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -235,10 +235,10 @@
           "description": "基于 sheet-stage 协议输出详细分析报告和行动建议",
           "icon": "📘",
           "iconColor": "bg-emerald-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "data-analysis",
           "inputMapping": "分析目标：{{input-text-sheet-stage-analysis.output.text}}\n\nIngest 摘要：{{tool-ingest-sheet-stage-analysis.output.text}}\n\nProfile 结构化数据：{{tool-profile-sheet-stage-analysis.output.result.data.payload}}\n\nQuery 回答：{{tool-query-sheet-stage-analysis.output.result.data.payload.answer}}\n\nExport 结果：{{tool-export-sheet-stage-analysis.output.result.data.payload.rendered}}\n\n合并上下文：{{merge-context-sheet-stage-analysis.output.text}}",
-          "instructions": "请输出详细 Markdown 报告：执行摘要、字段字典、关键指标、质量问题、异常清单、强相关关系、结论、建议动作和下一步追问。必须详细，不要只给概览。"
+          "instructions": "请输出详细 Markdown 报告：执行摘要、字段字典、关键指标、质量问题、异常清单、强相关关系、结论、建议动作和下一步追问。必须详细，不要只给概览。",
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {

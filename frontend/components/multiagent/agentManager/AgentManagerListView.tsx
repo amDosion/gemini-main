@@ -36,6 +36,26 @@ interface AgentManagerListViewProps {
   onOpenRuntimeSessions: (agent: AgentDef) => void;
 }
 
+const handleAgentDragStart = (
+  event: React.DragEvent<HTMLDivElement>,
+  agent: AgentDef,
+  isActive: boolean
+) => {
+  if (!isActive) {
+    event.preventDefault();
+    return;
+  }
+  event.dataTransfer.setData('application/reactflow', 'agent');
+  event.dataTransfer.setData(
+    'application/reactflow-node-payload',
+    JSON.stringify({
+      kind: 'agentPreset',
+      agent,
+    })
+  );
+  event.dataTransfer.effectAllowed = 'move';
+};
+
 export const AgentManagerListView: React.FC<AgentManagerListViewProps> = ({
   activeCount,
   inactiveCount,
@@ -143,7 +163,12 @@ export const AgentManagerListView: React.FC<AgentManagerListViewProps> = ({
           return (
             <div
               key={agent.id}
-              className="p-3 bg-slate-800/50 rounded-lg border border-slate-700/50 hover:border-teal-500/30 transition-colors group"
+              data-testid={`agent-drag-${agent.id}`}
+              draggable={isActive}
+              onDragStart={(event) => handleAgentDragStart(event, agent, isActive)}
+              className={`p-3 bg-slate-800/50 rounded-lg border border-slate-700/50 hover:border-teal-500/30 transition-colors group ${
+                isActive ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'
+              }`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2.5 min-w-0">

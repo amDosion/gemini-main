@@ -76,11 +76,13 @@
           "description": "解析广告报表并输出否定词/加投词初稿",
           "icon": "🧩",
           "iconColor": "bg-indigo-500",
-          "agentName": "亚马逊广告分析师",
           "agentTaskType": "data-analysis",
           "agentFileUrl": "{{input-file-ad.output.fileUrl}}",
           "inputMapping": "广告目标：{{input-text-ad.output.text}}\\n报表文件：{{input-file-ad.output.fileUrl}}\\n\\n请先完成广告优化初判：\\n1. 否定词候选\\n2. 加投词候选\\n3. 预算与竞价初始建议。",
-          "instructions": "请先自动识别表头并做字段映射（支持中英文/别名字段），至少识别：search term、impressions、clicks、spend、orders、sales。\\n如存在缺失字段，明确标记并给出降级分析策略。\\n输出结构化初判：negativeKeywords、scaleUpKeywords、budgetActions、riskNotes；每项都给出触发依据（点击、花费、ACoS、CVR等）。"
+          "instructions": "请先自动识别表头并做字段映射（支持中英文/别名字段），至少识别：search term、impressions、clicks、spend、orders、sales。\\n如存在缺失字段，明确标记并给出降级分析策略。\\n输出结构化初判：negativeKeywords、scaleUpKeywords、budgetActions、riskNotes；每项都给出触发依据（点击、花费、ACoS、CVR等）。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-ad-analyst"
         }
       },
       {
@@ -112,9 +114,12 @@
           "description": "核对字段映射、口径和异常值风险",
           "icon": "📈",
           "iconColor": "bg-cyan-500",
-          "agentName": "数据报表分析师",
           "inputMapping": "广告目标：{{input-text-ad.output.text}}\\n报表文件：{{input-file-ad.output.fileUrl}}\\n优化初判：{{agent-ad-optimize.output.text}}",
-          "instructions": "请只做“数据可靠性复核”：\n1. 字段映射是否正确（搜索词、花费、销售、订单）\n2. 统计口径是否一致（总量/均值/占比）\n3. 标注异常与样本不足风险\n4. 输出可信度评分（0-100）和风险清单\n5. 若换任意同类型 Excel，说明该流程如何自动适配（字段别名、空值、货币/百分比格式差异）"
+          "instructions": "请只做“数据可靠性复核”：\n1. 字段映射是否正确（搜索词、花费、销售、订单）\n2. 统计口径是否一致（总量/均值/占比）\n3. 标注异常与样本不足风险\n4. 输出可信度评分（0-100）和风险清单\n5. 若换任意同类型 Excel，说明该流程如何自动适配（字段别名、空值、货币/百分比格式差异）",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -130,9 +135,12 @@
           "description": "按 PPC 视角审阅否定词与加投词",
           "icon": "📊",
           "iconColor": "bg-blue-500",
-          "agentName": "亚马逊广告分析师",
           "inputMapping": "广告目标：{{input-text-ad.output.text}}\\n优化初判：{{agent-ad-optimize.output.text}}",
-          "instructions": "请只做“广告动作复核”：\n1. 否定词候选按 P0/P1 分级（是否立即执行）\n2. 加投词候选按预期收益排序\n3. 给出竞价/预算调整建议（加价/降价/暂停）\n4. 输出执行前置条件和风险提示"
+          "instructions": "请只做“广告动作复核”：\n1. 否定词候选按 P0/P1 分级（是否立即执行）\n2. 加投词候选按预期收益排序\n3. 给出竞价/预算调整建议（加价/降价/暂停）\n4. 输出执行前置条件和风险提示",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-ad-analyst"
         }
       },
       {
@@ -148,9 +156,12 @@
           "description": "从经营目标角度评估投入与回报平衡",
           "icon": "🧮",
           "iconColor": "bg-violet-500",
-          "agentName": "运营策略顾问",
           "inputMapping": "广告目标：{{input-text-ad.output.text}}\\n优化初判：{{agent-ad-optimize.output.text}}",
-          "instructions": "请只做“预算复核”：\n1. 按目标 ACoS 评估预算上/下调空间\n2. 标注可放量词与应降本词\n3. 给出 7 天预算节奏建议\n4. 输出风险阈值（何时暂停/回滚）"
+          "instructions": "请只做“预算复核”：\n1. 按目标 ACoS 评估预算上/下调空间\n2. 标注可放量词与应降本词\n3. 给出 7 天预算节奏建议\n4. 输出风险阈值（何时暂停/回滚）",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {
@@ -182,9 +193,12 @@
           "description": "校验矛盾项并给出最终可信结论",
           "icon": "✅",
           "iconColor": "bg-emerald-500",
-          "agentName": "数据报表分析师",
           "inputMapping": "并行复核汇总：{{merge-ad-review.output.text}}",
-          "instructions": "请对上游三个复核结果做一致性校验：\n1. 找出结论冲突点并解释原因\n2. 保留有数据支撑的建议，剔除弱证据建议\n3. 输出“通过/有条件通过/不通过”结论\n4. 给出最终执行前检查清单"
+          "instructions": "请对上游三个复核结果做一致性校验：\n1. 找出结论冲突点并解释原因\n2. 保留有数据支撑的建议，剔除弱证据建议\n3. 输出“通过/有条件通过/不通过”结论\n4. 给出最终执行前检查清单",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -200,9 +214,12 @@
           "description": "输出可直接落地的投放行动计划",
           "icon": "🧠",
           "iconColor": "bg-indigo-500",
-          "agentName": "运营策略顾问",
           "inputMapping": "已校验结论：{{agent-ad-validation.output.text}}",
-          "instructions": "请基于“已校验结论”输出最终执行方案：\n1. 未来 7 天行动清单（P0/P1/P2）\n2. 否定词执行顺序（含阈值）\n3. 加投词预算/竞价调整表\n4. 预期指标变化区间（ACoS/订单/花费）\n5. 复盘指标与回滚条件"
+          "instructions": "请基于“已校验结论”输出最终执行方案：\n1. 未来 7 天行动清单（P0/P1/P2）\n2. 否定词执行顺序（含阈值）\n3. 加投词预算/竞价调整表\n4. 预期指标变化区间（ACoS/订单/花费）\n5. 复盘指标与回滚条件",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {

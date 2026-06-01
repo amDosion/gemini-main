@@ -1,3 +1,9 @@
+import {
+  WORKFLOW_AGENT_TASK_TYPES,
+  normalizeWorkflowAgentTaskType,
+  type WorkflowAgentTaskType,
+} from './workflowContract';
+
 /**
  * Shared provider/model normalization for multi-agent UI.
  *
@@ -6,14 +12,7 @@
  * - Frontend does not infer model tasks from modelId.
  */
 
-export type AgentTaskType =
-  | 'chat'
-  | 'image-gen'
-  | 'image-edit'
-  | 'video-gen'
-  | 'audio-gen'
-  | 'vision-understand'
-  | 'data-analysis';
+export type AgentTaskType = WorkflowAgentTaskType;
 
 export interface ModelOption {
   id: string;
@@ -29,53 +28,20 @@ export interface ProviderModels {
   defaultModelsByTask?: Partial<Record<AgentTaskType, string>>;
 }
 
-const SUPPORTED_TASKS = new Set<AgentTaskType>([
-  'chat',
-  'image-gen',
-  'image-edit',
-  'video-gen',
-  'audio-gen',
-  'vision-understand',
-  'data-analysis',
-]);
+export const AGENT_TASK_TYPES: AgentTaskType[] = [...WORKFLOW_AGENT_TASK_TYPES];
 
-const TASK_ALIASES: Record<string, AgentTaskType> = {
-  image_edit: 'image-edit',
-  data_analysis: 'data-analysis',
-  vision_understand: 'vision-understand',
-  image_understand: 'vision-understand',
-  vision_analyze: 'vision-understand',
-  image_analyze: 'vision-understand',
-  video: 'video-gen',
-  video_generate: 'video-gen',
-  video_generation: 'video-gen',
-  audio: 'audio-gen',
-  speech: 'audio-gen',
-  tts: 'audio-gen',
-  speech_gen: 'audio-gen',
-  speech_generate: 'audio-gen',
-  speech_generation: 'audio-gen',
-  audio_generate: 'audio-gen',
-  audio_generation: 'audio-gen',
-};
-
-const toTaskType = (value: unknown): AgentTaskType | null => {
-  const token = String(value || '')
-    .trim()
-    .toLowerCase();
-  if (!token) return null;
-  const hyphenatedToken = token.replace(/_/g, '-');
-  const normalized = (TASK_ALIASES[token] ||
-    TASK_ALIASES[token.replace(/-/g, '_')] ||
-    hyphenatedToken) as AgentTaskType;
-  return SUPPORTED_TASKS.has(normalized) ? normalized : null;
+export const normalizeAgentTaskType = (
+  value: unknown,
+  fallback: AgentTaskType | null = null
+): AgentTaskType | null => {
+  return normalizeWorkflowAgentTaskType(value, fallback);
 };
 
 export const normalizeSupportedTasks = (raw: unknown): AgentTaskType[] => {
   if (!Array.isArray(raw)) return [];
   const normalized: AgentTaskType[] = [];
   for (const item of raw) {
-    const task = toTaskType(item);
+    const task = normalizeAgentTaskType(item);
     if (task && !normalized.includes(task)) {
       normalized.push(task);
     }
@@ -153,7 +119,7 @@ const normalizeDefaultModelsByTask = (
   }
   const output: Partial<Record<AgentTaskType, string>> = {};
   Object.entries(rawValue as Record<string, unknown>).forEach(([rawTask, rawModelId]) => {
-    const taskType = toTaskType(rawTask);
+    const taskType = normalizeAgentTaskType(rawTask);
     const modelId = String(rawModelId || '').trim();
     if (!taskType || !modelId) return;
     output[taskType] = modelId;
@@ -232,4 +198,75 @@ export const pickProviderDefaultModel = (
     if (modelSupportsTask(preferred, taskType)) return preferred;
   }
   return modelPool.find((model) => modelSupportsTask(model, taskType));
+};
+
+export interface ProviderTaskModelSelection {
+  selectedProvider: ProviderModels | undefined;
+  providerModels: ModelOption[];
+  compatibleModels: ModelOption[];
+  selectedModels: ModelOption[];
+  providerHasNoCompatibleModels: boolean;
+  selectedModel: ModelOption | undefined;
+  selectedModelSupportsTask: boolean;
+  findProvider: (providerId: string) => ProviderModels | undefined;
+  findProviderModels: (providerId: string) => ModelOption[];
+  findModelById: (providerId: string, modelId: string) => ModelOption | undefined;
+  pickCompatibleModel: (providerId?: string, taskType?: AgentTaskType) => ModelOption | undefined;
+}
+
+export const resolveProviderTaskModelSelection = ({
+  providers,
+  providerId,
+  modelId,
+  taskType,
+}: {
+  providers: ProviderModels[];
+  providerId: string;
+  modelId?: string;
+  taskType: AgentTaskType;
+}): ProviderTaskModelSelection => {
+  const selectedProviderId = String(providerId || '').trim();
+  const selectedModelId = String(modelId || '').trim();
+  const findProvider = (candidateProviderId: string): ProviderModels | undefined =>
+    providers.find((item) => item.providerId === candidateProviderId);
+  const findProviderModels = (candidateProviderId: string): ModelOption[] => {
+    const provider = findProvider(candidateProviderId);
+    return provider?.allModels || provider?.models || [];
+  };
+  const findModelById = (
+    candidateProviderId: string,
+    candidateModelId: string
+  ): ModelOption | undefined => {
+    if (!candidateProviderId || !candidateModelId) return undefined;
+    return findProviderModels(candidateProviderId).find((model) => model.id === candidateModelId);
+  };
+  const pickCompatibleModel = (
+    candidateProviderId?: string,
+    candidateTaskType: AgentTaskType = taskType
+  ): ModelOption | undefined => {
+    return pickProviderDefaultModel(
+      findProvider(candidateProviderId || selectedProviderId),
+      candidateTaskType
+    );
+  };
+
+  const selectedProvider = findProvider(selectedProviderId);
+  const providerModels = selectedProvider?.allModels || selectedProvider?.models || [];
+  const compatibleModels = providerModels.filter((model) => modelSupportsTask(model, taskType));
+  const selectedModel = providerModels.find((model) => model.id === selectedModelId);
+
+  return {
+    selectedProvider,
+    providerModels,
+    compatibleModels,
+    selectedModels: compatibleModels,
+    providerHasNoCompatibleModels:
+      selectedProviderId !== '' && providerModels.length > 0 && compatibleModels.length === 0,
+    selectedModel,
+    selectedModelSupportsTask: modelSupportsTask(selectedModel, taskType),
+    findProvider,
+    findProviderModels,
+    findModelById,
+    pickCompatibleModel,
+  };
 };

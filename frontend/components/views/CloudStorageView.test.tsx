@@ -73,6 +73,7 @@ vi.mock('./cloudStorage/useCloudStorageViewer', () => ({
     currentViewerImageSrc: null,
     currentViewerImageExhausted: false,
     currentViewerVideoSrc: null,
+    handleViewerImagePreviewError: vi.fn(),
     handleViewerPreviewError: vi.fn()
   })
 }));

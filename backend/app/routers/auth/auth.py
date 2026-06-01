@@ -28,6 +28,7 @@ from ...services.common.auth_service import (
     TokenExpiredError,
 )
 from ...core.dependencies import require_current_user
+from ...core.user_context import extract_user_id_from_token
 from ...services.common.persona_init_service import ensure_personas_initialized
 from ...services.common.system_config_service import (
     initialize_system_configs,
@@ -136,6 +137,34 @@ def clear_auth_cookies(response: Response) -> None:
         response.delete_cookie(**delete_kwargs)
 
 
+def _get_bearer_token(auth_header: str | None) -> str | None:
+    if not auth_header:
+        return None
+    parts = auth_header.split()
+    if len(parts) == 2 and parts[0].lower() == "bearer" and parts[1].strip():
+        return parts[1].strip()
+    return None
+
+
+def _get_request_token(request: Request, *, cookie_name: str) -> str | None:
+    """
+    Resolve an auth token from request state.
+
+    Authorization header wins so API clients can explicitly override browser
+    cookies. Browser UI can rely on httpOnly cookies without exposing refresh
+    tokens to localStorage.
+    """
+    return _get_bearer_token(request.headers.get("Authorization")) or request.cookies.get(cookie_name)
+
+
+def _build_public_token_response(tokens: TokenPair) -> dict[str, object]:
+    """Return non-secret token metadata; access/refresh tokens stay in httpOnly cookies."""
+    return {
+        "token_type": tokens.token_type,
+        "expires_in": tokens.expires_in,
+    }
+
+
 @router.get("/config")
 async def get_auth_config(db: Session = Depends(get_db)):
     """获取认证配置（注册开关状态）"""
@@ -209,9 +238,10 @@ async def get_ip_info_endpoint(request: Request):
 @router.post("/register")
 async def register(
     data: RegisterRequest,
+    response: Response,
     db: Session = Depends(get_db)
 ):
-    """用户注册 - 返回 token 而不是设置 cookie"""
+    """用户注册 - 返回 token 并设置 Cookie（兼容注册即登录）"""
     auth_service = AuthService(db)
     try:
         result = auth_service.register(data)
@@ -252,13 +282,12 @@ async def register(
             user_settings.active_profile_id is not None
         )
 
-        # ✅ 返回用户信息和 token，前端存储在 localStorage
+        set_auth_cookies(response, result.tokens)
+
+        # refresh_token 只设置到 httpOnly Cookie，不返回给浏览器 JS。
         return {
             "user": user_response.dict(),
-            "access_token": result.tokens.access_token,
-            "refresh_token": result.tokens.refresh_token,
-            "token_type": result.tokens.token_type,
-            "expires_in": result.tokens.expires_in,
+            **_build_public_token_response(result.tokens),
             "has_active_profile": has_active_profile  # ✅ 新增：配置状态
         }
     except RegistrationDisabledError:
@@ -276,7 +305,7 @@ async def login(
     response: Response,
     db: Session = Depends(get_db)
 ):
-    """用户登录 - 返回 token 并设置 Cookie（用于 EventSource 认证）"""
+    """用户登录 - 返回用户信息并设置 httpOnly Cookie。"""
     auth_service = AuthService(db)
     try:
         # 获取客户端 IP 和 User-Agent
@@ -301,13 +330,10 @@ async def login(
         # ✅ 统一安全 Cookie 策略（生产环境强制 secure + strict）
         set_auth_cookies(response, result.tokens)
 
-        # ✅ 返回用户信息和 token，前端存储在 localStorage
+        # refresh_token 只设置到 httpOnly Cookie，不返回给浏览器 JS。
         return {
             "user": user_response.dict(),
-            "access_token": result.tokens.access_token,
-            "refresh_token": result.tokens.refresh_token,
-            "token_type": result.tokens.token_type,
-            "expires_in": result.tokens.expires_in,
+            **_build_public_token_response(result.tokens),
             "has_active_profile": has_active_profile  # ✅ 新增：配置状态
         }
     except InvalidCredentialsError:
@@ -335,49 +361,45 @@ async def logout(
     # ✅ 统一清除 Cookie
     clear_auth_cookies(response)
     
-    # ✅ 从 Authorization header 获取 access_token
-    auth_header = request.headers.get("Authorization")
-    if auth_header:
-        parts = auth_header.split()
-        if len(parts) == 2 and parts[0].lower() == "bearer":
-            access_token = parts[1]
-            try:
-                # 验证 access_token 并获取用户 ID
-                payload = auth_service.validate_token(access_token)
-                user_id = payload.sub
-                
-                # 清除用户表中的 access_token
-                user = auth_service.get_user_by_id(user_id)
-                if user:
-                    user.access_token = None
-                    user.token_expires_at = None
-                    db.commit()
-                
-                # ✅ 撤销该用户所有未过期的 refresh_token
-                from ...models.db_models import RefreshToken
-                now = datetime.now(timezone.utc)
-                db.query(RefreshToken).filter(
-                    RefreshToken.user_id == user_id,
-                    RefreshToken.revoked_at.is_(None),
-                    RefreshToken.expires_at > now
-                ).update({"revoked_at": now})
-                
-                # ✅ 记录登出到 IPLoginHistory
-                ip_address = get_client_ip(request)
-                user_agent = request.headers.get("User-Agent")
-                ip_history = IPLoginHistory(
-                    user_id=user_id,
-                    ip_address=ip_address,
-                    action="logout",
-                    user_agent=user_agent
-                )
-                db.add(ip_history)
+    access_token = _get_request_token(request, cookie_name="access_token")
+    if access_token:
+        try:
+            # 验证 access_token 并获取用户 ID
+            payload = auth_service.validate_token(access_token)
+            user_id = payload.sub
+
+            # 清除用户表中的 access_token
+            user = auth_service.get_user_by_id(user_id)
+            if user:
+                user.access_token = None
+                user.token_expires_at = None
                 db.commit()
-                
-                logger.info(f"[Logout] ✅ 用户 {user_id} 登出成功 (IP: {ip_address})")
-            except Exception as e:
-                logger.error(f"[Logout] Error revoking tokens: {e}")
-                pass  # Token 可能已无效，忽略错误
+
+            # ✅ 撤销该用户所有未过期的 refresh_token
+            from ...models.db_models import RefreshToken
+            now = datetime.now(timezone.utc)
+            db.query(RefreshToken).filter(
+                RefreshToken.user_id == user_id,
+                RefreshToken.revoked_at.is_(None),
+                RefreshToken.expires_at > now
+            ).update({"revoked_at": now})
+
+            # ✅ 记录登出到 IPLoginHistory
+            ip_address = get_client_ip(request)
+            user_agent = request.headers.get("User-Agent")
+            ip_history = IPLoginHistory(
+                user_id=user_id,
+                ip_address=ip_address,
+                action="logout",
+                user_agent=user_agent
+            )
+            db.add(ip_history)
+            db.commit()
+
+            logger.info(f"[Logout] ✅ 用户 {user_id} 登出成功 (IP: {ip_address})")
+        except Exception as e:
+            logger.error(f"[Logout] Error revoking tokens: {e}")
+            pass  # Token 可能已无效，忽略错误
     
     return {"message": "Logged out successfully"}
 
@@ -388,16 +410,10 @@ async def refresh_token(
     response: Response,
     db: Session = Depends(get_db)
 ):
-    """刷新访问令牌 - 从 Authorization header 获取 refresh token"""
+    """刷新访问令牌 - Header 优先，httpOnly refresh Cookie 兜底"""
     auth_service = AuthService(db)
-    
-    # ✅ 从 Authorization header 获取 refresh token
-    auth_header = request.headers.get("Authorization")
-    refresh_token = None
-    if auth_header:
-        parts = auth_header.split()
-        if len(parts) == 2 and parts[0].lower() == "bearer":
-            refresh_token = parts[1]
+
+    refresh_token = _get_request_token(request, cookie_name="refresh_token")
     
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Refresh token not found")
@@ -444,12 +460,9 @@ async def refresh_token(
         # ✅ 统一安全 Cookie 策略（生产环境强制 secure + strict）
         set_auth_cookies(response, tokens)
 
-        # ✅ 返回新的 access_token 和 refresh_token
+        # refresh_token 只设置到 httpOnly Cookie，不返回给浏览器 JS。
         return {
-            "access_token": tokens.access_token,
-            "refresh_token": tokens.refresh_token,  # ✅ 新增：返回新的 refresh_token
-            "token_type": tokens.token_type,
-            "expires_in": tokens.expires_in,
+            **_build_public_token_response(tokens),
             "has_active_profile": has_active_profile  # ✅ 新增：配置状态
         }
     except (InvalidTokenError, TokenExpiredError):
@@ -461,21 +474,17 @@ async def get_current_user(
     request: Request,
     db: Session = Depends(get_db)
 ):
-    """获取当前用户信息 - 从 Authorization header 获取 token"""
+    """获取当前用户信息 - Header 优先，httpOnly access Cookie 兜底"""
     auth_service = AuthService(db)
 
-    # ✅ 从 Authorization header 获取 token
-    auth_header = request.headers.get("Authorization")
-    access_token = None
-    if auth_header:
-        parts = auth_header.split()
-        if len(parts) == 2 and parts[0].lower() == "bearer":
-            access_token = parts[1]
+    access_token = _get_request_token(request, cookie_name="access_token")
 
     if not access_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
-
+    
     try:
+        if not extract_user_id_from_token(access_token):
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
         user_response = auth_service.get_current_user(access_token)
 
         # ✅ 检查用户是否有活跃的配置文件
@@ -496,6 +505,8 @@ async def get_current_user(
         }
     except (InvalidTokenError, TokenExpiredError):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    except HTTPException:
+        raise
     except Exception as e:
         # ✅ 捕获其他异常（如数据库错误），避免返回 500 错误
         logger.error(f"[Auth] 获取当前用户失败: {e}", exc_info=True)

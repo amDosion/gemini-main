@@ -4,7 +4,11 @@ import io
 import pytest
 from PIL import Image as PILImage
 
-from app.routers.models.models import filter_models_by_mode
+from app.routers.models.models import (
+    _merge_google_vertex_static_models,
+    _resolve_mode_view,
+    filter_models_by_mode,
+)
 from app.services.common.google_model_catalog import (
     IMAGEN_EDIT_MODELS,
     IMAGE_UPSCALE_MODELS,
@@ -12,7 +16,7 @@ from app.services.common.google_model_catalog import (
     get_static_google_vertex_models,
 )
 from app.services.common.model_capabilities import Capabilities, ModelConfig
-from app.services.gemini.vertexai.expand_service import ExpandService
+from app.services.gemini.vertexai.expand_service import ExpandService, genai_types
 
 
 def _png_data_url(width=64, height=48):
@@ -108,7 +112,8 @@ async def test_outpaint_modes_use_selected_edit_model_and_forward_sdk_config(mon
     assert call["config"].seed == 123
     assert call["config"].base_steps == 35
     assert call["config"].guidance_scale == 12.5
-    assert getattr(call["config"], "person_generation", None) is None
+    assert call["config"].person_generation == genai_types.PersonGeneration.ALLOW_ALL
+    assert call["config"].http_options.timeout == 600_000
     assert getattr(call["config"], "safety_filter_level", None) is None
     assert results[0]["mime_type"] == "image/jpeg"
     assert results[0]["url"].startswith("data:image/jpeg;base64,")
@@ -215,6 +220,34 @@ def test_google_vertex_static_catalog_drives_expand_model_availability():
         "imagen-3.0-capability-001",
     ]
     assert IMAGE_UPSCALE_MODELS == ["imagen-4.0-upscale-preview"]
+
+
+def test_google_image_outpainting_mode_view_prefers_edit_model_for_default_ratio_mode():
+    models = [
+        ModelConfig(
+            id="imagen-4.0-upscale-preview",
+            name="Imagen Upscale",
+            description="upscale",
+            capabilities=Capabilities(vision=True),
+        ),
+    ]
+
+    merged_models = _merge_google_vertex_static_models("google", models)
+    mode_catalog, filtered_models, default_model_id = _resolve_mode_view(
+        models=merged_models,
+        preferred_model_ids=["imagen-4.0-upscale-preview"],
+        mode="image-outpainting",
+    )
+    outpainting_catalog = next(
+        item for item in mode_catalog if item["id"] == "image-outpainting"
+    )
+
+    assert [model.id for model in filtered_models] == [
+        "imagen-3.0-capability-001",
+        "imagen-4.0-upscale-preview",
+    ]
+    assert default_model_id == "imagen-3.0-capability-001"
+    assert outpainting_catalog["default_model_id"] == "imagen-3.0-capability-001"
 
 
 def test_expand_service_model_validation_is_backed_by_static_catalog():

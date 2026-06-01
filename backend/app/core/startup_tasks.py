@@ -16,6 +16,94 @@ from .path_utils import ensure_credentials_dir
 logger = logging.getLogger(__name__)
 
 
+def _optional_ddl_info_prefix(log_prefixes: Dict[str, str]) -> str:
+    return log_prefixes.get("info") or log_prefixes.get("success") or "[INFO]"
+
+
+def _is_optional_ddl_permission_error(exc: Exception) -> bool:
+    original = getattr(exc, "orig", None)
+    pgcode = getattr(original, "pgcode", None) or getattr(original, "sqlstate", None)
+    if pgcode == "42501":
+        return True
+
+    message = str(exc).lower()
+    return (
+        "must be owner of table" in message
+        or "permission denied" in message
+        or "insufficientprivilege" in message
+    )
+
+
+def _table_schema_is_manageable(conn: Any, table: str) -> bool:
+    if getattr(conn.dialect, "name", "") != "postgresql":
+        return True
+
+    from sqlalchemy import text
+
+    result = conn.execute(
+        text(
+            """
+            SELECT COALESCE(
+                (
+                    SELECT pg_has_role(c.relowner, 'MEMBER')
+                    FROM pg_catalog.pg_class c
+                    WHERE c.oid = to_regclass(:table_name)
+                ),
+                FALSE
+            )
+            """
+        ),
+        {"table_name": table},
+    ).scalar()
+    return bool(result)
+
+
+def _ensure_optional_index(
+    *,
+    engine: Any,
+    table_names: set[str],
+    table: str,
+    index_name: str,
+    sql: str,
+    log_prefixes: Dict[str, str],
+) -> bool:
+    if table not in table_names:
+        return False
+
+    from sqlalchemy import text
+
+    info_prefix = _optional_ddl_info_prefix(log_prefixes)
+    try:
+        with engine.connect() as conn:
+            if not _table_schema_is_manageable(conn, table):
+                logger.info(
+                    f"{info_prefix} Skipping optional index {index_name} on {table}: "
+                    "database user is not the table owner"
+                )
+                return False
+    except Exception as exc:
+        logger.info(
+            f"{info_prefix} Skipping optional index {index_name} on {table}: "
+            f"could not verify table ownership ({exc})"
+        )
+        return False
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(sql))
+        logger.info(f"{log_prefixes['success']} Ensured index {index_name} on {table}")
+        return True
+    except Exception as exc:
+        if _is_optional_ddl_permission_error(exc):
+            logger.info(
+                f"{info_prefix} Skipping optional index {index_name} on {table}: "
+                "database user cannot create indexes on this table"
+            )
+        else:
+            logger.warning(f"{log_prefixes['warning']} Failed to ensure {index_name}: {exc}")
+        return False
+
+
 async def setup_logger_configuration(log_prefixes: Dict[str, str]):
     """
     重新配置 logger（防止 Uvicorn 覆盖）
@@ -146,21 +234,24 @@ async def migrate_ip_login_history_index(log_prefixes: Dict[str, str]):
         from .database import engine
 
         inspector = inspect(engine)
-        if "ip_login_history" not in set(inspector.get_table_names()):
+        table_names = set(inspector.get_table_names())
+        if "ip_login_history" not in table_names:
             logger.info(
                 f"{log_prefixes.get('info', log_prefixes['success'])} "
                 "ip_login_history table not found, skip index migration"
             )
             return
 
-        with engine.begin() as conn:
-            conn.execute(text(
+        _ensure_optional_index(
+            engine=engine,
+            table_names=table_names,
+            table="ip_login_history",
+            index_name="ix_ip_login_user_action_time",
+            sql=(
                 "CREATE INDEX IF NOT EXISTS ix_ip_login_user_action_time "
                 "ON ip_login_history (user_id, action, created_at)"
-            ))
-        logger.info(
-            f"{log_prefixes['success']} Ensured ip_login_history composite index "
-            "(user_id, action, created_at)"
+            ),
+            log_prefixes=log_prefixes,
         )
     except Exception as e:
         logger.warning(
@@ -266,19 +357,15 @@ async def ensure_performance_indexes(log_prefixes: Dict[str, str]):
             ),
         ]
 
-        with engine.begin() as conn:
-            for table, index_name, sql in migrations:
-                if table not in table_names:
-                    continue
-                try:
-                    conn.execute(text(sql))
-                    logger.info(
-                        f"{log_prefixes['success']} Ensured index {index_name} on {table}"
-                    )
-                except Exception as inner:
-                    logger.warning(
-                        f"{log_prefixes['warning']} Failed to ensure {index_name}: {inner}"
-                    )
+        for table, index_name, sql in migrations:
+            _ensure_optional_index(
+                engine=engine,
+                table_names=table_names,
+                table=table,
+                index_name=index_name,
+                sql=sql,
+                log_prefixes=log_prefixes,
+            )
     except Exception as e:
         logger.warning(f"{log_prefixes['warning']} Failed to ensure performance indexes: {e}")
 
@@ -465,7 +552,7 @@ async def start_worker_pool(
             try:
                 await worker_pool.start()
                 logger.info(f"{log_prefixes['success']} Upload worker pool started successfully (embedded mode)")
-                logger.warning(f"{log_prefixes['success']} Worker pool startup verification passed (on-demand mode)")
+                logger.info(f"{log_prefixes['success']} Worker pool startup verification passed (on-demand mode)")
                 logger.info(f"{log_prefixes['info']} Workers will start on-demand when tasks are submitted")
             except Exception as e:
                 logger.error(f"{log_prefixes['error']} Failed to start upload worker pool: {e}")

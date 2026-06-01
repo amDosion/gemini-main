@@ -149,6 +149,7 @@ def extract_metadata(msg: Dict[str, Any]) -> Dict[str, Any]:
         'thoughts',          # 思考过程列表
         'text_response',     # AI 文本响应
         'enhanced_prompt',   # 增强后的提示词
+        'openai_response_id', # OpenAI Responses 图片多轮编辑上下文
         # 其他扩展字段
         'custom_data',
     ]
@@ -157,6 +158,15 @@ def extract_metadata(msg: Dict[str, Any]) -> Dict[str, Any]:
     for field in metadata_fields:
         if field in msg and msg[field] is not None:
             metadata[field] = msg[field]
+
+    if 'openai_response_id' not in metadata:
+        for attachment in msg.get('attachments') or []:
+            if not isinstance(attachment, dict):
+                continue
+            response_id = attachment.get('openai_response_id') or attachment.get('openaiResponseId')
+            if isinstance(response_id, str) and response_id.strip():
+                metadata['openai_response_id'] = response_id.strip()
+                break
     
     return metadata
 

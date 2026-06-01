@@ -2,6 +2,8 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkflowHistoryController } from './useWorkflowHistoryController';
+import { setPrivateCacheUserScope } from '../../../services/privateCacheScope';
+import { __resetWorkflowPreviewCacheForTest } from '../../../services/workflowPreviewCache';
 
 const {
   requestJsonMock,
@@ -27,6 +29,8 @@ describe('useWorkflowHistoryController media', () => {
     requestJsonMock.mockReset();
     fetchWorkflowPreviewImagesWithMetaMock.mockReset();
     fetchWorkflowPreviewMediaWithMetaMock.mockReset();
+    __resetWorkflowPreviewCacheForTest();
+    setPrivateCacheUserScope(null);
     fetchWorkflowPreviewImagesWithMetaMock.mockResolvedValue({ imageUrls: [], skippedCount: 0, count: 0 });
     fetchWorkflowPreviewMediaWithMetaMock.mockResolvedValue({ mediaType: 'video', items: [], skippedCount: 0, count: 0 });
   });
@@ -101,10 +105,65 @@ describe('useWorkflowHistoryController media', () => {
     expect(fetchWorkflowPreviewMediaWithMetaMock).toHaveBeenCalledWith(
       'exec-video',
       'video',
-      12,
-      expect.any(AbortSignal)
+      12
     );
     expect(result.current.historyPreviewMedia['exec-video']?.videoItems).toHaveLength(1);
+  });
+
+  it('filters browser-local blob urls from persisted workflow history summaries', async () => {
+    requestJsonMock.mockImplementation((url: string) => {
+      if (url === '/api/workflows/history?limit=100') {
+        return Promise.resolve({
+          executions: [
+            {
+              id: 'exec-stale-blob-summary',
+              title: 'Blob summary',
+              task: 'Filter stale blobs',
+              status: 'completed',
+              resultSummary: {
+                imageCount: 2,
+                imageUrls: [
+                  'blob:https://gemini.dicry.cn:18443/stale-history-image',
+                  '/api/workflows/history/exec-stale-blob-summary/images/1',
+                ],
+                audioCount: 2,
+                audioUrls: [
+                  'blob:https://gemini.dicry.cn:18443/stale-history-audio',
+                  '/api/workflows/history/exec-stale-blob-summary/audio/items/1',
+                ],
+                videoCount: 2,
+                videoUrls: [
+                  'blob:https://gemini.dicry.cn:18443/stale-history-video',
+                  '/api/workflows/history/exec-stale-blob-summary/video/items/1',
+                ],
+              },
+            },
+          ],
+        });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    const { result } = renderHook(() =>
+      useWorkflowHistoryController({
+        setExecutionStatus: vi.fn(),
+        showError: vi.fn(),
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.displayedWorkflowHistory).toHaveLength(1);
+    });
+
+    expect(result.current.displayedWorkflowHistory[0].resultImageUrls).toEqual([
+      '/api/workflows/history/exec-stale-blob-summary/images/1',
+    ]);
+    expect(result.current.displayedWorkflowHistory[0].resultAudioUrls).toEqual([
+      '/api/workflows/history/exec-stale-blob-summary/audio/items/1',
+    ]);
+    expect(result.current.displayedWorkflowHistory[0].resultVideoUrls).toEqual([
+      '/api/workflows/history/exec-stale-blob-summary/video/items/1',
+    ]);
   });
 
   it('hydrates execution status with preview audio and video urls when loading history detail', async () => {
@@ -186,13 +245,22 @@ describe('useWorkflowHistoryController media', () => {
       await result.current.handleLoadWorkflowFromHistory('exec-history-media');
     });
 
-    const latestExecutionStatus = setExecutionStatus.mock.calls.at(-1)?.[0];
-    expect(latestExecutionStatus?.executionId).toBe('exec-history-media');
-    expect(latestExecutionStatus?.resultPreviewAudioUrls).toEqual([
-      '/api/workflows/history/exec-history-media/audio/items/1',
-    ]);
-    expect(latestExecutionStatus?.resultPreviewVideoUrls).toEqual([
-      '/api/workflows/history/exec-history-media/video/items/1',
-    ]);
+    const immediateExecutionStatus = setExecutionStatus.mock.calls[0]?.[0];
+    expect(immediateExecutionStatus?.executionId).toBe('exec-history-media');
+    expect(immediateExecutionStatus?.resultPreviewAudioUrls).toEqual([]);
+    expect(immediateExecutionStatus?.resultPreviewVideoUrls).toEqual([]);
+
+    await waitFor(() => {
+      const latestCall = setExecutionStatus.mock.calls.at(-1)?.[0];
+      const latestExecutionStatus =
+        typeof latestCall === 'function' ? latestCall(immediateExecutionStatus) : latestCall;
+      expect(latestExecutionStatus?.executionId).toBe('exec-history-media');
+      expect(latestExecutionStatus?.resultPreviewAudioUrls).toEqual([
+        '/api/workflows/history/exec-history-media/audio/items/1',
+      ]);
+      expect(latestExecutionStatus?.resultPreviewVideoUrls).toEqual([
+        '/api/workflows/history/exec-history-media/video/items/1',
+      ]);
+    });
   });
 });

@@ -99,12 +99,14 @@ import mimetypes
 import uuid
 import logging
 import httpx
+import time
 
 from ...core.encryption import decrypt_config
 from ...utils.attachment_handler import is_base64_url, is_blob_url, is_http_url, get_url_type
 from ...models.db_models import MessageAttachment, UploadTask, StorageConfig, ActiveStorage
 from .redis_queue_service import redis_queue
 from .upload_worker_pool import worker_pool
+from .upload_task_scope import is_upload_task_owned_by_user
 from ..storage.storage_service import StorageService
 from ...utils.url_security import (
     get_with_redirect_guard,
@@ -216,6 +218,7 @@ class AttachmentService:
         # ✅ 详细日志：步骤2 - 提交Worker Pool任务
         logger.info(f"[AttachmentService] 🔄 [步骤2] 提交Worker Pool任务...")
         task_id = await self._submit_upload_task(
+            user_id=user_id,
             session_id=session_id,
             message_id=message_id,
             attachment_id=attachment_id,
@@ -384,6 +387,7 @@ class AttachmentService:
         # ✅ 详细日志：步骤4 - 提交Worker Pool任务
         logger.info(f"[AttachmentService] 🔄 [步骤4] 提交Worker Pool任务...")
         task_id = await self._submit_upload_task(
+            user_id=user_id,
             session_id=session_id,
             message_id=message_id,
             attachment_id=attachment_id,
@@ -605,6 +609,7 @@ class AttachmentService:
         
         logger.info(f"[AttachmentService] 🔄 [步骤4] 调用 _submit_upload_task() 创建上传任务...")
         task_id = await self._submit_upload_task(
+            user_id=user_id,
             session_id=session_id,
             message_id=attachment.message_id,
             attachment_id=attachment_id,
@@ -684,7 +689,7 @@ class AttachmentService:
                 id=attachment.upload_task_id,
                 status='completed'
             ).first()
-            if task and task.target_url:
+            if task and task.target_url and is_upload_task_owned_by_user(self.db, task, user_id):
                 return task.target_url
 
         # 优先级2: attachment.url
@@ -742,11 +747,19 @@ class AttachmentService:
         if not storage or storage.get("provider") != "local":
             return None
 
+        load_start = time.time()
         content = await self._load_local_storage_source_bytes(
             user_id=user_id,
             source_file_path=source_file_path,
             source_ai_url=source_ai_url,
         )
+        logger.info(
+            "[AttachmentService] 本地存储源数据读取完成 (bytes=%s, 耗时: %.2fms)",
+            len(content),
+            (time.time() - load_start) * 1000,
+        )
+
+        upload_start = time.time()
         upload = await StorageService.upload_file(
             filename=filename,
             content=content,
@@ -754,16 +767,25 @@ class AttachmentService:
             provider="local",
             config=dict(storage.get("config") or {}),
         )
+        logger.info(
+            "[AttachmentService] 本地存储写入完成 (耗时: %.2fms)",
+            (time.time() - upload_start) * 1000,
+        )
         persisted_url = str(upload.get("url") or "").strip()
         if not persisted_url:
             raise RuntimeError("Local storage upload returned an empty URL.")
 
+        db_update_start = time.time()
         attachment.url = persisted_url
         attachment.temp_url = None
         attachment.upload_status = 'completed'
         attachment.upload_task_id = None
         attachment.upload_error = None
         self.db.commit()
+        logger.info(
+            "[AttachmentService] 本地存储附件状态更新完成 (耗时: %.2fms)",
+            (time.time() - db_update_start) * 1000,
+        )
 
         if source_file_path:
             self._delete_local_source_file(source_file_path)
@@ -857,6 +879,7 @@ class AttachmentService:
 
     async def _submit_upload_task(
         self,
+        user_id: str,
         session_id: str,
         message_id: str,
         attachment_id: str,
@@ -873,6 +896,7 @@ class AttachmentService:
         提交上传任务到Worker Pool
 
         参数:
+            user_id: 用户ID
             session_id: 会话ID
             message_id: 消息ID
             attachment_id: 附件ID
@@ -895,6 +919,7 @@ class AttachmentService:
         logger.info(f"[AttachmentService]     - attachment_id: {attachment_id}")
         logger.info(f"[AttachmentService]     - filename: {filename}")
         logger.info(f"[AttachmentService]     - mime_type: {mime_type}")
+        logger.info(f"[AttachmentService]     - user_id: {user_id}")
         logger.info(f"[AttachmentService]     - session_id: {session_id if session_id else 'None'}")
         logger.info(f"[AttachmentService]     - message_id: {message_id if message_id else 'None'}")
         logger.info(f"[AttachmentService]     - priority: {priority}")

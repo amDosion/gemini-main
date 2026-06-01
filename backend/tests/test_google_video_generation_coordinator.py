@@ -36,9 +36,9 @@ def test_google_video_contract_for_veo31_keeps_4k_and_official_extension_constra
 
     extension_constraints = runtime_schema["video_contract"]["extension_constraints"]
     assert extension_constraints["added_seconds"] == 7
-    assert extension_constraints["max_extension_count"] == 4
-    assert extension_constraints["max_source_video_seconds"] == 30
-    assert extension_constraints["max_output_video_seconds"] == 37
+    assert extension_constraints["max_extension_count"] == 20
+    assert extension_constraints["max_source_video_seconds"] == 141
+    assert extension_constraints["max_output_video_seconds"] == 148
     assert extension_constraints["require_duration_seconds"] == ["8"]
     assert extension_constraints["require_resolution_values"] == ["720p", "1080p", "4k"]
 
@@ -133,11 +133,11 @@ def test_google_video_contract_duration_matrix_filters_totals_above_output_limit
 
     matrix = runtime_schema["video_contract"]["extension_duration_matrix"]
     eight_second_plan = next(item for item in matrix if item["base_seconds"] == "8")
-    assert eight_second_plan["options"][-1]["count"] == 4
-    assert eight_second_plan["options"][-1]["total_seconds"] == 36
+    assert eight_second_plan["options"][-1]["count"] == 20
+    assert eight_second_plan["options"][-1]["total_seconds"] == 148
 
     four_second_plan = next(item for item in matrix if item["base_seconds"] == "4")
-    assert four_second_plan["options"][-1]["total_seconds"] <= 37
+    assert four_second_plan["options"][-1]["total_seconds"] <= 148
 
 
 def test_google_video_contract_for_veo2_disables_extension_but_keeps_mask_edit_path() -> None:
@@ -499,6 +499,57 @@ async def test_generate_video_4k_extension_uses_per_extension_storyboard_prompts
         "extension one: side step from the final frame",
         "extension two: editorial close-up from the final frame",
     ]
+
+
+@pytest.mark.asyncio
+async def test_gemini_api_video_prompt_enhancement_rewrites_extension_storyboard_segments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator = VideoGenerationCoordinator(api_key="test-key")
+    enhance_calls: list[str] = []
+
+    async def _fake_enhance_prompt_locally(
+        *,
+        prompt: str,
+        model_hint: str | None = None,
+        thinking_level: str | None = None,
+    ) -> str:
+        enhance_calls.append(prompt)
+        return f"enhanced::{prompt}"
+
+    monkeypatch.setattr(coordinator, "_enhance_prompt_locally", _fake_enhance_prompt_locally)
+    request_kwargs = {
+        "enhance_prompt": True,
+        "enhance_prompt_model": "gemini-2.5-flash",
+        "video_extension_count": 2,
+        "storyboard_segments": [
+            "extension one: side step",
+            "extension two: close-up",
+        ],
+    }
+
+    payload = await coordinator._prepare_prompt_for_runtime(
+        prompt="keep the same model identity",
+        model="veo-3.1-generate-preview",
+        request_kwargs=request_kwargs,
+        extension_count=2,
+        selected_api_mode="gemini_api",
+    )
+
+    assert enhance_calls == [
+        "keep the same model identity",
+        "extension one: side step",
+        "extension two: close-up",
+    ]
+    assert request_kwargs["storyboard_segments"] == [
+        "enhanced::extension one: side step",
+        "enhanced::extension two: close-up",
+    ]
+    assert payload["effective_prompt"].startswith("enhanced::keep the same model identity")
+    assert "Additional execution requirements" in payload["effective_prompt"]
+    assert "enhanced::extension one: side step" in payload["extension_prompts"][0]
+    assert "enhanced::extension two: close-up" in payload["extension_prompts"][1]
+    assert payload["prompt_enhancement"].storyboard_was_enhanced is True
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,19 @@
 export const PREVIEW_IMAGE_MAX_ENTRIES = 40;
 const INLINE_MEDIA_DATA_URL_MAX_CHARS = 4096;
 
+export const isBrowserLocalBlobUrl = (value: unknown): boolean =>
+  typeof value === 'string' && value.trim().toLowerCase().startsWith('blob:');
+
+export const isPersistedWorkflowResultUrl = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim().length > 0 && !isBrowserLocalBlobUrl(value);
+
+export const filterPersistedWorkflowResultUrls = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value
+        .map((url) => (typeof url === 'string' ? url.trim() : ''))
+        .filter((url): url is string => isPersistedWorkflowResultUrl(url))
+    : [];
+
 const stripMarkdownCodeFence = (text: string): string => {
   let normalized = String(text || '').trim();
   const matched = normalized.match(/^```(?:json|markdown|md|text)?\s*([\s\S]*?)\s*```$/i);
@@ -25,7 +38,8 @@ export const isLikelyImageUrl = (value: string) => {
 const createLikelyMediaUrlMatcher =
   (extensions: RegExp, pathHints: RegExp, dataPrefix: RegExp) => (value: string) => {
     if (!value) return false;
-    if (dataPrefix.test(value) || /^blob:/i.test(value)) return true;
+    if (isBrowserLocalBlobUrl(value)) return false;
+    if (dataPrefix.test(value)) return true;
     if (/^https?:\/\//.test(value) || value.startsWith('/')) {
       const normalized = value.toLowerCase().split('?')[0].split('#')[0];
       if (extensions.test(normalized)) return true;
@@ -110,7 +124,8 @@ export const isDirectlyRenderableImageUrl = (value: unknown) => {
   if (typeof value !== 'string') return false;
   const normalized = value.trim();
   if (!normalized) return false;
-  if (normalized.startsWith('data:image/') || normalized.startsWith('blob:')) return true;
+  if (isBrowserLocalBlobUrl(normalized)) return false;
+  if (normalized.startsWith('data:image/')) return true;
   if (/^https?:\/\//.test(normalized)) return true;
   if (normalized.startsWith('/')) {
     return !isLocalFilesystemPath(normalized);
@@ -126,7 +141,8 @@ const isDirectlyRenderableMediaUrl = (value: unknown, prefix: 'data:audio/' | 'd
   if (typeof value !== 'string') return false;
   const normalized = value.trim();
   if (!normalized) return false;
-  if (isRenderableInlineMediaUrl(normalized, prefix) || normalized.startsWith('blob:')) return true;
+  if (isBrowserLocalBlobUrl(normalized)) return false;
+  if (isRenderableInlineMediaUrl(normalized, prefix)) return true;
   if (/^https?:\/\//.test(normalized)) return true;
   if (normalized.startsWith('/')) {
     return !isLocalFilesystemPath(normalized);
@@ -143,8 +159,50 @@ export const isDirectlyRenderableVideoUrl = (value: unknown) =>
 export const extractImageUrls = (value: unknown): string[] => {
   const result: string[] = [];
   const seen = new Set<string>();
+  const sourceHints = new Set([
+    'sourceimageurl',
+    'source_image_url',
+    'referenceimageurl',
+    'reference_image_url',
+    'inputimageurl',
+    'input_image_url',
+    'originalimageurl',
+    'original_image_url',
+    'startimageurl',
+    'start_image_url',
+    'raw',
+    'rawurl',
+    'raw_url',
+    'dataurl',
+    'data_url',
+  ]);
+  const sourceContainerHints = new Set([
+    'referenceimages',
+    'reference_images',
+    'referenceimage',
+    'reference_image',
+    'sourceimages',
+    'source_images',
+    'source',
+    'source_input',
+    'sourceinput',
+    'original',
+    'originalimage',
+    'original_image',
+    'input',
+    'inputs',
+  ]);
 
-  const push = (candidate: unknown) => {
+  const normalizeKeyHint = (keyHint: string) =>
+    String(keyHint || '')
+      .trim()
+      .toLowerCase()
+      .replace(/-/g, '_');
+
+  const push = (candidate: unknown, keyHint = '') => {
+    if (sourceHints.has(normalizeKeyHint(keyHint))) {
+      return;
+    }
     const normalized = normalizeImageValue(candidate);
     if (normalized && !seen.has(normalized)) {
       seen.add(normalized);
@@ -152,14 +210,49 @@ export const extractImageUrls = (value: unknown): string[] => {
     }
   };
 
-  const walk = (payload: unknown) => {
-    push(payload);
+  const pushImageItems = (items: unknown) => {
+    if (Array.isArray(items)) {
+      items.forEach((item) => {
+        if (isPlainObject(item)) {
+          push(item.url, 'imageUrl');
+          push(item.imageUrl, 'imageUrl');
+          push(item.image_url, 'image_url');
+          return;
+        }
+        push(item, 'imageUrl');
+      });
+      return;
+    }
+    if (items != null) {
+      push(items, 'imageUrls');
+    }
+  };
+
+  if (isPlainObject(value)) {
+    push(value.imageUrl, 'imageUrl');
+    push(value.image_url, 'image_url');
+    pushImageItems(value.imageUrls);
+    pushImageItems(value.image_urls);
+    pushImageItems(value.images);
+    if (result.length > 0) {
+      return result;
+    }
+  }
+
+  const walk = (payload: unknown, keyHint = '') => {
+    push(payload, keyHint);
     if (Array.isArray(payload)) {
-      payload.forEach((item) => walk(item));
+      payload.forEach((item) => walk(item, keyHint));
       return;
     }
     if (isPlainObject(payload)) {
-      Object.values(payload).forEach((item) => walk(item));
+      Object.entries(payload).forEach(([key, item]) => {
+        const normalizedKey = normalizeKeyHint(key);
+        if (sourceContainerHints.has(normalizedKey)) {
+          return;
+        }
+        walk(item, normalizedKey);
+      });
     }
   };
 

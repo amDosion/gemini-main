@@ -26,6 +26,8 @@ from ....utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
 
+EXPAND_VERTEX_EDIT_IMAGE_TIMEOUT_MS = 600_000
+
 # 使用新版 google-genai SDK
 try:
     from google.genai import types as genai_types
@@ -234,13 +236,15 @@ class ExpandService:
                 )
 
     def _build_outpaint_config(self, **kwargs):
-        """Build EditImageConfig for Vertex AI outpaint without injecting safety/person settings."""
+        """Build EditImageConfig for Vertex AI outpaint."""
         output_mime_type = kwargs.get('output_mime_type', 'image/png')
         config_kwargs = dict(
             edit_mode="EDIT_MODE_OUTPAINT",
             number_of_images=kwargs.get('number_of_images', 1),
             include_rai_reason=kwargs.get('include_rai_reason', True),
             output_mime_type=output_mime_type,
+            person_generation=genai_types.PersonGeneration.ALLOW_ALL,
+            http_options=genai_types.HttpOptions(timeout=EXPAND_VERTEX_EDIT_IMAGE_TIMEOUT_MS),
         )
 
         if kwargs.get('negative_prompt'):

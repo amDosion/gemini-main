@@ -1212,21 +1212,21 @@ async def execute_node(
 
     if node_type == "human":
         approval_prompt = node_data.get("approval_prompt") or node_data.get("approvalPrompt") or "请人工确认是否继续执行"
+        has_explicit_auto_approve = "auto_approve" in node_data or "autoApprove" in node_data
         auto_approve = engine._to_bool(
-            node_data.get("auto_approve", node_data.get("autoApprove", True)),
-            default=True,
+            node_data.get("auto_approve", node_data.get("autoApprove")),
+            default=False,
         )
+        if not (has_explicit_auto_approve and auto_approve):
+            raise ValueError(
+                "Human approval node requires explicit autoApprove=true until real human confirmation is available"
+            )
         input_text = engine._derive_node_input_text(context, initial_input, input_packets)
         return {
             "approved": auto_approve,
             "approvalPrompt": approval_prompt,
-            "note": "Phase 3 默认自动通过（可在后续版本接入真实人工确认）",
+            "note": "Human approval auto-approved because autoApprove=true was explicitly configured.",
             "text": input_text,
-        }, {"mode": "all" if auto_approve else "none"}
+        }, {"mode": "all"}
 
-    logger.warning(f"[WorkflowEngine] Unknown node type: {node_type}, fallback to passthrough")
-    passthrough_text = engine._derive_node_input_text(context, initial_input, input_packets)
-    return {
-        "text": passthrough_text or f"节点类型 {node_type} 暂不支持，已跳过执行",
-        "nodeType": node_type,
-    }, {"mode": "all"}
+    raise ValueError(f"Unsupported workflow node type: {node_type}")

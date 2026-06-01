@@ -39,17 +39,27 @@ export const GenViewLayout: React.FC<GenViewLayoutProps> = React.memo(({
     const DEFAULT_LEFT_SIDEBAR_WIDTH = 384;
     const LEFT_COLLAPSE_STORAGE_KEY = 'gen-view-layout:left-collapsed';
     const LEFT_WIDTH_STORAGE_KEY = 'gen-view-layout:left-width';
+    const leftSidebarRef = React.useRef<HTMLDivElement | null>(null);
+    const pendingLeftSidebarWidthRef = React.useRef(DEFAULT_LEFT_SIDEBAR_WIDTH);
+    const resizeAnimationFrameRef = React.useRef<number | null>(null);
+    const isResizingLeftSidebarRef = React.useRef(false);
+    const hasMountedWidthPersistenceRef = React.useRef(false);
     const [leftSidebarWidth, setLeftSidebarWidth] = React.useState<number>(() => {
         if (typeof window === 'undefined') {
+            pendingLeftSidebarWidthRef.current = DEFAULT_LEFT_SIDEBAR_WIDTH;
             return DEFAULT_LEFT_SIDEBAR_WIDTH;
         }
         try {
             const raw = Number(window.localStorage.getItem(LEFT_WIDTH_STORAGE_KEY));
             if (!Number.isFinite(raw)) {
+                pendingLeftSidebarWidthRef.current = DEFAULT_LEFT_SIDEBAR_WIDTH;
                 return DEFAULT_LEFT_SIDEBAR_WIDTH;
             }
-            return Math.max(MIN_LEFT_SIDEBAR_WIDTH, Math.min(MAX_LEFT_SIDEBAR_WIDTH, raw));
+            const clamped = Math.max(MIN_LEFT_SIDEBAR_WIDTH, Math.min(MAX_LEFT_SIDEBAR_WIDTH, raw));
+            pendingLeftSidebarWidthRef.current = clamped;
+            return clamped;
         } catch {
+            pendingLeftSidebarWidthRef.current = DEFAULT_LEFT_SIDEBAR_WIDTH;
             return DEFAULT_LEFT_SIDEBAR_WIDTH;
         }
     });
@@ -75,13 +85,15 @@ export const GenViewLayout: React.FC<GenViewLayoutProps> = React.memo(({
         }
     }, [isDesktopSidebarCollapsed]);
 
-    // ✅ Wave 2 perf: debounce localStorage 写入。拖拽 resizer 时 leftSidebarWidth
-    // 每帧变化（mousemove 高频），原实现每帧同步写 localStorage 引发主线程阻塞。
-    // 250ms 后写入；后续渲染会取消上一次未触发的 timer 重新调度；
-    // 卸载时取消 timer 但不丢失（下次 mount 时 useState lazy init 会读 storage —
-    // 即使 storage 落后 250ms，UI 仍以 React state 为准）。
     React.useEffect(() => {
         if (typeof window === 'undefined') {
+            return;
+        }
+        if (!hasMountedWidthPersistenceRef.current) {
+            hasMountedWidthPersistenceRef.current = true;
+            return;
+        }
+        if (isResizingLeftSidebarRef.current) {
             return;
         }
         const timer = window.setTimeout(() => {
@@ -99,7 +111,34 @@ export const GenViewLayout: React.FC<GenViewLayoutProps> = React.memo(({
     const activeResizeHandlersRef = React.useRef<{ onMouseMove?: (event: MouseEvent) => void; onMouseUp?: () => void }>({});
     const [isResizingLeftSidebar, setIsResizingLeftSidebar] = React.useState(false);
 
-    const stopResizing = React.useCallback(() => {
+    const applyPendingLeftSidebarWidth = React.useCallback(() => {
+        const nextWidth = pendingLeftSidebarWidthRef.current;
+        leftSidebarRef.current?.style.setProperty('--gen-left-sidebar-width', `${nextWidth}px`);
+    }, []);
+
+    const scheduleLeftSidebarWidthPaint = React.useCallback((nextWidth: number) => {
+        pendingLeftSidebarWidthRef.current = nextWidth;
+        if (typeof window === 'undefined') {
+            return;
+        }
+        if (resizeAnimationFrameRef.current !== null) {
+            return;
+        }
+        resizeAnimationFrameRef.current = window.requestAnimationFrame(() => {
+            resizeAnimationFrameRef.current = null;
+            applyPendingLeftSidebarWidth();
+        });
+    }, [applyPendingLeftSidebarWidth]);
+
+    const cancelPendingResizeFrame = React.useCallback(() => {
+        if (typeof window === 'undefined' || resizeAnimationFrameRef.current === null) {
+            return;
+        }
+        window.cancelAnimationFrame(resizeAnimationFrameRef.current);
+        resizeAnimationFrameRef.current = null;
+    }, []);
+
+    const stopResizing = React.useCallback((commitWidth = false) => {
         const handlers = activeResizeHandlersRef.current;
         if (handlers.onMouseMove) {
             window.removeEventListener('mousemove', handlers.onMouseMove);
@@ -108,12 +147,24 @@ export const GenViewLayout: React.FC<GenViewLayoutProps> = React.memo(({
             window.removeEventListener('mouseup', handlers.onMouseUp);
         }
         activeResizeHandlersRef.current = {};
+        cancelPendingResizeFrame();
+        if (commitWidth) {
+            applyPendingLeftSidebarWidth();
+            const committedWidth = pendingLeftSidebarWidthRef.current;
+            setLeftSidebarWidth((current) => (
+                current === committedWidth ? current : committedWidth
+            ));
+        } else {
+            pendingLeftSidebarWidthRef.current = leftSidebarWidth;
+            leftSidebarRef.current?.style.setProperty('--gen-left-sidebar-width', `${leftSidebarWidth}px`);
+        }
+        isResizingLeftSidebarRef.current = false;
         if (typeof document !== 'undefined') {
             document.body.style.cursor = '';
             document.body.style.userSelect = '';
         }
         setIsResizingLeftSidebar(false);
-    }, []);
+    }, [applyPendingLeftSidebarWidth, cancelPendingResizeFrame, leftSidebarWidth]);
 
     React.useEffect(() => {
         return () => {
@@ -134,26 +185,29 @@ export const GenViewLayout: React.FC<GenViewLayoutProps> = React.memo(({
 
         const startX = event.clientX;
         const startWidth = leftSidebarWidth;
+        pendingLeftSidebarWidthRef.current = startWidth;
 
         const onMouseMove = (moveEvent: MouseEvent) => {
+            moveEvent.preventDefault();
             const deltaX = moveEvent.clientX - startX;
             const next = Math.max(
                 MIN_LEFT_SIDEBAR_WIDTH,
                 Math.min(MAX_LEFT_SIDEBAR_WIDTH, startWidth + deltaX),
             );
-            setLeftSidebarWidth(next);
+            scheduleLeftSidebarWidthPaint(next);
         };
         const onMouseUp = () => {
-            stopResizing();
+            stopResizing(true);
         };
 
         activeResizeHandlersRef.current = { onMouseMove, onMouseUp };
+        isResizingLeftSidebarRef.current = true;
         setIsResizingLeftSidebar(true);
         document.body.style.cursor = 'col-resize';
         document.body.style.userSelect = 'none';
         window.addEventListener('mousemove', onMouseMove);
         window.addEventListener('mouseup', onMouseUp);
-    }, [isDesktopSidebarCollapsed, leftSidebarWidth, stopResizing]);
+    }, [isDesktopSidebarCollapsed, leftSidebarWidth, scheduleLeftSidebarWidthPaint, stopResizing]);
 
     return (
         <div className="flex-1 flex h-full bg-slate-950 overflow-hidden relative">
@@ -188,6 +242,7 @@ export const GenViewLayout: React.FC<GenViewLayoutProps> = React.memo(({
                 </div>
             )}
             <div
+                ref={leftSidebarRef}
                 style={{ '--gen-left-sidebar-width': `${leftSidebarWidth}px` } as React.CSSProperties}
                 className={`
                 w-80 flex-shrink-0 z-40 md:z-0 bg-slate-900 border-r border-slate-800 flex flex-col

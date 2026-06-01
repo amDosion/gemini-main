@@ -92,11 +92,13 @@
           "description": "识别否定词和加投词",
           "icon": "🧩",
           "iconColor": "bg-indigo-500",
-          "agentName": "亚马逊广告分析师",
           "agentTaskType": "data-analysis",
           "agentFileUrl": "{{input-file-ads-board.output.fileUrl}}",
           "inputMapping": "投放目标：{{input-text-ads-board.output.text}}\\n报表文件：{{input-file-ads-board.output.fileUrl}}\\n\\n请输出关键词优化诊断：\\n1. 否定词候选（P0/P1）\\n2. 加投词候选（预算建议）\\n3. 竞价调整建议。",
-          "instructions": "请按“立即执行/观察/暂缓”三级输出，并标注每个建议的证据字段与阈值。"
+          "instructions": "请按“立即执行/观察/暂缓”三级输出，并标注每个建议的证据字段与阈值。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-ad-analyst"
         }
       },
       {
@@ -112,11 +114,13 @@
           "description": "检查字段映射和数据异常",
           "icon": "📊",
           "iconColor": "bg-cyan-500",
-          "agentName": "数据报表分析师",
           "agentTaskType": "data-analysis",
           "agentFileUrl": "{{input-file-ads-board.output.fileUrl}}",
           "inputMapping": "报表文件：{{input-file-ads-board.output.fileUrl}}\\n\\n请完成结构审计：\\n1. 字段映射校验\\n2. 异常值/缺失值定位\\n3. 样本量与统计口径风险。",
-          "instructions": "请输出审计摘要、风险等级、对后续广告决策的影响说明。"
+          "instructions": "请输出审计摘要、风险等级、对后续广告决策的影响说明。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -132,9 +136,12 @@
           "description": "评估竞价与预算调整方案",
           "icon": "📈",
           "iconColor": "bg-blue-500",
-          "agentName": "亚马逊广告分析师",
           "inputMapping": "投放目标：{{input-text-ads-board.output.text}}\\n报表文件：{{input-file-ads-board.output.fileUrl}}",
-          "instructions": "请仅输出 PPC 执行层面的结论：\n1. 否定词优先级（P0/P1）\n2. 加投词竞价策略（增幅范围）\n3. 应暂停/降价关键词\n4. 预算分配建议（品牌词/品类词/竞品词）"
+          "instructions": "请仅输出 PPC 执行层面的结论：\n1. 否定词优先级（P0/P1）\n2. 加投词竞价策略（增幅范围）\n3. 应暂停/降价关键词\n4. 预算分配建议（品牌词/品类词/竞品词）",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-ad-analyst"
         }
       },
       {
@@ -166,9 +173,12 @@
           "description": "验证诊断结果是否存在冲突",
           "icon": "✅",
           "iconColor": "bg-emerald-500",
-          "agentName": "数据报表分析师",
           "inputMapping": "三路诊断汇总：{{merge-ads-board.output.text}}",
-          "instructions": "请对三路输出做一致性验证：\n1. 识别冲突结论并解释\n2. 标注证据不足项\n3. 给出可信建议清单\n4. 输出“通过/有条件通过/不通过”结果"
+          "instructions": "请对三路输出做一致性验证：\n1. 识别冲突结论并解释\n2. 标注证据不足项\n3. 给出可信建议清单\n4. 输出“通过/有条件通过/不通过”结果",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -184,9 +194,12 @@
           "description": "输出可执行的预算与投放决策看板",
           "icon": "🧠",
           "iconColor": "bg-violet-500",
-          "agentName": "运营策略顾问",
           "inputMapping": "一致性验证结果：{{agent-ads-cross-check.output.text}}",
-          "instructions": "请输出广告决策看板：\n1. 否定词执行清单\n2. 加投词预算与竞价调整\n3. 7 天投放节奏\n4. 预期指标变化（ACoS/订单/花费）\n5. 回滚阈值与复盘节点"
+          "instructions": "请输出广告决策看板：\n1. 否定词执行清单\n2. 加投词预算与竞价调整\n3. 7 天投放节奏\n4. 预期指标变化（ACoS/订单/花费）\n5. 回滚阈值与复盘节点",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {

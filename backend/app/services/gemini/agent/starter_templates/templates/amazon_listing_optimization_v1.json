@@ -266,10 +266,10 @@
           "description": "输出标题词、卖点词、后台词的分层策略",
           "icon": "🗺️",
           "iconColor": "bg-amber-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "data-analysis",
           "inputMapping": "站点：{{input-site-listing.output.text}}\n产品需求：{{input-text-listing.output.text}}\n\n类目关键词：{{tool-category-keywords-listing.output.rawText}}\n\n流量词：{{tool-product-traffic-listing.output.rawText}}\n\n竞品关键词：{{tool-competitor-keywords-listing.output.rawText}}",
-          "instructions": "请输出 Listing 关键词地图：1) Title 核心词；2) Bullet 卖点词；3) Search Terms 后台词；4) 需要避开的重复/低质词；5) 按高优先级/次优先级/补充词分层。"
+          "instructions": "请输出 Listing 关键词地图：1) Title 核心词；2) Bullet 卖点词；3) Search Terms 后台词；4) 需要避开的重复/低质词；5) 按高优先级/次优先级/补充词分层。",
+          "agentPresetKey": "keyword-researcher"
         }
       },
       {
@@ -285,10 +285,10 @@
           "description": "总结竞品结构和可打差异点",
           "icon": "🧠",
           "iconColor": "bg-red-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "data-analysis",
           "inputMapping": "站点：{{input-site-listing.output.text}}\n产品需求：{{input-text-listing.output.text}}\n\n商品搜索结果：{{tool-product-search-listing.output.rawText}}\n\n竞品详情：{{tool-product-detail-listing.output.rawText}}\n\n网页线索：{{tool-read-webpage-listing.output.content}}",
-          "instructions": "请输出竞品差异化分析：1) 标题和 Bullet 常见结构；2) 竞品主打卖点；3) 空白机会；4) 需要回避的夸张表达；5) 可落地的差异化角度。"
+          "instructions": "请输出竞品差异化分析：1) 标题和 Bullet 常见结构；2) 竞品主打卖点；3) 空白机会；4) 需要回避的夸张表达；5) 可落地的差异化角度。",
+          "agentPresetKey": "competitor-analyst"
         }
       },
       {
@@ -304,10 +304,10 @@
           "description": "把卖点、场景和证据组织成转化结构",
           "icon": "🧱",
           "iconColor": "bg-emerald-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "data-analysis",
           "inputMapping": "站点：{{input-site-listing.output.text}}\n产品需求：{{input-text-listing.output.text}}\n\n竞品详情：{{tool-product-detail-listing.output.rawText}}\n\n流量词：{{tool-product-traffic-listing.output.rawText}}\n\n网页线索：{{tool-read-webpage-listing.output.content}}",
-          "instructions": "请规划转化结构：1) 主标题信息顺序；2) 五点卖点顺序；3) 产品描述和 A+ 模块建议；4) 每个模块对应的证据与场景；5) 哪些内容需要图片配合。"
+          "instructions": "请规划转化结构：1) 主标题信息顺序；2) 五点卖点顺序；3) 产品描述和 A+ 模块建议；4) 每个模块对应的证据与场景；5) 哪些内容需要图片配合。",
+          "agentPresetKey": "listing-optimizer"
         }
       },
       {
@@ -339,10 +339,10 @@
           "description": "输出标题、五点、描述和后台词",
           "icon": "✍️",
           "iconColor": "bg-indigo-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "chat",
           "inputMapping": "站点：{{input-site-listing.output.text}}\n产品需求：{{input-text-listing.output.text}}\n\n并行分析汇总：{{merge-analysis-listing.output.text}}\n\nMCP 资料汇总：{{merge-research-listing.output.text}}",
-          "instructions": "请输出完整 Listing 方案：1) 2 个标题方案（控制在 Amazon 常见字符范围内）；2) 5 条 Bullet；3) 产品描述；4) Search Terms；5) A+ 模块建议；6) 用表格注明每一段使用了哪些关键词和卖点。结果要详细、可直接给运营改稿。"
+          "instructions": "请输出完整 Listing 方案：1) 2 个标题方案（控制在 Amazon 常见字符范围内）；2) 5 条 Bullet；3) 产品描述；4) Search Terms；5) A+ 模块建议；6) 用表格注明每一段使用了哪些关键词和卖点。结果要详细、可直接给运营改稿。",
+          "agentPresetKey": "listing-optimizer"
         }
       },
       {

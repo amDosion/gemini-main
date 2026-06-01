@@ -17,10 +17,12 @@ import type { Edge, Node } from 'reactflow';
 
 import type { WorkflowEdge, WorkflowNode, WorkflowNodeData } from '../types';
 import type { ActiveTemplateMeta } from '../workflowTemplateLoader';
-import { validateWorkflow } from '../workflowUtils';
+import { formatWorkflowValidationError, validateWorkflow } from '../workflowUtils';
 import { buildWorkflowStructureFingerprint } from '../workflowEditorUtils';
 import { hasUsableImageInput } from '../workflowResultUtils';
 import { mergeUniqueStringList, normalizeStringList } from '../workflowGraphUtils';
+import { classifyToolNode } from '../toolClassification';
+import { normalizeWorkflowAgentTaskType } from '../workflowContract';
 import { getErrorMessage } from '../../../utils/errorMessage';
 
 import type { LogLevel } from '../ExecutionLogPanel';
@@ -112,19 +114,7 @@ export const useWorkflowExecuteHandler = ({
       setExecuteErrorBanner(null);
       const validation = validateWorkflow(nodes as Node<WorkflowNodeData>[], edges as Edge[]);
       if (!validation.isValid) {
-        const nodeErrorDetails = Object.entries(validation.nodeErrors || {})
-          .slice(0, 4)
-          .map(([nodeId, errors]) => `${nodeId}: ${(errors || []).join('；')}`);
-        const details = [
-          ...(validation.globalErrors || []),
-          ...(validation.edgeErrors || []),
-          ...nodeErrorDetails,
-        ].filter(Boolean);
-        const message =
-          details.length > 0
-            ? `工作流结构校验失败：${details.join(' | ')}`
-            : '工作流结构校验失败，请检查开始/结束节点及连线';
-        throw new Error(message);
+        throw new Error(formatWorkflowValidationError(validation));
       }
 
       setIsExecuting(true);
@@ -265,55 +255,34 @@ export const useWorkflowExecuteHandler = ({
         if (nodeType !== 'agent') return false;
         const hasNodeImage = Boolean(String(node?.data?.agentReferenceImageUrl || '').trim());
         if (!hasNodeImage) return false;
-        const taskType = String(node?.data?.agentTaskType || 'chat')
-          .toLowerCase()
-          .replace(/_/g, '-');
+        const explicitTaskType = String(node?.data?.agentTaskType || '').trim();
+        if (!explicitTaskType) return false;
+        const taskType = normalizeWorkflowAgentTaskType(explicitTaskType, null);
         return !(
           taskType === 'vision-understand' ||
-          taskType === 'image-understand' ||
-          taskType === 'vision-analyze' ||
-          taskType === 'image-analyze' ||
-          taskType === 'image-edit'
+          taskType === 'image-edit' ||
+          taskType === 'video-gen'
         );
       });
       if (hasInvalidAgentImageTask) {
         throw new Error(
-          '存在智能体节点已配置参考图，但任务类型不是 vision-understand 或 image-edit。请先修正节点配置。'
+          '存在智能体节点已配置参考图，但任务类型不是 vision-understand、image-edit 或 video-gen。请先修正节点配置。'
         );
       }
       const requiresImageInput = (nodes as WorkflowNode[]).some((node) => {
         const nodeType = (node?.data?.type || node?.type || '').toLowerCase();
         if (nodeType === 'agent') {
-          const taskType = String(node?.data?.agentTaskType || '').toLowerCase();
+          const taskType = normalizeWorkflowAgentTaskType(node?.data?.agentTaskType, null);
           if (
             taskType === 'image-edit' ||
-            taskType === 'image_edit' ||
-            taskType === 'vision-understand' ||
-            taskType === 'vision_understand' ||
-            taskType === 'image-understand' ||
-            taskType === 'image_understand'
+            taskType === 'vision-understand'
           ) {
             const hasNodeImage = Boolean(String(node?.data?.agentReferenceImageUrl || '').trim());
             return !hasNodeImage;
           }
         }
         if (nodeType === 'tool') {
-          const toolName = String(node?.data?.toolName || '')
-            .toLowerCase()
-            .replace(/-/g, '_');
-          const editTools = new Set([
-            'image_edit',
-            'edit_image',
-            'image_chat_edit',
-            'image_mask_edit',
-            'image_inpainting',
-            'image_background_edit',
-            'image_recontext',
-            'image_outpaint',
-            'image_outpainting',
-            'expand_image',
-          ]);
-          if (editTools.has(toolName)) {
+          if (classifyToolNode(String(node?.data?.toolName || '')).isImageEdit) {
             const hasNodeImage = Boolean(String(node?.data?.toolReferenceImageUrl || '').trim());
             return !hasNodeImage;
           }

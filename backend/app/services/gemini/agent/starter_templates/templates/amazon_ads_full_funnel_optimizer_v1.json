@@ -76,11 +76,13 @@
           "description": "识别字段、缺失值、异常值并输出可用口径",
           "icon": "🧪",
           "iconColor": "bg-sky-500",
-          "agentName": "数据报表分析师",
           "agentTaskType": "data-analysis",
           "agentFileUrl": "{{input-file-ads-funnel.output.fileUrl}}",
           "inputMapping": "文件：{{input-file-ads-funnel.output.fileUrl}}\n业务目标：{{input-text-ads-funnel.output.text}}\n\n请输出：\n1) 字段映射（search_term/keyword/impressions/clicks/spend/sales/orders/acos/cvr）\n2) 数据质量问题（缺失、异常、重复）\n3) 分析可用性结论（pass/fail + 原因）",
-          "instructions": "输出结构化结论，优先确保口径正确，避免直接给动作建议。"
+          "instructions": "输出结构化结论，优先确保口径正确，避免直接给动作建议。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -113,11 +115,13 @@
           "description": "输出可直接执行的否定词清单与原因",
           "icon": "🧹",
           "iconColor": "bg-rose-500",
-          "agentName": "亚马逊广告分析师",
           "agentTaskType": "data-analysis",
           "agentFileUrl": "{{input-file-ads-funnel.output.fileUrl}}",
           "inputMapping": "质检结果：{{agent-ads-funnel-intake.output.text}}\n业务目标：{{input-text-ads-funnel.output.text}}",
-          "instructions": "只输出否定词方案：term、建议匹配方式(exact/phrase)、触发规则、预计节省花费。"
+          "instructions": "只输出否定词方案：term、建议匹配方式(exact/phrase)、触发规则、预计节省花费。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-ad-analyst"
         }
       },
       {
@@ -133,11 +137,13 @@
           "description": "识别高效词并给出加价/加预算建议",
           "icon": "📈",
           "iconColor": "bg-emerald-500",
-          "agentName": "亚马逊广告分析师",
           "agentTaskType": "data-analysis",
           "agentFileUrl": "{{input-file-ads-funnel.output.fileUrl}}",
           "inputMapping": "质检结果：{{agent-ads-funnel-intake.output.text}}\n业务目标：{{input-text-ads-funnel.output.text}}",
-          "instructions": "只输出扩量方案：term、建议加价百分比、预算乘数、预期增量与风险。"
+          "instructions": "只输出扩量方案：term、建议加价百分比、预算乘数、预期增量与风险。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-ad-analyst"
         }
       },
       {
@@ -153,11 +159,13 @@
           "description": "按 campaign 层级分配预算与执行顺序",
           "icon": "💰",
           "iconColor": "bg-amber-500",
-          "agentName": "运营策略顾问",
           "agentTaskType": "data-analysis",
           "agentFileUrl": "{{input-file-ads-funnel.output.fileUrl}}",
           "inputMapping": "质检结果：{{agent-ads-funnel-intake.output.text}}\n业务目标：{{input-text-ads-funnel.output.text}}",
-          "instructions": "按 P0/P1/P2 输出预算重分配计划，附 7 天执行节奏与复盘指标。"
+          "instructions": "按 P0/P1/P2 输出预算重分配计划，附 7 天执行节奏与复盘指标。",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {
@@ -189,10 +197,12 @@
           "description": "审查冲突建议、重复词和阈值矛盾",
           "icon": "🛡️",
           "iconColor": "bg-indigo-500",
-          "agentName": "数据报表分析师",
           "agentTaskType": "data-analysis",
           "inputMapping": "并行策略汇总：{{merge-ads-funnel.output.text}}",
-          "instructions": "输出冲突清单（若有）+ 修复建议 + 可信度评分（0-100）。"
+          "instructions": "输出冲突清单（若有）+ 修复建议 + 可信度评分（0-100）。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -208,9 +218,12 @@
           "description": "输出可执行动作与优先级",
           "icon": "🧭",
           "iconColor": "bg-teal-500",
-          "agentName": "亚马逊广告分析师",
           "inputMapping": "策略汇总：{{merge-ads-funnel.output.text}}\n校验结论：{{agent-ads-funnel-validate.output.text}}",
-          "instructions": "输出最终动作板：P0/P1/P2、执行人、预计影响、回滚条件。"
+          "instructions": "输出最终动作板：P0/P1/P2、执行人、预计影响、回滚条件。",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-ad-analyst"
         }
       },
       {

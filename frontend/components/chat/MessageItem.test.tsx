@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { Message, Role } from '../../types/types';
 
-const { toolCallDisplaySpy } = vi.hoisted(() => ({
+const { attachmentGridSpy, toolCallDisplaySpy } = vi.hoisted(() => ({
+  attachmentGridSpy: vi.fn(),
   toolCallDisplaySpy: vi.fn(),
 }));
 
@@ -43,6 +44,18 @@ vi.mock('./ToolCallDisplay', () => ({
   },
 }));
 
+vi.mock('../message/AttachmentGrid', () => ({
+  AttachmentGrid: (props: any) => {
+    attachmentGridSpy(props);
+    return (
+      <div
+        data-testid="attachment-grid"
+        data-first-cloud-url={props.attachments?.[0]?.cloudUrl || ''}
+      />
+    );
+  },
+}));
+
 import MessageItem from './MessageItem';
 
 const createModelMessage = (overrides: Partial<Message> = {}): Message => ({
@@ -57,6 +70,7 @@ const createModelMessage = (overrides: Partial<Message> = {}): Message => ({
 
 describe('MessageItem', () => {
   beforeEach(() => {
+    attachmentGridSpy.mockClear();
     toolCallDisplaySpy.mockClear();
   });
 
@@ -102,5 +116,34 @@ describe('MessageItem', () => {
 
     expect(call1Props?.toolResult?.callId).toBe('call_1');
     expect(call2Props?.toolResult?.callId).toBe('call_2');
+  });
+
+  it('rerenders attachments when an existing message receives a durable cloudUrl', () => {
+    const message = createModelMessage({
+      id: 'model-msg-mutated-attachment',
+      attachments: [
+        {
+          id: 'att-mutated',
+          name: 'generated.png',
+          mimeType: 'image/png',
+          url: 'blob:https://gemini.dicry.cn:18443/message-stale-object-url',
+        },
+      ],
+    });
+    const durableUrl = '/api/storage/local-files/2026/05/31/message-generated.png';
+
+    const { rerender } = render(<MessageItem message={message} isStreaming={false} />);
+
+    expect(screen.getByTestId('attachment-grid')).toHaveAttribute('data-first-cloud-url', '');
+
+    message.attachments![0].cloudUrl = durableUrl;
+
+    rerender(<MessageItem message={message} isStreaming={false} />);
+
+    expect(screen.getByTestId('attachment-grid')).toHaveAttribute(
+      'data-first-cloud-url',
+      durableUrl
+    );
+    expect(attachmentGridSpy.mock.calls.at(-1)?.[0].attachments[0].cloudUrl).toBe(durableUrl);
   });
 });

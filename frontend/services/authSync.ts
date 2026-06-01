@@ -4,7 +4,7 @@
 
 // 创建广播频道
 const authChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('auth') : null;
-const tokenRefreshListeners = new Set<(accessToken: string, refreshToken: string) => void>();
+const tokenRefreshListeners = new Set<() => void>();
 const logoutListeners = new Set<() => void>();
 
 authChannel?.addEventListener('message', (event) => {
@@ -12,7 +12,7 @@ authChannel?.addEventListener('message', (event) => {
 
   if (payload.type === 'token_refreshed') {
     tokenRefreshListeners.forEach((listener) => {
-      listener(payload.accessToken, payload.refreshToken);
+      listener();
     });
     return;
   }
@@ -27,11 +27,9 @@ authChannel?.addEventListener('message', (event) => {
 /**
  * 广播 token 刷新事件
  */
-export function broadcastTokenRefresh(accessToken: string, refreshToken: string) {
+export function broadcastTokenRefresh() {
   authChannel?.postMessage({
     type: 'token_refreshed',
-    accessToken,
-    refreshToken,
     timestamp: Date.now()
   });
 }
@@ -39,7 +37,7 @@ export function broadcastTokenRefresh(accessToken: string, refreshToken: string)
 /**
  * 监听其他标签页的 token 刷新
  */
-export function listenTokenRefresh(callback: (accessToken: string, refreshToken: string) => void) {
+export function listenTokenRefresh(callback: () => void) {
   tokenRefreshListeners.add(callback);
 
   return () => {

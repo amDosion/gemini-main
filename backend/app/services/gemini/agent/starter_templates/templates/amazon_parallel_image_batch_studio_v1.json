@@ -76,9 +76,12 @@
           "description": "拆解 6 路素材任务，统一英文文案与排版规则",
           "icon": "🧠",
           "iconColor": "bg-indigo-500",
-          "agentName": "电商文案创作师",
           "inputMapping": "Reference image: {{input-image-batch-matrix.output.imageUrl}}\nCopy goal: {{input-text-batch-matrix.output.text}}",
-          "instructions": "输出 6 路素材规划：hero/lifestyle/comparison/ugc/flatlay/seasonal。每一路都给 headline、2 个 badges、禁止遮挡区域、safe-zone 排版规则。仅输出英文。"
+          "instructions": "输出 6 路素材规划：hero/lifestyle/comparison/ugc/flatlay/seasonal。每一路都给 headline、2 个 badges、禁止遮挡区域、safe-zone 排版规则。仅输出英文。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.8,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ecommerce-copywriter"
         }
       },
       {
@@ -110,7 +113,6 @@
           "description": "主视觉卖点图",
           "icon": "🌟",
           "iconColor": "bg-pink-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentEditMode": "image-chat-edit",
           "agentReferenceImageUrl": "{{input-image-batch-matrix.output.imageUrl}}",
@@ -120,7 +122,16 @@
           "agentProductMatchThreshold": 72,
           "agentOutputLanguage": "en",
           "inputMapping": "{{agent-plan-batch-matrix.output.text}}\n\nRoute hero: Produce Amazon hero image. English headline + 2 badges. Keep text in top corners; do not cover model face/torso or product body.",
-          "instructions": "English-only overlays. Keep product geometry and key texture unchanged."
+          "instructions": "English-only overlays. Keep product geometry and key texture unchanged.",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -136,7 +147,6 @@
           "description": "生活方式卖点图",
           "icon": "🏡",
           "iconColor": "bg-orange-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentEditMode": "image-chat-edit",
           "agentReferenceImageUrl": "{{input-image-batch-matrix.output.imageUrl}}",
@@ -146,7 +156,16 @@
           "agentProductMatchThreshold": 72,
           "agentOutputLanguage": "en",
           "inputMapping": "{{agent-plan-batch-matrix.output.text}}\n\nRoute lifestyle: Create daily-life usage scene with natural light. English headline + 2 badges in safe zones only.",
-          "instructions": "Prioritize realistic model pose and product usage context."
+          "instructions": "Prioritize realistic model pose and product usage context.",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -162,7 +181,6 @@
           "description": "场景对比和优势强调",
           "icon": "🆚",
           "iconColor": "bg-violet-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentEditMode": "image-chat-edit",
           "agentReferenceImageUrl": "{{input-image-batch-matrix.output.imageUrl}}",
@@ -172,7 +190,16 @@
           "agentProductMatchThreshold": 72,
           "agentOutputLanguage": "en",
           "inputMapping": "{{agent-plan-batch-matrix.output.text}}\n\nRoute comparison: Build a clean comparative benefit layout with English copy. Keep product unobstructed and avoid dense text blocks.",
-          "instructions": "Use high contrast callouts while preserving premium ecommerce style."
+          "instructions": "Use high contrast callouts while preserving premium ecommerce style.",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -188,7 +215,6 @@
           "description": "真实用户风格素材",
           "icon": "📱",
           "iconColor": "bg-sky-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentEditMode": "image-chat-edit",
           "agentReferenceImageUrl": "{{input-image-batch-matrix.output.imageUrl}}",
@@ -198,7 +224,16 @@
           "agentProductMatchThreshold": 72,
           "agentOutputLanguage": "en",
           "inputMapping": "{{agent-plan-batch-matrix.output.text}}\n\nRoute ugc: Generate social-friendly UGC style creative with short English headline and 2 badges only.",
-          "instructions": "Keep authentic tone, avoid over-polished rendering artifacts."
+          "instructions": "Keep authentic tone, avoid over-polished rendering artifacts.",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -214,7 +249,6 @@
           "description": "高质感平铺文案图",
           "icon": "🧷",
           "iconColor": "bg-rose-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentEditMode": "image-chat-edit",
           "agentReferenceImageUrl": "{{input-image-batch-matrix.output.imageUrl}}",
@@ -224,7 +258,16 @@
           "agentProductMatchThreshold": 72,
           "agentOutputLanguage": "en",
           "inputMapping": "{{agent-plan-batch-matrix.output.text}}\n\nRoute flatlay: Luxury flat-lay composition, English headline + 2 badges + optional thin callout lines. Keep copy away from product body.",
-          "instructions": "Use premium lighting and high-end ecommerce composition."
+          "instructions": "Use premium lighting and high-end ecommerce composition.",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -240,7 +283,6 @@
           "description": "节日/季节促销素材",
           "icon": "🎁",
           "iconColor": "bg-green-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentEditMode": "image-chat-edit",
           "agentReferenceImageUrl": "{{input-image-batch-matrix.output.imageUrl}}",
@@ -250,7 +292,16 @@
           "agentProductMatchThreshold": 72,
           "agentOutputLanguage": "en",
           "inputMapping": "{{agent-plan-batch-matrix.output.text}}\n\nRoute seasonal: Seasonal campaign visual (gift/holiday tone). English headline + 2 badges. Keep model/product clear.",
-          "instructions": "Do not change product category identity or core shape."
+          "instructions": "Do not change product category identity or core shape.",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -282,9 +333,12 @@
           "description": "按可投放标准打分并输出交付清单",
           "icon": "✅",
           "iconColor": "bg-emerald-500",
-          "agentName": "运营策略顾问",
           "inputMapping": "Batch outputs: {{merge-batch-matrix.output.text}}",
-          "instructions": "你只做素材交付评分，不要索要额外输入。请输出英文：\n1) Route scorecard（quality / overlap risk / pass-fail）\n2) Best picks by use-case（hero/ads/secondary）\n3) Retry prompts（仅对 fail 或 medium-risk 分支）\n4) Final delivery checklist。"
+          "instructions": "你只做素材交付评分，不要索要额外输入。请输出英文：\n1) Route scorecard（quality / overlap risk / pass-fail）\n2) Best picks by use-case（hero/ads/secondary）\n3) Retry prompts（仅对 fail 或 medium-risk 分支）\n4) Final delivery checklist。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {

@@ -58,12 +58,14 @@ const MODE_COMPONENTS: Record<string, React.LazyExoticComponent<React.ComponentT
 interface StudioViewProps {
   messages: Message[];
   mode: AppMode;
+  modeReloadKeys?: Partial<Record<AppMode, number>>;
   setAppMode: (mode: AppMode) => void;
   onImageClick: (url: string) => void;
   loadingState: string;
   onSend: (text: string, options: ChatOptions, attachments: Attachment[], mode: AppMode) => void;
   onStop: () => void;
   activeModelConfig?: ModelConfig;
+  onModelSelect?: (id: string) => void;
   visibleModels?: ModelConfig[];
   allVisibleModels?: ModelConfig[];
   initialPrompt?: string;
@@ -96,7 +98,7 @@ interface StudioViewProps {
  * - Unvisited modes cost zero memory
  */
 export const StudioView: React.FC<StudioViewProps> = React.memo((props) => {
-  const { mode: currentMode, messages, ...restProps } = props;
+  const { mode: currentMode, modeReloadKeys = {}, messages, ...restProps } = props;
 
   // Track which modes have been visited (once mounted, stay alive)
   const mountedModesRef = useRef<Set<string>>(new Set());
@@ -117,7 +119,7 @@ export const StudioView: React.FC<StudioViewProps> = React.memo((props) => {
 
         return (
           <div
-            key={mode}
+            key={`${mode}:${modeReloadKeys[mode as AppMode] || 0}`}
             style={{
               display: isActive ? 'contents' : 'none',
             }}

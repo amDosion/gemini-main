@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
+import { CachedImage } from './CachedImage';
+import type { MediaCacheSource } from '../../services/mediaCache';
 
 export type CarouselAccentTone = 'emerald' | 'orange' | 'pink' | 'indigo' | 'slate';
 
@@ -7,6 +9,7 @@ export interface CarouselMediaItem {
   id?: string | number;
   url?: string | null;
   thumbUrl?: string | null;
+  source?: MediaCacheSource | null;
   alt?: string;
 }
 
@@ -78,7 +81,7 @@ export const ImageCarouselThumbnails: React.FC<ImageCarouselThumbnailsProps> = (
   counterClassName = 'ml-2 text-sm text-slate-400 font-mono',
   showCounter = true
 }) => {
-  const [failedThumbs, setFailedThumbs] = useState<Record<number, boolean>>({});
+  const [failedThumbs, setFailedThumbs] = useState<Record<number, string>>({});
   const accent = ACCENT_CLASSES[accentTone] || ACCENT_CLASSES.emerald;
 
   const thumbStyle = useMemo<React.CSSProperties>(() => ({
@@ -95,7 +98,10 @@ export const ImageCarouselThumbnails: React.FC<ImageCarouselThumbnailsProps> = (
       {items.map((item, idx) => {
         const key = item.id ?? idx;
         const thumbUrl = item.thumbUrl || item.url || '';
-        const showPlaceholder = !thumbUrl || failedThumbs[idx];
+        const thumbSource = item.source || (thumbUrl ? { url: thumbUrl } : null);
+        const hasRenderableSource = Boolean(thumbUrl || thumbSource?.file);
+        const failedKey = thumbUrl || `${key}`;
+        const showPlaceholder = !hasRenderableSource || failedThumbs[idx] === failedKey;
         const isCurrent = idx === currentIndex;
 
         return (
@@ -109,11 +115,12 @@ export const ImageCarouselThumbnails: React.FC<ImageCarouselThumbnailsProps> = (
             title={`切换到第 ${idx + 1} 张`}
           >
             {!showPlaceholder && (
-              <img
-                src={thumbUrl}
+              <CachedImage
+                source={thumbSource}
+                src={thumbUrl || null}
                 className="w-full h-full object-cover"
                 alt={item.alt || `缩略图 ${idx + 1}`}
-                onError={() => setFailedThumbs((prev) => ({ ...prev, [idx]: true }))}
+                onError={() => setFailedThumbs((prev) => ({ ...prev, [idx]: failedKey }))}
               />
             )}
             {showPlaceholder && (

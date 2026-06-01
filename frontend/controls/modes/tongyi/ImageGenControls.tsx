@@ -3,14 +3,25 @@
  * 支持 wan2.x-t2i / z-image-turbo / wan2.6-image 系列模型
  */
 import React, { useEffect, useMemo } from 'react';
-import { Palette, Layers, Ratio, Maximize2, ChevronUp, ChevronDown, Dices, Sparkles, Wand2 } from 'lucide-react';
+import { BrainCircuit, Palette, Ratio, Maximize2, ChevronUp, ChevronDown, Dices, Wand2, Layers } from 'lucide-react';
 import { ControlsState } from '../../types';
+import { ModelConfig } from '../../../types/types';
 import { getPixelResolutionFromSchema, useModeControlsSchema } from '../../../hooks/useModeControlsSchema';
+import { useEnhancePromptModels } from '../../../hooks/useEnhancePromptModels';
+import PromptEnhanceControl from '../../shared/PromptEnhanceControl';
+import FeatureToggleControl from '../../shared/FeatureToggleControl';
+import ImageCountSliderControl from '../../shared/ImageCountSliderControl';
+import {
+  getBooleanDefault,
+  getUnsupportedParams,
+  supportsBooleanParam,
+} from '../../shared/modeControlSchemaUtils';
 
 export interface ImageGenControlsProps {
   providerId?: string;
   currentModel?: { id: string; name?: string };
   controls?: ControlsState;
+  availableModels?: ModelConfig[];
   style?: string;
   setStyle?: (v: string) => void;
   numberOfImages?: number;
@@ -27,8 +38,12 @@ export interface ImageGenControlsProps {
   setNegativePrompt?: (v: string) => void;
   promptExtend?: boolean;
   setPromptExtend?: (v: boolean) => void;
+  enhancePrompt?: boolean;
+  setEnhancePrompt?: (v: boolean) => void;
   addMagicSuffix?: boolean;
   setAddMagicSuffix?: (v: boolean) => void;
+  enableSequential?: boolean;
+  setEnableSequential?: (v: boolean) => void;
 }
 
 export const ImageGenControls: React.FC<ImageGenControlsProps> = ({
@@ -51,12 +66,25 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = ({
   setNegativePrompt: propSetNegativePrompt,
   promptExtend: propPromptExtend,
   setPromptExtend: propSetPromptExtend,
+  enhancePrompt: propEnhancePrompt,
+  setEnhancePrompt: propSetEnhancePrompt,
   addMagicSuffix: propAddMagicSuffix,
   setAddMagicSuffix: propSetAddMagicSuffix,
+  enableSequential: propEnableSequential,
+  setEnableSequential: propSetEnableSequential,
 }) => {
   const modelId = currentModel?.id || '';
   const { schema, loading, error } = useModeControlsSchema(providerId, 'image-gen', modelId);
   const defaults = schema?.defaults ?? {};
+  const unsupportedParams = useMemo(() => getUnsupportedParams(schema), [schema]);
+  const supportsStyle = !unsupportedParams.has('style');
+  const supportsNegativePrompt = !unsupportedParams.has('negative_prompt');
+  const supportsLocalPromptEnhance = !unsupportedParams.has('enhance_prompt');
+  const supportsAddMagicSuffix = !unsupportedParams.has('add_magic_suffix');
+  const supportsThinkingMode =
+    !unsupportedParams.has('thinking_mode') && supportsBooleanParam(schema, 'thinking_mode');
+  const supportsSequentialMode =
+    !unsupportedParams.has('enable_sequential') && supportsBooleanParam(schema, 'enable_sequential');
 
   const styleOptions = useMemo(
     () => (schema?.paramOptions?.style ?? []).filter((option) => typeof option.value === 'string'),
@@ -84,7 +112,10 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = ({
   const defaultSeed = typeof defaults.seed === 'number' ? defaults.seed : -1;
   const defaultNegativePrompt = typeof defaults.negative_prompt === 'string' ? defaults.negative_prompt : '';
   const defaultPromptExtend = typeof defaults.prompt_extend === 'boolean' ? defaults.prompt_extend : false;
+  const defaultEnhancePrompt = typeof defaults.enhance_prompt === 'boolean' ? defaults.enhance_prompt : false;
   const defaultAddMagicSuffix = typeof defaults.add_magic_suffix === 'boolean' ? defaults.add_magic_suffix : true;
+  const defaultThinkingMode = getBooleanDefault(schema, 'thinking_mode', true);
+  const defaultEnableSequential = getBooleanDefault(schema, 'enable_sequential', false);
 
   const style = controls?.style ?? propStyle ?? defaultStyle;
   const setStyle = controls?.setStyle ?? propSetStyle ?? (() => {});
@@ -102,32 +133,75 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = ({
   const setNegativePrompt = controls?.setNegativePrompt ?? propSetNegativePrompt ?? (() => {});
   const promptExtend = controls?.promptExtend ?? propPromptExtend ?? defaultPromptExtend;
   const setPromptExtend = controls?.setPromptExtend ?? propSetPromptExtend ?? (() => {});
+  const enhancePrompt = controls?.enhancePrompt ?? propEnhancePrompt ?? promptExtend ?? defaultEnhancePrompt;
+  const setEnhancePrompt = controls?.setEnhancePrompt ?? propSetEnhancePrompt ?? setPromptExtend;
+  const enhancePromptModel = controls?.enhancePromptModel ?? '';
+  const setEnhancePromptModel = controls?.setEnhancePromptModel;
+  const enhancePromptThinkingLevel = controls?.enhancePromptThinkingLevel ?? 'auto';
+  const setEnhancePromptThinkingLevel = controls?.setEnhancePromptThinkingLevel;
+  const enhancePromptModels = useEnhancePromptModels(
+    providerId,
+    undefined,
+    { requiresVision: true, includeHidden: true }
+  );
   const addMagicSuffix = controls?.addMagicSuffix ?? propAddMagicSuffix ?? defaultAddMagicSuffix;
   const setAddMagicSuffix = controls?.setAddMagicSuffix ?? propSetAddMagicSuffix ?? (() => {});
+  const thinkingMode = controls?.thinkingMode ?? defaultThinkingMode;
+  const setThinkingMode = controls?.setThinkingMode ?? (() => {});
+  const enableSequential = controls?.enableSequential ?? propEnableSequential ?? defaultEnableSequential;
+  const setEnableSequential = controls?.setEnableSequential ?? propSetEnableSequential ?? (() => {});
 
   const maxImageCount =
     (typeof schema?.constraints?.max_image_count === 'number' ? schema?.constraints?.max_image_count : undefined) ??
     Math.max(...imageCountOptions, 1);
+  const minImageCount = imageCountOptions.length > 0 ? Math.min(...imageCountOptions) : 1;
+  const standardMaxImageCount = supportsSequentialMode ? Math.min(maxImageCount, 4) : maxImageCount;
+  const effectiveMaxImageCount = supportsSequentialMode && enableSequential
+    ? maxImageCount
+    : standardMaxImageCount;
+  const maxSelectableImageCount = imageCountOptions.length > 0
+    ? Math.min(effectiveMaxImageCount, Math.max(...imageCountOptions))
+    : effectiveMaxImageCount;
+  const selectableImageCountOptions = useMemo(
+    () => imageCountOptions.filter((value) => value >= minImageCount && value <= maxSelectableImageCount),
+    [imageCountOptions, maxSelectableImageCount, minImageCount]
+  );
   const availableAspectRatios = useMemo(() => schema?.aspectRatios ?? [], [schema]);
   const availableResolutionTiers = useMemo(() => schema?.resolutionTiers ?? [], [schema]);
   const showResolutionTier = availableResolutionTiers.length > 0;
 
   useEffect(() => {
+    if (!supportsStyle) return;
     const validStyles = styleOptions
       .map((option) => option.value)
       .filter((value): value is string => typeof value === 'string');
     if (validStyles.length > 0 && !validStyles.includes(style)) {
       setStyle(validStyles[0]);
     }
-  }, [style, styleOptions, setStyle]);
+  }, [style, styleOptions, setStyle, supportsStyle]);
 
   useEffect(() => {
-    if (imageCountOptions.length > 0 && !imageCountOptions.includes(numberOfImages)) {
-      setNumberOfImages(imageCountOptions[0]);
-    } else if (numberOfImages > maxImageCount) {
-      setNumberOfImages(maxImageCount);
+    if (selectableImageCountOptions.length === 0) return;
+    if (numberOfImages < minImageCount) {
+      setNumberOfImages(minImageCount);
+    } else if (numberOfImages > maxSelectableImageCount) {
+      setNumberOfImages(maxSelectableImageCount);
+    } else if (!selectableImageCountOptions.includes(numberOfImages)) {
+      setNumberOfImages(selectableImageCountOptions[0]);
     }
-  }, [numberOfImages, imageCountOptions, maxImageCount, setNumberOfImages]);
+  }, [
+    maxSelectableImageCount,
+    minImageCount,
+    numberOfImages,
+    selectableImageCountOptions,
+    setNumberOfImages,
+  ]);
+
+  useEffect(() => {
+    if (supportsSequentialMode && enableSequential && thinkingMode) {
+      setThinkingMode(false);
+    }
+  }, [enableSequential, setThinkingMode, supportsSequentialMode, thinkingMode]);
 
   useEffect(() => {
     const validRatios = availableAspectRatios.map((r) => r.value);
@@ -153,12 +227,16 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = ({
   return (
     <div className="space-y-4">
       {!loading &&
-        (error || availableAspectRatios.length === 0 || styleOptions.length === 0 || imageCountOptions.length === 0) && (
+        (error ||
+          availableAspectRatios.length === 0 ||
+          (supportsStyle && styleOptions.length === 0) ||
+          imageCountOptions.length === 0) && (
           <div className="text-[10px] text-rose-400">
             比例/分辨率配置加载失败，请检查后端 `mode_controls_catalog.json`。
           </div>
         )}
 
+      {supportsStyle && (
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <Palette size={12} className="text-pink-400" />
@@ -176,30 +254,25 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = ({
           ))}
         </select>
       </div>
-
-      {maxImageCount > 1 && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Layers size={12} className="text-blue-400" />
-            <span className="text-xs text-slate-300">图片数量</span>
-          </div>
-          <div className="flex gap-2">
-            {imageCountOptions.filter((n) => n <= maxImageCount).map((n) => (
-              <button
-                key={n}
-                onClick={() => setNumberOfImages(n)}
-                className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                  numberOfImages === n
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
-                }`}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-        </div>
       )}
+
+      {supportsSequentialMode && (
+        <FeatureToggleControl
+          enabled={enableSequential}
+          onEnabledChange={setEnableSequential}
+          icon={<Layers size={12} className="text-blue-400" />}
+          label="组图生成"
+          activeClass="bg-blue-600"
+        />
+      )}
+
+      <ImageCountSliderControl
+        value={numberOfImages}
+        onChange={setNumberOfImages}
+        min={minImageCount}
+        max={maxSelectableImageCount}
+        label="图片数量"
+      />
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
@@ -288,6 +361,7 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = ({
               />
             </div>
 
+            {supportsNegativePrompt && (
             <div className="space-y-2">
               <span className="text-xs text-slate-300">负向提示词</span>
               <textarea
@@ -297,26 +371,23 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = ({
                 className="w-full h-16 bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500/50"
               />
             </div>
+            )}
 
-            <div className="flex items-center justify-between py-1">
-              <div className="flex items-center gap-2">
-                <Sparkles size={12} className="text-pink-400" />
-                <span className="text-xs text-slate-300">AI 增强提示词</span>
-              </div>
-              <div
-                onClick={() => setPromptExtend(!promptExtend)}
-                className={`w-10 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-200 ${
-                  promptExtend ? 'bg-pink-600' : 'bg-slate-600'
-                }`}
-              >
-                <div
-                  className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
-                    promptExtend ? 'translate-x-4' : 'translate-x-0'
-                  }`}
-                />
-              </div>
-            </div>
+            {supportsLocalPromptEnhance && (
+            <PromptEnhanceControl
+              enabled={enhancePrompt}
+              onEnabledChange={setEnhancePrompt}
+              modelId={enhancePromptModel}
+              onModelIdChange={setEnhancePromptModel}
+              modelOptions={enhancePromptModels}
+              allowAutoModel
+              thinkingLevel={enhancePromptThinkingLevel}
+              onThinkingLevelChange={setEnhancePromptThinkingLevel}
+            />
+            )}
 
+            {supportsAddMagicSuffix && (
+            <>
             <div className="flex items-center justify-between py-1">
               <div className="flex items-center gap-2">
                 <Wand2 size={12} className="text-pink-400" />
@@ -336,6 +407,18 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = ({
               </div>
             </div>
             <p className="text-[10px] text-slate-500 mt-1">自动添加"超清，4K，电影级构图"等质量增强词</p>
+            </>
+            )}
+
+            {supportsThinkingMode && !enableSequential && (
+              <FeatureToggleControl
+                enabled={thinkingMode}
+                onEnabledChange={setThinkingMode}
+                icon={<BrainCircuit size={12} className="text-cyan-400" />}
+                label="思考模式"
+                activeClass="bg-cyan-600"
+              />
+            )}
           </div>
         )}
       </div>

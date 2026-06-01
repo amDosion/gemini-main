@@ -12,7 +12,7 @@
  */
 
 import React from 'react';
-import { FileSpreadsheet, Info, Upload, X } from 'lucide-react';
+import { FileSpreadsheet, Info, Upload } from 'lucide-react';
 import { CustomNodeData } from '../CustomNode';
 import { NodeType } from '../nodeTypeConfigs';
 import type { NodeStatus } from '../types';
@@ -20,11 +20,10 @@ import type { AgentDef } from '../types';
 import { AgentSelector } from '../AgentSelector';
 import {
   AgentTaskType,
-  ModelOption,
   ProviderModels,
   formatModelTaskHint,
   modelSupportsTask,
-  pickProviderDefaultModel,
+  resolveProviderTaskModelSelection,
 } from '../providerModelUtils';
 import { useModeControlsSchema } from '../../../hooks/useModeControlsSchema';
 import {
@@ -38,17 +37,21 @@ import {
   normalizeWorkflowVideoExtensionSelection,
   getWorkflowVideoResolutionLabel,
 } from '../workflowResolution';
-import { fileToBase64 } from '../../../hooks/handlers/attachmentUtils';
 import {
   analyzeAgentNodeDefaultUsage,
-  buildAgentNodeDefaultsFromAgent,
 } from '../agentNodeDefaults';
+import {
+  buildAgentNodeBindingPatch,
+  buildAgentNodeDataForDisplay,
+  resolveAgentNodeEffectiveTaskType,
+} from '../agentNodeBinding';
 import { AgentVideoGenSection } from './agentSections/AgentVideoGenSection';
 import { AgentImageEditSection } from './agentSections/AgentImageEditSection';
 import { AgentImageGenSection } from './agentSections/AgentImageGenSection';
 import { AgentAudioGenSection } from './agentSections/AgentAudioGenSection';
 import { AgentDataAnalysisSection } from './agentSections/AgentDataAnalysisSection';
 import { reportInlineUploadError, readInlineFilesAsDataUrls } from '../uploadHandlers';
+import { InlineReferenceImagePreview } from './InlineReferenceImagePreview';
 
 export interface AgentNodeConfigPanelProps {
   nodeData: CustomNodeData;
@@ -78,43 +81,34 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
   agentDefaultAnalysis,
 }) => {
   if (nodeType === 'agent') {
+    const displayNodeData = buildAgentNodeDataForDisplay(nodeData, resolvedAgent) as CustomNodeData;
     const selectedProviderId = nodeData.modelOverrideProviderId || '';
-    const selectedProvider = providers.find(
-      (provider) => provider.providerId === selectedProviderId
+    const selectedTaskType: AgentTaskType = resolveAgentNodeEffectiveTaskType(
+      nodeData,
+      resolvedAgent
     );
-    const selectedTaskType: AgentTaskType = (
-      [
-        'chat',
-        'image-gen',
-        'image-edit',
-        'video-gen',
-        'audio-gen',
-        'vision-understand',
-        'data-analysis',
-      ].includes(String(nodeData.agentTaskType || 'chat'))
-        ? String(nodeData.agentTaskType || 'chat')
-        : 'chat'
-    ) as AgentTaskType;
-    const hasAgentReferenceImage = Boolean(String(nodeData.agentReferenceImageUrl || '').trim());
+    const hasAgentReferenceImage = Boolean(
+      String(displayNodeData.agentReferenceImageUrl || '').trim()
+    );
     const taskSupportsReferenceImage =
-      selectedTaskType === 'image-edit' || selectedTaskType === 'vision-understand';
-    const providerModels = selectedProvider?.allModels || selectedProvider?.models || [];
-    const compatibleModels = providerModels.filter((model) =>
-      modelSupportsTask(model, selectedTaskType)
-    );
-    const selectedModels = compatibleModels;
-    const providerHasNoCompatibleModels =
-      selectedProviderId !== '' && providerModels.length > 0 && compatibleModels.length === 0;
-    const selectedOverrideModel = providerModels.find(
-      (model) => model.id === (nodeData.modelOverrideModelId || '')
-    );
+      selectedTaskType === 'image-edit' ||
+      selectedTaskType === 'vision-understand' ||
+      selectedTaskType === 'video-gen';
+    const overrideModelSelection = resolveProviderTaskModelSelection({
+      providers,
+      providerId: selectedProviderId,
+      modelId: nodeData.modelOverrideModelId || '',
+      taskType: selectedTaskType,
+    });
+    const selectedModels = overrideModelSelection.selectedModels;
+    const providerHasNoCompatibleModels = overrideModelSelection.providerHasNoCompatibleModels;
+    const selectedOverrideModel = overrideModelSelection.selectedModel;
     const effectiveProvider = nodeData.modelOverrideProviderId || nodeData.agentProviderId || '';
     const effectiveModel = nodeData.modelOverrideModelId || nodeData.agentModelId || '';
-    const effectiveModelPool =
-      providers.find((provider) => provider.providerId === effectiveProvider)?.allModels ||
-      providers.find((provider) => provider.providerId === effectiveProvider)?.models ||
-      [];
-    const effectiveModelOption = effectiveModelPool.find((model) => model.id === effectiveModel);
+    const effectiveModelOption = overrideModelSelection.findModelById(
+      effectiveProvider,
+      effectiveModel
+    );
     const effectiveSupportedTasks = Array.isArray(effectiveModelOption?.supportedTasks)
       ? effectiveModelOption.supportedTasks
       : [];
@@ -128,27 +122,6 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
       { value: 'vision-understand', label: '🧠 图片理解（多模态）' },
       { value: 'data-analysis', label: '📊 数据分析' },
     ];
-    const isTaskCompatible = (model: ModelOption | undefined, taskType: AgentTaskType) => {
-      return modelSupportsTask(model, taskType);
-    };
-    const findProvider = (providerId: string): ProviderModels | undefined => {
-      return providers.find((item) => item.providerId === providerId);
-    };
-    const findProviderModels = (providerId: string): ModelOption[] => {
-      const provider = findProvider(providerId);
-      return provider?.allModels || provider?.models || [];
-    };
-    const findModelById = (providerId: string, modelId: string): ModelOption | undefined => {
-      if (!providerId || !modelId) return undefined;
-      return findProviderModels(providerId).find((model) => model.id === modelId);
-    };
-    const pickCompatibleModel = (
-      providerId: string,
-      taskType: AgentTaskType
-    ): ModelOption | undefined => {
-      const provider = findProvider(providerId);
-      return pickProviderDefaultModel(provider, taskType);
-    };
     const handleAgentTaskTypeChange = (nextTaskType: AgentTaskType) => {
       const updates: Partial<CustomNodeData> = { agentTaskType: nextTaskType };
       if (nextTaskType === 'video-gen') {
@@ -166,6 +139,10 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
         if (!Number.isFinite(Number(nodeData.agentVideoExtensionCount))) {
           updates.agentVideoExtensionCount =
             workflowVideoControlContract.defaultVideoExtensionCount;
+        }
+        if (!String(nodeData.agentVideoInputStrategy || '').trim()) {
+          updates.agentVideoInputStrategy =
+            workflowVideoSchema?.videoContract?.inputStrategies?.[0]?.id || '';
         }
         if (typeof nodeData.agentContinueFromPreviousVideo !== 'boolean') {
           updates.agentContinueFromPreviousVideo = false;
@@ -231,9 +208,15 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
       const overrideModelId = String(nodeData.modelOverrideModelId || '').trim();
 
       if (overrideProviderId) {
-        const overrideModel = findModelById(overrideProviderId, overrideModelId);
-        if (!isTaskCompatible(overrideModel, nextTaskType)) {
-          const fallback = pickCompatibleModel(overrideProviderId, nextTaskType);
+        const overrideModel = overrideModelSelection.findModelById(
+          overrideProviderId,
+          overrideModelId
+        );
+        if (!modelSupportsTask(overrideModel, nextTaskType)) {
+          const fallback = overrideModelSelection.pickCompatibleModel(
+            overrideProviderId,
+            nextTaskType
+          );
           updates.modelOverrideModelId = fallback?.id || '';
         }
         updateNodeData(updates);
@@ -246,9 +229,9 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
         updateNodeData(updates);
         return;
       }
-      const baseModel = findModelById(baseProviderId, baseModelId);
-      if (!isTaskCompatible(baseModel, nextTaskType)) {
-        const fallback = pickCompatibleModel(baseProviderId, nextTaskType);
+      const baseModel = overrideModelSelection.findModelById(baseProviderId, baseModelId);
+      if (!modelSupportsTask(baseModel, nextTaskType)) {
+        const fallback = overrideModelSelection.pickCompatibleModel(baseProviderId, nextTaskType);
         if (fallback?.id) {
           updates.modelOverrideProviderId = baseProviderId;
           updates.modelOverrideModelId = fallback.id;
@@ -256,7 +239,9 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
       }
       updateNodeData(updates);
     };
-    const duplicateFieldKeys = agentDefaultAnalysis.duplicated.map((item) => item.fieldKey);
+    const clearableDuplicatedAgentDefaults = agentDefaultAnalysis.duplicated
+      .filter((item) => item.fieldKey !== 'agentTaskType');
+    const duplicateFieldKeys = clearableDuplicatedAgentDefaults.map((item) => item.fieldKey);
     const clearDuplicatedAgentDefaults = () => {
       if (duplicateFieldKeys.length === 0) {
         return;
@@ -306,14 +291,21 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
             agentName={nodeData.agentName || ''}
             onResolvedAgent={setResolvedAgent}
             onChange={(agentId, agentName, agent) => {
+              if (!agent) {
+                updateNodeData({
+                  agentId,
+                  agentName,
+                  agentProviderId: '',
+                  agentModelId: '',
+                  modelOverrideProviderId: '',
+                  modelOverrideModelId: '',
+                });
+                return;
+              }
               updateNodeData({
-                agentId,
-                agentName,
-                agentProviderId: agent?.providerId || '',
-                agentModelId: agent?.modelId || '',
+                ...buildAgentNodeBindingPatch(agent, nodeData),
                 modelOverrideProviderId: '',
                 modelOverrideModelId: '',
-                ...buildAgentNodeDefaultsFromAgent(agent),
               });
             }}
           />
@@ -328,13 +320,13 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
                   节点会继承 Agent 默认值；只有与默认不同的字段才值得保留在节点上。
                 </div>
               </div>
-              {agentDefaultAnalysis.duplicated.length > 0 && (
+              {clearableDuplicatedAgentDefaults.length > 0 && (
                 <button
                   type="button"
                   onClick={clearDuplicatedAgentDefaults}
                   className="px-2 py-1 rounded border border-amber-500/30 bg-amber-500/10 text-[10px] text-amber-200 hover:bg-amber-500/20 transition-colors"
                 >
-                  清理重复字段 {agentDefaultAnalysis.duplicated.length}
+                  清理重复字段 {clearableDuplicatedAgentDefaults.length}
                 </button>
               )}
             </div>
@@ -389,8 +381,7 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
                 value={selectedProviderId}
                 onChange={(e) => {
                   const providerId = e.target.value;
-                  const provider = providers.find((item) => item.providerId === providerId);
-                  const firstModel = pickProviderDefaultModel(provider, selectedTaskType);
+                  const firstModel = overrideModelSelection.pickCompatibleModel(providerId);
                   updateNodeData({
                     modelOverrideProviderId: providerId,
                     modelOverrideModelId: providerId ? firstModel?.id || '' : '',
@@ -510,7 +501,7 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
         <div>
           <label className="block text-xs text-slate-500 mb-1.5">任务类型</label>
           <select
-            value={nodeData.agentTaskType || 'chat'}
+            value={selectedTaskType}
             onChange={(e) => {
               const nextTaskType = (
                 [
@@ -558,8 +549,8 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
           {hasAgentReferenceImage && !taskSupportsReferenceImage && (
             <div className="mt-2 rounded-lg border border-rose-500/30 bg-rose-500/10 p-2">
               <div className="text-[11px] text-rose-300">
-                当前节点已配置参考图，但任务类型是 `{selectedTaskType}`。请改为 `vision-understand`
-                或 `image-edit`。
+                当前节点已配置参考图，但任务类型是 `{selectedTaskType}`。请改为 `vision-understand`、
+                `image-edit` 或 `video-gen`。
               </div>
               <button
                 type="button"
@@ -573,14 +564,14 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
         </div>
 
         {/* ========== 图片生成参数（抽离至 ./agentSections/AgentImageGenSection） ========== */}
-        {nodeData.agentTaskType === 'image-gen' && (
-          <AgentImageGenSection nodeData={nodeData} updateNodeData={updateNodeData} />
+        {selectedTaskType === 'image-gen' && (
+          <AgentImageGenSection nodeData={displayNodeData} updateNodeData={updateNodeData} />
         )}
 
         {/* ========== 图片理解参数 ========== */}
-        {nodeData.agentTaskType === 'vision-understand' &&
+        {selectedTaskType === 'vision-understand' &&
           (() => {
-            const hasRef = !!nodeData.agentReferenceImageUrl;
+            const hasRef = !!displayNodeData.agentReferenceImageUrl;
             return (
               <div className="space-y-3 p-2.5 rounded-lg border border-indigo-500/20 bg-indigo-500/5">
                 <div className="text-xs text-indigo-300 font-medium">图片理解参数</div>
@@ -588,21 +579,11 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
                   <label className="block text-xs text-slate-500 mb-1">
                     参考图片 <span className="text-red-400">*</span>
                   </label>
-                  {hasRef && nodeData.agentReferenceImageUrl?.startsWith('data:') && (
-                    <div className="mb-2 relative group">
-                      <img
-                        src={nodeData.agentReferenceImageUrl}
-                        alt="参考图片"
-                        className="w-full h-24 object-cover rounded border border-indigo-500/30"
-                      />
-                      <button
-                        onClick={() => updateNodeData({ agentReferenceImageUrl: '' })}
-                        className="absolute top-1 right-1 p-0.5 bg-red-500/80 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <X size={10} />
-                      </button>
-                    </div>
-                  )}
+                  <InlineReferenceImagePreview
+                    imageUrl={displayNodeData.agentReferenceImageUrl}
+                    borderClassName="border-indigo-500/30"
+                    onClear={() => updateNodeData({ agentReferenceImageUrl: '' })}
+                  />
                   <label className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 border border-dashed border-indigo-500/40 rounded-lg cursor-pointer hover:border-indigo-500/60 transition-colors">
                     <Upload size={12} className="text-indigo-300" />
                     <span className="text-xs text-indigo-200">
@@ -628,8 +609,8 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
                   <input
                     type="text"
                     value={
-                      !nodeData.agentReferenceImageUrl?.startsWith('data:')
-                        ? nodeData.agentReferenceImageUrl || ''
+                      !displayNodeData.agentReferenceImageUrl?.startsWith('data:')
+                        ? displayNodeData.agentReferenceImageUrl || ''
                         : ''
                     }
                     onChange={(e) => updateNodeData({ agentReferenceImageUrl: e.target.value })}
@@ -641,7 +622,7 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
                 <div>
                   <label className="block text-xs text-slate-500 mb-1">输出格式</label>
                   <select
-                    value={nodeData.agentOutputFormat || 'json'}
+                    value={displayNodeData.agentOutputFormat || 'json'}
                     onChange={(e) => updateNodeData({ agentOutputFormat: e.target.value })}
                     data-field-key="agentOutputFormat"
                     className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50"
@@ -654,7 +635,7 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
                 <div>
                   <label className="block text-xs text-slate-500 mb-1">理解任务说明</label>
                   <textarea
-                    value={nodeData.inputMapping || ''}
+                    value={displayNodeData.inputMapping || ''}
                     onChange={(e) => updateNodeData({ inputMapping: e.target.value })}
                     rows={2}
                     data-field-key="inputMapping"
@@ -667,14 +648,14 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
           })()}
 
         {/* ========== 图片编辑参数（抽离至 ./agentSections/AgentImageEditSection） ========== */}
-        {nodeData.agentTaskType === 'image-edit' && (
-          <AgentImageEditSection nodeData={nodeData} updateNodeData={updateNodeData} />
+        {selectedTaskType === 'image-edit' && (
+          <AgentImageEditSection nodeData={displayNodeData} updateNodeData={updateNodeData} />
         )}
 
         {/* ========== 视频生成参数（抽离至 ./agentSections/AgentVideoGenSection） ========== */}
-        {nodeData.agentTaskType === 'video-gen' && (
+        {selectedTaskType === 'video-gen' && (
           <AgentVideoGenSection
-            nodeData={nodeData}
+            nodeData={displayNodeData}
             updateNodeData={updateNodeData}
             workflowVideoSchema={workflowVideoSchema}
             workflowVideoControlContract={workflowVideoControlContract}
@@ -682,21 +663,21 @@ export const AgentNodeConfigPanel: React.FC<AgentNodeConfigPanelProps> = ({
         )}
 
         {/* ========== 音频生成参数（抽离至 ./agentSections/AgentAudioGenSection） ========== */}
-        {nodeData.agentTaskType === 'audio-gen' && (
-          <AgentAudioGenSection nodeData={nodeData} updateNodeData={updateNodeData} />
+        {selectedTaskType === 'audio-gen' && (
+          <AgentAudioGenSection nodeData={displayNodeData} updateNodeData={updateNodeData} />
         )}
 
         {/* ========== 数据分析参数（抽离至 ./agentSections/AgentDataAnalysisSection） ========== */}
-        {nodeData.agentTaskType === 'data-analysis' && (
-          <AgentDataAnalysisSection nodeData={nodeData} updateNodeData={updateNodeData} />
+        {selectedTaskType === 'data-analysis' && (
+          <AgentDataAnalysisSection nodeData={displayNodeData} updateNodeData={updateNodeData} />
         )}
 
         {/* 输出格式（对话模式） */}
-        {(!nodeData.agentTaskType || nodeData.agentTaskType === 'chat') && (
+        {selectedTaskType === 'chat' && (
           <div>
             <label className="block text-xs text-slate-500 mb-1.5">输出格式</label>
             <select
-              value={nodeData.agentOutputFormat || ''}
+              value={displayNodeData.agentOutputFormat || ''}
               onChange={(e) => updateNodeData({ agentOutputFormat: e.target.value })}
               data-field-key="agentOutputFormat"
               className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20"

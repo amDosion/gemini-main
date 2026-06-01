@@ -76,11 +76,13 @@
           "description": "输出候选否定词、加投词和活动层异常",
           "icon": "🧩",
           "iconColor": "bg-indigo-500",
-          "agentName": "亚马逊广告分析师",
           "agentTaskType": "data-analysis",
           "agentFileUrl": "{{input-file-ads-bid-opt.output.fileUrl}}",
           "inputMapping": "优化约束：{{input-text-ads-bid-opt.output.text}}\\n报表文件：{{input-file-ads-bid-opt.output.fileUrl}}",
-          "instructions": "请输出预分析：\n1. 否定词候选\n2. 加投词候选\n3. 预算异常活动\n4. 竞价异常活动。"
+          "instructions": "请输出预分析：\n1. 否定词候选\n2. 加投词候选\n3. 预算异常活动\n4. 竞价异常活动。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-ad-analyst"
         }
       },
       {
@@ -112,9 +114,12 @@
           "description": "确认否定词/加投词执行优先级",
           "icon": "📊",
           "iconColor": "bg-blue-500",
-          "agentName": "亚马逊广告分析师",
           "inputMapping": "预分析结果：{{agent-ads-bid-precheck.output.text}}",
-          "instructions": "请输出关键词动作清单：\n1. 立即否定（P0）\n2. 观察否定（P1）\n3. 加投词与建议竞价区间。"
+          "instructions": "请输出关键词动作清单：\n1. 立即否定（P0）\n2. 观察否定（P1）\n3. 加投词与建议竞价区间。",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-ad-analyst"
         }
       },
       {
@@ -130,9 +135,12 @@
           "description": "输出活动层竞价与预算调整策略",
           "icon": "💸",
           "iconColor": "bg-violet-500",
-          "agentName": "运营策略顾问",
           "inputMapping": "预分析结果：{{agent-ads-bid-precheck.output.text}}\\n优化约束：{{input-text-ads-bid-opt.output.text}}",
-          "instructions": "请输出活动层动作：\n1. 加价/降价/暂停活动清单\n2. 预算上调/下调建议\n3. 7 天节奏与触发阈值。"
+          "instructions": "请输出活动层动作：\n1. 加价/降价/暂停活动清单\n2. 预算上调/下调建议\n3. 7 天节奏与触发阈值。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {
@@ -148,9 +156,12 @@
           "description": "校验建议可信度和执行风险",
           "icon": "✅",
           "iconColor": "bg-emerald-500",
-          "agentName": "数据报表分析师",
           "inputMapping": "预分析结果：{{agent-ads-bid-precheck.output.text}}",
-          "instructions": "请输出校验结果：\n1. 数据口径风险\n2. 样本不足风险\n3. 建议可信度评分\n4. 执行前检查清单。"
+          "instructions": "请输出校验结果：\n1. 数据口径风险\n2. 样本不足风险\n3. 建议可信度评分\n4. 执行前检查清单。",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -182,9 +193,12 @@
           "description": "生成可直接执行的竞价/预算闭环方案",
           "icon": "🧠",
           "iconColor": "bg-indigo-500",
-          "agentName": "运营策略顾问",
           "inputMapping": "闭环汇总：{{merge-ads-bid-opt.output.text}}",
-          "instructions": "请输出执行看板：\n1. 今日执行清单（P0/P1/P2）\n2. 关键词动作表\n3. 活动层竞价与预算表\n4. 回滚条件与复盘指标。"
+          "instructions": "请输出执行看板：\n1. 今日执行清单（P0/P1/P2）\n2. 关键词动作表\n3. 活动层竞价与预算表\n4. 回滚条件与复盘指标。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {

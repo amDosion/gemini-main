@@ -317,9 +317,10 @@ async def create_or_update_session(
     
     # 查询已完成的上传任务
     completed_tasks: Dict[str, UploadTask] = {}
-    if current_attachment_ids:
+    owned_current_attachment_ids = list(existing_attachments.keys())
+    if owned_current_attachment_ids:
         tasks = db.query(UploadTask).filter(
-            UploadTask.attachment_id.in_(current_attachment_ids),
+            UploadTask.attachment_id.in_(owned_current_attachment_ids),
             UploadTask.status == 'completed',
             UploadTask.target_url.isnot(None)
         ).all()
@@ -458,6 +459,15 @@ async def create_or_update_session(
             enhanced_prompt_value = msg.get("enhanced_prompt") or msg.get("edit_prompt")
             if enhanced_prompt_value:
                 message.edit_prompt = enhanced_prompt_value
+
+        if hasattr(message, "model_name"):
+            model_name_value = (
+                msg.get("model_name")
+                or msg.get("model_id")
+                or msg.get("mode_model_id")
+            )
+            if model_name_value:
+                message.model_name = str(model_name_value)
         
         # 5. upsert 附件（云 URL 保护逻辑）
         for att in msg.get("attachments", []):
@@ -973,9 +983,15 @@ async def get_attachment(
         raise HTTPException(status_code=404, detail="附件不存在")
     
     # 3. 查询关联的上传任务
-    task = db.query(UploadTask).filter(
-        UploadTask.attachment_id == attachment_id
-    ).first()
+    if attachment.upload_task_id:
+        task = db.query(UploadTask).filter(UploadTask.id == attachment.upload_task_id).first()
+    else:
+        task = (
+            db.query(UploadTask)
+            .filter(UploadTask.attachment_id == attachment_id)
+            .order_by(UploadTask.created_at.desc())
+            .first()
+        )
     
     # 4. 构建返回结果
     result = attachment.to_dict()

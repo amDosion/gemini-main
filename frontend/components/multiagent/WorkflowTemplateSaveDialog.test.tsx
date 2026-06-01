@@ -16,6 +16,39 @@ vi.mock('../../services/workflowTemplateCategoryService', () => ({
 
 const fetchMock = vi.fn();
 
+const buildNode = (id: string, type: string) =>
+  ({
+    id,
+    type,
+    position: { x: 0, y: 0 },
+    data: {
+      type,
+      label: id,
+      description: '',
+      icon: '',
+      iconColor: '',
+    },
+  }) as any;
+
+const validNodes = [
+  buildNode('start', 'start'),
+  buildNode('input', 'input_text'),
+  buildNode('end', 'end'),
+];
+
+const validEdges = [
+  { id: 'e-start-input', source: 'start', target: 'input' },
+  { id: 'e-input-end', source: 'input', target: 'end' },
+] as any;
+
+const invalidNodes = [
+  buildNode('start', 'start'),
+  buildNode('end', 'end'),
+  buildNode('orphan', 'input_text'),
+];
+
+const invalidEdges = [{ id: 'e-start-end', source: 'start', target: 'end' }] as any;
+
 describe('WorkflowTemplateSaveDialog', () => {
   beforeEach(() => {
     fetchMock.mockReset();
@@ -51,8 +84,8 @@ describe('WorkflowTemplateSaveDialog', () => {
       <WorkflowTemplateSaveDialog
         isOpen
         onClose={vi.fn()}
-        nodes={[]}
-        edges={[]}
+        nodes={validNodes}
+        edges={validEdges}
         activeTemplate={{
           id: 'template-1',
           name: 'Editable Flow',
@@ -114,8 +147,8 @@ describe('WorkflowTemplateSaveDialog', () => {
       <WorkflowTemplateSaveDialog
         isOpen
         onClose={vi.fn()}
-        nodes={[]}
-        edges={[]}
+        nodes={validNodes}
+        edges={validEdges}
         activeTemplate={{
           id: 'starter-1',
           name: 'Starter Flow',
@@ -147,5 +180,33 @@ describe('WorkflowTemplateSaveDialog', () => {
         }),
       );
     });
+  });
+
+  it('blocks template save locally when workflow graph is invalid', async () => {
+    render(
+      <WorkflowTemplateSaveDialog
+        isOpen
+        onClose={vi.fn()}
+        nodes={invalidNodes}
+        edges={invalidEdges}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('保存为模板')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('例如：客户服务工作流'), {
+      target: { value: 'Invalid Flow' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('描述这个工作流模板的用途和功能...'), {
+      target: { value: 'invalid disconnected graph' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /保存模板/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/工作流结构校验失败/)).toBeInTheDocument();
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

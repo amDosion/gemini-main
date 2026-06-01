@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
-import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cacheManager, CACHE_DOMAINS } from '../../services/CacheManager';
+import { clearPrivateMemoryCaches } from '../../services/privateClientCache';
+import {
+  scopedPrivateCacheKey,
+  setPrivateCacheUserScope,
+} from '../../services/privateCacheScope';
 import type { AgentDef } from './types';
 import { useAgentRegistry, __resetAgentRegistryCacheForTesting } from './useAgentRegistry';
 
@@ -55,10 +61,20 @@ const createDeferred = <T,>() => {
 
 describe('useAgentRegistry', () => {
   beforeEach(() => {
+    cleanup();
     fetchAgentListMock.mockReset();
     subscribeAgentRegistryUpdatedMock.mockReset();
     subscribeAgentRegistryUpdatedMock.mockReturnValue(() => {});
     __resetAgentRegistryCacheForTesting();
+    cacheManager.clearAll();
+    setPrivateCacheUserScope(null);
+  });
+
+  afterEach(() => {
+    cleanup();
+    __resetAgentRegistryCacheForTesting();
+    cacheManager.clearAll();
+    setPrivateCacheUserScope(null);
   });
 
   it('ignores stale response when a newer refresh resolves first', async () => {
@@ -137,5 +153,128 @@ describe('useAgentRegistry', () => {
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBeNull();
     expect(result.current.agents).toEqual([agent]);
+  });
+
+  it('does not reuse agent list cache across private user scopes', async () => {
+    setPrivateCacheUserScope('user-1');
+    const userOneAgents = [buildAgent('agent-user-1', 'User 1 Agent')];
+    fetchAgentListMock.mockResolvedValueOnce(buildResult(userOneAgents));
+
+    const first = renderHook(() => useAgentRegistry());
+
+    await waitFor(() => {
+      expect(first.result.current.agents).toEqual(userOneAgents);
+    });
+    first.unmount();
+
+    setPrivateCacheUserScope('user-2');
+    const userTwoAgents = [buildAgent('agent-user-2', 'User 2 Agent')];
+    fetchAgentListMock.mockResolvedValueOnce(buildResult(userTwoAgents));
+
+    const second = renderHook(() => useAgentRegistry());
+
+    await waitFor(() => {
+      expect(second.result.current.agents).toEqual(userTwoAgents);
+    });
+    expect(fetchAgentListMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('reloads mounted agent registry when private user scope changes', async () => {
+    setPrivateCacheUserScope('user-1');
+    const userOneAgents = [buildAgent('agent-user-1', 'User 1 Agent')];
+    fetchAgentListMock.mockResolvedValueOnce(buildResult(userOneAgents));
+
+    const hook = renderHook(() => useAgentRegistry());
+
+    await waitFor(() => {
+      expect(hook.result.current.agents).toEqual(userOneAgents);
+    });
+
+    const userTwoAgents = [buildAgent('agent-user-2', 'User 2 Agent')];
+    fetchAgentListMock.mockResolvedValueOnce(buildResult(userTwoAgents));
+    act(() => {
+      setPrivateCacheUserScope('user-2');
+    });
+
+    await waitFor(() => {
+      expect(hook.result.current.agents).toEqual(userTwoAgents);
+    });
+    expect(fetchAgentListMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not repopulate agent cache when an in-flight request resolves after cache clear', async () => {
+    setPrivateCacheUserScope('user-1');
+    const staleRequest = createDeferred<AgentListFetchResult>();
+    const currentRequest = createDeferred<AgentListFetchResult>();
+    fetchAgentListMock
+      .mockReturnValueOnce(staleRequest.promise)
+      .mockReturnValueOnce(currentRequest.promise);
+
+    const hook = renderHook(() => useAgentRegistry());
+
+    await waitFor(() => {
+      expect(fetchAgentListMock).toHaveBeenCalledTimes(1);
+    });
+
+    setPrivateCacheUserScope('user-2');
+    clearPrivateMemoryCaches();
+    await waitFor(() => {
+      expect(fetchAgentListMock).toHaveBeenCalledTimes(2);
+    });
+
+    const lateAgents = [buildAgent('late-agent', 'Late Agent')];
+    await act(async () => {
+      staleRequest.resolve(buildResult(lateAgents));
+      await staleRequest.promise;
+    });
+
+    expect(hook.result.current.agents).toEqual([]);
+    expect(
+      cacheManager.get<AgentDef[]>(
+        scopedPrivateCacheKey(CACHE_DOMAINS.AGENT_REGISTRY, '0::', 'user-1')
+      )
+    ).toBeNull();
+
+    const currentAgents = [buildAgent('current-agent', 'Current Agent')];
+    await act(async () => {
+      currentRequest.resolve(buildResult(currentAgents));
+      await currentRequest.promise;
+    });
+
+    expect(hook.result.current.agents).toEqual(currentAgents);
+    expect(hook.result.current.loading).toBe(false);
+  });
+
+  it('does not resolve stale refresh results after private user scope changes', async () => {
+    setPrivateCacheUserScope('user-1');
+    const staleRequest = createDeferred<AgentListFetchResult>();
+    fetchAgentListMock.mockReturnValueOnce(staleRequest.promise);
+
+    const hook = renderHook(() => useAgentRegistry({ autoLoad: false }));
+
+    let refreshPromise!: Promise<AgentDef[]>;
+    act(() => {
+      refreshPromise = hook.result.current.refreshAgents();
+    });
+    await waitFor(() => {
+      expect(fetchAgentListMock).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      setPrivateCacheUserScope('user-2');
+    });
+
+    const staleAgents = [buildAgent('stale-agent', 'Stale Agent')];
+    await act(async () => {
+      staleRequest.resolve(buildResult(staleAgents));
+    });
+
+    await expect(refreshPromise).resolves.toEqual([]);
+    expect(hook.result.current.agents).toEqual([]);
+    expect(
+      cacheManager.get<AgentDef[]>(
+        scopedPrivateCacheKey(CACHE_DOMAINS.AGENT_REGISTRY, '0::', 'user-1')
+      )
+    ).toBeNull();
   });
 });

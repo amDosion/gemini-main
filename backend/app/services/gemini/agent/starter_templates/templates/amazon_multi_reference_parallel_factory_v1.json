@@ -121,9 +121,12 @@
           "description": "生成 A/B/C 三路差异化编辑计划",
           "icon": "🧠",
           "iconColor": "bg-indigo-500",
-          "agentName": "电商文案创作师",
           "inputMapping": "Global goal: {{input-text-multi-ref-factory.output.text}}\nImage A: {{input-image-multi-ref-a.output.imageUrl}}\nImage B: {{input-image-multi-ref-b.output.imageUrl}}\nImage C: {{input-image-multi-ref-c.output.imageUrl}}",
-          "instructions": "输出三路并行任务（A/B/C）：每路给出场景方向、headline、2个 badges、safe-zone 规则，英文输出。"
+          "instructions": "输出三路并行任务（A/B/C）：每路给出场景方向、headline、2个 badges、safe-zone 规则，英文输出。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.8,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ecommerce-copywriter"
         }
       },
       {
@@ -155,7 +158,6 @@
           "description": "基于参考图 A 执行并行产图",
           "icon": "🅰️",
           "iconColor": "bg-pink-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentEditMode": "image-chat-edit",
           "agentReferenceImageUrl": "{{input-image-multi-ref-a.output.imageUrl}}",
@@ -165,7 +167,16 @@
           "agentProductMatchThreshold": 72,
           "agentOutputLanguage": "en",
           "inputMapping": "{{agent-brief-multi-ref-factory.output.text}}\n\nRoute A: Execute branch-A edits with non-overlap layout and English-only copy.",
-          "instructions": "Preserve product identity and avoid text covering subject."
+          "instructions": "Preserve product identity and avoid text covering subject.",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -181,7 +192,6 @@
           "description": "基于参考图 B 执行并行产图",
           "icon": "🅱️",
           "iconColor": "bg-violet-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentEditMode": "image-chat-edit",
           "agentReferenceImageUrl": "{{input-image-multi-ref-b.output.imageUrl}}",
@@ -191,7 +201,16 @@
           "agentProductMatchThreshold": 72,
           "agentOutputLanguage": "en",
           "inputMapping": "{{agent-brief-multi-ref-factory.output.text}}\n\nRoute B: Execute branch-B edits with distinct scene and English copy.",
-          "instructions": "Keep composition varied from branch A while preserving product geometry."
+          "instructions": "Keep composition varied from branch A while preserving product geometry.",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -207,7 +226,6 @@
           "description": "基于参考图 C 执行并行产图",
           "icon": "🆑",
           "iconColor": "bg-sky-500",
-          "agentName": "图片编辑优化师",
           "agentTaskType": "image-edit",
           "agentEditMode": "image-chat-edit",
           "agentReferenceImageUrl": "{{input-image-multi-ref-c.output.imageUrl}}",
@@ -217,7 +235,16 @@
           "agentProductMatchThreshold": 72,
           "agentOutputLanguage": "en",
           "inputMapping": "{{agent-brief-multi-ref-factory.output.text}}\n\nRoute C: Execute branch-C edits with campaign-ready composition and English copy.",
-          "instructions": "Maintain clarity on mobile thumbnail and keep product unblocked."
+          "instructions": "Maintain clarity on mobile thumbnail and keep product unblocked.",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPreferLatestModel": true,
+          "agentImageSize": "1K",
+          "agentResolutionTier": "1K",
+          "agentOutputMimeType": "image/png",
+          "agentPromptExtend": true,
+          "agentAddMagicSuffix": true,
+          "agentPresetKey": "image-edit-optimizer"
         }
       },
       {
@@ -249,9 +276,12 @@
           "description": "输出每路最优图和投放建议",
           "icon": "📦",
           "iconColor": "bg-emerald-500",
-          "agentName": "运营策略顾问",
           "inputMapping": "Merged outputs: {{merge-multi-ref-factory.output.text}}",
-          "instructions": "输出交付清单：\n1. A/B/C 每路推荐图\n2. 建议投放位（主图/副图/广告图）\n3. 风险说明与重跑提示词"
+          "instructions": "输出交付清单：\n1. A/B/C 每路推荐图\n2. 建议投放位（主图/副图/广告图）\n3. 风险说明与重跑提示词",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {

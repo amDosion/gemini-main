@@ -6,6 +6,7 @@ import { GenViewLayout } from '../common/GenViewLayout';
 import { useControlsState } from '../../hooks/useControlsState';
 import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
 import ChatEditInputArea from '../chat/ChatEditInputArea';
+import { RetainedAudio } from '../common/RetainedMedia';
 
 interface AudioGenViewProps {
   messages: Message[];
@@ -590,7 +591,7 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
               <div className="p-6 bg-cyan-500/10 rounded-full text-cyan-400">
                 <Mic size={64} />
               </div>
-              <audio
+              <RetainedAudio
                 ref={audioRef}
                 src={activeAudioUrl}
                 controls

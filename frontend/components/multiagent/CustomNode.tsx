@@ -31,6 +31,9 @@ import {
   resolveNodePortLayout,
   type WorkflowNodePortSide,
 } from './workflowPorts';
+import { resolveNodeIconAppearance } from './workflowNodeAppearance';
+import { CachedImage } from '../common/CachedImage';
+import { RetainedAudio, RetainedVideo } from '../common/RetainedMedia';
 import '@reactflow/node-resizer/dist/style.css';
 
 export type CustomNodeData = WorkflowNodeData;
@@ -146,6 +149,7 @@ const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
   const { id, data, selected } = props;
   const config =
     nodeTypeConfigs[data.type as keyof typeof nodeTypeConfigs] || nodeTypeConfigs.agent;
+  const iconAppearance = resolveNodeIconAppearance(data, config);
   const status = data.status || 'pending';
   const statusInfo = statusConfig[status];
   const StatusIcon = statusInfo.icon;
@@ -300,6 +304,17 @@ const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
     });
   };
 
+  const emitResultImageGalleryEvent = (initialIndex: number) => (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dispatchScopedWorkflowEvent('workflow:image-gallery-request', event.currentTarget, {
+      nodeId: String(id),
+      imageUrls: resultImageUrls,
+      initialIndex,
+      title: isEndNode ? '最终结果图片' : `${data.label || '节点'} 输出图片`,
+    });
+  };
+
   const getMetaText = () => {
     if (data.type === 'agent') {
       const effectiveProvider = data.modelOverrideProviderId || data.agentProviderId;
@@ -385,9 +400,10 @@ const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
         {/* Header */}
         <div className="px-3 py-2.5 flex items-center gap-2.5">
           <span
-            className={`w-8 h-8 ${config.iconColor} rounded-lg flex items-center justify-center text-white text-base flex-shrink-0`}
+            className={`w-8 h-8 ${iconAppearance.iconColorClassName} rounded-lg flex items-center justify-center text-white text-base flex-shrink-0`}
+            style={iconAppearance.iconColorStyle}
           >
-            {config.icon}
+            {iconAppearance.icon}
           </span>
           <div className="flex-1 min-w-0">
             <div className="text-xs font-semibold text-slate-200 truncate">{data.label}</div>
@@ -480,11 +496,16 @@ const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
                   key={`${id}-input-image-${index}`}
                   className={`w-full rounded border border-slate-700 bg-slate-900 p-1 flex items-center justify-center ${inputImageCellHeightClass}`}
                 >
-                  <img
+                  <CachedImage
+                    source={{
+                      attachmentId: `${id}-input-image-${index}`,
+                      url: imageUrl,
+                      mimeType: 'image/png',
+                      name: `node-input-image-${index + 1}.png`,
+                    }}
                     src={imageUrl}
                     alt={`node-input-image-${id}-${index + 1}`}
                     className="max-w-full max-h-full h-auto w-auto rounded object-contain"
-                    loading="lazy"
                   />
                 </div>
               ))}
@@ -505,17 +526,26 @@ const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
                     className={`grid gap-1.5 pr-0.5 overflow-y-auto ${resultImageGridColsClass} ${resultGalleryMaxHeightClass}`}
                   >
                     {resultImageUrls.map((imageUrl, index) => (
-                      <div
+                      <button
+                        type="button"
                         key={`${id}-result-image-${index}`}
-                        className={`w-full rounded border border-slate-700 bg-slate-900 p-1 flex items-center justify-center ${resultThumbnailHeightClass}`}
+                        onClick={emitResultImageGalleryEvent(index)}
+                        className={`nodrag w-full rounded border border-slate-700 bg-slate-900 p-1 flex items-center justify-center transition-colors hover:border-indigo-400/70 ${resultThumbnailHeightClass}`}
+                        aria-label={`打开第 ${index + 1} 张输出图片`}
+                        title="查看大图"
                       >
-                        <img
+                        <CachedImage
+                          source={{
+                            attachmentId: `${id}-result-image-${index}`,
+                            url: imageUrl,
+                            mimeType: 'image/png',
+                            name: `node-result-image-${index + 1}.png`,
+                          }}
                           src={imageUrl}
                           alt={`node-result-image-${id}-${index + 1}`}
                           className="max-w-full max-h-full h-auto w-auto rounded object-contain"
-                          loading="lazy"
                         />
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -528,7 +558,7 @@ const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
                   </div>
                   <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
                     {resultVideoUrls.map((videoUrl, index) => (
-                      <video
+                      <RetainedVideo
                         key={`${id}-result-video-${index}`}
                         src={videoUrl}
                         controls
@@ -546,7 +576,7 @@ const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
                   </div>
                   <div className="space-y-1.5 max-h-40 overflow-y-auto pr-0.5">
                     {resultAudioUrls.map((audioUrl, index) => (
-                      <audio
+                      <RetainedAudio
                         key={`${id}-result-audio-${index}`}
                         src={audioUrl}
                         controls

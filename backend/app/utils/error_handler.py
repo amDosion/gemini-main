@@ -35,7 +35,9 @@ _RATE_LIMIT_KEYWORDS = (
     "rate limit", "quota", "too many requests",
 )
 _BAD_REQUEST_KEYWORDS = ("invalid", "bad request", "bad_request", "invalid_argument")
+_BAD_GATEWAY_KEYWORDS = ("502", "bad gateway", "upstream_error", "upstream request failed")
 _SERVICE_UNAVAILABLE_KEYWORDS = ("503", "overloaded", "unavailable")
+_TIMEOUT_KEYWORDS = ("timeout", "timed out", "readtimeout", "request timed out")
 
 
 def classify_provider_error_code(error_str: str) -> int:
@@ -48,8 +50,12 @@ def classify_provider_error_code(error_str: str) -> int:
         return 429
     if any(kw in lowered for kw in _BAD_REQUEST_KEYWORDS):
         return 400
+    if any(kw in lowered for kw in _BAD_GATEWAY_KEYWORDS):
+        return 502
     if any(kw in lowered for kw in _SERVICE_UNAVAILABLE_KEYWORDS):
         return 503
+    if any(kw in lowered for kw in _TIMEOUT_KEYWORDS):
+        return 504
     return 500
 
 
@@ -68,6 +74,16 @@ _ERROR_DETAILS = {
         "error": "SERVICE_UNAVAILABLE",
         "message": "服务暂时过载",
         "suggestions": ["稍后重试", "使用指数退避策略"],
+    },
+    504: {
+        "error": "GATEWAY_TIMEOUT",
+        "message": "上游服务响应超时",
+        "suggestions": ["稍后重试", "降低分辨率或生成数量", "检查上游代理状态"],
+    },
+    502: {
+        "error": "BAD_GATEWAY",
+        "message": "上游网关请求失败",
+        "suggestions": ["稍后重试", "检查上游代理状态"],
     },
 }
 

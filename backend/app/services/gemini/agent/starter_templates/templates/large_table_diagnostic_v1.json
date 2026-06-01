@@ -115,10 +115,10 @@
           "description": "判断字段可信度、缺失风险和数据准备度",
           "icon": "🧪",
           "iconColor": "bg-sky-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "data-analysis",
           "inputMapping": "关注问题：{{input-text-large-table.output.text}}\n\nIngest 阶段摘要：{{tool-ingest-large-table.output.text}}\n\n字段列表：{{tool-ingest-large-table.output.result.data.payload.analysis.columns}}\n\n质量旗标：{{tool-ingest-large-table.output.result.data.payload.analysis.quality_flags}}",
-          "instructions": "输出：字段口径表、疑似脏数据、缺失高风险字段、是否适合直接建模/分析，以及必须先修复的质量问题。"
+          "instructions": "输出：字段口径表、疑似脏数据、缺失高风险字段、是否适合直接建模/分析，以及必须先修复的质量问题。",
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -134,10 +134,10 @@
           "description": "基于完整统计结果梳理指标结构与关键关系",
           "icon": "📐",
           "iconColor": "bg-indigo-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "data-analysis",
           "inputMapping": "关注问题：{{input-text-large-table.output.text}}\n\nIngest 阶段摘要：{{tool-ingest-large-table.output.text}}\n\n数值摘要：{{tool-ingest-large-table.output.result.data.payload.analysis.numeric_summary}}\n\n相关性：{{tool-ingest-large-table.output.result.data.payload.analysis.correlation_summary}}\n\n列分组：{{tool-ingest-large-table.output.result.data.payload.analysis.column_groups}}",
-          "instructions": "输出：指标层次、主要驱动因子、需要继续拆解的结构问题，以及最值得深挖的相关性关系。"
+          "instructions": "输出：指标层次、主要驱动因子、需要继续拆解的结构问题，以及最值得深挖的相关性关系。",
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -153,10 +153,10 @@
           "description": "整理异常值、离群区间和风险场景",
           "icon": "🚨",
           "iconColor": "bg-rose-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "data-analysis",
           "inputMapping": "关注问题：{{input-text-large-table.output.text}}\n\nIngest 阶段摘要：{{tool-ingest-large-table.output.text}}\n\n异常摘要：{{tool-ingest-large-table.output.result.data.payload.analysis.outlier_summary}}\n\n时间摘要：{{tool-ingest-large-table.output.result.data.payload.analysis.datetime_summary}}",
-          "instructions": "输出：异常分组、可能原因、影响范围、优先排查顺序，以及需要单独回查的时间区间或字段组合。"
+          "instructions": "输出：异常分组、可能原因、影响范围、优先排查顺序，以及需要单独回查的时间区间或字段组合。",
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -172,10 +172,10 @@
           "description": "把全量诊断转成后续验证问题与补数计划",
           "icon": "🧭",
           "iconColor": "bg-amber-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "data-analysis",
           "inputMapping": "关注问题：{{input-text-large-table.output.text}}\n\nIngest 阶段摘要：{{tool-ingest-large-table.output.text}}\n\n质量旗标：{{tool-ingest-large-table.output.result.data.payload.analysis.quality_flags}}\n\n相关性：{{tool-ingest-large-table.output.result.data.payload.analysis.correlation_summary}}",
-          "instructions": "输出：1) 还需要验证的业务假设；2) 需要补采/补算的数据；3) 建议新增的分组与切片；4) 下一轮分析的执行顺序。"
+          "instructions": "输出：1) 还需要验证的业务假设；2) 需要补采/补算的数据；3) 建议新增的分组与切片；4) 下一轮分析的执行顺序。",
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -258,10 +258,10 @@
           "description": "汇总专项诊断与 sheet-stage 导出结果，输出详细报告和行动路线图",
           "icon": "📘",
           "iconColor": "bg-emerald-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "data-analysis",
           "inputMapping": "关注问题：{{input-text-large-table.output.text}}\n\nIngest 阶段摘要：{{tool-ingest-large-table.output.text}}\n\nProfile 阶段结构：{{tool-profile-large-table.output.result.data.payload}}\n\nQuery 阶段回答：{{tool-query-large-table.output.result.data.payload.answer}}\n\nExport 渲染结果：{{tool-export-large-table.output.result.data.payload.rendered}}\n\n已合并上下文：{{merge-context-large-table.output.text}}",
-          "instructions": "请输出详细 Markdown 报告：执行摘要、字段字典、质量问题、结构洞察、强相关关系、异常清单、验证路径、优先级行动、后续分析建议。必须详细，不要只给概览。"
+          "instructions": "请输出详细 Markdown 报告：执行摘要、字段字典、质量问题、结构洞察、强相关关系、异常清单、验证路径、优先级行动、后续分析建议。必须详细，不要只给概览。",
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {

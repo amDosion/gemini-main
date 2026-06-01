@@ -40,8 +40,13 @@ from ..base.video_storyboard import (
 )
 from ..http_options import HttpOptions
 from ..client_pool import get_client_pool
+from ..common.config_builder import ConfigBuilder
 from ...common.google_model_catalog import VEO_VIDEO_MODELS
 from ...common.model_capabilities import is_multimodal_understanding_model
+from ...common.video_prompt_enhancement import (
+    apply_video_prompt_enhancement_metadata,
+    enhance_video_prompt_bundle,
+)
 from ..geminiapi.video_generation_service import GeminiAPIVideoGenerationService
 from ..vertexai.video_generation_service import VertexAIVideoGenerationService
 from ....utils.attachment_handler import is_base64_url
@@ -333,6 +338,7 @@ class VideoGenerationCoordinator:
         *,
         prompt: str,
         model_hint: Optional[str] = None,
+        thinking_level: Optional[str] = None,
     ) -> Optional[str]:
         api_key = str(self._config.get("gemini_api_key") or self._provided_api_key or "").strip()
         if not api_key:
@@ -357,10 +363,16 @@ class VideoGenerationCoordinator:
                 http_options=self._build_prompt_enhance_http_options(),
             )
             client = pooled_client
-            response = client.models.generate_content(
-                model=text_model,
-                contents=f"{system_prompt}\n\n{user_prompt}",
-            )
+            request_kwargs = {
+                "model": text_model,
+                "contents": f"{system_prompt}\n\n{user_prompt}",
+            }
+            if ConfigBuilder.normalize_thinking_level_name(thinking_level):
+                request_kwargs["config"] = ConfigBuilder.build_generate_config_with_tools(
+                    enable_thinking=True,
+                    thinking_level=thinking_level,
+                )
+            response = client.models.generate_content(**request_kwargs)
             enhanced = str(getattr(response, "text", "") or "").strip()
             if not enhanced and getattr(response, "parts", None):
                 for part in response.parts:
@@ -391,37 +403,61 @@ class VideoGenerationCoordinator:
         extension_count: int,
         selected_api_mode: str,
     ) -> Dict[str, Any]:
-        has_segmented_storyboard = any(
-            segment.strip() for segment in self._normalize_storyboard_segments(request_kwargs)[:extension_count]
-        )
-        storyboard_prompt = self._build_storyboard_prompt(
-            prompt=prompt,
-            request_kwargs=request_kwargs,
-            extension_count=0 if has_segmented_storyboard else extension_count,
-        )
         enhance_requested = bool(request_kwargs.get("enhance_prompt") or request_kwargs.get("enhancePrompt"))
-        enhanced_prompt: Optional[str] = None
+        enhancement_bundle = None
 
         if selected_api_mode == "gemini_api":
             request_kwargs.pop("enhance_prompt", None)
             request_kwargs.pop("enhancePrompt", None)
             if enhance_requested:
-                enhanced_prompt = await self._enhance_prompt_locally(
-                    prompt=storyboard_prompt,
-                    model_hint=request_kwargs.get("enhance_prompt_model") or request_kwargs.get("enhancePromptModel"),
+                model_hint = request_kwargs.get("enhance_prompt_model") or request_kwargs.get("enhancePromptModel")
+                thinking_level = (
+                    request_kwargs.get("enhance_prompt_thinking_level")
+                    or request_kwargs.get("enhancePromptThinkingLevel")
                 )
-                if enhanced_prompt and self._normalized_storyboard_options(request_kwargs)["generate_audio"] is False:
-                    enhanced_prompt = strip_audio_prompt_cues(enhanced_prompt)
+                generate_audio = self._normalized_storyboard_options(request_kwargs)["generate_audio"]
+
+                async def enhance_one(value: str) -> Optional[str]:
+                    enhanced = await self._enhance_prompt_locally(
+                        prompt=value,
+                        model_hint=model_hint,
+                        thinking_level=thinking_level,
+                    )
+                    if enhanced and generate_audio is False:
+                        return strip_audio_prompt_cues(enhanced)
+                    return enhanced
+
+                enhancement_bundle = await enhance_video_prompt_bundle(
+                    prompt=prompt,
+                    request_kwargs=request_kwargs,
+                    extension_count=extension_count,
+                    enhance_requested=True,
+                    enhance_prompt=enhance_one,
+                )
+                request_kwargs.clear()
+                request_kwargs.update(enhancement_bundle.request_kwargs)
+
+        base_prompt = enhancement_bundle.effective_prompt if enhancement_bundle else prompt
+        enhanced_prompt = enhancement_bundle.enhanced_prompt if enhancement_bundle else None
+        has_segmented_storyboard = any(
+            segment.strip() for segment in self._normalize_storyboard_segments(request_kwargs)[:extension_count]
+        )
+        storyboard_prompt = self._build_storyboard_prompt(
+            prompt=base_prompt,
+            request_kwargs=request_kwargs,
+            extension_count=0 if has_segmented_storyboard else extension_count,
+        )
 
         return {
             "storyboard_prompt": storyboard_prompt,
-            "effective_prompt": enhanced_prompt or storyboard_prompt,
+            "effective_prompt": storyboard_prompt,
             "enhanced_prompt": enhanced_prompt,
             "extension_prompts": self._build_extension_segment_prompts(
-                prompt=prompt,
+                prompt=base_prompt,
                 request_kwargs=request_kwargs,
                 extension_count=extension_count,
             ),
+            "prompt_enhancement": enhancement_bundle,
         }
 
     def _apply_storyboard_metadata(
@@ -1252,6 +1288,7 @@ class VideoGenerationCoordinator:
         )
         prepared_prompt = str(prepared_prompt_payload.get("effective_prompt") or prompt)
         enhanced_prompt = prepared_prompt_payload.get("enhanced_prompt")
+        prompt_enhancement = prepared_prompt_payload.get("prompt_enhancement")
         storyboard_prompt = str(prepared_prompt_payload.get("storyboard_prompt") or prepared_prompt)
         extension_prompts_raw = prepared_prompt_payload.get("extension_prompts")
         extension_prompts = extension_prompts_raw if isinstance(extension_prompts_raw, list) else []
@@ -1278,7 +1315,9 @@ class VideoGenerationCoordinator:
             if isinstance(result, dict):
                 result.setdefault("prompt", prompt)
                 result.setdefault("storyboard_prompt", storyboard_prompt)
-                if enhanced_prompt:
+                if prompt_enhancement:
+                    apply_video_prompt_enhancement_metadata(result, prompt_enhancement)
+                elif enhanced_prompt:
                     result["enhanced_prompt"] = enhanced_prompt
                     result.setdefault("prompt_enhancement_strategy", "local_llm")
                 return self._apply_storyboard_metadata(
@@ -1365,7 +1404,9 @@ class VideoGenerationCoordinator:
                 current_result["continuation_strategy"] = "last_frame_bridge_chain"
                 current_result.setdefault("prompt", prompt)
                 current_result.setdefault("storyboard_prompt", storyboard_prompt)
-                if enhanced_prompt:
+                if prompt_enhancement:
+                    apply_video_prompt_enhancement_metadata(current_result, prompt_enhancement)
+                elif enhanced_prompt:
                     current_result["enhanced_prompt"] = enhanced_prompt
                     current_result.setdefault("prompt_enhancement_strategy", "local_llm")
                 return self._apply_storyboard_metadata(
@@ -1412,7 +1453,9 @@ class VideoGenerationCoordinator:
             current_result["continuation_strategy"] = "video_extension_chain"
             current_result.setdefault("prompt", prompt)
             current_result.setdefault("storyboard_prompt", storyboard_prompt)
-            if enhanced_prompt:
+            if prompt_enhancement:
+                apply_video_prompt_enhancement_metadata(current_result, prompt_enhancement)
+            elif enhanced_prompt:
                 current_result["enhanced_prompt"] = enhanced_prompt
                 current_result.setdefault("prompt_enhancement_strategy", "local_llm")
             return self._apply_storyboard_metadata(

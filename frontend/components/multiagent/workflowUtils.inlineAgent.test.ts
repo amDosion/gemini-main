@@ -67,4 +67,115 @@ describe('validateWorkflow inline agent bindings', () => {
       '智能体节点必须配置智能体（agentId / agentName），或配置 inlineProviderId + inlineModelId，或启用 inlineUseActiveProfile',
     );
   });
+
+  it('rejects human nodes unless autoApprove is explicitly enabled', () => {
+    const nodes: Node<WorkflowNodeData>[] = [
+      buildNode('start', 'start', { type: 'start' }),
+      buildNode('review', 'human', {
+        type: 'human',
+        label: 'Review',
+        approvalPrompt: '确认后继续',
+      }),
+      buildNode('end', 'end', { type: 'end' }),
+    ];
+    const edges: Edge[] = [
+      { id: 'e1', source: 'start', target: 'review' },
+      { id: 'e2', source: 'review', target: 'end' },
+    ];
+
+    const result = validateWorkflow(nodes, edges);
+
+    expect(result.isValid).toBe(false);
+    expect(result.nodeErrors.review).toContain(
+      '人工审核节点当前没有真实确认流程，必须显式启用自动通过后才能执行',
+    );
+  });
+
+  it('rejects unsupported node types before execution', () => {
+    const nodes: Node<WorkflowNodeData>[] = [
+      buildNode('start', 'start', { type: 'start' }),
+      buildNode('mystery', 'mystery_box', {
+        type: 'mystery_box',
+        label: 'Mystery',
+      }),
+      buildNode('end', 'end', { type: 'end' }),
+    ];
+    const edges: Edge[] = [
+      { id: 'e1', source: 'start', target: 'mystery' },
+      { id: 'e2', source: 'mystery', target: 'end' },
+    ];
+
+    const result = validateWorkflow(nodes, edges);
+
+    expect(result.isValid).toBe(false);
+    expect(result.nodeErrors.mystery).toContain('不支持的节点类型：mystery_box');
+  });
+
+  it('allows reference images when agent task type is inherited from the bound Agent', () => {
+    const nodes: Node<WorkflowNodeData>[] = [
+      buildNode('start', 'start', { type: 'start' }),
+      buildNode('image-agent', 'agent', {
+        type: 'agent',
+        label: 'Image Edit Agent',
+        agentName: '图片编辑优化师',
+        agentReferenceImageUrl: 'https://example.com/ref.png',
+      }),
+      buildNode('end', 'end', { type: 'end' }),
+    ];
+    const edges: Edge[] = [
+      { id: 'e1', source: 'start', target: 'image-agent' },
+      { id: 'e2', source: 'image-agent', target: 'end' },
+    ];
+
+    const result = validateWorkflow(nodes, edges);
+
+    expect(result.isValid).toBe(true);
+    expect(result.nodeErrors['image-agent']).toBeUndefined();
+  });
+
+  it('allows reference images for video generation source-image workflows', () => {
+    const nodes: Node<WorkflowNodeData>[] = [
+      buildNode('start', 'start', { type: 'start' }),
+      buildNode('video-agent', 'agent', {
+        type: 'agent',
+        label: 'Video Agent',
+        inlineUseActiveProfile: true,
+        agentTaskType: 'video-gen',
+        agentReferenceImageUrl: 'https://example.com/source.png',
+      }),
+      buildNode('end', 'end', { type: 'end' }),
+    ];
+    const edges: Edge[] = [
+      { id: 'e1', source: 'start', target: 'video-agent' },
+      { id: 'e2', source: 'video-agent', target: 'end' },
+    ];
+
+    const result = validateWorkflow(nodes, edges);
+
+    expect(result.isValid).toBe(true);
+    expect(result.nodeErrors['video-agent']).toBeUndefined();
+  });
+
+  it('normalizes agent task aliases through the shared workflow contract when validating reference images', () => {
+    const nodes: Node<WorkflowNodeData>[] = [
+      buildNode('start', 'start', { type: 'start' }),
+      buildNode('video-agent', 'agent', {
+        type: 'agent',
+        label: 'Video Agent',
+        inlineUseActiveProfile: true,
+        agentTaskType: 'video',
+        agentReferenceImageUrl: 'https://example.com/source.png',
+      }),
+      buildNode('end', 'end', { type: 'end' }),
+    ];
+    const edges: Edge[] = [
+      { id: 'e1', source: 'start', target: 'video-agent' },
+      { id: 'e2', source: 'video-agent', target: 'end' },
+    ];
+
+    const result = validateWorkflow(nodes, edges);
+
+    expect(result.isValid).toBe(true);
+    expect(result.nodeErrors['video-agent']).toBeUndefined();
+  });
 });

@@ -2,13 +2,32 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { mockUseCachedImageSrc } = vi.hoisted(() => ({
+  mockUseCachedImageSrc: vi.fn(),
+}));
+
+vi.mock('../../hooks/useCachedImageSrc', () => ({
+  useCachedImageSrc: mockUseCachedImageSrc,
+}));
 
 import { ImageCompare } from './ImageCompare';
 
 describe('ImageCompare', () => {
+  beforeEach(() => {
+    mockUseCachedImageSrc.mockImplementation((source) => ({
+      src: source?.url ? `blob:cached-${source.url}` : null,
+      status: 'persistent-hit',
+      error: null,
+      refresh: vi.fn(),
+      recoverFromImageError: vi.fn(() => false),
+    }));
+  });
+
   afterEach(() => {
     cleanup();
+    mockUseCachedImageSrc.mockReset();
   });
 
   it('updates the comparison divider while dragging', () => {
@@ -63,8 +82,79 @@ describe('ImageCompare', () => {
     const sizer = document.querySelector('[data-testid="image-compare-sizer"]') as HTMLImageElement | null;
 
     expect(sizer).toBeInTheDocument();
-    expect(sizer).toHaveAttribute('src', '/result.png');
+    expect(sizer).toHaveAttribute('src', 'blob:cached-/result.png');
     expect(sizer).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('uses the shared image cache for compare layer sources', () => {
+    render(
+      <ImageCompare
+        beforeImage="/api/storage/local-files/source.png"
+        afterImage="/api/storage/local-files/result.png"
+        beforeLabel="原图"
+        afterLabel="编辑结果"
+      />,
+    );
+
+    expect(mockUseCachedImageSrc).toHaveBeenCalledWith(
+      expect.objectContaining({ url: '/api/storage/local-files/source.png' }),
+      expect.objectContaining({ fallbackSrc: '/api/storage/local-files/source.png' })
+    );
+    expect(mockUseCachedImageSrc).toHaveBeenCalledWith(
+      expect.objectContaining({ url: '/api/storage/local-files/result.png' }),
+      expect.objectContaining({ fallbackSrc: '/api/storage/local-files/result.png' })
+    );
+    expect(screen.getByAltText('编辑结果')).toHaveAttribute(
+      'src',
+      'blob:cached-/api/storage/local-files/result.png'
+    );
+    expect(screen.getByAltText('原图')).toHaveAttribute(
+      'src',
+      'blob:cached-/api/storage/local-files/source.png'
+    );
+  });
+
+  it('reports failed cached blob compare images back to the shared cache hook', () => {
+    const recoverBefore = vi.fn(() => true);
+    const recoverAfter = vi.fn(() => true);
+
+    mockUseCachedImageSrc
+      .mockReturnValueOnce({
+        src: 'blob:compare-after-sizer',
+        status: 'memory-hit',
+        error: null,
+        refresh: vi.fn(),
+        recoverFromImageError: vi.fn(() => true),
+      })
+      .mockReturnValueOnce({
+        src: 'blob:compare-after-revoked',
+        status: 'memory-hit',
+        error: null,
+        refresh: vi.fn(),
+        recoverFromImageError: recoverAfter,
+      })
+      .mockReturnValueOnce({
+        src: 'blob:compare-before-revoked',
+        status: 'memory-hit',
+        error: null,
+        refresh: vi.fn(),
+        recoverFromImageError: recoverBefore,
+      });
+
+    render(
+      <ImageCompare
+        beforeImage="/api/storage/local-files/source.png"
+        afterImage="/api/storage/local-files/result.png"
+        beforeLabel="原图"
+        afterLabel="编辑结果"
+      />,
+    );
+
+    fireEvent.error(screen.getByAltText('编辑结果'));
+    fireEvent.error(screen.getByAltText('原图'));
+
+    expect(recoverAfter).toHaveBeenCalledWith('blob:compare-after-revoked');
+    expect(recoverBefore).toHaveBeenCalledWith('blob:compare-before-revoked');
   });
 
   it('adjusts the source image opacity with the opacity slider', () => {

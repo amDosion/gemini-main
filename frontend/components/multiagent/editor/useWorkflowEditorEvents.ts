@@ -29,6 +29,7 @@ import {
   WorkflowNodeActionEventDetail,
   WorkflowNodeFieldFocusEventDetail,
   WorkflowNodeFieldFocusRequest,
+  WorkflowImageGalleryRequestDetail,
   WorkflowRemoveEdgeRequestDetail,
 } from '../workflowEditorUtils';
 
@@ -65,7 +66,12 @@ export interface UseWorkflowEditorEventsArgs {
   executionStatus?: ExecutionStatus;
   finalResult: any;
   finalError: string | null;
-  setShowResultPanel: React.Dispatch<React.SetStateAction<boolean>>;
+  handleOpenEndResult: (nodeId?: string) => void;
+  handleOpenImageGallery: (request: {
+    imageUrls: string[];
+    initialIndex?: number;
+    title?: string;
+  }) => void;
   addLog: AddLog;
 }
 
@@ -85,7 +91,8 @@ export const useWorkflowEditorEvents = ({
   executionStatus,
   finalResult,
   finalError,
-  setShowResultPanel,
+  handleOpenEndResult,
+  handleOpenImageGallery,
   addLog,
 }: UseWorkflowEditorEventsArgs): void => {
   useEffect(() => {
@@ -224,14 +231,40 @@ export const useWorkflowEditorEvents = ({
         addLog('system', '系统', 'warn', '结束节点暂无结果，请先从开始节点执行工作流');
         return;
       }
-      setShowResultPanel(true);
+      handleOpenEndResult(requestNodeId);
+    };
+
+    const onImageGalleryRequest = (event: Event) => {
+      const customEvent = event as CustomEvent<WorkflowImageGalleryRequestDetail>;
+      if (!isWorkflowEventForEditorScope(customEvent.detail?.editorScopeId, editorScopeId)) {
+        return;
+      }
+      const imageUrls = Array.isArray(customEvent.detail?.imageUrls)
+        ? customEvent.detail.imageUrls
+        : [];
+      handleOpenImageGallery({
+        imageUrls,
+        initialIndex:
+          typeof customEvent.detail?.initialIndex === 'number'
+            ? customEvent.detail.initialIndex
+            : 0,
+        title: customEvent.detail?.title,
+      });
     };
 
     window.addEventListener('workflow:execute-request', onExecuteRequest as EventListener);
     window.addEventListener('workflow:end-request', onEndRequest as EventListener);
+    window.addEventListener(
+      'workflow:image-gallery-request',
+      onImageGalleryRequest as EventListener
+    );
     return () => {
       window.removeEventListener('workflow:execute-request', onExecuteRequest as EventListener);
       window.removeEventListener('workflow:end-request', onEndRequest as EventListener);
+      window.removeEventListener(
+        'workflow:image-gallery-request',
+        onImageGalleryRequest as EventListener
+      );
     };
   }, [
     addLog,
@@ -240,7 +273,8 @@ export const useWorkflowEditorEvents = ({
     finalError,
     finalResult,
     handleExecute,
+    handleOpenEndResult,
+    handleOpenImageGallery,
     nodes,
-    setShowResultPanel,
   ]);
 };

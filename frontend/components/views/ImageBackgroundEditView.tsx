@@ -15,9 +15,15 @@ import { GenViewLayout } from '../common/GenViewLayout';
 import { ThinkingBlock } from '../message/ThinkingBlock';
 import { useToastContext } from '../../contexts/ToastContext';
 import { useControlsState } from '../../hooks/useControlsState';
+import { useAutoSelectGeneratedImageResult } from '../../hooks/useAutoSelectGeneratedImageResult';
 import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
 import ChatEditInputArea from '../chat/ChatEditInputArea';
 import { useThinkingBlock } from '../../hooks/useThinkingBlock';
+import { CachedImage } from '../common/CachedImage';
+import { getImageHistoryAttachmentPreviewUrl } from '../common/imageHistorySidebarHelpers';
+import { getPreferredImageAttachmentUrl } from '../../utils/attachmentUrl';
+import { useStableAttachmentImageUrl } from '../../hooks/useStableAttachmentImageUrl';
+import { buildMessagesMediaSignature } from '../../utils/messageMediaSignature';
 
 interface ImageBackgroundEditViewProps {
   messages: Message[];
@@ -35,21 +41,6 @@ interface ImageBackgroundEditViewProps {
   providerId?: string;
   sessionId?: string | null;
 }
-
-// 复用 ImageEditView 的比较函数
-const arePropsEqual = (
-  prevProps: ImageBackgroundEditViewProps,
-  nextProps: ImageBackgroundEditViewProps
-) => {
-  if (prevProps.activeModelConfig?.id !== nextProps.activeModelConfig?.id) {
-    return false;
-  }
-  if (prevProps.loadingState !== nextProps.loadingState) return false;
-  if (prevProps.messages !== nextProps.messages) return false;
-  if (prevProps.sessionId !== nextProps.sessionId) return false;
-  if (prevProps.providerId !== nextProps.providerId) return false;
-  return true;
-};
 
 // 复用共享的 ImageWorkspaceCanvas（components/common/ImageWorkspaceCanvas.tsx）
 type ImageEditMainCanvasProps = {
@@ -108,8 +99,7 @@ const ImageEditMainCanvas = memo((props: ImageEditMainCanvasProps) => (
 
 ImageEditMainCanvas.displayName = 'ImageEditMainCanvas';
 
-export const ImageBackgroundEditView = memo(
-  ({
+export const ImageBackgroundEditView: React.FC<ImageBackgroundEditViewProps> = ({
     messages,
     setAppMode,
     onImageClick,
@@ -124,7 +114,7 @@ export const ImageBackgroundEditView = memo(
     onExpandImage,
     providerId,
     sessionId: currentSessionId,
-  }: ImageBackgroundEditViewProps) => {
+  }) => {
     const { showError } = useToastContext();
     const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -153,56 +143,35 @@ export const ImageBackgroundEditView = memo(
       displayedContent: displayedThinkingContent,
     } = useThinkingBlock(messages, loadingState);
 
-    // Stable canvas URL
-    const canvasObjectUrlRef = useRef<string | null>(null);
-    const canvasObjectUrlFileRef = useRef<File | null>(null);
+    const getStableCanvasUrlFromAttachment = useStableAttachmentImageUrl([], {
+      retainedObjectUrl: activeImageUrl,
+      createFileObjectUrls: false,
+    });
+    const messagesMediaSignature = buildMessagesMediaSignature(messages);
 
-    const getStableCanvasUrlFromAttachment = useCallback((att: Attachment) => {
-      if (att.file) {
-        const file = att.file;
-        if (!canvasObjectUrlRef.current || canvasObjectUrlFileRef.current !== file) {
-          if (canvasObjectUrlRef.current) URL.revokeObjectURL(canvasObjectUrlRef.current);
-          canvasObjectUrlRef.current = URL.createObjectURL(file);
-          canvasObjectUrlFileRef.current = file;
-        }
-        return canvasObjectUrlRef.current;
-      }
-      return att.url || att.tempUrl || null;
-    }, []);
-
-    useEffect(() => {
-      return () => {
-        if (canvasObjectUrlRef.current) {
-          URL.revokeObjectURL(canvasObjectUrlRef.current);
-          canvasObjectUrlRef.current = null;
-          canvasObjectUrlFileRef.current = null;
-        }
-      };
-    }, []);
-
-    const [lastProcessedMsgId, setLastProcessedMsgId] = useState<string | null>(null);
     const [isCompareMode, setIsCompareMode] = useState(false);
     const canvas = useImageCanvas({ minZoom: 0.1, maxZoom: 5, zoomStep: 0.2 });
+    const getDisplayableImageAttachments = useCallback((attachments?: Attachment[]) => {
+      return (attachments ?? []).filter((att) =>
+        Boolean(att.file || getPreferredImageAttachmentUrl(att))
+      );
+    }, []);
+    const handleSelectGeneratedResult = useCallback(({ firstUrl }: { firstUrl: string }) => {
+      setActiveImageUrl(firstUrl);
+    }, []);
 
     useEffect(() => {
       canvas.resetView();
       setIsCompareMode(false);
     }, [activeImageUrl]);
 
-    useEffect(() => {
-      if (canvasObjectUrlRef.current && activeImageUrl !== canvasObjectUrlRef.current) {
-        URL.revokeObjectURL(canvasObjectUrlRef.current);
-        canvasObjectUrlRef.current = null;
-        canvasObjectUrlFileRef.current = null;
-      }
-    }, [activeImageUrl]);
-
     const originalImageUrl = useMemo(() => {
       const lastUserMsg = [...messages]
         .reverse()
         .find((m) => m.role === Role.USER && m.attachments?.length);
-      return lastUserMsg?.attachments?.[0]?.url || null;
-    }, [messages]);
+      const attachment = lastUserMsg?.attachments?.[0];
+      return attachment ? getStableCanvasUrlFromAttachment(attachment) : null;
+    }, [getStableCanvasUrlFromAttachment, messages, messagesMediaSignature]);
 
     useEffect(() => {
       if (initialAttachments && initialAttachments.length > 0) {
@@ -226,42 +195,45 @@ export const ImageBackgroundEditView = memo(
           behavior: 'smooth',
         });
       });
-    }, [messages, activeAttachments]);
+    }, [messages, messagesMediaSignature, activeAttachments]);
 
     useEffect(() => {
       if (activeAttachments.length === 0 && !activeImageUrl) {
         const lastUserMsg = [...messages]
           .reverse()
           .find((m) => m.role === Role.USER && m.attachments?.length);
-        if (lastUserMsg && lastUserMsg.attachments?.[0]?.url) {
-          setActiveImageUrl(lastUserMsg.attachments[0].url);
+        const lastUserUrl = lastUserMsg?.attachments?.[0]
+          ? getStableCanvasUrlFromAttachment(lastUserMsg.attachments[0])
+          : null;
+        if (lastUserMsg && lastUserUrl) {
+          setActiveImageUrl(lastUserUrl);
         } else {
           const lastModelMsg = [...messages]
             .reverse()
             .find((m) => m.role === Role.MODEL && m.attachments?.length);
-          if (lastModelMsg && lastModelMsg.attachments?.[0]?.url) {
-            setActiveImageUrl(lastModelMsg.attachments[0].url);
+          const lastModelUrl = lastModelMsg?.attachments?.[0]
+            ? getStableCanvasUrlFromAttachment(lastModelMsg.attachments[0])
+            : null;
+          if (lastModelMsg && lastModelUrl) {
+            setActiveImageUrl(lastModelUrl);
           }
         }
       }
+    }, [
+      messages,
+      messagesMediaSignature,
+      activeAttachments.length,
+      activeImageUrl,
+      getStableCanvasUrlFromAttachment,
+    ]);
 
-      if (loadingState === 'idle' && messages.length > 0) {
-        const lastMsg = messages[messages.length - 1];
-        if (lastMsg.id !== lastProcessedMsgId) {
-          if (
-            lastMsg.role === Role.MODEL &&
-            lastMsg.attachments &&
-            lastMsg.attachments.length > 0 &&
-            lastMsg.attachments[0].url
-          ) {
-            setActiveImageUrl(lastMsg.attachments[0].url);
-            setLastProcessedMsgId(lastMsg.id);
-          } else if (lastMsg.isError) {
-            setLastProcessedMsgId(lastMsg.id);
-          }
-        }
-      }
-    }, [messages, activeAttachments.length, loadingState, lastProcessedMsgId, activeImageUrl]);
+    useAutoSelectGeneratedImageResult({
+      messages,
+      loadingState,
+      getDisplayAttachments: getDisplayableImageAttachments,
+      getAttachmentUrl: getStableCanvasUrlFromAttachment,
+      onSelectResult: handleSelectGeneratedResult,
+    });
 
     // ✅ ChatEditInputArea 已经处理了附件和参数，这里只需要直接转发
     const handleSend = useCallback(
@@ -298,30 +270,47 @@ export const ImageBackgroundEditView = memo(
                   }`}
                 >
                   {msg.content && <p className="mb-2">{msg.content}</p>}
-                  {msg.attachments
-                    ?.filter((att) => att.url && att.url.length > 0)
-                    .map((att, idx) => (
+                  {msg.attachments?.map((att, idx) => {
+                    const previewId = att.id || `${msg.id}-${idx}`;
+                    const sourceAttachment = att.id ? att : { ...att, id: previewId };
+                    const imageUrl = getImageHistoryAttachmentPreviewUrl(
+                      sourceAttachment,
+                      previewId,
+                      getStableCanvasUrlFromAttachment(sourceAttachment) ||
+                        getPreferredImageAttachmentUrl(sourceAttachment)
+                    );
+                    if (!imageUrl) return null;
+                    return (
                       <div
                         key={idx}
-                        onClick={() => setActiveImageUrl(att.url || null)}
+                        onClick={() => {
+                          setActiveAttachments([sourceAttachment]);
+                          setActiveImageUrl(imageUrl);
+                        }}
                         className={`relative group mt-1 rounded-lg overflow-hidden border cursor-pointer transition-all ${
-                          activeImageUrl === att.url
+                          activeImageUrl === imageUrl
                             ? 'ring-2 ring-blue-500 border-transparent'
                             : 'border-slate-700 hover:border-slate-500'
                         }`}
                       >
-                        <img
-                          src={att.url}
+                        <CachedImage
+                          source={{
+                            ...sourceAttachment,
+                            attachmentId: previewId,
+                            url: imageUrl,
+                          }}
+                          src={imageUrl}
                           className="w-full h-32 object-cover bg-slate-900"
                           alt="thumbnail"
                         />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                          {activeImageUrl === att.url && (
+                          {activeImageUrl === imageUrl && (
                             <div className="bg-blue-500 w-2 h-2 rounded-full absolute top-2 right-2 shadow-sm" />
                           )}
                         </div>
                       </div>
-                    ))}
+                    );
+                  })}
                   {msg.isError && (
                     <div className="flex items-center gap-2 text-red-400 text-xs mt-1">
                       <AlertCircle size={12} /> Error generating
@@ -395,6 +384,7 @@ export const ImageBackgroundEditView = memo(
         activeModelConfig?.name,
         activeImageUrl,
         activeAttachments,
+        getStableCanvasUrlFromAttachment,
         displayedThinkingContent,
         isThinkingOpen,
       ]
@@ -515,6 +505,4 @@ export const ImageBackgroundEditView = memo(
         main={mainContent}
       />
     );
-  },
-  arePropsEqual
-);
+  };

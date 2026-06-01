@@ -1,5 +1,6 @@
 import React from 'react';
 import { Download } from 'lucide-react';
+import { downloadBlobInBrowser } from '../../../services/downloadService';
 
 interface PdfHtmlViewProps {
   data: Record<string, any>;
@@ -193,12 +194,10 @@ export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data }) => {
   const handleDownload = () => {
     const htmlDoc = generateDownloadHtml();
     const blob = new Blob([htmlDoc], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `pdf-extract-${Date.now()}.html`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadBlobInBrowser({
+      blob,
+      fileName: `pdf-extract-${Date.now()}.html`,
+    });
   };
 
   return (

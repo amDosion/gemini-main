@@ -1,7 +1,7 @@
 """
 统一初始化 API 路由
 """
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from sqlalchemy.orm import Session
 import logging
 
@@ -129,9 +129,10 @@ async def get_critical_init_data(
 
 @router.get("/init/sessions/more")
 async def get_more_sessions(
-    offset: int = 0,
-    limit: int = 20,
-    cursor: str | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=50),
+    cursor: str | None = Query(None),
+    mode: str | None = Query(None, max_length=64),
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)
 ):
@@ -152,7 +153,7 @@ async def get_more_sessions(
 
     try:
         result = await _query_sessions_metadata_only(
-            user_id, db, limit=limit, offset=offset, cursor=cursor
+            user_id, db, limit=limit, offset=offset, cursor=cursor, mode=mode
         )
         return {
             "sessions": result.get("sessions", []),
@@ -168,6 +169,7 @@ async def get_more_sessions(
 
 @router.get("/init/non-critical")
 async def get_non_critical_init_data(
+    mode: str = Query("chat", max_length=64),
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)
 ):
@@ -203,7 +205,10 @@ async def get_non_critical_init_data(
             return exc
 
     try:
-        sessions_result = await _safe(_query_sessions_with_first_messages(user_id, db, limit=20), "sessions")
+        sessions_result = await _safe(
+            _query_sessions_with_first_messages(user_id, db, limit=20, mode=mode),
+            "sessions"
+        )
         personas_result = await _safe(_query_personas(user_id, db), "personas")
         storage_result = await _safe(_query_storage_configs(user_id, db), "storage")
         vertex_ai_result = await _safe(_query_vertex_ai_config(user_id, db), "vertex_ai")
@@ -211,7 +216,8 @@ async def get_non_critical_init_data(
         return {
             "sessions": sessions_result.get("sessions", []) if isinstance(sessions_result, dict) else [],
             "sessionsTotal": sessions_result.get("total", 0) if isinstance(sessions_result, dict) else 0,
-            "sessionsHasMore": sessions_result.get("hasMore", False) if isinstance(sessions_result, dict) else False,
+            "sessionsHasMore": sessions_result.get("has_more", False) if isinstance(sessions_result, dict) else False,
+            "sessionsMode": mode,
             "personas": personas_result.get("personas", []) if isinstance(personas_result, dict) else [],
             "storageConfigs": storage_result.get("storage_configs", []) if isinstance(storage_result, dict) else [],
             "activeStorageId": storage_result.get("active_storage_id") if isinstance(storage_result, dict) else None,
@@ -224,6 +230,7 @@ async def get_non_critical_init_data(
             "sessions": [],
             "sessionsTotal": 0,
             "sessionsHasMore": False,
+            "sessionsMode": mode,
             "personas": [],
             "storageConfigs": [],
             "activeStorageId": None,

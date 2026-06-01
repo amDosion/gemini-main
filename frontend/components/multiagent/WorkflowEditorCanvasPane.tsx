@@ -14,6 +14,7 @@ import { ComponentLibrary } from './ComponentLibrary';
 import { PropertiesPanel } from './PropertiesPanel';
 import { FLOW_NODE_TYPES, type WorkflowNodeFieldFocusRequest } from './workflowEditorUtils';
 import { DEFAULT_WORKFLOW_EDGE_TYPE, FLOW_EDGE_TYPES } from './workflowEdgeTypes';
+import { resolveNodeMiniMapColor } from './workflowNodeAppearance';
 
 const FLOW_DEFAULT_EDGE_OPTIONS = {
   type: DEFAULT_WORKFLOW_EDGE_TYPE,
@@ -114,21 +115,7 @@ export const WorkflowEditorCanvasPane: React.FC<WorkflowEditorCanvasPaneProps> =
             nodeColor={(node) => {
               const data = node.data as WorkflowNodeData;
               const config = nodeTypeConfigs[data.type as NodeType] || nodeTypeConfigs.agent;
-              const colorMap: Record<string, string> = {
-                'bg-blue-500': '#3b82f6',
-                'bg-green-500': '#22c55e',
-                'bg-purple-500': '#a855f7',
-                'bg-teal-500': '#14b8a6',
-                'bg-yellow-500': '#eab308',
-                'bg-orange-500': '#f97316',
-                'bg-indigo-500': '#6366f1',
-                'bg-pink-500': '#ec4899',
-                'bg-red-500': '#ef4444',
-                'bg-cyan-500': '#06b6d4',
-                'bg-amber-500': '#f59e0b',
-                'bg-violet-500': '#8b5cf6',
-              };
-              return colorMap[config?.iconColor] || '#475569';
+              return resolveNodeMiniMapColor(data, config);
             }}
           />
         </ReactFlow>

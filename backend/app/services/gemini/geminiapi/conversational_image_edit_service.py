@@ -17,6 +17,7 @@ from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 
 from ..client_pool import get_client_pool
+from ..common.config_builder import ConfigBuilder
 from ..common.chat_session_manager import ChatSessionManager
 from ..common.file_handler import FileHandler
 from ...common.model_capabilities import get_google_capabilities
@@ -123,6 +124,57 @@ class ConversationalImageEditService:
         if not model_name:
             return False
         return 'gemini-3' in model_name.lower()
+
+    def _get_config_value(self, config: Optional[Dict[str, Any]], *keys: str, default: Any = None) -> Any:
+        if not config:
+            return default
+        for key in keys:
+            if key in config:
+                return config.get(key)
+        return default
+
+    def _resolve_enable_thinking(
+        self,
+        config: Optional[Dict[str, Any]],
+        default_enabled: bool = True,
+    ) -> bool:
+        value = self._get_config_value(config, 'enable_thinking', 'enableThinking', default=None)
+        if value is None:
+            return default_enabled
+        return bool(value)
+
+    def _build_thinking_config(
+        self,
+        model_name: str,
+        config: Optional[Dict[str, Any]] = None,
+        default_enabled: bool = True,
+    ) -> Any:
+        if not self._supports_thinking(model_name):
+            return None
+        enable_thinking = self._resolve_enable_thinking(config, default_enabled=default_enabled)
+        thinking_level = self._get_config_value(config, 'thinking_level', 'thinkingLevel', default=None)
+        return ConfigBuilder.build_thinking_config(
+            enable_thinking=enable_thinking,
+            thinking_level=thinking_level,
+        )
+
+    def _build_thinking_config_dict(
+        self,
+        model_name: str,
+        config: Optional[Dict[str, Any]] = None,
+        default_enabled: bool = True,
+    ) -> Optional[Dict[str, Any]]:
+        if not self._supports_thinking(model_name):
+            return None
+        enable_thinking = self._resolve_enable_thinking(config, default_enabled=default_enabled)
+        if not enable_thinking:
+            return None
+        thinking_config: Dict[str, Any] = {'include_thoughts': True}
+        thinking_level = self._get_config_value(config, 'thinking_level', 'thinkingLevel', default=None)
+        level_name = ConfigBuilder.normalize_thinking_level_name(thinking_level)
+        if level_name:
+            thinking_config['thinking_level'] = level_name
+        return thinking_config
 
     def _coerce_number_of_images(self, value: Any, default: int = 1) -> int:
         try:
@@ -244,7 +296,8 @@ class ConversationalImageEditService:
         self,
         prompt: str,
         model_hint: Optional[str] = None,
-        reference_images: Optional[List[Dict[str, Any]]] = None
+        reference_images: Optional[List[Dict[str, Any]]] = None,
+        thinking_level: Optional[str] = None,
     ) -> Optional[str]:
         """
         两段式提示词增强：先用文本模型改写，再用于图片编辑。
@@ -291,15 +344,27 @@ class ConversationalImageEditService:
                 request_parts.append(
                     genai_types.Part.from_text(text=f"{system_prompt}\n\n{user_prompt}")
                 )
-                response = client.models.generate_content(
-                    model=text_model,
-                    contents=request_parts,
-                )
+                request_kwargs = {
+                    "model": text_model,
+                    "contents": request_parts,
+                }
+                if ConfigBuilder.normalize_thinking_level_name(thinking_level):
+                    request_kwargs["config"] = ConfigBuilder.build_generate_config_with_tools(
+                        enable_thinking=True,
+                        thinking_level=thinking_level,
+                    )
+                response = client.models.generate_content(**request_kwargs)
             else:
-                response = client.models.generate_content(
-                    model=text_model,
-                    contents=f"{system_prompt}\n\n{user_prompt}",
-                )
+                request_kwargs = {
+                    "model": text_model,
+                    "contents": f"{system_prompt}\n\n{user_prompt}",
+                }
+                if ConfigBuilder.normalize_thinking_level_name(thinking_level):
+                    request_kwargs["config"] = ConfigBuilder.build_generate_config_with_tools(
+                        enable_thinking=True,
+                        thinking_level=thinking_level,
+                    )
+                response = client.models.generate_content(**request_kwargs)
 
             # 取文本输出
             enhanced = None
@@ -354,11 +419,6 @@ class ConversationalImageEditService:
             
             # 构建 Chat 配置
             # 注意：只提取 GenerateContentConfig 支持的有效字段（image_aspect_ratio, image_resolution）
-            # thinking 开关：默认跟随模型能力，若 config 显式关闭则禁用
-            enable_thinking = True
-            if config and 'enable_thinking' in config:
-                enable_thinking = bool(config.get('enable_thinking'))
-
             if genai_types:
                 # 使用官方 SDK 类型
                 # 注意：图像生成/编辑这类请求，通常不需要 google_search
@@ -369,8 +429,7 @@ class ConversationalImageEditService:
                 if config and config.get('image_resolution'):
                     image_config_dict['image_size'] = config['image_resolution']
                 
-                # ✅ 根据模型判断是否开启思考过程（仅 gemini-3 系列支持）
-                thinking_cfg = genai_types.ThinkingConfig(include_thoughts=True) if enable_thinking and self._supports_thinking(model) else None
+                thinking_cfg = self._build_thinking_config(model, config)
                 # ✅ 修复：只在有参数时创建 ImageConfig，避免空参数导致的问题
                 image_config = genai_types.ImageConfig(**image_config_dict) if image_config_dict else None
                 # ✅ 禁用安全策略，避免 IMAGE_RECITATION 错误
@@ -405,8 +464,9 @@ class ConversationalImageEditService:
                 }
                 if image_config_dict:
                     chat_config['image_config'] = image_config_dict
-                if enable_thinking and self._supports_thinking(model):
-                    chat_config['thinking_config'] = {'include_thoughts': True}
+                thinking_config = self._build_thinking_config_dict(model, config)
+                if thinking_config:
+                    chat_config['thinking_config'] = thinking_config
             
             # 创建 Chat 对象
             # 注意：Google SDK 的 chats.create() 可能需要历史记录
@@ -729,13 +789,7 @@ class ConversationalImageEditService:
                     elif 'imageResolution' in config_dict:
                         valid_config['image_resolution'] = config_dict['imageResolution']
                     
-                    # thinking 开关：默认跟随模型能力，若 config 显式关闭则禁用
-                    # ⚠️ 向后兼容：同时检查 camelCase（旧数据）和 snake_case（新数据）
-                    enable_thinking = True
-                    if 'enable_thinking' in config_dict:
-                        enable_thinking = bool(config_dict.get('enable_thinking'))
-                    elif 'enableThinking' in config_dict:
-                        enable_thinking = bool(config_dict.get('enableThinking'))
+                    enable_thinking = self._resolve_enable_thinking(config_dict)
 
                     if genai_types and valid_config:
                         # 构建 ImageConfig
@@ -745,8 +799,7 @@ class ConversationalImageEditService:
                         if 'image_resolution' in valid_config:
                             image_config_dict['image_size'] = valid_config['image_resolution']
 
-                        # ✅ 根据模型判断是否开启思考过程
-                        thinking_cfg = genai_types.ThinkingConfig(include_thoughts=True) if enable_thinking and self._supports_thinking(chat_session.model_name) else None
+                        thinking_cfg = self._build_thinking_config(chat_session.model_name, config_dict)
                         # ✅ 禁用安全策略，避免 IMAGE_RECITATION 错误
                         safety_settings = [
                             genai_types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="OFF"),
@@ -771,8 +824,9 @@ class ConversationalImageEditService:
                             # ✅ 禁用自动函数调用，避免 MALFORMED_FUNCTION_CALL 错误
                             'automatic_function_calling': {'disable': True}
                         }
-                        if enable_thinking and self._supports_thinking(chat_session.model_name):
-                            chat_config['thinking_config'] = {'include_thoughts': True}
+                        thinking_config = self._build_thinking_config_dict(chat_session.model_name, config_dict)
+                        if thinking_config:
+                            chat_config['thinking_config'] = thinking_config
                         if 'image_aspect_ratio' in valid_config:
                             chat_config['image_config']['aspect_ratio'] = valid_config['image_aspect_ratio']
                         if 'image_resolution' in valid_config:
@@ -785,15 +839,14 @@ class ConversationalImageEditService:
             # 当 config_json 为空或解析失败时，chat_config 仍为 None，需要兜底
             if chat_config is None:
                 if genai_types:
-                    enable_thinking = True
+                    cfg = None
                     if chat_session.config_json:
                         try:
                             cfg = json.loads(chat_session.config_json)
-                            if 'enable_thinking' in cfg:
-                                enable_thinking = bool(cfg.get('enable_thinking'))
                         except Exception:
                             pass
-                    thinking_cfg = genai_types.ThinkingConfig(include_thoughts=True) if enable_thinking and self._supports_thinking(chat_session.model_name) else None
+                    enable_thinking = self._resolve_enable_thinking(cfg)
+                    thinking_cfg = self._build_thinking_config(chat_session.model_name, cfg)
                     # ✅ 禁用安全策略，避免 IMAGE_RECITATION 错误
                     safety_settings = [
                         genai_types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="OFF"),
@@ -816,19 +869,16 @@ class ConversationalImageEditService:
                         # ✅ 禁用自动函数调用，避免 MALFORMED_FUNCTION_CALL 错误
                         'automatic_function_calling': {'disable': True}
                     }
-                    enable_thinking = True
+                    cfg = None
                     if chat_session.config_json:
                         try:
                             cfg = json.loads(chat_session.config_json)
-                            # ⚠️ 向后兼容：同时检查 camelCase（旧数据）和 snake_case（新数据）
-                            if 'enable_thinking' in cfg:
-                                enable_thinking = bool(cfg.get('enable_thinking'))
-                            elif 'enableThinking' in cfg:
-                                enable_thinking = bool(cfg.get('enableThinking'))
                         except Exception:
                             pass
-                    if enable_thinking and self._supports_thinking(chat_session.model_name):
-                        chat_config['thinking_config'] = {'include_thoughts': True}
+                    enable_thinking = self._resolve_enable_thinking(cfg)
+                    thinking_config = self._build_thinking_config_dict(chat_session.model_name, cfg)
+                    if thinking_config:
+                        chat_config['thinking_config'] = thinking_config
                     logger.debug(f"[DEBUG] chat_config 创建成功 (兜底逻辑 字典): response_modalities={chat_config['response_modalities']}, enable_thinking={enable_thinking}")
 
             # ✅ 简化设计：不加载历史记录
@@ -876,10 +926,15 @@ class ConversationalImageEditService:
         enhanced_prompt_text = None
         if enhance_prompt:
             enhance_model = config.get('enhance_prompt_model') if config else None
+            enhance_thinking_level = (
+                config.get('enhance_prompt_thinking_level')
+                or config.get('enhancePromptThinkingLevel')
+            ) if config else None
             enhanced_prompt_text = await self._enhance_prompt_two_stage(
                 prompt,
                 model_hint=enhance_model or model_name,
-                reference_images=reference_images
+                reference_images=reference_images,
+                thinking_level=enhance_thinking_level,
             )
             if enhanced_prompt_text:
                 prompt = enhanced_prompt_text
@@ -1075,7 +1130,7 @@ class ConversationalImageEditService:
 
                 # ✅ 获取模型名以判断是否支持 thinking
                 model_name = chat_session.model_name if chat_session else ''
-                thinking_cfg = genai_types.ThinkingConfig(include_thoughts=True) if self._supports_thinking(model_name) else None
+                thinking_cfg = self._build_thinking_config(model_name, config)
                 # ✅ 禁用安全策略，避免 IMAGE_RECITATION 错误
                 safety_settings = [
                     genai_types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="OFF"),
@@ -1701,6 +1756,8 @@ class ConversationalImageEditService:
             edit_config['enhance_prompt'] = kwargs['enhance_prompt']
         if 'enhance_prompt_model' in kwargs:
             edit_config['enhance_prompt_model'] = kwargs['enhance_prompt_model']
+        if 'enhance_prompt_thinking_level' in kwargs:
+            edit_config['enhance_prompt_thinking_level'] = kwargs['enhance_prompt_thinking_level']
         if 'enable_thinking' in kwargs:
             edit_config['enable_thinking'] = kwargs['enable_thinking']
         number_of_images = self._coerce_number_of_images(

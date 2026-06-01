@@ -1,17 +1,18 @@
 /**
- * end 节点结束出口面板:内联结果预览(图/视频/音频/文本) + "打开结束结果"按钮。
+ * end 节点结束出口面板:内联结果预览(图/视频/音频/文本) + 图片轮播入口。
  *
  * 1:1 抽离自 `PropertiesPanel.tsx` renderResultNodeConfig L3638-3734
  * (JIRA-frontend-view-decomposition.md P0 #1 续 — 主组件瘦身)。
  *
  * 注:与 ResultSection.tsx 不同 — ResultSection 用于通用节点的执行结果可视化,
- * 本 panel 专门处理 end 节点的"结束出口"语义(含 dispatchScopedWorkflowEvent
- * 触发独立结果面板)。
+ * 本 panel 专门处理 end 节点的"结束出口"语义。
  */
 
 import React from 'react';
-import { CustomNodeData } from '../CustomNode';
+import type { CustomNodeData } from '../CustomNode';
 import type { NodeStatus } from '../types';
+import { CachedImage } from '../../common/CachedImage';
+import { RetainedAudio, RetainedVideo } from '../../common/RetainedMedia';
 import { dispatchScopedWorkflowEvent } from '../workflowEditorUtils';
 
 export interface EndNodeResultPanelProps {
@@ -40,7 +41,7 @@ export const EndNodeResultPanel: React.FC<EndNodeResultPanelProps> = ({
       <div className="p-2.5 rounded-lg border border-rose-500/20 bg-rose-500/5">
         <div className="text-xs text-rose-300 font-medium">结束出口配置</div>
         <div className="mt-1 text-[10px] text-slate-500">
-          结束节点内置最终结果预览，并可打开独立结果面板查看完整输出。
+          结束节点内置最终结果预览，执行完成后会在这里显示完整输出。
         </div>
       </div>
       {hasInlineResult ? (
@@ -53,12 +54,37 @@ export const EndNodeResultPanel: React.FC<EndNodeResultPanelProps> = ({
               </div>
               <div className="grid grid-cols-4 gap-2 max-h-56 overflow-y-auto pr-1">
                 {resultPreviewUrls.map((imageUrl, index) => (
-                  <img
+                  <button
+                    type="button"
                     key={`${selectedNodeId}-end-result-${index}`}
-                    src={imageUrl}
-                    alt={`end-result-${index + 1}`}
-                    className="w-full h-16 object-cover rounded border border-slate-700 bg-slate-900"
-                  />
+                    onClick={(event) => {
+                      dispatchScopedWorkflowEvent(
+                        'workflow:image-gallery-request',
+                        event.currentTarget,
+                        {
+                          nodeId: selectedNodeId,
+                          imageUrls: resultPreviewUrls,
+                          initialIndex: index,
+                          title: '最终结果图片',
+                        }
+                      );
+                    }}
+                    className="h-16 w-full rounded border border-slate-700 bg-slate-900 transition-colors hover:border-indigo-400/70"
+                    aria-label={`打开第 ${index + 1} 张结束结果图片`}
+                    title="查看大图"
+                  >
+                    <CachedImage
+                      source={{
+                        attachmentId: `${selectedNodeId}-end-result-${index}`,
+                        url: imageUrl,
+                        mimeType: 'image/png',
+                        name: `end-result-${index + 1}.png`,
+                      }}
+                      src={imageUrl}
+                      alt={`end-result-${index + 1}`}
+                      className="h-full w-full rounded object-cover"
+                    />
+                  </button>
                 ))}
               </div>
             </div>
@@ -70,7 +96,7 @@ export const EndNodeResultPanel: React.FC<EndNodeResultPanelProps> = ({
               </div>
               <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                 {resultPreviewVideoUrls.map((videoUrl, index) => (
-                  <video
+                  <RetainedVideo
                     key={`${selectedNodeId}-end-video-${index}`}
                     src={videoUrl}
                     controls
@@ -87,7 +113,7 @@ export const EndNodeResultPanel: React.FC<EndNodeResultPanelProps> = ({
               </div>
               <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
                 {resultPreviewAudioUrls.map((audioUrl, index) => (
-                  <audio
+                  <RetainedAudio
                     key={`${selectedNodeId}-end-audio-${index}`}
                     src={audioUrl}
                     controls
@@ -113,16 +139,22 @@ export const EndNodeResultPanel: React.FC<EndNodeResultPanelProps> = ({
           {nodeData.error}
         </div>
       )}
-      <button
-        onClick={(event) => {
-          dispatchScopedWorkflowEvent('workflow:end-request', event.currentTarget, {
-            nodeId: selectedNodeId,
-          });
-        }}
-        className="w-full px-3 py-2 text-xs rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 transition-colors"
-      >
-        打开结束结果
-      </button>
+      {resultPreviewUrls.length > 1 && (
+        <button
+          type="button"
+          onClick={(event) => {
+            dispatchScopedWorkflowEvent('workflow:image-gallery-request', event.currentTarget, {
+              nodeId: selectedNodeId,
+              imageUrls: resultPreviewUrls,
+              initialIndex: 0,
+              title: '最终结果图片',
+            });
+          }}
+          className="w-full px-3 py-2 text-xs rounded-lg border border-indigo-500/40 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 transition-colors"
+        >
+          查看全部图片
+        </button>
+      )}
     </div>
   );
 };

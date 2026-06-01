@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { db } from '../services/db';
+import {
+  readCachedHistoryPreference,
+  readCachedHistoryStates,
+  upsertCachedHistoryState,
+  writeCachedHistoryPreference,
+  writeCachedHistoryStates,
+} from '../services/sessionCache';
+import {
+  getPrivateCacheUserScope,
+} from '../services/privateCacheScope';
+import { usePrivateCacheScopeRevision } from './usePrivateCacheScopeRevision';
 
 interface HistoryListItem {
   id: string;
@@ -33,6 +44,12 @@ export function useHistoryListActions<T extends HistoryListItem>({
 
   const itemIdSet = useMemo(() => new Set(items.map((item) => item.id)), [items]);
 
+  const privateScopeRevision = usePrivateCacheScopeRevision(() => {
+    setFavoriteIds(new Set());
+    setPendingFavoriteIds(new Set());
+    setShowFavoritesOnlyState(false);
+  });
+
   useEffect(() => {
     let disposed = false;
 
@@ -43,10 +60,26 @@ export function useHistoryListActions<T extends HistoryListItem>({
       };
     }
 
+    const cachedStates = readCachedHistoryStates(sessionId);
+    if (cachedStates !== null) {
+      const next = new Set<string>();
+      cachedStates.forEach((state) => {
+        if (state?.isFavorite && state?.messageId) {
+          next.add(state.messageId);
+        }
+      });
+      setFavoriteIds(next);
+      return () => {
+        disposed = true;
+      };
+    }
+
+    const requestScope = getPrivateCacheUserScope();
     db.getSessionHistoryStates(sessionId)
       .then((states) => {
-        if (disposed) return;
+        if (disposed || getPrivateCacheUserScope() !== requestScope) return;
 
+        writeCachedHistoryStates(sessionId, states);
         const next = new Set<string>();
         states.forEach((state) => {
           if (state?.isFavorite && state?.messageId) {
@@ -62,7 +95,7 @@ export function useHistoryListActions<T extends HistoryListItem>({
     return () => {
       disposed = true;
     };
-  }, [sessionId]);
+  }, [privateScopeRevision, sessionId]);
 
   useEffect(() => {
     let disposed = false;
@@ -74,9 +107,19 @@ export function useHistoryListActions<T extends HistoryListItem>({
       };
     }
 
+    const cachedPreference = readCachedHistoryPreference(sessionId);
+    if (cachedPreference !== null) {
+      setShowFavoritesOnlyState(!!cachedPreference.showFavoritesOnly);
+      return () => {
+        disposed = true;
+      };
+    }
+
+    const requestScope = getPrivateCacheUserScope();
     db.getSessionHistoryPreference(sessionId)
       .then((preference) => {
-        if (disposed) return;
+        if (disposed || getPrivateCacheUserScope() !== requestScope) return;
+        writeCachedHistoryPreference(sessionId, preference);
         setShowFavoritesOnlyState(!!preference?.showFavoritesOnly);
       })
       .catch(() => {
@@ -86,7 +129,7 @@ export function useHistoryListActions<T extends HistoryListItem>({
     return () => {
       disposed = true;
     };
-  }, [sessionId]);
+  }, [privateScopeRevision, sessionId]);
 
   useEffect(() => {
     setFavoriteIds((prev) => {
@@ -130,10 +173,19 @@ export function useHistoryListActions<T extends HistoryListItem>({
         next.add(messageId);
         return next;
       });
+      const requestScope = getPrivateCacheUserScope();
+      upsertCachedHistoryState(sessionId, {
+        messageId,
+        isFavorite: nextIsFavorite,
+        updatedAt: Date.now(),
+      });
 
       try {
         await db.updateSessionHistoryState(sessionId, messageId, { isFavorite: nextIsFavorite });
       } catch (error) {
+        if (getPrivateCacheUserScope() !== requestScope) {
+          return;
+        }
         // rollback optimistic update
         setFavoriteIds((prev) => {
           const next = new Set(prev);
@@ -144,7 +196,15 @@ export function useHistoryListActions<T extends HistoryListItem>({
           }
           return next;
         });
+        upsertCachedHistoryState(sessionId, {
+          messageId,
+          isFavorite: !nextIsFavorite,
+          updatedAt: Date.now(),
+        });
       } finally {
+        if (getPrivateCacheUserScope() !== requestScope) {
+          return;
+        }
         setPendingFavoriteIds((prev) => {
           const next = new Set(prev);
           next.delete(messageId);
@@ -163,10 +223,17 @@ export function useHistoryListActions<T extends HistoryListItem>({
         next.delete(messageId);
         return next;
       });
+      if (sessionId) {
+        upsertCachedHistoryState(sessionId, {
+          messageId,
+          isFavorite: false,
+          updatedAt: Date.now(),
+        });
+      }
 
       onDeleteItem?.(messageId);
     },
-    [onDeleteItem]
+    [onDeleteItem, sessionId]
   );
 
   const setShowFavoritesOnly = useCallback(
@@ -174,6 +241,10 @@ export function useHistoryListActions<T extends HistoryListItem>({
       setShowFavoritesOnlyState(value);
       if (!sessionId) return;
 
+      writeCachedHistoryPreference(sessionId, {
+        showFavoritesOnly: value,
+        updatedAt: Date.now(),
+      });
       db.updateSessionHistoryPreference(sessionId, { showFavoritesOnly: value });
     },
     [sessionId]

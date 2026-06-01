@@ -15,8 +15,22 @@ import {
 } from '../../../services/downloadService';
 import { downloadBlobWithXhr } from '../../../services/httpProgress';
 import { requestJson } from '../../../services/http';
+import {
+  capturePrivateCacheLifecycleSnapshot,
+  isPrivateCacheLifecycleSnapshotCurrent,
+} from '../../../services/privateCacheInvalidation';
+import { usePrivateCacheLifecycleRevision } from '../../../hooks/usePrivateCacheScopeRevision';
 import { removeRecordKey } from '../../../services/boundedRecordCache';
 import type { ExecutionStatus } from '../../multiagent/types';
+import {
+  extractAudioUrls,
+  extractImageUrls,
+  extractVideoUrls,
+  filterPersistedWorkflowResultUrls,
+  isDirectlyRenderableAudioUrl,
+  isDirectlyRenderableImageUrl,
+  isDirectlyRenderableVideoUrl,
+} from '../../multiagent/workflowResultUtils';
 import { buildExecutionStatusFromHistoryDetail } from './executionStatusUtils';
 import { mergeRuntimeHints, normalizeRuntimeHint, pickPrimaryRuntime } from './runtimeHints';
 import type { WorkflowHistoryItem, WorkflowLoadRequest } from './types';
@@ -137,6 +151,26 @@ export const useWorkflowHistoryController = ({
     }
   }, [releaseRequestController]);
 
+  const resetPrivateWorkflowHistoryState = useCallback(() => {
+    if (!isMountedRef.current) return;
+    historyListRequestSeqRef.current += 1;
+    historyDetailRequestSeqRef.current += 1;
+    historyListControllerRef.current = null;
+    historyDetailControllerRef.current = null;
+    setWorkflowHistory([]);
+    setHistoryLoading(false);
+    setHistoryError(null);
+    setLoadingHistoryId(null);
+    setDeletingHistoryId(null);
+    setDownloadingHistoryId(null);
+    setDownloadingAnalysisId(null);
+    setDownloadMediaProgress({});
+    setDownloadAnalysisProgress({});
+    setSelectedHistoryId(null);
+    setWorkflowLoadRequest(null);
+    setExecutionStatus(undefined);
+  }, [setExecutionStatus]);
+
   const mapHistoryItem = useCallback((item: Record<string, unknown>): WorkflowHistoryItem => {
     const workflowSummary = (item?.workflowSummary || {}) as Record<string, unknown>;
     const resultSummary = (item?.resultSummary || {}) as Record<string, unknown>;
@@ -171,9 +205,9 @@ export const useWorkflowHistoryController = ({
     const runtimeHints = mergeRuntimeHints([], runtimeHintsRaw);
     const primaryRuntime =
       normalizeRuntimeHint(resultSummary?.primaryRuntime || '') || pickPrimaryRuntime(runtimeHints);
-    const resultImageUrls = Array.isArray(resultSummary?.imageUrls) ? resultSummary.imageUrls : [];
-    const resultAudioUrls = Array.isArray(resultSummary?.audioUrls) ? resultSummary.audioUrls : [];
-    const resultVideoUrls = Array.isArray(resultSummary?.videoUrls) ? resultSummary.videoUrls : [];
+    const resultImageUrls = filterPersistedWorkflowResultUrls(resultSummary?.imageUrls);
+    const resultAudioUrls = filterPersistedWorkflowResultUrls(resultSummary?.audioUrls);
+    const resultVideoUrls = filterPersistedWorkflowResultUrls(resultSummary?.videoUrls);
     return {
       id: String(item?.id || ''),
       status: String(item?.status || 'unknown'),
@@ -182,11 +216,11 @@ export const useWorkflowHistoryController = ({
       task: String(item?.task || ''),
       resultPreview,
       resultImageCount,
-      resultImageUrls: resultImageUrls.filter((url: unknown) => typeof url === 'string'),
+      resultImageUrls,
       resultAudioCount,
-      resultAudioUrls: resultAudioUrls.filter((url: unknown) => typeof url === 'string'),
+      resultAudioUrls,
       resultVideoCount,
-      resultVideoUrls: resultVideoUrls.filter((url: unknown) => typeof url === 'string'),
+      resultVideoUrls,
       continuationStrategy: continuationStrategy || undefined,
       videoExtensionCount: videoExtensionCount > 0 ? videoExtensionCount : undefined,
       videoExtensionApplied: videoExtensionApplied > 0 ? videoExtensionApplied : undefined,
@@ -208,6 +242,7 @@ export const useWorkflowHistoryController = ({
   const fetchWorkflowHistory = useCallback(async () => {
     historyListRequestSeqRef.current += 1;
     const requestSeq = historyListRequestSeqRef.current;
+    const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
 
     const previousController = historyListControllerRef.current;
     if (previousController) {
@@ -220,7 +255,8 @@ export const useWorkflowHistoryController = ({
     historyListControllerRef.current = controller;
     const isStaleRequest = () =>
       requestSeq !== historyListRequestSeqRef.current ||
-      historyListControllerRef.current !== controller;
+      historyListControllerRef.current !== controller ||
+      !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot);
     if (isMountedRef.current) {
       setHistoryLoading(true);
       setHistoryError(null);
@@ -264,6 +300,7 @@ export const useWorkflowHistoryController = ({
       stopActiveExecutionFlow();
       historyDetailRequestSeqRef.current += 1;
       const requestSeq = historyDetailRequestSeqRef.current;
+      const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
 
       const previousController = historyDetailControllerRef.current;
       if (previousController) {
@@ -276,7 +313,9 @@ export const useWorkflowHistoryController = ({
       historyDetailControllerRef.current = controller;
       const isStaleRequest = () =>
         requestSeq !== historyDetailRequestSeqRef.current ||
-        historyDetailControllerRef.current !== controller;
+        historyDetailControllerRef.current !== controller ||
+        !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot);
+      let previewHydrationStarted = false;
       if (isMountedRef.current) {
         setLoadingHistoryId(executionId);
       }
@@ -300,32 +339,22 @@ export const useWorkflowHistoryController = ({
         const summaryImageCount = Number(payload?.resultSummary?.imageCount || 0);
         const summaryAudioCount = Number(payload?.resultSummary?.audioCount || 0);
         const summaryVideoCount = Number(payload?.resultSummary?.videoCount || 0);
-        const [previewImagesForResult, previewMediaForResult] = await Promise.all([
-          resolveHistoryDetailPreviewImages({
-            executionId,
-            summaryImageCount,
-            signal: controller.signal,
-            isStaleRequest,
-          }),
-          resolveHistoryDetailPreviewMedia({
-            executionId,
-            summaryAudioCount,
-            summaryVideoCount,
-            signal: controller.signal,
-            isStaleRequest,
-          }),
-        ]);
-        if (previewImagesForResult === null || previewMediaForResult === null) {
-          return;
-        }
-
-        setExecutionStatus(
-          buildExecutionStatusFromHistoryDetail(payload, {
-            imageUrls: previewImagesForResult,
-            audioUrls: previewMediaForResult.audioUrls,
-            videoUrls: previewMediaForResult.videoUrls,
-          })
+        const resultPayload = payload?.result;
+        const hasDirectResultImage = extractImageUrls(resultPayload).some((url) =>
+          isDirectlyRenderableImageUrl(url)
         );
+        const hasDirectResultAudio = extractAudioUrls(resultPayload).some((url) =>
+          isDirectlyRenderableAudioUrl(url)
+        );
+        const hasDirectResultVideo = extractVideoUrls(resultPayload).some((url) =>
+          isDirectlyRenderableVideoUrl(url)
+        );
+        const restoredExecutionStatus = buildExecutionStatusFromHistoryDetail(payload, {
+          imageUrls: [],
+          audioUrls: [],
+          videoUrls: [],
+        });
+        setExecutionStatus(restoredExecutionStatus);
         setWorkflowLoadRequest({
           token: `${executionId}-${Date.now()}`,
           name: workflowName,
@@ -333,8 +362,79 @@ export const useWorkflowHistoryController = ({
           input: input && typeof input === 'object' && !Array.isArray(input) ? input : {},
           nodes,
           edges,
+          executionStatus: restoredExecutionStatus,
         });
         setSelectedHistoryId(executionId);
+
+        const needsImagePreview = !hasDirectResultImage && summaryImageCount > 0;
+        const needsAudioPreview = !hasDirectResultAudio && summaryAudioCount > 0;
+        const needsVideoPreview = !hasDirectResultVideo && summaryVideoCount > 0;
+        if (!needsImagePreview && !needsAudioPreview && !needsVideoPreview) {
+          return;
+        }
+
+        previewHydrationStarted = true;
+        void (async () => {
+          try {
+            const [previewImagesForResult, previewMediaForResult] = await Promise.all([
+              needsImagePreview
+                ? resolveHistoryDetailPreviewImages({
+                    executionId,
+                    summaryImageCount,
+                    signal: controller.signal,
+                    isStaleRequest,
+                  })
+                : Promise.resolve([]),
+              needsAudioPreview || needsVideoPreview
+                ? resolveHistoryDetailPreviewMedia({
+                    executionId,
+                    summaryAudioCount: needsAudioPreview ? summaryAudioCount : 0,
+                    summaryVideoCount: needsVideoPreview ? summaryVideoCount : 0,
+                    signal: controller.signal,
+                    isStaleRequest,
+                  })
+                : Promise.resolve({ audioUrls: [], videoUrls: [] }),
+            ]);
+            if (
+              previewImagesForResult === null ||
+              previewMediaForResult === null ||
+              !isMountedRef.current ||
+              controller.signal.aborted ||
+              isStaleRequest()
+            ) {
+              return;
+            }
+
+            const hydratedExecutionStatus = buildExecutionStatusFromHistoryDetail(payload, {
+              imageUrls: previewImagesForResult,
+              audioUrls: previewMediaForResult.audioUrls,
+              videoUrls: previewMediaForResult.videoUrls,
+            });
+            setExecutionStatus((current) => {
+              if (!current || current.executionId === executionId) {
+                return hydratedExecutionStatus;
+              }
+              return current;
+            });
+          } catch (previewError) {
+            if (
+              isWorkflowExecutionAbortError(previewError) ||
+              !isMountedRef.current ||
+              controller.signal.aborted ||
+              isStaleRequest()
+            ) {
+              return;
+            }
+            const message =
+              previewError instanceof Error ? previewError.message : '加载历史媒体预览失败';
+            showError(message);
+          } finally {
+            releaseRequestController(controller);
+            if (historyDetailControllerRef.current === controller) {
+              historyDetailControllerRef.current = null;
+            }
+          }
+        })();
       } catch (error) {
         if (
           isWorkflowExecutionAbortError(error) ||
@@ -347,9 +447,11 @@ export const useWorkflowHistoryController = ({
         const message = error instanceof Error ? error.message : '加载历史详情失败';
         showError(message);
       } finally {
-        releaseRequestController(controller);
-        if (historyDetailControllerRef.current === controller) {
-          historyDetailControllerRef.current = null;
+        if (!previewHydrationStarted) {
+          releaseRequestController(controller);
+          if (historyDetailControllerRef.current === controller) {
+            historyDetailControllerRef.current = null;
+          }
         }
         if (isMountedRef.current && requestSeq === historyDetailRequestSeqRef.current) {
           setLoadingHistoryId(null);
@@ -521,6 +623,8 @@ export const useWorkflowHistoryController = ({
       inFlightControllersRef.current.clear();
     };
   }, []);
+
+  usePrivateCacheLifecycleRevision(resetPrivateWorkflowHistoryState, { includeCacheReset: true });
 
   // ref-mirror fetchWorkflowHistory：让 mount useEffect 与 interval useEffect 不响应
   // fetch 引用变化，避免父组件 re-render 导致 useCallback 重建 → useEffect 重 fire →

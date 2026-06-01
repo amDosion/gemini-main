@@ -12,7 +12,17 @@ import logging
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
 
-from .base import get_endpoint, get_pixel_resolution, QWEN_RESOLUTIONS
+from .base import (
+    QWEN_RESOLUTIONS,
+    WAN27_SEQUENTIAL_MAX_IMAGES,
+    WAN27_STANDARD_MAX_IMAGES,
+    clamp_image_count,
+    get_endpoint,
+    get_pixel_resolution,
+    get_qwen_image_max_output_count,
+    get_wan27_size,
+    is_wan27_image_model,
+)
 from ...utils.attachment_handler import is_http_url
 
 logger = logging.getLogger(__name__)
@@ -43,6 +53,9 @@ class ImageGenerationRequest:
     # 新增: Prompt 优化参数
     enable_prompt_optimize: bool = False     # 是否启用 Prompt 智能优化
     add_magic_suffix: bool = True            # 是否添加魔法词组
+    prompt_optimize_model: Optional[str] = None  # Prompt 优化使用的额外模型
+    thinking_mode: Optional[bool] = None      # Wan 2.7 Image 思考模式
+    enable_sequential: bool = False           # Wan 2.7 Image 组图模式
 
 
 class ImageGenerationService:
@@ -97,7 +110,8 @@ class ImageGenerationService:
                 optimize_result = await self.prompt_optimizer.optimize(
                     prompt=request.prompt,
                     enable_rewrite=True,
-                    add_magic_suffix=request.add_magic_suffix
+                    add_magic_suffix=request.add_magic_suffix,
+                    model=request.prompt_optimize_model,
                 )
                 if optimize_result.success:
                     request.prompt = optimize_result.optimized_prompt
@@ -136,6 +150,16 @@ class ImageGenerationService:
                     r.original_prompt = original_prompt
                     r.optimized_prompt = optimized_prompt
             return results
+
+        # Wan 2.7 Image 系列
+        if is_wan27_image_model(model_id):
+            logger.info(f"[ImageGenerationService] ✅ [步骤1] 识别为 Wan 2.7 Image 系列")
+            logger.info(f"[ImageGenerationService] 🔄 [步骤2] 调用 _generate_wan27_image()...")
+            result = await self._generate_wan27_image(request)
+            total_time = (time.time() - start_time) * 1000
+            logger.info(f"[ImageGenerationService] ========== 图片生成完成 (总耗时: {total_time:.2f}ms) ==========")
+            logger.info(f"[ImageGenerationService]     - 返回图片数量: {len(result)}")
+            return fill_prompt_info(result)
 
         # Z-Image 系列
         if "z-image" in model_id:
@@ -179,6 +203,59 @@ class ImageGenerationService:
 
         logger.error(f"[ImageGenerationService] ❌ [步骤1] 不支持的图像生成模型: {request.model_id}")
         raise ValueError(f"不支持的图像生成模型: {request.model_id}。请使用 wan2.x-t2i 系列模型。")
+
+    async def _generate_wan27_image(self, request: ImageGenerationRequest) -> List[ImageGenerationResult]:
+        """Wan 2.7 Image 文生图"""
+        endpoint = get_endpoint("image-generation")
+        max_images = WAN27_SEQUENTIAL_MAX_IMAGES if request.enable_sequential else WAN27_STANDARD_MAX_IMAGES
+        num_images = clamp_image_count(request.num_images, max_images)
+        size = get_wan27_size(
+            request.aspect_ratio,
+            request.resolution,
+            request.model_id,
+            has_image_input=False,
+            image_count=num_images,
+        )
+
+        parameters: Dict[str, Any] = {
+            "size": size,
+            "n": num_images,
+            "watermark": False,
+        }
+        if request.enable_sequential:
+            parameters["enable_sequential"] = True
+        elif request.thinking_mode is not None:
+            parameters["thinking_mode"] = request.thinking_mode
+        if request.seed is not None:
+            parameters["seed"] = request.seed
+
+        payload = {
+            "model": request.model_id,
+            "input": {
+                "messages": [{
+                    "role": "user",
+                    "content": [{"text": request.prompt}]
+                }]
+            },
+            "parameters": parameters
+        }
+
+        import time
+        start_time = time.time()
+
+        logger.info(f"[ImageGenerationService] ========== [Wan 2.7] 开始生成 ==========")
+        logger.info(f"[ImageGenerationService] 📥 [Wan 2.7] 请求参数:")
+        logger.info(f"[ImageGenerationService]     - model: {request.model_id}")
+        logger.info(f"[ImageGenerationService]     - size: {size}")
+        logger.info(f"[ImageGenerationService]     - n: {num_images}")
+        logger.info(f"[ImageGenerationService]     - enable_sequential: {parameters.get('enable_sequential')}")
+        logger.info(f"[ImageGenerationService]     - thinking_mode: {parameters.get('thinking_mode')}")
+
+        response = await self._call_api(endpoint, payload)
+        results = self._parse_image_response(response)
+        total_time = (time.time() - start_time) * 1000
+        logger.info(f"[ImageGenerationService] ========== [Wan 2.7] 生成完成 (耗时: {total_time:.2f}ms) ==========")
+        return results
 
     async def _generate_z_image(self, request: ImageGenerationRequest) -> List[ImageGenerationResult]:
         """Z-Image 系列生成"""
@@ -237,6 +314,10 @@ class ImageGenerationService:
         """Qwen-Image-Plus 生成"""
         endpoint = get_endpoint("image-generation")
         size = QWEN_RESOLUTIONS.get(request.aspect_ratio, "1328*1328")
+        num_images = clamp_image_count(
+            request.num_images,
+            get_qwen_image_max_output_count(request.model_id),
+        )
 
         payload = {
             "model": request.model_id,
@@ -248,8 +329,8 @@ class ImageGenerationService:
             },
             "parameters": {
                 "size": size,
-                "n": min(request.num_images, 4),
-                "prompt_extend": True,
+                "n": num_images,
+                "prompt_extend": False,
                 "watermark": False,
             }
         }
@@ -264,7 +345,7 @@ class ImageGenerationService:
         logger.info(f"[ImageGenerationService] 📥 [Qwen] 请求参数:")
         logger.info(f"[ImageGenerationService]     - model: {request.model_id}")
         logger.info(f"[ImageGenerationService]     - size: {size}")
-        logger.info(f"[ImageGenerationService]     - n: {min(request.num_images, 4)}")
+        logger.info(f"[ImageGenerationService]     - n: {num_images}")
         logger.info(f"[ImageGenerationService]     - prompt长度: {len(request.prompt)}")
         
         logger.info(f"[ImageGenerationService] 🔄 [Qwen] 调用 DashScope API...")
@@ -299,7 +380,7 @@ class ImageGenerationService:
             "parameters": {
                 "size": size,
                 "n": min(request.num_images, 4),
-                "prompt_extend": True,
+                "prompt_extend": False,
                 "watermark": False,
             }
         }
@@ -420,7 +501,11 @@ class ImageGenerationService:
                 if "url" in item:
                     image_url = item["url"]
                     url_type = "HTTP" if is_http_url(image_url) else "其他"
-                    results.append(ImageGenerationResult(url=image_url))
+                    results.append(ImageGenerationResult(
+                        url=image_url,
+                        optimized_prompt=item.get("actual_prompt"),
+                        original_prompt=item.get("orig_prompt"),
+                    ))
                     logger.info(f"[ImageGenerationService]     - ✅ 从 results[{idx}] 解析到图片: URL类型={url_type}")
 
         parse_time = (time.time() - start_time) * 1000

@@ -12,6 +12,7 @@ import {
   getPixelResolutionFromSchema,
   useModeControlsSchema,
 } from '../../hooks/useModeControlsSchema';
+import { normalizeWorkflowVideoResolution } from './workflowContract';
 
 /** 静态分辨率映射（tier × ratio → "WxH" 字符串），用于无 schema 信息时的标签 fallback */
 export const WORKFLOW_RESOLUTION_MAP: Record<string, Record<string, string>> = {
@@ -71,16 +72,6 @@ export function getResolutionLabel(tier: string, ratio: string): string {
   return map[ratio] || map['1:1'] || tier;
 }
 
-/** 旧版 video resolution 值 → 新值的别名表（1k/2k/4k 等 → 720p/1080p/4k） */
-export const WORKFLOW_LEGACY_VIDEO_RESOLUTION_ALIASES: Record<string, string> = {
-  '1k': '720p',
-  '720p': '720p',
-  '2k': '1080p',
-  '1080p': '1080p',
-  '4k': '4k',
-  '2160p': '4k',
-};
-
 export function normalizeWorkflowVideoResolutionSelection(
   value: unknown,
   validValues: string[],
@@ -93,7 +84,7 @@ export function normalizeWorkflowVideoResolutionSelection(
   if (validValues.includes(raw)) {
     return raw;
   }
-  const alias = WORKFLOW_LEGACY_VIDEO_RESOLUTION_ALIASES[raw.toLowerCase()];
+  const alias = normalizeWorkflowVideoResolution(raw);
   if (alias && validValues.includes(alias)) {
     return alias;
   }

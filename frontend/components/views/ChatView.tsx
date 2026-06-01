@@ -131,6 +131,7 @@ export const ChatView: React.FC<ChatViewProps> = React.memo(({
             hasMoreSessions={session.hasMoreSessions}
             isLoadingMore={session.isLoadingMore}
             loadMoreSessions={session.loadMoreSessions}
+            appMode={appMode}
             onSessionSelected={() => {
                 if (window.innerWidth < 768) setIsMobileHistoryOpen(false);
             }}

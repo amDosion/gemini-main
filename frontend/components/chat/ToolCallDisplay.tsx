@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/solid';
+import { CachedImage } from '../common/CachedImage';
 
 interface ToolCall {
   type: string;
@@ -76,7 +77,8 @@ const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({ toolCall, toolResult,
           </pre>
           {screenshotSrc && (
             <div className="rounded border border-gray-700 overflow-hidden">
-              <img
+              <CachedImage
+                source={{ url: screenshotSrc, name: `${toolResult.name} screenshot` }}
                 src={screenshotSrc}
                 alt={`${toolResult.name} screenshot`}
                 className="w-full h-auto max-h-64 object-contain bg-black"

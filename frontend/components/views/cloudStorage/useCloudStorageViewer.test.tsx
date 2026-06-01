@@ -162,6 +162,7 @@ describe('CloudStorageViewerOverlay', () => {
         goViewerPrev={() => undefined}
         goViewerNext={() => undefined}
         selectViewerIndex={() => undefined}
+        handleViewerImagePreviewError={() => false}
         handleViewerPreviewError={() => undefined}
         onDownloadItem={async () => undefined}
         onCopyUrl={async () => undefined}
@@ -182,6 +183,39 @@ describe('CloudStorageViewerOverlay', () => {
     await waitFor(() => {
       expect(getLastThumbnailPropsForPath('/clip-5.mp4').disableVideoPreview).toBe(false);
     });
+  });
+
+  it('delegates failed image preview blobs back to the viewer cache hook', () => {
+    const recoverImagePreview = vi.fn(() => true);
+    const file = createFileItem('photo.png', '/photo.png');
+
+    render(
+      <CloudStorageViewerOverlay
+        isOpen
+        currentViewerFile={file}
+        currentViewerKind="image"
+        currentViewerMetadata={undefined}
+        currentViewerImageSrc="blob:viewer-stale-preview"
+        currentViewerImageExhausted={false}
+        currentViewerVideoSrc={null}
+        viewerFiles={[file]}
+        viewerIndex={0}
+        goViewerPrev={() => undefined}
+        goViewerNext={() => undefined}
+        selectViewerIndex={() => undefined}
+        handleViewerImagePreviewError={recoverImagePreview}
+        handleViewerPreviewError={() => undefined}
+        onDownloadItem={async () => undefined}
+        onCopyUrl={async () => undefined}
+        failedPreviewUrlsRef={{ current: new Set<string>() }}
+        storageRevision={7}
+        onClose={() => undefined}
+      />
+    );
+
+    fireEvent.error(screen.getByAltText('photo.png'));
+
+    expect(recoverImagePreview).toHaveBeenCalledWith('blob:viewer-stale-preview');
   });
 });
 

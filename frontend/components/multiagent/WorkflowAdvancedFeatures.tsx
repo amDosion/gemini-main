@@ -15,6 +15,7 @@ import { CustomNodeData } from './CustomNode';
 import { validateWorkflow } from './workflowUtils';
 import { exportWorkflow, importWorkflow } from './workflowSerialization';
 import { useToastContext } from '../../contexts/ToastContext';
+import { downloadBlobInBrowser } from '../../services/downloadService';
 
 interface WorkflowAdvancedFeaturesProps {
   nodes: Node<CustomNodeData>[];
@@ -46,18 +47,14 @@ export const WorkflowAdvancedFeatures: React.FC<WorkflowAdvancedFeaturesProps> =
     try {
       const json = exportWorkflow(nodes, edges);
       const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `workflow-${Date.now()}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      downloadBlobInBrowser({
+        blob,
+        fileName: `workflow-${Date.now()}.json`,
+      });
     } catch (error) {
       showError('导出失败：' + (error as Error).message);
     }
-  }, [nodes, edges]);
+  }, [edges, nodes, showError]);
 
   // Import workflow from JSON file
   const handleImport = useCallback(

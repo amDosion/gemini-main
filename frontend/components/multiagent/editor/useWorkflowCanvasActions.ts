@@ -29,7 +29,7 @@ import type { AgentDef, WorkflowNodeData } from '../types';
 import type { ActiveTemplateMeta } from '../workflowTemplateLoader';
 import { nodeTypeConfigs, NodeType } from '../nodeTypeConfigs';
 import { autoLayoutWorkflow } from '../workflowUtils';
-import { buildAgentNodeDefaultsFromAgent } from '../agentNodeDefaults';
+import { buildAgentNodeBindingPatch } from '../agentNodeBinding';
 import {
   applyAgentBindingsToNodes,
   applySingleEdgeSelection,
@@ -82,7 +82,6 @@ export interface UseWorkflowCanvasActionsArgs {
   activeTemplateMeta: ActiveTemplateMeta | null;
   finalResult: any;
   finalError: string | null;
-  showResultPanel: boolean;
   setWorkflowPrompt: React.Dispatch<React.SetStateAction<string>>;
   setWorkflowInputImageUrl: React.Dispatch<React.SetStateAction<string>>;
   setWorkflowInputFileUrl: React.Dispatch<React.SetStateAction<string>>;
@@ -94,7 +93,6 @@ export interface UseWorkflowCanvasActionsArgs {
   setFinalRuntime: React.Dispatch<React.SetStateAction<string>>;
   setFinalRuntimeHints: React.Dispatch<React.SetStateAction<string[]>>;
   setExecuteErrorBanner: React.Dispatch<React.SetStateAction<string | null>>;
-  setShowResultPanel: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export interface UseWorkflowCanvasActionsResult {
@@ -147,7 +145,6 @@ export const useWorkflowCanvasActions = ({
   activeTemplateMeta,
   finalResult,
   finalError,
-  showResultPanel,
   setWorkflowPrompt,
   setWorkflowInputImageUrl,
   setWorkflowInputFileUrl,
@@ -159,7 +156,6 @@ export const useWorkflowCanvasActions = ({
   setFinalRuntime,
   setFinalRuntimeHints,
   setExecuteErrorBanner,
-  setShowResultPanel,
 }: UseWorkflowCanvasActionsArgs): UseWorkflowCanvasActionsResult => {
   const [isMainWorkspaceFullscreen, setIsMainWorkspaceFullscreen] = useState(false);
 
@@ -463,8 +459,7 @@ export const useWorkflowCanvasActions = ({
         Boolean(String(workflowInputFileUrl || '').trim()) ||
         Boolean(activeTemplateMeta?.templateId) ||
         finalResult !== null ||
-        Boolean(finalError) ||
-        showResultPanel),
+        Boolean(finalError)),
     [
       activeTemplateMeta?.templateId,
       edges.length,
@@ -472,7 +467,6 @@ export const useWorkflowCanvasActions = ({
       finalResult,
       isExecuting,
       nodes.length,
-      showResultPanel,
       workflowInputFileUrl,
       workflowInputImageUrl,
       workflowPrompt,
@@ -502,7 +496,6 @@ export const useWorkflowCanvasActions = ({
     setFinalRuntimeHints([]);
     setPendingNodeFieldFocusRequest(null);
     setExecuteErrorBanner(null);
-    setShowResultPanel(false);
     addLog('system', '系统', 'info', '已清除画布');
   }, [
     addLog,
@@ -522,7 +515,6 @@ export const useWorkflowCanvasActions = ({
     setFinalRuntimeHints,
     setPendingNodeFieldFocusRequest,
     setExecuteErrorBanner,
-    setShowResultPanel,
   ]);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -551,17 +543,6 @@ export const useWorkflowCanvasActions = ({
           : undefined;
 
       const droppedAgentName = String(droppedAgent?.name || '').trim();
-      const droppedAgentProvider = String(droppedAgent?.providerId || '').trim();
-      const droppedAgentModel = String(droppedAgent?.modelId || '').trim();
-      const agentPresetUpdates: Partial<WorkflowNodeData> = droppedAgent
-        ? {
-            agentId: String(droppedAgent.id || '').trim(),
-            agentName: droppedAgentName,
-            agentProviderId: droppedAgentProvider,
-            agentModelId: droppedAgentModel,
-            ...buildAgentNodeDefaultsFromAgent(droppedAgent),
-          }
-        : {};
 
       const position = reactFlowInstance.screenToFlowPosition({
         x: event.clientX,
@@ -569,17 +550,23 @@ export const useWorkflowCanvasActions = ({
       });
       const config = nodeTypeConfigs[type];
       if (!config) return;
+      const baseData: WorkflowNodeData = {
+        label: droppedAgentName || config.label,
+        description: String(droppedAgent?.description || '').trim() || config.description,
+        icon: config.icon,
+        iconColor: config.iconColor,
+        type: config.type,
+        ...getDefaultNodeConfig(type),
+      } as WorkflowNodeData;
+      const agentPresetUpdates: Partial<WorkflowNodeData> = droppedAgent
+        ? buildAgentNodeBindingPatch(droppedAgent, baseData, { visualMode: 'force' })
+        : {};
       const newNode: Node<WorkflowNodeData> = {
         id: `node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         type: config.type,
         position,
         data: {
-          label: droppedAgentName || config.label,
-          description: String(droppedAgent?.description || '').trim() || config.description,
-          icon: config.icon,
-          iconColor: config.iconColor,
-          type: config.type,
-          ...getDefaultNodeConfig(type),
+          ...baseData,
           ...agentPresetUpdates,
         },
       };

@@ -3,26 +3,41 @@
  *
  * 用于右侧参数面板，通过 ModeControlsCoordinator 分发
  */
-import React, { useEffect, useMemo } from 'react';
-import { ChevronDown, ChevronUp, Clapperboard, Dices, Film, Maximize2, Sparkles } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import { ChevronDown, ChevronUp, Clapperboard, Dices, Film, Maximize2 } from 'lucide-react';
 import { VideoGenControlsProps } from '../../types';
+import PromptEnhanceControl from '../../shared/PromptEnhanceControl';
+import VideoExtensionControl from '../../shared/VideoExtensionControl';
+import VideoInputStrategyControl from '../../shared/VideoInputStrategyControl';
 import { useModeControlsSchema } from '../../../hooks/useModeControlsSchema';
 import { useEnhancePromptModels } from '../../../hooks/useEnhancePromptModels';
 import { buildVideoControlContract, getVideoExtensionOptions } from '../../../utils/videoControlSchema';
+import { getUnsupportedParams } from '../../shared/modeControlSchemaUtils';
+import {
+  buildVideoInputStrategyOptions,
+  isVideoExtensionStrategyId,
+} from '../../../utils/videoSubmodeOptions';
 
 type VideoGenControlsBodyProps = VideoGenControlsProps & {
   schemaLoading: boolean;
   schemaError: string | null;
 };
 
+const LOCAL_PROMPT_ENHANCE_VIDEO_PROVIDERS = new Set(['openai']);
+
 const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
+  providerId = 'google',
   controls,
   controlsSchema,
   schemaLoading,
   schemaError,
+  currentModel,
+  availableModels,
+  onModelSelect,
   aspectRatio: propAspectRatio, setAspectRatio: propSetAspectRatio,
   resolution: propResolution, setResolution: propSetResolution,
   videoSeconds: propVideoSeconds, setVideoSeconds: propSetVideoSeconds,
+  videoInputStrategy: propVideoInputStrategy, setVideoInputStrategy: propSetVideoInputStrategy,
   videoExtensionCount: propVideoExtensionCount, setVideoExtensionCount: propSetVideoExtensionCount,
   storyboardShotSeconds: propStoryboardShotSeconds, setStoryboardShotSeconds: propSetStoryboardShotSeconds,
   generateAudio: propGenerateAudio, setGenerateAudio: propSetGenerateAudio,
@@ -39,9 +54,33 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
 }) => {
   const schema = controlsSchema;
   const videoControlContract = useMemo(() => buildVideoControlContract(schema), [schema]);
+  const unsupportedParams = useMemo(() => getUnsupportedParams(schema), [schema]);
+  const showAspectRatioControl = !unsupportedParams.has('aspect_ratio');
+  const showNegativePromptControl = !unsupportedParams.has('negative_prompt');
+  const showPromptEnhanceControl =
+    LOCAL_PROMPT_ENHANCE_VIDEO_PROVIDERS.has(String(providerId).toLowerCase()) ||
+    (!unsupportedParams.has('prompt_extend') && !unsupportedParams.has('enhance_prompt'));
+  const showSeedControl = !unsupportedParams.has('seed');
   const availableRatios = useMemo(() => schema?.aspectRatios ?? [], [schema]);
   const availableResolutionTiers = useMemo(() => schema?.resolutionTiers ?? [], [schema]);
   const availableSeconds = useMemo(() => schema?.paramOptions?.seconds ?? [], [schema]);
+  const schemaInputStrategies = useMemo(
+    () => schema?.videoContract?.inputStrategies ?? [],
+    [schema]
+  );
+  const rawInputStrategies = useMemo(
+    () => buildVideoInputStrategyOptions({
+      providerId,
+      currentModel,
+      availableModels,
+      schemaStrategies: schemaInputStrategies,
+    }),
+    [availableModels, currentModel, providerId, schemaInputStrategies]
+  );
+  const availableInputStrategies = useMemo(
+    () => rawInputStrategies.filter((strategy) => !isVideoExtensionStrategyId(strategy.id)),
+    [rawInputStrategies]
+  );
   const availableStoryboardShotSeconds = useMemo(() => schema?.paramOptions?.storyboard_shot_seconds ?? [], [schema]);
   const availableGenerateAudioOptions = useMemo(() => schema?.paramOptions?.generate_audio ?? [], [schema]);
   const availableSubtitleModes = useMemo(() => schema?.paramOptions?.subtitle_mode ?? [], [schema]);
@@ -76,6 +115,13 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
     (typeof defaults.seconds === 'string' ? defaults.seconds : undefined) ??
     (typeof defaults.seconds === 'number' ? String(defaults.seconds) : undefined) ??
     videoControlContract.defaultVideoSeconds;
+  const schemaDefaultVideoInputStrategy =
+    (typeof defaults.video_input_strategy === 'string' ? defaults.video_input_strategy : undefined) ??
+    (typeof defaults.videoInputStrategy === 'string' ? defaults.videoInputStrategy : undefined);
+  const defaultVideoInputStrategy =
+    schemaDefaultVideoInputStrategy && !isVideoExtensionStrategyId(schemaDefaultVideoInputStrategy)
+      ? schemaDefaultVideoInputStrategy
+      : availableInputStrategies[0]?.id ?? '';
   const defaultShowAdvanced = false;
   const defaultNegativePrompt = videoControlContract.defaultNegativePrompt;
   const defaultSeed = videoControlContract.defaultSeed;
@@ -92,6 +138,8 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
   const defaultStoryboardPrompt = videoControlContract.defaultStoryboardPrompt;
   const videoSeconds = controls?.videoSeconds ?? propVideoSeconds ?? defaultVideoSeconds;
   const setVideoSeconds = controls?.setVideoSeconds ?? propSetVideoSeconds ?? (() => {});
+  const videoInputStrategy = controls?.videoInputStrategy ?? propVideoInputStrategy ?? defaultVideoInputStrategy;
+  const setVideoInputStrategy = controls?.setVideoInputStrategy ?? propSetVideoInputStrategy ?? (() => {});
   const videoExtensionCount = controls?.videoExtensionCount ?? propVideoExtensionCount ?? defaultVideoExtensionCount;
   const setVideoExtensionCount = controls?.setVideoExtensionCount ?? propSetVideoExtensionCount ?? (() => {});
   const storyboardShotSeconds = controls?.storyboardShotSeconds ?? propStoryboardShotSeconds ?? defaultStoryboardShotSeconds;
@@ -117,15 +165,72 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
   const setSeed = controls?.setSeed ?? propSetSeed ?? (() => {});
   const enhancePrompt = controls?.enhancePrompt ?? propEnhancePrompt ?? defaultEnhancePrompt;
   const setEnhancePrompt = controls?.setEnhancePrompt ?? propSetEnhancePrompt ?? (() => {});
-  const enhancePromptModels = useEnhancePromptModels();
+  const enhancePromptModels = useEnhancePromptModels(providerId);
   const enhancePromptModel = controls?.enhancePromptModel ?? propEnhancePromptModel ?? '';
   const setEnhancePromptModel = controls?.setEnhancePromptModel ?? propSetEnhancePromptModel ?? (() => {});
+  const appliedSchemaDefaultsRef = useRef<string | null>(null);
+  const handleVideoInputStrategyChange = useCallback(
+    (nextStrategyId: string) => {
+      setVideoInputStrategy(nextStrategyId);
+      const nextStrategy = availableInputStrategies.find((strategy) => strategy.id === nextStrategyId);
+      const targetModelId = nextStrategy?.targetModelId;
+      if (targetModelId && targetModelId !== currentModel?.id) {
+        onModelSelect?.(targetModelId);
+      }
+    },
+    [availableInputStrategies, currentModel?.id, onModelSelect, setVideoInputStrategy]
+  );
+  const showExtensionControls = videoControlContract.validVideoExtensionCounts.some((count) => count > 0);
+  const schemaHasRequiredControls =
+    Boolean(schema) &&
+    (!showAspectRatioControl || availableRatios.length > 0) &&
+    availableResolutionTiers.length > 0;
 
   useEffect(() => {
-    if (enhancePromptMandatory && !enhancePrompt) {
+    if (!schema) {
+      return;
+    }
+    const schemaDefaultsKey = [
+      schema.provider,
+      schema.mode,
+      schema.modelId ?? '',
+      showAspectRatioControl ? defaultAspectRatio : '',
+      defaultResolution,
+      defaultVideoSeconds,
+    ].join('|');
+    if (appliedSchemaDefaultsRef.current === schemaDefaultsKey) {
+      return;
+    }
+    appliedSchemaDefaultsRef.current = schemaDefaultsKey;
+
+    if (showAspectRatioControl && defaultAspectRatio && aspectRatio !== defaultAspectRatio) {
+      setAspectRatio(defaultAspectRatio);
+    }
+    if (defaultResolution && resolution !== defaultResolution) {
+      setResolution(defaultResolution);
+    }
+    if (defaultVideoSeconds && videoSeconds !== defaultVideoSeconds) {
+      setVideoSeconds(defaultVideoSeconds);
+    }
+  }, [
+    aspectRatio,
+    defaultAspectRatio,
+    defaultResolution,
+    defaultVideoSeconds,
+    resolution,
+    schema,
+    setAspectRatio,
+    setResolution,
+    setVideoSeconds,
+    showAspectRatioControl,
+    videoSeconds,
+  ]);
+
+  useEffect(() => {
+    if (showPromptEnhanceControl && enhancePromptMandatory && !enhancePrompt) {
       setEnhancePrompt(true);
     }
-  }, [enhancePrompt, enhancePromptMandatory, setEnhancePrompt]);
+  }, [enhancePrompt, enhancePromptMandatory, setEnhancePrompt, showPromptEnhanceControl]);
 
   useEffect(() => {
     if (!enhancePromptModel || enhancePromptModels.length === 0) {
@@ -138,11 +243,14 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
   }, [enhancePromptModel, enhancePromptModels, setEnhancePromptModel]);
 
   useEffect(() => {
+    if (!showAspectRatioControl) {
+      return;
+    }
     const validRatios = availableRatios.map((r) => r.value);
     if (validRatios.length > 0 && !validRatios.includes(aspectRatio)) {
       setAspectRatio(validRatios[0]);
     }
-  }, [aspectRatio, availableRatios, setAspectRatio]);
+  }, [aspectRatio, availableRatios, setAspectRatio, showAspectRatioControl]);
 
   useEffect(() => {
     const validTiers = availableResolutionTiers.map((r) => r.value);
@@ -159,6 +267,24 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
   }, [availableSeconds, setVideoSeconds, videoSeconds]);
 
   useEffect(() => {
+    const validStrategies = availableInputStrategies.map((strategy) => strategy.id);
+    if (validStrategies.length > 0 && !validStrategies.includes(videoInputStrategy)) {
+      setVideoInputStrategy(defaultVideoInputStrategy || validStrategies[0]);
+    }
+  }, [
+    availableInputStrategies,
+    defaultVideoInputStrategy,
+    setVideoInputStrategy,
+    videoInputStrategy,
+  ]);
+
+  useEffect(() => {
+    if (!showExtensionControls && videoExtensionCount !== 0) {
+      setVideoExtensionCount(0);
+    }
+  }, [setVideoExtensionCount, showExtensionControls, videoExtensionCount]);
+
+  useEffect(() => {
     const validShotSeconds = availableStoryboardShotSeconds
       .map((option) => Number(option.value))
       .filter((value) => Number.isFinite(value));
@@ -167,15 +293,40 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
     }
   }, [availableStoryboardShotSeconds, setStoryboardShotSeconds, storyboardShotSeconds]);
 
+  const extensionBaseSeconds = useMemo(() => {
+    const currentOptions = getVideoExtensionOptions(videoControlContract, videoSeconds);
+    if (currentOptions.some((option) => option.count > 0)) {
+      return videoSeconds;
+    }
+    return (
+      Object.entries(videoControlContract.extensionOptionsBySeconds)
+        .find(([, options]) => options.some((option) => option.count > 0))?.[0] ??
+      videoSeconds
+    );
+  }, [videoControlContract, videoSeconds]);
+
   const derivedExtensionOptions = useMemo(() => {
-    return getVideoExtensionOptions(videoControlContract, videoSeconds).map((option) => ({
+    return getVideoExtensionOptions(videoControlContract, extensionBaseSeconds).map((option) => ({
       ...option,
       label:
         option.count === 0
           ? `${option.totalSeconds}s（原始）`
           : `${option.totalSeconds}s（+${option.count} 次延长）`,
     }));
-  }, [videoControlContract, videoSeconds]);
+  }, [extensionBaseSeconds, videoControlContract]);
+  const firstPositiveExtensionCount = useMemo(
+    () => derivedExtensionOptions.find((option) => option.count > 0)?.count ?? 1,
+    [derivedExtensionOptions]
+  );
+  const handleVideoExtensionEnabledChange = useCallback(
+    (enabled: boolean) => {
+      if (enabled && extensionBaseSeconds !== videoSeconds) {
+        setVideoSeconds(extensionBaseSeconds);
+      }
+      setVideoExtensionCount(enabled ? (videoExtensionCount > 0 ? videoExtensionCount : firstPositiveExtensionCount) : 0);
+    },
+    [extensionBaseSeconds, firstPositiveExtensionCount, setVideoExtensionCount, setVideoSeconds, videoExtensionCount, videoSeconds]
+  );
 
   useEffect(() => {
     const validCounts = derivedExtensionOptions.map((option) => option.count);
@@ -184,63 +335,53 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
     }
   }, [derivedExtensionOptions, setVideoExtensionCount, videoExtensionCount]);
 
-  const baseDurationSeconds = useMemo(() => {
-    const parsed = parseInt(String(videoSeconds || ''), 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 8;
-  }, [videoSeconds]);
-
-  const extensionStoryboardInputs = useMemo(() => {
-    return Array.from({ length: Math.max(0, videoExtensionCount) }, (_, index) => {
-      const start = baseDurationSeconds + index * extensionAddedSeconds;
-      const end = start + extensionAddedSeconds;
-      return {
-        index,
-        label: `延长 ${index + 1} 分镜`,
-        ariaLabel: `延长 ${index + 1} 分镜提示词`,
-        range: extensionAddedSeconds > 0 ? `${start}-${end}s` : '',
-        value: storyboardSegments[index] ?? '',
-      };
-    });
-  }, [baseDurationSeconds, extensionAddedSeconds, storyboardSegments, videoExtensionCount]);
-
-  const updateStoryboardSegment = (index: number, value: string) => {
-    const next = [...storyboardSegments];
-    while (next.length <= index) {
-      next.push('');
+  useEffect(() => {
+    if (showExtensionControls && derivedExtensionOptions.length === 0 && videoExtensionCount !== 0) {
+      setVideoExtensionCount(0);
     }
-    next[index] = value;
-    setStoryboardSegments(next);
-  };
+  }, [derivedExtensionOptions.length, setVideoExtensionCount, showExtensionControls, videoExtensionCount]);
+
+  const baseDurationSeconds = useMemo(() => {
+    const parsed = parseInt(String(extensionBaseSeconds || ''), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 8;
+  }, [extensionBaseSeconds]);
 
   return (
     <div className="space-y-4">
-      {!schemaLoading && (schemaError || availableRatios.length === 0 || availableResolutionTiers.length === 0) && (
+      {!schemaLoading && (schemaError || (schema && !schemaHasRequiredControls)) && (
         <div className="text-[10px] text-rose-400">
           视频参数配置加载失败，请检查后端 `mode_controls_catalog.json`。
         </div>
       )}
+      <VideoInputStrategyControl
+        strategies={availableInputStrategies}
+        value={videoInputStrategy}
+        onChange={handleVideoInputStrategyChange}
+      />
       {/* 视频比例 */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <Film size={12} className="text-indigo-400" />
-          <span className="text-xs text-slate-300">视频比例</span>
+      {showAspectRatioControl && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Film size={12} className="text-indigo-400" />
+            <span className="text-xs text-slate-300">视频比例</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {availableRatios.map((ratio) => (
+              <button
+                key={ratio.value}
+                onClick={() => setAspectRatio(ratio.value)}
+                className={`py-2 text-xs font-medium rounded-lg transition-all ${
+                  aspectRatio === ratio.value
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                }`}
+              >
+                {ratio.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          {availableRatios.map((ratio) => (
-            <button
-              key={ratio.value}
-              onClick={() => setAspectRatio(ratio.value)}
-              className={`py-2 text-xs font-medium rounded-lg transition-all ${
-                aspectRatio === ratio.value
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
-              }`}
-            >
-              {ratio.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      )}
 
       {/* 分辨率 */}
       <div className="space-y-2">
@@ -300,54 +441,35 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
         </div>
       )}
 
-      {derivedExtensionOptions.length > 0 && (
-        <div className="space-y-2 rounded-xl border border-slate-700/60 bg-slate-900/60 p-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Clapperboard size={12} className="text-cyan-400" />
-              <span className="text-xs text-slate-300">视频延长</span>
-            </div>
-            {extensionAddedSeconds > 0 && maxOutputVideoSeconds > 0 && (
-              <span className="text-[10px] text-cyan-300">
-                每次 +{extensionAddedSeconds}s，最长 {maxOutputVideoSeconds}s
-              </span>
-            )}
-          </div>
+      {showExtensionControls && (
+        <VideoExtensionControl
+          extensionOptions={derivedExtensionOptions}
+          extensionCount={videoExtensionCount}
+          onExtensionCountChange={setVideoExtensionCount}
+          enabled={videoExtensionCount > 0}
+          onEnabledChange={handleVideoExtensionEnabledChange}
+          addedSeconds={extensionAddedSeconds || baseDurationSeconds}
+          maxOutputVideoSeconds={maxOutputVideoSeconds}
+          baseDurationSeconds={baseDurationSeconds}
+          storyboardSegments={storyboardSegments}
+          onStoryboardSegmentsChange={setStoryboardSegments}
+          showStoryboard={storyboardPromptPreferred}
+        />
+      )}
 
-          <div className="grid grid-cols-2 gap-2">
-            <label className="space-y-1">
-              <span className="text-[11px] text-slate-400">延长次数</span>
-              <select
-                aria-label="延长次数"
-                value={String(videoExtensionCount)}
-                onChange={(event) => setVideoExtensionCount(parseInt(event.target.value, 10) || 0)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
-              >
-                {derivedExtensionOptions.map((option) => (
-                  <option key={option.count} value={option.count}>
-                    {option.count === 0 ? '不延长' : `${option.count} 次`}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-1">
-              <span className="text-[11px] text-slate-400">延长后总时长</span>
-              <select
-                aria-label="延长后总时长"
-                value={String(videoExtensionCount)}
-                onChange={(event) => setVideoExtensionCount(parseInt(event.target.value, 10) || 0)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
-              >
-                {derivedExtensionOptions.map((option) => (
-                  <option key={option.count} value={option.count}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </div>
+      {showPromptEnhanceControl && (
+        <PromptEnhanceControl
+          enabled={enhancePrompt}
+          onEnabledChange={setEnhancePrompt}
+          modelId={enhancePromptModel}
+          onModelIdChange={setEnhancePromptModel}
+          modelOptions={enhancePromptModels}
+          allowAutoModel
+          disabled={enhancePromptMandatory}
+          disabledHint={enhancePromptMandatory ? '当前 Veo 3.1 模型必须启用 AI 增强提示词。' : undefined}
+          thinkingLevel={controls?.enhancePromptThinkingLevel ?? 'auto'}
+          onThinkingLevelChange={controls?.setEnhancePromptThinkingLevel}
+        />
       )}
 
       <div className="border-t border-slate-700/50 pt-4">
@@ -361,85 +483,39 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
 
         {showAdvanced && (
           <div className="mt-4 space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-300">Seed</span>
-                <button
-                  onClick={() => setSeed(Math.floor(Math.random() * 2147483647))}
-                  className="text-xs text-indigo-400 hover:text-indigo-300"
-                  title="随机种子"
-                >
-                  <Dices size={14} />
-                </button>
-              </div>
-              <input
-                type="number"
-                value={seed === -1 ? '' : seed}
-                onChange={(event) => setSeed(event.target.value ? parseInt(event.target.value, 10) : -1)}
-                placeholder="随机 (-1)"
-                min={seedRange?.min}
-                max={seedRange?.max}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <span className="text-xs text-slate-300">负向提示词</span>
-              <textarea
-                value={negativePrompt}
-                onChange={(event) => setNegativePrompt(event.target.value)}
-                placeholder="不想在视频中出现的内容..."
-                className="w-full h-16 bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-300 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-
-            <div className="flex items-center justify-between py-1">
-              <div className="flex items-center gap-2">
-                <Sparkles size={12} className="text-pink-400" />
-                <span className="text-xs text-slate-300">AI 增强提示词</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!enhancePromptMandatory) {
-                    setEnhancePrompt(!enhancePrompt);
-                  }
-                }}
-                className={`w-10 h-6 flex items-center rounded-full p-1 transition-colors duration-200 ${
-                  enhancePrompt ? 'bg-pink-600' : 'bg-slate-600'
-                }`}
-                role="switch"
-                aria-checked={enhancePrompt}
-                aria-label="AI 增强提示词"
-                aria-disabled={enhancePromptMandatory}
-              >
-                <div
-                  className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
-                    enhancePrompt ? 'translate-x-4' : 'translate-x-0'
-                  }`}
+            {showSeedControl && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-300">Seed</span>
+                  <button
+                    onClick={() => setSeed(Math.floor(Math.random() * 2147483647))}
+                    className="text-xs text-indigo-400 hover:text-indigo-300"
+                    title="随机种子"
+                  >
+                    <Dices size={14} />
+                  </button>
+                </div>
+                <input
+                  type="number"
+                  value={seed === -1 ? '' : seed}
+                  onChange={(event) => setSeed(event.target.value ? parseInt(event.target.value, 10) : -1)}
+                  placeholder="随机 (-1)"
+                  min={seedRange?.min}
+                  max={seedRange?.max}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                 />
-              </button>
-            </div>
-            {enhancePromptMandatory && (
-              <p className="text-[10px] text-pink-300">当前 Veo 3.1 模型必须启用 AI 增强提示词。</p>
+              </div>
             )}
 
-            {enhancePrompt && (
+            {showNegativePromptControl && (
               <div className="space-y-2">
-                <span className="text-xs text-slate-300">增强提示词模型</span>
-                <select
-                  aria-label="增强提示词模型"
-                  value={enhancePromptModel}
-                  onChange={(event) => setEnhancePromptModel(event.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-pink-500/50"
-                >
-                  <option value="">自动选择</option>
-                  {enhancePromptModels.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.name || model.id}
-                    </option>
-                  ))}
-                </select>
+                <span className="text-xs text-slate-300">负向提示词</span>
+                <textarea
+                  value={negativePrompt}
+                  onChange={(event) => setNegativePrompt(event.target.value)}
+                  placeholder="不想在视频中出现的内容..."
+                  className="w-full h-16 bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-300 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500"
+                />
               </div>
             )}
 
@@ -477,29 +553,6 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
                   ))}
                 </select>
               </label>
-            )}
-
-            {storyboardPromptPreferred && extensionStoryboardInputs.length > 0 && (
-              <div className="space-y-2">
-                <span className="text-xs text-slate-300">延长分镜</span>
-                <div className="space-y-2 pt-1">
-                  {extensionStoryboardInputs.map((segment) => (
-                    <label key={segment.index} className="block space-y-1">
-                      <span className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] text-slate-400">{segment.label}</span>
-                        {segment.range && <span className="text-[10px] text-cyan-300">{segment.range}</span>}
-                      </span>
-                      <textarea
-                        aria-label={segment.ariaLabel}
-                        value={segment.value}
-                        onChange={(event) => updateStoryboardSegment(segment.index, event.target.value)}
-                        placeholder="描述这一段如何从上一段尾帧继续，包括动作、镜头、构图、口播和情绪变化。"
-                        className="w-full h-20 bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-300 placeholder-slate-500 resize-none focus:outline-none focus:border-cyan-500"
-                      />
-                    </label>
-                  ))}
-                </div>
-              </div>
             )}
 
             {availableSubtitleModes.length > 0 && (

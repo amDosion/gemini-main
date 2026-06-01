@@ -16,9 +16,8 @@ import {
 import {
   AgentTaskType,
   ProviderModels,
-  modelSupportsTask,
   normalizeProviderModels,
-  pickProviderDefaultModel,
+  resolveProviderTaskModelSelection,
 } from './providerModelUtils';
 import { AgentManagerEditorForm } from './agentManager/AgentManagerEditorForm';
 import { AgentManagerListView } from './agentManager/AgentManagerListView';
@@ -151,28 +150,35 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
     const preferredProvider = normalizedPreferredProviderId
       ? providers.find((provider) => provider.providerId === normalizedPreferredProviderId)
       : undefined;
-    const preferredProviderModel =
-      normalizedPreferredModelId && preferredProvider
-        ? preferredProvider.allModels.find((model) => model.id === normalizedPreferredModelId) ||
-          preferredProvider.models.find((model) => model.id === normalizedPreferredModelId)
-        : undefined;
-    const preferredProviderSupportsTask = modelSupportsTask(
-      preferredProviderModel,
-      defaultTaskType
-    );
+    const preferredSelection = resolveProviderTaskModelSelection({
+      providers,
+      providerId: normalizedPreferredProviderId,
+      modelId: normalizedPreferredModelId,
+      taskType: defaultTaskType,
+    });
     const fallbackProvider =
-      providers.find((provider) => pickProviderDefaultModel(provider, defaultTaskType)) ||
-      providers[0];
+      providers.find((provider) =>
+        resolveProviderTaskModelSelection({
+          providers,
+          providerId: provider.providerId,
+          taskType: defaultTaskType,
+        }).pickCompatibleModel()
+      ) || providers[0];
     const targetProvider =
       preferredProvider &&
-      (preferredProviderSupportsTask ||
-        pickProviderDefaultModel(preferredProvider, defaultTaskType))
+      (preferredSelection.selectedModelSupportsTask || preferredSelection.pickCompatibleModel())
         ? preferredProvider
         : fallbackProvider;
+    const targetSelection = resolveProviderTaskModelSelection({
+      providers,
+      providerId: targetProvider?.providerId || '',
+      modelId: normalizedPreferredModelId,
+      taskType: defaultTaskType,
+    });
     const targetModel =
-      preferredProvider && preferredProviderSupportsTask && preferredProviderModel
-        ? preferredProviderModel
-        : pickProviderDefaultModel(targetProvider, defaultTaskType);
+      targetSelection.selectedModelSupportsTask && targetSelection.selectedModel
+        ? targetSelection.selectedModel
+        : targetSelection.pickCompatibleModel();
     setEditing({
       id: '',
       name: '',
@@ -223,13 +229,13 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
     if (!editing || !editing.name.trim() || !editing.providerId || !editing.modelId) return;
     const defaultTaskType = (editing.agentCard?.defaults?.defaultTaskType ||
       'chat') as AgentTaskType;
-    const currentProvider = providers.find(
-      (provider) => provider.providerId === editing.providerId
-    );
-    const currentModel =
-      currentProvider?.allModels.find((model) => model.id === editing.modelId) ||
-      currentProvider?.models.find((model) => model.id === editing.modelId);
-    if (!modelSupportsTask(currentModel, defaultTaskType)) {
+    const modelSelection = resolveProviderTaskModelSelection({
+      providers,
+      providerId: editing.providerId,
+      modelId: editing.modelId,
+      taskType: defaultTaskType,
+    });
+    if (!modelSelection.selectedModelSupportsTask) {
       setNotice({ type: 'error', text: `当前模型不支持 ${defaultTaskType}，请重新选择兼容模型` });
       return;
     }

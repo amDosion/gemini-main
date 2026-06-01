@@ -9,8 +9,10 @@
  */
 
 import React from 'react';
-import { CustomNodeData } from '../CustomNode';
+import type { CustomNodeData } from '../CustomNode';
 import type { NodeStatus } from '../types';
+import { CachedImage } from '../../common/CachedImage';
+import { RetainedAudio, RetainedVideo } from '../../common/RetainedMedia';
 
 export interface PropertiesPanelResultSectionProps {
   nodeData: CustomNodeData;
@@ -52,7 +54,13 @@ export const PropertiesPanelResultSection: React.FC<PropertiesPanelResultSection
             {sourcePreviewUrl && (
               <div>
                 <div className="text-[10px] text-slate-400 mb-1">输入参考图</div>
-                <img
+                <CachedImage
+                  source={{
+                    attachmentId: `${selectedNodeId}-source-preview`,
+                    url: sourcePreviewUrl,
+                    mimeType: 'image/png',
+                    name: 'source-preview.png',
+                  }}
                   src={sourcePreviewUrl}
                   alt="source-preview"
                   className="w-full h-24 object-contain rounded border border-slate-700 bg-slate-900"
@@ -66,8 +74,14 @@ export const PropertiesPanelResultSection: React.FC<PropertiesPanelResultSection
                 </div>
                 <div className="grid grid-cols-2 gap-1 max-h-44 overflow-y-auto pr-0.5">
                   {resultPreviewUrls.map((imageUrl, index) => (
-                    <img
+                    <CachedImage
                       key={`${selectedNodeId}-result-preview-${index}`}
+                      source={{
+                        attachmentId: `${selectedNodeId}-result-preview-${index}`,
+                        url: imageUrl,
+                        mimeType: 'image/png',
+                        name: `result-preview-${index + 1}.png`,
+                      }}
                       src={imageUrl}
                       alt={`result-preview-${index + 1}`}
                       className="w-full h-24 object-cover rounded border border-slate-700 bg-slate-900"
@@ -87,7 +101,7 @@ export const PropertiesPanelResultSection: React.FC<PropertiesPanelResultSection
                 </div>
                 <div className="space-y-2 max-h-52 overflow-y-auto pr-0.5">
                   {resultPreviewVideoUrls.map((videoUrl, index) => (
-                    <video
+                    <RetainedVideo
                       key={`${selectedNodeId}-result-video-${index}`}
                       src={videoUrl}
                       controls
@@ -104,7 +118,7 @@ export const PropertiesPanelResultSection: React.FC<PropertiesPanelResultSection
                 </div>
                 <div className="space-y-2 max-h-40 overflow-y-auto pr-0.5">
                   {resultPreviewAudioUrls.map((audioUrl, index) => (
-                    <audio
+                    <RetainedAudio
                       key={`${selectedNodeId}-result-audio-${index}`}
                       src={audioUrl}
                       controls

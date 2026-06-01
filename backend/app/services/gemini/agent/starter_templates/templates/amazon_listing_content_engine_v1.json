@@ -76,11 +76,13 @@
           "description": "识别字段并提取可用卖点资产",
           "icon": "🧩",
           "iconColor": "bg-sky-500",
-          "agentName": "数据报表分析师",
           "agentTaskType": "data-analysis",
           "agentFileUrl": "{{input-file-listing-engine.output.fileUrl}}",
           "inputMapping": "文件：{{input-file-listing-engine.output.fileUrl}}\n目标：{{input-text-listing-engine.output.text}}",
-          "instructions": "输出字段映射、缺失字段、可用卖点资产池（功能/材质/场景/人群）。"
+          "instructions": "输出字段映射、缺失字段、可用卖点资产池（功能/材质/场景/人群）。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -113,10 +115,12 @@
           "description": "输出核心词/长尾词/否定词建议",
           "icon": "🔑",
           "iconColor": "bg-amber-500",
-          "agentName": "关键词研究专家",
           "agentTaskType": "data-analysis",
           "inputMapping": "结构化数据：{{agent-listing-intake.output.text}}\n目标：{{input-text-listing-engine.output.text}}",
-          "instructions": "输出按优先级分层的关键词包：Core / Long-tail / Defense。"
+          "instructions": "输出按优先级分层的关键词包：Core / Long-tail / Defense。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "keyword-researcher"
         }
       },
       {
@@ -132,9 +136,12 @@
           "description": "产出标题 + 五点 + 描述草案",
           "icon": "✍️",
           "iconColor": "bg-emerald-500",
-          "agentName": "Listing优化专家",
           "inputMapping": "结构化数据：{{agent-listing-intake.output.text}}\n目标：{{input-text-listing-engine.output.text}}",
-          "instructions": "输出英文版本：Title 3 版、Bullets 5 条、Description 1 版。"
+          "instructions": "输出英文版本：Title 3 版、Bullets 5 条、Description 1 版。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.6,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "listing-optimizer"
         }
       },
       {
@@ -150,9 +157,12 @@
           "description": "提炼差异化卖点和适配场景",
           "icon": "🎯",
           "iconColor": "bg-rose-500",
-          "agentName": "电商文案创作师",
           "inputMapping": "结构化数据：{{agent-listing-intake.output.text}}\n目标：{{input-text-listing-engine.output.text}}",
-          "instructions": "输出英文版卖点角度矩阵（人群 x 场景 x 卖点），并给 A+ 模块建议。"
+          "instructions": "输出英文版卖点角度矩阵（人群 x 场景 x 卖点），并给 A+ 模块建议。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.8,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ecommerce-copywriter"
         }
       },
       {
@@ -184,9 +194,12 @@
           "description": "检查政策风险并修订可上线版本",
           "icon": "🛡️",
           "iconColor": "bg-cyan-500",
-          "agentName": "亚马逊合规审核师",
           "inputMapping": "内容包：{{merge-listing-engine.output.text}}",
-          "instructions": "输出 Pass/Fail、风险点和可直接上线的最终英文文案。"
+          "instructions": "输出 Pass/Fail、风险点和可直接上线的最终英文文案。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.2,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-compliance-reviewer"
         }
       },
       {
@@ -202,9 +215,12 @@
           "description": "输出上线步骤与 7 天复盘指标",
           "icon": "🧭",
           "iconColor": "bg-indigo-500",
-          "agentName": "运营策略顾问",
           "inputMapping": "合规结果：{{agent-listing-compliance-check.output.text}}",
-          "instructions": "输出 P0/P1 上线动作、监控指标、复盘阈值和回滚条件。"
+          "instructions": "输出 P0/P1 上线动作、监控指标、复盘阈值和回滚条件。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {

@@ -17,6 +17,14 @@ import {
 import type { Message } from '../../../types/types';
 import { extractHistoryPrompts, extractVideoHistoryMeta } from '../../../utils/videoHistoryHelpers';
 import type { ActionMenuAnchor } from './types';
+import { CachedImage } from '../../common/CachedImage';
+import { HISTORY_THUMBNAIL_CACHE_PROPS } from '../../common/historyThumbnailCache';
+import { RetainedVideo } from '../../common/RetainedMedia';
+import {
+  getPreferredImageAttachmentUrl,
+  getRenderableAttachmentUrl,
+} from '../../../utils/attachmentUrl';
+import { getImageHistoryAttachmentPreviewUrl } from '../../common/imageHistorySidebarHelpers';
 
 export interface VideoHistoryRowProps {
   msg: Message;
@@ -62,11 +70,22 @@ export const VideoHistoryRow: React.FC<VideoHistoryRowProps> = ({
   openActionMenuBase,
 }) => {
   const previewVideo = msg.attachments?.find(
-    (attachment) => attachment.mimeType?.startsWith('video/') && attachment.url
+    (attachment) =>
+      attachment.mimeType?.startsWith('video/') && Boolean(getRenderableAttachmentUrl(attachment))
   );
-  const previewImage = msg.attachments?.find(
-    (attachment) => attachment.mimeType?.startsWith('image/') && attachment.url
-  );
+  const previewVideoUrl = getRenderableAttachmentUrl(previewVideo);
+  const previewImage = msg.attachments?.find((attachment) => {
+    if (!attachment.mimeType?.startsWith('image/')) return false;
+    return Boolean(attachment.file || getPreferredImageAttachmentUrl(attachment));
+  });
+  const previewImageId = previewImage?.id || `${msg.id}-image-preview`;
+  const previewImageUrl = previewImage
+    ? getImageHistoryAttachmentPreviewUrl(
+        previewImage,
+        previewImageId,
+        getPreferredImageAttachmentUrl(previewImage)
+      )
+    : null;
   const previewCount = (msg.attachments || []).filter(
     (attachment) =>
       attachment.mimeType?.startsWith('video/') || attachment.mimeType?.startsWith('image/')
@@ -119,10 +138,10 @@ export const VideoHistoryRow: React.FC<VideoHistoryRowProps> = ({
             <div className="w-full h-full flex items-center justify-center text-red-400 bg-red-900/10">
               <AlertCircle size={20} />
             </div>
-          ) : previewVideo?.url ? (
+          ) : previewVideoUrl ? (
             <>
-              <video
-                src={previewVideo.url}
+              <RetainedVideo
+                src={previewVideoUrl}
                 className="w-full h-full object-cover"
                 muted
                 playsInline
@@ -139,12 +158,17 @@ export const VideoHistoryRow: React.FC<VideoHistoryRowProps> = ({
                 </div>
               )}
             </>
-          ) : previewImage?.url ? (
+          ) : previewImageUrl ? (
             <>
-              <img
-                src={previewImage.url}
+              <CachedImage
+                source={{
+                  ...previewImage,
+                  attachmentId: previewImageId,
+                  url: previewImageUrl,
+                }}
+                src={previewImageUrl}
+                {...HISTORY_THUMBNAIL_CACHE_PROPS}
                 className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                loading="lazy"
                 alt="Video reference"
               />
               {previewCount > 1 && (

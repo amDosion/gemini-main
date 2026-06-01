@@ -39,6 +39,22 @@ QUERY_TIMEOUT = 5
 # 现在使用统一的实现：utils/message_assembly.py
 
 
+def _encode_session_cursor(session: ChatSession) -> str:
+    return f"{int(session.created_at)}:{session.id}"
+
+
+def _decode_session_cursor(cursor: Optional[str]) -> tuple[Optional[int], Optional[str]]:
+    normalized = str(cursor or "").strip()
+    if not normalized:
+        return None, None
+
+    if ":" not in normalized:
+        return int(normalized), None
+
+    created_at, session_id = normalized.split(":", 1)
+    return int(created_at), session_id.strip() or None
+
+
 async def _query_profiles(user_id: str, db: Session) -> Dict[str, Any]:
     """
     查询 Profiles 数据（异步包装）
@@ -225,7 +241,12 @@ async def _query_sessions(user_id: str, db: Session) -> Dict[str, Any]:
         return {"sessions": [], "error": str(e)}
 
 
-async def _query_sessions_with_first_messages(user_id: str, db: Session, limit: int = 20) -> Dict[str, Any]:
+async def _query_sessions_with_first_messages(
+    user_id: str,
+    db: Session,
+    limit: int = 20,
+    mode: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     查询会话列表 + 第一个会话的完整消息
     
@@ -242,27 +263,18 @@ async def _query_sessions_with_first_messages(user_id: str, db: Session, limit: 
         }
     """
     try:
-        logger.info(f"[InitService] 查询 Sessions（包含第一个会话的完整消息，limit={limit}）...")
-
-        # ✅ A-5: ChatSession 没有 updated_at 列，按 created_at 排序会让"最近活跃"
-        # 的会话被旧创建时间淹没。改为按"最近一条 message 的 timestamp"降序排序，
-        # 无消息的会话退回 session.created_at（COALESCE）。
-        from sqlalchemy import func
-        last_msg_subq = (
-            db.query(
-                MessageIndex.session_id.label("sid"),
-                func.max(MessageIndex.timestamp).label("last_ts"),
-            )
-            .filter(MessageIndex.user_id == user_id)
-            .group_by(MessageIndex.session_id)
-            .subquery()
+        logger.info(
+            f"[InitService] 查询 Sessions（包含第一个会话的完整消息，limit={limit}, mode={mode}）..."
         )
-        last_ts_col = func.coalesce(last_msg_subq.c.last_ts, ChatSession.created_at)
+
+        from sqlalchemy import func
+
+        session_query = db.query(ChatSession).filter(ChatSession.user_id == user_id)
+        if mode:
+            session_query = session_query.filter(ChatSession.mode == mode)
         sessions = (
-            db.query(ChatSession)
-            .outerjoin(last_msg_subq, last_msg_subq.c.sid == ChatSession.id)
-            .filter(ChatSession.user_id == user_id)
-            .order_by(last_ts_col.desc())
+            session_query
+            .order_by(ChatSession.created_at.desc(), ChatSession.id.desc())
             .limit(limit)
             .all()
         )
@@ -277,9 +289,10 @@ async def _query_sessions_with_first_messages(user_id: str, db: Session, limit: 
             }
         
         # ✅ 查询总会话数量（用于分页）
-        total_count = db.query(ChatSession).filter(
-            ChatSession.user_id == user_id
-        ).count()
+        total_query = db.query(ChatSession).filter(ChatSession.user_id == user_id)
+        if mode:
+            total_query = total_query.filter(ChatSession.mode == mode)
+        total_count = total_query.count()
         
         # ✅ 批量查询每个会话的消息数量（用于显示）
         session_ids = [s.id for s in sessions]
@@ -354,10 +367,10 @@ async def _query_sessions_with_first_messages(user_id: str, db: Session, limit: 
             session_dict = {
                 "id": session.id,
                 "title": session.title,
-                "created_at": session.created_at,
-                "persona_id": session.persona_id,
+                "createdAt": session.created_at,
+                "personaId": session.persona_id,
                 "mode": session.mode,
-                "message_count": message_count_map.get(session.id, 0)
+                "messageCount": message_count_map.get(session.id, 0)
             }
             
             if idx == 0:
@@ -395,6 +408,7 @@ async def _query_sessions_metadata_only(
     limit: int = 20,
     offset: int = 0,
     cursor: Optional[str] = None,
+    mode: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     查询会话元数据（仅元数据，不包含消息）
@@ -402,10 +416,10 @@ async def _query_sessions_metadata_only(
     用于滚动加载更多会话（惰性加载）。
 
     A-7 cursor 分页:
-    - 若提供 cursor（上一页最后一条 session.created_at，毫秒字符串），按
-      `created_at < cursor` 过滤，避免大 OFFSET 劣化。
+    - cursor 使用 `created_at:session_id`，和 `(created_at DESC, id DESC)` 排序一致。
+    - 旧的纯毫秒 cursor 仍兼容，继续按 `created_at < cursor` 过滤。
     - total 仅在第一页（无 cursor 且 offset==0）返回，避免每页全表 count(*)。
-    - next_cursor 为本页最后一条的 created_at（若 has_more 为真），便于下一次调用。
+    - next_cursor 为本页最后一条的 `created_at:session_id`（若 has_more 为真），便于下一次调用。
     - 不带 cursor 时退回 OFFSET 模式（向后兼容）。
     建议在 chat_sessions 上加索引 (user_id, created_at DESC)。
 
@@ -419,23 +433,38 @@ async def _query_sessions_metadata_only(
     """
     try:
         logger.info(
-            f"[InitService] 查询 Sessions 元数据（limit={limit}, offset={offset}, cursor={cursor}）..."
+            f"[InitService] 查询 Sessions 元数据（limit={limit}, offset={offset}, cursor={cursor}, mode={mode}）..."
         )
 
-        from sqlalchemy import func
+        from sqlalchemy import and_, func, or_
 
         base_q = db.query(ChatSession).filter(ChatSession.user_id == user_id)
+        if mode:
+            base_q = base_q.filter(ChatSession.mode == mode)
 
         cursor_ts: Optional[int] = None
+        cursor_id: Optional[str] = None
         if cursor:
             try:
-                cursor_ts = int(cursor)
-                base_q = base_q.filter(ChatSession.created_at < cursor_ts)
+                cursor_ts, cursor_id = _decode_session_cursor(cursor)
+                if cursor_ts is not None and cursor_id:
+                    base_q = base_q.filter(
+                        or_(
+                            ChatSession.created_at < cursor_ts,
+                            and_(
+                                ChatSession.created_at == cursor_ts,
+                                ChatSession.id < cursor_id,
+                            ),
+                        )
+                    )
+                elif cursor_ts is not None:
+                    base_q = base_q.filter(ChatSession.created_at < cursor_ts)
             except (TypeError, ValueError):
                 logger.warning(f"[InitService] 非法 cursor: {cursor!r}，退回 OFFSET 模式")
                 cursor_ts = None
+                cursor_id = None
 
-        ordered_q = base_q.order_by(ChatSession.created_at.desc())
+        ordered_q = base_q.order_by(ChatSession.created_at.desc(), ChatSession.id.desc())
 
         # 多取 1 条用来判断 has_more（避免再发一次 count）
         if cursor_ts is not None:
@@ -459,9 +488,10 @@ async def _query_sessions_metadata_only(
         # ✅ total 只在第一页查（避免每次滚动都全表 count）
         total_count: Optional[int] = None
         if cursor_ts is None and offset == 0:
-            total_count = db.query(func.count(ChatSession.id)).filter(
-                ChatSession.user_id == user_id
-            ).scalar() or 0
+            total_q = db.query(func.count(ChatSession.id)).filter(ChatSession.user_id == user_id)
+            if mode:
+                total_q = total_q.filter(ChatSession.mode == mode)
+            total_count = total_q.scalar() or 0
 
         # ✅ 批量查询每个会话的消息数量
         session_ids = [s.id for s in sessions]
@@ -480,17 +510,17 @@ async def _query_sessions_metadata_only(
             session_dict = {
                 "id": session.id,
                 "title": session.title,
-                "created_at": session.created_at,
-                "persona_id": session.persona_id,
+                "createdAt": session.created_at,
+                "personaId": session.persona_id,
                 "mode": session.mode,
-                "message_count": message_count_map.get(session.id, 0),
+                "messageCount": message_count_map.get(session.id, 0),
                 "messages": []
             }
             sessions_result.append(session_dict)
 
         next_cursor: Optional[str] = None
         if has_more and sessions:
-            next_cursor = str(sessions[-1].created_at)
+            next_cursor = _encode_session_cursor(sessions[-1])
 
         logger.info(
             f"[InitService] Sessions 元数据加载成功: {len(sessions_result)} 个会话, has_more={has_more}"

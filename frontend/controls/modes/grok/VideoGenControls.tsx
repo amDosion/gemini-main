@@ -6,10 +6,14 @@
  * - 质量：标清 480p / 高清 720p（按钮组）
  * - 尺寸/比例：5 种固定尺寸
  */
-import React, { useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { Clock3, Film, Maximize2 } from 'lucide-react';
 import { VideoGenControlsProps } from '../../types';
 import { useModeControlsSchema } from '../../../hooks/useModeControlsSchema';
+import { useEnhancePromptModels } from '../../../hooks/useEnhancePromptModels';
+import PromptEnhanceControl from '../../shared/PromptEnhanceControl';
+import VideoExtensionControl from '../../shared/VideoExtensionControl';
+import { buildVideoControlContract, getVideoExtensionOptions } from '../../../utils/videoControlSchema';
 
 const GROK_SIZE_OPTIONS = [
   { label: '1:1 (1024\u00d71024)', value: '1024x1024' },
@@ -42,9 +46,19 @@ export const VideoGenControls: React.FC<VideoGenControlsProps> = (props) => {
     setResolution: propSetResolution,
     videoSeconds: propVideoSeconds,
     setVideoSeconds: propSetVideoSeconds,
+    enhancePrompt: propEnhancePrompt,
+    setEnhancePrompt: propSetEnhancePrompt,
+    enhancePromptModel: propEnhancePromptModel,
+    setEnhancePromptModel: propSetEnhancePromptModel,
+    videoExtensionCount: propVideoExtensionCount,
+    setVideoExtensionCount: propSetVideoExtensionCount,
+    storyboardSegments: propStoryboardSegments,
+    setStoryboardSegments: propSetStoryboardSegments,
   } = props;
 
   const { schema, loading, error } = useModeControlsSchema(providerId, 'video-gen', currentModel?.id);
+  const enhancePromptModels = useEnhancePromptModels(providerId);
+  const videoControlContract = useMemo(() => buildVideoControlContract(schema), [schema]);
 
   const availableSizes = useMemo(() => {
     const schemaRatios = schema?.aspectRatios;
@@ -88,6 +102,16 @@ export const VideoGenControls: React.FC<VideoGenControlsProps> = (props) => {
   const setResolution = controls?.setResolution ?? propSetResolution ?? (() => {});
   const videoSeconds = controls?.videoSeconds ?? propVideoSeconds ?? defaultDuration;
   const setVideoSeconds = controls?.setVideoSeconds ?? propSetVideoSeconds ?? (() => {});
+  const enhancePrompt = controls?.enhancePrompt ?? propEnhancePrompt ?? false;
+  const setEnhancePrompt = controls?.setEnhancePrompt ?? propSetEnhancePrompt ?? (() => {});
+  const enhancePromptModel = controls?.enhancePromptModel ?? propEnhancePromptModel ?? '';
+  const setEnhancePromptModel = controls?.setEnhancePromptModel ?? propSetEnhancePromptModel ?? (() => {});
+  const videoExtensionCount =
+    controls?.videoExtensionCount ?? propVideoExtensionCount ?? videoControlContract.defaultVideoExtensionCount;
+  const setVideoExtensionCount =
+    controls?.setVideoExtensionCount ?? propSetVideoExtensionCount ?? (() => {});
+  const storyboardSegments = controls?.storyboardSegments ?? propStoryboardSegments ?? [];
+  const setStoryboardSegments = controls?.setStoryboardSegments ?? propSetStoryboardSegments ?? (() => {});
 
   // 校验当前尺寸
   useEffect(() => {
@@ -115,6 +139,45 @@ export const VideoGenControls: React.FC<VideoGenControlsProps> = (props) => {
   }, [videoSeconds, minDuration, maxDuration, setVideoSeconds]);
 
   const currentDuration = parseInt(videoSeconds) || minDuration;
+  const extensionBaseDuration = useMemo(() => {
+    const currentOptions = getVideoExtensionOptions(videoControlContract, String(currentDuration));
+    if (currentOptions.some((option) => option.count > 0)) {
+      return currentDuration;
+    }
+    const fallback = Object.entries(videoControlContract.extensionOptionsBySeconds)
+      .find(([, options]) => options.some((option) => option.count > 0))?.[0];
+    const parsedFallback = parseInt(String(fallback || ''), 10);
+    return Number.isFinite(parsedFallback) && parsedFallback > 0 ? parsedFallback : currentDuration;
+  }, [currentDuration, videoControlContract]);
+  const extensionOptions = useMemo(() => {
+    return getVideoExtensionOptions(videoControlContract, String(extensionBaseDuration)).map((option) => ({
+      ...option,
+      label:
+        option.count === 0
+          ? `${option.totalSeconds}s（原始）`
+          : `${option.totalSeconds}s（+${option.count} 次延长）`,
+    }));
+  }, [extensionBaseDuration, videoControlContract]);
+  const firstPositiveExtensionCount = useMemo(
+    () => extensionOptions.find((option) => option.count > 0)?.count ?? 1,
+    [extensionOptions]
+  );
+  const handleVideoExtensionEnabledChange = useCallback(
+    (enabled: boolean) => {
+      if (enabled && extensionBaseDuration !== currentDuration) {
+        setVideoSeconds(String(extensionBaseDuration));
+      }
+      setVideoExtensionCount(enabled ? (videoExtensionCount > 0 ? videoExtensionCount : firstPositiveExtensionCount) : 0);
+    },
+    [currentDuration, extensionBaseDuration, firstPositiveExtensionCount, setVideoExtensionCount, setVideoSeconds, videoExtensionCount]
+  );
+
+  useEffect(() => {
+    const validCounts = extensionOptions.map((option) => option.count);
+    if (validCounts.length > 0 && !validCounts.includes(videoExtensionCount)) {
+      setVideoExtensionCount(validCounts[0]);
+    }
+  }, [extensionOptions, setVideoExtensionCount, videoExtensionCount]);
 
   return (
     <div className="space-y-4">
@@ -193,6 +256,31 @@ export const VideoGenControls: React.FC<VideoGenControlsProps> = (props) => {
           <span>{maxDuration}s</span>
         </div>
       </div>
+
+      <VideoExtensionControl
+        extensionOptions={extensionOptions}
+        extensionCount={videoExtensionCount}
+        onExtensionCountChange={setVideoExtensionCount}
+        enabled={videoExtensionCount > 0}
+        onEnabledChange={handleVideoExtensionEnabledChange}
+        addedSeconds={extensionBaseDuration}
+        maxOutputVideoSeconds={videoControlContract.extensionConstraints.maxOutputVideoSeconds}
+        baseDurationSeconds={extensionBaseDuration}
+        storyboardSegments={storyboardSegments}
+        onStoryboardSegmentsChange={setStoryboardSegments}
+        showStoryboard={videoControlContract.fieldPolicies.storyboardPromptPreferred}
+      />
+
+      <PromptEnhanceControl
+        enabled={enhancePrompt}
+        onEnabledChange={setEnhancePrompt}
+        modelId={enhancePromptModel}
+        onModelIdChange={setEnhancePromptModel}
+        modelOptions={enhancePromptModels}
+        allowAutoModel
+        thinkingLevel={controls?.enhancePromptThinkingLevel ?? 'auto'}
+        onThinkingLevelChange={controls?.setEnhancePromptThinkingLevel}
+      />
 
       {/* Grok 信息提示 */}
       <div className="text-[10px] text-slate-500 italic">

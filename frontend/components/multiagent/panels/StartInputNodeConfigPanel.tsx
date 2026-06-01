@@ -18,6 +18,7 @@ import { NodeType } from '../nodeTypeConfigs';
 import { reportInlineUploadError, readInlineFilesAsDataUrls } from '../uploadHandlers';
 import { isDirectlyRenderableImageUrl } from '../workflowResultUtils';
 import { dispatchScopedWorkflowEvent } from '../workflowEditorUtils';
+import { CachedImage } from '../../common/CachedImage';
 
 export interface StartInputNodeConfigPanelProps {
   nodeData: CustomNodeData;
@@ -159,7 +160,8 @@ export const StartInputNodeConfigPanel: React.FC<StartInputNodeConfigPanelProps>
               <div className="grid grid-cols-4 gap-2 max-h-56 overflow-y-auto pr-1">
                 {renderableStartImageValues.map((imageUrl, index) => (
                   <div key={`${selectedNode.id}-input-image-${index}`} className="relative group">
-                    <img
+                    <CachedImage
+                      source={{ url: imageUrl, name: `输入图片-${index + 1}` }}
                       src={imageUrl}
                       alt={`输入图片-${index + 1}`}
                       className="w-full h-16 object-cover rounded border border-emerald-500/30"

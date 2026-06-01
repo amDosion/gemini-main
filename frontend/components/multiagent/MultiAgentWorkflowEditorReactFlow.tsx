@@ -29,11 +29,11 @@ import {
 import 'reactflow/dist/style.css';
 
 import { ExecutionLogPanel } from './ExecutionLogPanel';
-import { WorkflowResultPanel } from './WorkflowResultPanel';
 import { WorkflowTemplateSelector, type WorkflowTemplate } from './WorkflowTemplateSelector';
 import { WorkflowTemplateSaveDialog } from './WorkflowTemplateSaveDialog';
 import { WorkflowEditorTopBar } from './WorkflowEditorTopBar';
 import { WorkflowEditorCanvasPane } from './WorkflowEditorCanvasPane';
+import { WorkflowResultImageCanvas } from './WorkflowResultImageCanvas';
 import { useExecutionLogs } from './WorkflowExecutionHooks';
 import { useUndoRedo } from './useUndoRedo';
 import type { ExecutionStatus, WorkflowNode, WorkflowEdge, WorkflowNodeData } from './types';
@@ -41,19 +41,20 @@ import { useAgentRegistry } from './useAgentRegistry';
 import { loadTemplateIntoEditor, ActiveTemplateMeta } from './workflowTemplateLoader';
 import { useResultPanelPreviewState } from './useResultPanelPreviewState';
 import {
+  applySingleEdgeSelection,
+  applySingleNodeSelection,
   buildWorkflowStructureFingerprint,
   createWorkflowEditorScopeId,
-  isTerminalExecutionStatus,
   WORKFLOW_EDITOR_SCOPE_ATTRIBUTE,
   WorkflowNodeFieldFocusRequest,
 } from './workflowEditorUtils';
 
 import { useWorkflowImageExport } from './editor/useWorkflowImageExport';
 import { useWorkflowExecuteHandler } from './editor/useWorkflowExecuteHandler';
-import { useWorkflowResultMedia } from './editor/useWorkflowResultMedia';
 import { useWorkflowCanvasActions } from './editor/useWorkflowCanvasActions';
 import { useWorkflowEditorEvents } from './editor/useWorkflowEditorEvents';
 import { useWorkflowEditorLoading } from './editor/useWorkflowEditorLoading';
+import { isDirectlyRenderableImageUrl } from './workflowResultUtils';
 
 interface MultiAgentWorkflowEditorReactFlowProps {
   onExecute?: (workflow: {
@@ -76,8 +77,14 @@ interface MultiAgentWorkflowEditorReactFlowProps {
     edges: WorkflowEdge[];
     prompt?: string;
     input?: Record<string, any>;
+    executionStatus?: ExecutionStatus;
   } | null;
   onExit?: () => void;
+  onOpenResultImages?: (request: {
+    title?: string;
+    imageUrls: string[];
+    initialIndex?: number;
+  }) => void;
 }
 
 const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorReactFlowProps> = ({
@@ -86,6 +93,7 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
   executionStatus,
   loadedWorkflow,
   onExit,
+  onOpenResultImages,
 }) => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const editorRootRef = useRef<HTMLDivElement>(null);
@@ -111,14 +119,13 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
 
   // UI state
   const [showLogs, setShowLogs] = useState(false);
-  const [showResultPanel, setShowResultPanel] = useState(() => {
-    const initialFinalStatus = String(executionStatus?.finalStatus || '')
-      .trim()
-      .toLowerCase();
-    return isTerminalExecutionStatus(initialFinalStatus);
-  });
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const [showTemplateSave, setShowTemplateSave] = useState(false);
+  const [imageViewerState, setImageViewerState] = useState<{
+    title: string;
+    imageUrls: string[];
+    initialIndex: number;
+  } | null>(null);
   const [workflowPrompt, setWorkflowPrompt] = useState('');
   const [workflowInputImageUrl, setWorkflowInputImageUrl] = useState('');
   const [workflowInputFileUrl, setWorkflowInputFileUrl] = useState('');
@@ -149,11 +156,8 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     setFinalResult,
     finalError,
     setFinalError,
-    finalCompletedAt,
     setFinalCompletedAt,
-    finalRuntime,
     setFinalRuntime,
-    finalRuntimeHints,
     setFinalRuntimeHints,
   } = useWorkflowExecuteHandler({
     onExecute,
@@ -223,7 +227,6 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     activeTemplateMeta,
     finalResult,
     finalError,
-    showResultPanel,
     setWorkflowPrompt,
     setWorkflowInputImageUrl,
     setWorkflowInputFileUrl,
@@ -235,7 +238,6 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     setFinalRuntime,
     setFinalRuntimeHints,
     setExecuteErrorBanner,
-    setShowResultPanel,
   });
 
   // executionStatus + loadedWorkflow synchronization effects
@@ -261,11 +263,96 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     setFinalCompletedAt,
     setFinalRuntime,
     setFinalRuntimeHints,
-    setShowResultPanel,
     addLog,
   });
 
-  // Window event listeners + keyboard delete
+  const handleOpenImageGallery = React.useCallback(
+    (request: { imageUrls: string[]; initialIndex?: number; title?: string }) => {
+      const seen = new Set<string>();
+      const imageUrls = (request.imageUrls || [])
+        .map((imageUrl) => String(imageUrl || '').trim())
+        .filter((imageUrl) => {
+          if (!imageUrl || seen.has(imageUrl) || !isDirectlyRenderableImageUrl(imageUrl)) {
+            return false;
+          }
+          seen.add(imageUrl);
+          return true;
+        });
+      if (imageUrls.length === 0) {
+        addLog('system', '系统', 'warn', '当前没有可查看的结果图片');
+        return;
+      }
+      const rawIndex = Number(request.initialIndex || 0);
+      const normalizedIndex = Number.isFinite(rawIndex)
+        ? Math.max(0, Math.min(imageUrls.length - 1, Math.floor(rawIndex)))
+        : 0;
+      if (onOpenResultImages) {
+        onOpenResultImages({
+          title: request.title || '结果图片',
+          imageUrls,
+          initialIndex: normalizedIndex,
+        });
+        return;
+      }
+      setImageViewerState({
+        title: request.title || '结果图片',
+        imageUrls,
+        initialIndex: normalizedIndex,
+      });
+    },
+    [addLog, onOpenResultImages]
+  );
+
+  const handleOpenEndResult = React.useCallback(
+    (nodeId?: string) => {
+      const currentNodes = nodesRef.current as Node<WorkflowNodeData>[];
+      const endNodes = currentNodes.filter((node) => {
+        const nodeType = String(node?.data?.type || node?.type || '')
+          .trim()
+          .toLowerCase();
+        return nodeType === 'end';
+      });
+      const normalizedNodeId = String(nodeId || '').trim();
+      const preferredNode = normalizedNodeId
+        ? endNodes.find((node) => String(node.id) === normalizedNodeId)
+        : null;
+      const resultNode = endNodes.find(
+        (node) => node.data?.result !== undefined && node.data.result !== null
+      );
+      const targetNode = preferredNode || resultNode || endNodes[0] || null;
+      if (!targetNode) {
+        addLog('system', '系统', 'warn', '当前画布没有结束节点，无法定位最终结果');
+        return;
+      }
+
+      setNodes((nds) =>
+        applySingleNodeSelection(nds as Node<WorkflowNodeData>[], String(targetNode.id))
+      );
+      setEdges((eds) => applySingleEdgeSelection(eds, null));
+      setPendingNodeFieldFocusRequest(null);
+
+      const centerX = targetNode.position.x + Number(targetNode.width || 260) / 2;
+      const centerY = targetNode.position.y + Number(targetNode.height || 180) / 2;
+      requestAnimationFrame(() => {
+        reactFlowInstance?.setCenter?.(centerX, centerY, {
+          zoom: 1,
+          duration: 320,
+        });
+      });
+    },
+    [addLog, reactFlowInstance, setEdges, setNodes]
+  );
+
+  // Result-panel preview state (existing dedicated hook)
+  useResultPanelPreviewState({
+    executionStatus,
+    finalResult,
+    setFinalResult,
+    setNodes,
+    addLog,
+  });
+
+  // Window event listeners + keyboard delete.
   useWorkflowEditorEvents({
     editorScopeId,
     nodes: nodes as Node<WorkflowNodeData>[],
@@ -282,47 +369,8 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     executionStatus,
     finalResult,
     finalError,
-    setShowResultPanel,
-    addLog,
-  });
-
-  // Result-panel preview state (existing dedicated hook)
-  const {
-    executionId,
-    executionFinalStatus,
-    mergedResultPanelPreviewImageUrls,
-    resultPanelPreviewAudioUrls,
-    resultPanelPreviewVideoUrls,
-    resultPanelPreviewLoadingExecutionId,
-    handleRetryResultPreview,
-  } = useResultPanelPreviewState({
-    executionStatus,
-    finalResult,
-    setFinalResult,
-    setNodes,
-    addLog,
-  });
-
-  // Derived result media + batch download handlers + copy
-  const {
-    renderedResultItems,
-    renderableSourceInputPreviewUrl,
-    finalOutputImageUrls,
-    finalOutputAudioUrls,
-    finalOutputVideoUrls,
-    handleBatchDownloadImages,
-    handleBatchDownloadAudio,
-    handleBatchDownloadVideo,
-    handleCopyFinalResult,
-  } = useWorkflowResultMedia({
-    finalResult,
-    finalError,
-    nodes: nodes as Node<WorkflowNodeData>[],
-    workflowInputImageUrl,
-    mergedResultPanelPreviewImageUrls,
-    resultPanelPreviewAudioUrls,
-    resultPanelPreviewVideoUrls,
-    executionId,
+    handleOpenEndResult,
+    handleOpenImageGallery,
     addLog,
   });
 
@@ -408,6 +456,17 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
     [addLog, onSave]
   );
 
+  const hasEndNode = nodes.some((node) => {
+    const nodeType = String(node?.data?.type || node?.type || '')
+      .trim()
+      .toLowerCase();
+    return nodeType === 'end';
+  });
+  const isResultActive =
+    String(selectedNode?.data?.type || selectedNode?.type || '')
+      .trim()
+      .toLowerCase() === 'end';
+
   return (
     <div
       ref={editorRootRef}
@@ -442,13 +501,9 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
         canDeleteSelectedNode={Boolean(selectedNode)}
         onAutoLayout={handleAutoLayout}
         canAutoLayout={nodes.length > 0}
-        onToggleResultPanel={() => setShowResultPanel((prev) => !prev)}
-        canToggleResultPanel={
-          finalResult !== null ||
-          Boolean(finalError) ||
-          isTerminalExecutionStatus(executionFinalStatus)
-        }
-        showResultPanel={showResultPanel}
+        onOpenResult={() => handleOpenEndResult()}
+        canOpenResult={hasEndNode}
+        isResultActive={isResultActive}
         onExportImage={() => {
           void handleDownloadWorkflowImage();
         }}
@@ -492,26 +547,12 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
         <ExecutionLogPanel logs={logs} isOpen={showLogs} onClose={() => setShowLogs(false)} />
       )}
 
-      <WorkflowResultPanel
-        show={showResultPanel}
-        executionId={executionId}
-        finalCompletedAt={finalCompletedAt}
-        finalRuntime={finalRuntime}
-        finalRuntimeHints={finalRuntimeHints}
-        finalError={finalError}
-        finalResult={finalResult}
-        renderedResultItems={renderedResultItems}
-        finalOutputImageUrls={finalOutputImageUrls}
-        finalOutputAudioUrls={finalOutputAudioUrls}
-        finalOutputVideoUrls={finalOutputVideoUrls}
-        renderableSourceInputPreviewUrl={renderableSourceInputPreviewUrl}
-        resultPanelPreviewLoadingExecutionId={resultPanelPreviewLoadingExecutionId}
-        onBatchDownloadImages={handleBatchDownloadImages}
-        onBatchDownloadAudio={handleBatchDownloadAudio}
-        onBatchDownloadVideo={handleBatchDownloadVideo}
-        onCopyResult={handleCopyFinalResult}
-        onClose={() => setShowResultPanel(false)}
-        onRetryResultPreview={handleRetryResultPreview}
+      <WorkflowResultImageCanvas
+        open={Boolean(imageViewerState)}
+        title={imageViewerState?.title}
+        imageUrls={imageViewerState?.imageUrls || []}
+        initialIndex={imageViewerState?.initialIndex || 0}
+        onClose={() => setImageViewerState(null)}
       />
 
       {/* Template Dialogs */}

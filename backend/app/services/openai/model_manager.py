@@ -114,6 +114,7 @@ class ModelManager:
             "gpt-image-1-mini": "GPT Image 1 Mini",
             "gpt-image-1.5": "GPT Image 1.5",
             "gpt-image-1.5-mini": "GPT Image 1.5 Mini",
+            "gpt-image-2": "GPT Image 2",
             "dall-e-2": "DALL-E 2",
             "dall-e-3": "DALL-E 3",
             "tts-1": "TTS 1",
@@ -137,6 +138,11 @@ class ModelManager:
         if lower_id in exact_names:
             return exact_names[lower_id]
 
+        if lower_id.startswith("gpt-image") or lower_id.startswith("chatgpt-image"):
+            return self._title_tokens(
+                model_id,
+                token_map={"gpt": "GPT", "chatgpt": "ChatGPT", "image": "Image", "mini": "Mini"},
+            )
         if "codex" in lower_id:
             return self._title_tokens(model_id, token_map={"codex": "Codex", "mini": "Mini", "max": "Max", "latest": "Latest"})
         if lower_id.startswith("tts-"):

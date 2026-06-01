@@ -3,11 +3,41 @@ import { requestJson } from './http';
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
 
+const WORKFLOW_STATE_MARKER_KEYS = [
+  'status',
+  'finalStatus',
+  'executionId',
+  'isTerminal',
+  'stateVersion',
+  'clientPolicy',
+  'nodeStatuses',
+  'nodeExecutions',
+  'nodeResults',
+  'nodeErrors',
+  'nodeProgress',
+  'resultSummary',
+  'finalResult',
+  'result',
+  'error',
+] as const;
+
+const hasWorkflowStateMarker = (payload: Record<string, unknown>): boolean =>
+  WORKFLOW_STATE_MARKER_KEYS.some((key) => Object.prototype.hasOwnProperty.call(payload, key));
+
 export const resolveWorkflowExecutionStatePayload = (payload: unknown): Record<string, unknown> => {
-  if (!isRecord(payload) || !isRecord(payload.execution_state)) {
+  if (!isRecord(payload)) {
     throw new Error('工作流状态格式错误：缺少 execution_state');
   }
-  return payload.execution_state;
+  if (isRecord(payload.execution_state)) {
+    return payload.execution_state;
+  }
+  if (isRecord(payload.executionState)) {
+    return payload.executionState;
+  }
+  if (hasWorkflowStateMarker(payload)) {
+    return payload;
+  }
+  throw new Error('工作流状态格式错误：缺少 execution_state');
 };
 
 export const fetchWorkflowExecutionState = async (

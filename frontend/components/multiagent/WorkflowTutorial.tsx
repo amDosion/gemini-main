@@ -22,7 +22,7 @@ const tutorialSteps: TutorialStep[] = [
   },
   {
     title: '组件库',
-    description: '左侧是组件库，包含 9 种不同类型的节点。您可以拖拽这些节点到画布上。',
+    description: '左侧是组件库，包含流程、执行和编排节点。您可以拖拽这些节点到画布上。',
     target: 'component-library',
     position: 'right',
     action: '尝试拖拽一个"开始节点"到画布',

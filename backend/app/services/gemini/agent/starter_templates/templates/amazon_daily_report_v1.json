@@ -58,8 +58,11 @@
           "description": "分析今日广告数据表现",
           "icon": "📊",
           "iconColor": "bg-blue-500",
-          "agentName": "亚马逊广告分析师",
-          "instructions": "请分析今日广告数据，输出简要分析：\n1. 今日广告关键指标（Spend/Sales/ACOS）\n2. 与昨日/上周同期对比\n3. 异常 Campaign 标注\n4. 紧急调整建议（如有）"
+          "instructions": "请分析今日广告数据，输出简要分析：\n1. 今日广告关键指标（Spend/Sales/ACOS）\n2. 与昨日/上周同期对比\n3. 异常 Campaign 标注\n4. 紧急调整建议（如有）",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-ad-analyst"
         }
       },
       {
@@ -75,8 +78,11 @@
           "description": "分析今日销售和库存数据",
           "icon": "📈",
           "iconColor": "bg-cyan-500",
-          "agentName": "数据报表分析师",
-          "instructions": "请分析今日销售和运营数据：\n1. 今日订单量/销售额/退款率\n2. 各 ASIN 表现排名\n3. 库存预警（低于安全库存的 SKU）\n4. BSR 变动趋势"
+          "instructions": "请分析今日销售和运营数据：\n1. 今日订单量/销售额/退款率\n2. 各 ASIN 表现排名\n3. 库存预警（低于安全库存的 SKU）\n4. BSR 变动趋势",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -92,8 +98,11 @@
           "description": "监测竞品动态变化",
           "icon": "🎯",
           "iconColor": "bg-red-500",
-          "agentName": "竞品分析专家",
-          "instructions": "请分析竞品最新动态：\n1. 竞品价格变动\n2. 竞品新增 Review 或 Q&A\n3. 竞品广告位变化\n4. 需要关注的竞品行为"
+          "instructions": "请分析竞品最新动态：\n1. 竞品价格变动\n2. 竞品新增 Review 或 Q&A\n3. 竞品广告位变化\n4. 需要关注的竞品行为",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.4,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "competitor-analyst"
         }
       },
       {
@@ -125,8 +134,11 @@
           "description": "汇总三维分析生成运营日报",
           "icon": "🧠",
           "iconColor": "bg-indigo-500",
-          "agentName": "运营策略顾问",
-          "instructions": "请将广告分析、销售分析和竞品动态三部分汇总，生成结构化的运营日报：\n1. 【今日概要】一句话总结\n2. 【关键指标】核心数据表格\n3. 【重要发现】3-5 条关键发现\n4. 【待办事项】今日需要处理的事项（按优先级）\n5. 【明日关注】明天重点关注的事项"
+          "instructions": "请将广告分析、销售分析和竞品动态三部分汇总，生成结构化的运营日报：\n1. 【今日概要】一句话总结\n2. 【关键指标】核心数据表格\n3. 【重要发现】3-5 条关键发现\n4. 【待办事项】今日需要处理的事项（按优先级）\n5. 【明日关注】明天重点关注的事项",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {

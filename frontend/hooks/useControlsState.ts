@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { AppMode, LoraConfig, ModelConfig } from '../types/types';
-import { ControlsState, OffsetPixels } from '../controls/types';
+import { ControlsState, OffsetPixels, ThinkingLevel } from '../controls/types';
 
 /**
  * Centralized controls state hook.
@@ -42,6 +42,7 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
   const [aspectRatio, setAspectRatio] = useState('1:1');
   const [resolution, setResolution] = useState('1K');
   const [videoSeconds, setVideoSeconds] = useState('');
+  const [videoInputStrategy, setVideoInputStrategy] = useState('');
   const [videoExtensionCount, setVideoExtensionCount] = useState(0);
   const [storyboardShotSeconds, setStoryboardShotSeconds] = useState(0);
   const [generateAudio, setGenerateAudio] = useState(true);
@@ -52,6 +53,10 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
   const [storyboardSegments, setStoryboardSegments] = useState<string[]>([]);
   const [numberOfImages, setNumberOfImages] = useState(1);
   const [style, setStyle] = useState('None');
+  const [quality, setQuality] = useState('auto');
+  const [background, setBackground] = useState('auto');
+  const [moderation, setModeration] = useState('auto');
+  const [outputFormat, setOutputFormat] = useState('png');
 
   // Advanced Settings（默认展开）
   const [showAdvanced, setShowAdvanced] = useState(true);
@@ -65,10 +70,13 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
   const [outputCompressionQuality, setOutputCompressionQuality] = useState(100);
   const [enhancePrompt, setEnhancePrompt] = useState(true);
   const [enhancePromptModel, setEnhancePromptModel] = useState('');
+  const [enhancePromptThinkingLevel, setEnhancePromptThinkingLevel] = useState<ThinkingLevel>('auto');
 
   // TongYi Specific Parameters
   const [promptExtend, setPromptExtend] = useState(false); // 阿里的 prompt_extend 参数
   const [addMagicSuffix, setAddMagicSuffix] = useState(true); // 阿里的 add_magic_suffix 参数（默认开启）
+  const [thinkingMode, setThinkingMode] = useState(true); // Wan 2.7 Image thinking_mode 参数
+  const [enableSequential, setEnableSequential] = useState(false); // Wan 2.7 Image enable_sequential 组图模式
 
 
   // Out-Painting (旧参数，保留向后兼容)
@@ -154,6 +162,7 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
       aspectRatio, setAspectRatio,
       resolution, setResolution,
       videoSeconds, setVideoSeconds,
+      videoInputStrategy, setVideoInputStrategy,
       videoExtensionCount, setVideoExtensionCount,
       storyboardShotSeconds, setStoryboardShotSeconds,
       generateAudio, setGenerateAudio,
@@ -164,6 +173,10 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
       storyboardSegments, setStoryboardSegments,
       numberOfImages, setNumberOfImages,
       style, setStyle,
+      quality, setQuality,
+      background, setBackground,
+      moderation, setModeration,
+      outputFormat, setOutputFormat,
 
 
       // Advanced Settings
@@ -178,10 +191,13 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
       outputCompressionQuality, setOutputCompressionQuality,
       enhancePrompt, setEnhancePrompt,
       enhancePromptModel, setEnhancePromptModel,
+      enhancePromptThinkingLevel, setEnhancePromptThinkingLevel,
 
       // TongYi Specific Parameters
       promptExtend, setPromptExtend,
       addMagicSuffix, setAddMagicSuffix,
+      thinkingMode, setThinkingMode,
+      enableSequential, setEnableSequential,
 
 
       // Out-Painting (旧参数，保留向后兼容)
@@ -218,12 +234,14 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
       enableSearch, enableThinking, enableCodeExecution, enableUrlContext,
       enableBrowser, enableRAG, enableEnhancedRetrieval, enableDeepResearch,
       enableAutoDeepResearch, deepResearchAgentId, googleCacheMode, selectedMcpServerKey,
-      aspectRatio, resolution, videoSeconds, videoExtensionCount, storyboardShotSeconds,
+      aspectRatio, resolution, videoSeconds, videoInputStrategy, videoExtensionCount, storyboardShotSeconds,
       generateAudio, subtitleMode, subtitleLanguage, subtitleScript,
       storyboardPrompt, storyboardSegments, numberOfImages, style,
+      quality, background, moderation, outputFormat,
       showAdvanced, negativePrompt, seed, loraConfig,
       outputMimeType, outputCompressionQuality, enhancePrompt, enhancePromptModel,
-      promptExtend, addMagicSuffix,
+      enhancePromptThinkingLevel,
+      promptExtend, addMagicSuffix, thinkingMode, enableSequential,
       outPaintingMode, scaleFactor, offsetPixels,
       outpaintMode, xScale, yScale, upscaleFactor,
       voice,

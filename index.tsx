@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
+import 'antd/dist/reset.css';
 import './styles/tailwind.css';
 import App from './frontend/App';
 import { GlobalErrorBoundary } from './frontend/components/common/GlobalErrorBoundary';

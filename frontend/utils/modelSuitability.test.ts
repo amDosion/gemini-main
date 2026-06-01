@@ -4,6 +4,7 @@ import {
   getEnhancePromptModelCandidates,
   isDeepResearchModel,
   isMultimodalUnderstandingModel,
+  isTongyiVisionPromptEnhancementModel,
   isThinkingCapableModel,
 } from './modelSuitability';
 
@@ -41,6 +42,65 @@ describe('modelSuitability', () => {
     ]);
 
     expect(candidates.map((m) => m.id)).toEqual(['gemini-3.1-pro-preview']);
+  });
+
+  it('keeps OpenAI text models as prompt enhancement candidates for OpenAI image modes', () => {
+    const candidates = getEnhancePromptModelCandidates(
+      [
+        buildModel('gpt-5.4-mini', false),
+        buildModel('o4-mini', false),
+        buildModel('gpt-image-2', true),
+        buildModel('dall-e-3', true),
+        buildModel('text-embedding-3-large', false),
+        buildModel('tts-1', false),
+      ],
+      'openai'
+    );
+
+    expect(candidates.map((model) => model.id)).toEqual(['gpt-5.4-mini', 'o4-mini']);
+  });
+
+  it('keeps Tongyi Qwen text models as prompt enhancement candidates for Wan image modes', () => {
+    const candidates = getEnhancePromptModelCandidates(
+      [
+        buildModel('qwen-plus', false),
+        buildModel('qwen-max', false),
+        buildModel('qwen-vl-max', true),
+        buildModel('qwen-image-2.0-pro', true),
+        buildModel('wan2.7-image-pro', true),
+        buildModel('wan2.7-t2v', true),
+        buildModel('happyhorse-1.0-t2v', true),
+        buildModel('z-image-turbo', true),
+      ],
+      'tongyi'
+    );
+
+    expect(candidates.map((model) => model.id)).toEqual([
+      'qwen-plus',
+      'qwen-max',
+      'qwen-vl-max',
+    ]);
+  });
+
+  it('keeps only Tongyi vision models when image editing needs visual prompt enhancement', () => {
+    const candidates = getEnhancePromptModelCandidates(
+      [
+        buildModel('qwen-plus', false),
+        buildModel('qwen-max', false),
+        buildModel('qwen-vl-max', true),
+        buildModel('qwen3-vl-plus', true),
+        buildModel('qwen-image-edit-plus', true),
+        buildModel('wan2.7-image-pro', true),
+      ],
+      'tongyi',
+      { requiresVision: true }
+    );
+
+    expect(candidates.map((model) => model.id)).toEqual([
+      'qwen-vl-max',
+      'qwen3-vl-plus',
+    ]);
+    expect(isTongyiVisionPromptEnhancementModel(buildModel('qwen-plus', false))).toBe(false);
   });
 
   it('prioritizes backend traits over legacy fallback', () => {

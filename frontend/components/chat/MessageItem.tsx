@@ -15,6 +15,7 @@ import { BrowserProgressIndicator } from '../message/BrowserProgressIndicator';
 import ToolCallDisplay from './ToolCallDisplay';
 import ResearchProgressIndicator from '../research/ResearchProgressIndicator';
 import ResearchRequiredActionCard from '../research/ResearchRequiredActionCard';
+import { downloadBlobInBrowser } from '../../services/downloadService';
 
 interface MessageItemProps {
   message: Message;
@@ -76,20 +77,11 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
 
     try {
       const blob = new Blob([displayContent], { type: 'text/markdown' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-
-      // Create a filename based on timestamp or ID
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      link.href = url;
-      link.download = `message-${timestamp}.md`;
-
-      document.body.appendChild(link);
-      link.click();
-
-      // Cleanup
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      downloadBlobInBrowser({
+        blob,
+        fileName: `message-${timestamp}.md`,
+      });
 
       setIsDownloaded(true);
       setTimeout(() => setIsDownloaded(false), 2000);
@@ -306,20 +298,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
   );
 };
 
-const areMessageItemPropsEqual = (
-  prevProps: Readonly<MessageItemProps>,
-  nextProps: Readonly<MessageItemProps>
-): boolean => {
-  return (
-    prevProps.message === nextProps.message &&
-    prevProps.isStreaming === nextProps.isStreaming &&
-    prevProps.onImageClick === nextProps.onImageClick &&
-    prevProps.onEditImage === nextProps.onEditImage &&
-    prevProps.onSubmitResearchAction === nextProps.onSubmitResearchAction
-  );
-};
-
-const MessageItem = React.memo(MessageItemComponent, areMessageItemPropsEqual);
+const MessageItem = MessageItemComponent;
 MessageItem.displayName = 'MessageItem';
 
 export default MessageItem;

@@ -37,6 +37,7 @@ export class ImageGenHandler extends BaseHandler {
         userId: res.userId,
         size: res.size,
         enhancedPrompt: res.enhancedPrompt,
+        openaiResponseId: res.openaiResponseId,
       } as Attachment));
 
       // ✅ 后端已处理上传任务，不需要前端再次上传

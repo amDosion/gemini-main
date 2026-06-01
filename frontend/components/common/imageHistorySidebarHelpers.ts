@@ -6,6 +6,11 @@
  */
 
 import { Message, Role, Attachment } from '../../types/types';
+import {
+  isDataAttachmentUrl,
+  getPreferredAttachmentUrl,
+  isTemporaryAttachmentUrl,
+} from '../../utils/attachmentUrl';
 
 export interface ImageHistoryPromptParts {
   originalPrompt: string;
@@ -15,6 +20,13 @@ export interface ImageHistoryPromptParts {
 export interface ImageHistoryPreviewAttachment {
   id: string;
   url: string;
+}
+
+export interface ImageHistoryPrimaryPreviewAttachment {
+  attachment: ImageHistoryPreviewAttachment;
+  sourceAttachment: Attachment | null;
+  displayUrl: string;
+  index: number;
 }
 
 export interface ImageHistoryHoverPreview {
@@ -68,6 +80,7 @@ export interface ImageHistorySidebarOptions {
   secondaryPromptCopyTitle?: string;
   secondaryPromptBadgeText?: string;
   fallbackSelection?: 'first' | 'last';
+  disableFallbackSelection?: boolean;
   getDisplayAttachments: (attachments?: Attachment[]) => Attachment[];
   getAttachmentUrl: (attachment: Attachment) => string | null;
   extractPrompts: (message: Message) => ImageHistoryPromptParts;
@@ -76,12 +89,15 @@ export interface ImageHistorySidebarOptions {
     displayAttachments: Attachment[];
     previewAttachments: ImageHistoryPreviewAttachment[];
     firstImage?: string;
+    firstImageSourceAttachment?: Attachment | null;
   }) => void;
   onSelectPreviewAttachment?: (payload: {
     message: Message;
     displayAttachments: Attachment[];
     previewAttachments: ImageHistoryPreviewAttachment[];
     attachment: ImageHistoryPreviewAttachment;
+    sourceAttachment: Attachment | null;
+    displayUrl: string;
     index: number;
   }) => void;
   loadingContent?: React.ReactNode;
@@ -123,6 +139,9 @@ export const ACCENT_CLASSES: Record<ImageHistoryAccent, {
 
 export const USER_SELECTED_CLASS = 'ring-1 ring-blue-400/80 border-transparent bg-blue-500/10';
 export const USER_IDLE_CLASS = 'border-blue-500/20 bg-blue-500/5 hover:border-blue-400/40';
+export {
+  HISTORY_THUMBNAIL_RAW_FALLBACK_DELAY_MS as IMAGE_HISTORY_RAW_FALLBACK_DELAY_MS,
+} from './historyThumbnailCache';
 
 export const getAttachmentPreviewGridClass = (count: number): string => {
   if (count <= 1) return 'grid grid-cols-1 gap-2';
@@ -143,6 +162,176 @@ export const getAttachmentPreviewImageClass = (count: number): string => (
     : 'h-full w-full object-contain'
 );
 
+export const getImageHistoryLocalBlobPreviewUrl = (attachmentId: string): string =>
+  `local-blob:${attachmentId}`;
+
+const getSafeImageHistoryPreviewUrl = (
+  attachment: Attachment | null | undefined,
+  fallbackId: string,
+  preferredUrl?: string | null
+): string | null => {
+  const normalizedPreferredUrl = (preferredUrl || '').trim();
+  const preferredAttachmentUrl = getPreferredAttachmentUrl(attachment);
+  if (preferredAttachmentUrl && !isTemporaryAttachmentUrl(preferredAttachmentUrl)) {
+    return preferredAttachmentUrl;
+  }
+  if (normalizedPreferredUrl && !isTemporaryAttachmentUrl(normalizedPreferredUrl)) {
+    return normalizedPreferredUrl;
+  }
+
+  const attachmentId = attachment?.id || fallbackId;
+  if (attachment?.file && attachmentId) {
+    return getImageHistoryLocalBlobPreviewUrl(attachmentId);
+  }
+  if (preferredAttachmentUrl && isDataAttachmentUrl(preferredAttachmentUrl)) {
+    return preferredAttachmentUrl;
+  }
+  if (normalizedPreferredUrl && isDataAttachmentUrl(normalizedPreferredUrl)) {
+    return normalizedPreferredUrl;
+  }
+  return null;
+};
+
+export const getImageHistoryAttachmentPreviewUrl = (
+  attachment: Attachment,
+  fallbackId: string,
+  preferredUrl?: string | null
+): string => {
+  return getSafeImageHistoryPreviewUrl(attachment, fallbackId, preferredUrl) || '';
+};
+
+export const getImageHistoryAuthorLabel = (
+  message: Message,
+  _fallbackModelLabel: string
+): string => {
+  if (message.role === Role.USER) return 'You';
+
+  const modelLabel =
+    message.modelName ||
+    message.model_name ||
+    message.modelId ||
+    message.model_id ||
+    message.modeModelId ||
+    message.mode_model_id ||
+    'AI';
+
+  return modelLabel.trim() || 'AI';
+};
+
+export const resolveImageHistoryRowSourceAttachment = (
+  displayAttachments: Attachment[],
+  previewAttachment: ImageHistoryPreviewAttachment | null | undefined,
+  firstImage: string | null | undefined
+): Attachment | null => {
+  if (!previewAttachment && !firstImage) return null;
+  const previewId = previewAttachment?.id || '';
+  const previewUrl = previewAttachment?.url || firstImage || '';
+  const attachmentUrls = (attachment: Attachment): Array<string | undefined | null> => {
+    const rawAttachment = attachment as Attachment & {
+      temp_url?: string | null;
+      cloud_url?: string | null;
+      file_uri?: string | null;
+    };
+    return [
+      rawAttachment.url,
+      rawAttachment.tempUrl,
+      rawAttachment.temp_url,
+      rawAttachment.cloudUrl,
+      rawAttachment.cloud_url,
+      rawAttachment.fileUri,
+      rawAttachment.file_uri,
+    ];
+  };
+  const isTemporaryPreviewUrl = isTemporaryAttachmentUrl(previewUrl);
+
+  if (previewId) {
+    const idMatch = displayAttachments.find((attachment) => attachment.id === previewId);
+    const idMatchUsesPreviewUrl = idMatch
+      ? attachmentUrls(idMatch).some((url) => url === previewUrl)
+      : false;
+    if (idMatch && (!previewUrl || isTemporaryPreviewUrl || idMatchUsesPreviewUrl)) {
+      return idMatch;
+    }
+    if (idMatch && getPreferredAttachmentUrl(idMatch)) {
+      return idMatch;
+    }
+  }
+
+  if (previewUrl) {
+    return (
+      displayAttachments.find((attachment) =>
+        attachmentUrls(attachment).some((url) => url === previewUrl)
+      ) || null
+    );
+  }
+
+  return null;
+};
+
+export const getImageHistoryStablePreviewUrl = (
+  displayAttachments: Attachment[],
+  previewAttachment: ImageHistoryPreviewAttachment | null | undefined
+): string | null => {
+  if (!previewAttachment?.url) return null;
+  const sourceAttachment = resolveImageHistoryRowSourceAttachment(
+    displayAttachments,
+    previewAttachment,
+    previewAttachment.url
+  );
+  return (
+    getSafeImageHistoryPreviewUrl(sourceAttachment, previewAttachment.id, previewAttachment.url) ||
+    (!isTemporaryAttachmentUrl(previewAttachment.url) || isDataAttachmentUrl(previewAttachment.url)
+      ? previewAttachment.url
+      : null)
+  );
+};
+
+const isRenderableHistoryPreview = (
+  displayUrl: string,
+  sourceAttachment: Attachment | null
+): boolean => {
+  if (!displayUrl) return false;
+  if (!isTemporaryAttachmentUrl(displayUrl)) return true;
+  return Boolean(sourceAttachment?.file);
+};
+
+export const selectImageHistoryPrimaryPreviewAttachment = (
+  displayAttachments: Attachment[],
+  previewAttachments: ImageHistoryPreviewAttachment[]
+): ImageHistoryPrimaryPreviewAttachment | null => {
+  let fallback: ImageHistoryPrimaryPreviewAttachment | null = null;
+
+  for (let index = 0; index < previewAttachments.length; index += 1) {
+    const attachment = previewAttachments[index];
+    if (!attachment?.url) continue;
+    const sourceAttachment = resolveImageHistoryRowSourceAttachment(
+      displayAttachments,
+      attachment,
+      attachment.url
+    );
+    const displayUrl =
+      getSafeImageHistoryPreviewUrl(sourceAttachment, attachment.id, attachment.url) ||
+      (!isTemporaryAttachmentUrl(attachment.url) || isDataAttachmentUrl(attachment.url)
+        ? attachment.url
+        : '');
+    if (!displayUrl) continue;
+
+    const candidate = {
+      attachment,
+      sourceAttachment,
+      displayUrl,
+      index,
+    };
+    fallback = fallback || candidate;
+
+    if (isRenderableHistoryPreview(displayUrl, sourceAttachment)) {
+      return candidate;
+    }
+  }
+
+  return fallback;
+};
+
 export const extractImageHistoryPrompts = (message: Message): ImageHistoryPromptParts => {
   const rawContent = (message.content || '').trim();
   let originalPrompt = rawContent;
@@ -161,4 +350,3 @@ export const extractImageHistoryPrompts = (message: Message): ImageHistoryPrompt
     enhancedPrompt,
   };
 };
-

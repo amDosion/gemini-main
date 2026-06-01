@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UnifiedProviderClient } from './UnifiedProviderClient';
 import type { ChatOptions, Message } from '../../types/types';
+import { removeAccessToken, setAccessToken } from '../authTokenStore';
 import {
   buildExecutionStatusFromHistoryDetail,
   normalizeSnapshotForApply,
@@ -19,12 +20,51 @@ describe('UnifiedProviderClient stream handling', () => {
   beforeEach(() => {
     vi.stubGlobal('localStorage', {
       getItem: () => null,
+      removeItem: () => undefined,
     });
   });
 
   afterEach(() => {
+    removeAccessToken();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it('uses cookie-first auth for chat streaming even when a stale memory token exists', async () => {
+    setAccessToken('stale-access-token');
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"chunkType":"done","text":""}\n\n'));
+        controller.close();
+      },
+    });
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+      async () =>
+        new Response(stream, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new UnifiedProviderClient('google');
+    for await (const _update of client.sendMessageStream(
+      'gemini-3.1-pro-preview',
+      [] as Message[],
+      'stream with cookie',
+      [],
+      defaultOptions,
+      '',
+      ''
+    )) {
+      // drain stream
+    }
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    const headers = new Headers(init?.headers);
+    expect(headers.get('Content-Type')).toBe('application/json');
+    expect(headers.has('Authorization')).toBe(false);
+    expect(init?.credentials).toBe('include');
   });
 
   it('parses split SSE payloads with tool events', async () => {
@@ -172,7 +212,7 @@ describe('UnifiedProviderClient stream handling', () => {
 });
 
 describe('workflow contract compatibility regressions', () => {
-  it('keeps execution state payload contract strict on execution_state wrapper', () => {
+  it('accepts workflow execution state from wrapped and direct backend payloads', () => {
     expect(
       resolveWorkflowExecutionStatePayload({
         execution_state: { status: 'running', nodeStatuses: { n1: 'running' } },
@@ -182,11 +222,24 @@ describe('workflow contract compatibility regressions', () => {
       nodeStatuses: { n1: 'running' },
     });
 
-    expect(() =>
+    expect(
+      resolveWorkflowExecutionStatePayload({
+        executionState: { status: 'completed', nodeStatuses: { n1: 'completed' } },
+      })
+    ).toEqual({
+      status: 'completed',
+      nodeStatuses: { n1: 'completed' },
+    });
+
+    expect(
       resolveWorkflowExecutionStatePayload({
         status: 'running',
+        nodeStatuses: { n2: 'running' },
       })
-    ).toThrow('工作流状态格式错误：缺少 execution_state');
+    ).toEqual({
+      status: 'running',
+      nodeStatuses: { n2: 'running' },
+    });
   });
 
   it('normalizes history snapshot state/runtime fields for mixed legacy and new shapes', () => {

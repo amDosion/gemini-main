@@ -47,6 +47,7 @@ export interface ImageGenerationResult {
   thoughts?: Array<{ type: 'text' | 'image'; content: string }>; // 思考过程（thoughts）
   text?: string; // 文本响应
   enhancedPrompt?: string; // 增强后的提示词（当启用 enhance_prompt 时返回）
+  openaiResponseId?: string; // OpenAI Responses API response id
 }
 
 export interface VideoGenerationResult {
@@ -84,6 +85,24 @@ export interface VideoGenerationResult {
   storyboardSegments?: string[];
   trackedFeature?: string;
   trackingOverlayText?: string;
+  lastFrameImageUrl?: string;
+  lastFrameAttachmentId?: string;
+  derivedAssets?: Array<{
+    kind?: string;
+    role?: string;
+    url: string;
+    attachmentId?: string;
+    messageId?: string;
+    sessionId?: string;
+    userId?: string;
+    mimeType?: string;
+    filename?: string;
+    uploadStatus?: 'pending' | 'completed' | 'failed';
+    taskId?: string;
+    cloudUrl?: string;
+    derivedFromAttachmentId?: string;
+    derivedFromVideoUrl?: string;
+  }>;
   sidecarFiles?: Array<{
     kind?: string;
     format?: string;

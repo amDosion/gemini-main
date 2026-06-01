@@ -16,9 +16,15 @@ from ...utils.attachment_handler import is_base64_url
 
 VIDEO_MODE_CONTRACT_VERSION = "2026-03-17"
 _GOOGLE_VIDEO_PROVIDER = "google"
+_TONGYI_VIDEO_PROVIDER = "tongyi"
+_OPENAI_VIDEO_PROVIDER = "openai"
+_GROK_VIDEO_PROVIDER = "grok"
 _VIDEO_GEN_MODE = "video-gen"
 _IMAGE_GEN_MODE = "image-gen"
 _DEFAULT_RUNTIME_API_MODE = "gemini_api"
+_TONGYI_RUNTIME_API_MODE = "dashscope"
+_OPENAI_RUNTIME_API_MODE = "openai_videos"
+_GROK_RUNTIME_API_MODE = "grok_video"
 _MASK_FALLBACK_MODE = "REMOVE"
 _OUTPUT_MIME_CONTROL_KEYS = ("output_mime_type", "output_compression_quality")
 
@@ -90,6 +96,46 @@ def _supports_model_family(model_id: Optional[str], marker: str) -> bool:
     return marker in str(model_id or "").strip().lower()
 
 
+def _is_tongyi_video_model(model_id: Optional[str]) -> bool:
+    model = str(model_id or "").strip().lower()
+    return (
+        "happyhorse" in model
+        or model.startswith("wan2.7-t2v")
+        or model.startswith("wan2.7-i2v")
+        or model.startswith("wan2.7-r2v")
+        or model.startswith("wan2.7-videoedit")
+        or model.startswith("wan2.7-video-edit")
+    )
+
+
+def _is_tongyi_text_to_video_model(model_id: Optional[str]) -> bool:
+    model = str(model_id or "").strip().lower()
+    return model.endswith("-t2v") or "-t2v" in model
+
+
+def _is_tongyi_image_to_video_model(model_id: Optional[str]) -> bool:
+    model = str(model_id or "").strip().lower()
+    return model.endswith("-i2v") or "-i2v" in model
+
+
+def _is_tongyi_reference_to_video_model(model_id: Optional[str]) -> bool:
+    model = str(model_id or "").strip().lower()
+    return model.endswith("-r2v") or "-r2v" in model
+
+
+def _is_tongyi_video_edit_model(model_id: Optional[str]) -> bool:
+    model = str(model_id or "").strip().lower()
+    return "videoedit" in model or "video-edit" in model
+
+
+def _is_tongyi_video_provider(provider: Optional[str]) -> bool:
+    return str(provider or "").strip().lower() == _TONGYI_VIDEO_PROVIDER
+
+
+def _is_openai_sora_video_model(model_id: Optional[str]) -> bool:
+    return str(model_id or "").strip().lower().startswith("sora")
+
+
 def attachment_to_media_input(attachment: Any) -> Optional[Dict[str, Any]]:
     candidate_url: Optional[str] = None
     normalized_file_uri = str(
@@ -139,16 +185,27 @@ def attachment_to_media_input(attachment: Any) -> Optional[Dict[str, Any]]:
 
 def extract_video_mode_attachment_params(
     attachments: Optional[Sequence[Any]],
+    *,
+    provider: Optional[str] = None,
+    mode: Optional[str] = None,
+    model_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if not attachments:
         return {}
 
     video_items: List[Dict[str, Any]] = []
+    audio_items: List[Dict[str, Any]] = []
     source_image_items: List[Dict[str, Any]] = []
     last_frame_items: List[Dict[str, Any]] = []
     reference_image_items: List[Dict[str, Any]] = []
     image_items: List[Dict[str, Any]] = []
     mask_items: List[Dict[str, Any]] = []
+    normalized_provider = str(provider or "").strip().lower()
+    normalized_mode = str(mode or "").strip().lower()
+    is_tongyi_video = normalized_provider == _TONGYI_VIDEO_PROVIDER and normalized_mode == _VIDEO_GEN_MODE
+    is_tongyi_i2v = is_tongyi_video and _is_tongyi_image_to_video_model(model_id)
+    is_tongyi_r2v = is_tongyi_video and _is_tongyi_reference_to_video_model(model_id)
+    is_tongyi_videoedit = is_tongyi_video and _is_tongyi_video_edit_model(model_id)
 
     for attachment in attachments:
         payload = attachment_to_media_input(attachment)
@@ -167,8 +224,18 @@ def extract_video_mode_attachment_params(
             or str(payload.get("provider_file_uri") or "").strip()
             or str(payload.get("gcs_uri") or "").strip()
         )
+        is_video_payload = mime_type.startswith("video/") or has_video_asset_ref
+        if normalized_role in {"source_video", "first_clip", "reference_video"}:
+            video_items.append(payload)
+            continue
+        if normalized_role in {"source", "reference"} and is_video_payload:
+            video_items.append(payload)
+            continue
         if normalized_role == "mask":
             mask_items.append(payload)
+            continue
+        if normalized_role in {"audio", "driving_audio", "voice", "soundtrack"}:
+            audio_items.append(payload)
             continue
         if normalized_role in {"last_frame", "end_frame", "target_frame"}:
             last_frame_items.append(payload)
@@ -179,8 +246,11 @@ def extract_video_mode_attachment_params(
         if normalized_role in {"reference", "reference_image", "style_reference"}:
             reference_image_items.append(payload)
             continue
-        if mime_type.startswith("video/") or has_video_asset_ref:
+        if is_video_payload:
             video_items.append(payload)
+            continue
+        if mime_type.startswith("audio/"):
+            audio_items.append(payload)
             continue
         if mime_type.startswith("image/"):
             image_items.append(payload)
@@ -189,6 +259,22 @@ def extract_video_mode_attachment_params(
 
     if video_items:
         params["source_video"] = video_items[0]
+        if audio_items:
+            params["audio_url"] = audio_items[0]
+
+        if is_tongyi_videoedit or is_tongyi_r2v:
+            reference_items = [*reference_image_items, *image_items]
+            if reference_items:
+                params["reference_images"] = {"raw": reference_items}
+            return params
+
+        if is_tongyi_i2v:
+            if last_frame_items:
+                params["last_frame_image"] = last_frame_items[0]
+            elif image_items:
+                params["last_frame_image"] = image_items[0]
+            return params
+
         if mask_items:
             params["video_mask_image"] = mask_items[0]
         elif image_items:
@@ -210,6 +296,8 @@ def extract_video_mode_attachment_params(
         params["reference_images"] = {"raw": extra_refs}
     if mask_items:
         params["video_mask_image"] = mask_items[0]
+    if audio_items:
+        params["audio_url"] = audio_items[0]
 
     return params
 
@@ -219,9 +307,17 @@ def merge_video_mode_attachment_params(
     method_name: str,
     params: Dict[str, Any],
     attachments: Optional[Sequence[Any]],
+    provider: Optional[str] = None,
+    mode: Optional[str] = None,
+    model_id: Optional[str] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     merged = dict(params)
-    video_params = extract_video_mode_attachment_params(attachments)
+    video_params = extract_video_mode_attachment_params(
+        attachments,
+        provider=provider,
+        mode=mode,
+        model_id=model_id,
+    )
     if not video_params:
         return merged, {}
 
@@ -351,9 +447,573 @@ def _build_extension_duration_matrix(
     return matrix
 
 
+def _build_chained_extension_duration_matrix(
+    *,
+    default_seconds: Any,
+    seconds_options: List[Any],
+    max_video_extension_count: int,
+    max_output_video_seconds: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    base_values: List[str] = []
+    for item in seconds_options:
+        value = str(item).strip()
+        if value and value not in base_values:
+            base_values.append(value)
+    if not base_values and default_seconds is not None:
+        value = str(default_seconds).strip()
+        if value:
+            base_values.append(value)
+
+    matrix: List[Dict[str, Any]] = []
+    for base_value in base_values:
+        base_seconds = _coerce_positive_int(base_value)
+        if base_seconds is None:
+            continue
+        options: List[Dict[str, Any]] = []
+        for count in range(0, max_video_extension_count + 1):
+            total_seconds = base_seconds * (count + 1)
+            if max_output_video_seconds is not None and total_seconds > max_output_video_seconds:
+                continue
+            options.append(
+                {
+                    "count": count,
+                    "label": (
+                        f"{total_seconds}s (base)"
+                        if count == 0
+                        else f"{total_seconds}s (+{count} extensions)"
+                    ),
+                    "total_seconds": total_seconds,
+                }
+            )
+        if options:
+            matrix.append(
+                {
+                    "base_seconds": str(base_seconds),
+                    "options": options,
+                }
+            )
+    return matrix
+
+
+def _expand_seconds_range_options(
+    *,
+    default_seconds: Any,
+    seconds_range: Dict[str, Any],
+) -> List[int]:
+    min_seconds = _coerce_positive_int(seconds_range.get("min"))
+    max_seconds = _coerce_positive_int(seconds_range.get("max"))
+    step_seconds = _coerce_positive_int(seconds_range.get("step")) or 1
+    values: List[int] = []
+    if min_seconds is not None and max_seconds is not None and min_seconds <= max_seconds:
+        values = list(range(min_seconds, max_seconds + 1, step_seconds))
+        if values and values[-1] != max_seconds:
+            values.append(max_seconds)
+
+    default_value = _coerce_positive_int(default_seconds)
+    if default_value is not None and default_value not in values:
+        values.append(default_value)
+    return sorted(values)
+
+
+def _build_tongyi_video_mode_contract(schema: Dict[str, Any]) -> Dict[str, Any]:
+    model_id = str(schema.get("model_id") or "").strip().lower()
+    defaults = schema.get("defaults") if isinstance(schema.get("defaults"), dict) else {}
+    constraints = schema.get("constraints") if isinstance(schema.get("constraints"), dict) else {}
+    param_options = schema.get("param_options") if isinstance(schema.get("param_options"), dict) else {}
+
+    is_t2v = _is_tongyi_text_to_video_model(model_id)
+    is_i2v = _is_tongyi_image_to_video_model(model_id)
+    is_r2v = _is_tongyi_reference_to_video_model(model_id)
+    is_videoedit = _is_tongyi_video_edit_model(model_id)
+    is_known_tongyi_video = _is_tongyi_video_model(model_id)
+
+    supports = {
+        "text_to_video": is_t2v or not is_known_tongyi_video,
+        "first_frame_to_video": is_i2v,
+        "first_last_frame": is_i2v,
+        "video_continuation": is_i2v,
+        "video_continuation_to_last_frame": is_i2v,
+        "video_extension": is_known_tongyi_video,
+        "reference_to_video": is_r2v,
+        "video_edit": is_videoedit,
+        "video_mask_image": False,
+        "reference_images": is_r2v or is_videoedit,
+        "reference_video": is_r2v,
+        "driving_audio": is_i2v,
+        "generate_audio": False,
+        "subtitle_sidecar": False,
+        "storyboard_prompting": is_known_tongyi_video,
+        "tracking_overlay_prompt": False,
+    }
+    max_extension_count = _coerce_non_negative_int(constraints.get("max_video_extension_count")) or 8
+    max_output_video_seconds = _coerce_positive_int(constraints.get("max_output_video_seconds"))
+    extension_duration_matrix = (
+        _build_chained_extension_duration_matrix(
+            default_seconds=defaults.get("seconds"),
+            seconds_options=_extract_option_values(param_options.get("seconds")),
+            max_video_extension_count=max_extension_count,
+            max_output_video_seconds=max_output_video_seconds,
+        )
+        if is_known_tongyi_video
+        else []
+    )
+
+    attachment_slots = [
+        {
+            "name": "source_image",
+            "label": "首帧图",
+            "kind": "image",
+            "multiple": False,
+            "required": is_i2v,
+            "roles": ["source", "source_image", "start_frame", "first_frame"],
+            "enabled": is_i2v,
+        },
+        {
+            "name": "last_frame_image",
+            "label": "尾帧图",
+            "kind": "image",
+            "multiple": False,
+            "required": False,
+            "roles": ["last_frame", "end_frame", "target_frame"],
+            "enabled": is_i2v,
+        },
+        {
+            "name": "source_video",
+            "label": "源视频",
+            "kind": "video",
+            "multiple": False,
+            "required": is_videoedit,
+            "roles": ["source_video", "source", "first_clip", "reference_video"],
+            "enabled": is_i2v or is_r2v or is_videoedit,
+        },
+        {
+            "name": "reference_video",
+            "label": "参考视频",
+            "kind": "video",
+            "multiple": False,
+            "required": False,
+            "roles": ["reference_video", "reference"],
+            "enabled": is_r2v,
+        },
+        {
+            "name": "reference_images",
+            "label": "参考图",
+            "kind": "image",
+            "multiple": True,
+            "required": False,
+            "roles": ["reference", "reference_image", "style_reference"],
+            "enabled": is_r2v,
+            "max_items": 9 if is_r2v else None,
+        },
+        {
+            "name": "video_edit_reference_images",
+            "label": "视频编辑参考图",
+            "kind": "image",
+            "multiple": True,
+            "required": False,
+            "roles": ["reference", "reference_image", "style_reference"],
+            "enabled": is_videoedit,
+            "max_items": 4,
+        },
+        {
+            "name": "driving_audio",
+            "label": "驱动音频",
+            "kind": "audio",
+            "multiple": False,
+            "required": False,
+            "roles": ["audio", "driving_audio", "voice", "soundtrack"],
+            "enabled": is_i2v,
+        },
+        {
+            "name": "video_mask_image",
+            "label": "视频遮罩图",
+            "kind": "image",
+            "multiple": False,
+            "required": False,
+            "roles": ["mask"],
+            "enabled": False,
+        },
+    ]
+
+    input_strategies: List[Dict[str, Any]] = []
+    if is_t2v or not is_known_tongyi_video:
+        input_strategies.append(
+            {
+                "id": "text_to_video",
+                "label": "文生视频",
+                "requires": [],
+                "allows": [],
+            }
+        )
+    if is_i2v:
+        input_strategies.extend(
+            [
+                {
+                    "id": "first_frame_to_video",
+                    "label": "图生视频",
+                    "requires": ["source_image"],
+                    "allows": ["driving_audio"],
+                },
+                {
+                    "id": "first_last_frame_to_video",
+                    "label": "首尾帧生视频",
+                    "requires": ["source_image", "last_frame_image"],
+                    "allows": ["driving_audio"],
+                },
+                {
+                    "id": "video_continuation",
+                    "label": "视频延长",
+                    "requires": ["source_video"],
+                    "allows": ["driving_audio"],
+                },
+                {
+                    "id": "video_continuation_to_last_frame",
+                    "label": "延长到尾帧",
+                    "requires": ["source_video", "last_frame_image"],
+                    "allows": ["driving_audio"],
+                },
+            ]
+        )
+    if is_r2v:
+        input_strategies.append(
+            {
+                "id": "reference_to_video",
+                "label": "参考生视频",
+                "requires": [],
+                "allows": ["source_video", "reference_video", "reference_images"],
+            }
+        )
+    if is_videoedit:
+        input_strategies.append(
+            {
+                "id": "video_edit",
+                "label": "视频编辑",
+                "requires": ["source_video"],
+                "allows": ["video_edit_reference_images"],
+            }
+        )
+
+    return {
+        "version": VIDEO_MODE_CONTRACT_VERSION,
+        "runtime_api_mode": _TONGYI_RUNTIME_API_MODE,
+        "supports": supports,
+        "attachment_slots": attachment_slots,
+        "input_strategies": input_strategies,
+        "provider_payload_media_types": [
+            "first_frame",
+            "last_frame",
+            "first_clip",
+            "driving_audio",
+            "reference_image",
+            "reference_video",
+            "video",
+        ],
+        "field_policies": {
+            "enhance_prompt": {
+                "mandatory": False,
+                "locked_when_mandatory": False,
+                "effective_default": bool(defaults.get("enhance_prompt")),
+            },
+            "generate_audio": {
+                "available": False,
+                "forced_value": False,
+            },
+            "subtitle_mode": {
+                "available": False,
+                "single_sidecar_format": False,
+                "default_enabled_mode": None,
+                "supported_values": [],
+            },
+            "storyboard_prompt": {
+                "preferred": is_known_tongyi_video,
+                "deprecated_companion_fields": [],
+            },
+        },
+        "normalization_rules": [
+            "Tongyi text-to-video sends no media inputs.",
+            "Tongyi image-to-video maps source_image to first_frame and source_video to first_clip.",
+            "Tongyi image-to-video maps explicit last_frame_image to last_frame.",
+            "Tongyi reference-to-video maps source_video to reference_video and reference_images.raw to reference_image.",
+            "Tongyi video edit maps source_video to video and loose images to reference_image, not video_mask_image.",
+        ],
+        "media_limits": {
+            "max_reference_image_count": 9 if is_r2v else 4 if is_videoedit else 0,
+            "max_reference_video_count": 1 if is_r2v else 0,
+            "max_driving_audio_count": 1 if is_i2v else 0,
+        },
+        "extension_duration_matrix": extension_duration_matrix,
+        "extension_constraints": {
+            "added_seconds": None,
+            "max_extension_count": max_extension_count if is_known_tongyi_video else 0,
+            "max_source_video_seconds": None,
+            "max_output_video_seconds": max_output_video_seconds,
+            "require_duration_seconds": [],
+            "require_resolution_values": [],
+        },
+        "constraints": constraints,
+    }
+
+
+def _build_openai_video_mode_contract(schema: Dict[str, Any]) -> Dict[str, Any]:
+    model_id = str(schema.get("model_id") or "").strip().lower()
+    defaults = schema.get("defaults") if isinstance(schema.get("defaults"), dict) else {}
+    constraints = schema.get("constraints") if isinstance(schema.get("constraints"), dict) else {}
+    param_options = schema.get("param_options") if isinstance(schema.get("param_options"), dict) else {}
+    is_sora = _is_openai_sora_video_model(model_id) or not model_id
+    max_extension_count = _coerce_non_negative_int(constraints.get("max_video_extension_count")) or 8
+    max_output_video_seconds = _coerce_positive_int(constraints.get("max_output_video_seconds"))
+    extension_duration_matrix = (
+        _build_chained_extension_duration_matrix(
+            default_seconds=defaults.get("seconds"),
+            seconds_options=_extract_option_values(param_options.get("seconds")),
+            max_video_extension_count=max_extension_count,
+            max_output_video_seconds=max_output_video_seconds,
+        )
+        if is_sora
+        else []
+    )
+
+    supports = {
+        "text_to_video": is_sora,
+        "image_to_video": is_sora,
+        "first_frame_to_video": is_sora,
+        "video_extension": is_sora,
+        "video_edit": is_sora,
+        "first_last_frame": False,
+        "video_mask_image": False,
+        "reference_images": False,
+        "reference_video": False,
+        "generate_audio": False,
+        "subtitle_sidecar": False,
+        "storyboard_prompting": is_sora,
+        "tracking_overlay_prompt": False,
+    }
+
+    attachment_slots = [
+        {
+            "name": "source_image",
+            "label": "首帧图",
+            "kind": "image",
+            "multiple": False,
+            "required": False,
+            "roles": ["source", "source_image", "start_frame", "first_frame"],
+            "enabled": is_sora,
+        },
+        {
+            "name": "source_video",
+            "label": "源视频",
+            "kind": "video",
+            "multiple": False,
+            "required": False,
+            "roles": ["source_video", "source"],
+            "enabled": is_sora,
+        },
+        {
+            "name": "last_frame_image",
+            "label": "尾帧图",
+            "kind": "image",
+            "multiple": False,
+            "required": False,
+            "roles": ["last_frame", "end_frame", "target_frame"],
+            "enabled": False,
+        },
+        {
+            "name": "video_mask_image",
+            "label": "遮罩图",
+            "kind": "image",
+            "multiple": False,
+            "required": False,
+            "roles": ["mask"],
+            "enabled": False,
+        },
+    ]
+
+    input_strategies: List[Dict[str, Any]] = []
+    if is_sora:
+        input_strategies = [
+            {
+                "id": "text_to_video",
+                "label": "文生视频",
+                "requires": [],
+                "allows": [],
+            },
+            {
+                "id": "image_to_video",
+                "label": "图生视频",
+                "requires": ["source_image"],
+                "allows": [],
+            },
+            {
+                "id": "video_extension",
+                "label": "视频延长",
+                "requires": ["source_video"],
+                "allows": [],
+            },
+            {
+                "id": "video_edit",
+                "label": "视频编辑",
+                "requires": ["source_video"],
+                "allows": [],
+            },
+        ]
+
+    return {
+        "version": VIDEO_MODE_CONTRACT_VERSION,
+        "runtime_api_mode": _OPENAI_RUNTIME_API_MODE,
+        "supports": supports,
+        "attachment_slots": attachment_slots,
+        "input_strategies": input_strategies,
+        "sub_modes": input_strategies,
+        "field_policies": {
+            "enhance_prompt": {
+                "mandatory": False,
+                "locked_when_mandatory": False,
+                "effective_default": False,
+            },
+            "generate_audio": {
+                "available": False,
+                "forced_value": False,
+            },
+            "subtitle_mode": {
+                "available": False,
+                "single_sidecar_format": False,
+                "default_enabled_mode": None,
+                "supported_values": [],
+            },
+            "storyboard_prompt": {
+                "preferred": is_sora,
+                "deprecated_companion_fields": [],
+            },
+        },
+        "normalization_rules": [
+            "OpenAI text_to_video calls videos.create with no media input.",
+            "OpenAI image_to_video maps source_image to videos.create input_reference.",
+            "OpenAI video_extension maps source_video to videos.extend.",
+            "OpenAI video_edit maps source_video to videos.edit.",
+        ],
+        "extension_duration_matrix": extension_duration_matrix,
+        "extension_constraints": {
+            "added_seconds": None,
+            "max_extension_count": max_extension_count if is_sora else 0,
+            "max_source_video_seconds": None,
+            "max_output_video_seconds": max_output_video_seconds,
+            "require_duration_seconds": [],
+            "require_resolution_values": [],
+        },
+        "constraints": constraints,
+    }
+
+
+def _build_grok_video_mode_contract(schema: Dict[str, Any]) -> Dict[str, Any]:
+    defaults = schema.get("defaults") if isinstance(schema.get("defaults"), dict) else {}
+    constraints = schema.get("constraints") if isinstance(schema.get("constraints"), dict) else {}
+    numeric_ranges = schema.get("numeric_ranges") if isinstance(schema.get("numeric_ranges"), dict) else {}
+    seconds_range = numeric_ranges.get("seconds") if isinstance(numeric_ranges.get("seconds"), dict) else {}
+    if not seconds_range:
+        seconds_range = {
+            "min": constraints.get("min_seconds"),
+            "max": constraints.get("max_seconds"),
+            "step": constraints.get("seconds_step") or 1,
+        }
+    default_seconds = defaults.get("seconds") or 10
+    min_seconds = _coerce_positive_int(seconds_range.get("min")) or 6
+    max_seconds = _coerce_positive_int(seconds_range.get("max")) or 30
+    seconds_options = _expand_seconds_range_options(
+        default_seconds=default_seconds,
+        seconds_range=seconds_range,
+    )
+    max_extension_count = _coerce_non_negative_int(constraints.get("max_video_extension_count")) or 8
+
+    return {
+        "version": VIDEO_MODE_CONTRACT_VERSION,
+        "runtime_api_mode": _GROK_RUNTIME_API_MODE,
+        "supports": {
+            "text_to_video": True,
+            "image_to_video": True,
+            "first_frame_to_video": True,
+            "video_extension": True,
+            "storyboard_prompting": True,
+            "generate_audio": False,
+            "subtitle_sidecar": False,
+            "video_mask_image": False,
+            "reference_images": False,
+            "reference_video": False,
+            "tracking_overlay_prompt": False,
+        },
+        "attachment_slots": [
+            {
+                "name": "source_image",
+                "label": "首帧图",
+                "kind": "image",
+                "multiple": False,
+                "required": False,
+                "roles": ["source", "source_image", "start_frame", "first_frame"],
+                "enabled": True,
+            },
+            {
+                "name": "source_video",
+                "label": "源视频",
+                "kind": "video",
+                "multiple": False,
+                "required": False,
+                "roles": ["source_video", "source"],
+                "enabled": True,
+            },
+        ],
+        "input_strategies": [
+            {"id": "text_to_video", "label": "文生视频", "requires": [], "allows": []},
+            {"id": "image_to_video", "label": "图生视频", "requires": ["source_image"], "allows": []},
+            {"id": "video_extension", "label": "视频延长", "requires": [], "allows": ["source_video"]},
+        ],
+        "field_policies": {
+            "enhance_prompt": {
+                "mandatory": False,
+                "locked_when_mandatory": False,
+                "effective_default": False,
+            },
+            "generate_audio": {
+                "available": False,
+                "forced_value": False,
+            },
+            "subtitle_mode": {
+                "available": False,
+                "single_sidecar_format": False,
+                "default_enabled_mode": None,
+                "supported_values": [],
+            },
+            "storyboard_prompt": {
+                "preferred": True,
+                "deprecated_companion_fields": [],
+            },
+        },
+        "extension_duration_matrix": _build_chained_extension_duration_matrix(
+            default_seconds=default_seconds,
+            seconds_options=seconds_options,
+            max_video_extension_count=max_extension_count,
+            max_output_video_seconds=None,
+        ),
+        "extension_constraints": {
+            "added_seconds": None,
+            "max_extension_count": max_extension_count,
+            "max_source_video_seconds": None,
+            "max_output_video_seconds": None,
+            "require_duration_seconds": [],
+            "require_resolution_values": [],
+        },
+        "constraints": constraints,
+    }
+
+
 def build_video_mode_contract(schema: Dict[str, Any]) -> Dict[str, Any]:
     provider = str(schema.get("provider") or "").strip().lower()
     mode = str(schema.get("mode") or "").strip().lower()
+    if provider == _TONGYI_VIDEO_PROVIDER and mode == _VIDEO_GEN_MODE:
+        return _build_tongyi_video_mode_contract(schema)
+    if provider == _OPENAI_VIDEO_PROVIDER and mode == _VIDEO_GEN_MODE:
+        return _build_openai_video_mode_contract(schema)
+    if provider == _GROK_VIDEO_PROVIDER and mode == _VIDEO_GEN_MODE:
+        return _build_grok_video_mode_contract(schema)
+
     if provider != _GOOGLE_VIDEO_PROVIDER or mode != _VIDEO_GEN_MODE:
         return {}
 
@@ -383,7 +1043,7 @@ def build_video_mode_contract(schema: Dict[str, Any]) -> Dict[str, Any]:
     attachment_slots = [
         {
             "name": "source_image",
-            "label": "Source image",
+            "label": "首帧图",
             "kind": "image",
             "multiple": False,
             "required": False,
@@ -392,7 +1052,7 @@ def build_video_mode_contract(schema: Dict[str, Any]) -> Dict[str, Any]:
         },
         {
             "name": "last_frame_image",
-            "label": "Last frame image",
+            "label": "尾帧图",
             "kind": "image",
             "multiple": False,
             "required": False,
@@ -401,7 +1061,7 @@ def build_video_mode_contract(schema: Dict[str, Any]) -> Dict[str, Any]:
         },
         {
             "name": "reference_images",
-            "label": "Reference images",
+            "label": "参考图",
             "kind": "image",
             "multiple": True,
             "required": False,
@@ -411,7 +1071,7 @@ def build_video_mode_contract(schema: Dict[str, Any]) -> Dict[str, Any]:
         },
         {
             "name": "source_video",
-            "label": "Source video",
+            "label": "源视频",
             "kind": "video",
             "multiple": False,
             "required": False,
@@ -420,7 +1080,7 @@ def build_video_mode_contract(schema: Dict[str, Any]) -> Dict[str, Any]:
         },
         {
             "name": "video_mask_image",
-            "label": "Video mask image",
+            "label": "视频遮罩图",
             "kind": "image",
             "multiple": False,
             "required": False,
@@ -432,13 +1092,13 @@ def build_video_mode_contract(schema: Dict[str, Any]) -> Dict[str, Any]:
     input_strategies = [
         {
             "id": "text_to_video",
-            "label": "Text to video",
+            "label": "文生视频",
             "requires": [],
             "allows": [],
         },
         {
             "id": "image_to_video",
-            "label": "Image to video",
+            "label": "图生视频",
             "requires": ["source_image"],
             "allows": ["reference_images"],
         },
@@ -447,7 +1107,7 @@ def build_video_mode_contract(schema: Dict[str, Any]) -> Dict[str, Any]:
         input_strategies.append(
             {
                 "id": "first_last_frame",
-                "label": "First and last frame to video",
+                "label": "首尾帧生视频",
                 "requires": ["source_image", "last_frame_image"],
                 "allows": [],
             }
@@ -456,7 +1116,7 @@ def build_video_mode_contract(schema: Dict[str, Any]) -> Dict[str, Any]:
         input_strategies.append(
             {
                 "id": "video_extension",
-                "label": "Extend source video",
+                "label": "视频延长",
                 "requires": ["source_video"],
                 "allows": [],
             }
@@ -465,7 +1125,7 @@ def build_video_mode_contract(schema: Dict[str, Any]) -> Dict[str, Any]:
         input_strategies.append(
             {
                 "id": "masked_video_edit",
-                "label": "Mask-based video edit",
+                "label": "遮罩视频编辑",
                 "requires": ["source_video", "video_mask_image"],
                 "allows": [],
             }
@@ -563,6 +1223,114 @@ def _allowed_extension_counts_for_seconds(
     return None
 
 
+def _requested_video_input_strategy(params: Dict[str, Any], contract: Dict[str, Any]) -> Optional[str]:
+    requested = str(
+        params.get("video_input_strategy")
+        or params.get("videoInputStrategy")
+        or ""
+    ).strip()
+    if not requested:
+        return None
+    strategies = contract.get("input_strategies")
+    if not isinstance(strategies, list):
+        return requested
+    allowed = {
+        str(strategy.get("id") or "").strip()
+        for strategy in strategies
+        if isinstance(strategy, dict) and str(strategy.get("id") or "").strip()
+    }
+    if allowed and requested not in allowed:
+        raise ValueError(
+            f"Unsupported video_input_strategy '{requested}'. Supported values: {sorted(allowed)}"
+        )
+    return requested
+
+
+def _video_strategy_map(contract: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    strategies = contract.get("input_strategies")
+    if not isinstance(strategies, list):
+        return {}
+    result: Dict[str, Dict[str, Any]] = {}
+    for strategy in strategies:
+        if not isinstance(strategy, dict):
+            continue
+        strategy_id = str(strategy.get("id") or "").strip()
+        if strategy_id:
+            result[strategy_id] = strategy
+    return result
+
+
+def _has_video_slot(params: Dict[str, Any], slot_name: str) -> bool:
+    if slot_name in {"source_image", "last_frame_image", "source_video", "video_mask_image"}:
+        return bool(params.get(slot_name))
+    if slot_name in {"driving_audio", "audio_url"}:
+        return bool(params.get("audio_url") or params.get("audioUrl"))
+    if slot_name in {"reference_images", "video_edit_reference_images"}:
+        reference_images = params.get("reference_images")
+        if not isinstance(reference_images, dict):
+            return False
+        raw = reference_images.get("raw")
+        if isinstance(raw, list):
+            return any(bool(item) for item in raw)
+        return bool(raw)
+    if slot_name == "reference_video":
+        return bool(params.get("source_video") or params.get("reference_video"))
+    return bool(params.get(slot_name))
+
+
+def _validate_video_input_strategy_requirements(
+    *,
+    params: Dict[str, Any],
+    contract: Dict[str, Any],
+    strategy_id: str,
+    model_id: Optional[str],
+) -> None:
+    strategies = _video_strategy_map(contract)
+    if not strategies:
+        return
+    strategy = strategies.get(strategy_id)
+    if strategy is None:
+        if strategy_id == "text_to_video":
+            raise ValueError(
+                f"Video model '{model_id}' requires one of the supported media strategies; "
+                "attach source_image, source_video, last_frame_image, or reference_images."
+            )
+        allowed = sorted(strategies)
+        raise ValueError(
+            f"Unsupported video_input_strategy '{strategy_id}' for model '{model_id}'. "
+            f"Supported values: {allowed}"
+        )
+
+    requires = strategy.get("requires")
+    if not isinstance(requires, list):
+        requires = []
+    missing = [
+        str(slot)
+        for slot in requires
+        if str(slot).strip() and not _has_video_slot(params, str(slot))
+    ]
+    if missing:
+        raise ValueError(
+            f"video_input_strategy '{strategy_id}' requires missing media slot(s): {missing}"
+        )
+
+    if requires:
+        return
+
+    supports = contract.get("supports") if isinstance(contract.get("supports"), dict) else {}
+    if supports.get("reference_to_video") is True:
+        if not (
+            _has_video_slot(params, "source_video")
+            or _has_video_slot(params, "reference_video")
+            or _has_video_slot(params, "source_image")
+            or _has_video_slot(params, "reference_images")
+        ):
+            raise ValueError(
+                f"video_input_strategy '{strategy_id}' requires one of: "
+                "source_video, reference_video, source_image, reference_images"
+            )
+
+
 def _derive_video_input_strategy(params: Dict[str, Any], contract: Dict[str, Any]) -> str:
     source_video = params.get("source_video")
     source_image = params.get("source_image")
@@ -571,6 +1339,23 @@ def _derive_video_input_strategy(params: Dict[str, Any], contract: Dict[str, Any
     reference_images = params.get("reference_images")
     supports = contract.get("supports") if isinstance(contract.get("supports"), dict) else {}
 
+    if source_video and supports.get("video_edit") is True:
+        return "video_edit"
+    if supports.get("reference_to_video") is True and (source_video or source_image or reference_images):
+        return "reference_to_video"
+    if source_video and last_frame_image and supports.get("video_continuation_to_last_frame") is True:
+        return "video_continuation_to_last_frame"
+    if source_video and supports.get("video_continuation") is True:
+        return "video_continuation"
+    if (
+        source_image
+        and last_frame_image
+        and supports.get("first_last_frame") is True
+        and supports.get("first_frame_to_video") is True
+    ):
+        return "first_last_frame_to_video"
+    if source_image and supports.get("first_frame_to_video") is True:
+        return "first_frame_to_video"
     if source_video and video_mask_image and supports.get("video_mask_image") is True:
         return "masked_video_edit"
     if source_video:
@@ -592,6 +1377,9 @@ def normalize_video_generation_request_params(
     db: Optional[Session] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     normalized = dict(params)
+    for image_count_key in ("number_of_images", "numberOfImages", "num_images", "numImages", "n"):
+        normalized.pop(image_count_key, None)
+
     schema = resolve_runtime_mode_controls_schema(
         provider=provider,
         mode=mode,
@@ -658,7 +1446,7 @@ def normalize_video_generation_request_params(
     if extension_count is not None and extension_count > 0:
         if supports.get("video_extension") is not True:
             raise ValueError(
-                f"Google video extension is not supported for model '{model_id}'."
+                f"Video extension is not supported for provider '{provider}' model '{model_id}'."
             )
         allowed_counts = _allowed_extension_counts_for_seconds(contract, base_seconds=seconds_value)
         if allowed_counts is not None and extension_count not in allowed_counts:
@@ -667,9 +1455,20 @@ def normalize_video_generation_request_params(
                 f"Allowed counts: {allowed_counts}"
             )
 
+    effective_input_strategy = (
+        _requested_video_input_strategy(normalized, contract)
+        or _derive_video_input_strategy(normalized, contract)
+    )
+    _validate_video_input_strategy_requirements(
+        params=normalized,
+        contract=contract,
+        strategy_id=effective_input_strategy,
+        model_id=model_id,
+    )
+
     normalization_meta = {
         "runtime_api_mode": runtime_api_mode,
-        "input_strategy": _derive_video_input_strategy(normalized, contract),
+        "input_strategy": effective_input_strategy,
         "effective_enhance_prompt": bool(normalized.get("enhance_prompt")),
         "subtitle_mode": subtitle_mode,
     }
@@ -689,6 +1488,40 @@ def apply_video_mode_runtime_overrides(
         resolved["runtime_api_mode"] = api_mode or _DEFAULT_RUNTIME_API_MODE
         if resolved["runtime_api_mode"] != "vertex_ai":
             _remove_output_mime_controls(resolved)
+        return resolved
+
+    if provider == _TONGYI_VIDEO_PROVIDER and mode == _VIDEO_GEN_MODE:
+        resolved["runtime_api_mode"] = _TONGYI_RUNTIME_API_MODE
+        resolved["video_contract"] = build_video_mode_contract(resolved)
+        return resolved
+
+    if provider == _OPENAI_VIDEO_PROVIDER and mode == _VIDEO_GEN_MODE:
+        resolved["runtime_api_mode"] = _OPENAI_RUNTIME_API_MODE
+        constraints = resolved.setdefault("constraints", {})
+        if isinstance(constraints, dict):
+            unsupported = list(constraints.get("unsupported_params") or [])
+            for key in (
+                "negative_prompt",
+                "seed",
+                "generate_audio",
+                "subtitle_mode",
+                "subtitle_language",
+                "subtitle_script",
+            ):
+                if key not in unsupported:
+                    unsupported.append(key)
+            unsupported = [
+                key
+                for key in unsupported
+                if key not in {"enhance_prompt", "prompt_extend", "storyboard_prompt", "storyboard_segments"}
+            ]
+            constraints["unsupported_params"] = unsupported
+        resolved["video_contract"] = build_video_mode_contract(resolved)
+        return resolved
+
+    if provider == _GROK_VIDEO_PROVIDER and mode == _VIDEO_GEN_MODE:
+        resolved["runtime_api_mode"] = _GROK_RUNTIME_API_MODE
+        resolved["video_contract"] = build_video_mode_contract(resolved)
         return resolved
 
     if provider != _GOOGLE_VIDEO_PROVIDER or mode != _VIDEO_GEN_MODE:
@@ -715,11 +1548,13 @@ def apply_video_mode_runtime_overrides(
                 if isinstance(option, dict) and str(option.get("value") or "").strip()
             ]
             constraints["video_extension_require_resolution_values"] = (
-                resolution_values or ["720p", "1080p", "4k"]
+                resolution_values
+                or constraints.get("video_extension_require_resolution_values")
+                or ["720p", "1080p", "4k"]
             )
-            constraints["max_source_video_seconds"] = 30
-            constraints["max_output_video_seconds"] = 37
-            constraints["max_video_extension_count"] = 4
+            constraints.setdefault("max_source_video_seconds", 141)
+            constraints.setdefault("max_output_video_seconds", 148)
+            constraints.setdefault("max_video_extension_count", 20)
 
     resolved["video_contract"] = build_video_mode_contract(resolved)
     return resolved
@@ -736,10 +1571,15 @@ def resolve_runtime_mode_controls_schema(
     schema = resolve_mode_controls(provider=provider, mode=mode, model_id=model_id)
     if not schema:
         return None
-    runtime_api_mode = resolve_google_video_runtime_api_mode(db=db, user_id=user_id)
+    normalized_provider = str(provider or "").strip().lower()
+    runtime_api_mode = (
+        resolve_google_video_runtime_api_mode(db=db, user_id=user_id)
+        if normalized_provider == _GOOGLE_VIDEO_PROVIDER
+        else None
+    )
     return apply_video_mode_runtime_overrides(
         schema,
-        provider=provider,
+        provider=normalized_provider,
         mode=mode,
         runtime_api_mode=runtime_api_mode,
     )

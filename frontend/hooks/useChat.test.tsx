@@ -121,6 +121,47 @@ describe('useChat race and rollback fixes', () => {
     );
   });
 
+  it('captures the active model on model response messages at generation time', async () => {
+    const updateSessionMessages = vi.fn();
+
+    const { result } = renderHook(() =>
+      useChat('session-1', updateSessionMessages)
+    );
+
+    await act(async () => {
+      await result.current.sendMessage(
+        'make an image',
+        DEFAULT_OPTIONS,
+        [],
+        'image-gen',
+        DEFAULT_MODEL,
+        'google'
+      );
+    });
+
+    expect(result.current.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: Role.MODEL,
+          content: 'model response',
+          modelId: DEFAULT_MODEL.id,
+          modelName: DEFAULT_MODEL.name,
+        }),
+      ])
+    );
+
+    expect(updateSessionMessages).toHaveBeenCalledWith(
+      'session-1',
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: Role.MODEL,
+          modelId: DEFAULT_MODEL.id,
+          modelName: DEFAULT_MODEL.name,
+        }),
+      ])
+    );
+  });
+
   it('does not let stale in-flight request overwrite messages after switching sessions', async () => {
     const updateSessionMessages = vi.fn();
     const pending = createDeferred<{ content: string; attachments: never[] }>();

@@ -17,7 +17,9 @@
     "test:ui-result-panel": "vitest run frontend/components/multiagent/MultiAgentWorkflowEditorReactFlow.resultPanel.test.tsx --environment jsdom",
     "test:ui-mcp-settings": "vitest run frontend/components/modals/settings/McpTab.ui.test.tsx --environment jsdom",
     "e2e:agent": "node scripts/e2e/agent_workflow_e2e.mjs",
-    "e2e:video:real": "backend/.venv/bin/python scripts/e2e/google_video_ui_e2e.py"
+    "e2e:video:real": "backend/.venv/bin/python scripts/e2e/google_video_ui_e2e.py",
+    "e2e:tongyi-video:ui": "backend/.venv/bin/python scripts/e2e/tongyi_video_ui_e2e.py",
+    "e2e:openai-image:ui": "backend/.venv/bin/python scripts/e2e/openai_image_ui_e2e.py"
   },
   "dependencies": {
     "@dagrejs/dagre": "^1.1.8",
@@ -27,6 +29,7 @@
     "@skybridge/devtools": "^0.33.3",
     "@tanstack/react-virtual": "^3.13.24",
     "@xyflow/react": "^12.10.0",
+    "antd": "^5.29.3",
     "dompurify": "^3.3.1",
     "eventsource-parser": "^3.0.6",
     "form-data": "^4.0.5",

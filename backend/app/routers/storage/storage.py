@@ -57,6 +57,10 @@ _BROWSE_METADATA_BACKFILL_TOTAL_TIMEOUT_SECONDS = 8.0
 
 # 导入路径工具
 from ...core.path_utils import get_temp_dir, get_temp_dir_relative, resolve_relative_path, ensure_relative_path
+from ...services.common.upload_task_scope import (
+    is_upload_task_owned_by_user,
+    resolve_upload_task_user_id,
+)
 
 # 项目内临时文件目录（使用统一的路径工具）
 TEMP_DIR = get_temp_dir()
@@ -885,34 +889,7 @@ async def _attach_metadata_to_browse_payload(
 
 
 def _is_upload_task_owned_by_user(db: Session, task: UploadTask, user_id: str) -> bool:
-    session_id = str(task.session_id or "").strip()
-    if session_id:
-        owned_session = db.query(ChatSession.id).filter(
-            ChatSession.id == session_id,
-            ChatSession.user_id == user_id,
-        ).first()
-        if owned_session:
-            return True
-
-    attachment_id = str(task.attachment_id or "").strip()
-    if attachment_id:
-        owned_attachment = db.query(MessageAttachment.id).filter(
-            MessageAttachment.id == attachment_id,
-            MessageAttachment.user_id == user_id,
-        ).first()
-        if owned_attachment:
-            return True
-
-    message_id = str(task.message_id or "").strip()
-    if message_id:
-        owned_message_attachment = db.query(MessageAttachment.id).filter(
-            MessageAttachment.message_id == message_id,
-            MessageAttachment.user_id == user_id,
-        ).first()
-        if owned_message_attachment:
-            return True
-
-    return False
+    return is_upload_task_owned_by_user(db, task, user_id)
 
 
 def _require_owned_upload_task(db: Session, task_id: str, user_id: str) -> UploadTask:
@@ -2109,8 +2086,8 @@ async def process_upload_task(task_id: str, _db: Session = None):
         
         # 2. 获取用户ID和存储配置
         # ✅ 使用 StorageManager 统一管理配置
-        user_id = "default"
-        if task.session_id:
+        user_id = resolve_upload_task_user_id(db, task) or "default"
+        if user_id == "default" and task.session_id:
             session = db.query(ChatSession).filter(ChatSession.id == task.session_id).first()
             if session:
                 user_id = session.user_id
@@ -2190,7 +2167,8 @@ async def process_upload_task(task_id: str, _db: Session = None):
                         task.session_id, 
                         task.message_id, 
                         task.attachment_id, 
-                        task.target_url
+                        task.target_url,
+                        expected_user_id=resolve_upload_task_user_id(db, task),
                     )
                 except Exception as e:
                     logger.warning(f"[UploadTask] ⚠️ 更新会话附件 URL 失败（任务已完成）: {e}")
@@ -2219,6 +2197,7 @@ async def update_session_attachment_url(
     message_id: str, 
     attachment_id: str, 
     url: str,
+    expected_user_id: Optional[str] = None,
     max_retries: int = 10,
     retry_delay: float = 2.0
 ):
@@ -2243,7 +2222,15 @@ async def update_session_attachment_url(
         logger.warning(f"[UploadTask] ⚠️ 会话不存在，跳过附件更新: session={session_id}")
         return
 
-    expected_user_id = session.user_id
+    session_user_id = str(session.user_id or "").strip()
+    if expected_user_id and session_user_id and expected_user_id != session_user_id:
+        logger.warning(
+            f"[UploadTask] ⚠️ 任务用户与会话用户不匹配，跳过附件更新: "
+            f"task_user={expected_user_id}, session_user={session_user_id}, session={session_id}"
+        )
+        return
+
+    owner_user_id = expected_user_id or session_user_id
     
     for attempt in range(max_retries):
         try:
@@ -2253,7 +2240,7 @@ async def update_session_attachment_url(
                 MessageAttachment.id == attachment_id,
                 MessageAttachment.message_id == message_id,
                 MessageAttachment.session_id == session_id,
-                MessageAttachment.user_id == expected_user_id,
+                MessageAttachment.user_id == owner_user_id,
             ).first()
             
             if attachment:
@@ -2338,6 +2325,9 @@ async def upload_file_async(
             status_code=400, 
             detail="session_id 和 message_id 是必需的参数"
         )
+    session_owner = db.query(ChatSession.user_id).filter(ChatSession.id == session_id).first()
+    if session_owner and session_owner.user_id != user_id:
+        raise HTTPException(status_code=404, detail="会话不存在")
     logger.info(f"[UploadAsync] ✅ 参数验证通过")
     
     # ✅ 使用 AttachmentService 统一处理用户上传
@@ -2403,7 +2393,8 @@ async def upload_file_async(
         from ...models.db_models import MessageAttachment, UploadTask
         
         attachment = db.query(MessageAttachment).filter_by(
-            id=result['attachment_id']
+            id=result['attachment_id'],
+            user_id=user_id,
         ).first()
         if attachment:
             # 更新 MessageAttachment.id
@@ -2411,8 +2402,8 @@ async def upload_file_async(
             db.commit()
             
             # ✅ 新增：同步更新 UploadTask.attachment_id
-            upload_task = db.query(UploadTask).filter_by(
-                attachment_id=result['attachment_id']
+            upload_task = db.query(UploadTask).filter(
+                UploadTask.attachment_id == result['attachment_id'],
             ).first()
             if upload_task:
                 upload_task.attachment_id = attachment_id
@@ -2485,6 +2476,15 @@ async def upload_from_url(
     if not filename:
         raise HTTPException(status_code=400, detail="filename 不能为空")
 
+    session_id = str(data.get("session_id") or "").strip() or None
+    message_id = str(data.get("message_id") or "").strip() or None
+    attachment_id = str(data.get("attachment_id") or "").strip() or None
+
+    if session_id:
+        session_owner = db.query(ChatSession.user_id).filter(ChatSession.id == session_id).first()
+        if session_owner and session_owner.user_id != user_id:
+            raise HTTPException(status_code=404, detail="会话不存在")
+
     resolved_storage_id, _ = _resolve_enabled_storage_config(
         db=db,
         user_id=user_id,
@@ -2497,9 +2497,9 @@ async def upload_from_url(
 
     task = UploadTask(
         id=task_id,
-        session_id=data.get('session_id'),
-        message_id=data.get('message_id'),
-        attachment_id=data.get('attachment_id'),
+        session_id=session_id,
+        message_id=message_id,
+        attachment_id=attachment_id,
         source_url=safe_source_url,
         filename=filename,
         storage_id=resolved_storage_id,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ExecutionStatus } from '../../multiagent/types';
-import { executionStreamReducer } from './executionStreamReducer';
+import { consumeExecutionStatePayload, executionStreamReducer } from './executionStreamReducer';
 
 const buildExecutionStatus = (overrides: Partial<ExecutionStatus> = {}): ExecutionStatus => ({
   executionId: 'exec-reducer-test',
@@ -19,6 +19,27 @@ const buildExecutionStatus = (overrides: Partial<ExecutionStatus> = {}): Executi
 });
 
 describe('executionStreamReducer', () => {
+  it('consumes direct execution_state SSE payloads from the workflow backend', () => {
+    const consumed = consumeExecutionStatePayload({
+      executionId: 'exec-direct-state',
+      status: 'running',
+      finalStatus: 'running',
+      nodeStatuses: {
+        node1: 'running',
+      },
+      nodeProgress: {
+        node1: 42,
+      },
+    });
+
+    expect(consumed.consumed).toBe(true);
+    expect(consumed.status).toBe('running');
+    expect(consumed.normalizedPayload?.executionId).toBe('exec-direct-state');
+    expect(consumed.normalizedPayload?.nodeStatuses).toEqual({
+      node1: 'running',
+    });
+  });
+
   it('preserves preview urls from previous state when completed payload omits them', () => {
     const prev = buildExecutionStatus({
       resultPreviewImageUrls: ['/api/temp-images/image-1'],

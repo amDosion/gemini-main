@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UnifiedProviderClient } from './UnifiedProviderClient';
 import type { Attachment, ChatOptions } from '../../types/types';
+import { removeAccessToken, setAccessToken } from '../authTokenStore';
 
 const successResponse = () =>
   new Response(JSON.stringify({ success: true, data: {} }), {
@@ -12,10 +13,12 @@ describe('UnifiedProviderClient mode payload sanitization', () => {
   beforeEach(() => {
     vi.stubGlobal('localStorage', {
       getItem: () => null,
+      removeItem: () => undefined,
     });
   });
 
   afterEach(() => {
+    removeAccessToken();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -25,6 +28,73 @@ describe('UnifiedProviderClient mode payload sanitization', () => {
     return JSON.parse(String(init?.body || '{}'));
   };
 
+  const getRequestInit = (fetchMock: ReturnType<typeof vi.fn>) =>
+    fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+
+  it('uses cookie-first auth for model listing even when a stale memory token exists', async () => {
+    setAccessToken('stale-access-token');
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ models: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new UnifiedProviderClient('google');
+    await client.getAvailableModels();
+
+    const init = getRequestInit(fetchMock);
+    const headers = new Headers(init?.headers);
+    expect(headers.has('Authorization')).toBe(false);
+    expect(init?.credentials).toBe('include');
+  });
+
+  it('uses cookie-first auth for mode execution even when a stale memory token exists', async () => {
+    setAccessToken('stale-access-token');
+    const fetchMock = vi.fn(async () => successResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new UnifiedProviderClient('google');
+    await client.executeMode(
+      'image-gen',
+      'gemini-3.1-flash-image-preview',
+      'draw a cat',
+      [],
+      {
+        enableSearch: false,
+        enableThinking: false,
+        enableCodeExecution: false,
+      },
+      {}
+    );
+
+    const init = getRequestInit(fetchMock);
+    const headers = new Headers(init?.headers);
+    expect(headers.get('Content-Type')).toBe('application/json');
+    expect(headers.has('Authorization')).toBe(false);
+    expect(init?.credentials).toBe('include');
+  });
+
+  it('uses cookie-first auth for provider file uploads', async () => {
+    setAccessToken('stale-access-token');
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ fileId: 'file-1' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new UnifiedProviderClient('google');
+    await client.uploadFile(new File(['hello'], 'hello.txt', { type: 'text/plain' }), '', '');
+
+    const init = getRequestInit(fetchMock);
+    const headers = new Headers(init?.headers);
+    expect(headers.has('Authorization')).toBe(false);
+    expect(init?.credentials).toBe('include');
+  });
+
   it('drops non-mode chat and workflow fields from image mode requests', async () => {
     const fetchMock = vi.fn(async () => successResponse());
     vi.stubGlobal('fetch', fetchMock);
@@ -32,7 +102,9 @@ describe('UnifiedProviderClient mode payload sanitization', () => {
     const client = new UnifiedProviderClient('google');
     const options: ChatOptions = {
       enableSearch: false,
-      enableThinking: false,
+      enableThinking: true,
+      enhancePrompt: true,
+      enhancePromptThinkingLevel: 'high',
       enableCodeExecution: false,
       imageAspectRatio: '1:1',
       imageResolution: '1K',
@@ -65,7 +137,9 @@ describe('UnifiedProviderClient mode payload sanitization', () => {
 
     expect(body.options).toMatchObject({
       enableSearch: false,
-      enableThinking: false,
+      enableThinking: true,
+      enhancePrompt: true,
+      enhancePromptThinkingLevel: 'high',
       enableCodeExecution: false,
       imageAspectRatio: '1:1',
       imageResolution: '1K',
@@ -114,6 +188,82 @@ describe('UnifiedProviderClient mode payload sanitization', () => {
       baseSteps: 32,
       sessionId: 'session-2',
       messageId: 'message-2',
+    });
+  });
+
+  it('keeps OpenAI previous response id for image continuation state', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            images: [
+              {
+                url: 'data:image/png;base64,result',
+                mimeType: 'image/png',
+                openaiResponseId: 'resp_456',
+              },
+            ],
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }
+      )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new UnifiedProviderClient('openai');
+    const result = await client.executeMode(
+      'image-gen',
+      'gpt-image-2',
+      'draw a product scene',
+      [],
+      {
+        enableSearch: false,
+        enableThinking: false,
+        enableCodeExecution: false,
+        imageAspectRatio: '1:1',
+        imageResolution: '1K',
+        openaiPreviousResponseId: 'resp_123',
+      },
+      {}
+    );
+
+    const body = getPostedBody(fetchMock);
+    expect(body.options).toMatchObject({
+      openaiPreviousResponseId: 'resp_123',
+    });
+    expect(body.options).not.toHaveProperty('openaiImageApi');
+    expect(body.options).not.toHaveProperty('openaiResponsesModel');
+    expect(result[0].openaiResponseId).toBe('resp_456');
+  });
+
+  it('keeps pdf extraction template options instead of dropping them before backend mapping', async () => {
+    const fetchMock = vi.fn(async () => successResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new UnifiedProviderClient('openai');
+    await client.executeMode(
+      'pdf-extract',
+      'gpt-5.4-mini',
+      'extract fields',
+      [],
+      {
+        enableSearch: false,
+        enableThinking: false,
+        enableCodeExecution: false,
+        pdfExtractTemplate: 'invoice',
+        pdfAdditionalInstructions: 'Use USD totals.',
+      },
+      {}
+    );
+
+    const body = getPostedBody(fetchMock);
+    expect(body.options).toMatchObject({
+      pdfExtractTemplate: 'invoice',
+      pdfAdditionalInstructions: 'Use USD totals.',
     });
   });
 

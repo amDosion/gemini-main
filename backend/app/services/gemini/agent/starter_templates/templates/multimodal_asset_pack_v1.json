@@ -78,12 +78,12 @@
           "description": "自动使用当前活跃配置里可用的图片生成模型",
           "icon": "🖼️",
           "iconColor": "bg-pink-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "image-gen",
           "agentAspectRatio": "1:1",
           "agentNumberOfImages": 1,
           "inputMapping": "{{input-text-asset-pack.output.text}}\\n\\n请只输出适合首发落地页的一张主图：背景干净、主体清晰、便于电商展示。",
-          "instructions": "优先保证主体识别度和电商合规，不要加入水印或无关文字。"
+          "instructions": "优先保证主体识别度和电商合规，不要加入水印或无关文字。",
+          "agentPresetKey": "product-image-designer"
         }
       },
       {
@@ -99,13 +99,13 @@
           "description": "自动使用当前活跃配置里可用的视频生成模型",
           "icon": "🎬",
           "iconColor": "bg-fuchsia-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "video-gen",
           "agentAspectRatio": "16:9",
-          "agentResolutionTier": "1K",
+          "agentResolutionTier": "720p",
           "agentVideoDurationSeconds": 6,
           "inputMapping": "{{input-text-asset-pack.output.text}}\\n\\n请输出一支节奏紧凑的产品短视频，突出开箱、使用动作和成品画面。",
-          "instructions": "镜头稳定、转场简洁、主体清晰，适合品牌首发或社媒投放。"
+          "instructions": "镜头稳定、转场简洁、主体清晰，适合品牌首发或社媒投放。",
+          "agentPresetKey": "video-creative-director"
         }
       },
       {
@@ -121,10 +121,10 @@
           "description": "自动使用当前活跃配置里可用的语音生成模型",
           "icon": "🎙️",
           "iconColor": "bg-amber-500",
-          "inlineUseActiveProfile": true,
           "agentTaskType": "audio-gen",
           "inputMapping": "{{input-text-asset-pack.output.text}}\\n\\n请只朗读一段 40 字以内的中文产品旁白，语气简洁、专业。",
-          "instructions": "控制时长，适合与 6 秒视频同步使用。"
+          "instructions": "控制时长，适合与 6 秒视频同步使用。",
+          "agentPresetKey": "voiceover-producer"
         }
       },
       {

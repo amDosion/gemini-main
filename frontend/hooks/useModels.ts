@@ -1,6 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { ModelConfig, AppMode, ModeCatalogItem } from '../types/types';
 import { llmService } from '../services/llmService';
+import { clearEnhancePromptModelsCache } from './useEnhancePromptModels';
+import {
+  capturePrivateCacheLifecycleSnapshot,
+  isPrivateCacheLifecycleSnapshotCurrent,
+} from '../services/privateCacheInvalidation';
+import { usePrivateCacheLifecycleRevision } from './usePrivateCacheScopeRevision';
 
 const isValidModelConfig = (m: unknown): m is ModelConfig => {
   if (!m || typeof m !== 'object') return false;
@@ -93,6 +99,7 @@ export const useModels = (
   const [currentModelId, setCurrentModelId] = useState<string>('');
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
+  const [privateCacheResetNonce, setPrivateCacheResetNonce] = useState(0);
   const normalizedSavedModels = useMemo(
     () => normalizeModels(initialSavedModels),
     [initialSavedModels]
@@ -121,6 +128,24 @@ export const useModels = (
   const modeRequestSeqRef = useRef(0);
   const allRequestSeqRef = useRef(0);
   const userSelectedModelRef = useRef(false);
+
+  const resetModelStateForPrivateScopeChange = useCallback(() => {
+    allRequestSeqRef.current += 1;
+    modeRequestSeqRef.current += 1;
+    userSelectedModelRef.current = false;
+    setAvailableModels([]);
+    setModeCatalog([]);
+    setModeModels([]);
+    setModeDefaultModelId(null);
+    setCurrentModelId('');
+    setIsLoadingModels(false);
+    setPrivateCacheResetNonce((value) => value + 1);
+  }, []);
+
+  usePrivateCacheLifecycleRevision(
+    resetModelStateForPrivateScopeChange,
+    { includeCacheReset: true }
+  );
 
   // 手动选择模型时打标，避免后续自动切换覆盖用户意图
   const setCurrentModelIdWithUserFlag = useCallback((id: string | ((prev: string) => string)) => {
@@ -199,11 +224,11 @@ export const useModels = (
 
     if (providerChanged) {
       userSelectedModelRef.current = false;
-      setModeCatalog([]);
       setCurrentModelId('');
     }
     if (providerChanged || profileChanged) {
       llmService.clearModelCache();
+      clearEnhancePromptModelsCache();
     }
 
     // 首次激活快路径: init 数据已含 all-models + modeCatalog + chat-models → 跳过 fetch
@@ -221,6 +246,7 @@ export const useModels = (
     }
 
     let cancelled = false;
+    const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
     const allRequestId = ++allRequestSeqRef.current;
     const modeRequestId = ++modeRequestSeqRef.current;
 
@@ -240,28 +266,39 @@ export const useModels = (
         if (
           cancelled ||
           allRequestId !== allRequestSeqRef.current ||
-          modeRequestId !== modeRequestSeqRef.current
+          modeRequestId !== modeRequestSeqRef.current ||
+          !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
         ) {
           return;
         }
         // 一轮 batched setState
         setAvailableModels(filterModelsForMode(normalizeModels(allPayload.models)));
-        setModeCatalog(normalizeModeCatalog(allPayload.modeCatalog));
+        const nextModeCatalog = normalizeModeCatalog(allPayload.modeCatalog);
+        if (shouldBypassCache || nextModeCatalog.length > 0) {
+          setModeCatalog(nextModeCatalog);
+        }
         setModeModels(filterModelsForMode(normalizeModels(modePayload.models), appMode));
         setModeDefaultModelId(modePayload.defaultModelId || null);
       } catch (error) {
         if (
           !cancelled &&
           allRequestId === allRequestSeqRef.current &&
-          modeRequestId === modeRequestSeqRef.current
+          modeRequestId === modeRequestSeqRef.current &&
+          isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
         ) {
           setAvailableModels([]);
-          setModeCatalog([]);
           setModeModels([]);
           setModeDefaultModelId(null);
+          if (shouldBypassCache) {
+            setModeCatalog([]);
+          }
         }
       } finally {
-        if (!cancelled && modeRequestId === modeRequestSeqRef.current) {
+        if (
+          !cancelled &&
+          modeRequestId === modeRequestSeqRef.current &&
+          isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
+        ) {
           setIsLoadingModels(false);
         }
       }
@@ -272,7 +309,7 @@ export const useModels = (
     return () => {
       cancelled = true;
     };
-  }, [configReady, providerId, profileCacheKey, appMode]);
+  }, [configReady, providerId, profileCacheKey, appMode, privateCacheResetNonce]);
 
   // 当前模式模型（由后端按 mode 过滤返回）
   const visibleModels = useMemo(() => {
@@ -315,24 +352,47 @@ export const useModels = (
 
     setIsLoadingModels(true);
     userSelectedModelRef.current = false;
+    const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
+    const allRequestId = ++allRequestSeqRef.current;
+    const modeRequestId = ++modeRequestSeqRef.current;
 
     try {
       const [allPayload, filteredPayload] = await Promise.all([
         llmService.getAvailableModelsPayload(false),
         llmService.getAvailableModelsPayload(false, appMode),
       ]);
+      if (
+        allRequestId !== allRequestSeqRef.current ||
+        modeRequestId !== modeRequestSeqRef.current ||
+        !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
+      ) {
+        return;
+      }
       setAvailableModels(filterModelsForMode(normalizeModels(allPayload.models)));
-      setModeCatalog(normalizeModeCatalog(allPayload.modeCatalog));
+      const nextModeCatalog = normalizeModeCatalog(allPayload.modeCatalog);
+      setModeCatalog(nextModeCatalog);
       setModeModels(filterModelsForMode(normalizeModels(filteredPayload.models), appMode));
       setModeDefaultModelId(filteredPayload.defaultModelId || null);
     } catch (error) {
+      if (
+        allRequestId !== allRequestSeqRef.current ||
+        modeRequestId !== modeRequestSeqRef.current ||
+        !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
+      ) {
+        return;
+      }
       setAvailableModels([]);
-      setModeCatalog([]);
       setModeModels([]);
       setModeDefaultModelId(null);
       setCurrentModelId('');
+      setModeCatalog([]);
     } finally {
-      setIsLoadingModels(false);
+      if (
+        modeRequestId === modeRequestSeqRef.current &&
+        isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
+      ) {
+        setIsLoadingModels(false);
+      }
     }
   }, [configReady, appMode]);
 

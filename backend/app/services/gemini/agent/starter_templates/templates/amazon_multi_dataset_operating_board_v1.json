@@ -123,11 +123,13 @@
           "description": "解析广告字段并输出可分析摘要",
           "icon": "📊",
           "iconColor": "bg-blue-500",
-          "agentName": "数据报表分析师",
           "agentTaskType": "data-analysis",
           "agentFileUrl": "{{input-file-ads-op-board.output.fileUrl}}",
           "inputMapping": "目标：{{input-text-op-board.output.text}}\n广告文件：{{input-file-ads-op-board.output.fileUrl}}",
-          "instructions": "输出：字段映射、数据质量、核心指标、异常点。"
+          "instructions": "输出：字段映射、数据质量、核心指标、异常点。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -143,11 +145,13 @@
           "description": "解析销售与转化字段",
           "icon": "💹",
           "iconColor": "bg-emerald-500",
-          "agentName": "数据报表分析师",
           "agentTaskType": "data-analysis",
           "agentFileUrl": "{{input-file-sales-op-board.output.fileUrl}}",
           "inputMapping": "目标：{{input-text-op-board.output.text}}\n销售文件：{{input-file-sales-op-board.output.fileUrl}}",
-          "instructions": "输出：销量/转化/客单价趋势、异常点、可信度评分。"
+          "instructions": "输出：销量/转化/客单价趋势、异常点、可信度评分。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -163,11 +167,13 @@
           "description": "解析库存与断货风险",
           "icon": "📦",
           "iconColor": "bg-orange-500",
-          "agentName": "数据报表分析师",
           "agentTaskType": "data-analysis",
           "agentFileUrl": "{{input-file-inventory-op-board.output.fileUrl}}",
           "inputMapping": "目标：{{input-text-op-board.output.text}}\n库存文件：{{input-file-inventory-op-board.output.fileUrl}}",
-          "instructions": "输出：周转天数、库存健康度、断货风险清单。"
+          "instructions": "输出：周转天数、库存健康度、断货风险清单。",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -215,9 +221,12 @@
           "description": "给出投放预算和关键词动作",
           "icon": "🎯",
           "iconColor": "bg-indigo-500",
-          "agentName": "亚马逊广告分析师",
           "inputMapping": "汇总底稿：{{merge-intake-op-board.output.text}}\n目标：{{input-text-op-board.output.text}}",
-          "instructions": "输出：预算重分配、关键词动作、7天投放节奏。"
+          "instructions": "输出：预算重分配、关键词动作、7天投放节奏。",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "amazon-ad-analyst"
         }
       },
       {
@@ -233,9 +242,12 @@
           "description": "输出 Listing 与素材优化方向",
           "icon": "🧱",
           "iconColor": "bg-violet-500",
-          "agentName": "Listing优化专家",
           "inputMapping": "汇总底稿：{{merge-intake-op-board.output.text}}\n目标：{{input-text-op-board.output.text}}",
-          "instructions": "输出：标题五点优化优先级、素材迭代建议、转化瓶颈修复项。"
+          "instructions": "输出：标题五点优化优先级、素材迭代建议、转化瓶颈修复项。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.6,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "listing-optimizer"
         }
       },
       {
@@ -251,9 +263,12 @@
           "description": "输出库存/现金流/断货风险边界",
           "icon": "⚠️",
           "iconColor": "bg-red-500",
-          "agentName": "数据报表分析师",
           "inputMapping": "汇总底稿：{{merge-intake-op-board.output.text}}\n目标：{{input-text-op-board.output.text}}",
-          "instructions": "输出：风险阈值、预警触发条件、应急动作（减投/补货/调价）。"
+          "instructions": "输出：风险阈值、预警触发条件、应急动作（减投/补货/调价）。",
+          "agentTaskType": "data-analysis",
+          "agentTemperature": 0.3,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "data-report-analyst"
         }
       },
       {
@@ -285,9 +300,12 @@
           "description": "输出周执行计划与看板指标",
           "icon": "🧭",
           "iconColor": "bg-emerald-500",
-          "agentName": "运营策略顾问",
           "inputMapping": "策略汇总：{{merge-strategy-op-board.output.text}}",
-          "instructions": "输出经营看板：\n1) 本周关键动作\n2) 指标目标区间\n3) 日/周复盘节点\n4) 回滚与止损机制。"
+          "instructions": "输出经营看板：\n1) 本周关键动作\n2) 指标目标区间\n3) 日/周复盘节点\n4) 回滚与止损机制。",
+          "agentTaskType": "chat",
+          "agentTemperature": 0.5,
+          "agentMaxTokens": 4096,
+          "agentPresetKey": "ops-strategy-consultant"
         }
       },
       {

@@ -4,6 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSessionSync } from './useSessionSync';
 import { ChatSession, Message, ModelConfig, Role } from '../types/types';
 import { skipModeRestoreFlag } from '../contexts/SessionContext';
+import { cacheManager } from '../services/CacheManager';
+import { readCachedSessionsForMode, writeCachedSessionsForMode } from '../services/sessionCache';
+import { setPrivateCacheUserScope } from '../services/privateCacheScope';
 
 const { apiGetMock, llmStartNewChatMock } = vi.hoisted(() => ({
   apiGetMock: vi.fn(),
@@ -36,6 +39,8 @@ describe('useSessionSync stale request protection', () => {
   beforeEach(() => {
     apiGetMock.mockReset();
     llmStartNewChatMock.mockReset();
+    cacheManager.clearAll();
+    setPrivateCacheUserScope(null);
     skipModeRestoreFlag.current = false;
   });
 
@@ -131,6 +136,70 @@ describe('useSessionSync stale request protection', () => {
     expect(setAppMode).not.toHaveBeenCalledWith('image-gen');
   });
 
+  it('ignores late lazy-loaded session details after the private user scope changes', async () => {
+    const staleLoad = createDeferred<ChatSession>();
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/api/sessions/shared-session') {
+        return staleLoad.promise;
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    const setMessages = vi.fn();
+    const setAppMode = vi.fn();
+    const staleMessage: Message = {
+      id: 'user-one-message',
+      role: Role.MODEL,
+      content: 'user one stale content',
+      attachments: [],
+      timestamp: Date.now(),
+      mode: 'image-gen',
+    };
+
+    setPrivateCacheUserScope('user-1');
+    renderHook(() =>
+      useSessionSync({
+        currentSessionId: 'shared-session',
+        sessions: [
+          {
+            id: 'shared-session',
+            title: 'Shared',
+            messages: [],
+            createdAt: 1,
+            mode: 'image-gen',
+          },
+        ],
+        setMessages,
+        setAppMode,
+      })
+    );
+
+    await waitFor(() => {
+      expect(apiGetMock).toHaveBeenCalledWith(
+        '/api/sessions/shared-session',
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
+      );
+    });
+
+    setPrivateCacheUserScope('user-2');
+
+    await act(async () => {
+      staleLoad.resolve({
+        id: 'shared-session',
+        title: 'Shared full',
+        createdAt: 1,
+        mode: 'image-gen',
+        messages: [staleMessage],
+      });
+      await staleLoad.promise;
+      await Promise.resolve();
+    });
+
+    expect(setMessages).not.toHaveBeenCalled();
+    expect(setAppMode).not.toHaveBeenCalledWith('image-gen');
+    expect(readCachedSessionsForMode('image-gen')).toBeNull();
+  });
+
   it('passes AbortSignal when lazy loading session details', async () => {
     apiGetMock.mockResolvedValue({
       id: 'session-x',
@@ -167,6 +236,175 @@ describe('useSessionSync stale request protection', () => {
 
     const requestOptions = apiGetMock.mock.calls[0]?.[1] as { signal?: AbortSignal } | undefined;
     expect(requestOptions?.signal).toBeDefined();
+  });
+
+  it('lazy loads session details when the session list arrives after currentSessionId', async () => {
+    const fullMessage: Message = {
+      id: 'image-gen-msg',
+      role: Role.MODEL,
+      content: 'generated image history',
+      attachments: [],
+      timestamp: Date.now(),
+      mode: 'image-gen',
+    };
+    apiGetMock.mockResolvedValue({
+      id: 'image-gen-session',
+      title: 'Image Gen',
+      createdAt: 1,
+      mode: 'image-gen',
+      messages: [fullMessage],
+    } as ChatSession);
+
+    const setMessages = vi.fn();
+    const setAppMode = vi.fn();
+
+    const { rerender } = renderHook(
+      ({ sessions }) =>
+        useSessionSync({
+          currentSessionId: 'image-gen-session',
+          sessions,
+          setMessages,
+          setAppMode,
+        }),
+      {
+        initialProps: { sessions: [] as ChatSession[] },
+      }
+    );
+
+    expect(apiGetMock).not.toHaveBeenCalled();
+
+    rerender({
+      sessions: [
+        {
+          id: 'image-gen-session',
+          title: 'Image Gen',
+          messages: [],
+          createdAt: 1,
+          mode: 'image-gen',
+        },
+      ],
+    });
+
+    await waitFor(() => {
+      expect(apiGetMock).toHaveBeenCalledWith(
+        '/api/sessions/image-gen-session',
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
+      );
+    });
+    await waitFor(() => {
+      expect(setMessages).toHaveBeenCalledWith([fullMessage]);
+      expect(setAppMode).toHaveBeenCalledWith('image-gen');
+    });
+  });
+
+  it('writes lazy-loaded full session messages back to the mode session cache', async () => {
+    const fullMessage: Message = {
+      id: 'session-x-msg',
+      role: Role.MODEL,
+      content: 'loaded',
+      attachments: [],
+      timestamp: Date.now(),
+      mode: 'image-gen',
+    };
+    apiGetMock.mockResolvedValue({
+      id: 'session-x',
+      title: 'X',
+      createdAt: 1,
+      mode: 'image-gen',
+      messages: [fullMessage],
+    } as ChatSession);
+
+    writeCachedSessionsForMode('image-gen', [
+      {
+        id: 'session-x',
+        title: 'X',
+        messages: [],
+        createdAt: 1,
+        mode: 'image-gen',
+      },
+    ]);
+
+    const setMessages = vi.fn();
+    const setAppMode = vi.fn();
+
+    renderHook(() =>
+      useSessionSync({
+        currentSessionId: 'session-x',
+        sessions: [
+          {
+            id: 'session-x',
+            title: 'X',
+            messages: [],
+            createdAt: 1,
+            mode: 'image-gen',
+          },
+        ],
+        setMessages,
+        setAppMode,
+      })
+    );
+
+    await waitFor(() => {
+      expect(setMessages).toHaveBeenCalledWith([fullMessage]);
+    });
+
+    expect(readCachedSessionsForMode('image-gen')?.[0]?.messages).toEqual([
+      fullMessage,
+    ]);
+  });
+
+  it('does not pollute the chat mode cache when a lazy-loaded session belongs to another mode', async () => {
+    const fullMessage: Message = {
+      id: 'image-msg',
+      role: Role.MODEL,
+      content: 'image loaded',
+      attachments: [],
+      timestamp: Date.now(),
+      mode: 'image-gen',
+    };
+    apiGetMock.mockResolvedValue({
+      id: 'image-session',
+      title: 'Image',
+      createdAt: 2,
+      mode: 'image-gen',
+      messages: [fullMessage],
+    } as ChatSession);
+
+    const chatSession: ChatSession = {
+      id: 'chat-session',
+      title: 'Chat',
+      messages: [],
+      createdAt: 1,
+      mode: 'chat',
+    };
+    writeCachedSessionsForMode('chat', [chatSession]);
+
+    const setMessages = vi.fn();
+    const setAppMode = vi.fn();
+
+    renderHook(() =>
+      useSessionSync({
+        currentSessionId: 'image-session',
+        sessions: [
+          {
+            id: 'image-session',
+            title: 'Image',
+            messages: [],
+            createdAt: 2,
+            mode: 'image-gen',
+          },
+        ],
+        setMessages,
+        setAppMode,
+      })
+    );
+
+    await waitFor(() => {
+      expect(setMessages).toHaveBeenCalledWith([fullMessage]);
+    });
+
+    expect(readCachedSessionsForMode('chat')).toEqual([chatSession]);
+    expect(readCachedSessionsForMode('image-gen')?.[0]?.messages).toEqual([fullMessage]);
   });
 
   it('retries lazy load when switching back quickly after aborting previous fetch', async () => {

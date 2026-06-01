@@ -3,8 +3,6 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { authService, User, RegisterData, LoginData, ChangePasswordData } from '../services/auth';
-import { clearSchemaCacheForLogout } from './useModeControlsSchema';
-import { clearEnhancePromptCacheForLogout } from './useEnhancePromptModels';
 
 export interface UseAuthReturn {
   user: User | null;
@@ -28,74 +26,35 @@ export function useAuth(): UseAuthReturn {
   const [allowRegistration, setAllowRegistration] = useState(false);
   const [hasActiveProfile, setHasActiveProfile] = useState<boolean | null>(null); // ✅ 新增状态
 
-  // 初始化：尝试刷新 token 而不是直接清除
+  // 初始化：Cookie 是主认证状态；内存 token 只作为当前标签页加速路径。
   useEffect(() => {
     const init = async () => {
       setIsLoading(true);
       try {
-        const token = localStorage.getItem('access_token');
-        const refreshToken = localStorage.getItem('refresh_token');
+        const configPromise = authService.getConfig().catch(() => ({ allowRegistration: false }));
+        let currentUser = await authService.getCurrentUser();
 
-        // ✅ 先从 localStorage 读取缓存的配置状态（立即可用）
-        const cachedStatus = localStorage.getItem('has_active_profile');
-        if (cachedStatus !== null) {
-          setHasActiveProfile(cachedStatus === 'true');
-        }
-
-        if (token) {
+        if (!currentUser) {
           try {
-            // 尝试获取用户信息
-            const [currentUser, config] = await Promise.all([
-              authService.getCurrentUser(),
-              authService.getConfig().catch(() => ({ allowRegistration: false })),
-            ]);
-            setUser(currentUser);
-            setAllowRegistration(config.allowRegistration);
-
-            // ✅ 更新配置状态（从用户信息中获取）
-            if (currentUser?.hasActiveProfile !== undefined) {
-              setHasActiveProfile(currentUser.hasActiveProfile);
+            const refreshed = await authService.refreshToken();
+            if (refreshed) {
+              currentUser = await authService.getCurrentUser(true);
             }
           } catch {
-            // ✅ 新增：如果有 refresh_token，尝试刷新
-            if (refreshToken) {
-              try {
-                const refreshed = await authService.refreshToken();
-                if (refreshed) {
-                  // 刷新成功，重新获取用户信息
-                  const [currentUser, config] = await Promise.all([
-                    authService.getCurrentUser(),
-                    authService.getConfig().catch(() => ({ allowRegistration: false })),
-                  ]);
-                  setUser(currentUser);
-                  setAllowRegistration(config.allowRegistration);
+            // refresh 网络错误或服务端拒绝都进入未登录收敛路径
+          }
+        }
 
-                  // ✅ 更新配置状态
-                  if (currentUser?.hasActiveProfile !== undefined) {
-                    setHasActiveProfile(currentUser.hasActiveProfile);
-                  }
-                  return; // 成功，退出
-                }
-              } catch {
-                // Refresh failed
-              }
-            }
+        const config = await configPromise;
+        setAllowRegistration(config.allowRegistration);
 
-            // 刷新失败或没有 refresh_token，清除所有 tokens
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
-            localStorage.removeItem('has_active_profile'); // ✅ 同时清除配置状态
-            setUser(null);
-            setHasActiveProfile(null);
-            const config = await authService
-              .getConfig()
-              .catch(() => ({ allowRegistration: false }));
-            setAllowRegistration(config.allowRegistration);
+        if (currentUser) {
+          setUser(currentUser);
+          if (currentUser.hasActiveProfile !== undefined) {
+            setHasActiveProfile(currentUser.hasActiveProfile);
           }
         } else {
-          // 没有 token，设置为未登录状态
-          const config = await authService.getConfig().catch(() => ({ allowRegistration: false }));
-          setAllowRegistration(config.allowRegistration);
+          await authService.clearLocalPrivateSessionState();
           setUser(null);
           setHasActiveProfile(null);
         }
@@ -132,29 +91,51 @@ export function useAuth(): UseAuthReturn {
   useEffect(() => {
     if (!user) return;
 
-    // ✅ 使用服务端返回的 expires_in，提前 2 小时刷新（更安全）
-    // 24 小时 - 2 小时 = 22 小时后刷新
-    const refreshInterval = 22 * 60 * 60 * 1000; // 22 小时（毫秒）
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const timer = setInterval(async () => {
-      try {
-        const success = await authService.refreshToken();
-        // ✅ C-4: 仅在 refreshToken 明确 false(refresh_token 真失效)时清 token;
-        // 网络错误抛异常进入 catch,不清 token,允许下次周期重试
-        if (success === false) {
-          setUser(null);
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
+    const scheduleNextRefresh = () => {
+      if (cancelled) return;
+      timer = setTimeout(async () => {
+        try {
+          const success = await authService.refreshToken();
+          if (success === false) {
+            await authService.clearLocalPrivateSessionState({ broadcast: true });
+            setUser(null);
+            setHasActiveProfile(null);
+            return;
+          }
+        } catch {
+          // 网络错误,保留状态
         }
-      } catch {
-        // 网络错误,保留状态
-      }
-    }, refreshInterval);
+        scheduleNextRefresh();
+      }, authService.getAccessTokenRefreshDelayMs());
+    };
+
+    scheduleNextRefresh();
 
     return () => {
-      clearInterval(timer);
+      cancelled = true;
+      if (timer) {
+        clearTimeout(timer);
+      }
     };
   }, [user?.id]);
+
+  const refreshAuthenticatedUser = useCallback(async () => {
+    try {
+      const success = await authService.refreshToken();
+      if (success === false) {
+        await authService.clearLocalPrivateSessionState({ broadcast: true });
+        setUser(null);
+        setHasActiveProfile(null);
+        return null;
+      }
+      return await authService.getCurrentUser(true);
+    } catch {
+      return null;
+    }
+  }, []);
 
   // 注册
   const register = useCallback(async (data: RegisterData) => {
@@ -163,12 +144,7 @@ export function useAuth(): UseAuthReturn {
     try {
       const newUser = await authService.register(data);
       setUser(newUser);
-
-      // ✅ 更新配置状态（注册后通常没有配置）
-      const cachedStatus = localStorage.getItem('has_active_profile');
-      if (cachedStatus !== null) {
-        setHasActiveProfile(cachedStatus === 'true');
-      }
+      setHasActiveProfile(newUser.hasActiveProfile ?? null);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Registration failed';
       setError(message);
@@ -215,24 +191,17 @@ export function useAuth(): UseAuthReturn {
   const logout = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    // 清空模块级 fetch cache 防跨用户污染（修 code-reviewer HIGH：
-    // schemaCache + enhancePromptCandidatesCache 原本只通过测试 reset 函数清，
-    // 生产 logout 路径未触发清理，多用户切换时下一用户可能看到上一用户的数据）
-    clearSchemaCacheForLogout();
-    clearEnhancePromptCacheForLogout();
     try {
       await authService.logout();
       // ✅ token 已在 authService.logout() 中清除
       setUser(null);
       setHasActiveProfile(null); // ✅ 清除配置状态
-      localStorage.removeItem('has_active_profile');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Logout failed';
       setError(message);
       // 即使出错也清除用户状态
       setUser(null);
       setHasActiveProfile(null);
-      localStorage.removeItem('has_active_profile');
     } finally {
       setIsLoading(false);
     }
@@ -242,7 +211,7 @@ export function useAuth(): UseAuthReturn {
   const refreshUser = useCallback(async () => {
     try {
       // ✅ Wave 2 perf: force=true 绕过缓存（用户主动刷新场景需要实时数据）
-      const currentUser = await authService.getCurrentUser(true);
+      const currentUser = await refreshAuthenticatedUser();
       setUser(currentUser);
 
       // ✅ 更新配置状态
@@ -252,7 +221,7 @@ export function useAuth(): UseAuthReturn {
     } catch {
       // Failed to refresh user
     }
-  }, []);
+  }, [refreshAuthenticatedUser]);
 
   // 清除错误
   const clearError = useCallback(() => {

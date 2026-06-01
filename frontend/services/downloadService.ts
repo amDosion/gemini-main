@@ -1,3 +1,9 @@
+import {
+  createManagedMediaObjectUrl,
+  revokeManagedMediaObjectUrl,
+} from './mediaCache';
+import { isLocalBlobAttachmentUrl } from '../utils/attachmentUrl';
+
 interface BrowserDownloadOptions {
   href: string;
   fileName?: string;
@@ -83,10 +89,13 @@ export const downloadBlobInBrowser = ({
   fileName,
   revokeDelayMs = DEFAULT_OBJECT_URL_REVOKE_DELAY_MS,
 }: BlobBrowserDownloadOptions): void => {
-  const objectUrl = URL.createObjectURL(blob);
+  const objectUrl = createManagedMediaObjectUrl(blob);
+  if (!objectUrl) {
+    throw new Error('Object URL API is not available for browser downloads');
+  }
   triggerBrowserDownload({ href: objectUrl, fileName });
   window.setTimeout(() => {
-    URL.revokeObjectURL(objectUrl);
+    revokeManagedMediaObjectUrl(objectUrl);
   }, Math.max(0, revokeDelayMs));
 };
 
@@ -104,6 +113,10 @@ export const downloadSourceUrlInBrowser = async ({
   fileName,
   blobRevokeDelayMs = 0,
 }: SourceUrlDownloadOptions): Promise<void> => {
+  if (isLocalBlobAttachmentUrl(sourceUrl)) {
+    return;
+  }
+
   if (isBlobLikeSource(sourceUrl)) {
     const response = await fetch(sourceUrl);
     const blob = await response.blob();
