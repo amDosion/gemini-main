@@ -153,7 +153,7 @@ class ImageEditCoordinator:
         if self._user_id and self._db:
             try:
                 from ....models.db_models import VertexAIConfig
-                from ....core.encryption import decrypt_data
+                from ....core.encryption import decrypt_api_key
 
                 def _load_vertex() -> Optional[Dict[str, Any]]:
                     row = self._db.query(VertexAIConfig).filter(
@@ -177,20 +177,21 @@ class ImageEditCoordinator:
                     config['vertex_ai_project_id'] = user_config.get('vertex_ai_project_id')
                     config['vertex_ai_location'] = user_config.get('vertex_ai_location') or 'us-central1'
 
-                    # Decrypt credentials JSON if present
+                    # Decrypt credentials JSON if present (fail-closed: an undecryptable
+                    # token resolves to '' and is never forwarded to the Vertex AI SDK).
                     raw_credentials = user_config.get('vertex_ai_credentials_json')
                     if raw_credentials:
-                        try:
-                            config['vertex_ai_credentials_json'] = decrypt_data(raw_credentials)
+                        decrypted_credentials = decrypt_api_key(raw_credentials, silent=True)
+                        if decrypted_credentials:
+                            config['vertex_ai_credentials_json'] = decrypted_credentials
                             logger.debug(f"[ImageEditCoordinator] Successfully decrypted Vertex AI credentials")
-                        except Exception as e:
-                            logger.error(f"[ImageEditCoordinator] Failed to decrypt credentials: {e}")
+                        else:
+                            logger.error(f"[ImageEditCoordinator] Failed to decrypt credentials (key mismatch); refusing to forward ciphertext")
                             config['vertex_ai_credentials_json'] = None
 
                     # For Gemini API mode, get API key from ConfigProfile
                     if user_config.get('api_mode') == 'gemini_api':
                         from ....models.db_models import ConfigProfile
-                        from ....core.encryption import decrypt_data, is_encrypted
 
                         def _load_google_profile() -> Optional[Dict[str, Any]]:
                             row = self._db.query(ConfigProfile).filter(
@@ -206,16 +207,10 @@ class ImageEditCoordinator:
                         )
 
                         if google_profile and google_profile.get('api_key'):
-                            # ✅ 解密 API Key（如果已加密）
-                            api_key = google_profile.get('api_key')
-                            if is_encrypted(api_key):
-                                try:
-                                    api_key = decrypt_data(api_key, silent=True)
-                                    logger.debug(f"[ImageEditCoordinator] Successfully decrypted Gemini API key from ConfigProfile")
-                                except Exception as e:
-                                    logger.error(f"[ImageEditCoordinator] Failed to decrypt API key from ConfigProfile: {e}")
-                                    # 解密失败时，不设置 gemini_api_key，让系统回退到环境变量
-                                    api_key = None
+                            # ✅ 解密 API Key（fail-closed：密钥不匹配时返回 ''，绝不下发密文）
+                            api_key = decrypt_api_key(google_profile.get('api_key'), silent=True)
+                            if not api_key:
+                                logger.error(f"[ImageEditCoordinator] Failed to decrypt API key from ConfigProfile (key mismatch); refusing to forward ciphertext")
 
                             if api_key:
                                 config['gemini_api_key'] = api_key

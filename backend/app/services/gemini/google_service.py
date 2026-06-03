@@ -1380,15 +1380,26 @@ class GoogleService(BaseProviderService):
         if user_id and db:
             try:
                 from ...models.db_models import VertexAIConfig
-                from ...core.encryption import decrypt_data, is_encrypted
+                from ...core.encryption import decrypt_api_key
                 uc = db.query(VertexAIConfig).filter(VertexAIConfig.user_id == user_id).first()
                 if uc and uc.api_mode == "vertex_ai" and uc.vertex_ai_project_id and uc.vertex_ai_credentials_json:
-                    project_id = uc.vertex_ai_project_id
-                    location = uc.vertex_ai_location or "us-central1"
                     raw = uc.vertex_ai_credentials_json
-                    credentials_json = decrypt_data(raw) if is_encrypted(raw) else raw
-                    from_db = True
-                    logger.info("[Google Service] Try-on using Vertex config from DB for user=%s", user_id or "")
+                    # fail-closed: decrypt_api_key returns '' on key-mismatch (never the
+                    # ciphertext), so an undecryptable token is never forwarded to the
+                    # Vertex AI SDK as service-account credentials (V-S2).
+                    decrypted = decrypt_api_key(raw, silent=True)
+                    if decrypted:
+                        project_id = uc.vertex_ai_project_id
+                        location = uc.vertex_ai_location or "us-central1"
+                        credentials_json = decrypted
+                        from_db = True
+                        logger.info("[Google Service] Try-on using Vertex config from DB for user=%s", user_id or "")
+                    else:
+                        logger.error(
+                            "[Google Service] Try-on Vertex credentials undecryptable (key mismatch) for user=%s; "
+                            "refusing to forward ciphertext, falling back to env",
+                            user_id or "",
+                        )
             except Exception as e:
                 logger.warning("[Google Service] Vertex config from DB failed: %s", e)
 

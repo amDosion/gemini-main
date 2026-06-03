@@ -1021,7 +1021,7 @@ class VideoGenerationCoordinator:
         if self._user_id and self._db:
             try:
                 from ....models.db_models import ConfigProfile, UserSettings, VertexAIConfig
-                from ....core.encryption import decrypt_data, is_encrypted
+                from ....core.encryption import decrypt_api_key
 
                 def _load_vertex() -> Optional[Dict[str, Any]]:
                     row = self._db.query(VertexAIConfig).filter(
@@ -1043,9 +1043,12 @@ class VideoGenerationCoordinator:
                     config["vertex_ai_location"] = vertex_snapshot.get("vertex_ai_location") or "us-central1"
                     raw_credentials = vertex_snapshot.get("vertex_ai_credentials_json")
                     if raw_credentials:
-                        config["vertex_ai_credentials_json"] = (
-                            decrypt_data(raw_credentials) if is_encrypted(raw_credentials) else raw_credentials
-                        )
+                        # fail-closed: decrypt_api_key gates on Fernet shape and returns ''
+                        # on key-mismatch (never the ciphertext), so an undecryptable token
+                        # is never forwarded to the Vertex AI SDK (V-S2).
+                        decrypted_credentials = decrypt_api_key(raw_credentials, silent=True)
+                        if decrypted_credentials:
+                            config["vertex_ai_credentials_json"] = decrypted_credentials
 
                 if self._provided_api_key:
                     config["gemini_api_key"] = self._provided_api_key
@@ -1097,10 +1100,10 @@ class VideoGenerationCoordinator:
                         )
 
                     if google_snapshot and google_snapshot.get("api_key"):
-                        key = google_snapshot["api_key"]
-                        if is_encrypted(key):
-                            key = decrypt_data(key, silent=True)
-                        config["gemini_api_key"] = key
+                        # fail-closed: never forward undecryptable ciphertext as an API key.
+                        key = decrypt_api_key(google_snapshot["api_key"], silent=True)
+                        if key:
+                            config["gemini_api_key"] = key
 
                 if config:
                     return config

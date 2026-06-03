@@ -22,7 +22,7 @@ import logging
 
 from ...core.database import get_db
 from ...core.dependencies import require_current_user
-from ...core.encryption import encrypt_data, decrypt_data, is_encrypted
+from ...core.encryption import encrypt_data, decrypt_data, decrypt_api_key, is_encrypted
 from ...models.db_models import VertexAIConfig, ConfigProfile, UserSettings
 from ...services.common.provider_factory import ProviderFactory
 from ...services.gemini.base.imagen_common import ConfigurationError
@@ -170,32 +170,28 @@ async def _get_google_api_key(db: Session, user_id: str) -> Optional[str]:
     if active_profile_id:
         for profile in matching_profiles:
             if profile.id == active_profile_id and profile.api_key:
-                api_key = profile.api_key
-                # 自动解密 API key（用于业务逻辑使用）
-                try:
-                    if is_encrypted(api_key):
-                        return decrypt_data(api_key, silent=True)
-                    else:
-                        return api_key
-                except Exception as e:
-                    logger.warning(f"[VertexAIConfig] Failed to decrypt API key: {e}")
-                    # 解密失败时返回原值（可能是旧数据）
-                    return api_key
+                # 自动解密 API key（fail-closed：密钥不匹配时返回 ''，绝不下发密文）
+                decrypted = decrypt_api_key(profile.api_key, silent=True)
+                if not decrypted:
+                    logger.warning(
+                        "[VertexAIConfig] Failed to decrypt active-profile API key (key mismatch); "
+                        "refusing to return ciphertext"
+                    )
+                    return None
+                return decrypted
 
     # Fallback: first matching profile
     for profile in matching_profiles:
         if profile.api_key:
-            api_key = profile.api_key
-            # 自动解密 API key（用于业务逻辑使用）
-            try:
-                if is_encrypted(api_key):
-                    return decrypt_data(api_key, silent=True)
-                else:
-                    return api_key
-            except Exception as e:
-                logger.warning(f"[VertexAIConfig] Failed to decrypt API key: {e}")
-                # 解密失败时返回原值（可能是旧数据）
-                return api_key
+            # 自动解密 API key（fail-closed：密钥不匹配时返回 ''，绝不下发密文）
+            decrypted = decrypt_api_key(profile.api_key, silent=True)
+            if not decrypted:
+                logger.warning(
+                    "[VertexAIConfig] Failed to decrypt fallback-profile API key (key mismatch); "
+                    "refusing to return ciphertext"
+                )
+                return None
+            return decrypted
 
     return None
 
@@ -273,18 +269,17 @@ async def get_vertex_ai_config(
         
         # 根据 edit_mode 决定是否解密
         if edit_mode and user_config.vertex_ai_credentials_json:
-            # 编辑模式：解密返回给前端
-            try:
-                if is_encrypted(user_config.vertex_ai_credentials_json):
-                    vertex_ai_credentials_json = decrypt_data(user_config.vertex_ai_credentials_json)
-                    logger.debug(f"[VertexAIConfig] Decrypted credentials for edit mode (user={user_id})")
-                else:
-                    # 如果未加密（旧数据），直接返回
-                    vertex_ai_credentials_json = user_config.vertex_ai_credentials_json
-            except Exception as e:
-                logger.warning(f"[VertexAIConfig] Failed to decrypt credentials in edit mode: {e}")
-                # 解密失败时返回加密值（前端可以显示错误）
-                vertex_ai_credentials_json = user_config.vertex_ai_credentials_json
+            # 编辑模式：解密返回给前端（fail-closed：密钥不匹配时返回 None，绝不把密文回传前端）
+            decrypted_credentials = decrypt_api_key(user_config.vertex_ai_credentials_json, silent=True)
+            if decrypted_credentials:
+                vertex_ai_credentials_json = decrypted_credentials
+                logger.debug(f"[VertexAIConfig] Decrypted credentials for edit mode (user={user_id})")
+            else:
+                logger.warning(
+                    f"[VertexAIConfig] Failed to decrypt credentials in edit mode (key mismatch) for user={user_id}; "
+                    "returning None instead of ciphertext"
+                )
+                vertex_ai_credentials_json = None
         else:
             # 非编辑模式：返回加密值（或 None）
             vertex_ai_credentials_json = user_config.vertex_ai_credentials_json
