@@ -23,6 +23,7 @@ from ...utils.url_security import get_with_redirect_guard, validate_outbound_htt
 from ._shared import (
     IMAGE_EDIT_ALLOWED_OPTION_KEYS,
     build_async_client,
+    call_image_api_with_fanout,
     coerce_openai_image_max_retries,
     coerce_openai_image_timeout,
     elapsed_ms,
@@ -188,12 +189,20 @@ class ImageEditor:
             call_kwargs["mask"] = mask_file
         image_client = self._image_request_client()
         call_kwargs = prepare_kwargs_for_openai_method(image_client.images.edit, call_kwargs)
-        return await image_client.images.edit(
-            model=model,
-            prompt=prompt,
-            image=image_files,
-            **call_kwargs,
-        )
+        count = self._requested_image_count(call_kwargs)
+
+        async def _single(n: int) -> Any:
+            # 扇出时每次只请求 1 张; image_files 为不可变 bytes, 可安全跨并发复用。
+            single_kwargs = {**call_kwargs, "n": n}
+            return await image_client.images.edit(
+                model=model,
+                prompt=prompt,
+                image=image_files,
+                **single_kwargs,
+            )
+
+        # 详见 call_image_api_with_fanout: 订阅/OAuth 网关不支持原生 n>1, 故扇出为并发 n=1。
+        return await call_image_api_with_fanout(_single, count)
 
     def _normalize_edit_kwargs(self, model: str, kwargs: Mapping[str, Any]) -> Dict[str, Any]:
         return normalize_image_api_kwargs(

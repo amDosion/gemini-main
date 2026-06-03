@@ -10,6 +10,7 @@ import time
 
 from ._shared import (
     build_async_client,
+    call_image_api_with_fanout,
     coerce_openai_image_max_retries,
     coerce_openai_image_timeout,
     elapsed_ms,
@@ -168,11 +169,19 @@ class ImageGenerator:
         request_kwargs: Dict[str, Any],
     ) -> Any:
         image_client = self._image_request_client()
-        return await image_client.images.generate(
-            model=model,
-            prompt=prompt,
-            **request_kwargs,
-        )
+        count = self._requested_image_count(request_kwargs)
+
+        async def _single(n: int) -> Any:
+            # 扇出时每次只请求 1 张; 透传其余参数(size/quality/output_format 等)。
+            single_kwargs = {**request_kwargs, "n": n}
+            return await image_client.images.generate(
+                model=model,
+                prompt=prompt,
+                **single_kwargs,
+            )
+
+        # 详见 call_image_api_with_fanout: 订阅/OAuth 网关不支持原生 n>1, 故扇出为并发 n=1。
+        return await call_image_api_with_fanout(_single, count)
 
     def _response_to_results(self, response: Any, request_kwargs: Dict[str, Any]) -> List[Dict[str, Any]]:
         return image_response_to_results(response, request_kwargs)

@@ -3,10 +3,12 @@ OpenAI 服务共享辅助函数。
 """
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 import time
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Set
+from types import SimpleNamespace
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Mapping, Optional, Set
 
 from openai import AsyncOpenAI
 
@@ -692,6 +694,55 @@ async def enhance_openai_video_prompt(
         extra_context=operation_context,
         log_label="OpenAI Video",
     )
+
+
+# 扇出并发上限: 与 ResponsesImageService 保持一致, 并尊重网关的 per-user 并发限制
+# (sub2api 默认 user_concurrency=5)。避免 n=10 时一次打满并发触发 429/502。
+IMAGE_FANOUT_MAX_CONCURRENCY = 4
+
+
+async def call_image_api_with_fanout(
+    request_call: Callable[[int], Awaitable[Any]],
+    count: int,
+    *,
+    max_concurrency: int = IMAGE_FANOUT_MAX_CONCURRENCY,
+) -> Any:
+    """发起图像请求；当请求张数 > 1 时,扇出为 N 个并发的单图(n=1)调用。
+
+    背景(经验证据,见 .investigations/2026-06-02-openai-batch-image-502.md):
+    官方 OpenAI Images API 的 ``n`` 参数合法取值为 1-10,原生批量本应可用。
+    但部分 OpenAI 兼容网关——尤其是把 ``/v1/images/generations`` 转译为
+    Responses API ``image_generation`` 工具的订阅/OAuth 代理——并不支持原生
+    ``n``:n>1 会被上游拒绝(``Unknown parameter: 'tools[0].n'``)并以 502 暴露。
+    而单图(n=1)请求在所有后端都稳定可用。
+
+    因此对 count>1 一律扇出为 count 个 n=1 调用并合并 ``.data``——原生批量后端与
+    订阅/OAuth 后端都能拿回 N 张图,同时保持公开契约不变(返回对象的 ``.data``
+    持有 N 个图像项)。并发受 ``max_concurrency`` 闸约束以免超过网关 per-user
+    并发限制。count<=1 时直接透传,不引入额外开销。
+    """
+    safe_count = max(1, count)
+    if safe_count == 1:
+        return await request_call(1)
+
+    semaphore = asyncio.Semaphore(max(1, min(max_concurrency, safe_count)))
+
+    async def _bounded_call() -> Any:
+        async with semaphore:
+            return await request_call(1)
+
+    responses = await asyncio.gather(*(_bounded_call() for _ in range(safe_count)))
+
+    merged_data: List[Any] = []
+    for resp in responses:
+        merged_data.extend(getattr(resp, "data", None) or [])
+
+    base = responses[0]
+    try:
+        base.data = merged_data
+        return base
+    except Exception:  # pragma: no cover - 兜底: 部分响应对象不可变
+        return SimpleNamespace(data=merged_data)
 
 
 def image_response_to_results(response: Any, request_kwargs: Mapping[str, Any]) -> List[Dict[str, Any]]:
