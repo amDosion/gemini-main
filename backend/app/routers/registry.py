@@ -86,29 +86,26 @@ def register_routers(app: FastAPI):
     include_router_with_auth_boundary(app, interactions_router)
     
     # Multi-Agent API 路由（必须在 chat 路由之前注册，避免路径冲突）
-    try:
-        include_router_with_auth_boundary(app, multi_agent_router)
-        logger.info("Multi-Agent router registered successfully")
-    except Exception as e:
-        logger.error(f"Failed to register multi_agent_router: {e}", exc_info=True)
-    
+    # 注意：不要吞掉注册异常。注册失败必须让启动 fail-closed，
+    # 与上下所有路由一致；否则会留下静默缺失的关键路由 (V-S8)。
+    include_router_with_auth_boundary(app, multi_agent_router)
+    logger.info("Multi-Agent router registered successfully")
+
     # Workflow Engine API 路由 (Phase 1)
-    try:
-        include_router_with_auth_boundary(app, workflows_router)
-        logger.info("Workflows router registered successfully")
-        template_routes = [
-            route
-            for route in app.routes
-            if hasattr(route, "path")
-            and str(getattr(route, "path", "")).startswith("/api/workflows/templates")
-        ]
-        if template_routes:
-            logger.info(f"Workflow template routes registered: {len(template_routes)}")
-        else:
-            logger.warning("Workflow template routes not found after workflows router registration")
-    except Exception as e:
-        logger.error(f"Failed to register workflows_router: {e}", exc_info=True)
-    
+    # 同样 fail-closed：注册失败直接抛出，不做静默降级。
+    include_router_with_auth_boundary(app, workflows_router)
+    logger.info("Workflows router registered successfully")
+    template_routes = [
+        route
+        for route in app.routes
+        if hasattr(route, "path")
+        and str(getattr(route, "path", "")).startswith("/api/workflows/templates")
+    ]
+    if template_routes:
+        logger.info(f"Workflow template routes registered: {len(template_routes)}")
+    else:
+        logger.warning("Workflow template routes not found after workflows router registration")
+
     
     # ==================== 用户路由 ====================
     include_router_with_auth_boundary(app, profiles_router)

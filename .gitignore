@@ -13,6 +13,7 @@ __pycache__/
 *.pyo
 .venv/
 backend/.venv/
+backend/.venv-linux/
 .pytest_cache/
 .hypothesis/
 backend/.hypothesis/

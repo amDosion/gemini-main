@@ -22,6 +22,57 @@ logger = logging.getLogger(__name__)
 DEFAULT_GZIP_MINIMUM_SIZE = 1024
 GZIP_MINIMUM_SIZE_ENV_VAR = "GZIP_MINIMUM_SIZE"
 
+# Content-Security-Policy: applied to every HTTP response unless downstream
+# already set one. The default is intentionally conservative for an app that
+# serves a JSON API plus built SPA assets from the same origin. It allows
+# inline styles (Tailwind/SPA build emits a few), data:/blob: images and media
+# (generated media previews, base64 thumbnails), and same-origin connections.
+# Override via CSP_POLICY for stricter/looser deployments.
+CSP_POLICY_ENV_VAR = "CSP_POLICY"
+DEFAULT_CSP_POLICY = (
+    "default-src 'self'; "
+    "base-uri 'self'; "
+    "frame-ancestors 'none'; "
+    "object-src 'none'; "
+    "img-src 'self' data: blob:; "
+    "media-src 'self' data: blob:; "
+    "font-src 'self' data:; "
+    "style-src 'self' 'unsafe-inline'; "
+    "script-src 'self'; "
+    "connect-src 'self'"
+)
+
+# Strict-Transport-Security: only meaningful over HTTPS. Sent when the request
+# arrived over TLS or when running in production (TLS is typically terminated
+# at a reverse proxy, so the app may still see http internally). Never sent on
+# plain-HTTP local dev to avoid pinning localhost to HTTPS.
+HSTS_MAX_AGE_ENV_VAR = "HSTS_MAX_AGE"
+DEFAULT_HSTS_MAX_AGE = 31536000  # 1 year
+
+
+def _resolve_csp_policy() -> str:
+    raw = os.getenv(CSP_POLICY_ENV_VAR, "").strip()
+    return raw or DEFAULT_CSP_POLICY
+
+
+def _resolve_hsts_max_age() -> int:
+    raw = os.getenv(HSTS_MAX_AGE_ENV_VAR, str(DEFAULT_HSTS_MAX_AGE)).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning(
+            "Invalid %s=%r, fallback to default=%s",
+            HSTS_MAX_AGE_ENV_VAR,
+            raw,
+            DEFAULT_HSTS_MAX_AGE,
+        )
+        return DEFAULT_HSTS_MAX_AGE
+    return max(0, value)
+
+
+def _build_hsts_header(max_age: int) -> str:
+    return f"max-age={max_age}; includeSubDomains"
+
 
 def _resolve_gzip_minimum_size() -> int:
     raw = os.getenv(GZIP_MINIMUM_SIZE_ENV_VAR, str(DEFAULT_GZIP_MINIMUM_SIZE)).strip()
@@ -49,6 +100,11 @@ class SecurityHeadersMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # Decide HSTS up-front from request context: TLS request scheme, or
+        # production (where TLS is usually terminated upstream of this app).
+        is_https = str(scope.get("scheme", "")).lower() == "https"
+        send_hsts = is_https or settings.is_production
+
         async def send_wrapper(message: Message) -> None:
             if message["type"] == "http.response.start":
                 headers = MutableHeaders(raw=message.setdefault("headers", []))
@@ -58,6 +114,12 @@ class SecurityHeadersMiddleware:
                     headers["X-Frame-Options"] = "DENY"
                 if "referrer-policy" not in headers:
                     headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+                if "content-security-policy" not in headers:
+                    headers["Content-Security-Policy"] = _resolve_csp_policy()
+                if send_hsts and "strict-transport-security" not in headers:
+                    headers["Strict-Transport-Security"] = _build_hsts_header(
+                        _resolve_hsts_max_age()
+                    )
             await send(message)
 
         await self.app(scope, receive, send_wrapper)
