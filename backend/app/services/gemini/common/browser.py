@@ -19,6 +19,34 @@ from typing import Optional, List, Dict, Any, Union
 from urllib.parse import urlparse, parse_qs, unquote
 from bs4 import BeautifulSoup
 
+from ....utils.url_security import (
+    UnsafeURLError,
+    resolve_safe_redirect_url,
+    validate_outbound_http_url,
+)
+
+
+def _http_get_with_ssrf_guard(url: str, *, headers: Dict[str, str], timeout: int,
+                              max_redirects: int = 5):
+    """SSRF-safe GET (S2).
+
+    Validates the initial URL and every redirect hop against
+    app.utils.url_security, disabling requests' automatic redirect following so
+    each ``Location`` is re-validated before it is fetched. Raises UnsafeURLError
+    on a blocked target or too many hops.
+    """
+    current = validate_outbound_http_url(url)
+    for _ in range(max_redirects + 1):
+        response = requests.get(
+            current, timeout=timeout, headers=headers, allow_redirects=False
+        )
+        location = response.headers.get("Location") or response.headers.get("location")
+        if 300 <= response.status_code < 400 and location:
+            current = resolve_safe_redirect_url(current, location)
+            continue
+        return response
+    raise UnsafeURLError("重定向次数过多")
+
 # Markdown conversion for cleaner output
 try:
     import markdownify
@@ -174,7 +202,8 @@ def read_webpage(url: str, max_length: int = 50000) -> str:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
 
-        response = requests.get(url, timeout=10, headers=headers)
+        # SSRF guard (S2): validate the URL + every redirect hop before fetching.
+        response = _http_get_with_ssrf_guard(url, headers=headers, timeout=10)
         response.raise_for_status()  # Raise an exception for HTTP errors
 
         # Convert HTML to Markdown if markdownify is available
@@ -200,6 +229,10 @@ def read_webpage(url: str, max_length: int = 50000) -> str:
         logger.info(f"{LOG_PREFIXES['success']} Successfully read webpage: {url} ({len(content)} characters)")
         return content
 
+    except UnsafeURLError as e:
+        error_msg = f"Error: URL 被 SSRF 防护拒绝 ({url}): {e}"
+        logger.warning(error_msg)
+        return error_msg
     except requests.exceptions.Timeout:
         error_msg = f"Error: Request timeout while reading webpage {url}"
         logger.error(error_msg)
@@ -425,6 +458,15 @@ def selenium_browse(
         logger.debug(f"Steps to perform: {steps}")
 
     result = {"content": "", "screenshot": None, "error": None}
+
+    # SSRF guard (S2): reject internal/metadata/loopback targets before any
+    # driver work, regardless of selenium availability.
+    try:
+        url = validate_outbound_http_url(url)
+    except UnsafeURLError as e:
+        result["error"] = f"Error: URL 被 SSRF 防护拒绝: {e}"
+        logger.warning(f"{LOG_PREFIXES['error']} {result['error']}")
+        return result
 
     if not SELENIUM_AVAILABLE:
         result["error"] = "Error: Selenium is not available. Please install selenium and webdriver-manager."
