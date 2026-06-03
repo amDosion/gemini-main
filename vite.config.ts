@@ -77,7 +77,10 @@ export default defineConfig({
     open: '/login', // 自动打开浏览器到登录页面
     cors: true, // 启用 CORS
     hmr: {
-      protocol: 'wss', // 使用 WebSocket 协议
+      // 协议：默认 wss，保持反向代理(HTTPS 终结)部署兼容；本地纯 HTTP 直连开发用
+      // VITE_HMR_PROTOCOL=ws 覆盖（见 scripts/start_all.ps1）。否则浏览器会去连不存在的
+      // wss 端口导致 HMR 握手失败（页面功能不受影响，仅热更新失效）。
+      protocol: process.env.VITE_HMR_PROTOCOL ?? 'wss',
       // 不指定 host，让 HMR 自动适配当前访问地址（支持 localhost、127.0.0.1 和局域网 IP）
       port: 21573,
       // 反向代理外网端口；可通过 VITE_HMR_CLIENT_PORT 覆盖，默认 18443 保持现有部署兼容
