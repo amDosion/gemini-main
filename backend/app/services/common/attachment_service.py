@@ -8,104 +8,22 @@
 4. 管理附件生命周期
 """
 
-from typing import Optional, Dict, Any, List, Literal, TypedDict
+from typing import Optional, Dict, Any, List
 
+# 持久化契约与容错 wrapper 已拆分到 attachment_persistence;此处 re-export 以保持
+# 既有 ``from ...attachment_service import safe_persist_ai_result, UploadStatus`` 等
+# import 路径不变(公共 API 不变)。
+from .attachment_persistence import (
+    UploadStatus,
+    ProcessAIResultDict,
+    safe_persist_ai_result,
+    safe_persist_ai_result_concurrent,
+)
 
-# 附件上传状态契约 —— 与 message_attachments.upload_status 列对齐。
-# 其他模块(modes.py / workflows.py / handlers)从此处 import,确保 typo
-# 在 IDE / mypy 静态检查阶段被发现。
-UploadStatus = Literal["pending", "uploading", "completed", "failed"]
-
-
-async def safe_persist_ai_result(
-    attachment_service: "AttachmentService",
-    *,
-    log_label: str = "媒体",
-    log_with_traceback: bool = True,
-    **kwargs: Any,
-) -> Optional["ProcessAIResultDict"]:
-    """``process_ai_result`` 的容错 wrapper —— 把"调用 + try/except + log"模式
-    集中到一处,modes.py / workflows.py / template_sample / google_service 共用。
-
-    成功:返回 ``ProcessAIResultDict``。失败:log 后返回 ``None``,caller 自定义降级。
-
-    持久化失败属罕见且高价值事件 —— 始终带 traceback 记 ERROR(不再因
-    ``log_with_traceback=False`` 丢 traceback),避免出现"故障神秘、查不出原因"。
-    ``log_with_traceback`` 形参保留以兼容既有 caller 签名,但失败日志恒带堆栈。
-    """
-    try:
-        return await attachment_service.process_ai_result(**kwargs)
-    except Exception as err:
-        logger.error("[Persist] %s 失败: %r", log_label, err, exc_info=True)
-        return None
-
-
-async def safe_persist_ai_result_concurrent(
-    sessionmaker: Any,
-    *,
-    log_label: str = "媒体",
-    log_with_traceback: bool = False,
-    reraise: bool = False,
-    **kwargs: Any,
-) -> Optional["ProcessAIResultDict"]:
-    """并发安全版 —— 每次调用打开一个 *fresh* SQLAlchemy ``Session``,内部构造
-    临时 ``AttachmentService`` 实例,跑完即关。
-
-    用于 ``asyncio.gather(...)`` 同时持久化 N 个 AI 媒体 (image batch / video sidecars)。
-    SQLAlchemy ``Session`` non-task-safe — 共享实例并发会破坏 identity map / pending
-    changes / transaction boundary,本 wrapper 保证 session-per-task。
-
-    ``sessionmaker``:无参可调用对象(典型为 ``app.core.database.SessionLocal``),
-    ``with sessionmaker() as fresh_session:`` 自动 close。
-
-    成功:返回 ``ProcessAIResultDict``。
-
-    失败处理(始终先带 traceback 记 ERROR,杜绝静默吞错):
-    - ``reraise=False``(默认):返回 ``None``,caller 自行降级(video sidecar 等
-      优雅降级路径依赖此契约)。
-    - ``reraise=True``:向上抛原异常 —— 用于硬失败路径(image-gen 必须把底层
-      原因暴露给 route,绝不接受非持久化"成功"或静默 ``None``)。
-
-    ``log_with_traceback`` 形参保留以兼容既有 caller 签名,但失败日志恒带堆栈。
-    """
-    try:
-        with sessionmaker() as fresh_session:
-            # local import 避免顶层循环 import(AttachmentService 类定义在本模块下方)
-            service = AttachmentService(fresh_session)
-            return await service.process_ai_result(**kwargs)
-    except Exception as err:
-        logger.error("[Persist] %s 失败: %r", log_label, err, exc_info=True)
-        if reraise:
-            raise
-        return None
-
-
-class ProcessAIResultDict(TypedDict, total=False):
-    """``AttachmentService.process_ai_result(...)`` 的返回 shape。
-
-    total=False:所有字段 optional —— 不同 provider 路径 / 降级路径返回的 keyset 不同。
-    ``status`` 是 ``UploadStatus`` 字面量四选一,IDE 会针对赋值字面量 typo 报错。
-    """
-    attachment_id: str
-    display_url: str
-    cloud_url: str
-    status: UploadStatus
-    task_id: Optional[str]
-    file_uri: Optional[str]
-    google_file_uri: Optional[str]
-    mime_type: str
-    filename: str
-    session_id: str
-    message_id: str
-    user_id: str
 from sqlalchemy.orm import Session
 from datetime import datetime
-import base64
-import os
-import mimetypes
 import uuid
 import logging
-import httpx
 import time
 
 from ...core.encryption import ConfigDecryptionError, decrypt_config
@@ -115,9 +33,11 @@ from .redis_queue_service import redis_queue
 from .upload_worker_pool import worker_pool
 from .upload_task_scope import is_upload_task_owned_by_user
 from ..storage.storage_service import StorageService
-from ...utils.url_security import (
-    get_with_redirect_guard,
-    validate_outbound_http_url,
+from . import attachment_records
+from .attachment_local_writer import record_local_persist_failure
+from .attachment_source_resolver import (
+    delete_local_source_file,
+    load_local_storage_source_bytes,
 )
 
 logger = logging.getLogger(__name__)
@@ -172,7 +92,6 @@ class AttachmentService:
                 'task_id': str
             }
         """
-        import time
         start_time = time.time()
         
         logger.info(f"[AttachmentService] ========== 开始处理用户上传 ==========")
@@ -296,7 +215,6 @@ class AttachmentService:
                 'task_id': str
             }
         """
-        import time
         start_time = time.time()
         
         logger.info(f"[AttachmentService] ========== 开始处理AI返回的图片 ==========")
@@ -464,7 +382,6 @@ class AttachmentService:
             }
             或 None（未找到）
         """
-        import time
         start_time = time.time()
         
         # ✅ 详细日志：步骤1 - 查找匹配的附件ID
@@ -769,7 +686,8 @@ class AttachmentService:
 
         try:
             load_start = time.time()
-            content = await self._load_local_storage_source_bytes(
+            content = await load_local_storage_source_bytes(
+                db=self.db,
                 user_id=user_id,
                 source_file_path=source_file_path,
                 source_ai_url=source_ai_url,
@@ -809,7 +727,7 @@ class AttachmentService:
             )
 
             if source_file_path:
-                self._delete_local_source_file(source_file_path)
+                delete_local_source_file(source_file_path)
 
             return persisted_url
         except Exception as err:
@@ -831,123 +749,21 @@ class AttachmentService:
         attachment_pk_message_id: Any,
         error: Exception,
     ) -> None:
-        """best-effort 把本地直写失败原因写回 ``message_attachments`` 行。
-
-        直写过程若在 commit 阶段抛错,session 可能处于失败事务态 —— 先 ``rollback``
-        再以复合主键定向 ``UPDATE``,确保诊断写入不被原异常事务连累。任何二次失败
-        只记日志,不掩盖原始异常(原始异常由 caller ``raise`` 继续上抛)。
-        """
-        detail = f"{type(error).__name__}: {error}"[:1000]
-        try:
-            self.db.rollback()
-            self.db.query(MessageAttachment).filter(
-                MessageAttachment.id == attachment_pk_id,
-                MessageAttachment.message_id == attachment_pk_message_id,
-            ).update(
-                {
-                    MessageAttachment.upload_status: 'failed',
-                    MessageAttachment.upload_error: detail,
-                },
-                synchronize_session=False,
-            )
-            self.db.commit()
-            logger.error(
-                "[AttachmentService] 本地直写失败,已标记附件 %s 为 failed: %s",
-                attachment_pk_id,
-                detail,
-                exc_info=True,
-            )
-        except Exception:
-            logger.error(
-                "[AttachmentService] 记录本地直写失败诊断时二次失败 (attachment_id=%s)",
-                attachment_pk_id,
-                exc_info=True,
-            )
-
-    async def _load_local_storage_source_bytes(
-        self,
-        *,
-        user_id: str,
-        source_file_path: Optional[str] = None,
-        source_ai_url: Optional[str] = None,
-    ) -> bytes:
-        if source_file_path:
-            from ...core.path_utils import resolve_relative_path
-
-            file_path = resolve_relative_path(source_file_path)
-            with open(file_path, 'rb') as f:
-                return f.read()
-
-        normalized_ai_url = str(source_ai_url or "").strip()
-        if not normalized_ai_url:
-            raise ValueError("Local storage persistence requires a source payload.")
-
-        if is_base64_url(normalized_ai_url):
-            _mime_type, base64_str = self._parse_data_url(normalized_ai_url)
-            return base64.b64decode(base64_str)
-
-        if normalized_ai_url.startswith('files/') or normalized_ai_url.startswith('gs://') or self._is_google_provider_http_file_url(normalized_ai_url):
-            from ..gemini.base.video_asset_download import download_google_video_asset_for_user
-            from ..gemini.base.video_common import normalize_gemini_file_name
-
-            provider_file_name = normalize_gemini_file_name(normalized_ai_url)
-            provider_file_uri = normalized_ai_url if normalized_ai_url.startswith('files/') or provider_file_name else None
-            gcs_uri = normalized_ai_url if normalized_ai_url.startswith('gs://') else None
-            payload, _mime_type = await download_google_video_asset_for_user(
-                self.db,
-                user_id,
-                provider_file_name=provider_file_name,
-                provider_file_uri=provider_file_uri,
-                gcs_uri=gcs_uri,
-            )
-            return payload
-
-        safe_url = validate_outbound_http_url(normalized_ai_url)
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response, _final_url = await get_with_redirect_guard(client, safe_url, max_redirects=5)
-            response.raise_for_status()
-            return response.content
-
-    def _delete_local_source_file(self, source_file_path: str) -> None:
-        from ...core.path_utils import resolve_relative_path
-
-        try:
-            file_path = resolve_relative_path(source_file_path)
-            if os.path.exists(file_path):
-                os.remove(file_path)
-        except Exception:
-            logger.warning(f"[AttachmentService] 本地存储直写后删除临时文件失败: {source_file_path}")
+        record_local_persist_failure(
+            db=self.db,
+            attachment_pk_id=attachment_pk_id,
+            attachment_pk_message_id=attachment_pk_message_id,
+            error=error,
+        )
 
     def _is_persistent_storage_url(self, url: Optional[str]) -> bool:
-        from ..gemini.base.video_common import normalize_gemini_file_name
-
-        normalized = str(url or "").strip()
-        if not normalized:
-            return False
-        if is_base64_url(normalized) or is_blob_url(normalized):
-            return False
-        if normalized.startswith('gs://') or normalized.startswith('files/'):
-            return False
-        if normalize_gemini_file_name(normalized):
-            return False
-        return True
+        return attachment_records.is_persistent_storage_url(url)
 
     def _is_google_provider_http_file_url(self, url: str) -> bool:
-        normalized = str(url or "").strip()
-        return normalized.startswith("https://") and "/files/" in normalized
+        return attachment_records.is_google_provider_http_file_url(url)
 
     def _parse_data_url(self, data_url: str) -> tuple[str, str]:
-        if not is_base64_url(data_url):
-            raise ValueError("Invalid data URL")
-
-        parts = data_url.split(',', 1)
-        if len(parts) != 2:
-            raise ValueError("Invalid data URL format")
-
-        header = parts[0]
-        base64_str = parts[1]
-        mime_type = header.split(':', 1)[1].split(';', 1)[0] if ':' in header else ''
-        return (mime_type or 'application/octet-stream', base64_str)
+        return attachment_records.parse_data_url(data_url)
 
     async def _submit_upload_task(
         self,
@@ -983,7 +799,6 @@ class AttachmentService:
         返回:
             任务ID
         """
-        import time
         start_time = time.time()
         
         logger.info(f"[AttachmentService] ========== 开始创建上传任务 ==========")
@@ -1070,12 +885,7 @@ class AttachmentService:
         return task_id
 
     def _build_generated_filename(self, prefix: str, mime_type: Optional[str]) -> str:
-        guessed_ext = mimetypes.guess_extension((mime_type or "").split(";")[0].strip()) or ""
-        if guessed_ext == ".jpe":
-            guessed_ext = ".jpg"
-        if not guessed_ext:
-            guessed_ext = ".bin"
-        return f"{prefix}-{uuid.uuid4()}{guessed_ext}"
+        return attachment_records.build_generated_filename(prefix, mime_type)
 
     def _resolve_provider_asset_metadata(
         self,
@@ -1086,57 +896,20 @@ class AttachmentService:
         provider_file_uri: Optional[str] = None,
         gcs_uri: Optional[str] = None,
     ) -> tuple[str, str]:
-        from ..gemini.base.video_common import normalize_gemini_file_name
-
-        normalized_ai_url = str(ai_url or "").strip()
-        normalized_file_uri = str(file_uri or "").strip()
-        normalized_provider_file_name = str(provider_file_name or "").strip()
-        normalized_provider_file_uri = str(provider_file_uri or "").strip()
-        normalized_gcs_uri = str(gcs_uri or "").strip()
-
-        resolved_file_uri = (
-            normalized_file_uri
-            or normalized_gcs_uri
-            or normalized_provider_file_uri
-            or normalized_provider_file_name
+        return attachment_records.resolve_provider_asset_metadata(
+            ai_url=ai_url,
+            file_uri=file_uri,
+            provider_file_name=provider_file_name,
+            provider_file_uri=provider_file_uri,
+            gcs_uri=gcs_uri,
         )
-        if not resolved_file_uri:
-            if normalized_ai_url.startswith("gs://") or normalize_gemini_file_name(normalized_ai_url):
-                resolved_file_uri = normalized_ai_url
-
-        resolved_google_file_uri = normalize_gemini_file_name(
-            normalized_provider_file_name
-            or normalized_provider_file_uri
-            or resolved_file_uri
-        ) or ""
-
-        return resolved_file_uri, resolved_google_file_uri
 
     def _find_attachment_by_url(
         self,
         target_url: str,
         messages: List[Dict[str, Any]]
     ) -> Optional[str]:
-        """
-        在消息列表中查找附件ID
-
-        策略:
-        1. 精确匹配url
-        2. 精确匹配tempUrl
-
-        **不再有**: 模糊匹配（原文档错误）
-        """
-        for msg in reversed(messages):  # 从新到旧
-            for att in msg.get('attachments', []):
-                # 策略1: 精确匹配url
-                if att.get('url') == target_url:
-                    return att.get('id')
-
-                # 策略2: 精确匹配tempUrl
-                if att.get('tempUrl') == target_url:
-                    return att.get('id')
-
-        return None
+        return attachment_records.find_attachment_by_url(target_url, messages)
 
     def _find_latest_uploaded_image(
         self,
