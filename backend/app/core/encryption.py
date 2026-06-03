@@ -497,15 +497,27 @@ def decrypt_api_key(api_key: str, silent: bool = False) -> str:
     if not api_key:
         return api_key
 
-    if not is_encrypted(api_key):
+    # 仅依据"形状"判断是否为加密令牌（与 ENCRYPTION_KEY 是否匹配无关）。
+    # 不能用 is_encrypted()：它在密钥不匹配时吞掉 InvalidToken 并返回 False，
+    # 会导致密钥不匹配的 Fernet 密文被当作明文 API key 原样下发给 Provider SDK
+    # （fail-open，验证发现项 V-S2）。looks_like_fernet_token 只看形状，因此
+    # 密钥不匹配的密文仍会进入下方解密分支并 fail-closed。
+    if not looks_like_fernet_token(api_key):
         return api_key
 
     try:
         return decrypt_data(api_key, silent=silent)
-    except Exception:
+    except Exception as exc:
+        # fail-closed：绝不把 Fernet 密文当作明文 API key 返回给调用方。
         if silent:
-            return api_key
-        raise
+            # silent 调用方容忍失败，但必须返回空串而非密文，避免把 gAAAA... 发给 Provider。
+            logger.error(
+                "[decrypt_api_key] 解密失败（ENCRYPTION_KEY 不匹配或数据损坏），"
+                "拒绝下发密文，返回空值: %s",
+                type(exc).__name__,
+            )
+            return ""
+        raise ConfigDecryptionError("api_key") from exc
 
 
 def mask_sensitive_fields(config: Dict[str, Any], mask: str = "***") -> Dict[str, Any]:
