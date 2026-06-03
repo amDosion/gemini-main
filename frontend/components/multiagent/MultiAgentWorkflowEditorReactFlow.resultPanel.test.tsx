@@ -247,21 +247,28 @@ describe('MultiAgentWorkflowEditorReactFlow final result surface', () => {
     const editorScopeId = editorRoot?.getAttribute('data-workflow-editor-scope');
     expect(editorScopeId).toBeTruthy();
 
-    window.dispatchEvent(
-      new CustomEvent('workflow:image-gallery-request', {
-        detail: {
-          editorScopeId,
-          imageUrls: [finalImageUrl, 'https://cdn.example.com/workflow/second.png'],
-          initialIndex: 1,
-          title: '最终结果图片',
-        },
-      })
-    );
-
-    expect(onOpenResultImages).toHaveBeenCalledWith({
-      title: '最终结果图片',
-      imageUrls: [finalImageUrl, 'https://cdn.example.com/workflow/second.png'],
-      initialIndex: 1,
+    // The window listener for 'workflow:image-gallery-request' is registered by a
+    // passive effect (useWorkflowEditorEvents) that re-runs when loadedWorkflow
+    // applies its nodes. Rendering the node-count text does not guarantee that
+    // passive effect has flushed yet, so dispatch inside waitFor and re-emit until
+    // the listener is attached. This makes the assertion deterministic under
+    // parallel-run scheduling instead of racing a single synchronous dispatch.
+    await waitFor(() => {
+      window.dispatchEvent(
+        new CustomEvent('workflow:image-gallery-request', {
+          detail: {
+            editorScopeId,
+            imageUrls: [finalImageUrl, 'https://cdn.example.com/workflow/second.png'],
+            initialIndex: 1,
+            title: '最终结果图片',
+          },
+        })
+      );
+      expect(onOpenResultImages).toHaveBeenCalledWith({
+        title: '最终结果图片',
+        imageUrls: [finalImageUrl, 'https://cdn.example.com/workflow/second.png'],
+        initialIndex: 1,
+      });
     });
   });
 });

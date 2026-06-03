@@ -1,9 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  generateMaskFromSelections,
-  updateMaskCanvasUrl,
-} from './maskDrawingHelpers';
+import { generateMaskFromSelections, updateMaskCanvasUrl } from './maskDrawingHelpers';
 import {
   __resetMediaCacheForTest,
   releaseMediaObjectUrl,
@@ -30,6 +27,7 @@ const createCanvasStub = (blobText: string): HTMLCanvasElement =>
 
 describe('maskDrawingHelpers managed object urls', () => {
   beforeEach(() => {
+    vi.useFakeTimers();
     __resetMediaCacheForTest();
     let objectUrlIndex = 0;
     Object.defineProperty(URL, 'createObjectURL', {
@@ -46,6 +44,8 @@ describe('maskDrawingHelpers managed object urls', () => {
   });
 
   afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
     __resetMediaCacheForTest();
     vi.restoreAllMocks();
   });
@@ -66,6 +66,9 @@ describe('maskDrawingHelpers managed object urls', () => {
     expect(URL.revokeObjectURL).not.toHaveBeenCalledWith(previousUrl);
 
     releaseMediaObjectUrl(previousUrl);
+    // Revocation of a retired-while-retained url is intentionally deferred
+    // (RETAINED_OBJECT_URL_REVOKE_DELAY_MS); advance fake timers to observe it.
+    vi.runAllTimers();
 
     expect(URL.revokeObjectURL).toHaveBeenCalledWith(previousUrl);
   });
@@ -100,6 +103,9 @@ describe('maskDrawingHelpers managed object urls', () => {
     expect(URL.revokeObjectURL).not.toHaveBeenCalledWith(previousUrl);
 
     releaseMediaObjectUrl(previousUrl);
+    // Revocation of a retired-while-retained url is intentionally deferred
+    // (RETAINED_OBJECT_URL_REVOKE_DELAY_MS); advance fake timers to observe it.
+    vi.runAllTimers();
 
     expect(URL.revokeObjectURL).toHaveBeenCalledWith(previousUrl);
   });

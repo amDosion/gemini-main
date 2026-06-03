@@ -161,8 +161,7 @@ describe('MultiAgentView workflow media images', () => {
     await waitFor(() => {
       expect(fetchWorkflowPreviewImagesWithMetaMock).toHaveBeenCalledWith(
         'exec-lazy',
-        40,
-        expect.any(AbortSignal)
+        40
       );
     });
     expect(await screen.findByAltText('媒体图片 2')).toHaveAttribute('src', lazyWorkflowImageUrl);

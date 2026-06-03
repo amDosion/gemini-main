@@ -252,7 +252,13 @@ export const resolveImageHistoryRowSourceAttachment = (
     if (idMatch && (!previewUrl || isTemporaryPreviewUrl || idMatchUsesPreviewUrl)) {
       return idMatch;
     }
-    if (idMatch && getPreferredAttachmentUrl(idMatch)) {
+    // Reaching here means the preview URL is a concrete (non-temporary) URL that
+    // does NOT match the id-matched attachment. Trust the id only when the
+    // attachment has a durable url and no local `file`: its durable url is the
+    // correct source. If the attachment carries a stale `file`, returning it
+    // would force a local-blob preview of the wrong image, so fall through to
+    // URL-based matching and never attach that mismatched metadata.
+    if (idMatch && !idMatch.file && getPreferredAttachmentUrl(idMatch)) {
       return idMatch;
     }
   }
