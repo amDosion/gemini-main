@@ -27,7 +27,7 @@ import logging
 import time
 
 from ...core.encryption import ConfigDecryptionError, decrypt_config
-from ...utils.attachment_handler import is_base64_url, is_blob_url, is_http_url, get_url_type
+from ...utils.attachment_handler import is_base64_url
 from ...models.db_models import MessageAttachment, UploadTask, StorageConfig, ActiveStorage
 from .redis_queue_service import redis_queue
 from .upload_worker_pool import worker_pool
@@ -38,6 +38,11 @@ from .attachment_local_writer import record_local_persist_failure
 from .attachment_source_resolver import (
     delete_local_source_file,
     load_local_storage_source_bytes,
+)
+# 两个大编排方法的内部逻辑已拆到独立模块,服务层只保留薄包装(公共 API 不变)。
+from .attachment_ai_result import process_ai_result as _process_ai_result_impl
+from .attachment_continuity import (
+    resolve_continuity_attachment as _resolve_continuity_attachment_impl,
 )
 
 logger = logging.getLogger(__name__)
@@ -215,139 +220,24 @@ class AttachmentService:
                 'task_id': str
             }
         """
-        start_time = time.time()
-        
-        logger.info(f"[AttachmentService] ========== 开始处理AI返回的图片 ==========")
-        logger.info(f"[AttachmentService] 📥 请求参数:")
-        logger.info(f"[AttachmentService]     - prefix: {prefix}")
-        logger.info(f"[AttachmentService]     - mime_type: {mime_type}")
-        logger.info(f"[AttachmentService]     - session_id: {session_id if session_id else 'None'}")
-        logger.info(f"[AttachmentService]     - message_id: {message_id if message_id else 'None'}")
-        logger.info(f"[AttachmentService]     - user_id: {user_id}")
-        logger.info(f"[AttachmentService]     - storage_id: {storage_id if storage_id else 'None'}")
-        
-        # ✅ 详细日志：步骤1 - 判断URL类型
-        url_type = "Base64" if is_base64_url(ai_url) else "HTTP" if is_http_url(ai_url) else "未知"
-        logger.info(f"[AttachmentService] 🔍 [步骤1] 判断URL类型: {url_type}")
-        logger.info(f"[AttachmentService]     - ai_url长度: {len(ai_url)}")
-        if url_type == "Base64":
-            # 估算Base64图片大小
-            try:
-                base64_str = ai_url.split(',', 1)[1] if ',' in ai_url else ''
-                estimated_size = len(base64_str) * 3 / 4 / 1024  # Base64解码后大小（KB）
-                logger.info(f"[AttachmentService]     - 估算图片大小: {estimated_size:.2f} KB")
-            except (IndexError, ValueError):
-                # 仅用于日志的体积估算，解析失败可忽略（B4：收窄裸 except）
-                pass
-        
-        attachment_id = str(uuid.uuid4())
-        resolved_filename = filename or self._build_generated_filename(prefix, mime_type)
-        resolved_file_uri, resolved_google_file_uri = self._resolve_provider_asset_metadata(
+        # 编排实现已迁出到 attachment_ai_result;此处仅薄包装委派。
+        # 传 self 让实现按调用点解析协作者(_submit_upload_task /
+        # _persist_to_local_storage_if_enabled 等),保持 monkeypatch 契约。
+        return await _process_ai_result_impl(
+            self,
             ai_url=ai_url,
+            mime_type=mime_type,
+            session_id=session_id,
+            message_id=message_id,
+            user_id=user_id,
+            prefix=prefix,
+            storage_id=storage_id,
+            filename=filename,
             file_uri=file_uri,
             provider_file_name=provider_file_name,
             provider_file_uri=provider_file_uri,
             gcs_uri=gcs_uri,
         )
-        logger.info(f"[AttachmentService] 🔄 [步骤1] 生成附件ID: {attachment_id}")
-        logger.info(f"[AttachmentService]     - filename: {resolved_filename}")
-
-        # ✅ 步骤2 - 统一返回临时代理 URL，前端不直接接触 base64/第三方临时 URL
-        logger.info(f"[AttachmentService] 🔄 [步骤2] 设置显示URL...")
-        display_url = f"/api/temp-images/{attachment_id}"
-        if is_base64_url(ai_url):
-            logger.info(f"[AttachmentService]     - Base64 Data URL，改为代理URL: {display_url}")
-        else:
-            logger.info(f"[AttachmentService]     - HTTP URL，改为代理URL: {display_url}")
-        logger.info(f"[AttachmentService] ✅ [步骤2] 显示URL已设置")
-
-        # ✅ 详细日志：步骤3 - 创建附件记录
-        logger.info(f"[AttachmentService] 🔄 [步骤3] 创建附件记录...")
-        attachment = MessageAttachment(
-            id=attachment_id,
-            message_id=message_id,
-            user_id=user_id,
-            session_id=session_id,
-            name=resolved_filename,
-            mime_type=mime_type,
-            temp_url=ai_url,  # 保存原始URL（可能是Base64）
-            url='',           # 云URL（待Worker Pool上传完成后更新）
-            upload_status='pending',
-            file_uri=resolved_file_uri or None,
-            google_file_uri=resolved_google_file_uri or None,
-        )
-        self.db.add(attachment)
-        self.db.commit()
-        step3_time = (time.time() - start_time) * 1000
-        logger.info(f"[AttachmentService] ✅ [步骤3] 附件记录已创建并保存到数据库 (耗时: {step3_time:.2f}ms)")
-
-        local_storage_url = await self._persist_to_local_storage_if_enabled(
-            attachment=attachment,
-            user_id=user_id,
-            filename=resolved_filename,
-            mime_type=mime_type,
-            storage_id=storage_id,
-            source_ai_url=ai_url,
-        )
-        if local_storage_url:
-            total_time = (time.time() - start_time) * 1000
-            logger.info(f"[AttachmentService] ✅ [步骤4] 本地存储已直写完成，跳过 Worker Pool")
-            logger.info(f"[AttachmentService] ========== AI图片处理完成 (总耗时: {total_time:.2f}ms) ==========")
-            logger.info(f"[AttachmentService]     - attachment_id: {attachment_id}")
-            logger.info(f"[AttachmentService]     - display_url: {local_storage_url} (direct local storage)")
-            return {
-                'attachment_id': attachment_id,
-                'display_url': local_storage_url,
-                'cloud_url': local_storage_url,
-                'status': 'completed',
-                'task_id': None,
-                'session_id': session_id,
-                'message_id': message_id,
-                'user_id': user_id,
-                'filename': resolved_filename,
-                'mime_type': mime_type,
-                'file_uri': resolved_file_uri or '',
-                'google_file_uri': resolved_google_file_uri or '',
-            }
-
-        # ✅ 详细日志：步骤4 - 提交Worker Pool任务
-        logger.info(f"[AttachmentService] 🔄 [步骤4] 提交Worker Pool任务...")
-        task_id = await self._submit_upload_task(
-            user_id=user_id,
-            session_id=session_id,
-            message_id=message_id,
-            attachment_id=attachment_id,
-            source_ai_url=ai_url,  # ✅ 新增source类型（可以是Base64或HTTP）
-            filename=resolved_filename,
-            mime_type=mime_type,
-            storage_id=storage_id,
-        )
-        attachment.upload_task_id = task_id
-        self.db.commit()
-        step4_time = (time.time() - start_time) * 1000
-        logger.info(f"[AttachmentService] ✅ [步骤4] 上传任务已创建: {task_id} (耗时: {step4_time:.2f}ms)")
-
-        total_time = (time.time() - start_time) * 1000
-        logger.info(f"[AttachmentService] ========== AI图片处理完成 (总耗时: {total_time:.2f}ms) ==========")
-        logger.info(f"[AttachmentService]     - attachment_id: {attachment_id}")
-        logger.info(f"[AttachmentService]     - display_url: {display_url}")
-        logger.info(f"[AttachmentService]     - task_id: {task_id}")
-
-        return {
-            'attachment_id': attachment_id,
-            'display_url': display_url,  # ✅ 统一临时代理URL（/api/temp-images/{attachment_id}）
-            'cloud_url': '',             # ✅ 云URL（空，待上传完成）
-            'status': 'pending',
-            'task_id': task_id,
-            # ✅ 新增：返回完整的元数据，供前端保存和后续 CONTINUITY LOGIC 使用
-            'session_id': session_id,
-            'message_id': message_id,
-            'user_id': user_id,
-            'filename': resolved_filename,
-            'mime_type': mime_type,
-            'file_uri': resolved_file_uri or '',
-            'google_file_uri': resolved_google_file_uri or '',
-        }
 
     async def resolve_continuity_attachment(
         self,
@@ -382,201 +272,16 @@ class AttachmentService:
             }
             或 None（未找到）
         """
-        start_time = time.time()
-        
-        # ✅ 详细日志：步骤1 - 查找匹配的附件ID
-        logger.info(f"[AttachmentService] 🔍 [步骤1] 开始查找匹配的附件ID...")
-        logger.info(f"[AttachmentService]     - active_image_url类型: {'Blob' if is_blob_url(active_image_url) else 'Base64' if is_base64_url(active_image_url) else 'HTTP' if is_http_url(active_image_url) else '未知'}")
-        logger.info(f"[AttachmentService]     - active_image_url长度: {len(active_image_url)}")
-        logger.info(f"[AttachmentService]     - messages数量: {len(messages)}")
-        
-        attachment_id = self._find_attachment_by_url(active_image_url, messages)
-        
-        if attachment_id:
-            logger.info(f"[AttachmentService] ✅ [步骤1] 在messages中找到附件ID: {attachment_id}")
-        else:
-            logger.info(f"[AttachmentService] ⚠️ [步骤1] 在messages中未找到匹配的附件ID")
-
-        if not attachment_id:
-            # 策略: Blob URL兜底 - 查找最近的已上传图片
-            if is_blob_url(active_image_url):
-                logger.info(f"[AttachmentService] 🔄 [步骤1-兜底] Blob URL，尝试查找最近的已上传图片...")
-                attachment_id = self._find_latest_uploaded_image(session_id, user_id)
-                if attachment_id:
-                    logger.info(f"[AttachmentService] ✅ [步骤1-兜底] 找到最近的已上传图片: {attachment_id}")
-                else:
-                    logger.warning(f"[AttachmentService] ❌ [步骤1-兜底] 未找到最近的已上传图片")
-
-        if not attachment_id:
-            elapsed_time = (time.time() - start_time) * 1000
-            logger.warning(f"[AttachmentService] ❌ 未找到匹配的附件 (耗时: {elapsed_time:.2f}ms)")
-            return None
-
-        # ✅ 详细日志：步骤2 - 查询数据库
-        logger.info(f"[AttachmentService] 🔍 [步骤2] 查询数据库获取附件详情...")
-        logger.info(f"[AttachmentService]     - attachment_id: {attachment_id}")
-        logger.info(f"[AttachmentService]     - user_id: {user_id}")
-        
-        attachment = self.db.query(MessageAttachment).filter_by(
-            id=attachment_id,
-            user_id=user_id
-        ).first()
-
-        if not attachment:
-            elapsed_time = (time.time() - start_time) * 1000
-            logger.warning(f"[AttachmentService] ❌ [步骤2] 数据库中未找到附件记录 (耗时: {elapsed_time:.2f}ms)")
-            return None
-        
-        logger.info(f"[AttachmentService] ✅ [步骤2] 找到附件记录:")
-        logger.info(f"[AttachmentService]     - upload_status: {attachment.upload_status}")
-        # 对于BASE64 URL，只输出类型和长度，不输出内容
-        if is_base64_url(attachment.url):
-            logger.info(f"[AttachmentService]     - url: Base64 Data URL (长度: {len(attachment.url)} 字符)")
-        else:
-            logger.info(f"[AttachmentService]     - url: {attachment.url[:80] + '...' if attachment.url and len(attachment.url) > 80 else attachment.url or 'None'}")
-        logger.info(f"[AttachmentService]     - temp_url: {'存在' if attachment.temp_url else 'None'}")
-        if is_base64_url(attachment.temp_url):
-            logger.info(f"[AttachmentService]     - temp_url类型: Base64 (长度: {len(attachment.temp_url)} 字符)")
-        else:
-            logger.info(f"[AttachmentService]     - temp_url类型: {'HTTP' if is_http_url(attachment.temp_url) else 'None' if not attachment.temp_url else '其他'}")
-
-        # ✅ 详细日志：步骤3 - 检查上传状态
-        logger.info(f"[AttachmentService] 🔍 [步骤3] 检查上传状态...")
-        
-        # ✅ 关键修复：如果附件已经上传完成且有 HTTP URL，直接返回，不创建新任务
-        if attachment.upload_status == 'completed' and self._is_persistent_storage_url(attachment.url):
-            # 已上传到云存储 → 直接返回云URL，不创建新任务
-            elapsed_time = (time.time() - start_time) * 1000
-            logger.info(f"[AttachmentService] ✅ [步骤3] 附件已上传完成，直接复用 (耗时: {elapsed_time:.2f}ms)")
-            logger.info(f"[AttachmentService]     - 跳过上传任务创建")
-            # 对于BASE64 URL，只输出类型和长度，不输出内容
-            if is_base64_url(attachment.url):
-                logger.info(f"[AttachmentService]     - 返回云URL: Base64 Data URL (长度: {len(attachment.url)} 字符)")
-            else:
-                logger.info(f"[AttachmentService]     - 返回云URL: {attachment.url[:80] + '...' if len(attachment.url) > 80 else attachment.url}")
-            return {
-                'attachment_id': attachment_id,
-                'url': attachment.url,
-                'status': 'completed',
-                'task_id': None,
-                # ✅ 新增：返回完整的附件元数据
-                'message_id': attachment.message_id,
-                'session_id': attachment.session_id,
-                'user_id': attachment.user_id,
-                'filename': attachment.name,
-                'mime_type': attachment.mime_type,
-                'size': attachment.size,
-                'cloud_url': attachment.url,  # 已上传完成，url 就是 cloud_url
-                'created_at': None  # MessageAttachment 模型没有 created_at 字段
-            }
-        
-        # ✅ 如果附件有 HTTP URL 但状态不是 completed，可能是数据不一致，也直接返回
-        if self._is_persistent_storage_url(attachment.url) and attachment.upload_status != 'completed':
-            logger.warning(f"[AttachmentService] ⚠️ [步骤3] 附件有 HTTP URL 但状态不是 completed，更新状态并直接返回")
-            logger.warning(f"[AttachmentService]     - 原状态: {attachment.upload_status}")
-            logger.warning(f"[AttachmentService]     - 更新为: completed")
-            attachment.upload_status = 'completed'
-            self.db.commit()
-            elapsed_time = (time.time() - start_time) * 1000
-            logger.info(f"[AttachmentService] ✅ [步骤3] 状态已更新，直接返回 (耗时: {elapsed_time:.2f}ms)")
-            return {
-                'attachment_id': attachment_id,
-                'url': attachment.url,
-                'status': 'completed',
-                'task_id': None,
-                # ✅ 新增：返回完整的附件元数据
-                'message_id': attachment.message_id,
-                'session_id': attachment.session_id,
-                'user_id': attachment.user_id,
-                'filename': attachment.name,
-                'mime_type': attachment.mime_type,
-                'size': attachment.size,
-                'cloud_url': attachment.url,  # 已上传完成，url 就是 cloud_url
-                'created_at': None  # MessageAttachment 模型没有 created_at 字段
-            }
-        
-        # ✅ 详细日志：步骤4 - 未上传，准备创建上传任务
-        logger.info(f"[AttachmentService] 🔄 [步骤4] 附件未上传完成，准备创建上传任务...")
-        
-        # ✅ 修复：如果附件有 temp_url（Base64或HTTP URL），使用 source_ai_url
-        # 如果附件有 url（但未上传），使用 source_url
-        # 只有在附件已上传的情况下才使用 source_attachment_id 复用
-        # ✅ 关键修复：如果附件没有任何 URL，使用请求中的 active_image_url
-        source_ai_url = None
-        source_url = None
-        
-        if attachment.temp_url:
-            # 有 temp_url（Base64或HTTP URL），使用 source_ai_url
-            source_ai_url = attachment.temp_url
-            logger.info(f"[AttachmentService]     - 使用 temp_url 作为 source_ai_url")
-            logger.info(f"[AttachmentService]     - temp_url类型: {'Base64' if is_base64_url(attachment.temp_url) else 'HTTP'}")
-        elif attachment.url and not is_http_url(attachment.url):
-            # 有 url 但不是 HTTP URL（可能是Base64），使用 source_ai_url
-            source_ai_url = attachment.url
-            logger.info(f"[AttachmentService]     - 使用 url (非HTTP) 作为 source_ai_url")
-        elif attachment.url and is_http_url(attachment.url):
-            # 有 HTTP URL，使用 source_url
-            source_url = attachment.url
-            logger.info(f"[AttachmentService]     - 使用 url (HTTP) 作为 source_url")
-        elif active_image_url:
-            # ✅ 关键修复：附件没有任何 URL，使用请求中的 active_image_url
-            logger.info(f"[AttachmentService]     - 附件没有 URL，使用请求中的 active_image_url")
-            if is_base64_url(active_image_url) or is_blob_url(active_image_url):
-                source_ai_url = active_image_url
-                logger.info(f"[AttachmentService]     - active_image_url类型: {'Base64' if is_base64_url(active_image_url) else 'Blob'}")
-            elif is_http_url(active_image_url):
-                source_url = active_image_url
-                logger.info(f"[AttachmentService]     - active_image_url类型: HTTP")
-            else:
-                logger.warning(f"[AttachmentService]     - ⚠️ active_image_url类型未知: {active_image_url[:50]}...")
-        else:
-            logger.warning(f"[AttachmentService]     - ⚠️ 没有可用的源URL或文件路径")
-        
-        logger.info(f"[AttachmentService] 🔄 [步骤4] 调用 _submit_upload_task() 创建上传任务...")
-        task_id = await self._submit_upload_task(
-            user_id=user_id,
+        # 编排实现已迁出到 attachment_continuity;此处仅薄包装委派。
+        # 传 self 让实现按调用点解析协作者(_find_attachment_by_url /
+        # _submit_upload_task / db 等),保持 monkeypatch 契约。
+        return await _resolve_continuity_attachment_impl(
+            self,
+            active_image_url=active_image_url,
             session_id=session_id,
-            message_id=attachment.message_id,
-            attachment_id=attachment_id,
-            source_ai_url=source_ai_url,  # ✅ 使用 temp_url 或 url（Base64/HTTP）
-            source_url=source_url,  # ✅ 使用 HTTP URL（如果有）
-            filename=attachment.name or 'continuity-image.png',
-            mime_type=attachment.mime_type or 'image/png'
+            user_id=user_id,
+            messages=messages,
         )
-        
-        elapsed_time = (time.time() - start_time) * 1000
-        logger.info(f"[AttachmentService] ✅ [步骤4] 上传任务已创建: {task_id} (耗时: {elapsed_time:.2f}ms)")
-
-        # ✅ 关键修复：当数据库中没有保存 URL 时，使用前端传入的 active_image_url
-        # 这样 Base64 URL 可以正确传递给 AI 服务处理
-        final_url = attachment.temp_url or attachment.url or active_image_url or ''
-        
-        # 日志记录最终使用的 URL 来源
-        if attachment.temp_url:
-            url_source = 'temp_url'
-        elif attachment.url:
-            url_source = 'url'
-        elif active_image_url:
-            url_source = 'active_image_url (前端传入)'
-        else:
-            url_source = '无可用 URL'
-        logger.info(f"[AttachmentService]     - 返回 URL 来源: {url_source}")
-        
-        return {
-            'attachment_id': attachment_id,
-            'url': final_url,
-            'status': 'pending',
-            'task_id': task_id,
-            # ✅ 新增：返回完整的附件元数据
-            'message_id': attachment.message_id,
-            'session_id': attachment.session_id,
-            'user_id': attachment.user_id,
-            'filename': attachment.name,
-            'mime_type': attachment.mime_type,
-            'size': attachment.size,
-            'cloud_url': None,  # 尚未上传完成
-            'created_at': None  # MessageAttachment 模型没有 created_at 字段
-        }
 
     async def get_cloud_url(
         self,
