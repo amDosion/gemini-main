@@ -1012,6 +1012,9 @@ class UploadWorkerPool:
         task.status = 'completed'
         task.target_url = url
         task.completed_at = now
+        # V-S28: 上传成功后清除 source_ai_url（常为明文 base64 图像负载），
+        # 避免其残留在 DB 列中被数据库导出泄露；与完成状态在同一次提交中落库。
+        task.source_ai_url = None
         db.commit()
         await self._log_task_db_state(task.id, stage="after_success_commit", worker_name=worker_name)
         await redis_queue.append_task_log(
