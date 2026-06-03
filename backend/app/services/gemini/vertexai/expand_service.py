@@ -13,7 +13,6 @@ import logging
 import base64
 import os
 import io
-import json
 import tempfile
 from typing import Dict, Any, List, Optional, Tuple, Union
 
@@ -108,7 +107,10 @@ class ExpandService:
 
     def _load_config(self) -> Dict[str, Any]:
         """
-        从数据库或环境变量加载 Vertex AI 配置（遵循 SegmentationService 的模式）
+        从数据库或环境变量加载 Vertex AI 配置。
+
+        委托给共享的 ``load_vertex_ai_config`` 助手（与 SegmentationService 共用，
+        并通过协调层的 TTL 配置缓存合并同一用户的 DB 读取）。
 
         Returns:
             配置字典，包含：
@@ -119,61 +121,11 @@ class ExpandService:
         if self._config:
             return self._config
 
-        config = {}
+        from ._vertex_config import load_vertex_ai_config
 
-        # 尝试从数据库加载（如果有 user_id 和 db）
-        if self._user_id and self._db:
-            try:
-                from ....models.db_models import VertexAIConfig
-                from ....core.encryption import decrypt_data
-
-                user_config = self._db.query(VertexAIConfig).filter(
-                    VertexAIConfig.user_id == self._user_id
-                ).first()
-
-                if user_config and user_config.api_mode == 'vertex_ai':
-                    logger.info(f"[Expand Service] Using Vertex AI config from database for user={self._user_id}")
-
-                    config['project_id'] = user_config.vertex_ai_project_id
-                    config['location'] = user_config.vertex_ai_location or 'us-central1'
-
-                    # 解密 credentials JSON（如果有）
-                    if user_config.vertex_ai_credentials_json:
-                        try:
-                            credentials_json = decrypt_data(user_config.vertex_ai_credentials_json)
-
-                            # 创建 credentials 对象
-                            from google.oauth2 import service_account
-                            credentials_info = json.loads(credentials_json)
-                            credentials = service_account.Credentials.from_service_account_info(
-                                credentials_info,
-                                scopes=['https://www.googleapis.com/auth/cloud-platform']
-                            )
-                            config['credentials'] = credentials
-                            logger.info(f"[Expand Service] Successfully loaded Vertex AI credentials from database")
-                        except Exception as e:
-                            logger.error(f"[Expand Service] Failed to decrypt/parse credentials: {e}")
-
-                    self._config = config
-                    return config
-                else:
-                    logger.info(f"[Expand Service] No Vertex AI config in database for user={self._user_id if self._user_id else 'None'}, falling back to environment")
-            except Exception as e:
-                logger.warning(f"[Expand Service] Failed to load config from database: {e}")
-
-        # 回退到环境变量
-        try:
-            from ....core.config import settings
-            config['project_id'] = settings.gcp_project_id
-            config['location'] = settings.gcp_location or 'us-central1'
-            logger.info(f"[Expand Service] Using config from environment variables")
-        except Exception as e:
-            logger.error(f"[Expand Service] Failed to load config from environment: {e}")
-            raise ValueError("GCP configuration not available")
-
-        if not config.get('project_id'):
-            raise ValueError("GCP_PROJECT_ID not configured (neither in database nor environment)")
-
+        config = load_vertex_ai_config(
+            self._user_id, self._db, log_prefix="[Expand Service]"
+        )
         self._config = config
         return config
 

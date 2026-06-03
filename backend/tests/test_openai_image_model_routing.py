@@ -569,12 +569,14 @@ async def test_openai_gpt_image_generation_does_not_manual_retry_single_image_re
 
 
 @pytest.mark.asyncio
-async def test_openai_gpt_image_generation_rejects_short_fanned_out_response() -> None:
-    # 若扇出的某些 n=1 调用没有返回图像, 合计少于请求数, 契约检查必须报错。
+async def test_openai_gpt_image_generation_raises_when_no_usable_image_payload() -> None:
+    # 当所有扇出的 n=1 调用都没有返回图像(合计 0 张)时, 这是硬失败:
+    # 报错文案必须准确(不再使用误导性的 "native Image API n request" 旧措辞)。
+    # 注意: 部分成功(>=1 张)不再报错, 见 test_openai_image_fanout_partial.py。
     fake_client = _FakeOpenAIClient(single_generate_result_count=0)
     generator = ImageGenerator(api_key="test-key", client=fake_client)  # type: ignore[arg-type]
 
-    with pytest.raises(RuntimeError, match="returned fewer images than requested"):
+    with pytest.raises(RuntimeError, match="did not contain a usable image payload") as exc_info:
         await generator.generate_image(
             "Generate simple icon variants.",
             "gpt-image-2",
@@ -584,6 +586,8 @@ async def test_openai_gpt_image_generation_rejects_short_fanned_out_response() -
             output_format="png",
         )
 
+    # 旧的误导性措辞必须已被移除。
+    assert "native Image API n request" not in str(exc_info.value)
     assert [call["n"] for call in fake_client.images.calls] == [1, 1, 1]
 
 

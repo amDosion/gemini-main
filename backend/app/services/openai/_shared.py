@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import os
 import time
 from types import SimpleNamespace
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Mapping, Optional, Set
@@ -698,14 +699,37 @@ async def enhance_openai_video_prompt(
 
 # 扇出并发上限: 与 ResponsesImageService 保持一致, 并尊重网关的 per-user 并发限制
 # (sub2api 默认 user_concurrency=5)。避免 n=10 时一次打满并发触发 429/502。
+# 默认值; 可经 OPENAI_IMAGE_FANOUT_MAX_CONCURRENCY 环境变量按部署调优。
 IMAGE_FANOUT_MAX_CONCURRENCY = 4
+
+# 显式哨兵: 与“调用方主动传入 max_concurrency=None”区分; 默认时按环境变量解析。
+_FANOUT_CONCURRENCY_DEFAULT = object()
+
+
+def resolve_image_fanout_max_concurrency() -> int:
+    """解析图像扇出并发上限。
+
+    读取 ``OPENAI_IMAGE_FANOUT_MAX_CONCURRENCY`` 环境变量; 缺省、非法或 <=0
+    时回退到 ``IMAGE_FANOUT_MAX_CONCURRENCY`` (默认 4)。允许按部署/网关 per-user
+    并发限制调优而无需改代码。
+    """
+    raw = os.environ.get("OPENAI_IMAGE_FANOUT_MAX_CONCURRENCY")
+    if raw is None:
+        return IMAGE_FANOUT_MAX_CONCURRENCY
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return IMAGE_FANOUT_MAX_CONCURRENCY
+    if value <= 0:
+        return IMAGE_FANOUT_MAX_CONCURRENCY
+    return value
 
 
 async def call_image_api_with_fanout(
     request_call: Callable[[int], Awaitable[Any]],
     count: int,
     *,
-    max_concurrency: int = IMAGE_FANOUT_MAX_CONCURRENCY,
+    max_concurrency: Any = _FANOUT_CONCURRENCY_DEFAULT,
 ) -> Any:
     """发起图像请求；当请求张数 > 1 时,扇出为 N 个并发的单图(n=1)调用。
 
@@ -719,25 +743,63 @@ async def call_image_api_with_fanout(
     因此对 count>1 一律扇出为 count 个 n=1 调用并合并 ``.data``——原生批量后端与
     订阅/OAuth 后端都能拿回 N 张图,同时保持公开契约不变(返回对象的 ``.data``
     持有 N 个图像项)。并发受 ``max_concurrency`` 闸约束以免超过网关 per-user
-    并发限制。count<=1 时直接透传,不引入额外开销。
+    并发限制; 未显式传入时按 ``OPENAI_IMAGE_FANOUT_MAX_CONCURRENCY`` 解析。
+    count<=1 时直接透传,不引入额外开销。
+
+    部分成功语义(partial-success): 各扇出腿相互独立。某一腿失败(例如单次上游
+    502)不得丢弃其它已完成且已计费的腿——使用 ``return_exceptions=True`` 收集,
+    合并所有成功腿的 ``.data`` 并对失败腿记录警告。仅当所有腿都失败时, 才抛出
+    第一个异常(保留可诊断的失败路径)。
     """
     safe_count = max(1, count)
     if safe_count == 1:
         return await request_call(1)
 
-    semaphore = asyncio.Semaphore(max(1, min(max_concurrency, safe_count)))
+    if max_concurrency is _FANOUT_CONCURRENCY_DEFAULT or max_concurrency is None:
+        resolved_concurrency = resolve_image_fanout_max_concurrency()
+    else:
+        resolved_concurrency = int(max_concurrency)
+
+    semaphore = asyncio.Semaphore(max(1, min(resolved_concurrency, safe_count)))
 
     async def _bounded_call() -> Any:
         async with semaphore:
             return await request_call(1)
 
-    responses = await asyncio.gather(*(_bounded_call() for _ in range(safe_count)))
+    settled = await asyncio.gather(
+        *(_bounded_call() for _ in range(safe_count)),
+        return_exceptions=True,
+    )
 
     merged_data: List[Any] = []
-    for resp in responses:
+    successes: List[Any] = []
+    first_error: Optional[BaseException] = None
+    failure_count = 0
+    for resp in settled:
+        if isinstance(resp, BaseException):
+            failure_count += 1
+            if first_error is None:
+                first_error = resp
+            continue
+        successes.append(resp)
         merged_data.extend(getattr(resp, "data", None) or [])
 
-    base = responses[0]
+    if not successes:
+        # 全部失败: 抛出第一个异常以保留可诊断的失败路径。
+        assert first_error is not None  # for type-checkers; loop guarantees this
+        raise first_error
+
+    if failure_count:
+        logger.warning(
+            "[OpenAI fan-out] %s/%s image legs failed; returning %s partial result(s). "
+            "First error: %s",
+            failure_count,
+            safe_count,
+            len(merged_data),
+            first_error,
+        )
+
+    base = successes[0]
     try:
         base.data = merged_data
         return base

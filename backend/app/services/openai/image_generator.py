@@ -135,15 +135,20 @@ class ImageGenerator:
                 len(results),
             )
 
-            if len(results) < requested_count:
-                raise RuntimeError(
-                    "OpenAI Images Generate returned fewer images than requested "
-                    f"({len(results)}/{requested_count}). The native Image API n request "
-                    "did not satisfy the contract."
-                )
-
             if not results:
+                # 无任何可用图片(全部腿失败或响应无图像负载)才算硬失败。
                 raise RuntimeError("OpenAI image response did not contain a usable image payload.")
+
+            if len(results) < requested_count:
+                # 部分成功: 扇出为 n=1 的并发腿后, 个别腿可能因上游 502/429 失败。
+                # 不丢弃已完成且已计费的图片——返回部分结果并记录警告。
+                logger.warning(
+                    "[OpenAI ImageGenerator] Partial image result: %s/%s images returned "
+                    "(model=%s). Some fan-out legs failed upstream; surfacing completed images.",
+                    len(results),
+                    requested_count,
+                    model,
+                )
 
             if enhanced_prompt:
                 for result in results:
