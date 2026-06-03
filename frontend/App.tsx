@@ -542,8 +542,9 @@ const AppContent: React.FC = () => {
       mode: AppMode,
       forcedModelId?: string
     ) => {
-      // Only check for Key if not Ollama
-      if (!config.apiKey && config.providerId !== 'ollama') {
+      const hasActiveServerProfile = Boolean(activeProfileId || activeProfile);
+      // Profile credentials are server-owned and may be redacted from init/settings responses.
+      if (!config.apiKey && config.providerId !== 'ollama' && !hasActiveServerProfile) {
         setSettingsInitialTab('profiles');
         setIsSettingsOpen(true);
         return;
@@ -623,6 +624,8 @@ const AppContent: React.FC = () => {
       config.apiKey,
       config.providerId,
       config.protocol,
+      activeProfileId,
+      activeProfile,
       currentSessionId,
       sessions,
       showError,

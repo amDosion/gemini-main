@@ -18,6 +18,7 @@ const {
   showWarningMock,
   startTelemetrySpanMock,
   telemetryEndMock,
+  mockSettingsState,
 } = vi.hoisted(() => ({
   sendMessageMock: vi.fn(),
   setCurrentModelIdMock: vi.fn(),
@@ -31,6 +32,10 @@ const {
   showWarningMock: vi.fn(),
   startTelemetrySpanMock: vi.fn(),
   telemetryEndMock: vi.fn(),
+  mockSettingsState: {
+    apiKey: 'test-api-key',
+    activeProfileId: 'profile-1' as string | null,
+  },
 }));
 
 vi.mock('./services/frontendTelemetry', () => ({
@@ -167,7 +172,7 @@ vi.mock('./hooks', () => {
   return {
     useSettings: () => ({
       config: {
-        apiKey: 'test-api-key',
+        apiKey: mockSettingsState.apiKey,
         providerId: 'google',
         dashscopeApiKey: '',
         protocol: 'google',
@@ -176,14 +181,16 @@ vi.mock('./hooks', () => {
       isSettingsOpen: false,
       setIsSettingsOpen: setIsSettingsOpenMock,
       profiles: [],
-      activeProfileId: 'profile-1',
-      activeProfile: {
-        id: 'profile-1',
-        providerId: 'google',
-        updatedAt: 1,
-        hiddenModels: [],
-        savedModels: [oldModel, targetModel],
-      },
+      activeProfileId: mockSettingsState.activeProfileId,
+      activeProfile: mockSettingsState.activeProfileId
+        ? {
+            id: mockSettingsState.activeProfileId,
+            providerId: 'google',
+            updatedAt: 1,
+            hiddenModels: [],
+            savedModels: [oldModel, targetModel],
+          }
+        : null,
       saveProfile: vi.fn(),
       deleteProfile: vi.fn(),
       activateProfile: vi.fn(),
@@ -312,6 +319,8 @@ describe('App welcome prompt quick send model selection', () => {
     showWarningMock.mockReset();
     startTelemetrySpanMock.mockReset();
     telemetryEndMock.mockReset();
+    mockSettingsState.apiKey = 'test-api-key';
+    mockSettingsState.activeProfileId = 'profile-1';
 
     createNewSessionMock.mockReturnValue({
       id: 'session-new',
@@ -438,6 +447,23 @@ describe('App welcome prompt quick send model selection', () => {
     expect(showWarningMock).not.toHaveBeenCalledWith(
       expect.stringContaining('DashScope API Key is required')
     );
+    expect(setIsSettingsOpenMock).not.toHaveBeenCalled();
+  });
+
+  it('allows sending with an active server-side profile when the API key is redacted', async () => {
+    mockSettingsState.apiKey = '';
+    mockSettingsState.activeProfileId = 'profile-1';
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(sendMessageMock).toHaveBeenCalled();
+    });
+
     expect(setIsSettingsOpenMock).not.toHaveBeenCalled();
   });
 });
