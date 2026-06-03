@@ -10,6 +10,7 @@
 from fastapi import Request, HTTPException, status
 from datetime import datetime, timezone
 from typing import Optional
+from sqlalchemy.exc import SQLAlchemyError
 from ..core.jwt_utils import decode_token, TokenPayload
 from ..core.database import SessionLocal
 from ..models.db_models import User
@@ -57,9 +58,14 @@ def _is_access_token_active_in_db(user_id: str, access_token: str) -> bool:
             return False
 
         return True
-    except Exception as e:
-        # 鉴权失败默认拒绝（fail closed）
-        logger.error(f"[UserContext] 数据库校验 access_token 失败: {e}", exc_info=True)
+    except SQLAlchemyError as e:
+        # 仅吞掉数据库层错误并 fail closed（短暂的 DB 抖动 != 无效 token）。
+        # logger.exception 在 ERROR 级别记录并附带 traceback，便于区分
+        # "数据库故障导致的 401" 与 "token 本身无效"。
+        logger.exception(
+            "[UserContext] SQLAlchemy 数据库校验 access_token 失败（transient DB error）: %s",
+            e,
+        )
         return False
     finally:
         db.close()

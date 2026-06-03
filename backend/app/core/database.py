@@ -29,6 +29,9 @@ engine_kwargs = {
     "pool_recycle": int(os.getenv("DB_POOL_RECYCLE", "1800")),  # 连接池回收时间（秒）
     "pool_size": int(os.getenv("DB_POOL_SIZE", "10")),  # 连接池大小
     "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "20")),  # 最大溢出连接数
+    # 连接超时（秒）：数据库不可达时不要让请求线程无限期挂起，
+    # 让上游快速失败而非把事件循环/连接池拖死。psycopg2 将该参数透传到 libpq。
+    "connect_args": {"connect_timeout": int(os.getenv("DB_CONNECT_TIMEOUT", "5"))},
 }
 engine = create_engine(DATABASE_URL, **engine_kwargs)
 

@@ -19,6 +19,14 @@ from .encryption import decrypt_api_key
 logger = logging.getLogger(__name__)
 
 
+def _redact_key(api_key: Optional[str]) -> str:
+    """返回 API key 的脱敏表示（仅保留末 4 位），绝不返回完整密钥。"""
+    key = str(api_key or "")
+    if len(key) <= 4:
+        return "****"
+    return f"****{key[-4:]}"
+
+
 async def get_provider_credentials(
     provider: str,
     db: Session,
@@ -50,7 +58,15 @@ async def get_provider_credentials(
     """
     # 1. 优先使用请求参数（用于验证连接）
     if request_api_key and request_api_key.strip():
-        logger.info(f"[CredentialManager] Using API key from request parameter for {provider}")
+        # 请求方携带 api_key 覆盖项是敏感操作（绕过库内已存配置），
+        # 以 WARNING 记录并附带 user_id + provider，仅打印末 4 位，绝不记录完整密钥。
+        logger.warning(
+            "[CredentialManager] Request-supplied api_key override used "
+            "(user_id=%s, provider=%s, key=%s)",
+            user_id,
+            provider,
+            _redact_key(request_api_key),
+        )
         # 请求参数通常是明文，直接使用
         return request_api_key, request_base_url
 

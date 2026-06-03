@@ -1,5 +1,6 @@
 """Credential resolver for provider-backed LLM runtime."""
 
+import asyncio
 from typing import Optional, Tuple
 
 from fastapi import HTTPException
@@ -22,7 +23,10 @@ class ProviderCredentialsResolver:
     ) -> Tuple[str, Optional[str]]:
         normalized_profile_id = str(profile_id or "").strip()
         if normalized_profile_id:
-            return self._resolve_sync_for_explicit_profile(
+            # The explicit-profile path issues SYNC SQLAlchemy ORM queries; run it
+            # off the event-loop thread so it never blocks concurrent requests.
+            return await self._run_blocking(
+                self._resolve_sync_for_explicit_profile,
                 provider_id=provider_id,
                 profile_id=normalized_profile_id,
                 db=db,
@@ -30,19 +34,55 @@ class ProviderCredentialsResolver:
             )
 
         try:
-            return await get_provider_credentials(
-                provider=provider_id,
+            # get_provider_credentials is declared async but performs SYNC ORM
+            # work internally; offload it to a worker thread to keep the loop free.
+            return await self._run_blocking(
+                self._resolve_via_credential_manager,
+                provider_id=provider_id,
                 db=db,
                 user_id=user_id,
             )
         except HTTPException:
             # Keep previous fallback semantics used by AgentLLMService:
             # when exact provider key is not found, allow base provider prefix lookup.
-            return self._resolve_sync_with_base_provider_fallback(
+            return await self._run_blocking(
+                self._resolve_sync_with_base_provider_fallback,
                 provider_id=provider_id,
                 db=db,
                 user_id=user_id,
             )
+
+    @staticmethod
+    async def _run_blocking(func, **kwargs) -> Tuple[str, Optional[str]]:
+        """Execute a blocking sync resolver in the default thread-pool executor.
+
+        Keeps the public ``resolve`` coroutine non-blocking while reusing the
+        existing synchronous SQLAlchemy ORM logic unchanged. HTTPException (and
+        any other exception) raised by the sync callable propagates intact.
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, lambda: func(**kwargs))
+
+    def _resolve_via_credential_manager(
+        self,
+        provider_id: str,
+        db: Session,
+        user_id: str,
+    ) -> Tuple[str, Optional[str]]:
+        """Synchronous bridge to the (sync-internally) credential manager.
+
+        ``get_provider_credentials`` is a coroutine that awaits nothing and only
+        runs sync ORM queries, so driving it to completion with a private event
+        loop inside the worker thread is safe and keeps the sync ``Session`` on a
+        single thread (its lifecycle is still owned by the caller's get_db dep).
+        """
+        return asyncio.run(
+            get_provider_credentials(
+                provider=provider_id,
+                db=db,
+                user_id=user_id,
+            )
+        )
 
     def _provider_matches(self, expected_provider: str, profile_provider: str) -> bool:
         expected = str(expected_provider or "").strip().lower()
