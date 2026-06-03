@@ -20,8 +20,6 @@ ENCRYPTION_KEY 用于加密 JWT Secret Key 和其他敏感数据（如 API keys�
 
 import os
 import base64
-import json
-from pathlib import Path
 from typing import Optional, Dict, Any, Set
 from cryptography.fernet import Fernet, InvalidToken
 import logging
@@ -71,11 +69,6 @@ def _decrypt_fernet_config_value(fernet: Fernet, value: str) -> str:
 
 # ==================== ENCRYPTION_KEY 管理 ====================
 
-# 文件路径
-from .path_utils import CREDENTIALS_DIR as _credentials_dir, ensure_credentials_dir
-
-ENCRYPTION_KEY_FILE = _credentials_dir / ".encryption_key"
-
 
 class EncryptionKeyManager:
     """ENCRYPTION_KEY 管理器"""
@@ -90,52 +83,6 @@ class EncryptionKeyManager:
         """
         key = Fernet.generate_key()
         return key.decode()
-    
-    @staticmethod
-    def save_key(key: str) -> None:
-        """
-        保存 ENCRYPTION_KEY 到文件
-        
-        Args:
-            key: ENCRYPTION_KEY（Fernet 格式）
-        """
-        try:
-            # 确保目录存在并强制收紧到 0o700（对存量 0o755 目录会调用 chmod 矫正）
-            ensure_credentials_dir()
-
-            # 保存到文件（不加密，但用文件权限保护）
-            data = {
-                'key': key,
-                'generated_at': str(Path(__file__).stat().st_mtime)  # 简单的时间戳
-            }
-            with open(ENCRYPTION_KEY_FILE, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2)
-            
-            # 设置文件权限（仅所有者可读）
-            os.chmod(ENCRYPTION_KEY_FILE, 0o600)
-            logger.info(f"[EncryptionKeyManager] ✅ ENCRYPTION_KEY 已保存到: {ENCRYPTION_KEY_FILE}")
-        except Exception as e:
-            logger.error(f"[EncryptionKeyManager] ❌ 保存 ENCRYPTION_KEY 失败: {e}")
-            raise
-    
-    @staticmethod
-    def load_key_from_file() -> Optional[str]:
-        """
-        从文件加载 ENCRYPTION_KEY
-        
-        Returns:
-            ENCRYPTION_KEY 或 None（如果文件不存在）
-        """
-        try:
-            if not ENCRYPTION_KEY_FILE.exists():
-                return None
-            
-            with open(ENCRYPTION_KEY_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data.get('key')
-        except Exception as e:
-            logger.warning(f"[EncryptionKeyManager] 从文件加载 ENCRYPTION_KEY 失败: {e}")
-            return None
     
     @staticmethod
     def get_or_create_key() -> str:
@@ -486,13 +433,14 @@ def decrypt_api_key(api_key: str, silent: bool = False) -> str:
 
     Args:
         api_key: API Key（可能是明文或已加密）
-        silent: 如果为 True，解密失败时返回原值而非抛异常
+        silent: 如果为 True，解密失败时 fail-closed 返回空串（绝不返回密文），
+            而不是抛异常；如果为 False，解密失败时抛 ConfigDecryptionError。
 
     Returns:
-        解密后的 API Key
+        解密后的 API Key；当 silent=True 且对一个 Fernet 密文解密失败时返回 ""。
 
     Raises:
-        Exception: 当 silent=False 且解密失败时
+        ConfigDecryptionError: 当 silent=False 且对 Fernet 密文解密失败时
     """
     if not api_key:
         return api_key

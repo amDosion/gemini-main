@@ -15,6 +15,7 @@ from cryptography.fernet import Fernet
 
 from app.core.encryption import (
     ConfigDecryptionError,
+    EncryptionKeyManager,
     decrypt_api_key,
     encrypt_data,
     looks_like_fernet_token,
@@ -61,3 +62,17 @@ def test_plaintext_key_passthrough(monkeypatch):
         "AIzaSyExamplePlaintextGoogleKey"
     )
     assert decrypt_api_key("", silent=True) == ""
+
+
+def test_dead_file_key_persistence_methods_are_removed():
+    """File-based ENCRYPTION_KEY persistence was unreferenced dead code.
+
+    The key is sourced only from the environment (``get_or_create_key``); the
+    old ``save_key`` / ``load_key_from_file`` helpers had zero callers and are
+    removed. Guard against their reintroduction to keep the key off disk.
+    """
+    assert not hasattr(EncryptionKeyManager, "save_key")
+    assert not hasattr(EncryptionKeyManager, "load_key_from_file")
+    # The intentionally-retained surface stays available.
+    assert hasattr(EncryptionKeyManager, "generate_key")
+    assert hasattr(EncryptionKeyManager, "get_or_create_key")
