@@ -1249,6 +1249,59 @@ describe('mediaCache', () => {
     expect(snapshot.recentEvents).toEqual([]);
   });
 
+  it('bounds the diagnostic ring buffer and preserves the most-recent entries', async () => {
+    __setMediaCacheDiagnosticsEnabledForTest(true);
+    resetMediaCacheDiagnostics();
+
+    const totalRecords = 250;
+    // Each saveMediaBlobToCache persists successfully and records exactly one
+    // `cache-write` diagnostic, giving us a deterministic 1-event-per-call driver.
+    for (let index = 0; index < totalRecords; index += 1) {
+      const identity = resolveMediaCacheIdentity({
+        attachmentId: `att-ring-${index}`,
+        url: `/api/storage/local-files/generated/ring-${index}.png`,
+        mimeType: 'image/png',
+        userScope: 'user-1',
+      })!;
+      await saveMediaBlobToCache(identity, await new Response(`ring-${index}`).blob(), {
+        contentType: 'image/png',
+      });
+    }
+
+    const snapshot = getMediaCacheDiagnosticsSnapshot();
+
+    // Counter must reflect every record, not just the retained window.
+    expect(snapshot.counters['cache-write']).toBe(totalRecords);
+
+    // The event window must stay bounded regardless of how many records arrived.
+    expect(snapshot.recentEvents.length).toBeLessThanOrEqual(200);
+    expect(snapshot.recentEvents.length).toBe(200);
+
+    // The retained events must be the most-recent ones, in chronological order.
+    const sourceUrls = snapshot.recentEvents.map((event) => event.sourceUrl);
+    const expectedSourceUrls = Array.from({ length: 200 }, (_unused, offset) => {
+      const recordIndex = totalRecords - 200 + offset;
+      return `/api/storage/local-files/generated/ring-${recordIndex}.png`;
+    });
+    expect(sourceUrls).toEqual(expectedSourceUrls);
+
+    // The newest event corresponds to the final record.
+    expect(snapshot.recentEvents[snapshot.recentEvents.length - 1].sourceUrl).toBe(
+      `/api/storage/local-files/generated/ring-${totalRecords - 1}.png`
+    );
+
+    // Timestamps must be non-decreasing (oldest first, newest last).
+    for (let index = 1; index < snapshot.recentEvents.length; index += 1) {
+      expect(snapshot.recentEvents[index].timestamp).toBeGreaterThanOrEqual(
+        snapshot.recentEvents[index - 1].timestamp
+      );
+    }
+
+    // The snapshot must be a defensive copy: mutating it must not corrupt internal state.
+    snapshot.recentEvents.push({ type: 'memory-hit', timestamp: Date.now() });
+    expect(getMediaCacheDiagnosticsSnapshot().recentEvents.length).toBe(200);
+  });
+
   it('does not create a persistent identity for data URLs', () => {
     const identity = resolveMediaCacheIdentity({
       url: 'data:image/png;base64,abc',

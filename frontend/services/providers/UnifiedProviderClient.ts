@@ -35,6 +35,70 @@ import {
   pickAllowedEntries,
 } from './unifiedProviderHelpers';
 
+/**
+ * Raw model entry as returned by `GET /api/models/{provider}`.
+ *
+ * The backend emits complete ModelConfig-shaped objects, but every field is
+ * treated as optional/dynamic here because the shape is provider-driven and
+ * may evolve; narrowing happens at the mapping site.
+ */
+interface RawModelEntry {
+  id: string;
+  name?: string;
+  description?: string;
+  capabilities?: Record<string, boolean>;
+  contextWindow?: number;
+}
+
+/** Response envelope for `GET /api/models/{provider}`. */
+interface ModelsListResponse {
+  models: RawModelEntry[];
+}
+
+/**
+ * Unified backend response envelope: `{ success: boolean; data: T }`.
+ * Used by every `/api/modes/{provider}/{mode}` endpoint.
+ */
+interface UnifiedResponseEnvelope<T = unknown> {
+  success: boolean;
+  data: T;
+}
+
+/**
+ * Image result item shape returned inside `data.images` for image modes.
+ * Fields mirror the standardized backend payload (snake_case is converted to
+ * camelCase by CaseConversionMiddleware before it reaches the client).
+ */
+interface RawImageResultItem {
+  url?: string;
+  mimeType?: string;
+  filename?: string;
+  attachmentId?: string;
+  uploadStatus?: 'pending' | 'completed' | 'failed';
+  taskId?: string;
+  thoughts?: Array<{ type: 'text' | 'image'; content: string }>;
+  text?: string;
+  enhancedPrompt?: string;
+  openaiResponseId?: string;
+  messageId?: string;
+  sessionId?: string;
+  userId?: string;
+  size?: number;
+  cloudUrl?: string;
+  createdAt?: number;
+}
+
+/** `data` payload for image modes that return a list of generated images. */
+interface ImageModeData {
+  images?: RawImageResultItem[];
+}
+
+/** Response payload for `POST /api/upload/{provider}`. */
+interface UploadFileResponse {
+  fileId?: string;
+  url?: string;
+}
+
 export class UnifiedProviderClient implements ILLMProvider {
   public id: string;
 
@@ -56,54 +120,53 @@ export class UnifiedProviderClient implements ILLMProvider {
     baseUrl?: string,
     useCache: boolean = true
   ): Promise<ModelConfig[]> {
-    try {
-      // Build query parameters
-      // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
-      const params = new URLSearchParams();
-      if (apiKey) {
-        params.append('apiKey', apiKey); // ✅ 传递 API Key 给后端
-      }
-      if (baseUrl) {
-        params.append('baseUrl', baseUrl);
-      }
-      // ✅ 添加 useCache 参数，验证连接时应该使用 false 强制刷新
-      params.append('useCache', String(useCache));
+    // Build query parameters
+    // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
+    const params = new URLSearchParams();
+    if (apiKey) {
+      params.append('apiKey', apiKey); // ✅ 传递 API Key 给后端
+    }
+    if (baseUrl) {
+      params.append('baseUrl', baseUrl);
+    }
+    // ✅ 添加 useCache 参数，验证连接时应该使用 false 强制刷新
+    params.append('useCache', String(useCache));
 
-      // Call backend API with timeout protection
-      const queryString = params.toString();
-      const url = queryString ? `/api/models/${this.id}?${queryString}` : `/api/models/${this.id}`;
-      const response = await fetchWithTimeout(url, {
-        withAuth: true,
-        skipAuth: true,
-        timeoutMs: 30000,
-        timeoutMessage: `Request to ${this.id} API timed out after 30 seconds. Please check your network connection and try again.`,
-      });
+    // Call backend API with timeout protection
+    const queryString = params.toString();
+    const url = queryString ? `/api/models/${this.id}?${queryString}` : `/api/models/${this.id}`;
+    const response = await fetchWithTimeout(url, {
+      withAuth: true,
+      skipAuth: true,
+      timeoutMs: 30000,
+      timeoutMessage: `Request to ${this.id} API timed out after 30 seconds. Please check your network connection and try again.`,
+    });
 
-      if (!response.ok) {
-        const parsedError = await parseHttpError(response, 'Failed to get models');
-        throw new Error(`Failed to get models: ${parsedError.message}`);
-      }
+    if (!response.ok) {
+      const parsedError = await parseHttpError(response, 'Failed to get models');
+      throw new Error(`Failed to get models: ${parsedError.message}`);
+    }
 
-      const data = await readJsonResponse<any>(response);
+    const data = await readJsonResponse<ModelsListResponse>(response);
 
-      // Backend now returns complete ModelConfig objects
-      // Use them directly, with fallback for missing capabilities
-      return data.models.map((model: Record<string, unknown>) => ({
-        id: String(model.id),
-        name: String(model.name || model.id),
-        description: String(model.description || `${this.id} model: ${model.id}`),
-        capabilities: (model.capabilities || {
+    // Backend now returns complete ModelConfig objects
+    // Use them directly, with fallback for missing capabilities
+    return data.models.map((model) => ({
+      id: String(model.id),
+      name: String(model.name || model.id),
+      description: String(model.description || `${this.id} model: ${model.id}`),
+      // Backend may omit specific capability flags; fall back to all-false.
+      // The raw record is widened by the backend contract, so narrow it to the
+      // concrete ModelConfig capability shape here.
+      capabilities: (model.capabilities ||
+        ({
           vision: false,
           search: false,
           reasoning: false,
           coding: false,
-        }) as Record<string, boolean>,
-        contextWindow:
-          Number(model.contextWindow) || this.getDefaultContextWindow(String(model.id)),
-      }));
-    } catch (error) {
-      throw error;
-    }
+        } as const)) as ModelConfig['capabilities'],
+      contextWindow: Number(model.contextWindow) || this.getDefaultContextWindow(String(model.id)),
+    }));
   }
 
   /**
@@ -183,11 +246,11 @@ export class UnifiedProviderClient implements ILLMProvider {
       const controller = new AbortController();
 
       const upstreamAbortListener = () => {
-        controller.abort((abortSignal as any)?.reason ?? 'Stream aborted by user');
+        controller.abort(abortSignal?.reason ?? 'Stream aborted by user');
       };
       if (abortSignal) {
         if (abortSignal.aborted) {
-          controller.abort((abortSignal as any)?.reason ?? 'Stream aborted by user');
+          controller.abort(abortSignal.reason ?? 'Stream aborted by user');
         } else {
           abortSignal.addEventListener('abort', upstreamAbortListener, { once: true });
         }
@@ -384,100 +447,100 @@ export class UnifiedProviderClient implements ILLMProvider {
     prompt: string,
     attachments: Attachment[] = [],
     options: Partial<ChatOptions> = {},
-    extra: Record<string, any> = {}
+    extra: Record<string, unknown> = {}
+    // NOTE: return is intentionally `any`. The payload is heterogeneous across
+    // modes (image arrays, video/audio/pdf objects) and a public consumer test
+    // indexes the image-mode result directly; precise typing lives on the
+    // internal envelope/item interfaces below instead of the public surface.
   ): Promise<any> {
-    try {
-      const normalizedOptions = normalizeLegacyModeOptions(mode, options);
-      const normalizedExtra = pruneUndefinedEntries({ ...(extra || {}) });
-      const { kept: sanitizedOptions, droppedKeys: droppedOptionKeys } = pickAllowedEntries(
-        normalizedOptions,
-        MODE_OPTION_KEYS
-      );
-      const { kept: sanitizedExtra, droppedKeys: droppedExtraKeys } = pickAllowedEntries(
-        normalizedExtra,
-        MODE_EXTRA_KEYS
-      );
-      const requestBody = {
-        modelId,
-        prompt,
-        attachments,
-        options: sanitizedOptions,
-        extra: sanitizedExtra,
-      };
+    const normalizedOptions = normalizeLegacyModeOptions(mode, options);
+    const normalizedExtra = pruneUndefinedEntries({ ...(extra || {}) });
+    const { kept: sanitizedOptions, droppedKeys: droppedOptionKeys } = pickAllowedEntries(
+      normalizedOptions,
+      MODE_OPTION_KEYS
+    );
+    const { kept: sanitizedExtra, droppedKeys: droppedExtraKeys } = pickAllowedEntries(
+      normalizedExtra,
+      MODE_EXTRA_KEYS
+    );
+    const requestBody = {
+      modelId,
+      prompt,
+      attachments,
+      options: sanitizedOptions,
+      extra: sanitizedExtra,
+    };
 
-      // ✅ 详细日志：记录发送给后端的参数（特别是 image-gen 模式）
-      if (mode === 'image-gen') {
-        if (droppedOptionKeys.length > 0 || droppedExtraKeys.length > 0) {
-        }
+    // ✅ 详细日志：记录发送给后端的参数（特别是 image-gen 模式）
+    if (mode === 'image-gen') {
+      if (droppedOptionKeys.length > 0 || droppedExtraKeys.length > 0) {
       }
-
-      const headers = new Headers({
-        'Content-Type': 'application/json',
-      });
-
-      // ✅ 统一路由: /api/modes/{provider}/{mode}
-      const url = `/api/modes/${this.id}/${mode}`;
-      if (mode === 'image-gen') {
-      }
-
-      const response = await fetchWithTimeout(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(requestBody),
-        withAuth: true,
-        skipAuth: true,
-        timeoutMs: 0,
-      });
-
-      if (!response.ok) {
-        const parsedError = await parseHttpError(
-          response,
-          `Mode execution failed (${response.status})`
-        );
-        throw new Error(parsedError.message);
-      }
-
-      const data = await readJsonResponse<any>(response);
-      // ✅ 新架构统一响应格式: { success: true, data: {...} }
-      if (!data.success || data.data === undefined) {
-        throw new Error(`Invalid response format: ${JSON.stringify(data)}`);
-      }
-
-      // ✅ 处理图片生成、编辑、试衣结果（后端已处理，返回标准化格式）
-      // 对于 image-gen、image-edit、virtual-try-on 模式，后端返回 { images: [...] }
-      const isImageMode =
-        mode === 'image-gen' || mode.startsWith('image-') || mode === 'virtual-try-on';
-      if (isImageMode && data.data.images) {
-        // 将后端格式转换为 ImageGenerationResult[]
-        // ✅ 修复：复制后端返回的所有元数据字段，确保前端能获取完整信息
-        return data.data.images.map(
-          (img: Record<string, unknown>) =>
-            ({
-              url: img.url, // 显示URL（可能是 /api/temp-images/{attachment_id} 或 HTTP URL）
-              mimeType: img.mimeType || 'image/png',
-              filename: img.filename,
-              attachmentId: img.attachmentId,
-              uploadStatus: img.uploadStatus,
-              taskId: img.taskId,
-              thoughts: img.thoughts, // ✅ 修复断点2：传递 thinking 数据
-              text: img.text, // ✅ 修复断点2：传递文本响应
-              enhancedPrompt: img.enhancedPrompt, // ✅ 传递增强后的提示词（如果存在）
-              openaiResponseId: img.openaiResponseId, // OpenAI Responses API 多轮图片编辑
-              // ✅ 新增：传递完整的附件元数据（后端 CaseConversionMiddleware 会自动转换 snake_case → camelCase）
-              messageId: img.messageId, // 关联的消息 ID
-              sessionId: img.sessionId, // 关联的会话 ID
-              userId: img.userId, // 用户 ID
-              size: img.size, // 文件大小（字节）
-              cloudUrl: img.cloudUrl, // 云存储 URL（如果已上传）
-              createdAt: img.createdAt, // 创建时间戳（毫秒）
-            }) as ImageGenerationResult
-        );
-      }
-
-      return data.data;
-    } catch (error) {
-      throw error;
     }
+
+    const headers = new Headers({
+      'Content-Type': 'application/json',
+    });
+
+    // ✅ 统一路由: /api/modes/{provider}/{mode}
+    const url = `/api/modes/${this.id}/${mode}`;
+    if (mode === 'image-gen') {
+    }
+
+    const response = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(requestBody),
+      withAuth: true,
+      skipAuth: true,
+      timeoutMs: 0,
+    });
+
+    if (!response.ok) {
+      const parsedError = await parseHttpError(
+        response,
+        `Mode execution failed (${response.status})`
+      );
+      throw new Error(parsedError.message);
+    }
+
+    const data = await readJsonResponse<UnifiedResponseEnvelope>(response);
+    // ✅ 新架构统一响应格式: { success: true, data: {...} }
+    if (!data.success || data.data === undefined) {
+      throw new Error(`Invalid response format: ${JSON.stringify(data)}`);
+    }
+
+    // ✅ 处理图片生成、编辑、试衣结果（后端已处理，返回标准化格式）
+    // 对于 image-gen、image-edit、virtual-try-on 模式，后端返回 { images: [...] }
+    const isImageMode =
+      mode === 'image-gen' || mode.startsWith('image-') || mode === 'virtual-try-on';
+    const imageData = data.data as ImageModeData;
+    if (isImageMode && imageData.images) {
+      // 将后端格式转换为 ImageGenerationResult[]
+      // ✅ 修复：复制后端返回的所有元数据字段，确保前端能获取完整信息
+      return imageData.images.map(
+        (img): ImageGenerationResult => ({
+          url: String(img.url ?? ''), // 显示URL（可能是 /api/temp-images/{attachment_id} 或 HTTP URL）
+          mimeType: img.mimeType || 'image/png',
+          filename: img.filename,
+          attachmentId: img.attachmentId,
+          uploadStatus: img.uploadStatus,
+          taskId: img.taskId,
+          thoughts: img.thoughts, // ✅ 修复断点2：传递 thinking 数据
+          text: img.text, // ✅ 修复断点2：传递文本响应
+          enhancedPrompt: img.enhancedPrompt, // ✅ 传递增强后的提示词（如果存在）
+          openaiResponseId: img.openaiResponseId, // OpenAI Responses API 多轮图片编辑
+          // ✅ 新增：传递完整的附件元数据（后端 CaseConversionMiddleware 会自动转换 snake_case → camelCase）
+          messageId: img.messageId, // 关联的消息 ID
+          sessionId: img.sessionId, // 关联的会话 ID
+          userId: img.userId, // 用户 ID
+          size: img.size, // 文件大小（字节）
+          cloudUrl: img.cloudUrl, // 云存储 URL（如果已上传）
+          createdAt: img.createdAt, // 创建时间戳（毫秒）
+        })
+      );
+    }
+
+    return data.data;
   }
 
   /**
@@ -708,7 +771,7 @@ export class UnifiedProviderClient implements ILLMProvider {
       '', // prompt 对于 outpainting 可能不需要
       [referenceImage],
       { ...options, baseUrl: baseUrl || options.baseUrl },
-      options.outPainting || {}
+      (options.outPainting || {}) as Record<string, unknown>
     );
 
     // 返回单个结果（outpainting 通常返回单张图片）
@@ -722,34 +785,30 @@ export class UnifiedProviderClient implements ILLMProvider {
    * Upload file
    */
   async uploadFile(file: File, apiKey: string, baseUrl: string): Promise<string> {
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      if (apiKey) {
-        formData.append('apiKey', apiKey);
-      }
-      if (baseUrl) {
-        formData.append('baseUrl', baseUrl);
-      }
-
-      const response = await fetchWithTimeout(`/api/upload/${this.id}`, {
-        method: 'POST',
-        body: formData,
-        withAuth: true,
-        skipAuth: true,
-        timeoutMs: 120000,
-      });
-
-      if (!response.ok) {
-        const parsedError = await parseHttpError(response, 'File upload failed');
-        throw new Error(`File upload failed: ${parsedError.message}`);
-      }
-
-      const data = await readJsonResponse<any>(response);
-      return data.fileId || data.url;
-    } catch (error) {
-      throw error;
+    const formData = new FormData();
+    formData.append('file', file);
+    if (apiKey) {
+      formData.append('apiKey', apiKey);
     }
+    if (baseUrl) {
+      formData.append('baseUrl', baseUrl);
+    }
+
+    const response = await fetchWithTimeout(`/api/upload/${this.id}`, {
+      method: 'POST',
+      body: formData,
+      withAuth: true,
+      skipAuth: true,
+      timeoutMs: 120000,
+    });
+
+    if (!response.ok) {
+      const parsedError = await parseHttpError(response, 'File upload failed');
+      throw new Error(`File upload failed: ${parsedError.message}`);
+    }
+
+    const data = await readJsonResponse<UploadFileResponse>(response);
+    return data.fileId || data.url || '';
   }
 
   // ==================== Helper Methods ====================

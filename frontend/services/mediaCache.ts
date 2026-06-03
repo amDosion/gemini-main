@@ -165,7 +165,13 @@ let persistentMaxEntries = DEFAULT_PERSISTENT_MAX_ENTRIES;
 let persistentMaxBytes = DEFAULT_PERSISTENT_MAX_BYTES;
 let diagnosticsEnabledOverride: boolean | null = null;
 let diagnosticCounters: Partial<Record<MediaCacheDiagnosticEventType, number>> = {};
-let diagnosticEvents: MediaCacheDiagnosticEvent[] = [];
+// Bounded ring buffer for dev-only diagnostics. We mutate `diagnosticEventRing`
+// in place (writing at `diagnosticEventHead` and advancing modulo the capacity)
+// so recording never allocates a new array, and the buffer can never grow past
+// DIAGNOSTIC_EVENT_LIMIT entries regardless of how many events are recorded.
+const diagnosticEventRing: MediaCacheDiagnosticEvent[] = [];
+let diagnosticEventHead = 0;
+let diagnosticEventCount = 0;
 
 const OBJECT_URL_RECORD_LIMIT = 1000;
 
@@ -200,25 +206,45 @@ const recordDiagnostic = (
     ...diagnosticCounters,
     [type]: (diagnosticCounters[type] || 0) + 1,
   };
-  diagnosticEvents = [
-    ...diagnosticEvents.slice(-(DIAGNOSTIC_EVENT_LIMIT - 1)),
-    {
-      type,
-      ...detail,
-      timestamp: Date.now(),
-    },
-  ];
+
+  const event: MediaCacheDiagnosticEvent = {
+    type,
+    ...detail,
+    timestamp: Date.now(),
+  };
+
+  // Write into the ring in place; once full, overwrite the oldest slot.
+  diagnosticEventRing[diagnosticEventHead] = event;
+  diagnosticEventHead = (diagnosticEventHead + 1) % DIAGNOSTIC_EVENT_LIMIT;
+  if (diagnosticEventCount < DIAGNOSTIC_EVENT_LIMIT) {
+    diagnosticEventCount += 1;
+  }
+};
+
+const readDiagnosticEventsInOrder = (): MediaCacheDiagnosticEvent[] => {
+  // Materialize the ring oldest-first so consumers see chronological order.
+  const ordered: MediaCacheDiagnosticEvent[] = new Array(diagnosticEventCount);
+  const start =
+    diagnosticEventCount < DIAGNOSTIC_EVENT_LIMIT
+      ? 0
+      : diagnosticEventHead;
+  for (let offset = 0; offset < diagnosticEventCount; offset += 1) {
+    ordered[offset] = diagnosticEventRing[(start + offset) % DIAGNOSTIC_EVENT_LIMIT];
+  }
+  return ordered;
 };
 
 export const getMediaCacheDiagnosticsSnapshot = (): MediaCacheDiagnosticsSnapshot => ({
   enabled: isDiagnosticsEnabled(),
   counters: { ...diagnosticCounters },
-  recentEvents: [...diagnosticEvents],
+  recentEvents: readDiagnosticEventsInOrder(),
 });
 
 export const resetMediaCacheDiagnostics = (): void => {
   diagnosticCounters = {};
-  diagnosticEvents = [];
+  diagnosticEventRing.length = 0;
+  diagnosticEventHead = 0;
+  diagnosticEventCount = 0;
 };
 
 const canUseCacheStorage = (): boolean =>
