@@ -73,6 +73,9 @@ queue/
 !backend/app/services/gemini/agent/test_templates/video_first_frame_sample.jpg
 !backend/app/services/gemini/agent/test_templates/video_last_frame_sample.jpg
 
+# Investigation evidence docs (local-only, not committed)
+.investigations/
+
 # AI tool configs
 .claude/
 .codex/
