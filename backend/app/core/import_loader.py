@@ -45,7 +45,8 @@ def safe_import(
     attr_names: Optional[List[str]] = None,
     fallback_values: Optional[Dict[str, Any]] = None,
     warning_message: Optional[str] = None,
-    info_message: Optional[str] = None
+    info_message: Optional[str] = None,
+    critical: bool = False
 ) -> ImportResult:
     """
     统一的 fallback import 函数
@@ -56,9 +57,16 @@ def safe_import(
         fallback_values: 导入失败时的 fallback 值字典，如 {'SELENIUM_AVAILABLE': False}
         warning_message: 导入失败时的警告消息
         info_message: 导入失败时的提示消息（如安装说明）
+        critical: 是否为关键模块。关键模块导入失败时抛出 RuntimeError，
+            而非静默降级为 None stub。用于 routers.registry / core.database
+            等"失败即应用不可用"的模块——否则所有路由会静默地不被注册，
+            表现为难以诊断的运行期 404/启动异常。
 
     Returns:
         ImportResult: 包含导入结果的对象
+
+    Raises:
+        RuntimeError: 当 critical=True 且所有导入路径均失败时抛出。
 
     Example:
         >>> result = safe_import(
@@ -121,13 +129,21 @@ def safe_import(
         try:
             from .logger import LOG_PREFIXES
             prefix = LOG_PREFIXES.get('warning', '⚠️')
-        except:
+        except Exception:
             prefix = '⚠️'
 
         logger.warning(f"{prefix} {warning_message}: {last_error}")
 
     if info_message:
         logger.info(info_message)
+
+    # 关键模块导入失败必须 fail-fast：静默降级会让路由不被注册或数据库不可用，
+    # 表现为不透明的运行期故障，远比一条清晰的启动异常难以诊断。
+    if critical:
+        raise RuntimeError(
+            f"Critical module import failed: '{relative_path}'. "
+            f"The application cannot start safely. Last error: {last_error}"
+        ) from last_error
 
     # 返回 fallback 值
     attrs = fallback_values.copy() if fallback_values else {}
@@ -164,8 +180,10 @@ def safe_import_multiple(configs: List[Dict[str, Any]]) -> Dict[str, ImportResul
     results = {}
 
     for config in configs:
-        name = config.pop('name')
-        result = safe_import(**config)
+        # 复制后再 pop，避免就地修改调用方传入的配置字典（A3）。
+        local_config = dict(config)
+        name = local_config.pop('name')
+        result = safe_import(**local_config)
         results[name] = result
 
     return results

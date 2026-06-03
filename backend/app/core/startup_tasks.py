@@ -127,6 +127,56 @@ async def setup_logger_configuration(log_prefixes: Dict[str, str]):
         logger.warning(f"{log_prefixes['warning']} Failed to ensure logger configuration: {e}")
 
 
+def assert_jwt_secret_configured(log_prefixes: Dict[str, str]) -> None:
+    """启动前置断言：JWT_SECRET_KEY 必须已配置。
+
+    jwt_utils 现在延迟解析密钥（import 不再有副作用），因此配置缺失不会再以
+    不透明的 import-chain 失败暴露。为保留"配置错误立即失败"的语义，这里在
+    启动阶段显式做一次 fail-fast 校验，给出清晰的错误信息，而不是等到第一次
+    登录请求才在请求路径里报错。
+
+    Raises:
+        RuntimeError: JWT_SECRET_KEY 未配置。
+    """
+    from .jwt_utils import _get_cached_jwt_secret, clear_jwt_secret_cache
+
+    # 清缓存以确保读取的是当前进程环境中的真实配置（支持启动期热轮换语义）。
+    clear_jwt_secret_cache()
+    try:
+        _get_cached_jwt_secret()
+    except RuntimeError as exc:
+        logger.error(
+            f"{log_prefixes['error']} JWT_SECRET_KEY 未配置，应用无法安全启动: {exc}"
+        )
+        raise RuntimeError(
+            "JWT_SECRET_KEY is not configured. Set it via environment variable "
+            "or secret manager before starting the application."
+        ) from exc
+
+
+async def initialize_database_schema(log_prefixes: Dict[str, str]):
+    """
+    初始化数据库表结构（Base.metadata.create_all）。
+
+    之前此调用内联在 main.py 的模块导入阶段执行（import 即建表），属于一个
+    重副作用：导入应用包就会连库建表，污染测试/只读/CLI 等场景，并且把数据库
+    可用性耦合进 import-chain。现移至 lifespan 启动期，作为显式启动任务，
+    使建表只在应用真正启动时发生。
+
+    与旧行为保持一致：建表失败仅告警（不中断启动），交由后续迁移任务/手工修复。
+
+    Args:
+        log_prefixes: 日志前缀字典
+    """
+    try:
+        from .database import Base, engine
+
+        Base.metadata.create_all(bind=engine)
+        logger.info(f"{log_prefixes['success']} Database tables initialized")
+    except Exception as e:
+        logger.warning(f"{log_prefixes['warning']} Database initialization failed: {e}")
+
+
 async def initialize_encryption_keys(log_prefixes: Dict[str, str]):
     """
     初始化加密密钥（从 .env 文件读取）
@@ -603,6 +653,15 @@ async def run_all_startup_tasks(
     except OSError as e:
         logger.error(f"{log_prefixes['error']} Failed to ensure credentials dir: {e}")
         raise
+
+    # 1.6 JWT_SECRET_KEY 前置校验（fail-fast）。
+    # jwt_utils 现在延迟解析密钥，配置缺失不会再在 import 期崩溃，因此在此处
+    # 显式断言，使误配置以清晰的启动错误暴露，而非在首个登录请求时报错。
+    assert_jwt_secret_configured(log_prefixes)
+
+    # 1.7 初始化数据库表结构（之前在 main.py import 期内联执行，现移至启动期）。
+    # 必须在依赖表存在的迁移任务（Group 2）之前完成。
+    await initialize_database_schema(log_prefixes)
 
     # 2. Group 1: 无依赖的初始化任务（并行）
     await asyncio.gather(

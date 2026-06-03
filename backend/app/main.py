@@ -82,35 +82,32 @@ rag_service = embedding_result['rag_service']
 EMBEDDING_AVAILABLE = embedding_result.success
 
 # Database initialization
+# core.database 是关键模块：导入失败意味着没有数据库会话工厂，应用无法安全运行，
+# 因此 critical=True，导入失败时 fail-fast（抛 RuntimeError），而非静默降级。
 db_result = safe_import(
     'core.database',
-    attr_names=['Base', 'engine']
+    attr_names=['Base', 'engine'],
+    critical=True
 )
 models_result = safe_import(
     'models',
     attr_names=['ConfigProfile', 'UserSettings', 'ChatSession', 'Persona']
 )
 
-if db_result.success and models_result.success:
-    try:
-        Base = db_result['Base']
-        engine = db_result['engine']
-        Base.metadata.create_all(bind=engine)
-        logger.info(f"{LOG_PREFIXES['info']} Database tables initialized")
-    except Exception as e:
-        logger.warning(f"{LOG_PREFIXES['warning']} Database initialization failed: {e}")
-else:
-    logger.warning(f"{LOG_PREFIXES['warning']} Could not import database or models")
+# 注意：Base.metadata.create_all 已从 import 期移除，改在 lifespan 启动期由
+# core.startup_tasks.initialize_database_schema 执行——避免"import 即建表"这种
+# 重副作用污染测试/只读/CLI 等场景，并解耦数据库可用性与 import-chain。
+if not models_result.success:
+    logger.warning(f"{LOG_PREFIXES['warning']} Could not import models")
 
 # Router registry (统一路由注册)
+# routers.registry 是关键模块：导入失败会导致所有路由静默地不被注册（应用看似
+# 启动成功但全是 404），这是难以诊断的失败模式。critical=True 让其 fail-fast。
 router_registry_result = safe_import(
     'routers.registry',
     attr_names=['register_routers', 'register_service_dependencies'],
-    fallback_values={
-        'register_routers': None,
-        'register_service_dependencies': None
-    },
-    warning_message="Could not import router registry"
+    warning_message="Could not import router registry",
+    critical=True
 )
 register_routers = router_registry_result.get('register_routers')
 register_service_dependencies = router_registry_result.get('register_service_dependencies')
@@ -198,21 +195,15 @@ register_exception_handlers_func = exception_handlers_result.get('register_excep
 if register_exception_handlers_func:
     register_exception_handlers_func(app)
 
-# Import auth router
-try:
-    from .routers.auth import router as auth_router
-    AUTH_ROUTER_AVAILABLE = True
-except ImportError:
-    try:
-        from routers.auth import router as auth_router
-        AUTH_ROUTER_AVAILABLE = True
-    except ImportError:
-        try:
-            from backend.app.routers.auth import router as auth_router
-            AUTH_ROUTER_AVAILABLE = True
-        except ImportError:
-            AUTH_ROUTER_AVAILABLE = False
-            logger.warning(f"{LOG_PREFIXES['warning']} Auth router not available")
+# Import auth router (通过统一的 safe_import，替代旧的三层嵌套 try/ImportError)
+auth_router_result = safe_import(
+    'routers.auth',
+    attr_names=['router'],
+    fallback_values={'router': None},
+    warning_message="Auth router not available"
+)
+auth_router = auth_router_result.get('router')
+AUTH_ROUTER_AVAILABLE = auth_router_result.success and auth_router is not None
 
 # 确保服务 logger 配置正确（在路由注册之前）
 try:
@@ -228,18 +219,14 @@ if ROUTER_REGISTRY_AVAILABLE:
         register_routers(app)
         
         # Register service dependencies (设置路由所需的外部服务引用)
-        # 获取 web_search 函数
-        try:
-            from .services.gemini.common.browser import web_search
-        except ImportError:
-            try:
-                from services.gemini.common.browser import web_search
-            except ImportError:
-                try:
-                    from backend.app.services.gemini.common.browser import web_search
-                except ImportError:
-                    web_search = None
-        
+        # 获取 web_search 函数（通过统一的 safe_import，替代旧的三层嵌套 try/ImportError）
+        web_search_result = safe_import(
+            'services.gemini.common.browser',
+            attr_names=['web_search'],
+            fallback_values={'web_search': None}
+        )
+        web_search = web_search_result.get('web_search')
+
         register_service_dependencies(
             app=app,
             selenium_available=SELENIUM_AVAILABLE,

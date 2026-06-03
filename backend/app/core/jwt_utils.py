@@ -15,6 +15,7 @@ import os
 import secrets
 import json
 import base64
+import functools
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -257,10 +258,40 @@ def get_jwt_secret_key() -> str:
 # ==================== JWT Token 功能 ====================
 
 # JWT 配置
-JWT_SECRET_KEY = get_jwt_secret_key()  # ✅ 从安全文件或环境变量获取
 JWT_ALGORITHM = "HS256"
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
 JWT_REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+
+
+# ==================== JWT Secret 延迟缓存访问器 ====================
+#
+# 之前此模块在导入时执行 `JWT_SECRET_KEY = get_jwt_secret_key()`，这是一个
+# 模块级副作用：当 JWT_SECRET_KEY 未配置时会在 import 阶段抛 RuntimeError，
+# 表现为一条不透明的 import-chain 失败（在 lifespan 之前崩溃，污染所有
+# 依赖本模块的 router / middleware 导入）。同时该常量缓存了密钥，热轮换
+# 必须重启进程。
+#
+# 改为延迟缓存访问器：
+# - 仅在首次"使用"（encode/decode）时解析密钥；import 不再有副作用；
+# - 缓存在进程内，clear_jwt_secret_cache() 可清空以支持热轮换，无需重启；
+# - 密钥缺失只在使用时以清晰的 RuntimeError 暴露，而非 import 崩溃。
+@functools.lru_cache(maxsize=1)
+def _get_cached_jwt_secret() -> str:
+    """延迟解析并缓存 JWT Secret Key（首次使用时读取环境变量）。
+
+    Raises:
+        RuntimeError: JWT_SECRET_KEY 未设置（仅在调用时抛出，不在 import 时）。
+    """
+    return get_jwt_secret_key()
+
+
+def clear_jwt_secret_cache() -> None:
+    """清空 JWT Secret 缓存（用于热轮换或测试）。
+
+    清空后，下一次 token encode/decode 会重新从环境变量读取密钥，
+    无需重新导入模块或重启进程。
+    """
+    _get_cached_jwt_secret.cache_clear()
 
 
 class TokenPayload(BaseModel):
@@ -287,7 +318,7 @@ class JWTUtils:
             "iat": int(now.timestamp()),
             "type": "access"
         }
-        return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+        return jwt.encode(payload, _get_cached_jwt_secret(), algorithm=JWT_ALGORITHM)
 
     @staticmethod
     def create_refresh_token(user_id: str) -> str:
@@ -302,7 +333,7 @@ class JWTUtils:
             "iat": int(now.timestamp()),
             "type": "refresh"
         }
-        return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+        return jwt.encode(payload, _get_cached_jwt_secret(), algorithm=JWT_ALGORITHM)
 
     @staticmethod
     def decode_token(token: str) -> TokenPayload:
@@ -313,7 +344,7 @@ class JWTUtils:
             JWTError: 令牌无效或已过期
         """
         try:
-            payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+            payload = jwt.decode(token, _get_cached_jwt_secret(), algorithms=[JWT_ALGORITHM])
             return TokenPayload(**payload)
         except JWTError as e:
             raise JWTError(f"Invalid token: {str(e)}")
