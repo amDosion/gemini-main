@@ -182,249 +182,245 @@ export class UnifiedProviderClient implements ILLMProvider {
     baseUrl: string,
     abortSignal?: AbortSignal
   ): AsyncGenerator<StreamUpdate, void, unknown> {
+    // ✅ 输入验证
+    if (!modelId || typeof modelId !== 'string') {
+      throw new Error('Invalid modelId: must be a non-empty string');
+    }
+    if (!Array.isArray(history)) {
+      throw new Error('Invalid history: must be an array');
+    }
+    if (typeof message !== 'string') {
+      throw new Error('Invalid message: must be a string');
+    }
+    if (!Array.isArray(attachments)) {
+      throw new Error('Invalid attachments: must be an array');
+    }
+
+    // ✅ 安全访问 options（提供默认值）
+    const safeOptions: ChatOptions = options || {
+      enableSearch: false,
+      enableThinking: false,
+      enableCodeExecution: false,
+      imageAspectRatio: '1:1',
+      imageResolution: '1024x1024',
+    };
+
+    // Build request body
+    // ✅ 不传递 apiKey，让后端从数据库获取（基于用户认证）
+    // 只有在明确需要测试/覆盖时才传递 apiKey
+    const requestBody: Record<string, unknown> = {
+      modelId,
+      messages: history,
+      message,
+      attachments,
+      options: {
+        temperature: safeOptions.temperature,
+        maxTokens: safeOptions.maxTokens,
+        topP: safeOptions.topP,
+        topK: safeOptions.topK,
+        enableSearch: safeOptions.enableSearch,
+        enableThinking: safeOptions.enableThinking,
+        enableBrowser: safeOptions.enableBrowser,
+        enableCodeExecution: safeOptions.enableCodeExecution,
+        enableGrounding: safeOptions.enableGrounding,
+        personaId: safeOptions.personaId,
+        mcpServerKey: safeOptions.mcpServerKey,
+        baseUrl: baseUrl || safeOptions.baseUrl,
+      },
+      stream: true,
+    };
+
+    // ✅ 只有在明确需要测试/覆盖时才传递 apiKey（例如：验证连接时）
+    // 正常使用时，后端会从数据库获取 API key（基于用户 ID）
+    // if (apiKey && /* 测试场景 */) {
+    //   requestBody.apiKey = apiKey;
+    // }
+
+    const headers = new Headers({
+      'Content-Type': 'application/json',
+    });
+
+    // ✅ 不在前端硬编码流式超时：
+    // 流式生命周期由上层 abortSignal（用户停止）与后端/SDK 网络策略控制。
+    const controller = new AbortController();
+
+    const upstreamAbortListener = () => {
+      controller.abort(abortSignal?.reason ?? 'Stream aborted by user');
+    };
+    if (abortSignal) {
+      if (abortSignal.aborted) {
+        controller.abort(abortSignal.reason ?? 'Stream aborted by user');
+      } else {
+        abortSignal.addEventListener('abort', upstreamAbortListener, { once: true });
+      }
+    }
+
     try {
-      // ✅ 输入验证
-      if (!modelId || typeof modelId !== 'string') {
-        throw new Error('Invalid modelId: must be a non-empty string');
-      }
-      if (!Array.isArray(history)) {
-        throw new Error('Invalid history: must be an array');
-      }
-      if (typeof message !== 'string') {
-        throw new Error('Invalid message: must be a string');
-      }
-      if (!Array.isArray(attachments)) {
-        throw new Error('Invalid attachments: must be an array');
-      }
+      // Call backend API - ✅ 统一使用 /api/modes/{provider}/chat
 
-      // ✅ 安全访问 options（提供默认值）
-      const safeOptions: ChatOptions = options || {
-        enableSearch: false,
-        enableThinking: false,
-        enableCodeExecution: false,
-        imageAspectRatio: '1:1',
-        imageResolution: '1024x1024',
-      };
-
-      // Build request body
-      // ✅ 不传递 apiKey，让后端从数据库获取（基于用户认证）
-      // 只有在明确需要测试/覆盖时才传递 apiKey
-      const requestBody: Record<string, unknown> = {
-        modelId,
-        messages: history,
-        message,
-        attachments,
-        options: {
-          temperature: safeOptions.temperature,
-          maxTokens: safeOptions.maxTokens,
-          topP: safeOptions.topP,
-          topK: safeOptions.topK,
-          enableSearch: safeOptions.enableSearch,
-          enableThinking: safeOptions.enableThinking,
-          enableBrowser: safeOptions.enableBrowser,
-          enableCodeExecution: safeOptions.enableCodeExecution,
-          enableGrounding: safeOptions.enableGrounding,
-          personaId: safeOptions.personaId,
-          mcpServerKey: safeOptions.mcpServerKey,
-          baseUrl: baseUrl || safeOptions.baseUrl,
-        },
-        stream: true,
-      };
-
-      // ✅ 只有在明确需要测试/覆盖时才传递 apiKey（例如：验证连接时）
-      // 正常使用时，后端会从数据库获取 API key（基于用户 ID）
-      // if (apiKey && /* 测试场景 */) {
-      //   requestBody.apiKey = apiKey;
-      // }
-
-      const headers = new Headers({
-        'Content-Type': 'application/json',
+      const response = await fetch(`/api/modes/${this.id}/chat`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestBody),
+        credentials: 'include',
+        signal: controller.signal,
       });
 
-      // ✅ 不在前端硬编码流式超时：
-      // 流式生命周期由上层 abortSignal（用户停止）与后端/SDK 网络策略控制。
-      const controller = new AbortController();
-
-      const upstreamAbortListener = () => {
-        controller.abort(abortSignal?.reason ?? 'Stream aborted by user');
-      };
-      if (abortSignal) {
-        if (abortSignal.aborted) {
-          controller.abort(abortSignal.reason ?? 'Stream aborted by user');
-        } else {
-          abortSignal.addEventListener('abort', upstreamAbortListener, { once: true });
-        }
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Chat failed: ${error}`);
       }
 
-      try {
-        // Call backend API - ✅ 统一使用 /api/modes/{provider}/chat
+      // 检查响应类型
+      const contentType = response.headers.get('content-type');
 
-        const response = await fetch(`/api/modes/${this.id}/chat`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(requestBody),
-          credentials: 'include',
-          signal: controller.signal,
-        });
+      // Read SSE stream
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response body');
+      }
 
-        if (!response.ok) {
-          const error = await response.text();
-          throw new Error(`Chat failed: ${error}`);
-        }
+      const decoder = new TextDecoder();
+      let chunkCount = 0;
+      let totalTextLength = 0;
+      const pendingUpdates: StreamUpdate[] = [];
+      let streamError: Error | null = null;
 
-        // 检查响应类型
-        const contentType = response.headers.get('content-type');
+      const parser = createParser({
+        onEvent: (event: EventSourceMessage) => {
+          const dataStr = event.data?.trim();
+          if (!dataStr || dataStr === '[DONE]') {
+            return;
+          }
 
-        // Read SSE stream
-        const reader = response.body?.getReader();
-        if (!reader) {
-          throw new Error('No response body');
-        }
+          try {
+            const chunk = JSON.parse(dataStr);
+            chunkCount++;
 
-        const decoder = new TextDecoder();
-        let chunkCount = 0;
-        let totalTextLength = 0;
-        const pendingUpdates: StreamUpdate[] = [];
-        let streamError: Error | null = null;
+            if (chunkCount <= 3 || chunk.chunkType === 'done' || chunk.chunkType === 'error') {
+            }
 
-        const parser = createParser({
-          onEvent: (event: EventSourceMessage) => {
-            const dataStr = event.data?.trim();
-            if (!dataStr || dataStr === '[DONE]') {
+            if (chunk.chunkType === 'error') {
+              streamError = new Error(chunk.error || 'Unknown error');
               return;
             }
 
-            try {
-              const chunk = JSON.parse(dataStr);
-              chunkCount++;
-
-              if (chunkCount <= 3 || chunk.chunkType === 'done' || chunk.chunkType === 'error') {
-              }
-
-              if (chunk.chunkType === 'error') {
-                streamError = new Error(chunk.error || 'Unknown error');
-                return;
-              }
-
-              if (chunk.chunkType === 'tool_call') {
-                const callId = chunk.callId || `tool_call_${chunkCount}`;
-                pendingUpdates.push({
-                  text: '',
-                  browserOperationId: chunk.browserOperationId,
-                  toolCall: {
-                    id: callId,
-                    type: chunk.toolType || 'function_call',
-                    name: chunk.toolName,
-                    arguments: chunk.toolArgs || {},
-                  },
-                });
-                return;
-              }
-
-              if (chunk.chunkType === 'tool_result') {
-                const hasScreenshot = chunk.screenshotUrl || chunk.screenshot;
-                pendingUpdates.push({
-                  text: '',
-                  browserOperationId: chunk.browserOperationId,
-                  toolResult: {
-                    name: chunk.toolName,
-                    callId: chunk.callId || '',
-                    result: chunk.toolResult || '',
-                    error: chunk.toolError,
-                    screenshot: chunk.screenshot,
-                    screenshotUrl: chunk.screenshotUrl,
-                  },
-                });
-                return;
-              }
-
-              if (chunk.chunkType === 'reasoning') {
-                const thoughtText = chunk.text || '';
-                if (thoughtText) {
-                  pendingUpdates.push({
-                    text: '',
-                    chunkType: 'reasoning',
-                    thoughts: [{ type: 'text', content: thoughtText }],
-                  });
-                }
-                return;
-              }
-
-              const shouldYield =
-                chunk.chunkType === 'done' ||
-                chunk.chunkType === 'content' ||
-                chunk.text !== undefined;
-              if (!shouldYield) {
-                return;
-              }
-
-              const text = chunk.text || '';
-              totalTextLength += text.length;
+            if (chunk.chunkType === 'tool_call') {
+              const callId = chunk.callId || `tool_call_${chunkCount}`;
               pendingUpdates.push({
-                text,
-                chunkType: chunk.chunkType,
-                attachments: chunk.attachments,
-                groundingMetadata: chunk.groundingMetadata,
-                urlContextMetadata: chunk.urlContextMetadata,
+                text: '',
                 browserOperationId: chunk.browserOperationId,
+                toolCall: {
+                  id: callId,
+                  type: chunk.toolType || 'function_call',
+                  name: chunk.toolName,
+                  arguments: chunk.toolArgs || {},
+                },
               });
-            } catch (error) {
-              streamError = error instanceof Error ? error : new Error(String(error));
+              return;
             }
-          },
-          onError: (error: ParseError) => {
-            // For malformed lines, keep stream resilient and continue parsing following events.
-          },
-        });
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            break;
-          }
-          parser.feed(decoder.decode(value, { stream: true }));
-          if (streamError) {
-            throw streamError;
-          }
-
-          while (pendingUpdates.length > 0) {
-            const nextUpdate = pendingUpdates.shift();
-            if (nextUpdate) {
-              yield nextUpdate;
+            if (chunk.chunkType === 'tool_result') {
+              const hasScreenshot = chunk.screenshotUrl || chunk.screenshot;
+              pendingUpdates.push({
+                text: '',
+                browserOperationId: chunk.browserOperationId,
+                toolResult: {
+                  name: chunk.toolName,
+                  callId: chunk.callId || '',
+                  result: chunk.toolResult || '',
+                  error: chunk.toolError,
+                  screenshot: chunk.screenshot,
+                  screenshotUrl: chunk.screenshotUrl,
+                },
+              });
+              return;
             }
+
+            if (chunk.chunkType === 'reasoning') {
+              const thoughtText = chunk.text || '';
+              if (thoughtText) {
+                pendingUpdates.push({
+                  text: '',
+                  chunkType: 'reasoning',
+                  thoughts: [{ type: 'text', content: thoughtText }],
+                });
+              }
+              return;
+            }
+
+            const shouldYield =
+              chunk.chunkType === 'done' ||
+              chunk.chunkType === 'content' ||
+              chunk.text !== undefined;
+            if (!shouldYield) {
+              return;
+            }
+
+            const text = chunk.text || '';
+            totalTextLength += text.length;
+            pendingUpdates.push({
+              text,
+              chunkType: chunk.chunkType,
+              attachments: chunk.attachments,
+              groundingMetadata: chunk.groundingMetadata,
+              urlContextMetadata: chunk.urlContextMetadata,
+              browserOperationId: chunk.browserOperationId,
+            });
+          } catch (error) {
+            streamError = error instanceof Error ? error : new Error(String(error));
           }
+        },
+        onError: (error: ParseError) => {
+          // For malformed lines, keep stream resilient and continue parsing following events.
+        },
+      });
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        parser.feed(decoder.decode(value, { stream: true }));
+        if (streamError) {
+          throw streamError;
         }
 
-        const rest = decoder.decode();
-        if (rest) {
-          parser.feed(rest);
-          if (streamError) {
-            throw streamError;
+        while (pendingUpdates.length > 0) {
+          const nextUpdate = pendingUpdates.shift();
+          if (nextUpdate) {
+            yield nextUpdate;
           }
-          while (pendingUpdates.length > 0) {
-            const nextUpdate = pendingUpdates.shift();
-            if (nextUpdate) {
-              yield nextUpdate;
-            }
-          }
-        }
-      } catch (error: unknown) {
-        if (isAbortError(error)) {
-          if (abortSignal?.aborted || controller.signal.aborted) {
-            return;
-          }
-          throw new Error(
-            `Connection to ${this.id} API was interrupted while streaming. Please check your network and try again.`
-          );
-        }
-        throw error;
-      } finally {
-        if (abortSignal) {
-          abortSignal.removeEventListener('abort', upstreamAbortListener);
         }
       }
-    } catch (error) {
+
+      const rest = decoder.decode();
+      if (rest) {
+        parser.feed(rest);
+        if (streamError) {
+          throw streamError;
+        }
+        while (pendingUpdates.length > 0) {
+          const nextUpdate = pendingUpdates.shift();
+          if (nextUpdate) {
+            yield nextUpdate;
+          }
+        }
+      }
+    } catch (error: unknown) {
+      if (isAbortError(error)) {
+        if (abortSignal?.aborted || controller.signal.aborted) {
+          return;
+        }
+        throw new Error(
+          `Connection to ${this.id} API was interrupted while streaming. Please check your network and try again.`
+        );
+      }
       throw error;
+    } finally {
+      if (abortSignal) {
+        abortSignal.removeEventListener('abort', upstreamAbortListener);
+      }
     }
   }
 

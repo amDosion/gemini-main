@@ -1,6 +1,9 @@
 import { cacheManager } from './CacheManager';
 import { requestJson } from './http';
-import { isSafeStoragePreviewCandidateUrl, isStoragePreviewProxyUrl } from './storagePreviewService';
+import {
+  isSafeStoragePreviewCandidateUrl,
+  isStoragePreviewProxyUrl,
+} from './storagePreviewService';
 import {
   deleteMediaCacheMetadata,
   listMediaCacheMetadata,
@@ -202,10 +205,10 @@ const recordDiagnostic = (
 ): void => {
   if (!isDiagnosticsEnabled()) return;
 
-  diagnosticCounters = {
-    ...diagnosticCounters,
-    [type]: (diagnosticCounters[type] || 0) + 1,
-  };
+  // Mutate the counter object in place (dev-only diagnostic): the public snapshot
+  // returns a defensive copy, so we never need to reallocate here. This matches
+  // the ring-buffer intent and avoids per-call object churn.
+  diagnosticCounters[type] = (diagnosticCounters[type] || 0) + 1;
 
   const event: MediaCacheDiagnosticEvent = {
     type,
@@ -224,10 +227,7 @@ const recordDiagnostic = (
 const readDiagnosticEventsInOrder = (): MediaCacheDiagnosticEvent[] => {
   // Materialize the ring oldest-first so consumers see chronological order.
   const ordered: MediaCacheDiagnosticEvent[] = new Array(diagnosticEventCount);
-  const start =
-    diagnosticEventCount < DIAGNOSTIC_EVENT_LIMIT
-      ? 0
-      : diagnosticEventHead;
+  const start = diagnosticEventCount < DIAGNOSTIC_EVENT_LIMIT ? 0 : diagnosticEventHead;
   for (let offset = 0; offset < diagnosticEventCount; offset += 1) {
     ordered[offset] = diagnosticEventRing[(start + offset) % DIAGNOSTIC_EVENT_LIMIT];
   }
@@ -277,7 +277,9 @@ const normalizeString = (value: unknown): string => String(value || '').trim();
 
 const isTemporaryUrl = (url: string): boolean => {
   const lowered = url.toLowerCase();
-  return lowered.startsWith('blob:') || lowered.startsWith('data:') || lowered.startsWith('local-blob:');
+  return (
+    lowered.startsWith('blob:') || lowered.startsWith('data:') || lowered.startsWith('local-blob:')
+  );
 };
 
 const isBlobObjectUrl = (url: string | null | undefined): boolean =>
@@ -421,8 +423,9 @@ const hashString = (value: string): string => {
   return (hash >>> 0).toString(36);
 };
 
-const getMediaUserScope = (source: Pick<MediaCacheSource, 'userScope'> | null | undefined): string =>
-  normalizeString(source?.userScope) || getPrivateCacheUserScope();
+const getMediaUserScope = (
+  source: Pick<MediaCacheSource, 'userScope'> | null | undefined
+): string => normalizeString(source?.userScope) || getPrivateCacheUserScope();
 
 const getScopeCacheSegment = (userScope: string): string => getPrivateCacheScopeSegment(userScope);
 
@@ -473,16 +476,18 @@ const getSeedUrl = (source: MediaCacheSource, selectedSourceUrl: string): string
     normalizeString(source.tempUrl ?? source.temp_url),
   ].filter(Boolean);
   return (
-    candidates.find(
-      (url) => url !== selectedSourceUrl && url.toLowerCase().startsWith('data:')
-    ) || null
+    candidates.find((url) => url !== selectedSourceUrl && url.toLowerCase().startsWith('data:')) ||
+    null
   );
 };
 
 const getPreviewNestedUrl = (url: string): string | null => {
   if (!isStoragePreviewProxyUrl(url)) return null;
   try {
-    const parsed = new URL(url, typeof window !== 'undefined' ? window.location.origin : 'http://local');
+    const parsed = new URL(
+      url,
+      typeof window !== 'undefined' ? window.location.origin : 'http://local'
+    );
     return parsed.searchParams.get('url');
   } catch {
     return null;
@@ -493,7 +498,10 @@ const getStorageRevision = (source: MediaCacheSource, url: string): string => {
   const explicit = normalizeString(source.storageRevision);
   if (explicit) return explicit;
   try {
-    const parsed = new URL(url, typeof window !== 'undefined' ? window.location.origin : 'http://local');
+    const parsed = new URL(
+      url,
+      typeof window !== 'undefined' ? window.location.origin : 'http://local'
+    );
     return normalizeString(parsed.searchParams.get('rev'));
   } catch {
     return '';
@@ -852,10 +860,7 @@ const deletePersistentMediaEntry = async (cacheKey: string): Promise<void> => {
   await deleteMediaCacheMetadata(cacheKey);
 };
 
-const createCacheBlobResponse = async (
-  blob: Blob,
-  contentType: string
-): Promise<Response> => {
+const createCacheBlobResponse = async (blob: Blob, contentType: string): Promise<Response> => {
   const headers = { 'Content-Type': contentType };
   try {
     return new Response(blob, {
@@ -1124,9 +1129,7 @@ const readSeedMediaBlob = async (
   return null;
 };
 
-const fetchAttachmentDurableUrl = async (
-  identity: MediaCacheIdentity
-): Promise<string | null> => {
+const fetchAttachmentDurableUrl = async (identity: MediaCacheIdentity): Promise<string | null> => {
   const attachmentId = normalizeString(identity.attachmentId);
   if (!identity.temporary || !attachmentId || identity.sourceBlob) return null;
 
@@ -1518,3 +1521,15 @@ export const __setMediaCacheLimitsForTest = (limits: {
 export const __setMediaCacheDiagnosticsEnabledForTest = (enabled: boolean | null): void => {
   diagnosticsEnabledOverride = enabled;
 };
+
+/**
+ * Test-only: exposes the live internal diagnostic counters object reference.
+ *
+ * Used to assert that `recordDiagnostic` mutates the counter object in place
+ * (ring-buffer intent) rather than reallocating a fresh object on every call.
+ * Not part of the public diagnostics API; the public snapshot still returns a
+ * defensive copy via `getMediaCacheDiagnosticsSnapshot`.
+ */
+export const __getMediaCacheDiagnosticCountersRefForTest = (): Partial<
+  Record<MediaCacheDiagnosticEventType, number>
+> => diagnosticCounters;

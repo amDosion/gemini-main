@@ -153,7 +153,9 @@ export const MODE_EXTRA_KEYS = new Set([
   'trackingOverlayText',
 ]);
 
-export function pruneUndefinedEntries(source: Record<string, any>): Record<string, any> {
+export function pruneUndefinedEntries(
+  source: Record<string, unknown>
+): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(source).filter(([, value]) => value !== undefined && value !== null)
   );
@@ -168,11 +170,14 @@ export function isAbortError(error: unknown): boolean {
   );
 }
 
-export function normalizeLegacyModeOptions(mode: string, options: Partial<ChatOptions>): Record<string, any> {
+export function normalizeLegacyModeOptions(
+  mode: string,
+  options: Partial<ChatOptions>
+): Record<string, unknown> {
   const normalized = pruneUndefinedEntries({ ...(options || {}) });
 
   if (mode === 'image-outpainting' && normalized.outPainting && typeof normalized.outPainting === 'object') {
-    const legacyOutPainting = normalized.outPainting as Record<string, any>;
+    const legacyOutPainting = normalized.outPainting as Record<string, unknown>;
     if (normalized.outpaintMode === undefined && legacyOutPainting.mode !== undefined) {
       normalized.outpaintMode = legacyOutPainting.mode;
     }
@@ -228,10 +233,10 @@ export function normalizeLegacyModeOptions(mode: string, options: Partial<ChatOp
 }
 
 export function pickAllowedEntries(
-  source: Record<string, any>,
+  source: Record<string, unknown>,
   allowedKeys: Set<string>
-): { kept: Record<string, any>; droppedKeys: string[] } {
-  const kept: Record<string, any> = {};
+): { kept: Record<string, unknown>; droppedKeys: string[] } {
+  const kept: Record<string, unknown> = {};
   const droppedKeys: string[] = [];
 
   for (const [key, value] of Object.entries(source)) {

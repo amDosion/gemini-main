@@ -33,6 +33,7 @@ import {
   __setMediaCacheDiagnosticsEnabledForTest,
   __setMediaCacheLimitsForTest,
   __resetMediaCacheForTest,
+  __getMediaCacheDiagnosticCountersRefForTest,
 } from './mediaCache';
 import { cacheManager } from './CacheManager';
 import { setPrivateCacheUserScope } from './privateCacheScope';
@@ -40,7 +41,7 @@ import { setPrivateCacheUserScope } from './privateCacheScope';
 const cacheEntries = new Map<string, Response>();
 let rejectCachePut = false;
 
-const createDeferred = <T,>() => {
+const createDeferred = <T>() => {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
   const promise = new Promise<T>((promiseResolve, promiseReject) => {
@@ -1157,13 +1158,14 @@ describe('mediaCache', () => {
 
   it('prunes least recently used persistent entries when the cache exceeds its entry limit', async () => {
     __setMediaCacheLimitsForTest({ maxEntries: 2, maxBytes: 1024 * 1024 });
-    const identities = ['one', 'two', 'three'].map((name) =>
-      resolveMediaCacheIdentity({
-        attachmentId: `att-prune-${name}`,
-        url: `/api/storage/local-files/generated/prune-${name}.png`,
-        mimeType: 'image/png',
-        userScope: 'user-1',
-      })!
+    const identities = ['one', 'two', 'three'].map(
+      (name) =>
+        resolveMediaCacheIdentity({
+          attachmentId: `att-prune-${name}`,
+          url: `/api/storage/local-files/generated/prune-${name}.png`,
+          mimeType: 'image/png',
+          userScope: 'user-1',
+        })!
     );
 
     await saveMediaBlobToCache(identities[0], await new Response('prune-one').blob(), {
@@ -1215,9 +1217,7 @@ describe('mediaCache', () => {
     expect(snapshot.counters['network-fetch']).toBe(1);
     expect(snapshot.counters['network-dedupe']).toBe(1);
     expect(snapshot.counters['cache-write']).toBe(1);
-    expect(
-      snapshot.recentEvents.filter((event) => event.type === 'network-fetch')
-    ).toHaveLength(1);
+    expect(snapshot.recentEvents.filter((event) => event.type === 'network-fetch')).toHaveLength(1);
 
     __resetMediaCacheForTest();
     __setMediaCacheDiagnosticsEnabledForTest(true);
@@ -1300,6 +1300,44 @@ describe('mediaCache', () => {
     // The snapshot must be a defensive copy: mutating it must not corrupt internal state.
     snapshot.recentEvents.push({ type: 'memory-hit', timestamp: Date.now() });
     expect(getMediaCacheDiagnosticsSnapshot().recentEvents.length).toBe(200);
+  });
+
+  it('mutates the diagnostic counters object in place instead of reallocating per record', async () => {
+    __setMediaCacheDiagnosticsEnabledForTest(true);
+    resetMediaCacheDiagnostics();
+
+    // Capture the live internal counters object reference before any records.
+    const countersRefBefore = __getMediaCacheDiagnosticCountersRefForTest();
+
+    // Drive several diagnostic-producing operations. Each successful persist
+    // records exactly one `cache-write` diagnostic.
+    const totalRecords = 5;
+    for (let index = 0; index < totalRecords; index += 1) {
+      const identity = resolveMediaCacheIdentity({
+        attachmentId: `att-counter-ref-${index}`,
+        url: `/api/storage/local-files/generated/counter-ref-${index}.png`,
+        mimeType: 'image/png',
+        userScope: 'user-1',
+      })!;
+      await saveMediaBlobToCache(identity, await new Response(`counter-${index}`).blob(), {
+        contentType: 'image/png',
+      });
+    }
+
+    const countersRefAfter = __getMediaCacheDiagnosticCountersRefForTest();
+
+    // The counters must be updated in place: the underlying object reference is
+    // stable across every recordDiagnostic call (ring-buffer intent), not a fresh
+    // object spread on each invocation.
+    expect(countersRefAfter).toBe(countersRefBefore);
+    expect(countersRefAfter['cache-write']).toBe(totalRecords);
+
+    // The public snapshot still returns a defensive copy, so mutating it must not
+    // leak back into the internal counters object.
+    const snapshot = getMediaCacheDiagnosticsSnapshot();
+    expect(snapshot.counters).not.toBe(countersRefAfter);
+    snapshot.counters['cache-write'] = 9999;
+    expect(__getMediaCacheDiagnosticCountersRefForTest()['cache-write']).toBe(totalRecords);
   });
 
   it('does not create a persistent identity for data URLs', () => {
@@ -1494,9 +1532,7 @@ describe('mediaCache', () => {
 
   it('defers managed object url revocation until retainers release it', async () => {
     vi.useFakeTimers();
-    const objectUrl = createManagedMediaObjectUrl(
-      await new Response('managed-retained').blob()
-    );
+    const objectUrl = createManagedMediaObjectUrl(await new Response('managed-retained').blob());
 
     expect(objectUrl).toBe('blob:cached-16');
 
