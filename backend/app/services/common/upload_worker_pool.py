@@ -80,6 +80,10 @@ class UploadWorkerPool:
         self._lock = asyncio.Lock()  # 保护 Worker 启动逻辑
         self._reconciler: asyncio.Task | None = None
         self._reconciler_started_at: Optional[float] = None  # reconciler 启动时间戳
+        # B1: 延迟重试任务集合（持有强引用，避免被 GC；stop() 时统一取消）。
+        # 退避通过独立的延迟重新入队任务实现，使单 worker 循环在退避期间
+        # 仍可继续抽取/处理其它任务，而不是 inline sleep 冻结循环。
+        self._retry_tasks: set[asyncio.Task] = set()
         # 周期性补偿入队：避免"必须重启才触发恢复"
         self._reconcile_interval_s: float = float(os.getenv("UPLOAD_QUEUE_RECONCILE_INTERVAL", "15"))
         self._reconcile_limit: int = int(os.getenv("UPLOAD_QUEUE_RECONCILE_LIMIT", "500"))
@@ -210,6 +214,14 @@ class UploadWorkerPool:
             self._reconciler.cancel()
             await asyncio.gather(self._reconciler, return_exceptions=True)
             self._reconciler = None
+
+        # B1: 取消所有挂起的延迟重试任务，避免停机后仍向队列写入。
+        if self._retry_tasks:
+            pending_retries = list(self._retry_tasks)
+            for retry_task in pending_retries:
+                retry_task.cancel()
+            await asyncio.gather(*pending_retries, return_exceptions=True)
+            self._retry_tasks.clear()
 
         # 停止单 Worker（按需调用模式）
         if self._worker_task and not self._worker_task.done():
@@ -393,9 +405,8 @@ class UploadWorkerPool:
 
             db.commit()
         except Exception as e:
-            log_print(f"[WorkerPool] ❌ 恢复/补偿任务失败: {e}", "ERROR")
-            import traceback
-            traceback.print_exc()
+            # B5: 用结构化日志（含堆栈）替代 traceback.print_exc()，避免绕过日志系统。
+            logger.error("[WorkerPool] ❌ 恢复/补偿任务失败: %s", e, exc_info=True)
             db.rollback()
         finally:
             db.close()
@@ -507,9 +518,8 @@ class UploadWorkerPool:
                 log_print(f"[{worker_name}] ⏹️ 收到停止信号")
                 break
             except Exception as e:
-                log_print(f"[{worker_name}] ❌ 异常: {e}", "ERROR")
-                import traceback
-                traceback.print_exc()
+                # B5: 用结构化日志（含堆栈）替代 traceback.print_exc()。
+                logger.error("[%s] ❌ 异常: %s", worker_name, e, exc_info=True)
                 await asyncio.sleep(1)
 
         self._running = False
@@ -1081,19 +1091,13 @@ class UploadWorkerPool:
             db.commit()
             await self._log_task_db_state(task_id, stage="after_failure_commit_pending", worker_name=worker_name)
 
-            # 延迟后重新入队
-            await asyncio.sleep(delay)
-            await redis_queue.enqueue(task_id, 'low')  # 重试任务低优先级
-            await redis_queue.update_stats("total_retried")
-
-            log_print(f"[{worker_name}] 🔄 任务已重新入队（低优先级）: {task_id}")
-            await redis_queue.append_task_log(
-                task_id,
-                level="info",
-                message=f"re-enqueued for retry (priority=low, delay_s={delay})",
-                source="worker",
-                extra={"worker": worker_name},
-            )
+            # B1: 不再 inline `await asyncio.sleep(delay)`（会冻结单 worker 循环整个退避窗口，
+            #     导致其它已入队任务在退避期间无法被抽取/处理）。
+            #     改为调度一个独立的延迟重新入队任务，让 worker 循环立即返回继续抽取其它任务。
+            #     幂等性：任务已置为 'pending' 且尚未在任何队列（已被 dequeue 移除索引），
+            #     延迟任务在退避结束后只入队一次；reconciler 在 'pending 且不在队列' 的窗口内
+            #     可能补偿入队，但 enqueue 始终幂等到同一 task_id（worker 取锁 + mark_uploading 防重复处理）。
+            self._schedule_delayed_requeue(task_id, delay, worker_name)
         else:
             log_print(f"[{worker_name}] ❌❌❌ 任务最终失败（已达最大重试次数）: {task_id}", "ERROR")
             
@@ -1114,6 +1118,54 @@ class UploadWorkerPool:
                 source="worker",
                 extra={"worker": worker_name},
             )
+
+    def _schedule_delayed_requeue(self, task_id: str, delay: float, worker_name: str):
+        """
+        B1: 调度一个独立的延迟重新入队任务（非阻塞退避）。
+
+        与 inline `await asyncio.sleep(delay)` 不同，本方法立即返回，使单 worker 循环
+        在退避窗口内继续抽取/处理其它已入队任务；退避结束后再把当前任务重新入队。
+
+        退避语义保持：实际入队发生在 delay 秒之后。
+        幂等性：任务已置为 'pending'，重新入队只发生一次。
+        """
+        ensure_worker = self.ensure_worker_running
+
+        async def _delayed_requeue():
+            try:
+                await asyncio.sleep(delay)
+                await redis_queue.enqueue(task_id, 'low')  # 重试任务低优先级
+                await redis_queue.update_stats("total_retried")
+                log_print(f"[{worker_name}] 🔄 任务已重新入队（低优先级）: {task_id}")
+                await redis_queue.append_task_log(
+                    task_id,
+                    level="info",
+                    message=f"re-enqueued for retry (priority=low, delay_s={delay})",
+                    source="worker",
+                    extra={"worker": worker_name},
+                )
+                # 退避结束、任务重新入队后，确保有 worker 在运行来消费它
+                # （若原 worker 因队列空闲已退出，则懒启动一个新的）。
+                try:
+                    await ensure_worker()
+                except Exception:
+                    logger.error(
+                        "[WorkerPool] ensure_worker_running after delayed requeue failed",
+                        exc_info=True,
+                    )
+            except asyncio.CancelledError:
+                # stop() 取消挂起的重试任务：交还 task 状态由 reconciler/recover 兜底
+                raise
+            except Exception:
+                logger.error(
+                    "[WorkerPool] delayed requeue failed for task %s",
+                    task_id,
+                    exc_info=True,
+                )
+
+        retry_task = asyncio.create_task(_delayed_requeue())
+        self._retry_tasks.add(retry_task)
+        retry_task.add_done_callback(self._retry_tasks.discard)
 
     async def _log_task_db_state(self, task_id: str, stage: str, worker_name: str):
         """

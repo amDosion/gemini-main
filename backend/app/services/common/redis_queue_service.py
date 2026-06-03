@@ -177,6 +177,10 @@ class RedisQueueService:
     QUEUE_HIGH = "upload:queue:high"
     QUEUE_NORMAL = "upload:queue:normal"
     QUEUE_LOW = "upload:queue:low"
+    # 并行索引 Set：记录当前在任意优先级队列中的 task_id。
+    # 用于 O(1) 的 SISMEMBER 成员检查，替代对每个队列做 O(N) 的 LPOS 列表扫描。
+    # 队列列表（QUEUE_*）仍是顺序的唯一真实来源；此 Set 仅作幂等成员索引。
+    QUEUE_INDEX_SET = "upload:queue:index"
     DEAD_LETTER = "upload:dead_letter"
     RATE_LIMIT_KEY = "upload:rate_limit"
     STATS_KEY = "upload:stats"
@@ -191,6 +195,11 @@ class RedisQueueService:
         self.rate_window = 1  # 1秒窗口
         self._redis: Optional[redis.Redis] = None
         self._global_pool = GlobalRedisConnectionPool.get_instance()
+        # P2: 注册一次 Lua 脚本（EVALSHA 复用），避免每次调用重发完整脚本字符串。
+        # 缓存绑定到具体的 redis 客户端实例，客户端切换时重新注册。
+        self._rate_limit_script = None
+        self._release_lock_script = None
+        self._scripts_client_id: Optional[int] = None
 
     async def connect(self):
         """
@@ -266,9 +275,12 @@ class RedisQueueService:
 
         key = self._task_log_key(task_id)
         try:
-            await self._redis.rpush(key, json.dumps(entry, ensure_ascii=False))
-            await self._redis.ltrim(key, -self.TASK_LOG_MAX_LEN, -1)
-            await self._redis.expire(key, self.TASK_LOG_TTL_SECONDS)
+            # P6: 将 RPUSH + LTRIM + EXPIRE 合并为单次 pipeline 往返。
+            pipe = self._redis.pipeline(transaction=False)
+            pipe.rpush(key, json.dumps(entry, ensure_ascii=False))
+            pipe.ltrim(key, -self.TASK_LOG_MAX_LEN, -1)
+            pipe.expire(key, self.TASK_LOG_TTL_SECONDS)
+            await pipe.execute()
         except Exception:
             # 任务日志不应影响主流程
             logger.debug("[RedisQueue] append_task_log failed", exc_info=True)
@@ -291,18 +303,17 @@ class RedisQueueService:
         return logs
 
     async def is_task_queued(self, task_id: str) -> bool:
-        """检查任务是否已存在于任意优先级队列中"""
+        """
+        检查任务是否已存在于任意优先级队列中。
+
+        P1: 使用 O(1) 的 SISMEMBER 索引 Set 检查，替代对每个优先级队列做
+        O(N) 的 LPOS 列表扫描。索引 Set 由 enqueue/dequeue/move_to_dead_letter
+        同步维护；队列列表仍是顺序的唯一真实来源。
+        """
         if self._redis is None:
             raise RuntimeError("Redis 未连接")
 
-        for key in (self.QUEUE_HIGH, self.QUEUE_NORMAL, self.QUEUE_LOW):
-            try:
-                pos = await self._redis.lpos(key, task_id)
-            except Exception:
-                pos = None
-            if pos is not None:
-                return True
-        return False
+        return bool(await self._redis.sismember(self.QUEUE_INDEX_SET, task_id))
 
     async def enqueue(self, task_id: str, priority: str = "normal") -> int:
         """
@@ -323,11 +334,13 @@ class RedisQueueService:
         queue_key = self._get_queue_key(priority)
 
         try:
-            # LPUSH 入队（左进右出）
-            await self._redis.lpush(queue_key, task_id)
-
-            # 更新统计
-            await self._redis.hincrby(self.STATS_KEY, "total_enqueued", 1)
+            # LPUSH 入队（左进右出）+ 同步维护索引 Set + 统计，单次 pipeline。
+            # P1: SADD 保持 QUEUE_INDEX_SET 与队列内容一致，供 is_task_queued 做 O(1) 检查。
+            pipe = self._redis.pipeline(transaction=False)
+            pipe.lpush(queue_key, task_id)
+            pipe.sadd(self.QUEUE_INDEX_SET, task_id)
+            pipe.hincrby(self.STATS_KEY, "total_enqueued", 1)
+            await pipe.execute()
 
             # 返回队列长度
             length = await self._redis.llen(queue_key)
@@ -368,7 +381,11 @@ class RedisQueueService:
 
         if result:
             queue_name, task_id = result
-            await self._redis.hincrby(self.STATS_KEY, "total_dequeued", 1)
+            # P1: 出队后从索引 Set 移除，保持与队列内容一致。
+            pipe = self._redis.pipeline(transaction=False)
+            pipe.srem(self.QUEUE_INDEX_SET, task_id)
+            pipe.hincrby(self.STATS_KEY, "total_dequeued", 1)
+            await pipe.execute()
             await self.append_task_log(
                 task_id,
                 level="info",
@@ -382,8 +399,13 @@ class RedisQueueService:
 
     async def move_to_dead_letter(self, task_id: str):
         """移入死信队列"""
-        await self._redis.lpush(self.DEAD_LETTER, task_id)
-        await self._redis.hincrby(self.STATS_KEY, "total_dead", 1)
+        # P1: 防御性地从索引 Set 移除（正常路径下 dequeue 已移除，
+        # 但若任务未经 dequeue 直接入死信，仍需保持索引一致）。
+        pipe = self._redis.pipeline(transaction=False)
+        pipe.lpush(self.DEAD_LETTER, task_id)
+        pipe.srem(self.QUEUE_INDEX_SET, task_id)
+        pipe.hincrby(self.STATS_KEY, "total_dead", 1)
+        await pipe.execute()
         logger.warning(f"[RedisQueue] 移入死信: {task_id}")
 
     async def retry_from_dead_letter(self, task_id: str, priority: str = "low") -> bool:
@@ -393,6 +415,54 @@ class RedisQueueService:
             await self.enqueue(task_id, priority)
             return True
         return False
+
+    # P2: Lua 脚本源（注册一次后通过 EVALSHA 复用，避免每次重发完整脚本字符串）
+    _RATE_LIMIT_LUA = """
+    local key = KEYS[1]
+    local now = tonumber(ARGV[1])
+    local window_start = tonumber(ARGV[2])
+    local limit = tonumber(ARGV[3])
+    local request_id = ARGV[4]
+
+    -- 清理过期记录
+    redis.call('ZREMRANGEBYSCORE', key, '-inf', window_start)
+
+    -- 检查当前窗口请求数
+    local count = redis.call('ZCARD', key)
+
+    if count < limit then
+        -- 添加新请求
+        redis.call('ZADD', key, now, request_id)
+        -- 设置过期时间
+        redis.call('EXPIRE', key, 2)
+        return 1
+    else
+        return 0
+    end
+    """
+
+    _RELEASE_LOCK_LUA = """
+    if redis.call('GET', KEYS[1]) == ARGV[1] then
+        return redis.call('DEL', KEYS[1])
+    else
+        return 0
+    end
+    """
+
+    def _ensure_scripts_registered(self):
+        """
+        P2: 确保 Lua 脚本已通过 register_script() 注册（EVALSHA 复用）。
+
+        脚本对象缓存绑定到当前 redis 客户端；若客户端被替换（重连/重置），
+        重新注册以避免使用过期的 SHA。
+        """
+        client = self._redis
+        if client is None:
+            raise RuntimeError("Redis 未连接")
+        if self._scripts_client_id != id(client):
+            self._rate_limit_script = client.register_script(self._RATE_LIMIT_LUA)
+            self._release_lock_script = client.register_script(self._RELEASE_LOCK_LUA)
+            self._scripts_client_id = id(client)
 
     async def acquire_rate_token(self) -> bool:
         """
@@ -404,40 +474,17 @@ class RedisQueueService:
         now = time.time()
         window_start = now - self.rate_window
 
-        # Lua 脚本保证原子性
-        lua_script = """
-        local key = KEYS[1]
-        local now = tonumber(ARGV[1])
-        local window_start = tonumber(ARGV[2])
-        local limit = tonumber(ARGV[3])
-        local request_id = ARGV[4]
-
-        -- 清理过期记录
-        redis.call('ZREMRANGEBYSCORE', key, '-inf', window_start)
-
-        -- 检查当前窗口请求数
-        local count = redis.call('ZCARD', key)
-
-        if count < limit then
-            -- 添加新请求
-            redis.call('ZADD', key, now, request_id)
-            -- 设置过期时间
-            redis.call('EXPIRE', key, 2)
-            return 1
-        else
-            return 0
-        end
-        """
+        self._ensure_scripts_registered()
 
         request_id = f"{now}:{id(asyncio.current_task())}"
-        result = await self._redis.eval(
-            lua_script,
-            1,
-            self.RATE_LIMIT_KEY,
-            str(now),
-            str(window_start),
-            str(self.rate_limit),
-            request_id
+        result = await self._rate_limit_script(
+            keys=[self.RATE_LIMIT_KEY],
+            args=[
+                str(now),
+                str(window_start),
+                str(self.rate_limit),
+                request_id,
+            ],
         )
 
         return result == 1
@@ -459,19 +506,14 @@ class RedisQueueService:
         return await self._redis.set(lock_key, worker_id, nx=True, ex=ttl)
 
     async def release_lock(self, task_id: str, worker_id: str) -> bool:
-        """释放任务锁"""
+        """释放任务锁（Lua 脚本保证原子性，只释放自己的锁）"""
         lock_key = f"{self.LOCK_PREFIX}{task_id}"
 
-        # Lua 脚本保证原子性（只释放自己的锁）
-        lua_script = """
-        if redis.call('GET', KEYS[1]) == ARGV[1] then
-            return redis.call('DEL', KEYS[1])
-        else
-            return 0
-        end
-        """
-
-        result = await self._redis.eval(lua_script, 1, lock_key, worker_id)
+        self._ensure_scripts_registered()
+        result = await self._release_lock_script(
+            keys=[lock_key],
+            args=[worker_id],
+        )
         return result == 1
 
     async def update_stats(self, field: str, increment: int = 1):
