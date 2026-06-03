@@ -23,7 +23,7 @@ from ...core.database import SessionLocal
 from ...core.config import settings
 from ...models.db_models import UploadTask, StorageConfig, ActiveStorage, ChatSession, WorkflowExecution
 from ..storage.storage_service import StorageService
-from ...core.encryption import decrypt_config
+from ...core.encryption import ConfigDecryptionError, decrypt_config
 from .redis_queue_service import redis_queue
 from ...utils.url_security import (
     get_with_redirect_guard,
@@ -972,13 +972,24 @@ class UploadWorkerPool:
             # 现在可以安全地修改 config.config，因为对象已从 session 中分离
             config.config = decrypted_config_dict
             logger.debug(f"[UploadWorkerPool] 已解密存储配置: {config.id} (provider={config.provider})")
-        except Exception as e:
-            logger.error(f"[UploadWorkerPool] 解密存储配置失败: {e}")
-            # 如果解密失败，可能是未加密的历史数据，继续使用原配置
-            # 但记录警告日志
-            logger.warning(f"[UploadWorkerPool] 使用未解密的配置（可能是历史数据）: {config.id}")
-            # 即使解密失败，也要 expunge 以避免意外修改
+        except ConfigDecryptionError as e:
+            logger.error(
+                "[UploadWorkerPool] 存储配置凭据解密失败: storage_id=%s provider=%s error=%s",
+                config.id,
+                config.provider,
+                e.code,
+            )
             db.expunge(config)
+            raise
+        except Exception as e:
+            logger.error(
+                "[UploadWorkerPool] 存储配置解密失败: storage_id=%s provider=%s error_type=%s",
+                config.id,
+                config.provider,
+                type(e).__name__,
+            )
+            db.expunge(config)
+            raise RuntimeError(f"storage_config_decryption_failed: {config.id}") from e
         
         return config
 

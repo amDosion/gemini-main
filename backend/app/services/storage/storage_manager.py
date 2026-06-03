@@ -16,11 +16,48 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
 from ...models.db_models import StorageConfig, ActiveStorage
-from ...core.encryption import encrypt_config, decrypt_config, mask_sensitive_fields
+from ...core.encryption import (
+    ConfigDecryptionError,
+    SENSITIVE_FIELDS,
+    encrypt_config,
+    decrypt_config,
+    mask_sensitive_fields,
+)
 from ...core.user_scoped_query import UserScopedQuery
 from .storage_service import StorageService
 
 logger = logging.getLogger(__name__)
+
+
+def _mask_unreadable_sensitive_fields(config: Dict[str, Any]) -> Dict[str, Any]:
+    masked_config: Dict[str, Any] = {}
+
+    for field, value in dict(config or {}).items():
+        if isinstance(value, dict):
+            masked_config[field] = _mask_unreadable_sensitive_fields(value)
+        elif field in SENSITIVE_FIELDS and value:
+            masked_config[field] = "***"
+        else:
+            masked_config[field] = value
+
+    return masked_config
+
+
+def _apply_display_config(config_dict: Dict[str, Any]) -> Dict[str, Any]:
+    raw_config = dict(config_dict.get("config") or {})
+    try:
+        config_dict["config"] = decrypt_config(raw_config)
+    except ConfigDecryptionError as e:
+        logger.warning(
+            "Storage config credentials require re-entry: storage_id=%s provider=%s error=%s",
+            config_dict.get("id"),
+            config_dict.get("provider"),
+            e.code,
+        )
+        config_dict["config"] = _mask_unreadable_sensitive_fields(raw_config)
+        config_dict["credentials_decryption_failed"] = True
+        config_dict["requires_reentry"] = True
+    return config_dict
 
 
 class StorageManager:
@@ -90,9 +127,7 @@ class StorageManager:
             result = []
             for config in configs:
                 config_dict = config.to_dict()
-                # Decrypt configuration before returning
-                config_dict['config'] = decrypt_config(config_dict['config'])
-                result.append(config_dict)
+                result.append(_apply_display_config(config_dict))
             
             logger.info(f"Retrieved {len(result)} storage configs for user {self.user_id}")
             return result
@@ -121,8 +156,7 @@ class StorageManager:
                 return None
             
             config_dict = config.to_dict()
-            # Decrypt configuration before returning
-            config_dict['config'] = decrypt_config(config_dict['config'])
+            _apply_display_config(config_dict)
             
             return config_dict
             

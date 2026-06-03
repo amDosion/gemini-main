@@ -35,7 +35,7 @@ from ...services.common.redis_queue_service import redis_queue
 from ...services.common.cache_service import CacheService
 from ...core.dependencies import require_current_user, get_cache
 from ...core.user_scoped_query import UserScopedQuery
-from ...core.encryption import decrypt_config
+from ...core.encryption import ConfigDecryptionError, decrypt_config
 from ...middleware.case_conversion_middleware import case_conversion_options
 from ...utils.url_security import (
     UnsafeURLError,
@@ -707,7 +707,18 @@ def _collect_storage_preview_host_allowlist(db: Session, user_id: str) -> set[st
     ).all()
 
     for config in configs:
-        decrypted = decrypt_config(config.config or {})
+        raw_config = dict(config.config or {})
+        try:
+            decrypted = decrypt_config(raw_config)
+        except ConfigDecryptionError as e:
+            logger.warning(
+                "[StoragePreview] storage config credentials unreadable; using public fields only: "
+                "storage_id=%s provider=%s error=%s",
+                config.id,
+                config.provider,
+                e.code,
+            )
+            decrypted = raw_config
         if not isinstance(decrypted, dict):
             continue
 

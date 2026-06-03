@@ -28,6 +28,47 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
+class ConfigDecryptionError(ValueError):
+    """Raised when a stored sensitive config value cannot be decrypted."""
+
+    code = "storage_config_credentials_not_decrypted"
+
+    def __init__(self, field: str):
+        self.field = field
+        super().__init__(
+            f"{self.code}: failed to decrypt sensitive config field '{field}'"
+        )
+
+
+def looks_like_fernet_token(data: str) -> bool:
+    """Return True when a string has the shape of a stored Fernet token."""
+    if not data:
+        return False
+
+    value = data.strip()
+    if value.startswith("gAAAAA"):
+        return True
+
+    try:
+        padded = value + ("=" * (-len(value) % 4))
+        decoded = base64.b64decode(padded.encode("utf-8"))
+        return decoded.decode("utf-8").strip().startswith("gAAAAA")
+    except (ValueError, UnicodeDecodeError, base64.binascii.Error):
+        return False
+
+
+def _decrypt_fernet_config_value(fernet: Fernet, value: str) -> str:
+    try:
+        return fernet.decrypt(value.encode("utf-8")).decode("utf-8")
+    except InvalidToken as direct_error:
+        try:
+            padded = value + ("=" * (-len(value) % 4))
+            encrypted_bytes = base64.b64decode(padded.encode("utf-8"))
+            return fernet.decrypt(encrypted_bytes).decode("utf-8")
+        except (InvalidToken, ValueError, UnicodeDecodeError, base64.binascii.Error):
+            raise direct_error
+
 # ==================== ENCRYPTION_KEY 管理 ====================
 
 # 文件路径
@@ -391,53 +432,52 @@ def decrypt_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     if not config:
         return config
-    
-    try:
-        key = _get_encryption_key_bytes()
-        fernet = Fernet(key)
-        
-        decrypted_config = {}
-        
-        for field, value in config.items():
-            if value is None:
-                decrypted_config[field] = value
-            elif isinstance(value, dict):
-                # Recursively decrypt nested dictionaries
-                decrypted_config[field] = decrypt_config(value)
-            elif field in SENSITIVE_FIELDS and isinstance(value, str):
-                # Decrypt sensitive string fields
-                # ✅ 检查是否已加密，避免对明文进行解密尝试
-                if is_encrypted(value):
-                    # 已加密，尝试解密
+
+    fernet: Optional[Fernet] = None
+    decrypted_config = {}
+
+    for field, value in config.items():
+        if value is None:
+            decrypted_config[field] = value
+        elif isinstance(value, dict):
+            # Recursively decrypt nested dictionaries
+            decrypted_config[field] = decrypt_config(value)
+        elif field in SENSITIVE_FIELDS and isinstance(value, str):
+            if looks_like_fernet_token(value):
+                if fernet is None:
                     try:
-                        decrypted_bytes = fernet.decrypt(value.encode('utf-8'))
-                        decrypted_config[field] = decrypted_bytes.decode('utf-8')
-                    except InvalidToken:
-                        logger.warning(
-                            f"[Encryption] Field '{field}' appears to be encrypted with a different key. "
-                            "Using value as-is."
+                        fernet = Fernet(_get_encryption_key_bytes())
+                    except ValueError as e:
+                        logger.error(
+                            "[Encryption] Failed to initialize config decryption for field '%s': %s",
+                            field,
+                            type(e).__name__,
                         )
-                        # 如果解密失败（可能是不同的密钥），保持原值
-                        decrypted_config[field] = value
-                    except Exception as e:
-                        logger.error(f"[Encryption] Failed to decrypt field '{field}': {e}")
-                        decrypted_config[field] = value
-                else:
-                    # 未加密（可能是历史数据），直接使用
-                    logger.debug(
-                        f"[Encryption] Field '{field}' is not encrypted (likely historical data). Using value as-is."
+                        raise ConfigDecryptionError(field) from e
+
+                try:
+                    decrypted_config[field] = _decrypt_fernet_config_value(
+                        fernet,
+                        value,
                     )
-                    decrypted_config[field] = value
+                except InvalidToken as e:
+                    logger.warning(
+                        "[Encryption] Failed to decrypt sensitive config field '%s': %s",
+                        field,
+                        type(e).__name__,
+                    )
+                    raise ConfigDecryptionError(field) from e
             else:
-                # Keep non-sensitive fields unchanged
+                # 未加密（可能是历史数据），直接使用
+                logger.debug(
+                    f"[Encryption] Field '{field}' is not encrypted (likely historical data). Using value as-is."
+                )
                 decrypted_config[field] = value
-        
-        return decrypted_config
-        
-    except Exception as e:
-        logger.error(f"[Encryption] Decryption failed: {e}")
-        # Return original config if decryption fails
-        return config
+        else:
+            # Keep non-sensitive fields unchanged
+            decrypted_config[field] = value
+
+    return decrypted_config
 
 
 def decrypt_api_key(api_key: str, silent: bool = False) -> str:

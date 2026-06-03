@@ -8,6 +8,7 @@ import oss2
 from datetime import datetime
 from typing import Dict, Any, Optional
 from urllib.parse import urlparse
+from ...core.encryption import ConfigDecryptionError, looks_like_fernet_token
 from .base import BaseStorageProvider, UploadResult
 
 
@@ -31,6 +32,12 @@ class AliyunProvider(BaseStorageProvider):
             path = path[len(bucket_name) + 1:]
         return path.strip("/")
 
+    def _require_plaintext_credentials(self) -> None:
+        for field in ("access_key_id", "access_key_secret"):
+            value = self.config.get(field)
+            if isinstance(value, str) and looks_like_fernet_token(value):
+                raise ConfigDecryptionError(field)
+
     def _create_bucket_client(self):
         access_key_id = self.config.get("access_key_id")
         access_key_secret = self.config.get("access_key_secret")
@@ -39,6 +46,8 @@ class AliyunProvider(BaseStorageProvider):
 
         if not all([access_key_id, access_key_secret, bucket_name, endpoint]):
             raise ValueError("阿里云 OSS 配置不完整：缺少必填项（access_key_id, access_key_secret, bucket, endpoint）")
+
+        self._require_plaintext_credentials()
 
         oss_endpoint = self._clean_endpoint(endpoint)
         auth = oss2.Auth(access_key_id, access_key_secret)
