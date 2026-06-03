@@ -15,6 +15,7 @@ import socket
 import json
 import hashlib
 import hmac
+import bcrypt
 import threading
 from pathlib import Path
 from typing import Optional
@@ -44,6 +45,82 @@ _encryption_key: Optional[str] = None
 _jwt_secret_key: Optional[str] = None
 _keys_initialized = False
 _keys_lock = threading.Lock()
+
+
+# ==================== 凭证 fail-closed 解析（S1 / S3） ====================
+
+class KeyServiceConfigError(RuntimeError):
+    """Key Service 凭证缺失、使用不安全默认值或强度不足时抛出（fail-closed）。"""
+
+
+# S1：必须显式拒绝的历史不安全默认值
+_INSECURE_CREDENTIAL_VALUES = frozenset({
+    "",
+    "default_token_change_me",
+    "default_password_change_me",
+})
+MIN_CLIENT_TOKEN_LEN = 16
+MIN_ADMIN_PASSWORD_LEN = 12
+_KEY_SERVICE_BCRYPT_ROUNDS = 12
+
+
+def hash_admin_password(password: str) -> str:
+    """对管理员密码做 SHA256 预处理 + bcrypt 哈希（S3）。
+
+    与 app/core/password.py 保持同一算法（SHA256 预处理规避 bcrypt 72 字节限制，
+    再用 bcrypt 生成标准 $2b$ 盐化哈希），但此独立服务进程内联实现以保持自包含。
+    """
+    pre = hashlib.sha256(password.encode("utf-8")).hexdigest()
+    hashed = bcrypt.hashpw(
+        pre.encode("utf-8"),
+        bcrypt.gensalt(rounds=_KEY_SERVICE_BCRYPT_ROUNDS),
+    )
+    return hashed.decode("utf-8")
+
+
+def verify_admin_password(password: str, password_hash: str) -> bool:
+    """常量时间校验管理员密码（S3，替换裸 SHA256 比较）。"""
+    pre = hashlib.sha256(password.encode("utf-8")).hexdigest()
+    try:
+        return bcrypt.checkpw(pre.encode("utf-8"), password_hash.encode("utf-8"))
+    except (ValueError, TypeError):
+        return False
+
+
+def resolve_key_service_credentials(env: Optional[dict] = None):
+    """读取并校验 Key Service 凭证，fail-closed（S1/S3）。
+
+    Returns:
+        (client_token, admin_password_bcrypt_hash)
+
+    Raises:
+        KeyServiceConfigError: 当任一凭证缺失、为不安全默认值或长度不足时。
+    """
+    if env is None:
+        env = os.environ
+    client_token = (env.get("KEY_SERVICE_CLIENT_TOKEN") or "").strip()
+    admin_password = env.get("ADMIN_VIEW_KEY_PASSWORD") or ""
+
+    if not client_token or client_token in _INSECURE_CREDENTIAL_VALUES:
+        raise KeyServiceConfigError(
+            "KEY_SERVICE_CLIENT_TOKEN 未设置或使用了不安全的默认值；"
+            "请通过环境变量提供一个强随机令牌。"
+        )
+    if not admin_password or admin_password in _INSECURE_CREDENTIAL_VALUES:
+        raise KeyServiceConfigError(
+            "ADMIN_VIEW_KEY_PASSWORD 未设置或使用了不安全的默认值；"
+            "请通过环境变量提供一个强密码。"
+        )
+    if len(client_token) < MIN_CLIENT_TOKEN_LEN:
+        raise KeyServiceConfigError(
+            f"KEY_SERVICE_CLIENT_TOKEN 太短（至少 {MIN_CLIENT_TOKEN_LEN} 个字符）。"
+        )
+    if len(admin_password) < MIN_ADMIN_PASSWORD_LEN:
+        raise KeyServiceConfigError(
+            f"ADMIN_VIEW_KEY_PASSWORD 太短（至少 {MIN_ADMIN_PASSWORD_LEN} 个字符）。"
+        )
+
+    return client_token, hash_admin_password(admin_password)
 
 def initialize_keys(
     encryption_key: Optional[str] = None,
@@ -234,8 +311,8 @@ class KeyServiceServer:
             data = conn.recv(4096).decode('utf-8')
             request = json.loads(data)
             
-            # 验证 Client 令牌
-            if request.get('token') != self.client_token:
+            # 验证 Client 令牌（常量时间比较，避免计时侧信道）
+            if not hmac.compare_digest(str(request.get('token') or ''), self.client_token):
                 conn.send(json.dumps({'error': '身份验证失败'}).encode())
                 return
             
@@ -268,11 +345,9 @@ class KeyServiceServer:
                 conn.send(json.dumps({'error': '需要先进行身份验证'}).encode())
                 return
             
-            # 验证管理员密码
+            # 验证管理员密码（bcrypt 盐化校验，替换裸 SHA256）
             password = request.get('password', '')
-            password_hash = hashlib.sha256(password.encode()).hexdigest()
-            
-            if not hmac.compare_digest(password_hash, self.admin_password_hash):
+            if not verify_admin_password(password, self.admin_password_hash):
                 conn.send(json.dumps({'error': '身份验证失败'}).encode())
                 return
             
@@ -296,11 +371,15 @@ def main():
         # 初始化密钥
         initialize_keys()
         
-        # 启动 Key Service
-        client_token = os.getenv('KEY_SERVICE_CLIENT_TOKEN', 'default_token_change_me')
-        admin_password = os.getenv('ADMIN_VIEW_KEY_PASSWORD', 'default_password_change_me')
-        admin_password_hash = hashlib.sha256(admin_password.encode()).hexdigest()
-        
+        # 启动 Key Service（fail-closed：拒绝缺失/不安全默认/弱凭证，S1/S3）
+        try:
+            client_token, admin_password_hash = resolve_key_service_credentials()
+        except KeyServiceConfigError as cred_error:
+            logger.error(
+                "[KeyService] 凭证配置错误，拒绝以不安全的默认值启动: %s", cred_error
+            )
+            sys.exit(1)
+
         server = KeyServiceServer(client_token, admin_password_hash)
         server.start()
         
