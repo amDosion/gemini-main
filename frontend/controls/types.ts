@@ -47,7 +47,6 @@ export interface AdvancedToggleProps {
   title?: string;
 }
 
-
 // ============================================
 // Mode Control Component Props
 // ============================================
@@ -173,7 +172,6 @@ export interface ImageMaskEditControlsProps {
   setShowAdvanced?: (v: boolean) => void;
 }
 
-
 export interface OffsetPixels {
   left: number;
   right: number;
@@ -284,7 +282,6 @@ export interface MultiAgentControlsProps {
   setEnableMultiAgent?: (v: boolean) => void;
 }
 
-
 // ============================================
 // Coordinator Props
 // ============================================
@@ -293,15 +290,20 @@ export interface ModeControlsCoordinatorProps {
   mode: AppMode;
   providerId: string;
   currentModel?: ModelConfig;
-  [key: string]: unknown;
 }
 
 // ============================================
 // Controls State (for useControlsState hook)
 // ============================================
 
-export interface ControlsState {
-  // Chat Controls
+// A5 (partial): ControlsState was a 146-line, 128-setter "god object". It is now
+// composed from cohesive per-domain slices below (shape-preserving — the public
+// `ControlsState` type and all 24 consumers are unchanged). The remaining runtime
+// half of A5 (dropping the `commonProps` mega-spread in App.tsx in favour of a
+// single typed `controls` prop per mode view) is a larger cross-cutting refactor
+// tracked separately; see .investigations/comprehensive-review-2026-06-04.md (A5).
+
+export interface ChatControlsState {
   enableSearch: boolean;
   setEnableSearch: (v: boolean) => void;
   enableThinking: boolean;
@@ -326,8 +328,9 @@ export interface ControlsState {
   setGoogleCacheMode: (v: 'none' | 'exact' | 'semantic') => void;
   selectedMcpServerKey: string;
   setSelectedMcpServerKey: (v: string) => void;
+}
 
-  // Generation Controls
+export interface GenerationControlsState {
   aspectRatio: string;
   setAspectRatio: (v: string) => void;
   resolution: string;
@@ -364,7 +367,9 @@ export interface ControlsState {
   setModeration: (v: string) => void;
   outputFormat: string;
   setOutputFormat: (v: string) => void;
+}
 
+export interface AdvancedControlsState {
   // Advanced Settings
   showAdvanced: boolean;
   setShowAdvanced: (v: boolean) => void;
@@ -387,8 +392,9 @@ export interface ControlsState {
   setEnhancePromptModel: (v: string) => void;
   enhancePromptThinkingLevel: ThinkingLevel;
   setEnhancePromptThinkingLevel: (v: ThinkingLevel) => void;
+}
 
-  // TongYi Specific Parameters
+export interface TongyiControlsState {
   promptExtend: boolean;
   setPromptExtend: (v: boolean) => void;
   addMagicSuffix: boolean;
@@ -397,7 +403,9 @@ export interface ControlsState {
   setThinkingMode: (v: boolean) => void;
   enableSequential: boolean;
   setEnableSequential: (v: boolean) => void;
+}
 
+export interface OutPaintingControlsState {
   // Out-Painting (旧参数，保留向后兼容)
   outPaintingMode: 'scale' | 'offset';
   setOutPaintingMode: (v: 'scale' | 'offset') => void;
@@ -415,7 +423,9 @@ export interface ControlsState {
   setYScale: (v: number) => void;
   upscaleFactor: 'x2' | 'x3' | 'x4';
   setUpscaleFactor: (v: 'x2' | 'x3' | 'x4') => void;
+}
 
+export interface MediaOutputControlsState {
   // Audio
   voice: string;
   setVoice: (v: string) => void;
@@ -430,11 +440,15 @@ export interface ControlsState {
   baseSteps: number;
   setBaseSteps: (v: number) => void;
   // output_mime_type 和 output_compression_quality 使用固定默认值（image/jpeg, 100）
+}
 
+export interface MultiAgentControlsState {
   // Multi-Agent Controls (保留用于向后兼容，但主要在工作流编辑器中管理)
   enableMultiAgent: boolean;
   setEnableMultiAgent: (v: boolean) => void;
+}
 
+export interface MaskEditControlsState {
   // Mask Edit Controls (仅用于 image-mask-edit 模式)
   editMode: string;
   setEditMode: (v: string) => void;
@@ -443,6 +457,29 @@ export interface ControlsState {
   guidanceScale: number;
   setGuidanceScale: (v: number) => void;
   // Mask 模式 (对应 Vertex AI MaskReferenceConfig.mask_mode)
-  maskMode: 'MASK_MODE_USER_PROVIDED' | 'MASK_MODE_BACKGROUND' | 'MASK_MODE_FOREGROUND' | 'MASK_MODE_SEMANTIC';
-  setMaskMode: (v: 'MASK_MODE_USER_PROVIDED' | 'MASK_MODE_BACKGROUND' | 'MASK_MODE_FOREGROUND' | 'MASK_MODE_SEMANTIC') => void;
+  maskMode:
+    | 'MASK_MODE_USER_PROVIDED'
+    | 'MASK_MODE_BACKGROUND'
+    | 'MASK_MODE_FOREGROUND'
+    | 'MASK_MODE_SEMANTIC';
+  setMaskMode: (
+    v:
+      | 'MASK_MODE_USER_PROVIDED'
+      | 'MASK_MODE_BACKGROUND'
+      | 'MASK_MODE_FOREGROUND'
+      | 'MASK_MODE_SEMANTIC'
+  ) => void;
 }
+
+// Composed from the cohesive slices above. Shape-identical to the previous flat
+// interface, so every existing `ControlsState` consumer keeps compiling unchanged.
+export interface ControlsState
+  extends
+    ChatControlsState,
+    GenerationControlsState,
+    AdvancedControlsState,
+    TongyiControlsState,
+    OutPaintingControlsState,
+    MediaOutputControlsState,
+    MultiAgentControlsState,
+    MaskEditControlsState {}
