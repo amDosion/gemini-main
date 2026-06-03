@@ -9,6 +9,7 @@ import inspect
 import json
 import logging
 import time
+from collections import deque
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from ..execution_context import ExecutionContext
@@ -147,10 +148,13 @@ async def execute(
         raise ValueError("结束节点不能有输出连接")
 
     def _bfs(seed: str, graph: Dict[str, List[Dict[str, Any]]], direction: str) -> Set[str]:
+        # deque.popleft() is O(1); list.pop(0) was O(n), making this BFS O(n^2)
+        # on large graphs. Traversal order and the resulting visited set are
+        # identical to the previous list-based queue.
         visited: Set[str] = set()
-        queue: List[str] = [seed]
+        queue: deque[str] = deque([seed])
         while queue:
-            current = queue.pop(0)
+            current = queue.popleft()
             if current in visited:
                 continue
             visited.add(current)

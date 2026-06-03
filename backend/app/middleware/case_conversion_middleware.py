@@ -25,6 +25,15 @@ logger = logging.getLogger(__name__)
 
 CASE_CONVERSION_META_ATTR = "__case_conversion_options__"
 
+# Response bodies larger than this many bytes are streamed through WITHOUT
+# snake_case -> camelCase conversion. Converting requires buffering the entire
+# JSON body in memory and re-serializing it; for very large endpoints (bulk
+# exports, large history dumps, file listings) that doubles memory and adds
+# latency for no real client benefit. Endpoints returning oversized JSON should
+# either fit the camelCase contract on the server side or be exempted; this
+# threshold is a conservative safety valve, not the normal path.
+MAX_RESPONSE_CONVERSION_BYTES = 2 * 1024 * 1024  # 2 MiB
+
 
 @dataclass(frozen=True)
 class CaseConversionOptions:
@@ -244,10 +253,82 @@ class CaseConversionMiddleware:
         # ========== 响应处理 ==========
         is_passthrough = False
         cached_start_message = None
-        response_body_chunks = []
+        response_body_chunks: list = []
+        response_body_size = 0
+        start_flushed = False
+
+        def _content_length_from_headers(headers: Any) -> int | None:
+            for name, value in headers or []:
+                name_str = name.decode() if isinstance(name, bytes) else name
+                if name_str.lower() == "content-length":
+                    raw = value.decode() if isinstance(value, bytes) else value
+                    try:
+                        return int(str(raw).strip())
+                    except (TypeError, ValueError):
+                        return None
+            return None
+
+        async def _flush_buffer_as_passthrough() -> None:
+            """
+            Abort conversion and stream what we have so far verbatim. Used when a
+            JSON body grows past MAX_RESPONSE_CONVERSION_BYTES so we never buffer
+            or re-serialize an oversized payload. Original Content-Length (if any)
+            is preserved because the bytes are unchanged.
+            """
+            nonlocal is_passthrough, start_flushed
+            is_passthrough = True
+            if cached_start_message is not None and not start_flushed:
+                start_flushed = True
+                await send(cached_start_message)
+            for chunk in response_body_chunks:
+                if chunk:
+                    await send({
+                        "type": "http.response.body",
+                        "body": chunk,
+                        "more_body": True,
+                    })
+            response_body_chunks.clear()
+
+        async def _emit_converted_response() -> None:
+            """Convert the fully-buffered JSON body snake_case -> camelCase and
+            send the (re-)framed response. Only called for sub-threshold JSON."""
+            full_body = b"".join(response_body_chunks)
+            new_body = full_body
+
+            if full_body:
+                try:
+                    data = json.loads(full_body.decode("utf-8"))
+                    converted_data = to_camel_case(data)
+                    new_body = json.dumps(converted_data, ensure_ascii=False).encode("utf-8")
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    pass
+                except Exception as e:
+                    logger.error(f"[CaseConversion] Response conversion failed: {e}")
+
+            # 发送响应头（更新 Content-Length）
+            if cached_start_message:
+                new_headers = []
+                for key, value in cached_start_message.get("headers", []):
+                    key_str = key.decode() if isinstance(key, bytes) else key
+                    if key_str.lower() != "content-length":
+                        new_headers.append((key, value))
+                new_headers.append((b"content-length", str(len(new_body)).encode()))
+
+                await send({
+                    "type": "http.response.start",
+                    "status": cached_start_message["status"],
+                    "headers": new_headers,
+                })
+
+            await send({
+                "type": "http.response.body",
+                "body": new_body,
+                "more_body": False,
+            })
 
         async def send_wrapper(message: Message) -> None:
             nonlocal is_passthrough, cached_start_message, response_body_chunks
+            nonlocal response_body_size, start_flushed
 
             msg_type = message["type"]
 
@@ -265,11 +346,22 @@ class CaseConversionMiddleware:
                 # SSE / 非 JSON / endpoint 显式跳过：直接透传
                 if is_sse or not is_json or options.skip_response_body:
                     is_passthrough = True
+                    start_flushed = True
                     await send(message)
-                else:
-                    # JSON 响应：缓存等待转换
-                    is_passthrough = False
-                    cached_start_message = message
+                    return
+
+                # JSON 响应：若声明的 Content-Length 超过阈值，直接透传，
+                # 不缓冲、不转换，避免大端点全量驻留内存。
+                declared_length = _content_length_from_headers(message.get("headers", []))
+                if declared_length is not None and declared_length > MAX_RESPONSE_CONVERSION_BYTES:
+                    is_passthrough = True
+                    start_flushed = True
+                    await send(message)
+                    return
+
+                # JSON 响应：缓存等待转换
+                is_passthrough = False
+                cached_start_message = message
                 return
 
             if msg_type == "http.response.body":
@@ -279,43 +371,25 @@ class CaseConversionMiddleware:
 
                 # JSON 响应：收集并转换
                 body = message.get("body", b"")
+                more_body = message.get("more_body", False)
                 if body:
                     response_body_chunks.append(body)
+                    response_body_size += len(body)
 
-                if not message.get("more_body", False):
-                    full_body = b"".join(response_body_chunks)
-                    new_body = full_body
-
-                    if full_body:
-                        try:
-                            data = json.loads(full_body.decode("utf-8"))
-                            converted_data = to_camel_case(data)
-                            new_body = json.dumps(converted_data, ensure_ascii=False).encode("utf-8")
-                        except (json.JSONDecodeError, UnicodeDecodeError):
-                            pass
-                        except Exception as e:
-                            logger.error(f"[CaseConversion] Response conversion failed: {e}")
-
-                    # 发送响应头（更新 Content-Length）
-                    if cached_start_message:
-                        new_headers = []
-                        for key, value in cached_start_message.get("headers", []):
-                            key_str = key.decode() if isinstance(key, bytes) else key
-                            if key_str.lower() != "content-length":
-                                new_headers.append((key, value))
-                        new_headers.append((b"content-length", str(len(new_body)).encode()))
-
+                # 累计字节超过阈值（未声明长度的分块响应）：切换为透传，
+                # 把已缓冲数据原样下发，后续块流式透传，避免全量缓冲大响应。
+                if response_body_size > MAX_RESPONSE_CONVERSION_BYTES:
+                    await _flush_buffer_as_passthrough()
+                    if not more_body:
                         await send({
-                            "type": "http.response.start",
-                            "status": cached_start_message["status"],
-                            "headers": new_headers
+                            "type": "http.response.body",
+                            "body": b"",
+                            "more_body": False,
                         })
+                    return
 
-                    await send({
-                        "type": "http.response.body",
-                        "body": new_body,
-                        "more_body": False
-                    })
+                if not more_body:
+                    await _emit_converted_response()
                 return
 
             # 其他消息直接透传

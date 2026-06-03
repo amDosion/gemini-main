@@ -31,7 +31,9 @@ class LLMAdapterFactory:
 
         if configured_client_type == "google":
             return "google"
-        if configured_client_type == "openai":
+        # grok exposes an OpenAI-compatible API (grok2api), so its dedicated
+        # client_type maps onto the OpenAI adapter family.
+        if configured_client_type in ("openai", "grok"):
             return "openai"
         if configured_client_type == "ollama":
             return "ollama"
@@ -40,7 +42,7 @@ class LLMAdapterFactory:
 
         if lowered.startswith("google"):
             return "google"
-        if lowered.startswith("openai"):
+        if lowered.startswith("openai") or lowered.startswith("grok"):
             return "openai"
         if lowered.startswith("ollama"):
             return "ollama"
@@ -54,6 +56,7 @@ class LLMAdapterFactory:
         adapter_cls = cls._ADAPTERS.get(family)
         if adapter_cls is None:
             raise ValueError(
-                f"不支持的 LLM 提供商: {provider_id}。支持: google, openai, tongyi, ollama。"
+                f"不支持的 LLM 提供商: {provider_id}。"
+                "支持: google, openai (含 grok 等 OpenAI 兼容提供商), tongyi, ollama。"
             )
         return adapter_cls(provider_service)

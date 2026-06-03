@@ -31,12 +31,28 @@ logger = logging.getLogger(__name__)
 _CACHE: TTLCache = TTLCache(maxsize=512, ttl=60)
 _LOCK = threading.RLock()
 
+# Per-key load locks so concurrent get_or_load() calls for the SAME key
+# collapse to a single loader() invocation (avoids the TOCTOU stampede where
+# every racing caller observed a miss and re-issued the same DB read), while
+# distinct keys still load in parallel.
+_KEY_LOCKS: Dict[Tuple[Any, ...], threading.Lock] = {}
+
 # Sentinel to distinguish "cached None" (no row) from "cache miss"
 _MISS = object()
 
 
 def _make_key(user_id: str, kind: str, *extra: Any) -> Tuple[Any, ...]:
     return (str(user_id), str(kind), *extra)
+
+
+def _get_key_lock(key: Tuple[Any, ...]) -> threading.Lock:
+    """Return (creating if needed) the dedicated load lock for `key`."""
+    with _LOCK:
+        lock = _KEY_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _KEY_LOCKS[key] = lock
+        return lock
 
 
 def get_or_load(
@@ -59,15 +75,29 @@ def get_or_load(
         return loader()
 
     key = _make_key(user_id, kind, *extra)
+
+    # Fast path: serve a hit without taking the per-key load lock.
     with _LOCK:
         cached = _CACHE.get(key, _MISS)
     if cached is not _MISS:
         return cached  # type: ignore[return-value]
 
-    value = loader()
-    with _LOCK:
-        _CACHE[key] = value
-    return value
+    # Miss: serialize loaders for THIS key so concurrent callers collapse to a
+    # single DB read. Different keys use different locks and still run in
+    # parallel.
+    key_lock = _get_key_lock(key)
+    with key_lock:
+        # Double-check: another thread may have populated the cache while we
+        # were waiting on `key_lock`.
+        with _LOCK:
+            cached = _CACHE.get(key, _MISS)
+        if cached is not _MISS:
+            return cached  # type: ignore[return-value]
+
+        value = loader()
+        with _LOCK:
+            _CACHE[key] = value
+        return value
 
 
 def clear_config_cache(
@@ -84,6 +114,7 @@ def clear_config_cache(
     with _LOCK:
         if user_id is None and kind is None:
             _CACHE.clear()
+            _prune_idle_key_locks()
             return
         target_user = None if user_id is None else str(user_id)
         target_kind = None if kind is None else str(kind)
@@ -98,3 +129,25 @@ def clear_config_cache(
             if target_kind is not None and key_kind != target_kind:
                 continue
             _CACHE.pop(key, None)
+        _prune_idle_key_locks()
+
+
+def _prune_idle_key_locks() -> None:
+    """
+    Drop per-key locks that are not currently held and whose cache entry is
+    gone, keeping `_KEY_LOCKS` bounded. Caller MUST hold `_LOCK`.
+
+    A lock that another thread is mid-load on (held) is skipped via a
+    non-blocking acquire probe so we never delete a lock in active use.
+    """
+    for lock_key in list(_KEY_LOCKS.keys()):
+        if lock_key in _CACHE:
+            continue
+        lock = _KEY_LOCKS.get(lock_key)
+        if lock is None:
+            continue
+        if lock.acquire(blocking=False):
+            try:
+                _KEY_LOCKS.pop(lock_key, None)
+            finally:
+                lock.release()
