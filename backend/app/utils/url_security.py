@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import socket
 from typing import Optional
 from urllib.parse import urlparse
 
 import httpx
+
+# Bound DNS resolution for async callers so a slow/hostile resolver cannot stall
+# an event-loop worker. Sync callers (run in worker threads) keep blocking
+# semantics but gain a per-socket default timeout below.
+_DEFAULT_DNS_TIMEOUT_SECONDS = 5.0
 
 
 class UnsafeURLError(ValueError):
@@ -73,8 +79,14 @@ def _is_disallowed_hostname(hostname: str) -> bool:
     return False
 
 
-def validate_outbound_http_url(url: str) -> str:
-    """Validate outbound URL against SSRF risks and return normalized raw URL."""
+def _prevalidate_url(url: str) -> tuple[str, Optional[str], int]:
+    """
+    Run the cheap, resolver-free SSRF checks.
+
+    Returns:
+        (raw_url, host_needing_dns, port). When ``host_needing_dns`` is None the
+        URL is already fully validated (IP literal) and no DNS lookup is needed.
+    """
     raw_url = str(url or "").strip()
     if not raw_url:
         raise UnsafeURLError("url 不能为空")
@@ -93,19 +105,14 @@ def validate_outbound_http_url(url: str) -> str:
     if ip_literal is not None:
         if _is_disallowed_ip(ip_literal):
             raise UnsafeURLError("URL 指向受限地址")
-        return raw_url
+        return raw_url, None, 0
 
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    try:
-        addr_infos = socket.getaddrinfo(
-            host,
-            port,
-            type=socket.SOCK_STREAM,
-            proto=socket.IPPROTO_TCP,
-        )
-    except socket.gaierror as exc:
-        raise UnsafeURLError("URL 主机解析失败") from exc
+    return raw_url, host, port
 
+
+def _check_resolved_addr_infos(addr_infos) -> None:
+    """Validate getaddrinfo results against the disallowed-IP policy."""
     resolved_ips = {
         ipaddress.ip_address(info[4][0])
         for info in addr_infos
@@ -116,6 +123,63 @@ def validate_outbound_http_url(url: str) -> str:
     if any(_is_disallowed_ip(ip_obj) for ip_obj in resolved_ips):
         raise UnsafeURLError("URL 指向受限网络地址")
 
+
+def _getaddrinfo(host: str, port: int):
+    return socket.getaddrinfo(
+        host,
+        port,
+        type=socket.SOCK_STREAM,
+        proto=socket.IPPROTO_TCP,
+    )
+
+
+def validate_outbound_http_url(url: str) -> str:
+    """Validate outbound URL against SSRF risks and return normalized raw URL.
+
+    Synchronous variant: safe to call from worker threads (e.g. read_webpage).
+    Async callers should prefer :func:`validate_outbound_http_url_async` so a
+    slow resolver cannot stall the event loop.
+    """
+    raw_url, host, port = _prevalidate_url(url)
+    if host is None:
+        return raw_url
+
+    try:
+        addr_infos = _getaddrinfo(host, port)
+    except socket.gaierror as exc:
+        raise UnsafeURLError("URL 主机解析失败") from exc
+
+    _check_resolved_addr_infos(addr_infos)
+    return raw_url
+
+
+async def validate_outbound_http_url_async(
+    url: str,
+    *,
+    resolve_timeout: float = _DEFAULT_DNS_TIMEOUT_SECONDS,
+) -> str:
+    """Async, event-loop-safe SSRF validator.
+
+    Runs the blocking ``getaddrinfo`` in the default executor under a bounded
+    ``asyncio.wait_for`` so a slow or hostile DNS resolver cannot stall a worker.
+    A timeout is treated as a resolution failure (fail-closed).
+    """
+    raw_url, host, port = _prevalidate_url(url)
+    if host is None:
+        return raw_url
+
+    loop = asyncio.get_running_loop()
+    try:
+        addr_infos = await asyncio.wait_for(
+            loop.run_in_executor(None, _getaddrinfo, host, port),
+            timeout=resolve_timeout,
+        )
+    except asyncio.TimeoutError as exc:
+        raise UnsafeURLError("URL 主机解析超时") from exc
+    except socket.gaierror as exc:
+        raise UnsafeURLError("URL 主机解析失败") from exc
+
+    _check_resolved_addr_infos(addr_infos)
     return raw_url
 
 

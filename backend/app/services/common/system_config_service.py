@@ -1,12 +1,48 @@
 """
 系统配置服务 - 管理系统级别的配置（如注册开关等）
 """
+import ipaddress
 import logging
+import os
 from sqlalchemy.orm import Session
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from ...models.db_models import SystemConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_trusted_proxies() -> List[ipaddress._BaseNetwork]:
+    """
+    解析受信任反向代理 CIDR 列表（环境变量 TRUSTED_PROXIES，逗号分隔）。
+
+    仅当直连对端（request.client.host）落在该集合内时，才信任
+    X-Forwarded-For / X-Real-IP 等可被伪造的代理头。否则一律使用直连 IP，
+    防止攻击者通过伪造代理头绕过基于 IP 的限流 / 封禁（S6）。
+
+    支持单个 IP（自动转换为 /32 或 /128）以及 CIDR 网段。
+    """
+    raw = os.getenv("TRUSTED_PROXIES", "")
+    networks: List[ipaddress._BaseNetwork] = []
+    for item in raw.split(","):
+        token = item.strip()
+        if not token:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(token, strict=False))
+        except ValueError:
+            logger.warning("[SystemConfig] 忽略非法的 TRUSTED_PROXIES 条目: %s", token)
+    return networks
+
+
+def _peer_is_trusted_proxy(peer_host: Optional[str]) -> bool:
+    """判断直连对端是否属于受信任代理网段。"""
+    if not peer_host:
+        return False
+    try:
+        peer_ip = ipaddress.ip_address(peer_host.strip())
+    except ValueError:
+        return False
+    return any(peer_ip in network for network in _parse_trusted_proxies())
 
 
 def is_private_ip(ip: str) -> bool:
@@ -55,54 +91,68 @@ def is_private_ip(ip: str) -> bool:
 def get_client_ip(request, prefer_public: bool = True) -> str:
     """
     获取客户端真实 IP 地址（优先获取公网 IP）
-    
-    优先级顺序：
+
+    安全模型（S6）：
+    - 代理头（X-Forwarded-For / X-Real-IP / CF-Connecting-IP / True-Client-IP /
+      X-Client-IP）可被任意客户端伪造。仅当直连对端 request.client.host 落在
+      配置的受信任代理网段（TRUSTED_PROXIES）内时，才解析并信任这些头。
+    - 当直连对端不是受信任代理时，忽略全部代理头，直接使用对端 IP，
+      防止攻击者伪造 IP 绕过基于 IP 的限流 / 封禁。
+    - 未配置 TRUSTED_PROXIES 时，等价于「不信任任何代理头」。
+
+    优先级顺序（仅在受信任代理场景）：
     1. X-Forwarded-For 头（取第一个非私有 IP）
-    2. X-Real-IP 头（如果是公网 IP）
+    2. X-Real-IP 头
     3. CF-Connecting-IP 头（Cloudflare）
     4. True-Client-IP 头（某些 CDN）
-    5. 直接连接 IP（request.client.host）
-    
+    5. X-Client-IP 头
+    6. 直接连接 IP（request.client.host）
+
     Args:
         request: FastAPI 请求对象
         prefer_public: 是否优先返回公网 IP（如果为 False，返回第一个找到的 IP）
-    
+
     Returns:
         客户端 IP 地址字符串
     """
     ip_candidates = []
-    
-    # 1. 检查 X-Forwarded-For 头（可能包含多个 IP，逗号分隔）
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        # 解析所有 IP（从左到右，第一个是原始客户端 IP）
-        ips = [ip.strip() for ip in forwarded_for.split(",")]
-        ip_candidates.extend(ips)
-    
-    # 2. 检查 X-Real-IP 头
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        ip_candidates.append(real_ip.strip())
-    
-    # 3. 检查 CF-Connecting-IP 头（Cloudflare）
-    cf_ip = request.headers.get("CF-Connecting-IP")
-    if cf_ip:
-        ip_candidates.append(cf_ip.strip())
-    
-    # 4. 检查 True-Client-IP 头（某些 CDN/代理）
-    true_client_ip = request.headers.get("True-Client-IP")
-    if true_client_ip:
-        ip_candidates.append(true_client_ip.strip())
-    
-    # 5. 检查 X-Client-IP 头
-    x_client_ip = request.headers.get("X-Client-IP")
-    if x_client_ip:
-        ip_candidates.append(x_client_ip.strip())
-    
-    # 6. 回退到直接连接 IP
-    if request.client:
-        ip_candidates.append(request.client.host)
-    
+
+    peer_host = request.client.host if getattr(request, "client", None) else None
+    trust_forwarded = _peer_is_trusted_proxy(peer_host)
+
+    if trust_forwarded:
+        # 仅在直连对端是受信任代理时，才解析可伪造的代理头。
+        # 1. 检查 X-Forwarded-For 头（可能包含多个 IP，逗号分隔）
+        forwarded_for = request.headers.get("X-Forwarded-For")
+        if forwarded_for:
+            # 解析所有 IP（从左到右，第一个是原始客户端 IP）
+            ips = [ip.strip() for ip in forwarded_for.split(",")]
+            ip_candidates.extend(ips)
+
+        # 2. 检查 X-Real-IP 头
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            ip_candidates.append(real_ip.strip())
+
+        # 3. 检查 CF-Connecting-IP 头（Cloudflare）
+        cf_ip = request.headers.get("CF-Connecting-IP")
+        if cf_ip:
+            ip_candidates.append(cf_ip.strip())
+
+        # 4. 检查 True-Client-IP 头（某些 CDN/代理）
+        true_client_ip = request.headers.get("True-Client-IP")
+        if true_client_ip:
+            ip_candidates.append(true_client_ip.strip())
+
+        # 5. 检查 X-Client-IP 头
+        x_client_ip = request.headers.get("X-Client-IP")
+        if x_client_ip:
+            ip_candidates.append(x_client_ip.strip())
+
+    # 6. 回退到直接连接 IP（始终作为候选；非受信任代理场景下是唯一可信来源）
+    if peer_host:
+        ip_candidates.append(peer_host)
+
     # 去重并过滤无效 IP
     seen = set()
     valid_ips = []

@@ -34,7 +34,6 @@ from ...services.common.system_config_service import (
     initialize_system_configs,
     get_client_ip,
     is_private_ip,
-    get_ip_info
 )
 from ...services.agent.agent_seed_service import ensure_seed_agents, get_default_seed_agents
 from ...services.gemini.agent.workflow_template_service import WorkflowTemplateService
@@ -67,13 +66,41 @@ class AuthCookieClearSpec:
     httponly: bool | None = None
 
 
-def _build_cookie_policy() -> CookiePolicy:
+def _request_is_https(request: Request | None) -> bool:
+    """
+    判断请求是否经由 HTTPS（用于 cookie 安全策略）。
+
+    - 直连 HTTPS：request.url.scheme == "https"
+    - 反代场景：X-Forwarded-Proto: https（取第一个值）
+
+    cookie 加固为 fail-safe：即便误判 HTTPS，Secure cookie 至多在纯 HTTP 下不发送，
+    不会造成凭证泄露。
+    """
+    if request is None:
+        return False
+
+    url = getattr(request, "url", None)
+    scheme = getattr(url, "scheme", None)
+    if isinstance(scheme, str) and scheme.lower() == "https":
+        return True
+
+    forwarded_proto = request.headers.get("X-Forwarded-Proto")
+    if forwarded_proto:
+        first = forwarded_proto.split(",")[0].strip().lower()
+        if first == "https":
+            return True
+
+    return False
+
+
+def _build_cookie_policy(request: Request | None = None) -> CookiePolicy:
     """
     统一 Cookie 安全策略：
     - 生产环境：secure=True, samesite=strict（不允许弱回退）
-    - 非生产环境：secure=False, samesite=lax
+    - 任意 HTTPS 请求：secure=True, samesite=strict（即使非生产环境）
+    - 其余非生产、纯 HTTP：secure=False, samesite=lax（便于本地开发）
     """
-    if settings.is_production:
+    if settings.is_production or _request_is_https(request):
         return CookiePolicy(secure=True, samesite="strict")
     return CookiePolicy(secure=False, samesite="lax")
 
@@ -107,9 +134,9 @@ def _build_auth_cookie_clear_specs() -> tuple[AuthCookieClearSpec, ...]:
     )
 
 
-def set_auth_cookies(response: Response, tokens: TokenPair) -> None:
+def set_auth_cookies(response: Response, tokens: TokenPair, request: Request | None = None) -> None:
     """统一设置认证相关 cookies（access/refresh/csrf）"""
-    policy = _build_cookie_policy()
+    policy = _build_cookie_policy(request)
     for cookie in _build_auth_cookie_specs(tokens):
         response.set_cookie(
             key=cookie.key,
@@ -122,9 +149,9 @@ def set_auth_cookies(response: Response, tokens: TokenPair) -> None:
         )
 
 
-def clear_auth_cookies(response: Response) -> None:
+def clear_auth_cookies(response: Response, request: Request | None = None) -> None:
     """统一清除认证相关 cookies"""
-    policy = _build_cookie_policy()
+    policy = _build_cookie_policy(request)
     for cookie in _build_auth_cookie_clear_specs():
         delete_kwargs = {
             "key": cookie.key,
@@ -191,53 +218,30 @@ async def get_auth_config(db: Session = Depends(get_db)):
 
 
 @router.get("/ip-info")
-async def get_ip_info_endpoint(request: Request):
+async def get_ip_info_endpoint(
+    request: Request,
+    user_id: str = Depends(require_current_user),
+):
     """
-    获取客户端 IP 信息（用于测试和调试）
-    
-    返回：
-    - detected_ip: 检测到的客户端 IP
-    - is_private: 是否为私有 IP
-    - ip_info: IP 详细信息（地理位置等，可选）
-    - headers: 相关的请求头信息
+    获取调用方自身的客户端 IP 概要（需登录）。
+
+    安全说明（S4）：
+    - 需要认证（require_current_user），不再对匿名请求开放。
+    - 仅返回调用方自己的 IP 及是否私有 IP；不回显任何原始转发头、
+      内部 client_host 或地理位置信息，避免内部基础设施细节泄露。
     """
-    try:
-        # 获取客户端 IP
-        detected_ip = get_client_ip(request, prefer_public=True)
-        is_private = is_private_ip(detected_ip)
-        
-        # 获取相关请求头
-        relevant_headers = {
-            "X-Forwarded-For": request.headers.get("X-Forwarded-For"),
-            "X-Real-IP": request.headers.get("X-Real-IP"),
-            "CF-Connecting-IP": request.headers.get("CF-Connecting-IP"),
-            "True-Client-IP": request.headers.get("True-Client-IP"),
-            "X-Client-IP": request.headers.get("X-Client-IP"),
-            "User-Agent": request.headers.get("User-Agent"),
-        }
-        
-        # 可选：获取 IP 详细信息（地理位置等）
-        ip_info = None
-        if detected_ip and detected_ip != "unknown" and not is_private:
-            try:
-                ip_info = await get_ip_info(detected_ip)
-            except Exception as e:
-                logger.debug(f"[Auth] 获取 IP 信息失败: {e}")
-        
-        return {
-            "detected_ip": detected_ip,
-            "is_private": is_private,
-            "ip_info": ip_info,
-            "headers": relevant_headers,
-            "client_host": request.client.host if request.client else None
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get IP info: {str(e)}")
+    detected_ip = get_client_ip(request, prefer_public=True)
+    is_private = is_private_ip(detected_ip)
+    return {
+        "detected_ip": detected_ip,
+        "is_private": is_private,
+    }
 
 
 @router.post("/register")
 async def register(
     data: RegisterRequest,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db)
 ):
@@ -282,7 +286,7 @@ async def register(
             user_settings.active_profile_id is not None
         )
 
-        set_auth_cookies(response, result.tokens)
+        set_auth_cookies(response, result.tokens, request)
 
         # refresh_token 只设置到 httpOnly Cookie，不返回给浏览器 JS。
         return {
@@ -327,8 +331,8 @@ async def login(
             user_settings.active_profile_id is not None
         )
 
-        # ✅ 统一安全 Cookie 策略（生产环境强制 secure + strict）
-        set_auth_cookies(response, result.tokens)
+        # ✅ 统一安全 Cookie 策略（生产环境/HTTPS 强制 secure + strict）
+        set_auth_cookies(response, result.tokens, request)
 
         # refresh_token 只设置到 httpOnly Cookie，不返回给浏览器 JS。
         return {
@@ -359,7 +363,7 @@ async def logout(
     auth_service = AuthService(db)
     
     # ✅ 统一清除 Cookie
-    clear_auth_cookies(response)
+    clear_auth_cookies(response, request)
     
     access_token = _get_request_token(request, cookie_name="access_token")
     if access_token:
@@ -457,8 +461,8 @@ async def refresh_token(
             user_settings.active_profile_id is not None
         )
 
-        # ✅ 统一安全 Cookie 策略（生产环境强制 secure + strict）
-        set_auth_cookies(response, tokens)
+        # ✅ 统一安全 Cookie 策略（生产环境/HTTPS 强制 secure + strict）
+        set_auth_cookies(response, tokens, request)
 
         # refresh_token 只设置到 httpOnly Cookie，不返回给浏览器 JS。
         return {
