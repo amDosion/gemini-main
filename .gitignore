@@ -129,3 +129,8 @@ package.json.test.ts
 scripts/start_all.*
 scripts/run_asin_full_research.py
 backend/python/
+
+# Coverage output
+coverage/
+backend/.coverage
+backend/htmlcov/

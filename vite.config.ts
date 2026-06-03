@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
 const proxyDebugEnabled = process.env.VITE_PROXY_DEBUG === '1';
@@ -63,6 +63,31 @@ function resolvePackageName(id: string): string | null {
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  // T3: a coverage gate now exists and is enforced. Thresholds are a conservative
+  // floor below the measured baseline — ratchet them upward as coverage improves.
+  test: {
+    coverage: {
+      provider: 'v8',
+      reporter: ['text-summary', 'text', 'html'],
+      reportsDirectory: './coverage',
+      include: ['frontend/**/*.{ts,tsx}'],
+      exclude: [
+        'frontend/**/*.test.{ts,tsx}',
+        'frontend/**/*.d.ts',
+        'frontend/**/__mocks__/**',
+        'frontend/**/types/**',
+        'frontend/**/*.stories.{ts,tsx}',
+      ],
+      // Measured baseline 2026-06-04: stmts 60.1 / branch 64.5 / func 60.3 / lines 60.1.
+      // Floor set ~5pts below baseline to absorb minor fluctuation; ratchet upward.
+      thresholds: {
+        statements: 55,
+        branches: 58,
+        functions: 55,
+        lines: 55,
+      },
+    },
+  },
   server: {
     host: '0.0.0.0', // 监听所有 IPv4 网络接口（包括 localhost 和局域网 IP）
     port: 21573,
