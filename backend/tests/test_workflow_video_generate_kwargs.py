@@ -36,6 +36,11 @@ class _DummyEngine:
             return value.get("url")
         return value
 
+    def _extract_first_audio_url(self, value):
+        if isinstance(value, dict):
+            return value.get("url")
+        return value
+
     def _extract_first_image_url(self, value):
         if isinstance(value, dict):
             return value.get("url")
