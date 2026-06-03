@@ -347,10 +347,13 @@ export const useSessions = (
         return;
       }
 
-      if (result.sessions.length > 0) {
+      // 防御性兜底：分页响应可能缺失 sessions 字段（与 fetchFirstSessionsPage 同款保护）。
+      // 缺失时按"空页"处理，避免 TypeError 被下方 catch 静默吞掉而使 hasMore 永久卡死。
+      const pageSessions = result?.sessions || [];
+      if (pageSessions.length > 0) {
         // ✅ 滚动加载的会话 messages 为空数组，需要准备
         const preparedSessions = prepareSessions(
-          result.sessions.map((s) => ({
+          pageSessions.map((s) => ({
             ...s,
             messages: s.messages || [], // 确保 messages 存在
           }))
@@ -488,12 +491,13 @@ export const useSessions = (
       try {
         await db.saveSession(prepareSessionForDb(session));
       } catch (error) {
-        // Silently fail - 可能是后端不可用或组件卸载导致请求取消
-        // Sessions 仍然会在内存中工作，只是不会持久化
+        // 组件卸载 / 请求取消导致的失败是预期的（React Strict Mode 双重渲染或卸载），静默忽略
         if (error instanceof Error && error.message.includes('component unmount')) {
-          // React Strict Mode 双重渲染或组件卸载导致，忽略
           return;
         }
+        // 其他失败（后端不可用、写入异常等）会导致会话无法持久化。
+        // Sessions 仍在内存中工作，但持久化丢失必须可观测，不能静默吞掉。
+        console.error('[useSessions] Failed to persist session to database:', error);
       }
     },
     [prepareSessionForDb]
