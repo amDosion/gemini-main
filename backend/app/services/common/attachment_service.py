@@ -29,15 +29,14 @@ async def safe_persist_ai_result(
 
     成功:返回 ``ProcessAIResultDict``。失败:log 后返回 ``None``,caller 自定义降级。
 
-    ``log_with_traceback=False`` 用于 N-iteration loop(避免批量失败时 traceback 风暴)。
+    持久化失败属罕见且高价值事件 —— 始终带 traceback 记 ERROR(不再因
+    ``log_with_traceback=False`` 丢 traceback),避免出现"故障神秘、查不出原因"。
+    ``log_with_traceback`` 形参保留以兼容既有 caller 签名,但失败日志恒带堆栈。
     """
     try:
         return await attachment_service.process_ai_result(**kwargs)
     except Exception as err:
-        if log_with_traceback:
-            logger.error(f"[Persist] {log_label} 失败: {err}", exc_info=True)
-        else:
-            logger.warning("[Persist] %s 失败: %s", log_label, err)
+        logger.error("[Persist] %s 失败: %r", log_label, err, exc_info=True)
         return None
 
 
@@ -46,6 +45,7 @@ async def safe_persist_ai_result_concurrent(
     *,
     log_label: str = "媒体",
     log_with_traceback: bool = False,
+    reraise: bool = False,
     **kwargs: Any,
 ) -> Optional["ProcessAIResultDict"]:
     """并发安全版 —— 每次调用打开一个 *fresh* SQLAlchemy ``Session``,内部构造
@@ -58,7 +58,15 @@ async def safe_persist_ai_result_concurrent(
     ``sessionmaker``:无参可调用对象(典型为 ``app.core.database.SessionLocal``),
     ``with sessionmaker() as fresh_session:`` 自动 close。
 
-    成功:返回 ``ProcessAIResultDict``。失败:log 后返回 ``None``,caller 降级。
+    成功:返回 ``ProcessAIResultDict``。
+
+    失败处理(始终先带 traceback 记 ERROR,杜绝静默吞错):
+    - ``reraise=False``(默认):返回 ``None``,caller 自行降级(video sidecar 等
+      优雅降级路径依赖此契约)。
+    - ``reraise=True``:向上抛原异常 —— 用于硬失败路径(image-gen 必须把底层
+      原因暴露给 route,绝不接受非持久化"成功"或静默 ``None``)。
+
+    ``log_with_traceback`` 形参保留以兼容既有 caller 签名,但失败日志恒带堆栈。
     """
     try:
         with sessionmaker() as fresh_session:
@@ -66,10 +74,9 @@ async def safe_persist_ai_result_concurrent(
             service = AttachmentService(fresh_session)
             return await service.process_ai_result(**kwargs)
     except Exception as err:
-        if log_with_traceback:
-            logger.error(f"[Persist] {log_label} 失败: {err}", exc_info=True)
-        else:
-            logger.warning("[Persist] %s 失败: %s", log_label, err)
+        logger.error("[Persist] %s 失败: %r", log_label, err, exc_info=True)
+        if reraise:
+            raise
         return None
 
 
@@ -747,50 +754,107 @@ class AttachmentService:
         if not storage or storage.get("provider") != "local":
             return None
 
-        load_start = time.time()
-        content = await self._load_local_storage_source_bytes(
-            user_id=user_id,
-            source_file_path=source_file_path,
-            source_ai_url=source_ai_url,
-        )
-        logger.info(
-            "[AttachmentService] 本地存储源数据读取完成 (bytes=%s, 耗时: %.2fms)",
-            len(content),
-            (time.time() - load_start) * 1000,
-        )
+        # 复合主键 (id, message_id) —— 在任何可能失败的 I/O 之前抓取,
+        # 以便 except 分支即使 session 处于失败事务态也能精确定位该行写诊断。
+        attachment_pk_id = attachment.id
+        attachment_pk_message_id = attachment.message_id
 
-        upload_start = time.time()
-        upload = await StorageService.upload_file(
-            filename=filename,
-            content=content,
-            content_type=mime_type,
-            provider="local",
-            config=dict(storage.get("config") or {}),
-        )
-        logger.info(
-            "[AttachmentService] 本地存储写入完成 (耗时: %.2fms)",
-            (time.time() - upload_start) * 1000,
-        )
-        persisted_url = str(upload.get("url") or "").strip()
-        if not persisted_url:
-            raise RuntimeError("Local storage upload returned an empty URL.")
+        try:
+            load_start = time.time()
+            content = await self._load_local_storage_source_bytes(
+                user_id=user_id,
+                source_file_path=source_file_path,
+                source_ai_url=source_ai_url,
+            )
+            logger.info(
+                "[AttachmentService] 本地存储源数据读取完成 (bytes=%s, 耗时: %.2fms)",
+                len(content),
+                (time.time() - load_start) * 1000,
+            )
 
-        db_update_start = time.time()
-        attachment.url = persisted_url
-        attachment.temp_url = None
-        attachment.upload_status = 'completed'
-        attachment.upload_task_id = None
-        attachment.upload_error = None
-        self.db.commit()
-        logger.info(
-            "[AttachmentService] 本地存储附件状态更新完成 (耗时: %.2fms)",
-            (time.time() - db_update_start) * 1000,
-        )
+            upload_start = time.time()
+            upload = await StorageService.upload_file(
+                filename=filename,
+                content=content,
+                content_type=mime_type,
+                provider="local",
+                config=dict(storage.get("config") or {}),
+            )
+            logger.info(
+                "[AttachmentService] 本地存储写入完成 (耗时: %.2fms)",
+                (time.time() - upload_start) * 1000,
+            )
+            persisted_url = str(upload.get("url") or "").strip()
+            if not persisted_url:
+                raise RuntimeError("Local storage upload returned an empty URL.")
 
-        if source_file_path:
-            self._delete_local_source_file(source_file_path)
+            db_update_start = time.time()
+            attachment.url = persisted_url
+            attachment.temp_url = None
+            attachment.upload_status = 'completed'
+            attachment.upload_task_id = None
+            attachment.upload_error = None
+            self.db.commit()
+            logger.info(
+                "[AttachmentService] 本地存储附件状态更新完成 (耗时: %.2fms)",
+                (time.time() - db_update_start) * 1000,
+            )
 
-        return persisted_url
+            if source_file_path:
+                self._delete_local_source_file(source_file_path)
+
+            return persisted_url
+        except Exception as err:
+            # guard-over-swallow:本地直写失败时,把失败原因落到该附件行
+            # (upload_status='failed' + upload_error),再原样向上抛 ——
+            # 绝不吞成 fallback 成功。即便上层 wrapper(safe_persist_*)吞掉异常,
+            # DB 行本身也能自证失败原因,根治"故障神秘、查不出 upload_error"。
+            self._record_local_persist_failure(
+                attachment_pk_id=attachment_pk_id,
+                attachment_pk_message_id=attachment_pk_message_id,
+                error=err,
+            )
+            raise
+
+    def _record_local_persist_failure(
+        self,
+        *,
+        attachment_pk_id: Any,
+        attachment_pk_message_id: Any,
+        error: Exception,
+    ) -> None:
+        """best-effort 把本地直写失败原因写回 ``message_attachments`` 行。
+
+        直写过程若在 commit 阶段抛错,session 可能处于失败事务态 —— 先 ``rollback``
+        再以复合主键定向 ``UPDATE``,确保诊断写入不被原异常事务连累。任何二次失败
+        只记日志,不掩盖原始异常(原始异常由 caller ``raise`` 继续上抛)。
+        """
+        detail = f"{type(error).__name__}: {error}"[:1000]
+        try:
+            self.db.rollback()
+            self.db.query(MessageAttachment).filter(
+                MessageAttachment.id == attachment_pk_id,
+                MessageAttachment.message_id == attachment_pk_message_id,
+            ).update(
+                {
+                    MessageAttachment.upload_status: 'failed',
+                    MessageAttachment.upload_error: detail,
+                },
+                synchronize_session=False,
+            )
+            self.db.commit()
+            logger.error(
+                "[AttachmentService] 本地直写失败,已标记附件 %s 为 failed: %s",
+                attachment_pk_id,
+                detail,
+                exc_info=True,
+            )
+        except Exception:
+            logger.error(
+                "[AttachmentService] 记录本地直写失败诊断时二次失败 (attachment_id=%s)",
+                attachment_pk_id,
+                exc_info=True,
+            )
 
     async def _load_local_storage_source_bytes(
         self,

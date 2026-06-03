@@ -388,6 +388,7 @@ async def _persist_ai_media_concurrent(
     default_ext: str,
     filename: Optional[str] = None,
     log_label: str = "媒体",
+    reraise: bool = False,
     **persist_extra: Any,
 ) -> Optional[_PersistOverlayDict]:
     """``_persist_ai_media_with_fallback`` 的并发版 —— 内部走
@@ -395,11 +396,15 @@ async def _persist_ai_media_concurrent(
     overlay 构造逻辑与单 session 版相同。
 
     用于 ``asyncio.gather(...)`` 持久化 N 个 AI 媒体(image batch / video sidecars)。
+
+    ``reraise=True`` 透传给底层 wrapper —— 失败时向上抛原异常(供
+    ``gather(return_exceptions=True)`` 捕获),用于 image-gen 硬失败路径把底层
+    原因暴露给 route;video sidecar 等优雅降级路径保持默认 ``False``(失败返 ``None``)。
     """
     processed = await safe_persist_ai_result_concurrent(
         sessionmaker,
         log_label=log_label,
-        log_with_traceback=False,
+        reraise=reraise,
         ai_url=ai_url,
         mime_type=mime_type,
         session_id=session_id,
@@ -2061,7 +2066,10 @@ async def handle_mode(
                 if persist_entries:
                     gather_results = await asyncio.gather(
                         *[
-                            _persist_ai_media_concurrent(SessionLocal, **e[2][0])
+                            # reraise=True:image-gen 是硬失败路径 —— 底层持久化异常
+                            # 必须被 gather 捕获并暴露给 route(注入 error details),
+                            # 绝不静默降级为非持久化"成功"。
+                            _persist_ai_media_concurrent(SessionLocal, reraise=True, **e[2][0])
                             for e in persist_entries
                         ],
                         return_exceptions=True,
@@ -2079,24 +2087,36 @@ async def handle_mode(
                     _entry, persist_result = next(persist_iter)
                     _persist_kwargs, extras = payload
                     if isinstance(persist_result, Exception) or persist_result is None:
+                        underlying_error_type: Optional[str] = None
+                        underlying_error_message: Optional[str] = None
                         if isinstance(persist_result, Exception):
+                            underlying_error_type = type(persist_result).__name__
+                            underlying_error_message = str(persist_result)[:500]
                             logger.error(
                                 "[Modes] 第 %s 张图片持久化抛出异常: %s",
                                 idx + 1, persist_result,
+                                exc_info=persist_result,
                             )
                         else:
-                            logger.error("[Modes] 第 %s 张图片持久化失败", idx + 1)
+                            logger.error("[Modes] 第 %s 张图片持久化失败(返回 None)", idx + 1)
+                        # 把底层失败原因注入 error details(仍返回 500,绝不 fallback)——
+                        # 配合 attachment_service 把原因落到 DB upload_error,
+                        # 根治"attachment_persistence_failed 不含底层原因、查不出真因"。
+                        error_details: Dict[str, Any] = {
+                            "provider": provider,
+                            "mode": mode,
+                            "service_method": method_name,
+                            "image_index": idx,
+                        }
+                        if underlying_error_type:
+                            error_details["error_type"] = underlying_error_type
+                            error_details["error_message"] = underlying_error_message
                         raise HTTPException(
                             status_code=500,
                             detail=_build_mode_error_detail(
                                 code="attachment_persistence_failed",
                                 message="AI generated image was not saved. Refusing to return a non-persistent image result.",
-                                details={
-                                    "provider": provider,
-                                    "mode": mode,
-                                    "service_method": method_name,
-                                    "image_index": idx,
-                                },
+                                details=error_details,
                                 retryable=True,
                             ),
                         )
