@@ -736,12 +736,15 @@ async def test_openai_image_editor_does_not_manual_retry_single_image_request() 
 
 
 @pytest.mark.asyncio
-async def test_openai_image_editor_rejects_short_fanned_out_response() -> None:
-    # 扇出的 n=1 编辑调用若未返回图像, 合计少于请求数, 契约检查必须报错。
+async def test_openai_image_editor_raises_when_no_usable_image_payload() -> None:
+    # V-S24: 当所有扇出的 n=1 编辑调用都没有返回图像(合计 0 张)时, 这是硬失败;
+    # 报错文案必须准确(不再使用误导性的 "native Image API n request" / "returned
+    # fewer images than requested" 旧措辞)。部分成功(>=1 张)不再报错,
+    # 见 test_openai_image_edit_partial.py。
     fake_client = _FakeOpenAIClient(single_edit_result_count=0)
     editor = ImageEditor(api_key="test-key", client=fake_client)  # type: ignore[arg-type]
 
-    with pytest.raises(RuntimeError, match="returned fewer images than requested"):
+    with pytest.raises(RuntimeError, match="did not contain a usable image payload") as exc_info:
         await editor.edit_image(
             prompt="Create edited variants.",
             model="gpt-image-2",
@@ -752,6 +755,7 @@ async def test_openai_image_editor_rejects_short_fanned_out_response() -> None:
             output_format="png",
         )
 
+    assert "native Image API n request" not in str(exc_info.value)
     assert [call["n"] for call in fake_client.images.edit_calls] == [1, 1]
 
 
