@@ -1,0 +1,22 @@
+# Coverage config for the MAIN backend application.
+# Excludes code that is not part of the maintained main-app surface:
+#  - _deprecated/*: dead code kept only for reference (name says deprecated).
+#  - geminiapi/*: a separate, standalone app (geminiapi/main.py runs its own
+#    process outside the main FastAPI app) — a documented design boundary, not
+#    the main backend under test.
+#  - scripts/* and manual probes: operational/manual tooling, not app logic.
+[run]
+source = app
+omit =
+    app/services/gemini/_deprecated/*
+    app/services/gemini/geminiapi/*
+    app/*/__main__.py
+    scripts/*
+    */manual_probes/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError
+    if TYPE_CHECKING:
