@@ -221,6 +221,8 @@ class _FakeImagesClient:
         fail_multi_image: bool = False,
         multi_generate_result_count: int | None = None,
         multi_edit_result_count: int | None = None,
+        single_generate_result_count: int | None = None,
+        single_edit_result_count: int | None = None,
         single_generate_failures: int = 0,
         single_edit_failures: int = 0,
     ) -> None:
@@ -229,8 +231,22 @@ class _FakeImagesClient:
         self.fail_multi_image = fail_multi_image
         self.multi_generate_result_count = multi_generate_result_count
         self.multi_edit_result_count = multi_edit_result_count
+        self.single_generate_result_count = single_generate_result_count
+        self.single_edit_result_count = single_edit_result_count
         self.single_generate_failures = single_generate_failures
         self.single_edit_failures = single_edit_failures
+        # 全局递增序号: 让扇出(并发 n=1)产出的图像彼此可区分。
+        # _FakeOpenAIClient 的 generate/edit 无内部 await, 在事件循环中按提交顺序原子执行,
+        # asyncio.gather 又按提交顺序返回, 故合并后的序号稳定可断言。
+        self._image_seq = 0
+        self._edit_seq = 0
+
+    def _resolve_result_count(self, count: int, *, multi: int | None, single: int | None) -> int:
+        if count > 1 and multi is not None:
+            return multi
+        if count == 1 and single is not None:
+            return single
+        return count
 
     async def generate(self, **kwargs):
         self.calls.append(kwargs)
@@ -240,16 +256,22 @@ class _FakeImagesClient:
         if count == 1 and self.single_generate_failures > 0:
             self.single_generate_failures -= 1
             raise _FakeRetryableOpenAIError("single-image request failed")
-        result_count = self.multi_generate_result_count if count > 1 and self.multi_generate_result_count is not None else count
-        return SimpleNamespace(
-            data=[
-                SimpleNamespace(
-                    b64_json=f"base64-payload-{idx}",
-                    revised_prompt=f"revised-{idx}",
-                )
-                for idx in range(result_count)
-            ]
+        result_count = self._resolve_result_count(
+            count,
+            multi=self.multi_generate_result_count,
+            single=self.single_generate_result_count,
         )
+        items = []
+        for _ in range(result_count):
+            seq = self._image_seq
+            self._image_seq += 1
+            items.append(
+                SimpleNamespace(
+                    b64_json=f"base64-payload-{seq}",
+                    revised_prompt=f"revised-{seq}",
+                )
+            )
+        return SimpleNamespace(data=items)
 
     async def edit(
         self,
@@ -284,16 +306,22 @@ class _FakeImagesClient:
         if count == 1 and self.single_edit_failures > 0:
             self.single_edit_failures -= 1
             raise _FakeRetryableOpenAIError("single-image edit request failed")
-        result_count = self.multi_edit_result_count if count > 1 and self.multi_edit_result_count is not None else count
-        return SimpleNamespace(
-            data=[
-                SimpleNamespace(
-                    b64_json=f"edited-base64-payload-{idx}",
-                    revised_prompt=f"edited-revised-{idx}",
-                )
-                for idx in range(result_count)
-            ]
+        result_count = self._resolve_result_count(
+            count,
+            multi=self.multi_edit_result_count,
+            single=self.single_edit_result_count,
         )
+        items = []
+        for _ in range(result_count):
+            seq = self._edit_seq
+            self._edit_seq += 1
+            items.append(
+                SimpleNamespace(
+                    b64_json=f"edited-base64-payload-{seq}",
+                    revised_prompt=f"edited-revised-{seq}",
+                )
+            )
+        return SimpleNamespace(data=items)
 
 
 class _FakeChatCompletionsClient:
@@ -343,6 +371,8 @@ class _FakeOpenAIClient:
         fail_multi_image: bool = False,
         multi_generate_result_count: int | None = None,
         multi_edit_result_count: int | None = None,
+        single_generate_result_count: int | None = None,
+        single_edit_result_count: int | None = None,
         single_generate_failures: int = 0,
         single_edit_failures: int = 0,
         enhanced_prompt: str = "enhanced prompt",
@@ -352,6 +382,8 @@ class _FakeOpenAIClient:
             fail_multi_image=fail_multi_image,
             multi_generate_result_count=multi_generate_result_count,
             multi_edit_result_count=multi_edit_result_count,
+            single_generate_result_count=single_generate_result_count,
+            single_edit_result_count=single_edit_result_count,
             single_generate_failures=single_generate_failures,
             single_edit_failures=single_edit_failures,
         )
@@ -370,7 +402,10 @@ class _FakeOpenAIClientWithOptions(_FakeOpenAIClient):
 
 
 @pytest.mark.asyncio
-async def test_openai_gpt_image_generation_returns_all_native_n_results() -> None:
+async def test_openai_gpt_image_generation_fans_out_into_single_image_calls() -> None:
+    # n>1 通过扇出实现: 发起 N 个并发的 n=1 调用并合并结果。
+    # 原因见 _shared.call_image_api_with_fanout: 订阅/OAuth 网关把 images/generations
+    # 转译为 Responses image_generation 工具, 该工具单次只产 1 张且不接受原生 n。
     fake_client = _FakeOpenAIClient()
     generator = ImageGenerator(api_key="test-key", client=fake_client)  # type: ignore[arg-type]
 
@@ -386,18 +421,19 @@ async def test_openai_gpt_image_generation_returns_all_native_n_results() -> Non
         output_format="png",
     )
 
-    assert fake_client.images.calls[0]["n"] == 3
+    assert [call["n"] for call in fake_client.images.calls] == [1, 1, 1]
     assert len(results) == 3
-    assert [item["revised_prompt"] for item in results] == [
+    # 每个扇出调用产出一张可区分的图像, 合并后为 3 张不同结果。
+    assert {item["revised_prompt"] for item in results} == {
         "revised-0",
         "revised-1",
         "revised-2",
-    ]
+    }
     assert all(item["url"].startswith("data:image/png;base64,") for item in results)
 
 
 @pytest.mark.asyncio
-async def test_openai_compatible_image_generation_uses_native_multi_image_first() -> None:
+async def test_openai_compatible_image_generation_fans_out_multi_image_requests() -> None:
     fake_client = _FakeOpenAIClient()
     generator = ImageGenerator(
         api_key="test-key",
@@ -414,7 +450,7 @@ async def test_openai_compatible_image_generation_uses_native_multi_image_first(
         output_format="png",
     )
 
-    assert [call["n"] for call in fake_client.images.calls] == [3]
+    assert [call["n"] for call in fake_client.images.calls] == [1, 1, 1]
     assert len(results) == 3
 
 
@@ -492,24 +528,26 @@ async def test_openai_image_generator_does_not_hardcode_prompt_enhancement_model
 
 
 @pytest.mark.asyncio
-async def test_openai_gpt_image_generation_uses_native_n_without_manual_fallback_on_provider_error() -> None:
+async def test_openai_gpt_image_generation_fans_out_to_avoid_unsupported_native_batch() -> None:
+    # 即使底层会对原生 n>1 报错, 扇出也只发 n=1 调用, 因此绕开了不被支持的原生批量路径。
     fake_client = _FakeOpenAIClient(fail_multi_image=True)
     generator = ImageGenerator(api_key="test-key", client=fake_client)  # type: ignore[arg-type]
 
-    with pytest.raises(_FakeRetryableOpenAIError, match="native multi-image request failed"):
-        await generator.generate_image(
-            "Generate simple icon variants.",
-            "gpt-image-2",
-            image_resolution="1K",
-            image_aspect_ratio="1:1",
-            number_of_images=3,
-            quality="low",
-            background="opaque",
-            moderation="low",
-            output_format="png",
-        )
+    results = await generator.generate_image(
+        "Generate simple icon variants.",
+        "gpt-image-2",
+        image_resolution="1K",
+        image_aspect_ratio="1:1",
+        number_of_images=3,
+        quality="low",
+        background="opaque",
+        moderation="low",
+        output_format="png",
+    )
 
-    assert [call["n"] for call in fake_client.images.calls] == [3]
+    # 从未发起原生 n>1 调用; 三个并发 n=1 调用全部成功。
+    assert [call["n"] for call in fake_client.images.calls] == [1, 1, 1]
+    assert len(results) == 3
 
 
 @pytest.mark.asyncio
@@ -531,8 +569,9 @@ async def test_openai_gpt_image_generation_does_not_manual_retry_single_image_re
 
 
 @pytest.mark.asyncio
-async def test_openai_gpt_image_generation_rejects_short_native_batch_response() -> None:
-    fake_client = _FakeOpenAIClient(multi_generate_result_count=0)
+async def test_openai_gpt_image_generation_rejects_short_fanned_out_response() -> None:
+    # 若扇出的某些 n=1 调用没有返回图像, 合计少于请求数, 契约检查必须报错。
+    fake_client = _FakeOpenAIClient(single_generate_result_count=0)
     generator = ImageGenerator(api_key="test-key", client=fake_client)  # type: ignore[arg-type]
 
     with pytest.raises(RuntimeError, match="returned fewer images than requested"):
@@ -545,7 +584,7 @@ async def test_openai_gpt_image_generation_rejects_short_native_batch_response()
             output_format="png",
         )
 
-    assert [call["n"] for call in fake_client.images.calls] == [3]
+    assert [call["n"] for call in fake_client.images.calls] == [1, 1, 1]
 
 
 @pytest.mark.asyncio
@@ -634,11 +673,13 @@ async def test_openai_image_editor_calls_images_edit_with_reference_images() -> 
         output_compression_quality=72,
     )
 
+    # n=2 通过扇出实现: 两个并发的 n=1 编辑调用, 各自携带相同参数与参考图。
+    assert [call["n"] for call in fake_client.images.edit_calls] == [1, 1]
     edit_call = fake_client.images.edit_calls[0]
     assert edit_call["model"] == "gpt-image-2"
     assert edit_call["prompt"] == "Turn the product photo into a gift basket scene."
     assert edit_call["size"] == "1024x1024"
-    assert edit_call["n"] == 2
+    assert edit_call["n"] == 1
     assert edit_call["quality"] == "high"
     assert edit_call["background"] == "opaque"
     assert "moderation" not in edit_call
@@ -652,22 +693,23 @@ async def test_openai_image_editor_calls_images_edit_with_reference_images() -> 
 
 
 @pytest.mark.asyncio
-async def test_openai_image_editor_uses_native_n_without_manual_fallback_on_provider_error() -> None:
+async def test_openai_image_editor_fans_out_to_avoid_unsupported_native_batch() -> None:
+    # 编辑路径同样扇出: 即便原生 n>1 会失败, 也只发 n=1 调用, 因此安全。
     fake_client = _FakeOpenAIClient(fail_multi_image=True)
     editor = ImageEditor(api_key="test-key", client=fake_client)  # type: ignore[arg-type]
 
-    with pytest.raises(_FakeRetryableOpenAIError, match="native multi-image edit request failed"):
-        await editor.edit_image(
-            prompt="Create edited variants.",
-            model="gpt-image-2",
-            reference_images={"raw": "data:image/png;base64,c2FtcGxl"},
-            image_resolution="1K",
-            image_aspect_ratio="1:1",
-            number_of_images=2,
-            output_format="png",
-        )
+    results = await editor.edit_image(
+        prompt="Create edited variants.",
+        model="gpt-image-2",
+        reference_images={"raw": "data:image/png;base64,c2FtcGxl"},
+        image_resolution="1K",
+        image_aspect_ratio="1:1",
+        number_of_images=2,
+        output_format="png",
+    )
 
-    assert [call["n"] for call in fake_client.images.edit_calls] == [2]
+    assert [call["n"] for call in fake_client.images.edit_calls] == [1, 1]
+    assert len(results) == 2
 
 
 @pytest.mark.asyncio
@@ -690,8 +732,9 @@ async def test_openai_image_editor_does_not_manual_retry_single_image_request() 
 
 
 @pytest.mark.asyncio
-async def test_openai_image_editor_rejects_short_native_batch_response() -> None:
-    fake_client = _FakeOpenAIClient(multi_edit_result_count=0)
+async def test_openai_image_editor_rejects_short_fanned_out_response() -> None:
+    # 扇出的 n=1 编辑调用若未返回图像, 合计少于请求数, 契约检查必须报错。
+    fake_client = _FakeOpenAIClient(single_edit_result_count=0)
     editor = ImageEditor(api_key="test-key", client=fake_client)  # type: ignore[arg-type]
 
     with pytest.raises(RuntimeError, match="returned fewer images than requested"):
@@ -705,7 +748,7 @@ async def test_openai_image_editor_rejects_short_native_batch_response() -> None
             output_format="png",
         )
 
-    assert [call["n"] for call in fake_client.images.edit_calls] == [2]
+    assert [call["n"] for call in fake_client.images.edit_calls] == [1, 1]
 
 
 @pytest.mark.asyncio
