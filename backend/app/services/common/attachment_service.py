@@ -108,7 +108,7 @@ import logging
 import httpx
 import time
 
-from ...core.encryption import decrypt_config
+from ...core.encryption import ConfigDecryptionError, decrypt_config
 from ...utils.attachment_handler import is_base64_url, is_blob_url, is_http_url, get_url_type
 from ...models.db_models import MessageAttachment, UploadTask, StorageConfig, ActiveStorage
 from .redis_queue_service import redis_queue
@@ -318,7 +318,8 @@ class AttachmentService:
                 base64_str = ai_url.split(',', 1)[1] if ',' in ai_url else ''
                 estimated_size = len(base64_str) * 3 / 4 / 1024  # Base64解码后大小（KB）
                 logger.info(f"[AttachmentService]     - 估算图片大小: {estimated_size:.2f} KB")
-            except:
+            except (IndexError, ValueError):
+                # 仅用于日志的体积估算，解析失败可忽略（B4：收窄裸 except）
                 pass
         
         attachment_id = str(uuid.uuid4())
@@ -730,8 +731,15 @@ class AttachmentService:
         raw_config = dict(config.config or {})
         try:
             resolved_config = decrypt_config(raw_config)
-        except Exception:
-            resolved_config = raw_config
+        except ConfigDecryptionError:
+            # fail-closed（B2）：解密失败时绝不把 Fernet 密文配置交给存储 provider，
+            # 与 V-S2 / fe394cb 的契约一致。让错误向上抛出而非静默回退到密文。
+            logger.error(
+                "[AttachmentService] 存储配置解密失败（ENCRYPTION_KEY 不匹配？），"
+                "拒绝使用密文配置: storage_id=%s",
+                config.id,
+            )
+            raise
 
         return {
             "id": config.id,
