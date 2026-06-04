@@ -181,11 +181,23 @@ def test_workflow_history_detail_opts_into_always_convert():
     # node executions + media) that can exceed 2 MiB. buildExecutionStatusFromHistoryDetail
     # reads payload.nodeExecutions/nodeStatuses/nodeResults/resultSummary camelCase
     # only, so a snake passthrough would render the restored history detail blank.
-    # (The /history LIST endpoint is server-side capped at 100 -> bounded -> not marked.)
     from app.routers.ai import workflows
 
     assert CaseConversionOptions.from_endpoint(
         workflows.get_workflow_history_detail
+    ).always_convert_response
+
+
+def test_workflow_history_list_opts_into_always_convert():
+    # The /history LIST is capped at 100 rows, but each row embeds result_summary with
+    # UNBOUNDED image_urls/audio_urls/video_urls arrays (from result_json Text column),
+    # so a single PAGE can exceed 2 MiB. mapHistoryItem reads item.resultSummary/
+    # workflowSummary + resultSummary.imageCount/imageUrls camelCase only, so a snake
+    # passthrough blanks the history sidebar. (Count-cap != byte-cap.)
+    from app.routers.ai import workflows
+
+    assert CaseConversionOptions.from_endpoint(
+        workflows.list_workflow_history
     ).always_convert_response
 
 

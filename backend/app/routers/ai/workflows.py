@@ -4480,6 +4480,7 @@ async def workflow_status_stream(
 
 
 @router.get("/api/workflows/history")
+@case_conversion_options(always_convert_response=True)
 async def list_workflow_history(
     limit: int = 20,
     offset: int = 0,
