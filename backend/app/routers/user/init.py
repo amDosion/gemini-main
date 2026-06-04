@@ -7,6 +7,7 @@ import logging
 
 from ...core.database import SessionLocal, get_db
 from ...core.dependencies import require_current_user
+from ...middleware.case_conversion_middleware import case_conversion_options
 from ...services.common.init_service import get_init_data
 from ..models.models import (
     _merge_saved_models,
@@ -24,6 +25,7 @@ router = APIRouter(prefix="/api", tags=["init"])
 
 
 @router.get("/init/critical")
+@case_conversion_options(always_convert_response=True)
 async def get_critical_init_data(
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)
@@ -168,6 +170,7 @@ async def get_more_sessions(
 
 
 @router.get("/init/non-critical")
+@case_conversion_options(always_convert_response=True)
 async def get_non_critical_init_data(
     mode: str = Query("chat", max_length=64),
     user_id: str = Depends(require_current_user),
@@ -239,6 +242,7 @@ async def get_non_critical_init_data(
 
 
 @router.get("/init")
+@case_conversion_options(always_convert_response=True)
 async def get_init(
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)

@@ -1522,6 +1522,7 @@ async def get_worker_status(user_id: str = Depends(require_current_user)):
 # ==================== 配置管理 ====================
 
 @router.get("/configs")
+@case_conversion_options(always_convert_response=True)
 async def get_storage_configs(
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)

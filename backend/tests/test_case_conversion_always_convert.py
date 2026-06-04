@@ -238,6 +238,31 @@ def test_available_models_opts_into_always_convert():
     assert CaseConversionOptions.from_endpoint(models.get_available_models).always_convert_response
 
 
+def test_storage_configs_opts_into_always_convert():
+    # GET /api/storage/configs returns the user's full UNPAGINATED storage-config list
+    # (credentials/config blobs); db.getStorageConfigs reads StorageConfig[] camelCase
+    # only (createdAt/...), so a large config set must stay camelCase.
+    from app.routers.storage import storage
+
+    assert CaseConversionOptions.from_endpoint(storage.get_storage_configs).always_convert_response
+
+
+def test_init_endpoints_opt_into_always_convert():
+    # The bootstrap endpoints return composite app data — profiles (to_dict snake,
+    # with unbounded saved_models) + storage configs + personas + first-message
+    # sessions — consumed camelCase only by useInitData. A large account must not get
+    # the whole app init in snake_case past the 2 MiB valve. /init/sessions/more stays
+    # paginated (not marked).
+    from app.routers.user import init
+
+    for fn in (
+        init.get_critical_init_data,
+        init.get_non_critical_init_data,
+        init.get_init,
+    ):
+        assert CaseConversionOptions.from_endpoint(fn).always_convert_response, fn.__name__
+
+
 def test_personas_list_opts_into_always_convert():
     # GET /personas returns the user's full UNPAGINATED persona list; each persona's
     # system_prompt (-> systemPrompt) can be long. db.getPersonas reads Persona[]
