@@ -46,7 +46,6 @@ from ...models.db_models import (
     generate_uuid,
 )
 from ...utils.case_converter import to_camel_case
-from ...utils.sse import encode_sse_data
 from ...services.agent.agent_llm_service import AgentLLMService
 from ...services.agent.workflow_engine import WorkflowEngine
 from ...services.agent.workflow_history_image_service import (
@@ -1329,11 +1328,15 @@ async def _publish_runtime_event(execution_id: str, event_type: str, data: Dict[
 
 
 def _format_sse(event: str, data: Dict[str, Any]) -> str:
-    # Route workflow status frames through the shared camelCase SSE seam so nested
-    # snake_case keys copied from runtime/backend state (e.g. node_results internals)
-    # are converted before reaching a frontend that reads camelCase only. The
-    # SKIP_VALUE_CONVERSION_FIELDS (result/state/metadata/...) stay opaque by design.
-    return encode_sse_data(data, camel_case=True, event=event)
+    # IMPORTANT: emit the payload verbatim — do NOT run to_camel_case here.
+    # _build_execution_state_with_runtime already builds camelCase STRUCTURAL keys
+    # (executionId/nodeResults/nodeStatuses/isTerminal/...), and nodeResults/
+    # nodeStatuses/nodeProgress/nodeErrors are maps keyed by DYNAMIC node ids
+    # (e.g. "image_gen_1"). Recursive camelCasing would mangle those node-id keys
+    # (image_gen_1 -> imageGen1), desyncing them from the workflow graph's node ids
+    # that the frontend reducer keys by. Conversion is both unnecessary (structural
+    # keys are already camelCase) and harmful here.
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
 def _safe_json_loads(raw: Optional[str], default: Any = None):
@@ -4559,6 +4562,7 @@ async def list_workflow_history(
 
 
 @router.get("/api/workflows/history/{execution_id}")
+@case_conversion_options(always_convert_response=True)
 async def get_workflow_history_detail(
     execution_id: str,
     user_id: str = Depends(require_current_user),

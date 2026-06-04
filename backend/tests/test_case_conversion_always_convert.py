@@ -109,3 +109,16 @@ def test_mcp_config_endpoints_opt_into_always_convert():
     assert CaseConversionOptions.from_endpoint(
         mcp_config.update_mcp_config
     ).always_convert_response
+
+
+def test_workflow_history_detail_opts_into_always_convert():
+    # GET /api/workflows/history/{id} returns an UNPAGINATED detail (full result +
+    # node executions + media) that can exceed 2 MiB. buildExecutionStatusFromHistoryDetail
+    # reads payload.nodeExecutions/nodeStatuses/nodeResults/resultSummary camelCase
+    # only, so a snake passthrough would render the restored history detail blank.
+    # (The /history LIST endpoint is server-side capped at 100 -> bounded -> not marked.)
+    from app.routers.ai import workflows
+
+    assert CaseConversionOptions.from_endpoint(
+        workflows.get_workflow_history_detail
+    ).always_convert_response
