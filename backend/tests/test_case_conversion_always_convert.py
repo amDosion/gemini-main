@@ -34,6 +34,16 @@ def _make_app():
     async def big_forced():
         return {"some_snake_key": "x" * 200, "another_key": 1}
 
+    # Mirror the real ADK pattern: TWO stacked route decorators (primary + legacy
+    # alias) over a single @case_conversion_options-decorated handler. Proves the
+    # option survives decorator stacking and is honored at RUNTIME on every route,
+    # not merely readable via from_endpoint on the bare function.
+    @app.get("/stacked/primary")
+    @app.get("/stacked/legacy")
+    @case_conversion_options(always_convert_response=True)
+    async def big_forced_stacked():
+        return {"some_snake_key": "x" * 200, "another_key": 1}
+
     return app
 
 
@@ -60,6 +70,17 @@ def test_forced_endpoint_still_converts_when_small(monkeypatch):
     client = TestClient(_make_app())
     data = client.get("/big-forced").json()
     assert "someSnakeKey" in data
+
+
+@pytest.mark.parametrize("path", ["/stacked/primary", "/stacked/legacy"])
+def test_stacked_route_decorators_still_force_conversion(monkeypatch, path):
+    # The ADK endpoints stack two @router.get over one @case_conversion_options
+    # handler. Both routes must honor always_convert_response past the threshold.
+    monkeypatch.setattr(ccm, "MAX_RESPONSE_CONVERSION_BYTES", 50)
+    client = TestClient(_make_app())
+    data = client.get(path).json()
+    assert "someSnakeKey" in data
+    assert "some_snake_key" not in data
 
 
 # --- Regression guard: the real app-owned endpoints MUST carry the flag ---------
