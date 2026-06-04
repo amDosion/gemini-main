@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from app.middleware import case_conversion_middleware as ccm
 from app.middleware.case_conversion_middleware import (
     CaseConversionMiddleware,
+    CaseConversionOptions,
     case_conversion_options,
 )
 
@@ -59,3 +60,26 @@ def test_forced_endpoint_still_converts_when_small(monkeypatch):
     client = TestClient(_make_app())
     data = client.get("/big-forced").json()
     assert "someSnakeKey" in data
+
+
+# --- Regression guard: the real app-owned endpoints MUST carry the flag ---------
+# The frontend now reads camelCase ONLY (snake fallbacks removed), so these
+# unpaginated app-owned endpoints must stay opted into always_convert_response.
+# If someone drops the decorator, the >2 MiB snake passthrough bug silently
+# returns -- these tests fail loudly instead.
+
+
+def test_sessions_endpoints_opt_into_always_convert():
+    from app.routers.user import sessions
+
+    assert CaseConversionOptions.from_endpoint(sessions.get_sessions).always_convert_response
+    assert CaseConversionOptions.from_endpoint(sessions.get_session).always_convert_response
+
+
+def test_agents_endpoints_opt_into_always_convert():
+    from app.routers.ai import workflows
+
+    assert CaseConversionOptions.from_endpoint(workflows.list_agents).always_convert_response
+    assert CaseConversionOptions.from_endpoint(
+        workflows.get_available_models_for_agents
+    ).always_convert_response
