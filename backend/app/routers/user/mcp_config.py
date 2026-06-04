@@ -313,6 +313,7 @@ async def update_mcp_config(
 
 
 @router.get("/config/tools/{server_key}")
+@case_conversion_options(always_convert_response=True)
 async def get_mcp_server_tools(
     server_key: str,
     user_id: str = Depends(require_current_user),
@@ -359,6 +360,7 @@ async def get_mcp_server_tools(
 
 
 @router.post("/config/tools/{server_key}/invoke")
+@case_conversion_options(always_convert_response=True)
 async def invoke_mcp_server_tool(
     server_key: str,
     payload: McpToolInvokePayload,
@@ -412,6 +414,7 @@ async def invoke_mcp_server_tool(
 
 
 @router.post("/session/stop")
+@case_conversion_options(always_convert_response=True)
 async def stop_mcp_sessions(
     payload: StopMcpSessionPayload,
     user_id: str = Depends(require_current_user),

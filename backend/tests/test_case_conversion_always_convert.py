@@ -111,6 +111,25 @@ def test_mcp_config_endpoints_opt_into_always_convert():
     ).always_convert_response
 
 
+def test_mcp_tool_endpoints_opt_into_always_convert():
+    # The whole mcpConfigService-consumed surface reads camelCase only
+    # (serverKey/toolCount/tools, serverKey/toolName/sessionId/latencyMs). The tools
+    # list is unbounded and invoke spreads **result.to_dict() (unbounded tool
+    # output), so they must stay camelCase past 2 MiB. stop is small but marked too
+    # to keep the MCP service surface one uniform conversion contract.
+    from app.routers.user import mcp_config
+
+    assert CaseConversionOptions.from_endpoint(
+        mcp_config.get_mcp_server_tools
+    ).always_convert_response
+    assert CaseConversionOptions.from_endpoint(
+        mcp_config.invoke_mcp_server_tool
+    ).always_convert_response
+    assert CaseConversionOptions.from_endpoint(
+        mcp_config.stop_mcp_sessions
+    ).always_convert_response
+
+
 def test_workflow_history_detail_opts_into_always_convert():
     # GET /api/workflows/history/{id} returns an UNPAGINATED detail (full result +
     # node executions + media) that can exceed 2 MiB. buildExecutionStatusFromHistoryDetail
