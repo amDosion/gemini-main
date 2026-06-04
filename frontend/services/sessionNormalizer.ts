@@ -48,12 +48,13 @@ export const recoverSessionAttachmentUrl = (attachment: Attachment): Attachment 
   };
 };
 
-// The frontend reads camelCase ONLY here. Every app-owned session endpoint is
-// delivered as camelCase by the backend: GET /api/sessions and /api/sessions/{id}
-// are marked @case_conversion_options(always_convert_response=True) so they are
-// converted even past the middleware's 2 MiB ceiling, and /api/init/sessions/more
-// is paginated and always converted. There is no longer any snake_case session
-// source, so the previous camelKey ?? snake_key dual-reads were removed.
+// The frontend reads camelCase ONLY here. Every app-owned session source is delivered
+// as camelCase by the backend: GET /api/sessions, /api/sessions/{id}, the /api/init*
+// bootstrap endpoints, AND /api/init/sessions/more are all marked
+// @case_conversion_options(always_convert_response=True), so they are converted even
+// past the middleware's 2 MiB ceiling (a paginated page of long first-messages can
+// cross it). There is no longer any snake_case session source, so the previous
+// camelKey ?? snake_key dual-reads were removed.
 // See .investigations/case-conversion-audit-2026-06-04.md.
 const normalizeAttachment = (source: RawAttachment): Attachment => {
   const createdAt = normalizeNumber(source.createdAt, 0);

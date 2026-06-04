@@ -130,6 +130,7 @@ async def get_critical_init_data(
 
 
 @router.get("/init/sessions/more")
+@case_conversion_options(always_convert_response=True)
 async def get_more_sessions(
     offset: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=50),
