@@ -313,6 +313,7 @@ async def set_active_profile(
 
 
 @router.get("/settings/full")
+@case_conversion_options(always_convert_response=True)
 async def get_full_settings(
     edit_mode: bool = False,  # 编辑模式：True 时解密返回，False 时返回加密值
     user_id: str = Depends(require_current_user),

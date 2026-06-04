@@ -775,6 +775,7 @@ async def delete_session(
 
 
 @router.get("/sessions/{session_id}/history-states")
+@case_conversion_options(always_convert_response=True)
 async def get_session_history_states(
     session_id: str,
     user_id: str = Depends(require_current_user),

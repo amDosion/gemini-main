@@ -238,6 +238,26 @@ def test_available_models_opts_into_always_convert():
     assert CaseConversionOptions.from_endpoint(models.get_available_models).always_convert_response
 
 
+def test_full_settings_opts_into_always_convert():
+    # GET /api/settings/full returns ALL profiles (to_dict snake, unbounded saved_models)
+    # plus active profile + settings; configurationService reads FullSettings camelCase
+    # only, so a large profile set must stay camelCase.
+    from app.routers.user import profiles
+
+    assert CaseConversionOptions.from_endpoint(profiles.get_full_settings).always_convert_response
+
+
+def test_session_history_states_opts_into_always_convert():
+    # GET /sessions/{id}/history-states returns ALL MessageHistoryState rows for a
+    # session with no limit; db.getSessionHistoryStates reads SessionHistoryState[]
+    # camelCase only, so an edit-heavy session must stay camelCase.
+    from app.routers.user import sessions
+
+    assert CaseConversionOptions.from_endpoint(
+        sessions.get_session_history_states
+    ).always_convert_response
+
+
 def test_storage_configs_opts_into_always_convert():
     # GET /api/storage/configs returns the user's full UNPAGINATED storage-config list
     # (credentials/config blobs); db.getStorageConfigs reads StorageConfig[] camelCase
