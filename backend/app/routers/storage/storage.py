@@ -2453,7 +2453,6 @@ async def upload_file_async(
 
 
 @router.post("/upload-from-url")
-@case_conversion_options(skip_request_body=True)
 async def upload_from_url(
     data: dict,
     user_id: str = Depends(require_current_user),
