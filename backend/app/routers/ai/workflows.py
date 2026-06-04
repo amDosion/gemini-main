@@ -6083,6 +6083,7 @@ async def get_agent(
 # ==================== Workflow Templates ====================
 
 @router.post("/api/workflows/templates")
+@case_conversion_options(always_convert_response=True)
 async def create_workflow_template(
     request: WorkflowTemplateCreateRequest,
     user_id: str = Depends(require_current_user),
@@ -6199,6 +6200,7 @@ async def seed_workflow_templates(
 
 
 @router.get("/api/workflows/templates/{template_id}")
+@case_conversion_options(always_convert_response=True)
 async def get_workflow_template(
     template_id: str,
     user_id: str = Depends(require_current_user),
@@ -6212,6 +6214,7 @@ async def get_workflow_template(
 
 
 @router.post("/api/workflows/templates/{template_id}/copy")
+@case_conversion_options(always_convert_response=True)
 async def copy_workflow_template(
     template_id: str,
     request: Optional[WorkflowTemplateCopyRequest] = None,
@@ -6237,6 +6240,7 @@ async def copy_workflow_template(
 
 
 @router.put("/api/workflows/templates/{template_id}")
+@case_conversion_options(always_convert_response=True)
 async def update_workflow_template(
     template_id: str,
     request: WorkflowTemplateUpdateRequest,

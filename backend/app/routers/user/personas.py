@@ -10,6 +10,7 @@ from ...core.database import SessionLocal, get_db
 from ...models.db_models import Persona as DBPersona
 from ...core.dependencies import require_current_user
 from ...core.user_scoped_query import UserScopedQuery
+from ...middleware.case_conversion_middleware import case_conversion_options
 from ...services.common.persona_init_service import DEFAULT_PERSONAS, create_default_personas
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ router = APIRouter(prefix="/api", tags=["personas"])
 # ==================== 角色管理 ====================
 
 @router.get("/personas")
+@case_conversion_options(always_convert_response=True)
 async def get_personas(
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)

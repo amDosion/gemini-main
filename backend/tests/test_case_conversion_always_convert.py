@@ -154,3 +154,30 @@ def test_workflow_templates_list_opts_into_always_convert():
     assert CaseConversionOptions.from_endpoint(
         workflows.list_workflow_templates
     ).always_convert_response
+
+
+def test_workflow_template_single_object_endpoints_opt_into_always_convert():
+    # Every endpoint returning a full WorkflowTemplate object is read camelCase only
+    # by the frontend (migrateTemplate / normalizeTemplateResponse read
+    # workflowType/userId/createdAt/config.* with no snake fallback). A single large
+    # template graph can exceed 2 MiB, so the whole template surface must be uniform:
+    # GET detail (future-proofed; no consumer yet), copy, create, update.
+    from app.routers.ai import workflows
+
+    for fn in (
+        workflows.get_workflow_template,
+        workflows.copy_workflow_template,
+        workflows.create_workflow_template,
+        workflows.update_workflow_template,
+    ):
+        assert CaseConversionOptions.from_endpoint(fn).always_convert_response, fn.__name__
+
+
+def test_personas_list_opts_into_always_convert():
+    # GET /personas returns the user's full UNPAGINATED persona list; each persona's
+    # system_prompt (-> systemPrompt) can be long. db.getPersonas reads Persona[]
+    # with systemPrompt camelCase only (Persona.to_dict() emits snake), so a large
+    # persona set must stay camelCase instead of losing every system prompt.
+    from app.routers.user import personas
+
+    assert CaseConversionOptions.from_endpoint(personas.get_personas).always_convert_response
