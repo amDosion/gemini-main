@@ -61,6 +61,40 @@ logger.propagate = True
 
 router = APIRouter(prefix="/api/modes", tags=["modes"])
 
+
+def _load_session_messages_with_attachments(
+    db, session_id: str, user_id: str
+) -> List[Dict[str, Any]]:
+    """Rebuild minimal CONTINUITY message dicts (id + attachments) for a session.
+
+    The v3 sharded-schema refactor removed the legacy ``Message`` model, so the
+    old ``from ...models.db_models import Message`` path 500'd here. CONTINUITY
+    only needs each message's attachments (id/url/tempUrl) to match
+    active_image_url, so reconstruct them from MessageAttachment, ordered by
+    MessageIndex.seq. User-scoped to avoid cross-user attachment leakage.
+    """
+    from ...models.db_models import MessageAttachment
+
+    seq_by_message = {
+        idx.id: int(getattr(idx, "seq", 0) or 0)
+        for idx in db.query(MessageIndex)
+        .filter(MessageIndex.session_id == session_id, MessageIndex.user_id == user_id)
+        .all()
+    }
+    grouped: Dict[str, Dict[str, Any]] = {}
+    for att in (
+        db.query(MessageAttachment)
+        .filter(
+            MessageAttachment.session_id == session_id,
+            MessageAttachment.user_id == user_id,
+        )
+        .all()
+    ):
+        msg = grouped.setdefault(att.message_id, {"id": att.message_id, "attachments": []})
+        msg["attachments"].append({"id": att.id, "url": att.url, "tempUrl": att.temp_url})
+    return sorted(grouped.values(), key=lambda m: seq_by_message.get(m["id"], 0))
+
+
 _MEDIA_METADATA_KEYS = (
     "enhanced_prompt",
     "thoughts",
@@ -1588,12 +1622,11 @@ async def handle_mode(
                     messages = request_body.extra["messages"]
                     logger.debug(f"[Modes]     - 从 extra 中获取 messages: {len(messages)} 条")
                 elif session_id:
-                    # 从数据库查询会话的所有消息（用于CONTINUITY LOGIC查找附件）
+                    # 从数据库重建会话消息（用于CONTINUITY LOGIC查找附件）。
+                    # v3 sharded-schema 已移除 Message 模型，改从 MessageAttachment 重建。
                     logger.debug(f"[Modes]     - 从数据库查询会话消息...")
-                    from ...models.db_models import Message
-                    db_messages = db.query(Message).filter_by(session_id=session_id).order_by(Message.timestamp.asc()).all()
-                    messages = [msg.to_dict() for msg in db_messages if hasattr(msg, 'to_dict')]
-                    logger.debug(f"[Modes]     - 从数据库查询到 {len(messages)} 条消息")
+                    messages = _load_session_messages_with_attachments(db, session_id, user_id)
+                    logger.debug(f"[Modes]     - 从数据库重建到 {len(messages)} 条带附件消息")
                 
                 # 解析 CONTINUITY 附件
                 logger.info(f"[Modes] 🔄 调用 AttachmentService.resolve_continuity_attachment()...")
