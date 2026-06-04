@@ -3,9 +3,11 @@ import { buildAttachmentMediaSignature } from './messageMediaSignature';
 import type { Attachment } from '../types/types';
 
 describe('messageMediaSignature', () => {
-  it('tracks snake_case media fields from raw history attachments', () => {
+  it('tracks camelCase media fields (attachments reach the frontend camelCase-only)', () => {
+    // The case-conversion middleware delivers every attachment camelCase; there is no
+    // snake_case attachment source anymore, so the signature tracks camelCase fields.
     const baseAttachment = {
-      id: 'att-snake-media',
+      id: 'att-media',
       name: 'result.png',
       mimeType: 'image/png',
       url: 'blob:https://gemini.dicry.cn:18443/stale-thumbnail',
@@ -13,15 +15,15 @@ describe('messageMediaSignature', () => {
 
     const pendingSignature = buildAttachmentMediaSignature({
       ...baseAttachment,
-      cloud_url: '',
-      upload_status: 'pending',
-    } as Attachment & { cloud_url?: string; upload_status?: string });
+      cloudUrl: '',
+      uploadStatus: 'pending',
+    } as Attachment);
 
     const completedSignature = buildAttachmentMediaSignature({
       ...baseAttachment,
-      cloud_url: '/api/storage/local-files/2026/06/01/result.png',
-      upload_status: 'completed',
-    } as Attachment & { cloud_url?: string; upload_status?: string });
+      cloudUrl: '/api/storage/local-files/2026/06/01/result.png',
+      uploadStatus: 'completed',
+    } as Attachment);
 
     expect(completedSignature).not.toBe(pendingSignature);
     expect(completedSignature).toContain('/api/storage/local-files/2026/06/01/result.png');

@@ -9,8 +9,10 @@ case_conversion_options(always_convert_response=True) opts an endpoint out of th
 oversized passthrough so it is ALWAYS converted -> the frontend never converts.
 """
 
+import logging
+
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.testclient import TestClient
 
 from app.middleware import case_conversion_middleware as ccm
@@ -45,6 +47,29 @@ def _make_app():
         return {"some_snake_key": "x" * 200, "another_key": 1}
 
     return app
+
+
+def test_undecodable_json_response_passes_through_and_logs(caplog):
+    # A response declared application/json whose body is not decodable JSON must be
+    # passed through UNCHANGED (converting is impossible) but the skip must be LOGGED
+    # so the silent path is observable instead of invisible (no swallowed failures).
+    app = FastAPI()
+    app.add_middleware(CaseConversionMiddleware)
+
+    bad = b"{not valid json"  # valid utf-8, invalid JSON -> JSONDecodeError
+
+    @app.get("/bad-json")
+    async def bad_json():
+        return Response(content=bad, media_type="application/json")
+
+    client = TestClient(app)
+    with caplog.at_level(logging.WARNING, logger="app.middleware.case_conversion_middleware"):
+        resp = client.get("/bad-json")
+
+    assert resp.content == bad  # body untouched, not corrupted
+    assert any(
+        "Skipped response conversion" in r.getMessage() for r in caplog.records
+    ), "undecodable JSON body should log a warning, not be skipped silently"
 
 
 def test_default_endpoint_passes_through_oversized_as_snake(monkeypatch):
@@ -192,6 +217,25 @@ def test_workflow_template_single_object_endpoints_opt_into_always_convert():
         workflows.update_workflow_template,
     ):
         assert CaseConversionOptions.from_endpoint(fn).always_convert_response, fn.__name__
+
+
+def test_profiles_list_opts_into_always_convert():
+    # GET /api/profiles returns the user's full UNPAGINATED config-profile list; each
+    # profile's saved_models can hold a whole provider catalog. db.getProfiles reads
+    # ConfigProfile (providerId/apiKey/baseUrl/isProxy/hiddenModels/createdAt) camelCase
+    # only (Profile.to_dict() emits snake), so a large profile set must stay camelCase.
+    from app.routers.user import profiles
+
+    assert CaseConversionOptions.from_endpoint(profiles.get_profiles).always_convert_response
+
+
+def test_available_models_opts_into_always_convert():
+    # GET /api/models/{provider} returns an UNPAGINATED model catalog (OpenRouter etc.
+    # carry hundreds of models). ModelsApiResponse reads models/defaultModelId/
+    # modeCatalog/filteredByMode camelCase only, so a large catalog must stay camelCase.
+    from app.routers.models import models
+
+    assert CaseConversionOptions.from_endpoint(models.get_available_models).always_convert_response
 
 
 def test_personas_list_opts_into_always_convert():

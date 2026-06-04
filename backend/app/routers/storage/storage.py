@@ -1696,7 +1696,10 @@ async def batch_get_storage_file_metadata(
     if not isinstance(urls_raw, list):
         raise HTTPException(status_code=400, detail="urls 必须是数组")
 
-    force_refresh = bool(payload.get("force_refresh", payload.get("forceRefresh", False)))
+    # The middleware converts the camelCase request body (forceRefresh) to snake_case
+    # before it reaches here; this endpoint is not skip_request_body, so reading
+    # force_refresh is sufficient (the old camelCase fallback was dead).
+    force_refresh = bool(payload.get("force_refresh", False))
     allowed_hosts = _collect_storage_preview_host_allowlist(db, user_id)
     storage_revision = await _get_storage_revision(user_id)
 

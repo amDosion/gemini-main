@@ -314,8 +314,17 @@ class CaseConversionMiddleware:
                     data = json.loads(full_body.decode("utf-8"))
                     converted_data = to_camel_case(data)
                     new_body = json.dumps(converted_data, ensure_ascii=False).encode("utf-8")
-                except (json.JSONDecodeError, UnicodeDecodeError):
-                    pass
+                except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                    # Body declared application/json but is not decodable JSON (truncated
+                    # stream, mislabeled content-type, binary). Pass the original bytes
+                    # through UNCHANGED — converting is impossible and corrupting is worse
+                    # — but LOG it so this otherwise-invisible skip is observable instead
+                    # of a silent failure that strands the frontend with snake_case.
+                    logger.warning(
+                        "[CaseConversion] Skipped response conversion: body declared "
+                        "application/json but failed to decode (%s)",
+                        e,
+                    )
                 except Exception as e:
                     logger.error(f"[CaseConversion] Response conversion failed: {e}")
 

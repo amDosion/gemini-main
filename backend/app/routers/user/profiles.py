@@ -13,6 +13,7 @@ from ...models.db_models import ConfigProfile as DBConfigProfile, UserSettings
 from ...core.dependencies import require_current_user
 from ...core.user_scoped_query import UserScopedQuery
 from ...core.encryption import encrypt_data, is_encrypted, decrypt_api_key
+from ...middleware.case_conversion_middleware import case_conversion_options
 from ...services.gemini.coordinators._config_cache import clear_config_cache
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,7 @@ class ConfigProfilePayload(BaseModel):
 # ==================== 配置文件管理 ====================
 
 @router.get("/profiles")
+@case_conversion_options(always_convert_response=True)
 async def get_profiles(
     edit_mode: bool = False,  # 编辑模式：True 时解密返回，False 时返回加密值
     user_id: str = Depends(require_current_user),

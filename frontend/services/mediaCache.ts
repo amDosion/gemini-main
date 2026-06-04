@@ -1316,6 +1316,14 @@ export const fetchAndStoreMedia = async (
         metadata = await persistCachedMedia(downloadIdentity, blob, response);
       } catch {
         metadata = null;
+        // persistCachedMedia writes the Cache API blob (cache.put) before later steps
+        // (writeMetadata/prune) that can throw — leaving the blob orphaned with no
+        // metadata. Best-effort clear so it isn't stranded (logout sweep is the backstop).
+        try {
+          await deletePersistentMediaEntry(downloadIdentity.cacheKey);
+        } catch {
+          /* orphan cleanup is best-effort */
+        }
       }
     }
     if (!isPrivateLifecycleCurrent(downloadIdentity)) {
@@ -1397,6 +1405,13 @@ export const saveMediaBlobToCache = async (
       metadata = await persistCachedMedia(identity, blob, response);
     } catch {
       metadata = null;
+      // See fetchAndStoreMedia: cache.put may have landed before a later persist step
+      // threw; best-effort clear so the blob isn't orphaned without metadata.
+      try {
+        await deletePersistentMediaEntry(identity.cacheKey);
+      } catch {
+        /* orphan cleanup is best-effort */
+      }
     }
   }
   if (!isPrivateLifecycleCurrent()) {

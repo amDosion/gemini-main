@@ -24,6 +24,7 @@ from ...services.common.model_capabilities import (
 )
 from ...core.dependencies import require_current_user, get_cache
 from ...core.credential_manager import get_provider_credentials
+from ...middleware.case_conversion_middleware import case_conversion_options
 from ...services.common.google_model_catalog import (
     IMAGEN_GENERATE_MODELS,
     IMAGEN_EDIT_MODELS,
@@ -896,6 +897,7 @@ def clear_cache(provider: Optional[str] = None) -> None:
 # ==================== API Endpoints ====================
 
 @router.get("/{provider}")
+@case_conversion_options(always_convert_response=True)
 async def get_available_models(
     provider: str,
     use_cache: bool = Query(True, description="Whether to use cached models"),
