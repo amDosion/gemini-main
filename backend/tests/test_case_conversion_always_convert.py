@@ -141,3 +141,16 @@ def test_workflow_history_detail_opts_into_always_convert():
     assert CaseConversionOptions.from_endpoint(
         workflows.get_workflow_history_detail
     ).always_convert_response
+
+
+def test_workflow_templates_list_opts_into_always_convert():
+    # GET /api/workflows/templates is UNPAGINATED and each template carries a full
+    # node/edge graph, so the response can exceed 2 MiB. migrateTemplate reads
+    # top-level template fields (estimatedNodeCount, id, workflowType, nodes...)
+    # camelCase only, so a snake passthrough would break template rendering.
+    # (template-categories is a small name list -> bounded -> not marked.)
+    from app.routers.ai import workflows
+
+    assert CaseConversionOptions.from_endpoint(
+        workflows.list_workflow_templates
+    ).always_convert_response

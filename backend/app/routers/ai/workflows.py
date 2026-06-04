@@ -6108,6 +6108,7 @@ async def create_workflow_template(
 
 
 @router.get("/api/workflows/templates")
+@case_conversion_options(always_convert_response=True)
 async def list_workflow_templates(
     category: Optional[str] = None,
     workflow_type: Optional[str] = None,
