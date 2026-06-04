@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from ...core.config import settings
 from ...core.database import get_db
 from ...core.dependencies import require_current_user
+from ...middleware.case_conversion_middleware import case_conversion_options
 from ...models.db_models import UserMcpConfig
 from ...services.mcp.types import (
     MCPServerType,
@@ -235,6 +236,7 @@ def _load_server_config_or_raise(db: Session, user_id: str, server_key: str) -> 
 
 
 @router.get("/config")
+@case_conversion_options(always_convert_response=True)
 async def get_mcp_config(
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db),
@@ -267,6 +269,7 @@ async def get_mcp_config(
 
 
 @router.put("/config")
+@case_conversion_options(always_convert_response=True)
 async def update_mcp_config(
     payload: McpConfigUpdatePayload,
     user_id: str = Depends(require_current_user),

@@ -83,3 +83,29 @@ def test_agents_endpoints_opt_into_always_convert():
     assert CaseConversionOptions.from_endpoint(
         workflows.get_available_models_for_agents
     ).always_convert_response
+
+
+def test_adk_runtime_session_endpoints_opt_into_always_convert():
+    # ADK runtime session list + snapshot are app-owned and unpaginated; the
+    # frontend (adkSessionApi/AdkSessionPanel) now reads sessionId/updatedAt/
+    # lastUpdateTime only, so a >2 MiB snapshot must not pass through as snake.
+    from app.routers.ai import multi_agent
+
+    assert CaseConversionOptions.from_endpoint(
+        multi_agent.list_adk_agent_sessions
+    ).always_convert_response
+    assert CaseConversionOptions.from_endpoint(
+        multi_agent.get_adk_agent_session
+    ).always_convert_response
+
+
+def test_mcp_config_endpoints_opt_into_always_convert():
+    # MCP config is a user-controlled JSON blob in a Text column with no size cap;
+    # the frontend (mcpConfigService) reads configJson/updatedAt only, so a large
+    # saved config must stay camelCase instead of loading as null.
+    from app.routers.user import mcp_config
+
+    assert CaseConversionOptions.from_endpoint(mcp_config.get_mcp_config).always_convert_response
+    assert CaseConversionOptions.from_endpoint(
+        mcp_config.update_mcp_config
+    ).always_convert_response

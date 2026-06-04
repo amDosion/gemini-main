@@ -26,6 +26,7 @@ from ...core.config import settings
 from ...core.database import get_db
 from ...core.dependencies import require_current_user
 from ...core.credential_manager import get_provider_credentials
+from ...middleware.case_conversion_middleware import case_conversion_options
 from ...models.db_models import AgentRegistry, MessageAttachment
 from ...services.gemini.agent.adk_runtime_contract import (
     ADKRuntimeErrorCode,
@@ -2293,6 +2294,7 @@ async def confirm_adk_tool_call(
     deprecated=True,
     summary="Legacy ADK session list endpoint (compatibility only)",
 )
+@case_conversion_options(always_convert_response=True)
 async def list_adk_agent_sessions(
     agent_id: str,
     user_id: str = Depends(require_current_user),
@@ -2329,6 +2331,7 @@ async def list_adk_agent_sessions(
     deprecated=True,
     summary="Legacy ADK session detail endpoint (compatibility only)",
 )
+@case_conversion_options(always_convert_response=True)
 async def get_adk_agent_session(
     agent_id: str,
     session_id: str,

@@ -46,6 +46,7 @@ from ...models.db_models import (
     generate_uuid,
 )
 from ...utils.case_converter import to_camel_case
+from ...utils.sse import encode_sse_data
 from ...services.agent.agent_llm_service import AgentLLMService
 from ...services.agent.workflow_engine import WorkflowEngine
 from ...services.agent.workflow_history_image_service import (
@@ -1328,7 +1329,11 @@ async def _publish_runtime_event(execution_id: str, event_type: str, data: Dict[
 
 
 def _format_sse(event: str, data: Dict[str, Any]) -> str:
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+    # Route workflow status frames through the shared camelCase SSE seam so nested
+    # snake_case keys copied from runtime/backend state (e.g. node_results internals)
+    # are converted before reaching a frontend that reads camelCase only. The
+    # SKIP_VALUE_CONVERSION_FIELDS (result/state/metadata/...) stay opaque by design.
+    return encode_sse_data(data, camel_case=True, event=event)
 
 
 def _safe_json_loads(raw: Optional[str], default: Any = None):
