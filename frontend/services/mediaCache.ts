@@ -1143,10 +1143,9 @@ const fetchAttachmentDurableUrl = async (identity: MediaCacheIdentity): Promise<
         errorMessage: '附件状态查询失败',
       }
     );
-    const rawUrl =
-      normalizeString(payload.url) ||
-      normalizeString(payload.cloudUrl) ||
-      normalizeString(payload.cloud_url);
+    // The /cloud-url endpoint returns { url, uploadStatus } (middleware-camelCased);
+    // there is no cloud_url field — the frontend must not read snake_case.
+    const rawUrl = normalizeString(payload.url) || normalizeString(payload.cloudUrl);
     return getCacheableDurableUrl(rawUrl);
   } catch {
     return null;

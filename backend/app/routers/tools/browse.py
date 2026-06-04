@@ -14,6 +14,7 @@ from ...core.dependencies import require_current_user
 
 logger = logging.getLogger(__name__)
 from ...utils.url_security import validate_outbound_http_url
+from ...utils.sse import encode_sse_data
 
 router = APIRouter(prefix="/api", tags=["browse"])
 
@@ -302,8 +303,10 @@ async def browse_progress_stream(operation_id: str, request: Request, user_id: s
                     # Wait for next progress update (with timeout)
                     message = await asyncio.wait_for(queue.get(), timeout=30.0)
                     
-                    # Format as SSE
-                    yield f"data: {json.dumps(message)}\n\n"
+                    # Format as SSE. SSE is middleware-passthrough, so camelCase
+                    # the frame here (snake_case operation_id -> operationId) so the
+                    # frontend never converts. (Was raw json.dumps -> dropped updates.)
+                    yield encode_sse_data(message, camel_case=True)
                     
                     # If operation completed or errored, stop streaming
                     if message.get("status") in ["completed", "error"]:

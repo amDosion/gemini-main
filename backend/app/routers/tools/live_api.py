@@ -20,6 +20,7 @@ from ...core.database import get_db
 from ...core.dependencies import require_current_user
 from ...core.user_context import extract_user_id_from_token
 from ...services.gemini.agent.live_api import LiveAPIHandler
+from ...utils.sse import encode_sse_data
 
 logger = logging.getLogger(__name__)
 
@@ -110,10 +111,12 @@ async def stream_query(
                 input_data=request_body.input,
                 agent_id=request_body.agent_id
             ):
-                yield f"data: {json.dumps(chunk)}\n\n"
+                # SSE is middleware-passthrough -> camelCase the frame server-side
+                # so the frontend consumes camelCase without converting.
+                yield encode_sse_data(chunk, camel_case=True)
         except Exception as e:
             logger.error(f"[Live API] Error in stream query: {e}", exc_info=True)
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            yield encode_sse_data({"error": str(e)}, camel_case=True)
     
     return StreamingResponse(
         event_generator(),
