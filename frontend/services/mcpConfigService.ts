@@ -45,37 +45,37 @@ const toNumberOrZero = (value: unknown): number => {
 };
 
 const mapConfigPayload = (raw: AnyObject): McpConfigPayload => ({
-  configJson: toStringOrEmpty(raw.configJson ?? raw.config_json ?? '{}') || '{}',
-  updatedAt: (raw.updatedAt ?? raw.updated_at ?? null) as string | null,
+  configJson: toStringOrEmpty(raw.configJson ?? '{}') || '{}',
+  updatedAt: (raw.updatedAt ?? null) as string | null,
 });
 
 const mapServerToolsPayload = (raw: AnyObject): McpServerToolsPayload => ({
-  serverKey: toStringOrEmpty(raw.serverKey ?? raw.server_key),
-  toolCount: toNumberOrZero(raw.toolCount ?? raw.tool_count),
+  serverKey: toStringOrEmpty(raw.serverKey),
+  toolCount: toNumberOrZero(raw.toolCount),
   tools: Array.isArray(raw.tools)
     ? raw.tools.map((item: AnyObject) => ({
-      name: toStringOrEmpty(item?.name),
-      description: typeof item?.description === 'string' ? item.description : undefined,
-    }))
+        name: toStringOrEmpty(item?.name),
+        description: typeof item?.description === 'string' ? item.description : undefined,
+      }))
     : [],
 });
 
 const mapStopSessionPayload = (raw: AnyObject): StopMcpSessionPayload => ({
   success: Boolean(raw.success),
-  closedCount: toNumberOrZero(raw.closedCount ?? raw.closed_count),
-  closedSessions: Array.isArray(raw.closedSessions ?? raw.closed_sessions)
-    ? (raw.closedSessions ?? raw.closed_sessions).map((item: unknown) => String(item))
+  closedCount: toNumberOrZero(raw.closedCount),
+  closedSessions: Array.isArray(raw.closedSessions)
+    ? raw.closedSessions.map((item: unknown) => String(item))
     : [],
   errors: Array.isArray(raw.errors) ? raw.errors.map((item: unknown) => String(item)) : [],
 });
 
 const mapInvokePayload = (raw: AnyObject): McpToolInvokeResult => {
-  const isError = raw.isError ?? raw.is_error;
+  const isError = raw.isError;
   return {
-    serverKey: toStringOrEmpty(raw.serverKey ?? raw.server_key),
-    toolName: toStringOrEmpty(raw.toolName ?? raw.tool_name),
-    sessionId: toStringOrEmpty(raw.sessionId ?? raw.session_id),
-    latencyMs: toNumberOrZero(raw.latencyMs ?? raw.latency_ms),
+    serverKey: toStringOrEmpty(raw.serverKey),
+    toolName: toStringOrEmpty(raw.toolName),
+    sessionId: toStringOrEmpty(raw.sessionId),
+    latencyMs: toNumberOrZero(raw.latencyMs),
     timestamp: toNumberOrZero(raw.timestamp),
     success: raw.success === undefined ? !Boolean(isError) : Boolean(raw.success),
     isError: isError === undefined ? undefined : Boolean(isError),
@@ -101,7 +101,9 @@ class McpConfigService {
   }
 
   async getServerTools(serverKey: string): Promise<McpServerToolsPayload> {
-    const raw = await apiClient.get<AnyObject>(`${this.baseUrl}/tools/${encodeURIComponent(serverKey)}`);
+    const raw = await apiClient.get<AnyObject>(
+      `${this.baseUrl}/tools/${encodeURIComponent(serverKey)}`
+    );
     return mapServerToolsPayload(raw || {});
   }
 
@@ -113,12 +115,19 @@ class McpConfigService {
     return mapStopSessionPayload(raw || {});
   }
 
-  async invokeServerTool(serverKey: string, toolName: string, argumentsPayload: Record<string, any>): Promise<McpToolInvokeResult> {
-    const raw = await apiClient.post<AnyObject>(`${this.baseUrl}/tools/${encodeURIComponent(serverKey)}/invoke`, {
-      tool_name: toolName,
-      toolName,
-      arguments: argumentsPayload,
-    });
+  async invokeServerTool(
+    serverKey: string,
+    toolName: string,
+    argumentsPayload: Record<string, any>
+  ): Promise<McpToolInvokeResult> {
+    const raw = await apiClient.post<AnyObject>(
+      `${this.baseUrl}/tools/${encodeURIComponent(serverKey)}/invoke`,
+      {
+        tool_name: toolName,
+        toolName,
+        arguments: argumentsPayload,
+      }
+    );
     return mapInvokePayload(raw || {});
   }
 }

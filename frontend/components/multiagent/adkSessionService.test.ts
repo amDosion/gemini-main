@@ -64,20 +64,27 @@ describe('adkSessionService QA-601 regression matrix', () => {
       tenantId: 'tenant-a',
     });
 
-    const [requestUrl, requestInit] = requestJsonMock.mock.calls[0] as [string, RequestInit & { body?: string }];
-    expect(requestUrl).toBe('/api/multi-agent/agents/agent-1/runtime/sessions/session-1/confirm-tool');
+    const [requestUrl, requestInit] = requestJsonMock.mock.calls[0] as [
+      string,
+      RequestInit & { body?: string },
+    ];
+    expect(requestUrl).toBe(
+      '/api/multi-agent/agents/agent-1/runtime/sessions/session-1/confirm-tool'
+    );
     const body = JSON.parse(String(requestInit.body || '{}'));
 
     expect(body.function_call_id).toBe('fc-1');
     expect(body.confirmed).toBe(true);
-    expect(body.approval_ticket).toEqual(expect.objectContaining({
-      session_id: 'session-1',
-      function_call_id: 'fc-1',
-      invocation_id: 'inv-1',
-      tenant_id: 'tenant-a',
-      nonce: 'nonce-1',
-      ticket: 'legacy-ticket-1',
-    }));
+    expect(body.approval_ticket).toEqual(
+      expect.objectContaining({
+        session_id: 'session-1',
+        function_call_id: 'fc-1',
+        invocation_id: 'inv-1',
+        tenant_id: 'tenant-a',
+        nonce: 'nonce-1',
+        ticket: 'legacy-ticket-1',
+      })
+    );
     expect(body.approval_ticket.timestamp_ms).toBe(FIXED_NOW_MS);
     expect(body.approval_ticket.ttl_seconds).toBe(FIXED_APPROVAL_TTL_SECONDS);
 
@@ -107,9 +114,9 @@ describe('adkSessionService QA-601 regression matrix', () => {
     requestJsonMock
       .mockResolvedValueOnce({
         sessions: [
-          { session_id: 'session-a', updated_at: 123 },
-          { id: 'session-b', updated_at: 456 },
-          { updated_at: 789 },
+          { sessionId: 'session-a', updatedAt: 123 },
+          { id: 'session-b', updatedAt: 456 },
+          { updatedAt: 789 },
         ],
       })
       .mockResolvedValueOnce({
@@ -122,11 +129,15 @@ describe('adkSessionService QA-601 regression matrix', () => {
       });
 
     const sessions = await listAdkAgentSessions('agent-1');
-    expect(requestJsonMock.mock.calls[0]?.[0]).toBe('/api/multi-agent/agents/agent-1/runtime/sessions');
+    expect(requestJsonMock.mock.calls[0]?.[0]).toBe(
+      '/api/multi-agent/agents/agent-1/runtime/sessions'
+    );
     expect(sessions.map((item) => item.id)).toEqual(['session-a', 'session-b']);
 
     const snapshot = await getAdkAgentSession('agent-1', 'session-a');
-    expect(requestJsonMock.mock.calls[1]?.[0]).toBe('/api/multi-agent/agents/agent-1/runtime/sessions/session-a');
+    expect(requestJsonMock.mock.calls[1]?.[0]).toBe(
+      '/api/multi-agent/agents/agent-1/runtime/sessions/session-a'
+    );
     expect(snapshot.id).toBe('session-a');
     expect(snapshot.raw).toEqual(expect.objectContaining({ id: 'session-a' }));
   });
@@ -156,22 +167,26 @@ describe('adkSessionService QA-601 regression matrix', () => {
 
   it('[M4] maps strict runtime error codes to readable prompts', () => {
     const runtimeUnavailable = formatAdkRuntimeContractErrorMessage(
-      new Error(JSON.stringify({
-        error_code: 'ADK_RUNTIME_UNAVAILABLE',
-        runtime_strategy: 'official_only',
-        strict_mode: true,
-      })),
+      new Error(
+        JSON.stringify({
+          error_code: 'ADK_RUNTIME_UNAVAILABLE',
+          runtime_strategy: 'official_only',
+          strict_mode: true,
+        })
+      ),
       'fallback'
     );
     expect(runtimeUnavailable).toContain('官方 ADK runtime 当前不可用');
     expect(runtimeUnavailable).toContain('strict_mode=true');
 
     const fallbackForbidden = formatAdkRuntimeContractErrorMessage(
-      new Error(JSON.stringify({
-        error_code: 'ADK_FALLBACK_FORBIDDEN',
-        runtime_strategy: 'official_or_legacy',
-        strict_mode: true,
-      })),
+      new Error(
+        JSON.stringify({
+          error_code: 'ADK_FALLBACK_FORBIDDEN',
+          runtime_strategy: 'official_or_legacy',
+          strict_mode: true,
+        })
+      ),
       'fallback'
     );
     expect(fallbackForbidden).toContain('禁止 fallback');
@@ -179,7 +194,9 @@ describe('adkSessionService QA-601 regression matrix', () => {
     expect(fallbackForbidden).toContain('strict_mode=true');
 
     const strategyViolationAllowLegacy = formatAdkRuntimeContractErrorMessage(
-      new Error('Request failed: 409 {"error_code":"ADK_STRATEGY_VIOLATION","runtime_strategy":"allow_legacy","strict_mode":false}'),
+      new Error(
+        'Request failed: 409 {"error_code":"ADK_STRATEGY_VIOLATION","runtime_strategy":"allow_legacy","strict_mode":false}'
+      ),
       'fallback'
     );
     expect(strategyViolationAllowLegacy).toContain('运行策略冲突');

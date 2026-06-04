@@ -14,7 +14,7 @@ describe('agentRegistryService', () => {
     requestJsonMock.mockReset();
   });
 
-  it('forwards status/task_type to backend and normalizes task counts', async () => {
+  it('forwards camelCase status/taskType to backend and normalizes task counts', async () => {
     requestJsonMock.mockResolvedValue({
       agents: [
         {
@@ -36,13 +36,13 @@ describe('agentRegistryService', () => {
         },
       ],
       count: 1,
-      active_count: 7,
-      inactive_count: 2,
-      task_counts: {
+      activeCount: 7,
+      inactiveCount: 2,
+      taskCounts: {
         all: 4,
         chat: 1,
-        video_gen: 2,
-        audio_gen: 1,
+        'video-gen': 2,
+        'audio-gen': 1,
       },
     });
 
@@ -58,7 +58,7 @@ describe('agentRegistryService', () => {
     expect(parsedUrl.pathname).toBe('/api/agents');
     expect(parsedUrl.searchParams.get('search')).toBe('veo');
     expect(parsedUrl.searchParams.get('status')).toBe('active');
-    expect(parsedUrl.searchParams.get('task_type')).toBe('video-gen');
+    expect(parsedUrl.searchParams.get('taskType')).toBe('video-gen');
 
     expect(result.count).toBe(1);
     expect(result.activeCount).toBe(7);
@@ -68,12 +68,29 @@ describe('agentRegistryService', () => {
     expect(result.taskCounts['audio-gen']).toBe(1);
   });
 
+  it('forwards includeInactive as a camelCase query param', async () => {
+    requestJsonMock.mockResolvedValue({
+      agents: [],
+      count: 0,
+      activeCount: 0,
+      inactiveCount: 0,
+    });
+
+    await fetchAgentList({ includeInactive: true });
+
+    const [url] = requestJsonMock.mock.calls[0] as [string];
+    const parsedUrl = new URL(url, 'http://localhost');
+
+    expect(parsedUrl.searchParams.get('includeInactive')).toBe('true');
+    expect(parsedUrl.searchParams.get('include_inactive')).toBeNull();
+  });
+
   it('falls back to empty task counts when backend omits them', async () => {
     requestJsonMock.mockResolvedValue({
       agents: [],
       count: 0,
-      active_count: 0,
-      inactive_count: 0,
+      activeCount: 0,
+      inactiveCount: 0,
     });
 
     const result = await fetchAgentList();
@@ -114,19 +131,23 @@ describe('agentRegistryService', () => {
 
     const result = await fetchAgentList();
 
-    expect(result.agents[0]?.runtime).toEqual(expect.objectContaining({
-      kind: 'google-adk',
-      label: 'Google ADK',
-      supportsSessions: true,
-      supportsLiveRun: true,
-      supportsMemory: true,
-      supportsOfficialOrchestration: true,
-    }));
-    expect(result.agents[0]?.source).toEqual(expect.objectContaining({
-      kind: 'seed',
-      label: '官方 Seed',
-      isSystem: true,
-    }));
+    expect(result.agents[0]?.runtime).toEqual(
+      expect.objectContaining({
+        kind: 'google-adk',
+        label: 'Google ADK',
+        supportsSessions: true,
+        supportsLiveRun: true,
+        supportsMemory: true,
+        supportsOfficialOrchestration: true,
+      })
+    );
+    expect(result.agents[0]?.source).toEqual(
+      expect.objectContaining({
+        kind: 'seed',
+        label: '官方 Seed',
+        isSystem: true,
+      })
+    );
     expect(result.agents[0]?.supportsRuntimeSessions).toBe(true);
   });
 

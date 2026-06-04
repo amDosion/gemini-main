@@ -56,7 +56,7 @@ describe('AdkSessionPanel QA-601 regression matrix', () => {
         },
       },
     ]);
-    confirmToolMock.mockResolvedValue({ status: 'completed', invocation_id: 'inv-after-confirm' });
+    confirmToolMock.mockResolvedValue({ status: 'completed', invocationId: 'inv-after-confirm' });
     rewindSessionMock.mockResolvedValue({ status: 'rewound' });
   });
 
@@ -83,7 +83,9 @@ describe('AdkSessionPanel QA-601 regression matrix', () => {
 
     renderPanel();
 
-    const strategySelect = (await screen.findByLabelText('runtime_strategy 选择')) as HTMLSelectElement;
+    const strategySelect = (await screen.findByLabelText(
+      'runtime_strategy 选择'
+    )) as HTMLSelectElement;
     const strictModeSwitch = screen.getByLabelText('strict_mode 切换') as HTMLInputElement;
 
     await waitFor(() => {
@@ -99,7 +101,9 @@ describe('AdkSessionPanel QA-601 regression matrix', () => {
     expect(strategySelect).toHaveValue('allow_legacy');
     expect(strictModeSwitch.checked).toBe(false);
     expect(
-      screen.getByText('已选择草案: strategy=allow_legacy · strict_mode=false（仅前端展示，尚未提交后端）')
+      screen.getByText(
+        '已选择草案: strategy=allow_legacy · strict_mode=false（仅前端展示，尚未提交后端）'
+      )
     ).toBeInTheDocument();
   });
 

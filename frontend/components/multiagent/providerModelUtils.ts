@@ -8,7 +8,8 @@ import {
  * Shared provider/model normalization for multi-agent UI.
  *
  * Contract:
- * - Backend response may be camelCase or snake_case.
+ * - Backend response is camelCase (CaseConversionMiddleware converts the
+ *   `/api/agents/available-models` JSON payload snake_case -> camelCase).
  * - Frontend does not infer model tasks from modelId.
  */
 
@@ -53,9 +54,7 @@ const normalizeModelEntry = (rawModel: Record<string, unknown>): ModelOption | n
   const id = String(rawModel?.id || '').trim();
   if (!id) return null;
   const name = String(rawModel?.name || id).trim() || id;
-  const supportedTasks = normalizeSupportedTasks(
-    rawModel?.supportedTasks ?? rawModel?.supported_tasks
-  );
+  const supportedTasks = normalizeSupportedTasks(rawModel?.supportedTasks);
   return {
     id,
     name,
@@ -63,23 +62,13 @@ const normalizeModelEntry = (rawModel: Record<string, unknown>): ModelOption | n
   };
 };
 
-const readProviderArray = (provider: Record<string, unknown>, ...keys: string[]): unknown[] => {
-  for (const key of keys) {
-    if (Array.isArray(provider?.[key])) {
-      return provider[key];
-    }
-  }
-  return [];
+const readProviderArray = (provider: Record<string, unknown>, key: string): unknown[] => {
+  const value = provider?.[key];
+  return Array.isArray(value) ? value : [];
 };
 
-const readProviderString = (provider: Record<string, unknown>, ...keys: string[]): string => {
-  for (const key of keys) {
-    const value = String(provider?.[key] || '').trim();
-    if (value) {
-      return value;
-    }
-  }
-  return '';
+const readProviderString = (provider: Record<string, unknown>, key: string): string => {
+  return String(provider?.[key] || '').trim();
 };
 
 const dedupeModelsById = (models: ModelOption[]): ModelOption[] => {
@@ -136,23 +125,20 @@ export const normalizeProviderModels = (payload: unknown): ProviderModels[] => {
   return providers
     .map((providerUnknown: unknown) => {
       const provider = providerUnknown as Record<string, unknown>;
-      const providerId = readProviderString(provider, 'providerId', 'provider_id');
+      const providerId = readProviderString(provider, 'providerId');
       if (!providerId) return null;
 
-      const providerName =
-        readProviderString(provider, 'providerName', 'provider_name') || providerId;
+      const providerName = readProviderString(provider, 'providerName') || providerId;
       const chatModels = normalizeModelArray(readProviderArray(provider, 'models'));
       const allModels = normalizeModelArray([
-        ...readProviderArray(provider, 'allModels', 'all_models'),
+        ...readProviderArray(provider, 'allModels'),
         ...chatModels,
-        ...readProviderArray(provider, 'imageGenerationModels', 'image_generation_models'),
-        ...readProviderArray(provider, 'imageEditModels', 'image_edit_models'),
-        ...readProviderArray(provider, 'videoGenerationModels', 'video_generation_models'),
-        ...readProviderArray(provider, 'audioGenerationModels', 'audio_generation_models'),
+        ...readProviderArray(provider, 'imageGenerationModels'),
+        ...readProviderArray(provider, 'imageEditModels'),
+        ...readProviderArray(provider, 'videoGenerationModels'),
+        ...readProviderArray(provider, 'audioGenerationModels'),
       ]);
-      const defaultModelsByTask = normalizeDefaultModelsByTask(
-        provider?.defaultModelsByTask ?? provider?.default_models_by_task
-      );
+      const defaultModelsByTask = normalizeDefaultModelsByTask(provider?.defaultModelsByTask);
 
       return {
         providerId,

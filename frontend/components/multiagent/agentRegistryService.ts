@@ -61,8 +61,8 @@ const parseAgentTaskFilterKey = (value: unknown): AgentTaskFilter | null => {
 };
 
 const inferLegacyRuntimeSupport = (agent: Record<string, unknown>): boolean => {
-  const normalizedAgentType = toSafeString(agent?.agentType || agent?.agent_type).toLowerCase();
-  const normalizedProviderId = toSafeString(agent?.providerId || agent?.provider_id).toLowerCase();
+  const normalizedAgentType = toSafeString(agent?.agentType).toLowerCase();
+  const normalizedProviderId = toSafeString(agent?.providerId).toLowerCase();
   return (
     ['adk', 'google-adk'].includes(normalizedAgentType) && normalizedProviderId.startsWith('google')
   );
@@ -87,13 +87,11 @@ const normalizeAgentRuntime = (agent: Record<string, unknown>): AgentDef['runtim
   return {
     kind: toSafeString(r.kind),
     label: toSafeString(r.label),
-    supportsRun: Boolean(r.supportsRun ?? r.supports_run),
-    supportsLiveRun: Boolean(r.supportsLiveRun ?? r.supports_live_run),
-    supportsSessions: Boolean(r.supportsSessions ?? r.supports_sessions),
-    supportsMemory: Boolean(r.supportsMemory ?? r.supports_memory),
-    supportsOfficialOrchestration: Boolean(
-      r.supportsOfficialOrchestration ?? r.supports_official_orchestration
-    ),
+    supportsRun: Boolean(r.supportsRun),
+    supportsLiveRun: Boolean(r.supportsLiveRun),
+    supportsSessions: Boolean(r.supportsSessions),
+    supportsMemory: Boolean(r.supportsMemory),
+    supportsOfficialOrchestration: Boolean(r.supportsOfficialOrchestration),
   };
 };
 
@@ -105,12 +103,12 @@ const normalizeAgentSource = (agent: unknown, runtime: AgentDef['runtime']): Age
     return {
       kind: toSafeString(s.kind),
       label: toSafeString(s.label),
-      isSystem: Boolean(s.isSystem ?? s.is_system),
+      isSystem: Boolean(s.isSystem),
     };
   }
 
-  const normalizedAgentType = toSafeString(a.agentType || a.agent_type).toLowerCase();
-  const normalizedProviderId = toSafeString(a.providerId || a.provider_id).toLowerCase();
+  const normalizedAgentType = toSafeString(a.agentType).toLowerCase();
+  const normalizedProviderId = toSafeString(a.providerId).toLowerCase();
   if (normalizedAgentType === 'seed') {
     return {
       kind: 'seed',
@@ -158,7 +156,7 @@ const normalizeAgentTaskCounts = (
   payload: Record<string, unknown>
 ): Record<AgentTaskFilter, number> => {
   const base = createEmptyAgentTaskCounts();
-  const rawCounts = payload?.taskCounts ?? payload?.task_counts;
+  const rawCounts = payload?.taskCounts;
   if (!rawCounts || typeof rawCounts !== 'object') {
     return base;
   }
@@ -239,7 +237,7 @@ const normalizeAgentItem = (agentUnknown: unknown): AgentDef | null => {
     id,
     name: toSafeString(agent?.name) || '未命名 Agent',
     description: toSafeString(agent?.description),
-    agentType: toSafeString(agent?.agentType || agent?.agent_type || 'custom') || 'custom',
+    agentType: toSafeString(agent?.agentType || 'custom') || 'custom',
     providerId: toSafeString(agent?.providerId),
     modelId: toSafeString(agent?.modelId),
     systemPrompt: toSafeString(agent?.systemPrompt),
@@ -250,21 +248,11 @@ const normalizeAgentItem = (agentUnknown: unknown): AgentDef | null => {
     status: toSafeString(agent?.status) || 'active',
     runtime,
     source,
-    supportsRuntimeSessions: Boolean(
-      agent?.supportsRuntimeSessions ??
-      agent?.supports_runtime_sessions ??
-      runtime?.supportsSessions
-    ),
-    supportsRuntimeLiveRun: Boolean(
-      agent?.supportsRuntimeLiveRun ?? agent?.supports_runtime_live_run ?? runtime?.supportsLiveRun
-    ),
-    supportsRuntimeMemory: Boolean(
-      agent?.supportsRuntimeMemory ?? agent?.supports_runtime_memory ?? runtime?.supportsMemory
-    ),
+    supportsRuntimeSessions: Boolean(agent?.supportsRuntimeSessions ?? runtime?.supportsSessions),
+    supportsRuntimeLiveRun: Boolean(agent?.supportsRuntimeLiveRun ?? runtime?.supportsLiveRun),
+    supportsRuntimeMemory: Boolean(agent?.supportsRuntimeMemory ?? runtime?.supportsMemory),
     supportsOfficialOrchestration: Boolean(
-      agent?.supportsOfficialOrchestration ??
-      agent?.supports_official_orchestration ??
-      runtime?.supportsOfficialOrchestration
+      agent?.supportsOfficialOrchestration ?? runtime?.supportsOfficialOrchestration
     ),
     agentCard: agent?.agentCard || createDefaultAgentCard(),
   };
@@ -286,10 +274,10 @@ export const fetchAgentList = async (
   options: AgentListFetchOptions = {}
 ): Promise<AgentListFetchResult> => {
   const params = new URLSearchParams();
-  if (options.includeInactive) params.set('include_inactive', 'true');
+  if (options.includeInactive) params.set('includeInactive', 'true');
   if (toSafeString(options.search)) params.set('search', toSafeString(options.search));
   if (options.status) params.set('status', options.status);
-  if (options.taskType) params.set('task_type', options.taskType);
+  if (options.taskType) params.set('taskType', options.taskType);
   const query = params.toString();
   const url = query ? `/api/agents?${query}` : '/api/agents';
 
@@ -304,15 +292,11 @@ export const fetchAgentList = async (
   const activeCount =
     typeof payload?.activeCount === 'number'
       ? payload.activeCount
-      : typeof payload?.active_count === 'number'
-        ? payload.active_count
-        : agents.filter((agent) => agent.status === 'active').length;
+      : agents.filter((agent) => agent.status === 'active').length;
   const inactiveCount =
     typeof payload?.inactiveCount === 'number'
       ? payload.inactiveCount
-      : typeof payload?.inactive_count === 'number'
-        ? payload.inactive_count
-        : agents.filter((agent) => agent.status === 'inactive').length;
+      : agents.filter((agent) => agent.status === 'inactive').length;
   const taskCounts = normalizeAgentTaskCounts(payload);
 
   return {

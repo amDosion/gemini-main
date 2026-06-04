@@ -1,8 +1,5 @@
 import { AppMode, Attachment, ChatSession, Message } from '../types/types';
-import {
-  getPreferredAttachmentUrl,
-  isTemporaryAttachmentUrl,
-} from '../utils/attachmentUrl';
+import { getPreferredAttachmentUrl, isTemporaryAttachmentUrl } from '../utils/attachmentUrl';
 
 type RawChatSession = Partial<ChatSession> & {
   id?: unknown;
@@ -77,12 +74,22 @@ export const recoverSessionAttachmentUrl = (attachment: Attachment): Attachment 
   };
 };
 
+// NOTE on the camelKey ?? snake_key dual-reads below — this is the ONE
+// intentional exception to "the frontend never converts case", and it is
+// justified, not sloppy defensive code:
+//   GET /api/sessions returns ALL sessions with their full message lists, which
+//   for large accounts can exceed the middleware's 2 MiB conversion ceiling
+//   (MAX_RESPONSE_CONVERSION_BYTES) and is then passed through UNCONVERTED as
+//   snake_case. The size is inherent message-text volume (no base64 in URL
+//   fields), so it cannot be safely capped without changing the load model; the
+//   primary list path (/api/init/sessions/more) is paginated and always camelCase.
+//   sessionNormalizer is therefore the single boundary seam that absorbs that
+//   documented oversized-passthrough exemption. Removing the snake fallbacks
+//   would make large-account session loading fragile, so they are kept here on
+//   purpose. See .investigations/case-conversion-audit-2026-06-04.md.
 const normalizeAttachment = (source: RawAttachment): Attachment => {
   const createdAt = normalizeNumber(source.createdAt ?? source.created_at, 0);
-  const googleFileExpiry = normalizeNumber(
-    source.googleFileExpiry ?? source.google_file_expiry,
-    0
-  );
+  const googleFileExpiry = normalizeNumber(source.googleFileExpiry ?? source.google_file_expiry, 0);
 
   return recoverSessionAttachmentUrl({
     ...(source as object),

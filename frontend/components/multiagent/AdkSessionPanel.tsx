@@ -278,7 +278,7 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
         string,
         unknown
       >;
-      const invocation = String(respObj.invocationId || respObj.invocation_id || '').trim();
+      const invocation = String(respObj.invocationId || '').trim();
       const responseConfirmed =
         typeof respObj.confirmed === 'boolean' ? respObj.confirmed : effectiveConfirmed;
       const action = responseConfirmed ? '批准' : '拒绝';
@@ -412,11 +412,7 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
               <div className="space-y-1.5">
                 {sessions.map((session) => {
                   const raw = session.raw || {};
-                  const updatedAt =
-                    raw?.updatedAt ||
-                    raw?.updated_at ||
-                    raw?.lastUpdateTime ||
-                    raw?.last_update_time;
+                  const updatedAt = raw?.updatedAt || raw?.lastUpdateTime;
                   return (
                     <button
                       key={session.id}

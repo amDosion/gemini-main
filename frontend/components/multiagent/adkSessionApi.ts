@@ -224,7 +224,7 @@ const remapRequestFailedError = (error: unknown, fallbackMessage: string): Error
 };
 
 const normalizeSessionId = (payload: Record<string, unknown>): string =>
-  toSafeString(payload?.sessionId || payload?.session_id || payload?.id);
+  toSafeString(payload?.sessionId || payload?.id);
 const buildAgentRuntimeRoute = (agentId: string, suffix: string): string =>
   `/api/multi-agent/agents/${encodeURIComponent(agentId)}/runtime${suffix}`;
 

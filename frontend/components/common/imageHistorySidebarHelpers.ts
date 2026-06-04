@@ -103,14 +103,17 @@ export interface ImageHistorySidebarOptions {
   loadingContent?: React.ReactNode;
 }
 
-export const ACCENT_CLASSES: Record<ImageHistoryAccent, {
-  modelSelected: string;
-  modelIdle: string;
-  modelLabel: string;
-  modelPill: string;
-  modelBadge: string;
-  activeThumb: string;
-}> = {
+export const ACCENT_CLASSES: Record<
+  ImageHistoryAccent,
+  {
+    modelSelected: string;
+    modelIdle: string;
+    modelLabel: string;
+    modelPill: string;
+    modelBadge: string;
+    activeThumb: string;
+  }
+> = {
   orange: {
     modelSelected: 'ring-1 ring-orange-400/80 border-transparent bg-orange-500/10',
     modelIdle: 'border-orange-500/20 bg-orange-500/5 hover:border-orange-400/40',
@@ -139,9 +142,7 @@ export const ACCENT_CLASSES: Record<ImageHistoryAccent, {
 
 export const USER_SELECTED_CLASS = 'ring-1 ring-blue-400/80 border-transparent bg-blue-500/10';
 export const USER_IDLE_CLASS = 'border-blue-500/20 bg-blue-500/5 hover:border-blue-400/40';
-export {
-  HISTORY_THUMBNAIL_RAW_FALLBACK_DELAY_MS as IMAGE_HISTORY_RAW_FALLBACK_DELAY_MS,
-} from './historyThumbnailCache';
+export { HISTORY_THUMBNAIL_RAW_FALLBACK_DELAY_MS as IMAGE_HISTORY_RAW_FALLBACK_DELAY_MS } from './historyThumbnailCache';
 
 export const getAttachmentPreviewGridClass = (count: number): string => {
   if (count <= 1) return 'grid grid-cols-1 gap-2';
@@ -150,17 +151,11 @@ export const getAttachmentPreviewGridClass = (count: number): string => {
   return 'grid grid-cols-4 gap-2';
 };
 
-export const getAttachmentPreviewButtonClass = (count: number): string => (
-  count <= 1
-    ? 'h-28 p-2'
-    : 'aspect-square p-1'
-);
+export const getAttachmentPreviewButtonClass = (count: number): string =>
+  count <= 1 ? 'h-28 p-2' : 'aspect-square p-1';
 
-export const getAttachmentPreviewImageClass = (count: number): string => (
-  count <= 1
-    ? 'max-h-24 max-w-full object-contain'
-    : 'h-full w-full object-contain'
-);
+export const getAttachmentPreviewImageClass = (count: number): string =>
+  count <= 1 ? 'max-h-24 max-w-full object-contain' : 'h-full w-full object-contain';
 
 export const getImageHistoryLocalBlobPreviewUrl = (attachmentId: string): string =>
   `local-blob:${attachmentId}`;
@@ -206,14 +201,7 @@ export const getImageHistoryAuthorLabel = (
 ): string => {
   if (message.role === Role.USER) return 'You';
 
-  const modelLabel =
-    message.modelName ||
-    message.model_name ||
-    message.modelId ||
-    message.model_id ||
-    message.modeModelId ||
-    message.mode_model_id ||
-    'AI';
+  const modelLabel = message.modelName || message.modelId || message.modeModelId || 'AI';
 
   return modelLabel.trim() || 'AI';
 };
@@ -226,22 +214,12 @@ export const resolveImageHistoryRowSourceAttachment = (
   if (!previewAttachment && !firstImage) return null;
   const previewId = previewAttachment?.id || '';
   const previewUrl = previewAttachment?.url || firstImage || '';
-  const attachmentUrls = (attachment: Attachment): Array<string | undefined | null> => {
-    const rawAttachment = attachment as Attachment & {
-      temp_url?: string | null;
-      cloud_url?: string | null;
-      file_uri?: string | null;
-    };
-    return [
-      rawAttachment.url,
-      rawAttachment.tempUrl,
-      rawAttachment.temp_url,
-      rawAttachment.cloudUrl,
-      rawAttachment.cloud_url,
-      rawAttachment.fileUri,
-      rawAttachment.file_uri,
-    ];
-  };
+  const attachmentUrls = (attachment: Attachment): Array<string | undefined | null> => [
+    attachment.url,
+    attachment.tempUrl,
+    attachment.cloudUrl,
+    attachment.fileUri,
+  ];
   const isTemporaryPreviewUrl = isTemporaryAttachmentUrl(previewUrl);
 
   if (previewId) {
