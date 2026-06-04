@@ -3,12 +3,15 @@ import { normalizeChatSession } from './sessionNormalizer';
 import { Role } from '../types/types';
 
 describe('normalizeChatSession', () => {
-  it('normalizes history attachment snake_case fields at the session boundary', () => {
+  it('normalizes history attachment fields at the session boundary (camelCase contract)', () => {
+    // Backend session endpoints are guaranteed camelCase (always_convert_response),
+    // so the normalizer's job is number coercion + durable-url recovery, not case
+    // conversion.
     const rawSession = {
-      id: 'session-snake-attachments',
+      id: 'session-attachments',
       title: 'History',
       mode: 'image-gen',
-      created_at: '1779624958194',
+      createdAt: '1779624958194',
       messages: [
         {
           id: 'message-1',
@@ -19,25 +22,28 @@ describe('normalizeChatSession', () => {
             {
               id: 'attachment-1',
               name: 'result.png',
-              mime_type: 'image/png',
+              mimeType: 'image/png',
               url: 'blob:https://gemini.dicry.cn:18443/stale-history-preview',
-              cloud_url: '/api/storage/local-files/2026/05/31/result.png',
-              file_uri: '/api/storage/local-files/2026/05/31/result-file.png',
-              temp_url: 'https://temporary.example.com/result.png',
-              upload_status: 'completed',
-              upload_task_id: 'upload-task-1',
-              created_at: '1779624958194',
+              cloudUrl: '/api/storage/local-files/2026/05/31/result.png',
+              fileUri: '/api/storage/local-files/2026/05/31/result-file.png',
+              tempUrl: 'https://temporary.example.com/result.png',
+              uploadStatus: 'completed',
+              uploadTaskId: 'upload-task-1',
+              createdAt: '1779624958194',
             },
           ],
         },
       ],
     };
-    const session = normalizeChatSession(rawSession as Parameters<typeof normalizeChatSession>[0]);
+    const session = normalizeChatSession(
+      rawSession as unknown as Parameters<typeof normalizeChatSession>[0]
+    );
 
     expect(session.createdAt).toBe(1779624958194);
     expect(session.messages[0].attachments?.[0]).toMatchObject({
       id: 'attachment-1',
       mimeType: 'image/png',
+      // stale blob preview is recovered to the durable cloud url
       url: '/api/storage/local-files/2026/05/31/result.png',
       cloudUrl: '/api/storage/local-files/2026/05/31/result.png',
       fileUri: '/api/storage/local-files/2026/05/31/result-file.png',
@@ -61,9 +67,9 @@ describe('normalizeChatSession', () => {
             {
               id: 'attachment-live-upload',
               name: 'local.png',
-              mime_type: 'image/png',
+              mimeType: 'image/png',
               url: 'blob:https://gemini.dicry.cn:18443/live-upload',
-              upload_status: 'uploading',
+              uploadStatus: 'uploading',
             },
           ],
         },

@@ -33,6 +33,7 @@ from ...utils.message_utils import (
     extract_metadata
 )
 from ...core.dependencies import require_current_user, get_cache
+from ...middleware.case_conversion_middleware import case_conversion_options
 from ...core.user_scoped_query import UserScopedQuery
 from ...utils.message_assembly import assemble_messages_v3
 from ...utils.attachment_handler import is_base64_url, is_blob_url, is_http_url
@@ -58,6 +59,7 @@ class HistoryPreferenceUpdateRequest(BaseModel):
 # ==================== 会话管理 ====================
 
 @router.get("/sessions")
+@case_conversion_options(always_convert_response=True)
 async def get_sessions(
     mode: Optional[str] = Query(None, description="按 mode 过滤；不传则返回该用户所有 session"),
     user_id: str = Depends(require_current_user),
@@ -586,6 +588,7 @@ async def create_or_update_session(
 
 
 @router.get("/sessions/{session_id}")
+@case_conversion_options(always_convert_response=True)
 async def get_session(
     session_id: str,
     user_id: str = Depends(require_current_user),

@@ -5,8 +5,6 @@ type RawChatSession = Partial<ChatSession> & {
   id?: unknown;
   title?: unknown;
   messages?: unknown;
-  created_at?: unknown;
-  persona_id?: unknown;
   mode?: unknown;
 };
 
@@ -14,23 +12,7 @@ type RawMessage = Partial<Message> & {
   attachments?: unknown;
 };
 
-type RawAttachment = Partial<Attachment> & {
-  mime_type?: unknown;
-  temp_url?: unknown;
-  upload_status?: unknown;
-  upload_task_id?: unknown;
-  upload_error?: unknown;
-  cloud_url?: unknown;
-  file_uri?: unknown;
-  message_id?: unknown;
-  session_id?: unknown;
-  user_id?: unknown;
-  created_at?: unknown;
-  google_file_uri?: unknown;
-  google_file_expiry?: unknown;
-  enhanced_prompt?: unknown;
-  openai_response_id?: unknown;
-};
+type RawAttachment = Partial<Attachment>;
 
 const normalizeNumber = (value: unknown, fallback: number): number => {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -47,14 +29,6 @@ const normalizeNumber = (value: unknown, fallback: number): number => {
 
 const normalizeOptionalString = (value: unknown): string | undefined =>
   typeof value === 'string' && value.length > 0 ? value : undefined;
-
-const firstOptionalString = (...values: unknown[]): string | undefined => {
-  for (const value of values) {
-    const normalized = normalizeOptionalString(value);
-    if (normalized) return normalized;
-  }
-  return undefined;
-};
 
 export const recoverSessionAttachmentUrl = (attachment: Attachment): Attachment => {
   if (!isTemporaryAttachmentUrl(attachment.url)) {
@@ -74,45 +48,39 @@ export const recoverSessionAttachmentUrl = (attachment: Attachment): Attachment 
   };
 };
 
-// NOTE on the camelKey ?? snake_key dual-reads below — this is the ONE
-// intentional exception to "the frontend never converts case", and it is
-// justified, not sloppy defensive code:
-//   GET /api/sessions returns ALL sessions with their full message lists, which
-//   for large accounts can exceed the middleware's 2 MiB conversion ceiling
-//   (MAX_RESPONSE_CONVERSION_BYTES) and is then passed through UNCONVERTED as
-//   snake_case. The size is inherent message-text volume (no base64 in URL
-//   fields), so it cannot be safely capped without changing the load model; the
-//   primary list path (/api/init/sessions/more) is paginated and always camelCase.
-//   sessionNormalizer is therefore the single boundary seam that absorbs that
-//   documented oversized-passthrough exemption. Removing the snake fallbacks
-//   would make large-account session loading fragile, so they are kept here on
-//   purpose. See .investigations/case-conversion-audit-2026-06-04.md.
+// The frontend reads camelCase ONLY here. Every app-owned session endpoint is
+// delivered as camelCase by the backend: GET /api/sessions and /api/sessions/{id}
+// are marked @case_conversion_options(always_convert_response=True) so they are
+// converted even past the middleware's 2 MiB ceiling, and /api/init/sessions/more
+// is paginated and always converted. There is no longer any snake_case session
+// source, so the previous camelKey ?? snake_key dual-reads were removed.
+// See .investigations/case-conversion-audit-2026-06-04.md.
 const normalizeAttachment = (source: RawAttachment): Attachment => {
-  const createdAt = normalizeNumber(source.createdAt ?? source.created_at, 0);
-  const googleFileExpiry = normalizeNumber(source.googleFileExpiry ?? source.google_file_expiry, 0);
+  const createdAt = normalizeNumber(source.createdAt, 0);
+  const googleFileExpiry = normalizeNumber(source.googleFileExpiry, 0);
 
   return recoverSessionAttachmentUrl({
     ...(source as object),
     id: String(source.id ?? ''),
     name: typeof source.name === 'string' ? source.name : '',
-    mimeType: firstOptionalString(source.mimeType, source.mime_type) || '',
-    url: firstOptionalString(source.url),
-    tempUrl: firstOptionalString(source.tempUrl, source.temp_url),
-    uploadStatus: firstOptionalString(source.uploadStatus, source.upload_status) as
+    mimeType: normalizeOptionalString(source.mimeType) || '',
+    url: normalizeOptionalString(source.url),
+    tempUrl: normalizeOptionalString(source.tempUrl),
+    uploadStatus: normalizeOptionalString(source.uploadStatus) as
       | Attachment['uploadStatus']
       | undefined,
-    uploadTaskId: firstOptionalString(source.uploadTaskId, source.upload_task_id),
-    uploadError: firstOptionalString(source.uploadError, source.upload_error),
-    cloudUrl: firstOptionalString(source.cloudUrl, source.cloud_url),
-    fileUri: firstOptionalString(source.fileUri, source.file_uri),
-    messageId: firstOptionalString(source.messageId, source.message_id),
-    sessionId: firstOptionalString(source.sessionId, source.session_id),
-    userId: firstOptionalString(source.userId, source.user_id),
+    uploadTaskId: normalizeOptionalString(source.uploadTaskId),
+    uploadError: normalizeOptionalString(source.uploadError),
+    cloudUrl: normalizeOptionalString(source.cloudUrl),
+    fileUri: normalizeOptionalString(source.fileUri),
+    messageId: normalizeOptionalString(source.messageId),
+    sessionId: normalizeOptionalString(source.sessionId),
+    userId: normalizeOptionalString(source.userId),
     createdAt: createdAt || undefined,
-    googleFileUri: firstOptionalString(source.googleFileUri, source.google_file_uri),
+    googleFileUri: normalizeOptionalString(source.googleFileUri),
     googleFileExpiry: googleFileExpiry || undefined,
-    enhancedPrompt: firstOptionalString(source.enhancedPrompt, source.enhanced_prompt),
-    openaiResponseId: firstOptionalString(source.openaiResponseId, source.openai_response_id),
+    enhancedPrompt: normalizeOptionalString(source.enhancedPrompt),
+    openaiResponseId: normalizeOptionalString(source.openaiResponseId),
   } as Attachment);
 };
 
@@ -128,8 +96,8 @@ const normalizeMessage = (source: RawMessage): Message => {
 };
 
 export const normalizeChatSession = (source: RawChatSession): ChatSession => {
-  const createdAt = normalizeNumber(source.createdAt ?? source.created_at, 0);
-  const personaId = source.personaId ?? source.persona_id;
+  const createdAt = normalizeNumber(source.createdAt, 0);
+  const personaId = source.personaId;
   const mode = typeof source.mode === 'string' ? (source.mode as AppMode) : undefined;
 
   return {

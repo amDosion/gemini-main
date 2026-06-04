@@ -35,6 +35,7 @@ from sqlalchemy.exc import IntegrityError
 from ...core.config import settings
 from ...core.database import get_db, SessionLocal
 from ...core.dependencies import require_current_user
+from ...middleware.case_conversion_middleware import case_conversion_options
 from ...models.db_models import (
     AgentRegistry,
     WorkflowExecution,
@@ -5741,6 +5742,7 @@ def _load_provider_models(user_id: str, db: Session) -> List[Dict[str, Any]]:
 # ==================== Agent CRUD ====================
 
 @router.get("/api/agents")
+@case_conversion_options(always_convert_response=True)
 async def list_agents(
     include_inactive: bool = False,
     search: Optional[str] = None,
@@ -6034,6 +6036,7 @@ async def get_workflow_execution_policy(
 
 
 @router.get("/api/agents/available-models")
+@case_conversion_options(always_convert_response=True)
 async def get_available_models_for_agents(
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)

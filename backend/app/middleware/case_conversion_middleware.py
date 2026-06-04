@@ -40,6 +40,12 @@ class CaseConversionOptions:
     skip_request_body: bool = False
     skip_query: bool = False
     skip_response_body: bool = False
+    # When True, this endpoint is ALWAYS converted snake_case -> camelCase even if
+    # its JSON body exceeds MAX_RESPONSE_CONVERSION_BYTES. Use for app-owned,
+    # unpaginated endpoints whose response can grow past the 2 MiB safety valve
+    # (e.g. /sessions, /api/agents) — otherwise they would pass through as
+    # snake_case and force the frontend to handle case conversion.
+    always_convert_response: bool = False
 
     @classmethod
     def from_endpoint(cls, endpoint: Any) -> "CaseConversionOptions":
@@ -50,6 +56,7 @@ class CaseConversionOptions:
             skip_request_body=bool(raw.get("skip_request_body", False)),
             skip_query=bool(raw.get("skip_query", False)),
             skip_response_body=bool(raw.get("skip_response_body", False)),
+            always_convert_response=bool(raw.get("always_convert_response", False)),
         )
 
 
@@ -58,20 +65,27 @@ def case_conversion_options(
     skip_request_body: bool = False,
     skip_query: bool = False,
     skip_response_body: bool = False,
+    always_convert_response: bool = False,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
-    Endpoint 元数据：声明是否跳过 case conversion 的某一部分。
+    Endpoint 元数据：声明是否跳过 case conversion 的某一部分，或强制总是转换响应。
 
     使用方式：
         @router.post("/upload-from-url")
         @case_conversion_options(skip_request_body=True)
         async def upload_from_url(...):
             ...
+
+        @router.get("/sessions")
+        @case_conversion_options(always_convert_response=True)  # 永不因 >2MiB 透传 snake
+        async def get_sessions(...):
+            ...
     """
     options = {
         "skip_request_body": skip_request_body,
         "skip_query": skip_query,
         "skip_response_body": skip_response_body,
+        "always_convert_response": always_convert_response,
     }
 
     def decorator(endpoint: Callable[..., Any]) -> Callable[..., Any]:
@@ -352,8 +366,14 @@ class CaseConversionMiddleware:
 
                 # JSON 响应：若声明的 Content-Length 超过阈值，直接透传，
                 # 不缓冲、不转换，避免大端点全量驻留内存。
+                # always_convert_response 端点豁免此透传：它们必须始终 camelCase
+                # （app 自有、无分页的大端点，前端无法处理 snake_case）。
                 declared_length = _content_length_from_headers(message.get("headers", []))
-                if declared_length is not None and declared_length > MAX_RESPONSE_CONVERSION_BYTES:
+                if (
+                    not options.always_convert_response
+                    and declared_length is not None
+                    and declared_length > MAX_RESPONSE_CONVERSION_BYTES
+                ):
                     is_passthrough = True
                     start_flushed = True
                     await send(message)
@@ -378,7 +398,11 @@ class CaseConversionMiddleware:
 
                 # 累计字节超过阈值（未声明长度的分块响应）：切换为透传，
                 # 把已缓冲数据原样下发，后续块流式透传，避免全量缓冲大响应。
-                if response_body_size > MAX_RESPONSE_CONVERSION_BYTES:
+                # always_convert_response 端点豁免：继续缓冲并转换。
+                if (
+                    not options.always_convert_response
+                    and response_body_size > MAX_RESPONSE_CONVERSION_BYTES
+                ):
                     await _flush_buffer_as_passthrough()
                     if not more_body:
                         await send({
