@@ -267,6 +267,22 @@ def test_storage_configs_opts_into_always_convert():
     assert CaseConversionOptions.from_endpoint(storage.get_storage_configs).always_convert_response
 
 
+def test_storage_browse_and_batch_opts_into_always_convert():
+    # Browse pages are limit<=1000 with rich per-item metadata (previewUrl etc.), so a
+    # single PAGE can exceed 2 MiB despite pagination; batch-delete returns a per-item
+    # results list bounded only by the (user-controlled) request size. CloudStorageView
+    # / db.browseStorage read StorageBrowseResponse (storageId/entryType/previewUrl/
+    # nextCursor) and the batch result (successCount/...) camelCase only.
+    from app.routers.storage import storage
+
+    for fn in (
+        storage.browse_active_storage,
+        storage.browse_storage,
+        storage.batch_delete_storage_items,
+    ):
+        assert CaseConversionOptions.from_endpoint(fn).always_convert_response, fn.__name__
+
+
 def test_init_endpoints_opt_into_always_convert():
     # The bootstrap endpoints return composite app data — profiles (to_dict snake,
     # with unbounded saved_models) + storage configs + personas + first-message

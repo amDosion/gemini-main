@@ -1602,6 +1602,7 @@ async def get_active_storage(
 
 
 @router.get("/active/browse")
+@case_conversion_options(always_convert_response=True)
 async def browse_active_storage(
     path: str = Query(default="", description="目录路径，空字符串表示根目录"),
     limit: int = Query(default=200, ge=1, le=1000, description="每页最多返回数量"),
@@ -1637,6 +1638,7 @@ async def browse_active_storage(
 
 
 @router.get("/browse/{storage_id}")
+@case_conversion_options(always_convert_response=True)
 async def browse_storage(
     storage_id: str,
     path: str = Query(default="", description="目录路径，空字符串表示根目录"),
@@ -1765,6 +1767,7 @@ async def delete_storage_item(
 
 
 @router.post("/items/batch-delete")
+@case_conversion_options(always_convert_response=True)
 async def batch_delete_storage_items(
     payload: dict,
     user_id: str = Depends(require_current_user),
