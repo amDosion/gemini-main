@@ -81,6 +81,8 @@ const callMcpAppTool = async (
     name: toolName,
     arguments: normalizeArgs(argsPayload) ?? undefined,
   };
+  // Capture the origin we target so the listener can reject messages from other frames.
+  const expectedOrigin = window.location.origin;
 
   return new Promise((resolve, reject) => {
     const cleanup = (listener: (event: MessageEvent) => void, timeoutId: number) => {
@@ -89,6 +91,8 @@ const callMcpAppTool = async (
     };
 
     const listener = (event: MessageEvent) => {
+      // Reject messages from any origin other than the one we sent postMessage to.
+      if (event.origin !== expectedOrigin) return;
       const data = event.data as JsonRpcSuccessResponse<unknown> | JsonRpcErrorResponse | null;
       if (!data || data.jsonrpc !== '2.0' || data.id !== requestId) {
         return;

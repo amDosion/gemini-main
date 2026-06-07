@@ -8,6 +8,7 @@ import { getAuthHeaders } from '../../../services/apiClient';
 import { v4 as uuidv4 } from 'uuid';
 import { ConfirmDialog } from '../../common/ConfirmDialog';
 import { getErrorMessage } from '../../../utils/errorMessage';
+import { useToastContext } from '../../../contexts/ToastContext';
 
 interface ProfilesTabProps {
     profiles: ConfigProfile[];
@@ -28,6 +29,8 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
     onEditProfile,
     onCreateNew
 }) => {
+    const { showError } = useToastContext();
+
     // --- Local State for Inspection ---
     const [previewProfile, setPreviewProfile] = useState<ConfigProfile | null>(null);
     const [previewModels, setPreviewModels] = useState<ModelConfig[]>([]);
@@ -87,7 +90,7 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
         return <Server size={20} />;
     };
 
-    const handleDuplicate = (profile: ConfigProfile) => {
+    const handleDuplicate = async (profile: ConfigProfile) => {
         const copy: ConfigProfile = {
             ...profile,
             id: uuidv4(),
@@ -95,7 +98,11 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
             createdAt: Date.now(),
             updatedAt: Date.now()
         };
-        onSaveProfile(copy);
+        try {
+            await onSaveProfile(copy);
+        } catch (e) {
+            showError(getErrorMessage(e) || 'Failed to duplicate profile.');
+        }
     };
 
     const handleInspectProfile = async (profile: ConfigProfile) => {
@@ -125,7 +132,9 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
                 setPreviewModels(models);
                 // Update cache count in background if it changed
                 if (profile.cachedModelCount !== models.length) {
-                    onSaveProfile({ ...profile, cachedModelCount: models.length, savedModels: models });
+                    // Intentional fire-and-forget: failure here is non-critical (display only)
+                    onSaveProfile({ ...profile, cachedModelCount: models.length, savedModels: models })
+                        .catch((e: unknown) => console.error('[ProfilesTab] Background cache-count update failed:', e));
                 }
             } else {
                 setPreviewError("No models found. Check API Key or connectivity.");
@@ -308,7 +317,7 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
                                                         <button
                                                             type="button"
                                                             onClick={() => {
-                                                                handleDuplicate(p);
+                                                                void handleDuplicate(p);
                                                                 setOpenMenuId(null);
                                                             }}
                                                             className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-800 rounded"

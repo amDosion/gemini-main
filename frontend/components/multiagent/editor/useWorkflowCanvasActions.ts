@@ -426,17 +426,18 @@ export const useWorkflowCanvasActions = ({
       setNodes((nds) => nds.map((node) => mergeNodeData(node as Node<WorkflowNodeData>)));
 
       if (includesPortLayoutUpdate) {
+        // Compute the post-update node list outside the setEdges updater so
+        // the updater remains pure. React may re-invoke updaters in concurrent
+        // mode, and calling setNodes inside setEdges is an impure side-effect
+        // that also risks stale intermediate state. nodesRef.current holds the
+        // pre-update snapshot; applying mergeNodeData here produces the same
+        // result that the setNodes call above will commit, giving
+        // filterEdgesByNodePortLayouts the correct port layouts without nesting
+        // a state setter call inside another state setter updater.
+        const updatedNodes = nodesRef.current.map((node) =>
+          mergeNodeData(node as Node<WorkflowNodeData>)
+        );
         setEdges((eds) => {
-          // Read latest nodes from setNodes updater to avoid stale closure
-          let currentNodes: Node<WorkflowNodeData>[] = [];
-          setNodes((nds) => {
-            currentNodes = nds.map((n) => mergeNodeData(n as Node<WorkflowNodeData>));
-            return nds;
-          });
-          const updatedNodes =
-            currentNodes.length > 0
-              ? currentNodes
-              : nodesRef.current.map((node) => mergeNodeData(node as Node<WorkflowNodeData>));
           const filteredEdges = filterEdgesByNodePortLayouts(updatedNodes, eds);
           const removedCount = eds.length - filteredEdges.length;
           if (removedCount > 0) {

@@ -49,12 +49,15 @@ export const VertexAIConfiguration: React.FC<VertexAIConfigurationProps> = ({
     const [isVerifying, setIsVerifying] = useState(false);
     const [verifyError, setVerifyError] = useState<string | null>(null);
     const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
+    // Load error state: set when the initial config fetch fails
+    const [loadError, setLoadError] = useState<string | null>(null);
 
     // Load Imagen configuration
     useEffect(() => {
         const loadImagenConfig = async () => {
             try {
                 setIsLoading(true);
+                setLoadError(null);
                 
                 // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
                 const data = await db.request<ImagenConfigResponse>('/vertex-ai/config?editMode=true');
@@ -110,6 +113,7 @@ export const VertexAIConfiguration: React.FC<VertexAIConfigurationProps> = ({
                     setSelectedModels(new Set(data.savedModels.map((sm: ModelConfig) => sm.id)));
                 }
             } catch (error) {
+                setLoadError(getErrorMessage(error) || 'Failed to load Vertex AI configuration');
                 setImagenConfig({
                     apiMode: 'vertex_ai',
                     geminiApiKey: '',
@@ -315,6 +319,13 @@ export const VertexAIConfiguration: React.FC<VertexAIConfigurationProps> = ({
                         </div>
                     </div>
                 </div>
+
+                {loadError && (
+                    <div className="rounded-xl border border-red-800/60 bg-red-900/20 px-4 py-3 text-sm text-red-200 flex items-center gap-2 shrink-0">
+                        <AlertTriangle size={16} className="shrink-0" />
+                        <span>{loadError}</span>
+                    </div>
+                )}
 
                 <div className="flex-1 flex flex-col min-h-0 space-y-2 md:space-y-3 overflow-y-auto custom-scrollbar pr-1 pb-24">
 

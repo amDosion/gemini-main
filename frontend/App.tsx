@@ -149,6 +149,12 @@ const AppContent: React.FC = () => {
     });
   }, []);
 
+  // ✅ C-2: 挂载时激活全局错误兜底，将未处理异常通过 Toast 展示给用户
+  useEffect(() => {
+    initGlobalErrorHandlers();
+    registerGlobalErrorNotifier(showError);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // --- Domain Hooks ---
   const {
     config,

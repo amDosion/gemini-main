@@ -310,10 +310,11 @@ export class LLMService {
     streamManager.cancelTask('active_chat_stream', 'User stopped generation');
 
     // Also stop browser session if Browse was enabled
-    this.stopBrowserSession();
+    // stopBrowserSession already catches all errors internally; .catch is a safety net for unhandled rejections
+    this.stopBrowserSession().catch(() => { /* cancellation cleanup errors are intentionally ignored */ });
 
     // Also stop MCP session if MCP was enabled for current chat
-    this.stopMcpSession();
+    this.stopMcpSession().catch((e) => console.error('[cancelCurrentStream] stopMcpSession error:', e));
   }
 
   /**

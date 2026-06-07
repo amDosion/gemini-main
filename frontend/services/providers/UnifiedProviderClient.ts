@@ -493,7 +493,7 @@ export class UnifiedProviderClient implements ILLMProvider {
       body: JSON.stringify(requestBody),
       withAuth: true,
       skipAuth: true,
-      timeoutMs: 0,
+      timeoutMs: 600000, // 10 min — generous enough for long image/video generation; 0 would disable timeout entirely
     });
 
     if (!response.ok) {
