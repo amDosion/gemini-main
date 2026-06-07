@@ -11,12 +11,10 @@ from ...core.database import get_db
 from ...core.config import settings
 from ...services.common.auth_service import (
     AuthService,
-    AuthConfigResponse,
     TokenPair,
     RegisterRequest,
     LoginRequest,
     ChangePasswordRequest,
-    UserResponse,
     RegistrationDisabledError,
     EmailExistsError,
     PasswordMismatchError,
@@ -31,13 +29,12 @@ from ...core.dependencies import require_current_user
 from ...core.user_context import extract_user_id_from_token
 from ...services.common.persona_init_service import ensure_personas_initialized
 from ...services.common.system_config_service import (
-    initialize_system_configs,
     get_client_ip,
     is_private_ip,
 )
 from ...services.agent.agent_seed_service import ensure_seed_agents, get_default_seed_agents
 from ...services.gemini.agent.workflow_template_service import WorkflowTemplateService
-from ...models.db_models import IPLoginHistory
+from ...models.db_models import IPLoginHistory, RefreshToken, UserSettings
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +244,11 @@ async def register(
 ):
     """用户注册 - 返回 token 并设置 Cookie（兼容注册即登录）"""
     auth_service = AuthService(db)
+    # Security: apply same IP-block gate used by /login to prevent blocked IPs from registering
+    ip_address_reg = get_client_ip(request)
+    if ip_address_reg and auth_service._check_ip_blocked(ip_address_reg):
+        logger.warning("[Auth] Blocked IP attempted registration: %s", ip_address_reg)
+        raise HTTPException(status_code=403, detail="Your IP address has been blocked")
     try:
         result = auth_service.register(data)
         user_response = auth_service.get_current_user(result.tokens.access_token)
@@ -276,7 +278,6 @@ async def register(
         )
 
         # ✅ 检查用户是否有活跃的配置文件（新用户通常为 false）
-        from ...models.db_models import UserSettings
         user_settings = db.query(UserSettings).filter(
             UserSettings.user_id == user_response.id
         ).first()
@@ -290,7 +291,7 @@ async def register(
 
         # refresh_token 只设置到 httpOnly Cookie，不返回给浏览器 JS。
         return {
-            "user": user_response.dict(),
+            "user": user_response.model_dump(),
             **_build_public_token_response(result.tokens),
             "has_active_profile": has_active_profile  # ✅ 新增：配置状态
         }
@@ -321,7 +322,6 @@ async def login(
         user_response = result.user
 
         # ✅ 检查用户是否有活跃的配置文件（优化：减少前端初始化请求）
-        from ...models.db_models import UserSettings
         user_settings = db.query(UserSettings).filter(
             UserSettings.user_id == user_response.id
         ).first()
@@ -336,7 +336,7 @@ async def login(
 
         # refresh_token 只设置到 httpOnly Cookie，不返回给浏览器 JS。
         return {
-            "user": user_response.dict(),
+            "user": user_response.model_dump(),
             **_build_public_token_response(result.tokens),
             "has_active_profile": has_active_profile  # ✅ 新增：配置状态
         }
@@ -372,15 +372,13 @@ async def logout(
             payload = auth_service.validate_token(access_token)
             user_id = payload.sub
 
-            # 清除用户表中的 access_token
+            # Wrap all three writes in one transaction so a partial failure rolls back cleanly
             user = auth_service.get_user_by_id(user_id)
             if user:
                 user.access_token = None
                 user.token_expires_at = None
-                db.commit()
 
-            # ✅ 撤销该用户所有未过期的 refresh_token
-            from ...models.db_models import RefreshToken
+            # 撤销该用户所有未过期的 refresh_token
             now = datetime.now(timezone.utc)
             db.query(RefreshToken).filter(
                 RefreshToken.user_id == user_id,
@@ -388,7 +386,7 @@ async def logout(
                 RefreshToken.expires_at > now
             ).update({"revoked_at": now})
 
-            # ✅ 记录登出到 IPLoginHistory
+            # 记录登出到 IPLoginHistory
             ip_address = get_client_ip(request)
             user_agent = request.headers.get("User-Agent")
             ip_history = IPLoginHistory(
@@ -398,12 +396,17 @@ async def logout(
                 user_agent=user_agent
             )
             db.add(ip_history)
-            db.commit()
+            db.commit()  # single commit for all three writes
 
             logger.info(f"[Logout] ✅ 用户 {user_id} 登出成功 (IP: {ip_address})")
+        except (InvalidTokenError, TokenExpiredError):
+            # Token already invalid or expired — revocation is a no-op; cookies are already cleared above
+            logger.info("[Logout] Token invalid or expired during logout; cookies already cleared")
+            db.rollback()
         except Exception as e:
-            logger.error(f"[Logout] Error revoking tokens: {e}")
-            pass  # Token 可能已无效，忽略错误
+            # Unexpected error: roll back any partial writes and log; cookies are already cleared
+            logger.error(f"[Logout] Error revoking tokens: {e}", exc_info=True)
+            db.rollback()
     
     return {"message": "Logged out successfully"}
 
@@ -451,7 +454,6 @@ async def refresh_token(
             logger.warning(f"[Auth] 记录 token 刷新历史失败: {e}")
 
         # ✅ 检查用户是否有活跃的配置文件
-        from ...models.db_models import UserSettings
         user_settings = db.query(UserSettings).filter(
             UserSettings.user_id == user_id
         ).first()
@@ -497,7 +499,6 @@ def get_current_user(
         user_response = auth_service.get_current_user(access_token)
 
         # ✅ 检查用户是否有活跃的配置文件
-        from ...models.db_models import UserSettings
         user_settings = db.query(UserSettings).filter(
             UserSettings.user_id == user_response.id
         ).first()
@@ -509,7 +510,7 @@ def get_current_user(
 
         # ✅ 返回用户信息 + 配置状态
         return {
-            **user_response.dict(),
+            **user_response.model_dump(),
             "has_active_profile": has_active_profile  # ✅ 新增：配置状态
         }
     except (InvalidTokenError, TokenExpiredError):

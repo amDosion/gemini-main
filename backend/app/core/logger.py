@@ -7,9 +7,7 @@ and proper formatting for better debugging and monitoring.
 
 import logging
 import sys
-import os
 import threading
-from datetime import datetime
 
 # 全部使用 ASCII 前缀，避免表情符号在部分环境下显示异常
 LOG_PREFIXES = {
@@ -37,7 +35,6 @@ class FlushingStreamHandler(logging.StreamHandler):
         super().__init__(stream)
         # 确保使用 stderr（Uvicorn 默认使用 stderr）
         if stream is None:
-            import sys
             self.stream = sys.stderr
     
     def emit(self, record):
@@ -54,12 +51,18 @@ class FlushingStreamHandler(logging.StreamHandler):
 class DatabaseLoggingFilter(logging.Filter):
     """
     日志过滤器：根据内存中的系统配置决定是否显示日志
-    
+
     enable_logging 由启动/配置更新路径同步写入内存：
     - True: 显示日志
     - False: 不显示日志
 
-    filter() 是日志热路径，不能执行同步数据库查询。
+    HOT-PATH INVARIANT: filter() is called on every log record. It MUST read only
+    the in-process class variable _enable_logging. It MUST NOT call
+    _get_enable_logging_from_db() or any other method that performs a synchronous
+    database query. Doing so would issue a blocking DB round-trip for every log
+    statement, causing severe latency under load. Use refresh_cache() (called from
+    non-hot-path configuration update code) to pull the value from the database and
+    update the in-memory flag.
     """
 
     _enable_logging: bool = True
@@ -77,10 +80,13 @@ class DatabaseLoggingFilter(logging.Filter):
     
     def _get_enable_logging_from_db(self) -> bool:
         """
-        从数据库读取 enable_logging 配置
-        
-        Returns:
-            bool: True 表示显示日志，False 表示不显示日志
+        Read enable_logging from the database (BLOCKING I/O).
+
+        WARNING: This method performs a synchronous database query. It MUST NOT be
+        called from filter(), which is the logging hot path. Calling it from filter()
+        would issue a blocking DB query on every single log record, causing severe
+        latency under load. It is safe only from non-hot-path callers such as
+        refresh_cache(), which is invoked explicitly after a configuration update.
         """
         try:
             from .database import SessionLocal
@@ -197,17 +203,13 @@ def setup_root_logger(level: int = logging.INFO) -> None:
     Args:
         level: Logging level (default: INFO)
     """
-    import sys
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
 
     # ✅ 修复：始终清除所有现有 handlers，避免重复日志
     # 这解决了 uvicorn 等可能添加额外 handler 导致日志重复的问题
     if root_logger.handlers:
-        # 记录现有 handlers 数量（用于调试）
-        existing_count = len(root_logger.handlers)
         root_logger.handlers.clear()
-        # 不输出日志，避免循环
 
     # ✅ 使用 stderr 而不是 stdout（Uvicorn 默认使用 stderr）
     # 这样可以确保日志不会被 Uvicorn 拦截
@@ -250,7 +252,6 @@ logger = setup_logger("backend")
 # 这样可以避免因为级别为 NOTSET (0) 而导致日志不显示
 def ensure_service_loggers():
     """确保所有服务模块的 logger 都设置了正确的级别"""
-    import sys
     service_modules = [
         "app.routers.core.modes",
         "app.routers.core.attachments",

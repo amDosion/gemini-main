@@ -36,7 +36,7 @@ SKIP_VALUE_CONVERSION_FIELDS: Set[str] = {
     'liveAPIConfig', 'live_api_config', 'live_a_p_i_config',  # Live API 配置
     'outPainting', 'out_painting',                      # 扩图配置
     'loraConfig', 'lora_config',                        # LoRA 配置
-    # 注意：移除了通用的 'config' 字段，以允许存储配置等后端API的config被正确转换
+    # 注意：移除了通用的 'config' 字段，以允许存储配置等后端 API的 config 被正确转换
 
     # ========== JSON Schema 相关 ==========
     'schema',                             # JSON Schema
@@ -107,96 +107,94 @@ def snake_to_camel(name: str) -> str:
 
 
 def to_snake_case(
-    data: Any, 
+    data: Any,
     skip_fields: Optional[Set[str]] = None,
-    _current_key: Optional[str] = None
 ) -> Any:
     """
     递归转换所有键为 snake_case
 
     支持：dict, list, 嵌套结构
-    
+
     对于 SKIP_VALUE_CONVERSION_FIELDS 中的字段，只转换该字段的 key，
     不递归转换其 value 内部的 key。
 
     Args:
         data: 要转换的数据（dict, list, 或其他）
         skip_fields: 额外需要跳过的字段名集合（可选）
-        _current_key: 内部使用，当前正在处理的 key 名
 
     Returns:
         转换后的数据，键名为 snake_case
     """
-    # 合并默认跳过字段和自定义跳过字段
-    all_skip_fields = SKIP_VALUE_CONVERSION_FIELDS
-    if skip_fields:
-        all_skip_fields = all_skip_fields | skip_fields
-    
-    if isinstance(data, dict):
-        result = {}
-        for k, v in data.items():
-            if isinstance(k, str) and k.startswith('_'):
-                # 保留私有字段键名和值结构（例如 _templateMeta）
-                result[k] = v
-                continue
-            new_key = camel_to_snake(k)
-            # 检查是否需要跳过该字段值的递归转换
-            if k in all_skip_fields or new_key in all_skip_fields:
-                # 只转换 key，value 保持原样
-                result[new_key] = v
-            else:
-                # 递归转换
-                result[new_key] = to_snake_case(v, skip_fields, k)
-        return result
-    elif isinstance(data, list):
-        return [to_snake_case(item, skip_fields, _current_key) for item in data]
-    else:
-        return data
+    # 合并默认跳过字段和自定义跳过字段；计算一次，由内部递归函数闭包使用
+    all_skip_fields = SKIP_VALUE_CONVERSION_FIELDS if not skip_fields else SKIP_VALUE_CONVERSION_FIELDS | skip_fields
+
+    def _recurse(node: Any, current_key: Optional[str] = None) -> Any:
+        if isinstance(node, dict):
+            result = {}
+            for k, v in node.items():
+                if isinstance(k, str) and k.startswith('_'):
+                    # 保留私有字段键名和值结构（例如 _templateMeta）
+                    result[k] = v
+                    continue
+                new_key = camel_to_snake(k)
+                # 检查是否需要跳过该字段值的递归转换
+                if k in all_skip_fields or new_key in all_skip_fields:
+                    # 只转换 key，value 保持原样
+                    result[new_key] = v
+                else:
+                    # 递归转换
+                    result[new_key] = _recurse(v, k)
+            return result
+        elif isinstance(node, list):
+            return [_recurse(item, current_key) for item in node]
+        else:
+            return node
+
+    return _recurse(data)
 
 
 def to_camel_case(
     data: Any,
     skip_fields: Optional[Set[str]] = None,
-    _current_key: Optional[str] = None
 ) -> Any:
     """
     递归转换所有键为 camelCase
 
     支持：dict, list, 嵌套结构
-    
+
     对于 SKIP_VALUE_CONVERSION_FIELDS 中的字段，只转换该字段的 key，
     不递归转换其 value 内部的 key。
 
     Args:
         data: 要转换的数据（dict, list, 或其他）
         skip_fields: 额外需要跳过的字段名集合（可选）
-        _current_key: 内部使用，当前正在处理的 key 名
 
     Returns:
         转换后的数据，键名为 camelCase
     """
-    # 合并默认跳过字段和自定义跳过字段
-    all_skip_fields = SKIP_VALUE_CONVERSION_FIELDS
-    if skip_fields:
-        all_skip_fields = all_skip_fields | skip_fields
-    
-    if isinstance(data, dict):
-        result = {}
-        for k, v in data.items():
-            if isinstance(k, str) and k.startswith('_'):
-                # 保留私有字段键名和值结构（例如 _templateMeta）
-                result[k] = v
-                continue
-            new_key = snake_to_camel(k)
-            # 检查是否需要跳过该字段值的递归转换
-            if k in all_skip_fields or new_key in all_skip_fields:
-                # 只转换 key，value 保持原样
-                result[new_key] = v
-            else:
-                # 递归转换
-                result[new_key] = to_camel_case(v, skip_fields, k)
-        return result
-    elif isinstance(data, list):
-        return [to_camel_case(item, skip_fields, _current_key) for item in data]
-    else:
-        return data
+    # 合并默认跳过字段和自定义跳过字段；计算一次，由内部递归函数闭包使用
+    all_skip_fields = SKIP_VALUE_CONVERSION_FIELDS if not skip_fields else SKIP_VALUE_CONVERSION_FIELDS | skip_fields
+
+    def _recurse(node: Any, current_key: Optional[str] = None) -> Any:
+        if isinstance(node, dict):
+            result = {}
+            for k, v in node.items():
+                if isinstance(k, str) and k.startswith('_'):
+                    # 保留私有字段键名和值结构（例如 _templateMeta）
+                    result[k] = v
+                    continue
+                new_key = snake_to_camel(k)
+                # 检查是否需要跳过该字段值的递归转换
+                if k in all_skip_fields or new_key in all_skip_fields:
+                    # 只转换 key，value 保持原样
+                    result[new_key] = v
+                else:
+                    # 递归转换
+                    result[new_key] = _recurse(v, k)
+            return result
+        elif isinstance(node, list):
+            return [_recurse(item, current_key) for item in node]
+        else:
+            return node
+
+    return _recurse(data)

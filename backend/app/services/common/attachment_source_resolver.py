@@ -38,8 +38,16 @@ async def load_local_storage_source_bytes(
         from ...core.path_utils import resolve_relative_path
 
         file_path = resolve_relative_path(source_file_path)
-        with open(file_path, 'rb') as f:
-            return f.read()
+        try:
+            with open(file_path, 'rb') as f:
+                return f.read()
+        except (FileNotFoundError, PermissionError) as exc:
+            logger.error(
+                "[AttachmentService] Cannot read local source file '%s': %s",
+                source_file_path,
+                exc,
+            )
+            raise
 
     normalized_ai_url = str(source_ai_url or "").strip()
     if not normalized_ai_url:

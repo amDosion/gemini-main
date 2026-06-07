@@ -27,7 +27,12 @@ async def get_google_service(
         user_id: User ID
 
     Returns:
-        GoogleService instance, or None if no API key found
+        GoogleService instance, or None if no API key is configured for the user.
+
+    Raises:
+        Exception: Re-raises any unexpected infrastructure failure (e.g., DB
+            unavailable, import error) so callers can distinguish between
+            "no key configured" (returns None) and "unexpected failure" (raises).
     """
     try:
         from ...models.db_models import UserSettings, ConfigProfile
@@ -44,6 +49,7 @@ async def get_google_service(
         ).all()
 
         if not matching_profiles:
+            # Expected: no Google profile configured for this user
             return None
 
         api_key = None
@@ -63,6 +69,7 @@ async def get_google_service(
                     break
 
         if not api_key:
+            # Expected: profiles exist but none has an API key set
             return None
 
         return ProviderFactory.create(
@@ -73,5 +80,14 @@ async def get_google_service(
         )
 
     except Exception as e:
-        logger.warning(f"[api_key_utils] Failed to create GoogleService: {e}")
-        return None
+        # Unexpected infrastructure failure (DB unavailable, import error,
+        # ProviderFactory misconfiguration). Re-raise so callers are not
+        # silently given None when the real cause is an infrastructure fault.
+        logger.error(
+            "[api_key_utils] Unexpected failure creating GoogleService for "
+            "user %s: %s",
+            user_id,
+            e,
+            exc_info=True,
+        )
+        raise

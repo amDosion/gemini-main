@@ -8,7 +8,6 @@ Redis 缓存服务
 - 缓存失效
 """
 import json
-import hashlib
 import logging
 from typing import Optional, Any, Callable, Awaitable
 import redis.asyncio as redis
@@ -16,6 +15,14 @@ import redis.asyncio as redis
 from ...core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Sentinel stored in Redis to represent a cached None result.
+# Distinguishes "key absent" from "fetch_func returned None",
+# preventing repeated re-fetches for legitimately None results.
+_NULL_SENTINEL = "__cache_null__"
+
+# Sentinel object returned by _get_raw() when a key is absent from Redis.
+_CACHE_MISS = object()
 
 
 class CacheService:
@@ -117,6 +124,32 @@ class CacheService:
             logger.warning(f"[CacheService] 获取缓存失败 (key={key}): {e}")
         
         return None
+
+    async def _get_raw(self, key: str) -> object:
+        """Return cached value, None (for sentinel), or _CACHE_MISS if absent.
+
+        Unlike get(), this distinguishes a cached None result (_NULL_SENTINEL)
+        from a key that does not exist in Redis (_CACHE_MISS).  Used internally
+        by get_or_set() to avoid re-fetching when fetch_func returned None.
+        """
+        if not self._redis:
+            await self.connect()
+
+        try:
+            data = await self._redis.get(key)
+            if data is None:
+                return _CACHE_MISS
+            if isinstance(data, bytes):
+                data = data.decode('utf-8')
+            if data == _NULL_SENTINEL:
+                return None
+            return json.loads(data)
+        except json.JSONDecodeError as e:
+            logger.warning(f"[CacheService] JSON 解析失败 (key={key}): {e}")
+            return _CACHE_MISS
+        except Exception as e:
+            logger.warning(f"[CacheService] _get_raw 失败 (key={key}): {e}")
+            return _CACHE_MISS
     
     async def set(
         self,
@@ -193,26 +226,41 @@ class CacheService:
         如果缓存存在，直接返回缓存值。
         如果缓存不存在，调用 fetch_func 获取数据，然后缓存并返回。
         
+        Thundering-herd policy: concurrent misses on the same key each invoke
+        fetch_func independently and the last writer wins.  This is acceptable
+        because cached data (model lists, session lists) is idempotent and the
+        race window is small relative to the TTL.  Use a Redis lock or SET NX EX
+        if strict single-population semantics are required.
+        
+        None-value handling: when fetch_func returns None, a sentinel string
+        (_NULL_SENTINEL) is written to Redis so that subsequent calls return None
+        immediately without re-invoking fetch_func.
+        
         Args:
             key: 缓存键
             fetch_func: 异步函数，用于获取数据（当缓存未命中时调用）
             ttl: 过期时间（秒），如果为 None 则使用默认 TTL
         
         Returns:
-            缓存的值或新获取的值
+            缓存的值或新获取的值（fetch_func 返回 None 时也返回 None）
         """
-        # 尝试从缓存获取
-        cached = await self.get(key)
-        if cached is not None:
+        # Use _get_raw to distinguish absent key from a cached None result.
+        raw = await self._get_raw(key)
+        if raw is not _CACHE_MISS:
             logger.debug(f"[CacheService] 缓存命中: {key}")
-            return cached
+            return raw
         
         # 缓存未命中，调用函数获取数据
         logger.debug(f"[CacheService] 缓存未命中，获取数据: {key}")
         try:
             value = await fetch_func()
-            # 缓存数据
-            await self.set(key, value, ttl)
+            if value is None:
+                # Cache the sentinel so repeated misses don't re-invoke fetch_func.
+                effective_ttl = ttl or self.default_ttl
+                if self._redis:
+                    await self._redis.setex(key, effective_ttl, _NULL_SENTINEL)
+            else:
+                await self.set(key, value, ttl)
             return value
         except Exception as e:
             logger.error(f"[CacheService] 获取数据失败 (key={key}): {e}")

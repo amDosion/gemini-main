@@ -25,12 +25,14 @@ from typing import Optional, List, Dict, Any, Tuple
 from pathlib import Path
 from urllib.parse import urlparse
 
+from cachetools import LRUCache
+
 from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from ...core.config import settings
 from ...core.database import get_db, SessionLocal
@@ -853,10 +855,12 @@ class LocalExecutionRuntime:
     execution_state_last_emitted_at: int = 0
 
 
-_execution_runtime_local: Dict[str, LocalExecutionRuntime] = {}
-_execution_tasks: Dict[str, asyncio.Task] = {}
-_execution_idempotency_locks: Dict[str, asyncio.Lock] = {}
-_execution_resume_locks: Dict[str, asyncio.Lock] = {}
+# Bounded LRU caches (maxsize=1000) prevent unbounded memory growth if
+# _cleanup_execution_runtime is not reached on an unexpected code path.
+_execution_runtime_local: LRUCache = LRUCache(maxsize=1000)
+_execution_tasks: LRUCache = LRUCache(maxsize=1000)
+_execution_idempotency_locks: LRUCache = LRUCache(maxsize=1000)
+_execution_resume_locks: LRUCache = LRUCache(maxsize=1000)
 _workflow_runtime_store = create_workflow_runtime_store()
 
 
@@ -4072,7 +4076,11 @@ async def _run_workflow_in_background(
         )
     except Exception:
         # 错误已在 _execute_workflow_internal 中记录和发布
-        pass
+        logger.error(
+            "[Workflow] Unhandled exception in background execution=%s",
+            execution_id,
+            exc_info=True,
+        )
     finally:
         done_flag = True
         try:
@@ -4082,7 +4090,12 @@ async def _run_workflow_in_background(
             ).first()
             latest_status = _normalize_workflow_status(getattr(latest, "status", None), default="failed")
             done_flag = latest_status in WORKFLOW_TERMINAL_STATUSES
-        except Exception:
+        except SQLAlchemyError:
+            logger.warning(
+                "[Workflow] DB query for terminal status failed, marking done; execution=%s",
+                execution_id,
+                exc_info=True,
+            )
             done_flag = True
         await _workflow_runtime_store.mark_done(
             execution_id,

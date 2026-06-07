@@ -1582,7 +1582,17 @@ class ADKRunner:
                         metadata[key] = value
             session.metadata_json = json.dumps(metadata, ensure_ascii=False)
             session.last_used_at = now
-            self.db.commit()
+            try:
+                self.db.commit()
+            except Exception:
+                self.db.rollback()
+                logger.error(
+                    "[ADKRunner] Failed to update session %s for user %s",
+                    session_id,
+                    user_id,
+                    exc_info=True,
+                )
+                raise
             return session.to_dict()
 
         initial_metadata: Dict[str, Any] = {
@@ -1603,8 +1613,18 @@ class ADKRunner:
             last_used_at=now,
         )
         self.db.add(session)
-        self.db.commit()
-        self.db.refresh(session)
+        try:
+            self.db.commit()
+            self.db.refresh(session)
+        except Exception:
+            self.db.rollback()
+            logger.error(
+                "[ADKRunner] Failed to create session %s for user %s",
+                session_id,
+                user_id,
+                exc_info=True,
+            )
+            raise
 
         logger.info("[ADKRunner] Created session %s for user %s", session_id, user_id)
         return session.to_dict()

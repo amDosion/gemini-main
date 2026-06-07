@@ -4,6 +4,7 @@ Google Drive 存储提供商
 """
 
 import asyncio
+import logging
 from google.oauth2.credentials import Credentials
 from google.auth.exceptions import RefreshError
 from googleapiclient.discovery import build
@@ -12,6 +13,8 @@ from googleapiclient.errors import HttpError
 from typing import Dict, Any, Optional
 from urllib.parse import urlparse
 from .base import BaseStorageProvider, UploadResult
+
+logger = logging.getLogger(__name__)
 
 
 class GoogleProvider(BaseStorageProvider):
@@ -191,6 +194,7 @@ class GoogleProvider(BaseStorageProvider):
             file_id = file.get('id')
             
             # 设置文件为公开访问
+            permissions_warning = None
             try:
                 await asyncio.to_thread(
                     lambda: service.permissions().create(
@@ -201,9 +205,16 @@ class GoogleProvider(BaseStorageProvider):
                         }
                     ).execute()
                 )
-            except HttpError:
-                # 权限设置失败不影响上传成功
-                pass
+            except HttpError as perm_err:
+                # Sharing may fail for organisation-restricted Drives;
+                # the upload itself succeeded so we continue but surface
+                # the partial failure so callers can act on it.
+                permissions_warning = str(perm_err)
+                logger.warning(
+                    "Google Drive: failed to set public permission on file %s: %s",
+                    file_id,
+                    perm_err,
+                )
             
             # 获取公开访问链接
             web_content_link = file.get('webContentLink')
@@ -212,16 +223,20 @@ class GoogleProvider(BaseStorageProvider):
             # 如果没有 webContentLink，使用 webViewLink
             public_url = web_content_link or web_view_link or f"https://drive.google.com/file/d/{file_id}/view"
             
+            upload_metadata: Dict[str, Any] = {
+                "file_id": file_id,
+                "folder_id": folder_id,
+                "web_view_link": web_view_link,
+                "web_content_link": web_content_link,
+            }
+            if permissions_warning is not None:
+                upload_metadata["permissions_warning"] = permissions_warning
+            
             return UploadResult(
                 success=True,
                 url=public_url,
                 provider="google-drive",
-                metadata={
-                    "file_id": file_id,
-                    "folder_id": folder_id,
-                    "web_view_link": web_view_link,
-                    "web_content_link": web_content_link
-                }
+                metadata=upload_metadata,
             )
         
         except RefreshError as e:

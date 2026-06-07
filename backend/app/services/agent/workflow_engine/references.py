@@ -198,8 +198,8 @@ def text_to_dataframe(engine: Any, text: str, source_hint: str = "") -> Any:
                         if rows and all(isinstance(item, dict) for item in rows):
                             return normalize_dataframe(engine, pd.DataFrame(rows))
                 return normalize_dataframe(engine, pd.DataFrame([parsed_json]))
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.debug('[WorkflowEngine] JSON parse attempt failed, falling back to CSV: %s', exc)
 
     delimiter = ","
     if "\t" in content:
@@ -208,18 +208,21 @@ def text_to_dataframe(engine: Any, text: str, source_hint: str = "") -> Any:
         try:
             sniffed = csv.Sniffer().sniff(content[:2048], delimiters=",\t;|")
             delimiter = sniffed.delimiter
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            logger.debug('[WorkflowEngine] CSV sniffer failed, using default delimiter: %s', exc)
             if source_hint.lower().endswith(".tsv"):
                 delimiter = "\t"
 
     try:
         frame = pd.read_csv(io.StringIO(content), sep=delimiter, engine="python")
         return normalize_dataframe(engine, frame)
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
+        logger.debug('[WorkflowEngine] CSV parse with detected delimiter failed, retrying with auto-detect: %s', exc)
         try:
             frame = pd.read_csv(io.StringIO(content), engine="python")
             return normalize_dataframe(engine, frame)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            logger.debug('[WorkflowEngine] CSV parse auto-detect failed, falling back to line-per-row: %s', exc)
             lines = [line for line in content.splitlines() if line.strip()]
             if not lines:
                 return pd.DataFrame()

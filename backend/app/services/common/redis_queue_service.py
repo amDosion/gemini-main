@@ -86,9 +86,7 @@ class GlobalRedisConnectionPool:
             self._start_health_check()
             
         except Exception as e:
-            logger.error(f"[GlobalRedisPool] ❌ 连接池初始化失败: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"[GlobalRedisPool] ❌ 连接池初始化失败: {e}", exc_info=True)
             raise
     
     async def close(self):

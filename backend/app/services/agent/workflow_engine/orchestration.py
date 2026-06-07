@@ -185,6 +185,9 @@ async def execute(
     node_visit_counts: Dict[str, int] = {}
 
     def should_defer_node_enqueue(node_id: str, trigger_source_id: Optional[str] = None) -> bool:
+        # INVARIANT: must be called while state_lock is held (or before task dispatch
+        # starts) because it reads shared mutable state: queued, in_flight,
+        # pending_inputs, and node_states.
         node = node_map.get(node_id)
         if not node:
             return False
@@ -230,6 +233,9 @@ async def execute(
         return False
 
     def enqueue(node_id: str, trigger_source_id: Optional[str] = None):
+        # INVARIANT: must be called while state_lock is held (or before task dispatch
+        # starts) because it mutates queued and execution_queue and calls
+        # should_defer_node_enqueue which reads additional shared state.
         if node_id not in node_map:
             return
         if node_id in queued or node_id in in_flight:
@@ -244,6 +250,8 @@ async def execute(
         "viaEdgeId": "__start__",
         "output": initial_input,
     })
+    # Safe without lock: state_lock and worker tasks have not been created yet;
+    # this is the only call site before concurrent execution begins.
     enqueue(start_node_id)
 
     logger.info(f"[WorkflowEngine] Start node: {start_node_id}, end node: {end_node_id}")
@@ -539,7 +547,19 @@ async def execute(
             for task in done:
                 try:
                     task.result()
-                except Exception:
+                except asyncio.CancelledError:
+                    # Intentional cancellation; propagate without treating it as an
+                    # unexpected failure so callers can distinguish the two cases.
+                    for pending_task in running_tasks:
+                        pending_task.cancel()
+                    await asyncio.gather(*running_tasks, return_exceptions=True)
+                    raise
+                except Exception as task_exc:
+                    logger.error(
+                        "[WorkflowEngine] Task failed: %s",
+                        task_exc,
+                        exc_info=True,
+                    )
                     for pending_task in running_tasks:
                         pending_task.cancel()
                     await asyncio.gather(*running_tasks, return_exceptions=True)

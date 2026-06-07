@@ -210,61 +210,26 @@ def decrypt_data(encrypted_data: str, silent: bool = False) -> str:
 
 def is_encrypted(data: str) -> bool:
     """
-    Check if data appears to be encrypted.
-    
-    通过尝试实际解密来判断数据是否加密，而不是仅检查 base64 格式。
-    这样可以避免将明文 API key（可能是 base64 格式）误判为加密数据。
-    
-    支持两种加密格式：
-    1. Fernet token（直接 Fernet 加密，以 'gAAAAA' 开头）- 用于 encrypt_config()
-    2. Base64 编码的 Fernet token（双重编码）- 用于 encrypt_data()
-    
+    Check if data appears to be encrypted (shape-based check only).
+
+    core-10: The previous decrypt-oracle approach swallowed InvalidToken when
+    the ENCRYPTION_KEY did not match, returning False and causing fail-open
+    (ciphertext forwarded as a live API key to provider SDKs). This function
+    now delegates purely to looks_like_fernet_token(), which inspects only the
+    token's shape and is independent of the active ENCRYPTION_KEY.
+
+    Callers that need to guard the credential path (e.g. decrypt_api_key)
+    already use looks_like_fernet_token() directly; this function is retained
+    for backwards-compatible callers that use it as a pre-encryption gate
+    (vertex_ai_config, profiles).
+
     Args:
         data: Data to check
-    
+
     Returns:
-        True if data can be successfully decrypted
+        True if data has the shape of a Fernet token
     """
-    if not data:
-        return False
-    
-    # 快速检查：如果看起来像 JSON，肯定不是加密的
-    if data.strip().startswith('{') or data.strip().startswith('['):
-        return False
-    
-    # 快速检查：如果包含常见 API key 前缀，可能是明文
-    common_prefixes = ['sk-', 'pk-', 'AIza', 'Bearer ', 'Basic ']
-    if any(data.startswith(prefix) for prefix in common_prefixes):
-        return False
-    
-    # 尝试实际解密：如果能成功解密，则认为是加密的
-    try:
-        key = _get_encryption_key_bytes()
-        fernet = Fernet(key)
-        
-        # 尝试两种格式：
-        # 1. 直接 Fernet token（encrypt_config 使用）
-        try:
-            fernet.decrypt(data.encode('utf-8'))
-            return True
-        except Exception:
-            pass
-        
-        # 2. Base64 编码的 Fernet token（encrypt_data 使用）
-        try:
-            encrypted_bytes = base64.b64decode(data.encode())
-            fernet.decrypt(encrypted_bytes)
-            return True
-        except (ValueError, base64.binascii.Error):
-            pass
-        
-        return False
-    except (ValueError, base64.binascii.Error):
-        # ENCRYPTION_KEY 未设置或 base64 解码失败，不是加密数据
-        return False
-    except Exception:
-        # 解密失败（密钥不匹配、数据格式错误等），不是加密数据
-        return False
+    return looks_like_fernet_token(data)
 
 
 # ==================== 配置字典加密/解密功能 ====================
@@ -336,9 +301,9 @@ def encrypt_config(config: Dict[str, Any]) -> Dict[str, Any]:
                 encrypted_config[field] = encrypt_config(value)
             elif field in SENSITIVE_FIELDS and isinstance(value, str):
                 # Encrypt sensitive string fields
-                # ✅ 检查是否已经加密，避免重复加密
-                if is_encrypted(value):
-                    # 已经加密，直接使用
+                # core-10: use shape-only check to avoid decrypt-oracle fail-open.
+                if looks_like_fernet_token(value):
+                    # Already a Fernet token — skip re-encryption.
                     encrypted_config[field] = value
                 else:
                     # 未加密，进行加密。
@@ -445,10 +410,9 @@ def decrypt_api_key(api_key: str, silent: bool = False) -> str:
         return api_key
 
     # 仅依据"形状"判断是否为加密令牌（与 ENCRYPTION_KEY 是否匹配无关）。
-    # 不能用 is_encrypted()：它在密钥不匹配时吞掉 InvalidToken 并返回 False，
-    # 会导致密钥不匹配的 Fernet 密文被当作明文 API key 原样下发给 Provider SDK
-    # （fail-open，验证发现项 V-S2）。looks_like_fernet_token 只看形状，因此
-    # 密钥不匹配的密文仍会进入下方解密分支并 fail-closed。
+    # core-10: is_encrypted() now delegates to looks_like_fernet_token() so
+    # either is shape-safe; we call looks_like_fernet_token() directly here
+    # for clarity and to avoid any future regression if is_encrypted changes.
     if not looks_like_fernet_token(api_key):
         return api_key
 

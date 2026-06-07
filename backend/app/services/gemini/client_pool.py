@@ -14,10 +14,11 @@ Usage:
     response = client.models.generate_content(...)
 """
 
-import threading
-import logging
+import functools
 import hashlib
+import logging
 import os
+import threading
 from typing import Dict, Optional, Any, Union
 from datetime import datetime
 
@@ -31,6 +32,16 @@ try:
 except ImportError:
     google_genai = None
     GOOGLE_GENAI_AVAILABLE = False
+
+
+@functools.lru_cache(maxsize=64)
+def _compute_http_fingerprint(payload: tuple) -> str:
+    """SHA-256 digest of a hashable HttpOptions payload tuple.
+
+    Bounded by lru_cache(maxsize=64); thread-safe under CPython's GIL
+    and semantically clean — no manual dict manipulation needed.
+    """
+    return hashlib.sha256(str(payload).encode("utf-8")).hexdigest()[:16]
 
 
 class GeminiClientPool:
@@ -524,18 +535,12 @@ class GeminiClientPool:
         else:
             return f"gemini:{cred_fingerprint}:http={self._http_options_fingerprint(http_options)}"
 
-    # Memoization cache for `_http_options_fingerprint`. The input is a pydantic
-    # `HttpOptions` (not hashable), so we first reduce it to a hashable tuple
-    # and use that as the cache key. The cache is bounded (64 entries) because
-    # the number of distinct HttpOptions shapes in practice is tiny — typically
-    # 1-2 per provider. SHA-256 is cheap individually but is invoked on every
-    # `get_client()` cache-hit, so removing it shaves a few microseconds per
-    # call and, more importantly, keeps the hot path allocation-free once warm.
-    _HTTP_FINGERPRINT_CACHE: Dict[tuple, str] = {}
-    _HTTP_FINGERPRINT_CACHE_MAX = 64
-
     @staticmethod
     def _http_options_fingerprint(http_options: Optional[HttpOptions]) -> str:
+        # Delegates to module-level _compute_http_fingerprint which is decorated
+        # with functools.lru_cache(maxsize=64). That helper is thread-safe under
+        # CPython's GIL and avoids the manual FIFO dict eviction that would
+        # otherwise require its own lock (finding svc-gemini-12).
         if not http_options:
             return "none"
         retry = http_options.retry_options
@@ -553,23 +558,7 @@ class GeminiClientPool:
             http_options.timeout,
             retry_tuple,
         )
-
-        cache = GeminiClientPool._HTTP_FINGERPRINT_CACHE
-        cached = cache.get(payload)
-        if cached is not None:
-            return cached
-
-        digest = hashlib.sha256(str(payload).encode("utf-8")).hexdigest()[:16]
-
-        # Bounded write — FIFO eviction is fine because HttpOptions shapes
-        # rarely change after the first few warm calls.
-        if len(cache) >= GeminiClientPool._HTTP_FINGERPRINT_CACHE_MAX:
-            try:
-                cache.pop(next(iter(cache)))
-            except (StopIteration, KeyError):
-                pass
-        cache[payload] = digest
-        return digest
+        return _compute_http_fingerprint(payload)
 
 
 # ==================== 全局单例访问 ====================

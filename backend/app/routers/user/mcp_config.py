@@ -349,6 +349,17 @@ async def get_mcp_server_tools(
             server_config,
             context="mcp-config-tools",
         )
+        # CANON-001 / W02R-004: execution-time stdio admin guard — a non-admin
+        # user could have a stdio config stored from a prior admin grant or direct
+        # DB manipulation; block stdio execution regardless of what is persisted.
+        if mcp_config.server_type == MCPServerType.STDIO and not _user_is_admin(db, user_id):
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"stdio MCP server '{server_key}' requires administrator privileges; "
+                    "use an http/streamableHttp/sse transport instead"
+                ),
+            )
         session_id = _session_id_for_server(user_id, server_key, server_config)
         manager = get_mcp_manager()
         await manager.create_session(session_id, mcp_config)
@@ -401,6 +412,17 @@ async def invoke_mcp_server_tool(
             server_config,
             context="mcp-config-invoke",
         )
+        # CANON-001 / W02R-004: execution-time stdio admin guard (mirrors the
+        # save-path check in _validate_config_root_or_raise; defends against
+        # stale persisted configs created when the user was previously an admin).
+        if mcp_config.server_type == MCPServerType.STDIO and not _user_is_admin(db, user_id):
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"stdio MCP server '{server_key}' requires administrator privileges; "
+                    "use an http/streamableHttp/sse transport instead"
+                ),
+            )
         session_id = _session_id_for_server(user_id, server_key, server_config)
         manager = get_mcp_manager()
         await manager.create_session(session_id, mcp_config)

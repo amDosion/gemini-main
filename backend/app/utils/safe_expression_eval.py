@@ -16,7 +16,7 @@ class SafeExpressionError(ValueError):
     """Raised when expression contains unsupported or unsafe constructs."""
 
 
-_BINARY_OPERATORS = {
+_BINARY_OPERATORS: Dict[type, Callable[..., Any]] = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
     ast.Mult: operator.mul,
@@ -26,13 +26,13 @@ _BINARY_OPERATORS = {
     ast.Pow: operator.pow,
 }
 
-_UNARY_OPERATORS = {
+_UNARY_OPERATORS: Dict[type, Callable[..., Any]] = {
     ast.UAdd: operator.pos,
     ast.USub: operator.neg,
     ast.Not: operator.not_,
 }
 
-_COMPARATORS = {
+_COMPARATORS: Dict[type, Callable[..., Any]] = {
     ast.Eq: operator.eq,
     ast.NotEq: operator.ne,
     ast.Lt: operator.lt,

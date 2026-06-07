@@ -2,7 +2,7 @@
 云存储配置和上传路由
 支持兰空图床和阿里云 OSS
 """
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, BackgroundTasks, Response, Request, Query
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Response, Request, Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from typing import Optional, Any
@@ -25,7 +25,6 @@ import hashlib
 from ...core.database import SessionLocal, get_db
 from ...core.config import settings
 from ...models.db_models import StorageConfig, ActiveStorage, UploadTask, ChatSession, MessageAttachment
-from ...services.storage.storage_service import StorageService
 from ...services.storage.storage_manager import StorageManager
 from ...services.storage.local_provider import (
     DEFAULT_LOCAL_URL_PREFIX,
@@ -2230,8 +2229,9 @@ async def process_upload_task(task_id: str, _db: Session = None):
             task.status = 'failed'
             task.error_message = str(e)
             db.commit()
-        except:
-            pass
+        except Exception:
+            logger.debug("[UploadTask] failed to persist error status, rolling back", exc_info=True)
+            db.rollback()
     finally:
         # ✅ 确保关闭独立的数据库会话
         db.close()
@@ -2256,9 +2256,7 @@ async def update_session_attachment_url(
     - max_retries: 最大重试次数（默认10次）
     - retry_delay: 每次重试间隔（默认2秒）
     """
-    from ...models.db_models import MessageAttachment
-    import asyncio
-    
+    # MessageAttachment and asyncio are already imported at module level
     logger.info(f"[UploadTask] 开始更新附件 URL: session={session_id}, msg={message_id}, att={attachment_id}")
 
     session = db.query(ChatSession).filter(
@@ -2436,8 +2434,6 @@ async def upload_file_async(
         logger.info(f"[UploadAsync] 🔄 [步骤4] 更新 attachment_id (向后兼容)...")
         logger.info(f"[UploadAsync]     - 提供的 attachment_id: {attachment_id}")
         logger.info(f"[UploadAsync]     - 生成的 attachment_id: {result['attachment_id']}")
-        from ...models.db_models import MessageAttachment, UploadTask
-        
         attachment = db.query(MessageAttachment).filter_by(
             id=result['attachment_id'],
             user_id=user_id,

@@ -8,9 +8,22 @@ MCP Manager - 高层 MCP 管理服务
 - 工具缓存
 
 类似于 storage_manager.py 的架构设计
+
+Singleton / multi-worker note
+------------------------------
+``get_mcp_manager()`` returns a **process-local** singleton.  In a
+multi-worker (multi-process) Uvicorn deployment each worker holds its own
+independent pool; session metadata is NOT shared across workers.  If
+cross-worker session sharing is required, store session metadata in a shared
+backend (e.g. Redis) and reconstruct ``MCPClient`` on demand.
+
+``MCPManager.close_all()`` MUST be called during application shutdown.
+Register it in ``backend/app/core/shutdown_tasks.py`` via
+``close_mcp_sessions()`` (parallel to ``close_gemini_client_pool``).
 """
 
 import asyncio
+import time
 from typing import Dict, Any, Optional, List
 import logging
 from contextlib import asynccontextmanager
@@ -30,6 +43,20 @@ from .adapter import (
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Pool configuration constants
+# ---------------------------------------------------------------------------
+
+# Hard upper bound on concurrent sessions in a single pool.  When the pool is
+# full, the least-recently-used idle session is evicted before a new one is
+# created.  Override via MCPSessionPool(max_sessions=N) if needed.
+_DEFAULT_MAX_SESSIONS: int = 50
+
+# Sessions not accessed within this window (seconds) are eligible for eviction
+# during the next ``get_or_create`` call or an explicit ``evict_idle_sessions``
+# sweep.  Default: 30 minutes.
+_DEFAULT_IDLE_TIMEOUT_SECONDS: float = 1800.0
+
 
 class MCPSessionPool:
     """
@@ -39,12 +66,72 @@ class MCPSessionPool:
     - 会话复用
     - 自动重连
     - 资源清理
+    - 容量上限 + 空闲超时淘汰
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        max_sessions: int = _DEFAULT_MAX_SESSIONS,
+        idle_timeout_seconds: float = _DEFAULT_IDLE_TIMEOUT_SECONDS,
+    ) -> None:
         self._sessions: Dict[str, MCPClient] = {}
         self._configs: Dict[str, MCPServerConfig] = {}
+        # Monotonic timestamp of last access per session (seconds).
+        self._last_used: Dict[str, float] = {}
         self._lock = asyncio.Lock()
+        self._max_sessions = max_sessions
+        self._idle_timeout = idle_timeout_seconds
+
+    # ------------------------------------------------------------------
+    # Internal helpers (must be called with self._lock already held)
+    # ------------------------------------------------------------------
+
+    def _touch(self, session_id: str) -> None:
+        """Update the last-used timestamp for a session (lock must be held)."""
+        self._last_used[session_id] = time.monotonic()
+
+    def _find_lru_idle_session(self) -> Optional[str]:
+        """
+        Return the session_id of the least-recently-used session, or None if
+        the pool is empty.  Lock must be held by caller.
+        """
+        if not self._last_used:
+            return None
+        return min(self._last_used, key=lambda sid: self._last_used[sid])
+
+    async def _evict_one_for_capacity(self) -> None:
+        """
+        Evict the LRU session to free a slot.  Called when the pool is at
+        capacity before creating a new session.  Lock must be held.
+        """
+        lru = self._find_lru_idle_session()
+        if lru is not None:
+            logger.warning(
+                "[MCPSessionPool] Pool at capacity (%d). Evicting LRU session: %s",
+                self._max_sessions,
+                lru,
+            )
+            await self._remove_locked(lru)
+
+    async def _remove_locked(self, session_id: str) -> None:
+        """Remove a session; lock must already be held by the caller."""
+        if session_id in self._sessions:
+            client = self._sessions.pop(session_id)
+            self._configs.pop(session_id, None)
+            self._last_used.pop(session_id, None)
+            try:
+                await client.close()
+            except Exception:
+                logger.warning(
+                    "[MCPSessionPool] Error closing session %s during removal",
+                    session_id,
+                    exc_info=True,
+                )
+            logger.info("[MCPSessionPool] Removed session: %s", session_id)
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     async def get_or_create(
         self,
@@ -62,24 +149,32 @@ class MCPSessionPool:
             MCP 客户端实例
         """
         async with self._lock:
-            # 检查是否已存在
+            # Reuse an existing connected session.
             if session_id in self._sessions:
                 client = self._sessions[session_id]
                 if client.is_connected:
-                    logger.debug(f"Reusing existing session: {session_id}")
+                    logger.debug("Reusing existing session: %s", session_id)
+                    self._touch(session_id)
                     return client
                 else:
-                    # 会话已断开，移除
-                    logger.info(f"Session {session_id} disconnected, creating new one")
-                    await self.remove(session_id)
+                    # Session disconnected; evict it and create a fresh one.
+                    logger.info(
+                        "Session %s disconnected, creating new one", session_id
+                    )
+                    await self._remove_locked(session_id)
 
-            # 创建新会话
-            logger.info(f"Creating new MCP session: {session_id}")
+            # Enforce capacity limit before allocating a new slot.
+            if len(self._sessions) >= self._max_sessions:
+                await self._evict_one_for_capacity()
+
+            # Create a new session.
+            logger.info("Creating new MCP session: %s", session_id)
             client = MCPClient(config)
             await client.connect()
 
             self._sessions[session_id] = client
             self._configs[session_id] = config
+            self._touch(session_id)
 
             return client
 
@@ -90,29 +185,58 @@ class MCPSessionPool:
         Args:
             session_id: 会话 ID
         """
-        if session_id in self._sessions:
-            client = self._sessions[session_id]
-            await client.close()
-            del self._sessions[session_id]
-            del self._configs[session_id]
-            logger.info(f"Removed session: {session_id}")
+        async with self._lock:
+            await self._remove_locked(session_id)
+
+    async def evict_idle_sessions(self) -> int:
+        """
+        Evict all sessions that have not been accessed within the idle-timeout
+        window.  Safe to call from a background sweep task.
+
+        Returns:
+            Number of sessions evicted.
+        """
+        now = time.monotonic()
+        async with self._lock:
+            idle: List[str] = [
+                sid
+                for sid, ts in self._last_used.items()
+                if now - ts >= self._idle_timeout
+            ]
+            for sid in idle:
+                logger.info(
+                    "[MCPSessionPool] Evicting idle session %s (idle %.0fs)",
+                    sid,
+                    now - self._last_used.get(sid, now),
+                )
+                await self._remove_locked(sid)
+        return len(idle)
 
     async def close_all(self) -> None:
         """关闭所有会话"""
-        logger.info(f"Closing {len(self._sessions)} MCP sessions...")
-
-        for session_id in list(self._sessions.keys()):
-            await self.remove(session_id)
-
-        logger.info("All MCP sessions closed")
+        async with self._lock:
+            count = len(self._sessions)
+            logger.info("[MCPSessionPool] Closing %d MCP sessions...", count)
+            for session_id in list(self._sessions.keys()):
+                await self._remove_locked(session_id)
+        logger.info("[MCPSessionPool] All MCP sessions closed")
 
     def get_session(self, session_id: str) -> Optional[MCPClient]:
-        """获取会话（不创建）"""
-        return self._sessions.get(session_id)
+        """获取会话（不创建），并更新最近访问时间。"""
+        client = self._sessions.get(session_id)
+        if client is not None:
+            # Update last-used without acquiring the async lock; monotonic write
+            # races are benign here (worst case: slightly stale eviction order).
+            self._last_used[session_id] = time.monotonic()
+        return client
 
     def list_sessions(self) -> List[str]:
         """列出所有会话 ID"""
         return list(self._sessions.keys())
+
+    def session_count(self) -> int:
+        """Return the current number of pooled sessions."""
+        return len(self._sessions)
 
 
 class MCPManager:
@@ -124,11 +248,24 @@ class MCPManager:
     - 工具列表获取
     - 工具调用
     - 格式转换
+
+    Lifecycle
+    ---------
+    ``close_all()`` should be called during application shutdown.  The global
+    singleton returned by ``get_mcp_manager()`` is registered in
+    ``backend/app/core/shutdown_tasks.close_mcp_sessions()``.
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        max_sessions: int = _DEFAULT_MAX_SESSIONS,
+        idle_timeout_seconds: float = _DEFAULT_IDLE_TIMEOUT_SECONDS,
+    ) -> None:
         """初始化 MCP 管理器"""
-        self._session_pool = MCPSessionPool()
+        self._session_pool = MCPSessionPool(
+            max_sessions=max_sessions,
+            idle_timeout_seconds=idle_timeout_seconds,
+        )
         logger.info("MCPManager initialized")
 
     async def create_session(
@@ -325,15 +462,34 @@ class MCPManager:
             await self.close_session(session_id)
 
     async def close_all(self) -> None:
-        """关闭所有会话"""
+        """关闭所有会话。在应用关闭时应通过 shutdown_tasks 调用。"""
         await self._session_pool.close_all()
+
+    async def evict_idle_sessions(self) -> int:
+        """
+        Evict sessions idle longer than the configured timeout.
+        Delegates to the underlying pool; returns eviction count.
+        """
+        return await self._session_pool.evict_idle_sessions()
 
     def list_sessions(self) -> List[str]:
         """列出所有会话 ID"""
         return self._session_pool.list_sessions()
 
+    def session_count(self) -> int:
+        """Return the current number of pooled sessions."""
+        return self._session_pool.session_count()
 
-# 全局单例（可选）
+
+# ---------------------------------------------------------------------------
+# Global singleton
+# ---------------------------------------------------------------------------
+# NOTE: This is a single-process singleton.  In a multi-worker Uvicorn
+# deployment each worker process has its own independent instance; session
+# metadata is NOT shared across workers.  ``close_all()`` is registered in
+# ``backend/app/core/shutdown_tasks.close_mcp_sessions()`` so that the
+# FastAPI lifespan tears it down cleanly on shutdown.
+
 _global_manager: Optional[MCPManager] = None
 
 
@@ -342,7 +498,7 @@ def get_mcp_manager() -> MCPManager:
     获取全局 MCP 管理器实例
 
     Returns:
-        MCPManager 单例
+        MCPManager 单例 (process-local; not shared across Uvicorn workers)
     """
     global _global_manager
     if _global_manager is None:

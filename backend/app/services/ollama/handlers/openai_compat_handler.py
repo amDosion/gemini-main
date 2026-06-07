@@ -3,13 +3,83 @@ Ollama OpenAI 兼容 API 处理器
 
 处理 Ollama 的 OpenAI 兼容 API 调用（/v1/* 端点）。
 """
-from typing import Dict, Any, List, Optional, AsyncGenerator
+from typing import Dict, Any, List, Optional, AsyncGenerator, Mapping, Set
 import logging
 import tiktoken
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion
 
 logger = logging.getLogger(__name__)
+
+# Keys injected by the application framework that must never be forwarded to
+# the underlying OpenAI-compatible API (mirrors INTERNAL_OPTION_KEYS in
+# backend/app/services/openai/_shared.py).
+_INTERNAL_OPTION_KEYS: Set[str] = {
+    "base_url",
+    "frontend_session_id",
+    "session_id",
+    "message_id",
+    "active_image_url",
+    "enable_search",
+    "enable_thinking",
+    "enable_code_execution",
+    "enable_browser",
+    "enable_grounding",
+    "reference_images",
+    "enhance_prompt",
+    "enhance_prompt_model",
+    "openai_responses_model",
+    "openai_previous_response_id",
+    # constructor-only key consumed by __init__
+    "timeout",
+}
+
+# Allowlist of chat-completion parameters accepted by Ollama's OpenAI-compat
+# endpoint.  Keys absent from this set are silently dropped so that internal
+# framework kwargs never reach the wire.
+OLLAMA_CHAT_ALLOWED_OPTION_KEYS: Set[str] = {
+    "temperature",
+    "max_tokens",
+    "top_p",
+    "frequency_penalty",
+    "presence_penalty",
+    "seed",
+    "stop",
+    "response_format",
+    "logit_bias",
+    "n",
+    "user",
+    "tools",
+    "tool_choice",
+    "parallel_tool_calls",
+    "stream_options",
+}
+
+
+def _filter_chat_kwargs(kwargs: Mapping[str, Any]) -> Dict[str, Any]:
+    """Strip internal framework keys and unknown options from chat kwargs.
+
+    Only keys present in OLLAMA_CHAT_ALLOWED_OPTION_KEYS reach the API so that
+    session/internal metadata injected upstream never leaks onto the wire.
+    """
+    filtered: Dict[str, Any] = {}
+    dropped: List[str] = []
+    for key, value in kwargs.items():
+        if key in _INTERNAL_OPTION_KEYS:
+            dropped.append(key)
+            continue
+        if key not in OLLAMA_CHAT_ALLOWED_OPTION_KEYS:
+            dropped.append(key)
+            continue
+        if value is None:
+            continue
+        filtered[key] = value
+    if dropped:
+        logger.debug(
+            "[Ollama OpenAICompatHandler] Dropped kwargs before API call: %s",
+            dropped,
+        )
+    return filtered
 
 
 class OpenAICompatibleHandler:
@@ -149,11 +219,17 @@ class OpenAICompatibleHandler:
         Returns:
             聊天响应字典
         """
+        # Strip stream_options and any internal/unknown keys before the
+        # non-streaming create() call to avoid unexpected parameter errors.
+        api_kwargs = {
+            k: v for k, v in _filter_chat_kwargs(kwargs).items()
+            if k != "stream_options"
+        }
         try:
             response: ChatCompletion = await self.client.chat.completions.create(
                 model=model,
                 messages=messages,
-                **kwargs
+                **api_kwargs
             )
             
             choice = response.choices[0]
@@ -198,13 +274,20 @@ class OpenAICompatibleHandler:
         Yields:
             流式响应块
         """
+        # Remove internal/unknown keys; stream and stream_options are set
+        # explicitly below so drop any caller-supplied stream_options to avoid
+        # duplicates.
+        api_kwargs = {
+            k: v for k, v in _filter_chat_kwargs(kwargs).items()
+            if k != "stream_options"
+        }
         try:
             stream = await self.client.chat.completions.create(
                 model=model,
                 messages=messages,
                 stream=True,
                 stream_options={"include_usage": True},
-                **kwargs
+                **api_kwargs
             )
             
             usage = None

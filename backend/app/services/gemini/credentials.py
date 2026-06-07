@@ -18,7 +18,18 @@ import json
 import logging
 from typing import Any, Optional, Tuple
 
+import google.auth.exceptions as _google_auth_exc
+import sqlalchemy.exc as _sa_exc
+
 logger = logging.getLogger(__name__)
+
+# Transient infrastructure errors that are safe to swallow: the caller will
+# treat the result as "no configuration found" and fall back to ADC or reject
+# the request explicitly. These are not credential-validity errors.
+_TRANSIENT_INFRA_ERRORS = (
+    _sa_exc.OperationalError,
+    _google_auth_exc.TransportError,
+)
 
 
 def get_vertex_ai_credentials_from_db(
@@ -46,6 +57,12 @@ def get_vertex_ai_credentials_from_db(
           - project: Google Cloud 项目 ID（如果找到）
           - location: Google Cloud 位置（如果找到）
           - credentials: service_account.Credentials 对象（如果找到并成功解密），否则 None
+
+    Raises:
+        ValueError: credentials JSON is malformed (re-raised from JSONDecodeError) or
+            from_service_account_info raised ValueError (invalid service-account structure).
+        google.auth.exceptions.GoogleAuthError: non-transient OAuth/SDK error; caller
+            must not silently fall back to ADC when credentials were explicitly configured.
     """
     if not db or not user_id:
         return None, None, None
@@ -106,14 +123,24 @@ def get_vertex_ai_credentials_from_db(
                     f"Vertex AI credentials JSON for user_id={user_id} is malformed; "
                     f"refusing to silently fallback to ADC. Please re-upload service-account JSON."
                 ) from e
-            except Exception as e:
-                # 真实 SDK / 加密层异常：保留 swallow 行为（DB 短暂不可达不应直接 500），
-                # 但提升日志级别到 ERROR 以便监控可见。
+            except _TRANSIENT_INFRA_ERRORS as e:
+                # 纯粹的瞬时基础设施故障（DB 短暂不可达、网络超时）：
+                # 记录 ERROR 但允许调用方按"无配置"处理，避免短暂故障直接打挂业务。
                 logger.error(
-                    f"[get_vertex_ai_credentials_from_db] Failed to load credentials from database "
-                    f"(user_id={user_id}): {e}",
+                    f"[get_vertex_ai_credentials_from_db] Transient infrastructure error while "
+                    f"loading credentials (user_id={user_id}): {e}",
                     exc_info=True,
                 )
+            except Exception as e:
+                # SDK / OAuth / 解密层错误（如 GoogleAuthError、ValueError from
+                # from_service_account_info、加密层异常）：必须传播，禁止静默 fallback ADC，
+                # 否则请求会以"错误身份"成功进入 GCP，是更危险的失败模式。
+                logger.error(
+                    f"[get_vertex_ai_credentials_from_db] Credential loading failed with a "
+                    f"non-transient error (user_id={user_id}): {type(e).__name__}: {e}",
+                    exc_info=True,
+                )
+                raise
         else:
             logger.info(
                 f"[get_vertex_ai_credentials_from_db] No vertex_ai_credentials_json in database "
@@ -128,12 +155,15 @@ def get_vertex_ai_credentials_from_db(
 
         return resolved_project, resolved_location, credentials
 
-    except ValueError:
-        # JSONDecodeError 转的 ValueError 必须传播给 caller（HTTP 500）。
+    except (ValueError, _google_auth_exc.GoogleAuthError):
+        # ValueError: malformed JSON or invalid service-account structure.
+        # GoogleAuthError (non-transient): OAuth/SDK error that must not be swallowed —
+        # silently falling back to ADC when credentials were configured is a security risk
+        # (the request would proceed as the wrong identity).
         raise
     except Exception as e:
-        # 其他外层异常（DB 不可达 / import 失败等）：升级为 ERROR 级别，
-        # 但仍返回 (None, None, None) —— 调用方按"无配置"处理（走 ADC 或拒绝），
+        # 外层异常（DB 不可达 / import 失败 / 瞬时 OperationalError 等基础设施故障）：
+        # 升级为 ERROR 级别，但仍返回 (None, None, None) —— 调用方按"无配置"处理（走 ADC 或拒绝），
         # 避免 DB 短暂故障直接打挂业务。
         logger.error(
             f"[get_vertex_ai_credentials_from_db] Failed to get Vertex AI config from database "

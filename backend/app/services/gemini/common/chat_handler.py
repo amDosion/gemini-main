@@ -74,23 +74,23 @@ class ChatHandler:
         if hasattr(value, "model_dump"):
             try:
                 return ChatHandler._to_json_compatible(value.model_dump())
-            except Exception:
-                pass
+            except Exception as _exc:  # fallthrough to next strategy
+                logger.debug("[_to_json_compatible] model_dump() failed: %s", _exc)
         if hasattr(value, "to_dict"):
             try:
                 return ChatHandler._to_json_compatible(value.to_dict())
-            except Exception:
-                pass
+            except Exception as _exc:  # fallthrough to next strategy
+                logger.debug("[_to_json_compatible] to_dict() failed: %s", _exc)
         if hasattr(value, "dict"):
             try:
                 return ChatHandler._to_json_compatible(value.dict())
-            except Exception:
-                pass
+            except Exception as _exc:  # fallthrough to next strategy
+                logger.debug("[_to_json_compatible] dict() failed: %s", _exc)
         if hasattr(value, "__dict__"):
             try:
                 return ChatHandler._to_json_compatible(vars(value))
-            except Exception:
-                pass
+            except Exception as _exc:  # fallthrough to str() fallback
+                logger.debug("[_to_json_compatible] vars() failed: %s", _exc)
         return str(value)
 
     @staticmethod
@@ -129,7 +129,16 @@ class ChatHandler:
 
         try:
             return dict(raw_args)
-        except Exception:
+        except Exception as _exc:
+            # Warn: non-dict args that cannot be coerced will cause the LLM to
+            # receive an empty argument map, which is more visible than silently
+            # stringifying and producing an invalid tool call.
+            logger.warning(
+                "[_extract_function_call_args] Cannot coerce args to dict "
+                "(type=%s): %s — returning empty dict",
+                type(raw_args).__name__,
+                _exc,
+            )
             return {}
 
     @staticmethod
@@ -198,7 +207,7 @@ class ChatHandler:
             args_serialized = json.dumps(args, ensure_ascii=False, sort_keys=True)
         except Exception:
             args_serialized = str(args)
-        args_hash = hashlib.sha1(args_serialized.encode("utf-8")).hexdigest()
+        args_hash = hashlib.sha256(args_serialized.encode("utf-8")).hexdigest()[:10]
         return f"sig:{name}:{args_hash}"
     
     async def chat(
@@ -652,12 +661,27 @@ class ChatHandler:
             for msg in history_messages:
                 role = msg['role']
                 content = msg['content']
-                history.append(
-                    genai_types.Content(
-                        role=role,
-                        parts=[genai_types.Part(text=content)]
+                hist_attachments = msg.get('attachments', [])
+                if hist_attachments:
+                    # Build multi-modal parts using the same logic as the
+                    # current-message path so history attachments are correctly
+                    # forwarded to the SDK.
+                    hist_parts = []
+                    for att in hist_attachments:
+                        part = self._build_attachment_part(att)
+                        if part:
+                            hist_parts.append(part)
+                    hist_parts.append(genai_types.Part(text=content))
+                    history.append(
+                        genai_types.Content(role=role, parts=hist_parts)
                     )
-                )
+                else:
+                    history.append(
+                        genai_types.Content(
+                            role=role,
+                            parts=[genai_types.Part(text=content)]
+                        )
+                    )
             
             # 使用异步 API 创建聊天会话
             async_chat = client.aio.chats.create(

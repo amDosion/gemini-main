@@ -4,6 +4,7 @@ S3 兼容存储提供商
 """
 
 import asyncio
+import logging
 import boto3
 from botocore.exceptions import ClientError, EndpointConnectionError
 from botocore.config import Config
@@ -12,6 +13,9 @@ from typing import Dict, Any, Optional
 from urllib.parse import urlparse
 from .base import BaseStorageProvider, UploadResult
 from app.utils.url_security import validate_storage_egress_url, UnsafeURLError
+
+
+logger = logging.getLogger(__name__)
 
 
 class S3Provider(BaseStorageProvider):
@@ -384,17 +388,60 @@ class S3Provider(BaseStorageProvider):
                 if not keys:
                     return {"success": False, "supported": True, "message": "源目录不存在"}
 
+                # NOTE: S3 does not support atomic directory rename.  We copy
+                # every object to the target prefix first, then delete each
+                # source key.  This means a partial failure can leave both
+                # source and target objects in the bucket.  On copy failure we
+                # attempt a best-effort rollback of already-copied target keys.
+                # On delete failure we log a warning and continue so that
+                # already-copied target keys are not permanently orphaned.
+                copied_target_keys: list[str] = []
                 for key in keys:
                     suffix = key[len(source_prefix):]
                     new_key = f"{target_prefix}{suffix}" if suffix else target_prefix
-                    await asyncio.to_thread(
-                        lambda _k=key, _nk=new_key: client.copy_object(
-                            Bucket=bucket,
-                            Key=_nk,
-                            CopySource={"Bucket": bucket, "Key": _k}
+                    try:
+                        await asyncio.to_thread(
+                            lambda _k=key, _nk=new_key: client.copy_object(
+                                Bucket=bucket,
+                                Key=_nk,
+                                CopySource={"Bucket": bucket, "Key": _k}
+                            )
                         )
-                    )
-                    await asyncio.to_thread(lambda _k=key: client.delete_object(Bucket=bucket, Key=_k))
+                        copied_target_keys.append(new_key)
+                    except ClientError as copy_err:
+                        # Best-effort rollback: delete already-copied target keys.
+                        for _rollback_key in copied_target_keys:
+                            try:
+                                await asyncio.to_thread(
+                                    lambda _rk=_rollback_key: client.delete_object(
+                                        Bucket=bucket, Key=_rk
+                                    )
+                                )
+                            except Exception as rb_err:
+                                logger.warning(
+                                    "S3 rename rollback: failed to delete target key %s: %s",
+                                    _rollback_key, rb_err,
+                                )
+                        err_code = copy_err.response.get("Error", {}).get("Code", "Unknown")
+                        err_msg = copy_err.response.get("Error", {}).get("Message", str(copy_err))
+                        return {
+                            "success": False,
+                            "supported": True,
+                            "message": f"S3 重命名失败（复制出错，已尝试回滚）({err_code}): {err_msg}",
+                        }
+
+                # Delete source keys; continue even if an individual delete fails
+                # to avoid leaving target orphans while source objects persist.
+                for key in keys:
+                    try:
+                        await asyncio.to_thread(
+                            lambda _k=key: client.delete_object(Bucket=bucket, Key=_k)
+                        )
+                    except ClientError as del_err:
+                        logger.warning(
+                            "S3 rename: failed to delete source key %s after copy: %s",
+                            key, del_err,
+                        )
                 return {"success": True, "supported": True, "message": None}
 
             # 文件重命名

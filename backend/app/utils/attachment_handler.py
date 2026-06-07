@@ -688,6 +688,13 @@ class AttachmentHandler:
         """
         计算附件内容的哈希值
 
+        NOTE: MD5 and SHA1 are provided for non-cryptographic purposes only
+        (e.g. deduplication, caching, content fingerprinting). Do not use them
+        for security-sensitive operations such as HMAC inputs or digital
+        signatures — use SHA256 or SHA3 for those cases instead.
+        usedforsecurity=False suppresses FIPS-mode OpenSSL warnings on those
+        algorithms and signals this intent explicitly.
+
         Args:
             algorithm: 哈希算法 ('md5', 'sha1', 'sha256')
 
@@ -699,9 +706,9 @@ class AttachmentHandler:
             return None
 
         if algorithm == 'md5':
-            return hashlib.md5(binary_data).hexdigest()
+            return hashlib.md5(binary_data, usedforsecurity=False).hexdigest()
         elif algorithm == 'sha1':
-            return hashlib.sha1(binary_data).hexdigest()
+            return hashlib.sha1(binary_data, usedforsecurity=False).hexdigest()
         elif algorithm == 'sha256':
             return hashlib.sha256(binary_data).hexdigest()
         else:

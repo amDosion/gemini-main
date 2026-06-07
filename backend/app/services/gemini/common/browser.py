@@ -38,15 +38,7 @@ def _http_get_with_ssrf_guard(url: str, *, headers: Dict[str, str], timeout: int
         url, headers=headers, timeout=timeout, max_redirects=max_redirects
     )
 
-# Markdown conversion for cleaner output
-try:
-    import markdownify
-    MARKDOWNIFY_AVAILABLE = True
-except ImportError:
-    MARKDOWNIFY_AVAILABLE = False
-    print("Warning: markdownify not available. Install with: pip install markdownify")
-
-# Import logger from core module
+# Logger initialised first so optional-import warnings can use it below.
 try:
     from ...core.logger import setup_logger, LOG_PREFIXES
     logger = setup_logger("browser")
@@ -61,6 +53,14 @@ except ImportError:
         'request': '[REQUEST]', 'action': '[ACTION]', 'navigate': '[NAV]',
     }
 
+# Markdown conversion for cleaner output
+try:
+    import markdownify
+    MARKDOWNIFY_AVAILABLE = True
+except ImportError:
+    MARKDOWNIFY_AVAILABLE = False
+    logger.warning("markdownify not available; install with: pip install markdownify")
+
 # Optional Selenium imports - only needed if using selenium_browse
 try:
     from selenium import webdriver
@@ -73,7 +73,7 @@ try:
     SELENIUM_AVAILABLE = True
 except ImportError:
     SELENIUM_AVAILABLE = False
-    print("Warning: Selenium not available. Install with: pip install selenium webdriver-manager")
+    logger.warning("Selenium not available; install with: pip install selenium webdriver-manager")
 
 
 # ============================================================================

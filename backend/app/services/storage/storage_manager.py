@@ -92,7 +92,7 @@ class StorageManager:
                     detail="No active storage configuration. Please activate one first."
                 )
 
-            config = self.user_query.get(StorageConfig, active.storage_id)
+            config = self.user_query.get(StorageConfig, str(active.storage_id))
 
         if not config:
             raise HTTPException(
@@ -156,7 +156,7 @@ class StorageManager:
                 return None
             
             config_dict = config.to_dict()
-            _apply_display_config(config_dict)
+            config_dict = _apply_display_config(config_dict)
             
             return config_dict
             
@@ -443,19 +443,20 @@ class StorageManager:
             config = self._resolve_storage_config(storage_id)
             
             # Decrypt configuration
-            decrypted_config = decrypt_config(config.config)
+            decrypted_config = decrypt_config(dict(config.config))  # type: ignore[arg-type]
+            provider = str(config.provider)
             
             # Upload file
             logger.info(
                 f"Uploading file for user {self.user_id}: "
-                f"filename={filename}, provider={config.provider}"
+                f"filename={filename}, provider={provider}"
             )
             
             result = await StorageService.upload_file(
                 filename=filename,
                 content=content,
                 content_type=content_type,
-                provider=config.provider,
+                provider=provider,
                 config=decrypted_config
             )
             
@@ -483,10 +484,11 @@ class StorageManager:
         """
         try:
             config = self._resolve_storage_config(storage_id)
-            decrypted_config = decrypt_config(config.config)
+            decrypted_config = decrypt_config(dict(config.config))  # type: ignore[arg-type]
+            provider = str(config.provider)
 
             browse_result = await StorageService.browse_files(
-                provider=config.provider,
+                provider=provider,
                 config=decrypted_config,
                 path=path,
                 limit=limit,
@@ -496,7 +498,7 @@ class StorageManager:
             return {
                 "storage_id": config.id,
                 "storage_name": config.name,
-                "provider": config.provider,
+                "provider": provider,
                 "path": path,
                 **browse_result
             }
@@ -519,10 +521,11 @@ class StorageManager:
         """
         try:
             config = self._resolve_storage_config(storage_id)
-            decrypted_config = decrypt_config(config.config)
+            decrypted_config = decrypt_config(dict(config.config))  # type: ignore[arg-type]
+            provider = str(config.provider)
 
             count_result = await StorageService.count_files(
-                provider=config.provider,
+                provider=provider,
                 config=decrypted_config,
                 path=path,
             )
@@ -530,7 +533,7 @@ class StorageManager:
             return {
                 "storage_id": config.id,
                 "storage_name": config.name,
-                "provider": config.provider,
+                "provider": provider,
                 "path": path,
                 **count_result,
             }
@@ -555,9 +558,10 @@ class StorageManager:
         """
         try:
             config = self._resolve_storage_config(storage_id)
-            decrypted_config = decrypt_config(config.config)
+            decrypted_config = decrypt_config(dict(config.config))  # type: ignore[arg-type]
+            provider = str(config.provider)
             result = await StorageService.delete_item(
-                provider=config.provider,
+                provider=provider,
                 config=decrypted_config,
                 path=path,
                 is_directory=is_directory,
@@ -566,7 +570,7 @@ class StorageManager:
             return {
                 "storage_id": config.id,
                 "storage_name": config.name,
-                "provider": config.provider,
+                "provider": provider,
                 "path": path,
                 **result
             }
@@ -591,9 +595,10 @@ class StorageManager:
         """
         try:
             config = self._resolve_storage_config(storage_id)
-            decrypted_config = decrypt_config(config.config)
+            decrypted_config = decrypt_config(dict(config.config))  # type: ignore[arg-type]
+            provider = str(config.provider)
             result = await StorageService.rename_item(
-                provider=config.provider,
+                provider=provider,
                 config=decrypted_config,
                 path=path,
                 new_name=new_name,
@@ -602,7 +607,7 @@ class StorageManager:
             return {
                 "storage_id": config.id,
                 "storage_name": config.name,
-                "provider": config.provider,
+                "provider": provider,
                 "path": path,
                 "new_name": new_name,
                 **result
@@ -656,7 +661,7 @@ class StorageManager:
                 ActiveStorage.user_id == self.user_id
             ).first()
             
-            return active.storage_id if active else None
+            return str(active.storage_id) if active else None
             
         except Exception as e:
             logger.error(f"Failed to get active storage: {e}")

@@ -5,7 +5,7 @@ MCP 客户端实现
 
 from typing import Dict, Any, Optional, List
 import logging
-from contextlib import asynccontextmanager
+import time
 
 from ...core.config import settings
 from ...utils.url_security import UnsafeURLError, validate_outbound_http_url_async
@@ -32,6 +32,9 @@ except ImportError:
     CallToolResult = None
 
 logger = logging.getLogger(__name__)
+
+# svc-mcp-5: how long (seconds) list_tools() results are considered fresh
+_TOOLS_CACHE_TTL_SECONDS: float = 60.0
 
 
 class MCPClient:
@@ -80,13 +83,17 @@ class MCPClient:
         self._session: Optional[ClientSession] = None
         self._session_context = None  # 保存 ClientSession 上下文管理器
         self._tools_cache: Optional[List[MCPTool]] = None
+        self._tools_cache_time: float = 0.0  # epoch seconds when cache was filled
         self._stdio_context = None  # 保存 stdio 上下文管理器
         self._streamable_http_context = None  # 保存 streamable HTTP 上下文管理器
 
+        # svc-mcp-4: log command name only at INFO; args may contain credential-style flags
         logger.info(
-            f"MCPClient initialized: type={config.server_type.value}, "
-            f"command={config.command}, args={config.args}"
+            "MCPClient initialized: type=%s, command=%s",
+            config.server_type.value,
+            config.command,
         )
+        logger.debug("MCPClient args: %s", config.args)
 
     async def __aenter__(self):
         """异步上下文管理器入口"""
@@ -205,7 +212,7 @@ class MCPClient:
             await self.close()
             raise RuntimeError(f"MCP connection failed: {e}") from e
 
-    async def list_tools(self) -> List[MCPTool]:
+    async def list_tools(self, force_refresh: bool = False) -> List[MCPTool]:
         """
         获取可用工具列表
 
@@ -218,9 +225,11 @@ class MCPClient:
         if not self._session:
             raise RuntimeError("Not connected. Call connect() first or use context manager.")
 
-        # 返回缓存的工具列表
-        if self._tools_cache is not None:
-            return self._tools_cache
+        # svc-mcp-5: return cached list if within TTL; use force_refresh=True to bypass
+        if self._tools_cache is not None and not force_refresh:
+            age = time.monotonic() - self._tools_cache_time
+            if age < _TOOLS_CACHE_TTL_SECONDS:
+                return self._tools_cache
 
         try:
             logger.info("Fetching tool list from MCP server...")
@@ -238,7 +247,8 @@ class MCPClient:
                 for tool in result.tools
             ]
 
-            logger.info(f"Found {len(self._tools_cache)} tools")
+            self._tools_cache_time = time.monotonic()
+            logger.info("Found %d tools", len(self._tools_cache))
             return self._tools_cache
 
         except Exception as e:
@@ -273,7 +283,9 @@ class MCPClient:
         if not isinstance(arguments, dict):
             raise ValueError("arguments must be a dictionary")
 
-        logger.info(f"Calling MCP tool: {tool_name} with args: {arguments}")
+        # svc-mcp-3: avoid logging argument values at INFO to prevent credential leakage
+        logger.info("Calling MCP tool: %s with %d args", tool_name, len(arguments))
+        logger.debug("MCP tool %s args: %s", tool_name, arguments)
 
         try:
             # 调用 MCP SDK 的 call_tool

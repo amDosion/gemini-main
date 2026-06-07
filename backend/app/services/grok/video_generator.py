@@ -247,7 +247,13 @@ class VideoGenerator:
             return result
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"[Grok VideoGenerator] HTTP error: {e.response.status_code} - {e.response.text}", exc_info=True)
+            # Truncate body to avoid logging potentially sensitive provider data (svc-providers-4)
+            logger.error(
+                "[Grok VideoGenerator] HTTP error: %s - %s",
+                e.response.status_code,
+                e.response.text[:200],
+                exc_info=True,
+            )
             raise
         except Exception as e:
             logger.error(f"[Grok VideoGenerator] Video generation error: {e}", exc_info=True)

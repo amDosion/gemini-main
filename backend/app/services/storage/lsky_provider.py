@@ -46,6 +46,12 @@ async def _get_async_http_client() -> httpx.AsyncClient:
     return _http_client
 
 
+# Hard cap on pages fetched by count_items to prevent unbounded pagination.
+# 100 pages × 200 items/page = 20 000 items maximum; results are flagged
+# with truncated=True when the cap is reached.
+_COUNT_ITEMS_PAGE_HARD_CAP: int = 100
+
+
 class LskyProvider(BaseStorageProvider):
     """兰空图床存储提供商"""
 
@@ -393,7 +399,12 @@ class LskyProvider(BaseStorageProvider):
                 page = 1
                 total_count = 0
 
+                truncated = False
                 while True:
+                    if page > _COUNT_ITEMS_PAGE_HARD_CAP:
+                        # Safety valve: stop fetching to avoid unbounded pagination.
+                        truncated = True
+                        break
                     response = await client.get(
                         endpoint,
                         headers=headers,
@@ -444,7 +455,8 @@ class LskyProvider(BaseStorageProvider):
                 return {
                     "supported": True,
                     "path": "",
-                    "total_count": total_count
+                    "total_count": total_count,
+                    "truncated": truncated,
                 }
             except (httpx.RequestError, httpx.HTTPStatusError) as e:
                 last_error = str(e)
@@ -477,7 +489,45 @@ class LskyProvider(BaseStorageProvider):
                 provider="lsky"
             )
 
+        # Attempt a minimal live probe to verify reachability and auth.
+        # GET /api/v1/images?per_page=1 with a short timeout.
+        # A 401 means the server is reachable (auth issue, not connectivity);
+        # only network-level failures (timeout, connection error) are reported
+        # as infrastructure failures.
+        base = domain.rstrip("/")
+        try:
+            validate_storage_egress_url(base)
+        except UnsafeURLError as exc:
+            return UploadResult(
+                success=False,
+                error=f"兰空图床 domain 被 SSRF 安全策略拒绝: {exc}",
+                provider="lsky",
+            )
+        probe_url = f"{base}/api/v1/images"
+        try:
+            client = await _get_async_http_client()
+            response = await client.get(
+                probe_url,
+                headers=self._build_headers(),
+                params={"per_page": 1},
+                timeout=10.0,
+            )
+            # Any HTTP response (including 401 Unauthorized) means the server
+            # is reachable.  Only network-level errors are treated as failures.
+            _ = response  # status not checked intentionally
+        except httpx.TimeoutException:
+            return UploadResult(
+                success=False,
+                error="兰空图床连通性测试超时，请检查 domain 地址",
+                provider="lsky",
+            )
+        except httpx.RequestError as exc:
+            return UploadResult(
+                success=False,
+                error=f"兰空图床连通性测试失败: {exc}",
+                provider="lsky",
+            )
         return UploadResult(
             success=True,
-            provider="lsky"
+            provider="lsky",
         )

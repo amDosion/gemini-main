@@ -196,8 +196,9 @@ class ImageExpandService:
                 try:
                     error_data = response.json()
                     error_msg = error_data.get("message", error_msg)
-                except:
-                    pass
+                except (ValueError, AttributeError) as json_exc:
+                    # response body is not valid JSON or not a dict; keep raw text
+                    logger.debug(f"[OutPainting] 无法解析错误响应 JSON: {json_exc}")
                 logger.error(f"[OutPainting] 提交失败: {error_msg}")
                 return False, None, error_msg
             

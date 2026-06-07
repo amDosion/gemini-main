@@ -45,6 +45,8 @@ class BatchJob:
     updated_at: int = field(default_factory=_now_ms)
     enqueued: bool = False
     cancel_requested: bool = False
+    # Timestamp (ms) when job entered a terminal state; used for TTL eviction.
+    finished_at: Optional[int] = None
 
 
 class BatchJobError(Exception):
@@ -70,12 +72,18 @@ class BatchJobDependencyError(BatchJobError):
 class BatchJobOrchestrator:
     """Async in-memory queue orchestrator."""
 
-    def __init__(self, handlers: Optional[Dict[str, BatchWorkloadHandler]] = None):
+    def __init__(
+        self,
+        handlers: Optional[Dict[str, BatchWorkloadHandler]] = None,
+        completed_job_ttl_seconds: float = 3600.0,
+    ) -> None:
         self._handlers: Dict[str, BatchWorkloadHandler] = dict(handlers or {})
         self._jobs: Dict[str, BatchJob] = {}
         self._queue: asyncio.Queue[str] = asyncio.Queue()
         self._lock = asyncio.Lock()
         self._drain_task: Optional[asyncio.Task[None]] = None
+        # Evict terminal jobs from memory after this many milliseconds.
+        self._completed_job_ttl_ms: int = max(0, int(completed_job_ttl_seconds * 1000))
 
     def register_handler(self, workload: str, handler: BatchWorkloadHandler) -> None:
         normalized = str(workload or "").strip().lower()
@@ -251,6 +259,7 @@ class BatchJobOrchestrator:
         job.enqueued = False
         job.status = "cancelled"
         job.updated_at = now
+        job.finished_at = now
         for item in job.items:
             if item.status not in {"pending", "running"}:
                 continue
@@ -272,6 +281,10 @@ class BatchJobOrchestrator:
                 logger.error("[BatchJob] Unhandled drain error for %s: %s", job_id, exc, exc_info=True)
             finally:
                 self._queue.task_done()
+
+            # Evict expired terminal jobs after each job completes to bound memory.
+            async with self._lock:
+                self._evict_expired_locked()
 
     async def _process_job(self, job_id: str) -> None:
         while True:
@@ -425,14 +438,37 @@ class BatchJobOrchestrator:
             job.status = "failed"
         else:
             job.status = "completed"
-        job.updated_at = _now_ms()
+        now = _now_ms()
+        job.updated_at = now
         job.enqueued = False
+        if job.status in {"completed", "failed", "cancelled"}:
+            job.finished_at = now
 
     def _get_job_locked(self, *, user_id: str, job_id: str) -> BatchJob:
         job = self._jobs.get(job_id)
         if not job or job.user_id != user_id:
             raise BatchJobNotFoundError("Batch job not found.")
         return job
+
+    def _evict_expired_locked(self) -> None:
+        """Remove terminal jobs whose finished_at exceeds the configured TTL.
+
+        Called under self._lock after each drain cycle to prevent unbounded
+        growth of self._jobs in long-running processes.
+        """
+        if self._completed_job_ttl_ms <= 0:
+            return
+        cutoff = _now_ms() - self._completed_job_ttl_ms
+        expired = [
+            jid
+            for jid, j in self._jobs.items()
+            if j.status in {"completed", "failed", "cancelled"}
+            and j.finished_at is not None
+            and j.finished_at <= cutoff
+        ]
+        for jid in expired:
+            logger.debug("[BatchJob] Evicting expired terminal job %s", jid)
+            del self._jobs[jid]
 
     def _serialize_progress_locked(self, job: BatchJob) -> Dict[str, Any]:
         counts = self._status_counts(job.items)
@@ -549,5 +585,6 @@ class BatchJobOrchestrator:
 
 def create_batch_job_orchestrator(
     handlers: Optional[Dict[str, BatchWorkloadHandler]] = None,
+    completed_job_ttl_seconds: float = 3600.0,
 ) -> BatchJobOrchestrator:
-    return BatchJobOrchestrator(handlers=handlers)
+    return BatchJobOrchestrator(handlers=handlers, completed_job_ttl_seconds=completed_job_ttl_seconds)

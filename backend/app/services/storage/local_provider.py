@@ -4,6 +4,7 @@
 """
 
 import asyncio
+import logging
 import os
 import shutil
 from datetime import datetime
@@ -11,6 +12,8 @@ from typing import Dict, Any, Optional
 from pathlib import Path
 from ...core.path_utils import get_project_root
 from .base import BaseStorageProvider, UploadResult
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_LOCAL_URL_PREFIX = "/api/storage/local-files"
 DEFAULT_LOCAL_STORAGE_RELATIVE_PATH = "backend/app/temp/local_storage"
@@ -121,7 +124,7 @@ class LocalProvider(BaseStorageProvider):
             resolved_relative = ""
 
         return target, resolved_relative
-    
+
     def _get_directory_size(self, path: str) -> int:
         """计算目录总大小（字节）"""
         total_size = 0
@@ -134,92 +137,101 @@ class LocalProvider(BaseStorageProvider):
         except (OSError, PermissionError):
             pass
         return total_size
-    
+
     def _check_storage_space(self, content_size: int) -> tuple[bool, str]:
-        """检查存储空间是否足够"""
+        """检查存储空间是否足够。
+
+        NOTE: This check is advisory and subject to a TOCTOU race — another
+        concurrent upload can push usage past the limit between the directory
+        scan and the actual write. The quota is therefore approximate (soft
+        limit), not a hard guarantee. This is intentional: a hard per-byte cap
+        would require filesystem-level locking which is out of scope here.
+        """
         storage_path, _url_prefix = resolve_local_storage_runtime_config(self.config)
         max_size_mb = self.config.get("max_size_mb")
-        
+
         if not max_size_mb:
             return True, ""
-        
+
         try:
             # 计算当前使用空间
             current_size_bytes = self._get_directory_size(storage_path)
             current_size_mb = current_size_bytes / (1024 * 1024)
-            
+
             # 计算上传后的总大小
             new_size_mb = current_size_mb + (content_size / (1024 * 1024))
-            
+
             if new_size_mb > max_size_mb:
                 return False, f"存储空间不足：当前 {current_size_mb:.2f}MB，限制 {max_size_mb}MB"
-            
+
             return True, ""
         except Exception as e:
             return False, f"检查存储空间失败: {str(e)}"
-    
+
     async def upload(self, filename: str, content: bytes, content_type: str) -> UploadResult:
         """
         上传文件到本地存储
-        
+
         Args:
             filename: 文件名
             content: 文件内容
             content_type: 文件 MIME 类型
-            
+
         Returns:
             UploadResult: 上传结果
         """
         storage_path, url_prefix = resolve_local_storage_runtime_config(self.config)
-        
-        # 检查存储空间
-        space_ok, space_error = self._check_storage_space(len(content))
+
+        # 检查存储空间（_check_storage_space 内部调用阻塞式 os.walk，移至线程池执行）
+        space_ok, space_error = await asyncio.to_thread(
+            self._check_storage_space, len(content)
+        )
         if not space_ok:
             return UploadResult(
                 success=False,
                 error=space_error,
                 provider="local"
             )
-        
+
         try:
             # 确保存储路径存在
             Path(storage_path).mkdir(parents=True, exist_ok=True)
-            
+
             # 生成日期目录结构 (YYYY/MM/DD)
             now = datetime.now()
             date_path = now.strftime("%Y/%m/%d")
             full_dir = os.path.join(storage_path, date_path)
-            
+
             # 创建日期目录
             Path(full_dir).mkdir(parents=True, exist_ok=True)
-            
+
             # 生成唯一文件名（使用时间戳避免冲突）
             timestamp = int(now.timestamp() * 1000)
-            
+
             # 清理文件名（移除路径遍历字符）
             safe_filename = os.path.basename(filename)
             unique_filename = f"{timestamp}_{safe_filename}"
-            
+
             # 构建完整文件路径
             file_path = os.path.join(full_dir, unique_filename)
-            
+
             # 写入文件
-            def _write_file(path, data):
+            def _write_file(path: str, data: bytes) -> None:
                 with open(path, 'wb') as f:
                     f.write(data)
             await asyncio.to_thread(_write_file, file_path, content)
-            
+
             # 计算相对路径
             relative_path = os.path.join(date_path, unique_filename)
-            
+
             # 构建公开访问 URL（使用正斜杠）
             relative_path_url = relative_path.replace('\\', '/')
             url_prefix_clean = url_prefix.rstrip('/')
             public_url = f"{url_prefix_clean}/{relative_path_url}"
-            
+
             # 获取文件大小
             file_size = os.path.getsize(file_path)
-            
+
             return UploadResult(
                 success=True,
                 url=public_url,
@@ -231,7 +243,7 @@ class LocalProvider(BaseStorageProvider):
                     "content_type": content_type
                 }
             )
-        
+
         except PermissionError:
             return UploadResult(
                 success=False,
@@ -250,30 +262,30 @@ class LocalProvider(BaseStorageProvider):
                 error=f"本地存储上传失败: {str(e)}",
                 provider="local"
             )
-    
+
     async def delete(self, file_url: str) -> bool:
         """
         删除文件
-        
+
         Args:
             file_url: 文件 URL
-            
+
         Returns:
             bool: 删除是否成功
         """
         storage_path, url_prefix = resolve_local_storage_runtime_config(self.config)
-        
+
         try:
             # 从 URL 中提取相对路径
             url_prefix_clean = url_prefix.rstrip('/')
             if not file_url.startswith(url_prefix_clean):
                 return False
-            
+
             relative_path = file_url[len(url_prefix_clean):].lstrip('/')
-            
+
             # 构建完整文件路径
             file_path = os.path.join(storage_path, relative_path.replace('/', os.sep))
-            
+
             # 安全检查：确保文件在 storagePath 内（realpath 解析符号链接，并以 os.sep
             # 为界，避免 /root_evil 命中 /root 的兄弟目录越权）
             file_path_abs = os.path.realpath(file_path)
@@ -281,17 +293,22 @@ class LocalProvider(BaseStorageProvider):
 
             if file_path_abs != storage_path_abs and not file_path_abs.startswith(storage_path_abs + os.sep):
                 return False
-            
+
             # 删除文件
             if os.path.exists(file_path):
                 os.remove(file_path)
                 return True
-            
+
             return False
-        
-        except (OSError, PermissionError):
+
+        except FileNotFoundError:
+            # File was already removed between the exists() check and remove() — treat as not found.
             return False
-        except Exception:
+        except (OSError, PermissionError) as e:
+            logger.warning("local delete failed for %r: %s", file_url, e)
+            return False
+        except Exception as e:
+            logger.warning("local delete unexpected error for %r: %s", file_url, e, exc_info=True)
             return False
 
     async def browse(
@@ -313,22 +330,30 @@ class LocalProvider(BaseStorageProvider):
                 except ValueError:
                     offset = 0
 
-            entries: list[dict] = []
-            with os.scandir(target_dir) as iterator:
-                for entry in iterator:
-                    stat = entry.stat(follow_symlinks=False)
-                    relative_item = os.path.relpath(entry.path, os.path.realpath(storage_path)).replace(os.sep, "/")
-                    item = {
-                        "name": entry.name,
-                        "path": relative_item,
-                        "entry_type": "directory" if entry.is_dir(follow_symlinks=False) else "file",
-                        "size": None if entry.is_dir(follow_symlinks=False) else stat.st_size,
-                        "updated_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                        "url": None
-                    }
-                    if item["entry_type"] == "file" and url_prefix:
-                        item["url"] = f"{url_prefix.rstrip('/')}/{relative_item}"
-                    entries.append(item)
+            # Scandir and stat calls are blocking I/O; run in a thread pool.
+            def _scan_entries() -> list[dict]:
+                result: list[dict] = []
+                storage_real = os.path.realpath(storage_path)
+                with os.scandir(target_dir) as iterator:
+                    for entry in iterator:
+                        stat = entry.stat(follow_symlinks=False)
+                        relative_item = os.path.relpath(
+                            entry.path, storage_real
+                        ).replace(os.sep, "/")
+                        item: dict = {
+                            "name": entry.name,
+                            "path": relative_item,
+                            "entry_type": "directory" if entry.is_dir(follow_symlinks=False) else "file",
+                            "size": None if entry.is_dir(follow_symlinks=False) else stat.st_size,
+                            "updated_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                            "url": None
+                        }
+                        if item["entry_type"] == "file" and url_prefix:
+                            item["url"] = f"{url_prefix.rstrip('/')}/{relative_item}"
+                        result.append(item)
+                return result
+
+            entries = await asyncio.to_thread(_scan_entries)
 
             entries.sort(key=lambda item: (0 if item["entry_type"] == "directory" else 1, item["name"].lower()))
 
@@ -487,22 +512,22 @@ class LocalProvider(BaseStorageProvider):
             return {"success": True, "supported": True, "message": None}
         except Exception as e:
             return {"success": False, "supported": True, "message": f"重命名失败: {str(e)}"}
-    
+
     async def test(self) -> UploadResult:
         """
         测试配置是否有效
-        
+
         Returns:
             UploadResult: 测试结果
         """
         storage_path, url_prefix = resolve_local_storage_runtime_config(self.config)
-        
+
         try:
             # 检查存储路径是否存在
             if not os.path.exists(storage_path):
                 # 尝试创建
                 Path(storage_path).mkdir(parents=True, exist_ok=True)
-            
+
             # 检查是否可写
             test_file = os.path.join(storage_path, '.test_write')
             try:
@@ -515,13 +540,13 @@ class LocalProvider(BaseStorageProvider):
                     error="本地存储路径不可写",
                     provider="local"
                 )
-            
-            # 计算当前使用空间
-            current_size_bytes = self._get_directory_size(storage_path)
+
+            # 计算当前使用空间（阻塞式 os.walk，移至线程池执行）
+            current_size_bytes = await asyncio.to_thread(self._get_directory_size, storage_path)
             current_size_mb = current_size_bytes / (1024 * 1024)
             max_size_mb = self.config.get("max_size_mb")
 
-            metadata = {
+            metadata: Dict[str, Any] = {
                 "storage_path": storage_path,
                 "current_size_mb": round(current_size_mb, 2)
             }
@@ -529,13 +554,13 @@ class LocalProvider(BaseStorageProvider):
             if max_size_mb:
                 metadata["max_size_mb"] = max_size_mb
                 metadata["available_mb"] = round(max_size_mb - current_size_mb, 2)
-            
+
             return UploadResult(
                 success=True,
                 provider="local",
                 metadata=metadata
             )
-        
+
         except PermissionError:
             return UploadResult(
                 success=False,

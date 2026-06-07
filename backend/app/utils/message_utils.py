@@ -225,6 +225,7 @@ def build_message_for_table(
         适合插入对应表的数据字典
     """
     # 基础字段（所有表共有）
+    meta = extract_metadata(msg)  # compute once; avoid calling twice for check + serialise
     base_data = {
         'id': msg['id'],
         'session_id': session_id,
@@ -232,7 +233,7 @@ def build_message_for_table(
         'content': msg['content'],
         'timestamp': msg['timestamp'],
         'is_error': msg.get('is_error', False),
-        'metadata_json': json.dumps(extract_metadata(msg)) if extract_metadata(msg) else None,
+        'metadata_json': json.dumps(meta) if meta else None,
     }
     
     # 根据表名添加特定字段

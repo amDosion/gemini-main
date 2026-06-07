@@ -1,14 +1,13 @@
 import time
-from typing import Dict
-from datetime import datetime, timedelta
+from typing import Dict, List
 
 
 class RateLimiter:
     """Rate limiter using in-memory storage"""
-    
+
     def __init__(self):
-        self.requests: Dict[str, list] = {}
-    
+        self.requests: Dict[str, List[float]] = {}
+
     async def check_rate_limit(
         self,
         user_id: str,
@@ -18,17 +17,22 @@ class RateLimiter:
         """Check if user is within rate limit"""
         current_time = time.time()
         window_start = current_time - window_seconds
-        
-        if user_id not in self.requests:
-            self.requests[user_id] = []
-        
-        self.requests[user_id] = [
-            req_time for req_time in self.requests[user_id]
+
+        recent: List[float] = [
+            req_time for req_time in self.requests.get(user_id, [])
             if req_time > window_start
         ]
-        
-        if len(self.requests[user_id]) >= max_requests:
+
+        # Remove the entry entirely when the window is empty so memory stays
+        # proportional to active users rather than accumulating all historical IDs.
+        if not recent:
+            self.requests.pop(user_id, None)
+            self.requests[user_id] = [current_time]
+            return True
+
+        if len(recent) >= max_requests:
             return False
-        
-        self.requests[user_id].append(current_time)
+
+        recent.append(current_time)
+        self.requests[user_id] = recent
         return True

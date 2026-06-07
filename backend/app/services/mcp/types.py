@@ -3,11 +3,14 @@ MCP 类型定义
 定义 MCP 服务使用的数据类型
 """
 
+import logging
 from typing import Dict, Any, Optional, List, Iterable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 import shutil
+
+logger = logging.getLogger(__name__)
 
 
 class MCPServerType(str, Enum):
@@ -131,8 +134,16 @@ def _collect_allowlisted_real_paths_by_name(
 
         try:
             resolved = _resolve_command_real_path(raw, context_prefix="")
-        except MCPStdioPolicyError:
-            # 忽略无法解析的 allowlist 项，仅依赖名称匹配。
+        except MCPStdioPolicyError as exc:
+            # Fallback: unresolvable allowlist entry is skipped; path-matching
+            # is degraded to name-only matching for this entry. Operators should
+            # ensure all allowlist commands are reachable on the executing host.
+            logger.warning(
+                "MCP allowlist entry '%s' could not be resolved and will only "
+                "be matched by name (degraded path-check posture): %s",
+                raw,
+                exc,
+            )
             continue
 
         real_paths.setdefault(name, set()).add(str(resolved))

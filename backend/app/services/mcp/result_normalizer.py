@@ -1,8 +1,17 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+# Maximum byte length of text that extract_embedded_json will scan.
+# Inputs beyond this limit are skipped to avoid O(n) scan cost on huge payloads.
+_MAX_SCAN_BYTES = 512 * 1024  # 512 KB
+# Maximum number of candidate positions ('{' / '[') to attempt parsing before giving up.
+_MAX_SCAN_POSITIONS = 20
 
 
 def _truncate(text: str, max_chars: int = 240) -> str:
@@ -63,12 +72,23 @@ def extract_embedded_json(text: str) -> Any:
     if not payload:
         return None
 
+    # Guard: skip scanning excessively large inputs to bound worst-case cost.
+    if len(payload) > _MAX_SCAN_BYTES:
+        logger.debug(
+            "extract_embedded_json: input too large (%d bytes), skipping scan",
+            len(payload),
+        )
+        return None
+
     decoder = json.JSONDecoder()
-    for match in re.finditer(r"[\[{]", payload):
+    # Guard: cap the number of candidate positions attempted to bound O(n) scan.
+    for attempts, match in enumerate(re.finditer(r"[\[{]", payload)):
+        if attempts >= _MAX_SCAN_POSITIONS:
+            break
         try:
             parsed, _ = decoder.raw_decode(payload[match.start():])
             return parsed
-        except Exception:
+        except json.JSONDecodeError:
             continue
     return None
 

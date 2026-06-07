@@ -147,6 +147,7 @@ async def run_web_search_tool(
     try:
         items = await asyncio.to_thread(fetch_duckduckgo_results, str(query), region)
     except Exception as exc:
+        logger.warning("[WorkflowEngine] web_search duckduckgo fetch failed: %s", exc)
         error_notes.append(f"duckduckgo:{exc}")
 
     if not items:
@@ -156,9 +157,12 @@ async def run_web_search_tool(
             items = normalize_search_items(fallback_payload, max_items=max_items)
             provider = "fallback_search"
         except Exception as exc:
+            logger.warning("[WorkflowEngine] web_search fallback fetch failed: %s", exc)
             error_notes.append(f"fallback:{exc}")
 
     items = items[:max_items]
+    # "no_results" covers both zero-result responses and all-provider fetch failures;
+    # callers can check "errors" in the response to distinguish the two.
     status = "completed" if items else "no_results"
     summary = (
         f"共找到 {len(items)} 条结果。"
