@@ -43,6 +43,31 @@ def require_current_user(request: Request) -> str:
     return require_user_id(request)
 
 
+def _user_is_admin(user_id: str) -> bool:
+    """Look up a user's admin flag (fail-closed). Isolated for testability."""
+    from .database import SessionLocal
+    from ..models.db_models import User
+
+    db = SessionLocal()
+    try:
+        return bool(db.query(User.is_admin).filter(User.id == user_id).scalar())
+    finally:
+        db.close()
+
+
+def require_admin(request: Request) -> str:
+    """Authentication dependency requiring administrator privileges.
+
+    Used for admin-only endpoints (e.g. cross-user diagnostics) so an ordinary
+    authenticated user cannot read other users' data (W02R-008). Fail-closed:
+    a missing/unknown user or a non-admin is rejected with 403.
+    """
+    user_id = require_current_user(request)
+    if not _user_is_admin(user_id):
+        raise HTTPException(status_code=403, detail="Administrator privileges required")
+    return user_id
+
+
 def get_current_user_optional(request: Request) -> Optional[str]:
     """
     可选认证依赖函数 - 不强制要求认证

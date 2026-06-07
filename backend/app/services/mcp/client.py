@@ -8,12 +8,14 @@ import logging
 from contextlib import asynccontextmanager
 
 from ...core.config import settings
+from ...utils.url_security import UnsafeURLError, validate_outbound_http_url_async
 from .types import (
     MCPServerConfig,
     MCPServerType,
     MCPTool,
     MCPToolResult,
     MCPStdioPolicyError,
+    MCPUrlPolicyError,
     validate_mcp_stdio_command_policy,
 )
 
@@ -113,6 +115,24 @@ class MCPClient:
             allowed_commands=settings.mcp_stdio_allowed_commands,
             context="mcp-client-connect",
         )
+
+        # CANON-001 / W02R-005: HTTP/SSE MCP server URLs are user-controlled and must
+        # pass the same outbound-egress SSRF policy as any other backend fetch.
+        # Validated before the connection attempt so a restricted (loopback/private/
+        # metadata) target is rejected rather than reached.
+        if self.config.server_type in (
+            MCPServerType.HTTP,
+            MCPServerType.STREAMABLE_HTTP,
+            MCPServerType.SSE,
+        ):
+            try:
+                # Event-loop-safe variant: bounds DNS resolution so a hostile/slow
+                # resolver on a user-supplied MCP URL cannot stall the event loop.
+                await validate_outbound_http_url_async(self.config.url or "")
+            except UnsafeURLError as exc:
+                raise MCPUrlPolicyError(
+                    f"MCP server URL rejected by outbound policy: {exc}"
+                ) from exc
 
         try:
             logger.info("Connecting to MCP server...")

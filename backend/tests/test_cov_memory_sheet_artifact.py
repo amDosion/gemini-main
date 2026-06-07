@@ -770,23 +770,28 @@ class TestBuildIngestKwargs:
         )
         assert kwargs["data_url"] == "data:text/csv;base64,YQ=="
 
-    def test_local_file_url_read_as_base64(self, tmp_path):
+    def test_local_file_url_rejected_without_resolver(self, tmp_path):
+        # SECURITY (CANON-008 / W02R-006): a server-local path supplied as file_url
+        # must NOT be read directly (was arbitrary local file read / LFI). With no
+        # vetted resolve_file_reference callback it must be rejected outright.
         f = tmp_path / "local.csv"
         f.write_text("col\nval\n", encoding="utf-8")
-        kwargs = build_sheet_ingest_kwargs_from_request(
-            request_body={"file_url": str(f)},
-            user_id=USER_ID,
-        )
-        assert kwargs["content_encoding"] == "base64"
-        assert kwargs["file_name"] == "local.csv"
+        with pytest.raises(ValueError):
+            build_sheet_ingest_kwargs_from_request(
+                request_body={"file_url": str(f)},
+                user_id=USER_ID,
+            )
 
-    def test_nonexistent_local_path_treated_as_file_url(self, tmp_path):
+    def test_nonexistent_local_path_rejected_without_resolver(self, tmp_path):
+        # SECURITY (CANON-008): a non-http/non-data file_url is no longer silently
+        # passed through; without a resolver it is rejected rather than treated as
+        # a server filesystem reference.
         missing = tmp_path / "ghost.csv"
-        kwargs = build_sheet_ingest_kwargs_from_request(
-            request_body={"file_url": str(missing)},
-            user_id=USER_ID,
-        )
-        assert kwargs["file_url"] == str(missing)
+        with pytest.raises(ValueError):
+            build_sheet_ingest_kwargs_from_request(
+                request_body={"file_url": str(missing)},
+                user_id=USER_ID,
+            )
 
     def test_no_source_without_resolver_raises(self):
         with pytest.raises(ValueError, match="content, data_url, file_url"):

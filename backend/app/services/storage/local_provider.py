@@ -16,6 +16,36 @@ DEFAULT_LOCAL_URL_PREFIX = "/api/storage/local-files"
 DEFAULT_LOCAL_STORAGE_RELATIVE_PATH = "backend/app/temp/local_storage"
 
 
+def _local_storage_allowed_roots() -> list[str]:
+    """Operator-controlled allow list of local storage roots.
+
+    CANON-020/025/026 / W02R-010: a user-configured local 'storage_path' must be
+    contained within one of these roots. The default root is the built-in local
+    storage base, so default deployments are unaffected. Operators broaden it via
+    the LOCAL_STORAGE_ALLOWED_ROOTS env var (os.pathsep- or comma-separated).
+    """
+    roots = [
+        os.path.realpath(
+            os.path.join(get_project_root(), *DEFAULT_LOCAL_STORAGE_RELATIVE_PATH.split("/"))
+        )
+    ]
+    raw = os.getenv("LOCAL_STORAGE_ALLOWED_ROOTS", "") or ""
+    sep = os.pathsep if os.pathsep in raw else ","
+    for part in raw.split(sep):
+        candidate = part.strip()
+        if candidate:
+            roots.append(os.path.realpath(candidate))
+    return roots
+
+
+def _is_within_allowed_local_root(path: str) -> bool:
+    target = os.path.realpath(path)
+    for root in _local_storage_allowed_roots():
+        if target == root or target.startswith(root + os.sep):
+            return True
+    return False
+
+
 def resolve_local_storage_runtime_config(config: Optional[Dict[str, Any]] = None) -> tuple[str, str]:
     runtime_config = dict(config or {})
     storage_path = str(runtime_config.get("storage_path") or "").strip()
@@ -27,6 +57,15 @@ def resolve_local_storage_runtime_config(config: Optional[Dict[str, Any]] = None
         storage_path = os.path.realpath(os.path.join(get_project_root(), storage_path))
     else:
         storage_path = os.path.realpath(storage_path)
+
+    # CANON-020/025/026 / W02R-010: the root itself must be operator-approved.
+    # Containment elsewhere is only enforced *relative* to this root, so an
+    # unrestricted root would let an authenticated user read/write/delete anywhere
+    # the app user can access.
+    if not _is_within_allowed_local_root(storage_path):
+        raise ValueError(
+            "storage_path 不在允许的本地存储根范围内；如需放行请设置 LOCAL_STORAGE_ALLOWED_ROOTS"
+        )
 
     if not url_prefix:
         url_prefix = DEFAULT_LOCAL_URL_PREFIX
@@ -235,11 +274,12 @@ class LocalProvider(BaseStorageProvider):
             # 构建完整文件路径
             file_path = os.path.join(storage_path, relative_path.replace('/', os.sep))
             
-            # 安全检查：确保文件在 storagePath 内
-            file_path_abs = os.path.abspath(file_path)
-            storage_path_abs = os.path.abspath(storage_path)
-            
-            if not file_path_abs.startswith(storage_path_abs):
+            # 安全检查：确保文件在 storagePath 内（realpath 解析符号链接，并以 os.sep
+            # 为界，避免 /root_evil 命中 /root 的兄弟目录越权）
+            file_path_abs = os.path.realpath(file_path)
+            storage_path_abs = os.path.realpath(storage_path)
+
+            if file_path_abs != storage_path_abs and not file_path_abs.startswith(storage_path_abs + os.sep):
                 return False
             
             # 删除文件

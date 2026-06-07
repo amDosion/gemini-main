@@ -292,8 +292,13 @@ def test_resolve_safe_preview_fetch_url_allowlists_restricted_host(monkeypatch):
         raise UnsafeURLError("URL 指向受限网络地址")
 
     monkeypatch.setattr(storage_mod, "validate_outbound_http_url", fake_validate)
+    # CANON-007: the bypass now requires the host to be approved by the OPERATOR
+    # (deploy-time env), not merely present in the user-derived storage allowlist.
+    monkeypatch.setattr(
+        storage_mod, "_operator_allowed_private_hosts", lambda: {"internal.example.com"}
+    )
     url = "https://internal.example.com/file.png"
-    # host present in allowlist -> allowed despite restricted-network error
+    # operator-approved AND user-configured host -> allowed despite restricted error
     assert storage_mod._resolve_safe_preview_fetch_url(url, {"internal.example.com"}) == url
 
 

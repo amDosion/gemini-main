@@ -5,7 +5,7 @@ This module provides API endpoints for getting available models from all provide
 It supports caching to improve performance and reduce API calls.
 """
 
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, Header
 from sqlalchemy.orm import Session
 from typing import List, Optional, Tuple, Any, Dict
 import logging
@@ -902,7 +902,11 @@ async def get_available_models(
     provider: str,
     use_cache: bool = Query(True, description="Whether to use cached models"),
     include_hidden: bool = Query(False, description="Include models hidden from the primary model selector"),
-    api_key: Optional[str] = Query(None, description="Override API key for verification requests"),
+    api_key: Optional[str] = Header(
+        None,
+        alias="X-Provider-Api-Key",
+        description="Override API key for verification requests (W02R-017: header, not query, to keep the secret out of access logs / history)",
+    ),
     base_url: Optional[str] = Query(None, description="Override base URL for verification requests"),
     mode: Optional[str] = Query(None, description="Filter models by app mode (chat, image-edit, image-gen, etc.)"),
     user_id: str = Depends(require_current_user),

@@ -745,6 +745,17 @@ def _collect_storage_preview_host_allowlist(db: Session, user_id: str) -> set[st
     return allowlist
 
 
+def _operator_allowed_private_hosts() -> set[str]:
+    """Deploy-time allowlist of private hosts the storage proxy may fetch.
+
+    CANON-007 / W02R-013: the private-network SSRF bypass must be controlled by
+    the OPERATOR (env STORAGE_PREVIEW_ALLOWED_PRIVATE_HOSTS), never self-populated
+    from a user's own storage config. Default empty = no bypass at all.
+    """
+    raw = getattr(settings, "storage_preview_allowed_private_hosts_raw", "") or ""
+    return {h.strip().lower() for h in raw.split(",") if h.strip()}
+
+
 def _resolve_safe_preview_fetch_url(url: str, allowed_hosts: set[str]) -> str:
     raw_url = str(url or "").strip()
     if not raw_url:
@@ -755,7 +766,13 @@ def _resolve_safe_preview_fetch_url(url: str, allowed_hosts: set[str]) -> str:
     except UnsafeURLError as exc:
         if _is_restricted_network_error(exc):
             host = _extract_hostname_from_value(raw_url)
-            if host and host in allowed_hosts:
+            operator_allowed = _operator_allowed_private_hosts()
+            # CANON-007: a restricted (loopback/private/metadata) host may only be
+            # fetched when the OPERATOR explicitly allowlisted it at deploy time.
+            # The user-derived `allowed_hosts` set alone must never grant the
+            # bypass, otherwise an authenticated user self-populates it via their
+            # own storage config and turns the proxy into an SSRF primitive.
+            if host and host in operator_allowed and host in allowed_hosts:
                 return raw_url
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -3017,7 +3034,14 @@ async def get_prepared_storage_download(
 
 
 @router.get("/local-files/{relative_path:path}", include_in_schema=False)
-async def get_local_storage_file(relative_path: str):
+async def get_local_storage_file(
+    relative_path: str,
+    user_id: str = Depends(require_current_user),
+):
+    # CANON-024 / W02R-011: require authentication. Same-origin <img> requests
+    # authenticate via the httpOnly access_token cookie, so media display is
+    # unaffected, but anonymous cross-user reads by guessable path are blocked.
+    # (Per-object ownership is a follow-up: the default layout is not user-scoped.)
     normalized_relative_path = str(relative_path or "").strip().lstrip("/")
     if not normalized_relative_path:
         raise HTTPException(status_code=404, detail="File not found")

@@ -16,12 +16,14 @@ import io
 import tempfile
 from typing import Dict, Any, List, Optional, Tuple, Union
 
-import aiohttp
+import httpx
 
 from ..client_pool import get_client_pool
 from ..common.parameter_validation import ImageServiceValidator
 from ...common.google_model_catalog import get_google_vertex_static_model_entries
 from ....utils.attachment_handler import is_base64_url
+from ....utils.url_security import UnsafeURLError, get_with_redirect_guard
+from ...storage.local_provider import resolve_local_public_file_path
 
 logger = logging.getLogger(__name__)
 
@@ -278,33 +280,40 @@ class ExpandService:
             return image_bytes, mime_type
 
         elif image_path.startswith('http://') or image_path.startswith('https://'):
-            # HTTP URL：需要下载图片（参考 ConversationalImageEditService.send_edit_message）
+            # HTTP URL：需要下载图片
+            # CANON-021: user-supplied image URL — fetch through the shared egress
+            # guard so the initial URL AND every redirect hop are SSRF-validated
+            # (a plain client would follow a 302 into a private/internal host).
             logger.info(f"[Expand Service] 下载 HTTP URL 图片: {image_path[:60]}...")
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(image_path, timeout=aiohttp.ClientTimeout(total=30)) as response:
-                        if response.status == 200:
-                            image_bytes = await response.read()
-                            mime_type = response.headers.get('Content-Type', 'image/png')
-                            # 清理 mime_type（可能包含 charset 等额外信息）
-                            if ';' in mime_type:
-                                mime_type = mime_type.split(';')[0].strip()
-                            logger.info(f"[Expand Service] ✅ HTTP URL 下载成功，大小: {len(image_bytes)} bytes, mime_type: {mime_type}")
-                            return image_bytes, mime_type
-                        else:
-                            raise ValueError(f"HTTP {response.status}: Failed to download image from {image_path[:60]}...")
-            except aiohttp.ClientError as e:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response, _final_url = await get_with_redirect_guard(
+                        client, image_path, max_redirects=5
+                    )
+                    response.raise_for_status()
+                    image_bytes = response.content
+                    mime_type = response.headers.get('Content-Type', 'image/png')
+                    # 清理 mime_type（可能包含 charset 等额外信息）
+                    if ';' in mime_type:
+                        mime_type = mime_type.split(';')[0].strip()
+                    logger.info(f"[Expand Service] ✅ HTTP URL 下载成功，大小: {len(image_bytes)} bytes, mime_type: {mime_type}")
+                    return image_bytes, mime_type
+            except UnsafeURLError:
+                raise  # propagate SSRF rejection (do not mask as a generic download error)
+            except httpx.HTTPError as e:
                 logger.error(f"[Expand Service] ❌ HTTP URL 下载失败: {e}")
                 raise ValueError(f"Failed to download image from URL: {str(e)}")
 
         else:
-            # 本地文件路径
-            if not os.path.exists(image_path):
-                raise ValueError(f"Image file not found: {image_path}")
-            with open(image_path, 'rb') as f:
+            # 本地文件路径：CANON-017/021 — 仅允许 allow-root 内的 local-files 引用，
+            # 不得对任意用户/模型可控路径执行 open()（任意文件读取 LFI）。
+            local_path = resolve_local_public_file_path(image_path)
+            if local_path is None or not local_path.exists() or not local_path.is_file():
+                raise ValueError(f"Image file not found or not permitted: {image_path}")
+            with open(local_path, 'rb') as f:
                 image_bytes = f.read()
             # 根据扩展名推断 mime_type
-            ext = os.path.splitext(image_path)[1].lower()
+            ext = os.path.splitext(str(local_path))[1].lower()
             mime_map = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp'}
             mime_type = mime_map.get(ext, 'image/png')
             return image_bytes, mime_type

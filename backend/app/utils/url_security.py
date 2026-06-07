@@ -8,6 +8,7 @@ import socket
 from typing import Optional
 from urllib.parse import urlparse
 
+import httpcore
 import httpx
 
 # Bound DNS resolution for async callers so a slow/hostile resolver cannot stall
@@ -133,6 +134,36 @@ def _getaddrinfo(host: str, port: int):
     )
 
 
+def _resolve_single_allowed_ip(host: str, port: int) -> str:
+    """Resolve ``host`` and return a single allowed IP to connect to (W02R-016).
+
+    Performs the SSRF policy check on the resolution result and returns one
+    validated IP. The caller connects to exactly this IP, eliminating the
+    check-then-reconnect DNS-rebinding window. Raises ``UnsafeURLError`` for a
+    disallowed host/IP or a failed resolution.
+    """
+    ip_literal = _try_parse_ip_host(host)
+    if ip_literal is not None:
+        if _is_disallowed_ip(ip_literal):
+            raise UnsafeURLError("URL 指向受限地址")
+        return str(ip_literal)
+
+    if _is_disallowed_hostname(host):
+        raise UnsafeURLError("URL 主机不被允许")
+
+    try:
+        addr_infos = _getaddrinfo(host, port)
+    except socket.gaierror as exc:
+        raise UnsafeURLError("URL 主机解析失败") from exc
+
+    _check_resolved_addr_infos(addr_infos)
+
+    for info in addr_infos:
+        if info and len(info) >= 5 and info[4]:
+            return str(info[4][0])
+    raise UnsafeURLError("URL 主机解析失败")
+
+
 def validate_outbound_http_url(url: str) -> str:
     """Validate outbound URL against SSRF risks and return normalized raw URL.
 
@@ -209,6 +240,9 @@ async def get_with_redirect_guard(
     Returns:
         (response, final_url)
     """
+    # W02R-016: pin DNS resolution to a validated IP at connect time so a
+    # rebinding flip between validation and connect cannot reach an internal host.
+    _ensure_client_pinned(client)
     current_url = validate_outbound_http_url(url)
     redirect_count = 0
 
@@ -223,3 +257,121 @@ async def get_with_redirect_guard(
         next_url = resolve_safe_redirect_url(current_url, response.headers.get("location", ""))
         current_url = next_url
         redirect_count += 1
+
+
+def sync_get_with_redirect_guard(
+    url: str,
+    *,
+    headers: Optional[dict] = None,
+    timeout: float = 30.0,
+    max_redirects: int = 5,
+) -> httpx.Response:
+    """Canonical synchronous SSRF-safe GET (sync counterpart of
+    :func:`get_with_redirect_guard`).
+
+    Validates the initial URL and re-validates EVERY redirect hop, and pins the
+    connection to the validated IP at connect time (W02R-016) via a dedicated
+    pinned httpx sync transport — so a public URL cannot 302 into a private host
+    and a DNS-rebinding flip cannot reach an internal address. The pinning is
+    scoped to this client only (no global socket state). Returns httpx.Response.
+    """
+    current_url = validate_outbound_http_url(url)
+    redirect_count = 0
+
+    with httpx.Client(timeout=timeout, follow_redirects=False) as client:
+        _ensure_sync_client_pinned(client)
+        while True:
+            response = client.get(current_url, headers=headers)
+            if response.status_code not in _REDIRECT_STATUS_CODES:
+                return response
+
+            location = response.headers.get("Location") or response.headers.get("location")
+            if redirect_count >= max_redirects:
+                raise UnsafeURLError(f"重定向次数超过限制 ({max_redirects})")
+            current_url = resolve_safe_redirect_url(current_url, location or "")
+            redirect_count += 1
+
+
+class _PinningAsyncBackend(httpcore.AsyncNetworkBackend):
+    """httpcore backend that resolves+validates the host and connects to that
+    exact IP (W02R-016).
+
+    Because resolution, SSRF validation, and the TCP connect happen atomically
+    here, there is no second resolution for a DNS-rebinding attacker to flip.
+    httpcore still drives TLS with ``server_hostname`` = the original hostname,
+    so SNI and certificate verification remain correct.
+    """
+
+    def __init__(self) -> None:
+        self._inner = httpcore.AnyIOBackend()
+
+    async def connect_tcp(
+        self, host, port, timeout=None, local_address=None, socket_options=None
+    ):
+        pinned_ip = _resolve_single_allowed_ip(host, int(port))
+        return await self._inner.connect_tcp(
+            pinned_ip,
+            port,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
+
+    async def connect_unix_socket(self, *args, **kwargs):  # pragma: no cover - not used
+        raise UnsafeURLError("unix-socket egress is not allowed")
+
+    async def sleep(self, seconds: float) -> None:  # pragma: no cover - passthrough
+        await self._inner.sleep(seconds)
+
+
+def _ensure_client_pinned(client: httpx.AsyncClient) -> None:
+    """Inject the SSRF/rebinding-safe network backend into an httpx client's pool.
+
+    Fail-closed: if the expected httpx/httpcore internals are not present (e.g.
+    after a library upgrade), raise rather than silently fetch without pinning.
+    """
+    transport = getattr(client, "_transport", None)
+    pool = getattr(transport, "_pool", None)
+    if pool is None or not hasattr(pool, "_network_backend"):
+        raise UnsafeURLError("无法为出站连接启用 SSRF 固定后端（httpx 内部结构不兼容）")
+    if not isinstance(pool._network_backend, _PinningAsyncBackend):
+        pool._network_backend = _PinningAsyncBackend()
+
+
+class _PinningSyncBackend(httpcore.NetworkBackend):
+    """Synchronous mirror of :class:`_PinningAsyncBackend` (W02R-016)."""
+
+    def __init__(self) -> None:
+        self._inner = httpcore.SyncBackend()
+
+    def connect_tcp(
+        self, host, port, timeout=None, local_address=None, socket_options=None
+    ):
+        pinned_ip = _resolve_single_allowed_ip(host, int(port))
+        return self._inner.connect_tcp(
+            pinned_ip,
+            port,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
+
+    def connect_unix_socket(self, *args, **kwargs):  # pragma: no cover - not used
+        raise UnsafeURLError("unix-socket egress is not allowed")
+
+    def sleep(self, seconds: float) -> None:  # pragma: no cover - passthrough
+        self._inner.sleep(seconds)
+
+
+def _ensure_sync_client_pinned(client: httpx.Client) -> None:
+    """Inject the SSRF/rebinding-safe sync backend into an httpx.Client pool.
+
+    Fail-closed: raise if the expected httpx/httpcore internals are absent rather
+    than silently connecting without pinning.
+    """
+    transport = getattr(client, "_transport", None)
+    pool = getattr(transport, "_pool", None)
+    if pool is None or not hasattr(pool, "_network_backend"):
+        raise UnsafeURLError("无法为出站连接启用 SSRF 固定后端（httpx 内部结构不兼容）")
+    if not isinstance(pool._network_backend, _PinningSyncBackend):
+        pool._network_backend = _PinningSyncBackend()

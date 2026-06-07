@@ -22,6 +22,10 @@ class MCPStdioPolicyError(ValueError):
     """stdio 命令策略校验失败"""
 
 
+class MCPUrlPolicyError(ValueError):
+    """HTTP/SSE MCP 服务器 URL 未通过出站 SSRF 策略校验（CANON-001 / W02R-005）。"""
+
+
 _STDIO_POLICY_ALLOWLIST = "allowlist"
 _STDIO_POLICY_DENY_ALL = "deny_all"
 _STDIO_POLICY_ALLOW_ALL = "allow_all"

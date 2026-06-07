@@ -21,31 +21,22 @@ from bs4 import BeautifulSoup
 
 from ....utils.url_security import (
     UnsafeURLError,
-    resolve_safe_redirect_url,
+    sync_get_with_redirect_guard,
     validate_outbound_http_url,
 )
 
 
 def _http_get_with_ssrf_guard(url: str, *, headers: Dict[str, str], timeout: int,
                               max_redirects: int = 5):
-    """SSRF-safe GET (S2).
+    """SSRF-safe GET (S2) — delegates to the canonical pinned sync egress guard.
 
-    Validates the initial URL and every redirect hop against
-    app.utils.url_security, disabling requests' automatic redirect following so
-    each ``Location`` is re-validated before it is fetched. Raises UnsafeURLError
-    on a blocked target or too many hops.
+    Validates the initial URL and every redirect hop AND connects to the
+    validated IP at connect time (no DNS-rebinding window). Returns an
+    httpx.Response. Raises UnsafeURLError on a blocked target or too many hops.
     """
-    current = validate_outbound_http_url(url)
-    for _ in range(max_redirects + 1):
-        response = requests.get(
-            current, timeout=timeout, headers=headers, allow_redirects=False
-        )
-        location = response.headers.get("Location") or response.headers.get("location")
-        if 300 <= response.status_code < 400 and location:
-            current = resolve_safe_redirect_url(current, location)
-            continue
-        return response
-    raise UnsafeURLError("重定向次数过多")
+    return sync_get_with_redirect_guard(
+        url, headers=headers, timeout=timeout, max_redirects=max_redirects
+    )
 
 # Markdown conversion for cleaner output
 try:

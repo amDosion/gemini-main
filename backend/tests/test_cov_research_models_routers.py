@@ -932,7 +932,10 @@ def test_get_available_models_verify_path(models_client, db_session, monkeypatch
 
     monkeypatch.setattr(pf, "ProviderFactory", FakeFactory)
 
-    resp = models_client.get("/api/models/openai?api_key=sk-test")
+    # W02R-017: the verification key is sent via header, not the query string.
+    resp = models_client.get(
+        "/api/models/openai", headers={"X-Provider-Api-Key": "sk-test"}
+    )
     assert resp.status_code == 200
     ids = {m["id"] for m in resp.json()["models"]}
     assert "gpt-4o" in ids

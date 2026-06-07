@@ -14,6 +14,7 @@ from google import genai
 from google.genai import types
 
 from ..client_pool import get_client_pool
+from ....utils.url_security import validate_outbound_http_url_async
 
 logger = logging.getLogger(__name__)
 
@@ -391,8 +392,10 @@ Document Text:
                 pdf_url = reference_images.get("pdf_url")
                 if pdf_url:
                     import httpx
+                    # CANON-010: pdf_url is attachment/user-controlled — enforce SSRF policy.
+                    safe_pdf_url = await validate_outbound_http_url_async(str(pdf_url))
                     async with httpx.AsyncClient() as client:
-                        response = await client.get(pdf_url)
+                        response = await client.get(safe_pdf_url)
                         response.raise_for_status()
                         pdf_bytes = response.content
         

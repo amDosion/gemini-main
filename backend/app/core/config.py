@@ -131,6 +131,12 @@ class Settings(BaseSettings):
     environment: str = os.getenv("ENVIRONMENT", "development").lower()
     allow_registration: bool = os.getenv("ALLOW_REGISTRATION", "false").lower() == "true"
     enable_global_auth_boundary: bool = os.getenv("ENABLE_GLOBAL_AUTH_BOUNDARY", "true").lower() == "true"
+    # CANON-007: storage preview/download 私网放行白名单，仅由运维在部署期设置。
+    # 默认空 = 不放行任何受限网络地址；绝不从用户存储配置自动填充（防 SSRF 自助绕过）。
+    # 逗号分隔的主机名/IP，例如自托管 MinIO："minio.internal,127.0.0.1"
+    storage_preview_allowed_private_hosts_raw: str = os.getenv(
+        "STORAGE_PREVIEW_ALLOWED_PRIVATE_HOSTS", ""
+    )
     # 注意：jwt_secret_key 不再从环境变量读取，由 jwt_utils.py 管理
     # 保留此字段仅用于向后兼容，实际使用 jwt_utils.py 中的 JWT_SECRET_KEY
     jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15"))

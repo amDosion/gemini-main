@@ -470,16 +470,14 @@ def build_sheet_ingest_kwargs_from_request(
         if lowered.startswith(("http://", "https://")):
             kwargs["file_url"] = normalized_file_url
             return kwargs
-        local_path = Path(normalized_file_url)
-        if local_path.exists() and local_path.is_file():
-            payload_bytes = local_path.read_bytes()
-            kwargs["content"] = base64.b64encode(payload_bytes).decode("ascii")
-            kwargs["content_encoding"] = "base64"
-            if not _pick_first_text(payload, ["file_name", "fileName"]):
-                kwargs["file_name"] = local_path.name or kwargs["file_name"]
-            return kwargs
-        kwargs["file_url"] = normalized_file_url
-        return kwargs
+        # SECURITY (CANON-008 / W02R-006): a non-http/non-data file_url must NEVER be
+        # treated as a server filesystem path here. Reading Path(file_url).read_bytes()
+        # on raw user input is arbitrary local file read (LFI). Local references are
+        # only permitted through the vetted resolve_file_reference callback below
+        # (allow-root / attachment ownership), never via this direct branch.
+        if not callable(resolve_file_reference):
+            raise ValueError("file_url must be an http(s) or data URL")
+        # fall through to resolver-based resolution below
 
     if not callable(resolve_file_reference):
         raise ValueError("one of content, data_url, file_url is required")

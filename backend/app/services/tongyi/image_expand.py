@@ -17,6 +17,8 @@ import time
 import httpx
 import requests
 
+from ...utils.url_security import sync_get_with_redirect_guard
+
 # 导入独立的上传服务
 from .file_upload import upload_bytes_to_dashscope
 
@@ -63,8 +65,10 @@ class ImageExpandService:
     def download_image(url: str) -> Optional[bytes]:
         """下载图片"""
         try:
+            # CANON-012: per-hop redirect-validated fetch (user-supplied URL;
+            # requests would otherwise follow a 302 into a private/internal host).
             logger.info(f"[OutPainting] 下载图片: {url[:60]}...")
-            response = requests.get(url, timeout=30)
+            response = sync_get_with_redirect_guard(url, timeout=30)
             if response.status_code == 200:
                 logger.info(f"[OutPainting] 下载成功，大小: {len(response.content)} bytes")
                 return response.content

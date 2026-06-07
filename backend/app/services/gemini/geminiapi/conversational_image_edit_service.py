@@ -21,7 +21,10 @@ from ..common.config_builder import ConfigBuilder
 from ..common.chat_session_manager import ChatSessionManager
 from ..common.file_handler import FileHandler
 from ...common.model_capabilities import get_google_capabilities
+import httpx
+
 from ....utils.attachment_handler import is_base64_url
+from ....utils.url_security import UnsafeURLError, get_with_redirect_guard
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +39,20 @@ class ConversationalImageEditService:
     - get_chat_history: 获取会话历史
     - delete_chat_session: 删除会话
     """
+    @staticmethod
+    async def _download_http_image_guarded(url: str, fallback_mime: str = "image/png") -> tuple[bytes, str]:
+        """CANON-021: SSRF-guarded download of a reference image URL.
+
+        Routes through the shared egress guard so the initial URL AND every
+        redirect hop are validated (a plain client would follow a 302 into a
+        private/internal host). Returns (image_bytes, mime_type).
+        """
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response, _final_url = await get_with_redirect_guard(client, url, max_redirects=5)
+            response.raise_for_status()
+            mime_type = (response.headers.get("Content-Type") or fallback_mime).split(";")[0].strip()
+            return response.content, (mime_type or fallback_mime)
+
     _ENHANCE_PROMPT_FALLBACK_MODEL = "gemini-2.5-pro"
     _NON_MULTIMODAL_ENHANCE_KEYWORDS = (
         "imagen",
@@ -1021,38 +1038,35 @@ class ConversationalImageEditService:
                         # HTTP URL：需要下载图片
                         logger.info(f"[ConversationalImageEdit] 下载 HTTP URL 图片: {url[:60]}...")
                         try:
-                            import aiohttp
-                            async with aiohttp.ClientSession() as session:
-                                async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
-                                    if response.status == 200:
-                                        image_bytes = await response.read()
-                                        mime_type = ref_img.get('mime_type') or response.headers.get('Content-Type', 'image/png')
-                                        
-                                        if genai_types:
-                                            # 使用官方示例的方式：Part.from_bytes()
-                                            try:
-                                                message_parts.append(genai_types.Part.from_bytes(
-                                                    data=image_bytes,
-                                                    mime_type=mime_type
-                                                ))
-                                                logger.info(f"[ConversationalImageEdit] ✅ HTTP URL 下载成功，大小: {len(image_bytes)} bytes")
-                                            except AttributeError:
-                                                # 如果 from_bytes 不存在，回退到 inline_data 方式
-                                                message_parts.append(genai_types.Part(inline_data=genai_types.Blob(
-                                                    data=image_bytes,
-                                                    mime_type=mime_type
-                                                )))
-                                        else:
-                                            # 回退到字典格式
-                                            base64_str = base64.b64encode(image_bytes).decode('utf-8')
-                                            message_parts.append({
-                                                'inline_data': {
-                                                    'mime_type': mime_type,
-                                                    'data': base64_str
-                                                }
-                                            })
-                                    else:
-                                        raise ValueError(f"HTTP {response.status}: Failed to download image from {url[:60]}...")
+                            # CANON-021: SSRF-guarded fetch (initial URL + every redirect hop).
+                            image_bytes, mime_type = await self._download_http_image_guarded(
+                                url, ref_img.get('mime_type') or 'image/png'
+                            )
+                            if genai_types:
+                                # 使用官方示例的方式：Part.from_bytes()
+                                try:
+                                    message_parts.append(genai_types.Part.from_bytes(
+                                        data=image_bytes,
+                                        mime_type=mime_type
+                                    ))
+                                    logger.info(f"[ConversationalImageEdit] ✅ HTTP URL 下载成功，大小: {len(image_bytes)} bytes")
+                                except AttributeError:
+                                    # 如果 from_bytes 不存在，回退到 inline_data 方式
+                                    message_parts.append(genai_types.Part(inline_data=genai_types.Blob(
+                                        data=image_bytes,
+                                        mime_type=mime_type
+                                    )))
+                            else:
+                                # 回退到字典格式
+                                base64_str = base64.b64encode(image_bytes).decode('utf-8')
+                                message_parts.append({
+                                    'inline_data': {
+                                        'mime_type': mime_type,
+                                        'data': base64_str
+                                    }
+                                })
+                        except UnsafeURLError:
+                            raise  # propagate SSRF rejection (do not mask as a generic download error)
                         except Exception as e:
                             logger.error(f"[ConversationalImageEdit] ❌ HTTP URL 下载失败: {e}")
                             raise ValueError(f"Failed to download image from URL: {str(e)}")

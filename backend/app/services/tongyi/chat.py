@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 from dashscope import Generation, MultiModalConversation
 import dashscope
 
+from ..storage.local_provider import resolve_local_public_file_path
 from ..common.base_provider import BaseProviderService
 from ..common.model_capabilities import ModelConfig, build_model_config
 from ..common.errors import (
@@ -447,13 +448,11 @@ class QwenNativeProvider(BaseProviderService):
             return None
 
         try:
-            parsed = urlparse(raw_path)
-            if parsed.scheme == "file":
-                candidate = Path(parsed.path).expanduser()
-            else:
-                candidate = Path(raw_path).expanduser()
-
-            if not candidate.exists() or not candidate.is_file():
+            # CANON-028: only read files that resolve within the allowed local-storage
+            # root (shared allow-root resolver). Arbitrary filesystem paths and
+            # file:// URLs are denied — no raw Path(...).read_bytes() on user/model input.
+            candidate = resolve_local_public_file_path(raw_path)
+            if candidate is None or not candidate.exists() or not candidate.is_file():
                 return None
 
             data = candidate.read_bytes()

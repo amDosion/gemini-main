@@ -58,15 +58,17 @@ def test_read_webpage_allows_public_target(monkeypatch):
 
     captured = {}
 
-    def _fake_get(url, **kwargs):
+    def _fake_get(self, url, **kwargs):
         captured["url"] = url
-        captured["allow_redirects"] = kwargs.get("allow_redirects")
         return _FakeResponse()
 
-    monkeypatch.setattr(browser.requests, "get", _fake_get)
+    # The guard now uses a pinned httpx sync client (redirects disabled on the
+    # client itself); mock its GET instead of requests.
+    import httpx
+
+    monkeypatch.setattr(httpx.Client, "get", _fake_get)
 
     # 8.8.8.8 is a public IP literal -> passes the SSRF guard with no DNS lookup.
     result = browser.read_webpage("http://8.8.8.8/")
     assert "hello-public" in result.lower()
-    # Redirects must be disabled so each hop can be re-validated.
-    assert captured.get("allow_redirects") is False
+    assert captured.get("url") == "http://8.8.8.8/"

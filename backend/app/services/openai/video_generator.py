@@ -527,11 +527,10 @@ class VideoGenerator:
                 return local_path.read_bytes(), mime_type
             raise ValueError(f"Local storage media file not found for OpenAI video generation: {url[:80]}")
 
-        path = Path(url)
-        if path.exists() and path.is_file():
-            mime_type = mimetypes.guess_type(path.name)[0] or fallback_mime_type
-            return path.read_bytes(), mime_type
-
+        # CANON-027: no generic Path(url).read_bytes() fallback — that was arbitrary
+        # local file read (LFI). Legit local media is served only via the allow-rooted
+        # DEFAULT_LOCAL_URL_PREFIX branch above; anything else must be an http(s) URL
+        # validated by the outbound guard below.
         safe_url = validate_outbound_http_url(url)
         async with httpx.AsyncClient(timeout=30.0) as client:
             response, _ = await get_with_redirect_guard(client, safe_url, max_redirects=5)

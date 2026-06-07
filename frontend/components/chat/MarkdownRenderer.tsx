@@ -1,4 +1,3 @@
-
 import { safeCopyToClipboard } from '../../utils/safeOps';
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
@@ -45,7 +44,7 @@ SyntaxHighlighter.registerLanguage('yml', yaml);
 // 思考块组件 - 用于渲染 AI 模型的 <think> 标签内容
 const ThinkBlock: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  
+
   return (
     <div className="my-3 rounded-lg border border-slate-700/50 bg-slate-900/50 overflow-hidden">
       <button
@@ -69,15 +68,23 @@ interface MarkdownRendererProps {
   content: string;
 }
 
-const CodeBlock = ({ language, children, ...props }: { language?: string; children?: React.ReactNode; [key: string]: unknown }) => {
+const CodeBlock = ({
+  language,
+  children,
+  ...props
+}: {
+  language?: string;
+  children?: React.ReactNode;
+  [key: string]: unknown;
+}) => {
   const [isCopied, setIsCopied] = useState(false);
 
   const handleCopy = async () => {
     if (!children) return;
     const ok = await safeCopyToClipboard(String(children));
     if (ok) {
-        setIsCopied(true);
-        setTimeout(() => setIsCopied(false), 2000);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
     }
   };
 
@@ -85,8 +92,8 @@ const CodeBlock = ({ language, children, ...props }: { language?: string; childr
     <div className="rounded-lg overflow-hidden my-3 border border-slate-700/50 shadow-sm group font-sans bg-[#0f172a]">
       <div className="bg-slate-900/80 px-3 py-2 text-xs text-slate-400 border-b border-slate-700/50 flex justify-between items-center backdrop-blur-sm">
         <span className="font-mono text-slate-500 font-bold lowercase">{language || 'text'}</span>
-        <button 
-          onClick={handleCopy} 
+        <button
+          onClick={handleCopy}
           className="flex items-center gap-1.5 text-slate-500 hover:text-white transition-colors p-1.5 rounded-md hover:bg-white/5"
           title="Copy to clipboard"
         >
@@ -98,7 +105,13 @@ const CodeBlock = ({ language, children, ...props }: { language?: string; childr
         style={vscDarkPlus}
         language={language}
         PreTag="div"
-        customStyle={{ margin: 0, padding: '1rem', background: 'transparent', fontSize: '0.875rem', lineHeight: '1.6' }}
+        customStyle={{
+          margin: 0,
+          padding: '1rem',
+          background: 'transparent',
+          fontSize: '0.875rem',
+          lineHeight: '1.6',
+        }}
         wrapLines={true}
         wrapLongLines={true}
         {...props}
@@ -109,14 +122,15 @@ const CodeBlock = ({ language, children, ...props }: { language?: string; childr
   );
 };
 
-
 // Sanitize schema: allow common HTML but block script execution
 const sanitizeSchema = {
   ...defaultSchema,
   tagNames: [...(defaultSchema.tagNames || []), 'think', 'details', 'summary', 'mark'],
   attributes: {
     ...defaultSchema.attributes,
-    '*': [...(defaultSchema.attributes?.['*'] || []), 'className', 'style'],
+    // W02R-019: do NOT allow inline `style` on chat/model-controlled markdown
+    // (CSS injection / UI redress, e.g. position:fixed overlays). className only.
+    '*': [...(defaultSchema.attributes?.['*'] || []), 'className'],
     img: [...(defaultSchema.attributes?.['img'] || []), 'src', 'alt', 'width', 'height', 'loading'],
     a: [...(defaultSchema.attributes?.['a'] || []), 'href', 'target', 'rel'],
   },
@@ -127,23 +141,50 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
   const customComponents: Record<string, unknown> = {
     // 处理 AI 模型的 <think> 标签（DeepSeek、Claude 等模型的思考过程）
     think: ({ children }: { children?: React.ReactNode }) => <ThinkBlock>{children}</ThinkBlock>,
-    code({ node, inline, className, children, ...props }: { node?: unknown; inline?: boolean; className?: string; children?: React.ReactNode; [key: string]: unknown }) {
+    code({
+      node,
+      inline,
+      className,
+      children,
+      ...props
+    }: {
+      node?: unknown;
+      inline?: boolean;
+      className?: string;
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) {
       const match = /language-(\w+)/.exec(className || '');
       return !inline && match ? (
         <CodeBlock language={match[1]} children={children} {...props} />
       ) : (
-        <code className={`${className} bg-slate-800 text-orange-300 px-1 py-0.5 rounded text-sm`} {...props}>
+        <code
+          className={`${className} bg-slate-800 text-orange-300 px-1 py-0.5 rounded text-sm`}
+          {...props}
+        >
           {children}
         </code>
       );
     },
     a: ({ node, ...props }: { node?: unknown; [key: string]: unknown }) => (
-      <a target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline" {...props} />
+      <a
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-400 hover:underline"
+        {...props}
+      />
     ),
-    ul: ({ node, ...props }: { node?: unknown; [key: string]: unknown }) => <ul className="list-disc pl-5 my-2 space-y-1" {...props} />,
-    ol: ({ node, ...props }: { node?: unknown; [key: string]: unknown }) => <ol className="list-decimal pl-5 my-2 space-y-1" {...props} />,
+    ul: ({ node, ...props }: { node?: unknown; [key: string]: unknown }) => (
+      <ul className="list-disc pl-5 my-2 space-y-1" {...props} />
+    ),
+    ol: ({ node, ...props }: { node?: unknown; [key: string]: unknown }) => (
+      <ol className="list-decimal pl-5 my-2 space-y-1" {...props} />
+    ),
     blockquote: ({ node, ...props }: { node?: unknown; [key: string]: unknown }) => (
-      <blockquote className="border-l-4 border-slate-600 pl-4 italic text-slate-400 my-2" {...props} />
+      <blockquote
+        className="border-l-4 border-slate-600 pl-4 italic text-slate-400 my-2"
+        {...props}
+      />
     ),
   };
 

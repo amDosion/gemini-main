@@ -13,8 +13,19 @@ import socket
 import ipaddress
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
-from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.error import HTTPError
+from urllib.parse import urljoin, urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
+
+
+class _NoFollowRedirect(HTTPRedirectHandler):
+    """Disable urllib auto-redirect so each hop's Location can be re-validated."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: N802
+        return None
+
+
+_REDIRECT_CODES = {301, 302, 303, 307, 308}
 
 from ....core.config import settings
 from ....utils.attachment_handler import is_base64_url
@@ -82,21 +93,44 @@ def load_binary_from_reference(
 
     parsed = urlparse(ref_text)
     if parsed.scheme in ("http", "https"):
-        safe_ref = validate_remote_reference_url(engine, ref_text)
-        request = Request(
-            url=safe_ref,
-            headers={
-                "User-Agent": "WorkflowEngine/1.0",
-                "Accept": "*/*",
-            },
-        )
-        with urlopen(request, timeout=10) as response:  # nosec B310
-            content_type = str(response.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
-            raw = response.read(max_bytes + 1)
-        if len(raw) > max_bytes:
-            raise ValueError(f"文件过大，超过 {max_bytes // (1024 * 1024)}MB 上限")
-        file_name = Path(parsed.path).name or "remote-file"
-        return raw, content_type, file_name
+        # CANON-018 / W02R-023: validate the initial URL AND every redirect hop.
+        # urllib follows redirects by default, so disable auto-redirect and
+        # re-validate each Location before fetching it (otherwise a public URL
+        # could 302 into a private/internal host). The streaming size cap is
+        # preserved via response.read(max_bytes + 1).
+        current = validate_remote_reference_url(engine, ref_text)
+        opener = build_opener(_NoFollowRedirect)
+        for _ in range(6):  # initial request + up to 5 redirects
+            request = Request(
+                url=current,
+                headers={
+                    "User-Agent": "WorkflowEngine/1.0",
+                    "Accept": "*/*",
+                },
+            )
+            try:
+                response = opener.open(request, timeout=10)  # nosec B310
+            except HTTPError as exc:
+                code = exc.code
+                location = exc.headers.get("Location") if exc.headers else None
+                try:
+                    exc.close()  # best-effort: release the redirect connection
+                except Exception:  # noqa: BLE001
+                    pass
+                if code in _REDIRECT_CODES:
+                    if not location:
+                        raise ValueError("重定向缺少 Location")
+                    current = validate_remote_reference_url(engine, urljoin(current, location))
+                    continue
+                raise
+            with response:
+                content_type = str(response.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+                raw = response.read(max_bytes + 1)
+            if len(raw) > max_bytes:
+                raise ValueError(f"文件过大，超过 {max_bytes // (1024 * 1024)}MB 上限")
+            file_name = Path(urlparse(current).path).name or "remote-file"
+            return raw, content_type, file_name
+        raise ValueError("重定向次数过多")
 
     if parsed.scheme in ("", "file"):
         if not settings.workflow_allow_local_file_reference:

@@ -26,6 +26,13 @@ import httpx
 import requests
 
 from ...utils.attachment_handler import is_base64_url
+from ...utils.url_security import (
+    UnsafeURLError,
+    get_with_redirect_guard,
+    sync_get_with_redirect_guard,
+    validate_outbound_http_url,
+    validate_outbound_http_url_async,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +222,17 @@ def upload_to_dashscope(
     try:
         logger.info("[DashScope Upload] 开始上传到临时存储...")
         logger.info(f"[DashScope Upload] 模型: {model}")
-        
+
+        # CANON-012: image_url is user-supplied and fetched server-side (step 2).
+        # Enforce the outbound SSRF policy up-front (data: URLs aren't fetched, so
+        # they are exempt) and fail fast before any outbound request is made.
+        if not is_base64_url(image_url):
+            try:
+                image_url = validate_outbound_http_url(image_url)
+            except UnsafeURLError as exc:
+                logger.warning(f"[DashScope Upload] 图片 URL 被出站策略拒绝: {exc}")
+                return DashScopeUploadResult(success=False, error=f"图片 URL 被拒绝: {exc}")
+
         # 步骤 1: 获取上传凭证
         logger.info("[DashScope Upload] 步骤 1: 获取上传凭证...")
         policy_url = f"{DASHSCOPE_BASE_URL}/api/v1/uploads"
@@ -270,7 +287,9 @@ def upload_to_dashscope(
         else:
             # URL - 下载图片
             try:
-                image_response = requests.get(image_url, timeout=30)
+                # CANON-012: per-hop redirect-validated fetch (requests follows
+                # redirects by default; a public URL could otherwise 302 -> internal).
+                image_response = sync_get_with_redirect_guard(image_url, timeout=30)
                 if image_response.status_code != 200:
                     return DashScopeUploadResult(
                         success=False,
@@ -481,6 +500,16 @@ async def upload_to_dashscope_async(
         logger.info("[DashScope Upload] 开始上传到临时存储 (async)...")
         logger.info(f"[DashScope Upload] 模型: {model}")
 
+        # CANON-012: image_url is user-supplied and fetched server-side (step 2 via
+        # httpx, follow_redirects=False). Enforce the outbound SSRF policy up-front
+        # (data: URLs are exempt) and fail fast before any outbound request.
+        if not is_base64_url(image_url):
+            try:
+                image_url = await validate_outbound_http_url_async(image_url)
+            except UnsafeURLError as exc:
+                logger.warning(f"[DashScope Upload] 图片 URL 被出站策略拒绝: {exc}")
+                return DashScopeUploadResult(success=False, error=f"图片 URL 被拒绝: {exc}")
+
         # 步骤 1: 获取上传凭证
         logger.info("[DashScope Upload] 步骤 1: 获取上传凭证...")
         success, policy_data, error = await _get_upload_policy_async(api_key, model)
@@ -508,7 +537,11 @@ async def upload_to_dashscope_async(
                 )
         else:
             try:
-                image_response = await client.get(image_url, timeout=30.0)
+                # CANON-012: per-hop redirect-validated fetch (so a public URL cannot
+                # 302 -> internal and legit redirect-serving URLs still work).
+                image_response, _final_url = await get_with_redirect_guard(
+                    client, image_url, max_redirects=5
+                )
                 if image_response.status_code != 200:
                     return DashScopeUploadResult(
                         success=False,

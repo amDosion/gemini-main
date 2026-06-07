@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 from ...utils.attachment_handler import is_base64_url
+from ...utils.url_security import validate_outbound_http_url_async
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +85,11 @@ class ImageEditor:
                 _, encoded = source.split(",", 1)
                 return base64.b64decode(encoded)
             if source.startswith(("http://", "https://")):
+                # CANON-011: request-controlled reference image URL — enforce the
+                # outbound SSRF policy before fetching it server-side.
+                safe_source = await validate_outbound_http_url_async(source)
                 async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.get(source)
+                    response = await client.get(safe_source)
                     response.raise_for_status()
                     return response.content
         if isinstance(source, bytes):

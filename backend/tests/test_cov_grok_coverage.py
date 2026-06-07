@@ -525,6 +525,15 @@ async def test_load_image_bytes_from_bytes_passthrough():
 async def test_load_image_bytes_from_http(monkeypatch):
     ed = _editor()
 
+    # CANON-011: _load_image_bytes now runs the SSRF guard first; this test pins
+    # the download mechanics, so pass the (non-resolvable) test host through.
+    async def _passthrough(url):
+        return url
+
+    monkeypatch.setattr(
+        "app.services.grok.image_editor.validate_outbound_http_url_async", _passthrough
+    )
+
     class _Resp:
         content = b"downloaded"
 

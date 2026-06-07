@@ -10,7 +10,7 @@ import logging
 
 import httpx
 
-from ...core.dependencies import require_current_user
+from ...core.dependencies import require_admin, require_current_user
 
 logger = logging.getLogger(__name__)
 from ...utils.url_security import validate_outbound_http_url
@@ -65,7 +65,7 @@ async def stop_browser_session(
 
 @router.get("/browser/sessions")
 async def get_browser_sessions(
-    user_id: str = Depends(require_current_user)
+    user_id: str = Depends(require_admin)
 ):
     """
     获取活跃的浏览器会话信息（仅供管理员调试使用）。

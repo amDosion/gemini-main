@@ -19,6 +19,11 @@ from ...core.dependencies import require_current_user
 from ...models.db_models import MessageAttachment
 from ...services.common.attachment_service import AttachmentService
 from ...utils.attachment_handler import is_base64_url, is_blob_url, is_http_url
+from ...utils.url_security import (
+    UnsafeURLError,
+    get_with_redirect_guard,
+    validate_outbound_http_url,
+)
 from ...services.gemini.base.video_asset_download import download_google_video_asset_for_user
 from ...services.gemini.base.video_common import normalize_gemini_file_name
 from ...services.storage.local_provider import resolve_local_public_file_path
@@ -34,15 +39,31 @@ async def _proxy_remote_image(
     remote_url: str,
     fallback_mime_type: Optional[str] = None,
 ) -> Response:
-    """Fetch remote image bytes and return same-origin response."""
-    async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:
-        upstream = await client.get(
-            remote_url,
-            headers={
-                "Accept": "image/*,*/*;q=0.8",
-                "User-Agent": "GeminiMain/TempImageProxy",
-            },
-        )
+    """Fetch remote image bytes and return same-origin response.
+
+    SSRF guard (CANON-006): the URL originates from user/provider-controlled
+    attachment fields, so it must pass the shared outbound-egress policy
+    (scheme + private/loopback/metadata blocklist + per-hop redirect validation)
+    before any request leaves the backend. follow_redirects is handled by
+    get_with_redirect_guard, which re-validates every hop instead of trusting
+    httpx to follow redirects blindly.
+    """
+    try:
+        safe_url = validate_outbound_http_url(remote_url)
+    except UnsafeURLError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    async with httpx.AsyncClient(
+        timeout=20.0,
+        headers={
+            "Accept": "image/*,*/*;q=0.8",
+            "User-Agent": "GeminiMain/TempImageProxy",
+        },
+    ) as client:
+        try:
+            upstream, _final_url = await get_with_redirect_guard(client, safe_url, max_redirects=5)
+        except UnsafeURLError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         upstream.raise_for_status()
     content_type = (upstream.headers.get("content-type") or fallback_mime_type or "application/octet-stream").split(";")[0]
     return Response(
@@ -228,6 +249,8 @@ async def get_temp_image(
                 logger.info(f"[TempImage] Proxying uploaded URL (no_redirect=1): {attachment_id}")
                 try:
                     return await _proxy_remote_image(attachment.url, attachment.mime_type)
+                except HTTPException:
+                    raise  # propagate SSRF/validation rejection (400) instead of masking as 502
                 except Exception as e:
                     logger.error(f"[TempImage] Proxy uploaded URL failed: {attachment_id}: {e}")
                     raise HTTPException(status_code=502, detail=f"Failed to proxy uploaded image: {str(e)}")
@@ -287,6 +310,8 @@ async def get_temp_image(
             logger.info(f"[TempImage] Proxying HTTP URL (no_redirect=1): {attachment_id}")
             try:
                 return await _proxy_remote_image(temp_url, attachment.mime_type)
+            except HTTPException:
+                raise  # propagate SSRF/validation rejection (400) instead of masking as 502
             except Exception as e:
                 logger.error(f"[TempImage] Proxy fetch failed: {attachment_id}: {e}")
                 raise HTTPException(status_code=502, detail=f"Failed to proxy temp image: {str(e)}")

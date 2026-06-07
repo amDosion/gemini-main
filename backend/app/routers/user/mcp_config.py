@@ -17,7 +17,7 @@ from ...core.config import settings
 from ...core.database import get_db
 from ...core.dependencies import require_current_user
 from ...middleware.case_conversion_middleware import case_conversion_options
-from ...models.db_models import UserMcpConfig
+from ...models.db_models import User, UserMcpConfig
 from ...services.mcp.types import (
     MCPServerType,
     MCPServerConfig,
@@ -192,17 +192,34 @@ def _build_and_validate_mcp_server_config(
         ) from exc
 
 
-def _validate_config_root_or_raise(root: Any, *, context: str) -> None:
+def _user_is_admin(db: Session, user_id: str) -> bool:
+    """Return True only if the user row exists and is flagged admin (fail-closed)."""
+    return bool(db.query(User.is_admin).filter(User.id == user_id).scalar())
+
+
+def _validate_config_root_or_raise(root: Any, *, context: str, allow_stdio: bool = True) -> None:
     if not isinstance(root, dict):
         raise HTTPException(status_code=400, detail="MCP config root must be a JSON object")
 
     server_map = _extract_server_map(root)
     for server_key, server_config in server_map.items():
-        _build_and_validate_mcp_server_config(
+        config = _build_and_validate_mcp_server_config(
             str(server_key),
             server_config,
             context=context,
         )
+        # CANON-001 / W02R-004: stdio MCP servers spawn local processes on the
+        # backend host (backend RCE surface — npx/uvx/node/python run with the app
+        # user's privileges). Restrict their configuration to administrators; other
+        # users may use http/streamableHttp/sse transports only.
+        if config.server_type == MCPServerType.STDIO and not allow_stdio:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"stdio MCP server '{server_key}' requires administrator privileges; "
+                    "use an http/streamableHttp/sse transport instead"
+                ),
+            )
 
 
 def _session_id_for_server(user_id: str, server_key: str, server_config: Dict[str, Any]) -> str:
@@ -279,7 +296,11 @@ async def update_mcp_config(
     try:
         normalized = _normalize_config_json(payload.config_json, payload.config)
         root = json.loads(normalized)
-        _validate_config_root_or_raise(root, context="mcp-config-save")
+        _validate_config_root_or_raise(
+            root,
+            context="mcp-config-save",
+            allow_stdio=_user_is_admin(db, user_id),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, text
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from ...models.db_models import User, RefreshToken, LoginAttempt, IPBlocklist, IPLoginHistory, generate_user_id
@@ -289,6 +289,24 @@ class AuthService:
         
         return True, None
 
+    # W02R-002: stable application-defined key for the first-admin advisory lock.
+    _FIRST_ADMIN_LOCK_KEY = 7723391011
+
+    def _acquire_first_admin_bootstrap_lock(self) -> None:
+        """Serialize the first-admin bootstrap decision (CWE-362).
+
+        On PostgreSQL, take a transaction-scoped advisory lock held until commit,
+        so concurrent registrations on an empty instance serialize through the
+        count->insert->commit critical section and only the first becomes admin.
+        SQLite serializes writers already, so no lock is issued there.
+        """
+        dialect = getattr(getattr(self.db, "bind", None), "dialect", None)
+        if dialect is not None and getattr(dialect, "name", "") == "postgresql":
+            self.db.execute(
+                text("SELECT pg_advisory_xact_lock(:k)"),
+                {"k": self._FIRST_ADMIN_LOCK_KEY},
+            )
+
     def register(self, data: RegisterRequest) -> AuthResponse:
         """
         用户注册
@@ -310,6 +328,10 @@ class AuthService:
         existing_user = self.db.query(User).filter(User.email == data.email).first()
         if existing_user:
             raise EmailExistsError()
+
+        # W02R-002: serialize the first-admin bootstrap decision so two concurrent
+        # registrations on an empty instance cannot both be granted admin (CWE-362).
+        self._acquire_first_admin_bootstrap_lock()
 
         # 创建用户（首个注册用户默认授予管理员）
         user_count = self.db.query(func.count(User.id)).scalar() or 0
@@ -549,18 +571,26 @@ class AuthService:
         if payload.type != 'refresh':
             raise InvalidTokenError()
 
-        # 检查令牌是否被撤销
+        # W02R-001: 失败闭合。仅当 refresh JWT 对应一个“已存储且未撤销”的 DB 行时才接受。
+        # 缺失行（已轮换/已清理）或已撤销行都不得铸发新令牌，否则服务端撤销无法生效。
         token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+        # W02R-001: lock the row so concurrent refreshes of the same token serialize
+        # (single-use rotation). On backends without row locking this is a no-op,
+        # but on Postgres it prevents two workers each minting a fresh pair.
         db_token = self.db.query(RefreshToken).filter(
             RefreshToken.token_hash == token_hash
-        ).first()
-        if db_token and db_token.revoked_at:
+        ).with_for_update().first()
+        if db_token is None or db_token.revoked_at is not None:
             raise InvalidTokenError()
-        
-        # ✅ 撤销当前使用的 refresh_token
-        if db_token:
-            db_token.revoked_at = datetime.now(timezone.utc)
-            self.db.commit()
+
+        # W02R-001: 绝不为非活跃账户铸发新的会话凭据（与 access-token 校验路径一致）。
+        user = self.get_user_by_id(payload.sub)
+        if user is None or getattr(user, "status", None) != "active":
+            raise InvalidTokenError()
+
+        # ✅ 撤销当前使用的 refresh_token（单次使用 + 轮换）
+        db_token.revoked_at = datetime.now(timezone.utc)
+        self.db.commit()
 
         # 生成新令牌（_create_tokens 会自动清理旧 token）
         return self._create_tokens(payload.sub)

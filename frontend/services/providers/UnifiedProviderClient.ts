@@ -123,8 +123,12 @@ export class UnifiedProviderClient implements ILLMProvider {
     // Build query parameters
     // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
     const params = new URLSearchParams();
+    // W02R-017: the API key is a secret and MUST NOT go in the query string
+    // (it would leak into access logs / browser history / Referer). Send it via
+    // the X-Provider-Api-Key request header instead.
+    const headers: Record<string, string> = {};
     if (apiKey) {
-      params.append('apiKey', apiKey); // ✅ 传递 API Key 给后端
+      headers['X-Provider-Api-Key'] = apiKey;
     }
     if (baseUrl) {
       params.append('baseUrl', baseUrl);
@@ -138,6 +142,7 @@ export class UnifiedProviderClient implements ILLMProvider {
     const response = await fetchWithTimeout(url, {
       withAuth: true,
       skipAuth: true,
+      headers,
       timeoutMs: 30000,
       timeoutMessage: `Request to ${this.id} API timed out after 30 seconds. Please check your network connection and try again.`,
     });
