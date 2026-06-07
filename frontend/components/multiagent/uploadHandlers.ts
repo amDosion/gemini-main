@@ -16,15 +16,40 @@ export const INLINE_UPLOAD_MAX_BYTES = 8 * 1024 * 1024;
 /** 上限字节的人类可读 label（用于错误消息） */
 export const INLINE_UPLOAD_MAX_BYTES_LABEL = '8MB';
 
+/** inline 上传错误事件名（沿用 `workflow:*` CustomEvent 约定）。 */
+export const INLINE_UPLOAD_ERROR_EVENT = 'workflow:inline-upload-error';
+
+/** inline 上传错误事件 detail。 */
+export interface InlineUploadErrorEventDetail {
+  /** 已解析的、面向用户的错误消息。 */
+  message: string;
+}
+
 /**
- * 弹窗报告 inline 上传错误。
+ * 报告 inline 上传错误。
  * 优先使用 Error.message，否则用 fallback 字符串。
  *
- * 注：1:1 沿用 `window.alert` UI；后续 ticket 可统一替换为 toast。
+ * 通过可取消的 `workflow:inline-upload-error` CustomEvent 派发，父级编辑器可监听
+ * 并以可关闭横幅展示（对齐既有 `executeErrorBanner` 模式）。若无监听者消费该事件
+ * （`preventDefault` 未被调用），则回退到 `window.alert` 以保留原有用户可见行为。
  */
 export function reportInlineUploadError(fallbackMessage: string, error: unknown): void {
   const message = error instanceof Error && error.message ? error.message : fallbackMessage;
-  if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  let consumed = false;
+  if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+    const event = new CustomEvent<InlineUploadErrorEventDetail>(INLINE_UPLOAD_ERROR_EVENT, {
+      detail: { message },
+      cancelable: true,
+    });
+    // dispatchEvent 返回 false 表示某个监听者调用了 preventDefault（即已消费该错误）。
+    consumed = window.dispatchEvent(event) === false;
+  }
+
+  if (!consumed && typeof window.alert === 'function') {
     window.alert(message);
   }
 }

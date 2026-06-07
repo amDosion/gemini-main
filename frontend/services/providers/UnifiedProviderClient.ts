@@ -35,69 +35,17 @@ import {
   pickAllowedEntries,
 } from './unifiedProviderHelpers';
 
-/**
- * Raw model entry as returned by `GET /api/models/{provider}`.
- *
- * The backend emits complete ModelConfig-shaped objects, but every field is
- * treated as optional/dynamic here because the shape is provider-driven and
- * may evolve; narrowing happens at the mapping site.
- */
-interface RawModelEntry {
-  id: string;
-  name?: string;
-  description?: string;
-  capabilities?: Record<string, boolean>;
-  contextWindow?: number;
-}
-
-/** Response envelope for `GET /api/models/{provider}`. */
-interface ModelsListResponse {
-  models: RawModelEntry[];
-}
-
-/**
- * Unified backend response envelope: `{ success: boolean; data: T }`.
- * Used by every `/api/modes/{provider}/{mode}` endpoint.
- */
-interface UnifiedResponseEnvelope<T = unknown> {
-  success: boolean;
-  data: T;
-}
-
-/**
- * Image result item shape returned inside `data.images` for image modes.
- * Fields mirror the standardized backend payload (snake_case is converted to
- * camelCase by CaseConversionMiddleware before it reaches the client).
- */
-interface RawImageResultItem {
-  url?: string;
-  mimeType?: string;
-  filename?: string;
-  attachmentId?: string;
-  uploadStatus?: 'pending' | 'completed' | 'failed';
-  taskId?: string;
-  thoughts?: Array<{ type: 'text' | 'image'; content: string }>;
-  text?: string;
-  enhancedPrompt?: string;
-  openaiResponseId?: string;
-  messageId?: string;
-  sessionId?: string;
-  userId?: string;
-  size?: number;
-  cloudUrl?: string;
-  createdAt?: number;
-}
-
-/** `data` payload for image modes that return a list of generated images. */
-interface ImageModeData {
-  images?: RawImageResultItem[];
-}
-
-/** Response payload for `POST /api/upload/{provider}`. */
-interface UploadFileResponse {
-  fileId?: string;
-  url?: string;
-}
+// services-10: response-shape interfaces live in ./unifiedProviderTypes
+// (same split pattern as ./unifiedProviderHelpers) to keep this file under the
+// 800-line project cap.
+import type {
+  RawModelEntry,
+  ModelsListResponse,
+  UnifiedResponseEnvelope,
+  RawImageResultItem,
+  ImageModeData,
+  UploadFileResponse,
+} from './unifiedProviderTypes';
 
 export class UnifiedProviderClient implements ILLMProvider {
   public id: string;
@@ -449,14 +397,8 @@ export class UnifiedProviderClient implements ILLMProvider {
   ): Promise<any> {
     const normalizedOptions = normalizeLegacyModeOptions(mode, options);
     const normalizedExtra = pruneUndefinedEntries({ ...(extra || {}) });
-    const { kept: sanitizedOptions } = pickAllowedEntries(
-      normalizedOptions,
-      MODE_OPTION_KEYS
-    );
-    const { kept: sanitizedExtra } = pickAllowedEntries(
-      normalizedExtra,
-      MODE_EXTRA_KEYS
-    );
+    const { kept: sanitizedOptions } = pickAllowedEntries(normalizedOptions, MODE_OPTION_KEYS);
+    const { kept: sanitizedExtra } = pickAllowedEntries(normalizedExtra, MODE_EXTRA_KEYS);
     const requestBody = {
       modelId,
       prompt,

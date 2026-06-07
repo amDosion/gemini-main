@@ -24,8 +24,11 @@ import { useImageCarousel } from '../../hooks/useImageCarousel';
 import { processUserAttachments } from '../../hooks/handlers/attachmentUtils';
 import { useClipboardAttachments } from '../../hooks/useClipboardAttachments';
 import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
-import { useImageHistorySidebar } from '../common/ImageHistorySidebar';
-import { getPreferredImageAttachmentUrl, revokeAttachmentObjectUrls } from '../../utils/attachmentUrl';
+import { extractImageHistoryPrompts, useImageHistorySidebar } from '../common/ImageHistorySidebar';
+import {
+  getPreferredImageAttachmentUrl,
+  revokeAttachmentObjectUrls,
+} from '../../utils/attachmentUrl';
 import { useThinkingBlock } from '../../hooks/useThinkingBlock';
 
 interface ImageGenViewProps {
@@ -45,43 +48,6 @@ interface ImageGenViewProps {
   sessionId?: string | null;
   onDeleteMessage?: (messageId: string) => void;
 }
-
-const extractHistoryPrompts = (
-  msg: Message
-): { originalPrompt: string; enhancedPrompt: string } => {
-  const rawContent = (msg.content || '').trim();
-  const attachmentEnhancedPrompt = msg.attachments
-    ?.find((att) => att.enhancedPrompt?.trim())
-    ?.enhancedPrompt?.trim();
-
-  let originalPrompt = rawContent;
-  let optimizedPrompt = msg.enhancedPrompt?.trim() || attachmentEnhancedPrompt || '';
-
-  const promptPairMatch = rawContent.match(/^📝\s*([\s\S]*?)(?:\n✨\s*([\s\S]*))?$/);
-  if (promptPairMatch) {
-    originalPrompt = (promptPairMatch[1] || '').trim();
-    if (!optimizedPrompt && promptPairMatch[2]) {
-      optimizedPrompt = promptPairMatch[2].trim();
-    }
-  } else {
-    const originalOnlyMatch = rawContent.match(/^📝\s*([\s\S]*)$/);
-    if (originalOnlyMatch) {
-      originalPrompt = originalOnlyMatch[1].trim();
-    }
-
-    if (!optimizedPrompt) {
-      const optimizedOnlyMatch = rawContent.match(/^✨\s*([\s\S]*)$/);
-      if (optimizedOnlyMatch) {
-        optimizedPrompt = optimizedOnlyMatch[1].trim();
-      }
-    }
-  }
-
-  return {
-    originalPrompt: originalPrompt || 'Generated Image Batch',
-    enhancedPrompt: optimizedPrompt,
-  };
-};
 
 export const ImageGenView: React.FC<ImageGenViewProps> = ({
   messages,
@@ -168,7 +134,8 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
     // 等 activeModelConfig 就绪才 fetch，避免 mount 时 modelId 未定义的浪费请求
     { enabled: !!activeModelConfig?.id }
   );
-  const schemaMaxCount = genSchema?.constraints?.max_image_count;
+  // constraints is Record<string, unknown>; narrow at runtime before using as a number.
+  const schemaMaxCount: unknown = genSchema?.constraints?.max_image_count;
   const maxImageCount = typeof schemaMaxCount === 'number' ? schemaMaxCount : isOpenAI ? 1 : 4;
   const supportsOutputMimeControls = Boolean(genSchema?.paramOptions?.output_mime_type?.length);
   const supportsOutputFormatControls = Boolean(genSchema?.paramOptions?.output_format?.length);
@@ -287,17 +254,17 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
 
   const carouselItems = useMemo<CarouselMediaItem[]>(
     () =>
-        displayImages.map((att, idx) => ({
-          id: att.id || `${idx}`,
-          url: att.url || null,
-          thumbUrl: att.url || null,
-          source: {
-            ...att,
-            attachmentId: att.id,
-            url: att.url || undefined,
-          },
-          alt: `缩略图 ${idx + 1}`,
-        })),
+      displayImages.map((att, idx) => ({
+        id: att.id || `${idx}`,
+        url: att.url || null,
+        thumbUrl: att.url || null,
+        source: {
+          ...att,
+          attachmentId: att.id,
+          url: att.url || undefined,
+        },
+        alt: `缩略图 ${idx + 1}`,
+      })),
     [displayImages]
   );
 
@@ -442,7 +409,12 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
     fallbackSelection: 'first',
     getDisplayAttachments: getDisplayImageAttachments,
     getAttachmentUrl: getGeneratedAttachmentUrl,
-    extractPrompts: extractHistoryPrompts,
+    extractPrompts: (message) =>
+      extractImageHistoryPrompts(message, {
+        fallbackLabel: 'Generated Image Batch',
+        includeAttachmentEnhanced: true,
+        matchOptimizedOnly: true,
+      }),
     onSelectItem: ({ message }) => {
       setSelectedMsgId(message.id);
       setCarouselInitialIndex(0);

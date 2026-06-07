@@ -7,7 +7,19 @@
  * - 分发入口统一为 providerId + mode
  */
 import React from 'react';
-import { AppMode } from '../../types/types';
+import { AppMode, ModelConfig } from '../../types/types';
+import type {
+  ChatControlsProps,
+  ImageGenControlsProps,
+  ImageEditControlsProps,
+  ImageMaskEditControlsProps,
+  ImageOutpaintControlsProps,
+  VideoGenControlsProps,
+  AudioGenControlsProps,
+  VirtualTryOnControlsProps,
+  PdfExtractControlsProps,
+  MultiAgentControlsProps,
+} from '../types';
 import * as CommonControls from './google';
 import { ImageEditControls as OpenAIImageEditControls } from './openai/ImageEditControls';
 import { ImageGenControls as OpenAIImageGenControls } from './openai/ImageGenControls';
@@ -19,22 +31,35 @@ import { ImageGenControls as TongYiImageGenControls } from './tongyi/ImageGenCon
 import { ImageGenControls as GrokImageGenControls } from './grok/ImageGenControls';
 import { VideoGenControls as GrokVideoGenControls } from './grok/VideoGenControls';
 
-// Each slot holds a component with its own concrete prop type. `any` is required here
-// because TypeScript's contravariant component type parameter prevents assigning
-// React.FC<ConcreteProps> to React.ComponentType<BaseProps | object | unknown>.
-// Call sites in ModeControlsCoordinator cast to the concrete prop type before rendering.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// Extra props the ModeControlsCoordinator supplies uniformly to the image-edit /
+// outpaint / virtual-try-on slots. The shared OpenAIImageControls-based override
+// components require a `mode` prop and accept `currentModel` / `availableModels` /
+// `maxImageCount`, while the base interfaces in `../types` omit some of these.
+// Modelling them here (all optional except `mode`, which the coordinator always
+// passes) keeps the slots precise enough to accept both the common google
+// components and the provider override components without falling back to `any`.
+type ImageEditSlotExtras = {
+  mode: AppMode | 'image-edit';
+  currentModel?: ModelConfig;
+  availableModels?: ModelConfig[];
+  maxImageCount?: number;
+};
+
+// Each slot is parameterized with its concrete prop interface from `../types`, so
+// the registry is type-checked without `any`. Slots whose provider overrides take
+// the shared image-control props intersect the base interface with the extras
+// the coordinator passes.
 export type ProviderModeControls = {
-  ChatControls: React.ComponentType<any>;
-  ImageGenControls: React.ComponentType<any>;
-  ImageEditControls: React.ComponentType<any>;
-  ImageMaskEditControls: React.ComponentType<any>;
-  ImageOutpaintControls: React.ComponentType<any>;
-  VideoGenControls: React.ComponentType<any>;
-  AudioGenControls: React.ComponentType<any>;
-  VirtualTryOnControls: React.ComponentType<any>;
-  PdfExtractControls: React.ComponentType<any>;
-  MultiAgentControls: React.ComponentType<any>;
+  ChatControls: React.ComponentType<ChatControlsProps>;
+  ImageGenControls: React.ComponentType<ImageGenControlsProps>;
+  ImageEditControls: React.ComponentType<ImageEditControlsProps>;
+  ImageMaskEditControls: React.ComponentType<ImageMaskEditControlsProps & ImageEditSlotExtras>;
+  ImageOutpaintControls: React.ComponentType<ImageOutpaintControlsProps & ImageEditSlotExtras>;
+  VideoGenControls: React.ComponentType<VideoGenControlsProps>;
+  AudioGenControls: React.ComponentType<AudioGenControlsProps>;
+  VirtualTryOnControls: React.ComponentType<VirtualTryOnControlsProps & ImageEditSlotExtras>;
+  PdfExtractControls: React.ComponentType<PdfExtractControlsProps>;
+  MultiAgentControls: React.ComponentType<MultiAgentControlsProps>;
 };
 
 const commonControls: ProviderModeControls = {
@@ -114,7 +139,15 @@ const modeToControlKey: Partial<Record<AppMode, keyof ProviderModeControls>> = {
   'multi-agent': 'MultiAgentControls',
 };
 
-export function getProviderControlByMode(providerId: string | undefined, mode: AppMode): React.ComponentType<any> | null {
+// The returned component is one of the registry slots; the exact slot is only
+// known at runtime, so the union of all slot component types is the most precise
+// statically-knowable return type.
+export type AnyProviderControl = ProviderModeControls[keyof ProviderModeControls];
+
+export function getProviderControlByMode(
+  providerId: string | undefined,
+  mode: AppMode
+): AnyProviderControl | null {
   const controlKey = modeToControlKey[mode];
   if (!controlKey) return null;
   return getProviderControls(providerId)[controlKey];

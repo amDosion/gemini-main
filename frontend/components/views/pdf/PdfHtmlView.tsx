@@ -10,10 +10,13 @@ type PdfExtractValue = PdfExtractPrimitive | PdfExtractData | PdfExtractValue[];
 interface PdfExtractData extends Record<string, PdfExtractValue> {}
 
 interface PdfHtmlViewProps {
-  data: PdfExtractData;
+  // controls-types-6: PdfExtractionResult.data is Record<string, unknown> at the
+  // boundary; narrow to the recursive PdfExtractData shape for rendering here.
+  data: Record<string, unknown>;
 }
 
-export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data }) => {
+export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data: rawData }) => {
+  const data = rawData as PdfExtractData;
   const escapeHtml = (str: string): string => {
     return str
       .replace(/&/g, '&amp;')

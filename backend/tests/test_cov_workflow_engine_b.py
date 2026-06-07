@@ -114,13 +114,18 @@ class TestResolveMaxVisits:
 
 
 class TestResolveMaxParallelNodes:
-    def test_explicit_value_clamped_to_bounds(self, engine):
-        assert flow_control.resolve_max_parallel_nodes(engine, {"max_parallel_nodes": 100}) == 32
+    def test_explicit_value_clamped_to_server_ceiling(self, engine):
+        # svc-agent-2: a caller-supplied value can never amplify fan-out beyond
+        # the server ceiling (DEFAULT_MAX_PARALLEL_NODES); it may only reduce it.
+        assert (
+            flow_control.resolve_max_parallel_nodes(engine, {"max_parallel_nodes": 100})
+            == engine.DEFAULT_MAX_PARALLEL_NODES
+        )
         assert flow_control.resolve_max_parallel_nodes(engine, {"max_parallel_nodes": 1}) == 1
         assert flow_control.resolve_max_parallel_nodes(engine, {"maxParallelNodes": 4}) == 4
 
     def test_negative_string_clamped_up_to_one(self, engine):
-        # "-5" is a truthy non-empty string -> parsed to -5 -> max(1, min(-5,32))=1
+        # "-5" is a truthy non-empty string -> parsed to -5 -> max(1, min(-5, ceiling))=1
         assert flow_control.resolve_max_parallel_nodes(engine, {"max_parallel_nodes": "-5"}) == 1
 
     def test_zero_is_falsy_and_uses_default(self, engine):

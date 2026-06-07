@@ -157,4 +157,59 @@ describe('Google ImageGenControls', () => {
 
     expect(controls.setEnhancePromptThinkingLevel).toHaveBeenCalledWith('high');
   });
+
+  it('exposes accessible labels on every form control (a11y regression for controls-types-9)', () => {
+    const controls = {
+      style: 'None',
+      setStyle: vi.fn(),
+      numberOfImages: 1,
+      setNumberOfImages: vi.fn(),
+      aspectRatio: '1:1',
+      setAspectRatio: vi.fn(),
+      resolution: '1K',
+      setResolution: vi.fn(),
+      showAdvanced: true,
+      setShowAdvanced: vi.fn(),
+      negativePrompt: '',
+      setNegativePrompt: vi.fn(),
+      seed: -1,
+      setSeed: vi.fn(),
+      outputMimeType: 'image/png',
+      setOutputMimeType: vi.fn(),
+      outputCompressionQuality: 100,
+      setOutputCompressionQuality: vi.fn(),
+      enhancePrompt: false,
+      setEnhancePrompt: vi.fn(),
+      enhancePromptModel: '',
+      setEnhancePromptModel: vi.fn(),
+      enableThinking: false,
+      setEnableThinking: vi.fn(),
+    };
+
+    render(
+      <ImageGenControls
+        providerId="google"
+        currentModel={{
+          id: 'gemini-2.5-flash-image',
+          name: 'Gemini 2.5 Flash Image',
+          description: '',
+          capabilities: {
+            vision: true,
+            search: false,
+            reasoning: true,
+            coding: false,
+          },
+        }}
+        controls={controls as any}
+        maxImageCount={10}
+      />
+    );
+
+    // Each interactive control must be reachable by its accessible name so that
+    // screen-reader users can identify it (no orphaned select/input/textarea).
+    expect(screen.getByLabelText('风格')).toHaveValue('None');
+    expect(screen.getByLabelText('生成数量')).toBeInTheDocument();
+    expect(screen.getByLabelText('Seed')).toBeInTheDocument();
+    expect(screen.getByLabelText('负向提示词')).toBeInTheDocument();
+  });
 });

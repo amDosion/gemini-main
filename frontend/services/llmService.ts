@@ -52,9 +52,23 @@ interface ModelCache {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hasExecuteMode(
   provider: unknown
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-): provider is { executeMode: (mode: string, modelId: string, prompt: string, attachments: unknown[], options: unknown, extra: unknown) => Promise<any> } {
-  return typeof provider === 'object' && provider !== null && 'executeMode' in provider && typeof (provider as Record<string, unknown>).executeMode === 'function';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): provider is {
+  executeMode: (
+    mode: string,
+    modelId: string,
+    prompt: string,
+    attachments: unknown[],
+    options: unknown,
+    extra: unknown
+  ) => Promise<any>;
+} {
+  return (
+    typeof provider === 'object' &&
+    provider !== null &&
+    'executeMode' in provider &&
+    typeof (provider as Record<string, unknown>).executeMode === 'function'
+  );
 }
 
 const emptyModelsPayload = (
@@ -211,12 +225,25 @@ export class LLMService {
 
     const data = await readJsonResponse<unknown>(response);
     const payload: ModelsApiResponse = {
-      models: Array.isArray((data as Record<string, unknown>).models) ? (data as Record<string, unknown>).models as ModelConfig[] : [],
-      defaultModelId: typeof (data as Record<string, unknown>).defaultModelId === 'string' ? (data as Record<string, unknown>).defaultModelId as string : null,
-      modeCatalog: Array.isArray((data as Record<string, unknown>).modeCatalog) ? (data as Record<string, unknown>).modeCatalog as ModeCatalogItem[] : [],
-      filteredByMode: typeof (data as Record<string, unknown>).filteredByMode === 'string' ? (data as Record<string, unknown>).filteredByMode as string : null,
+      models: Array.isArray((data as Record<string, unknown>).models)
+        ? ((data as Record<string, unknown>).models as ModelConfig[])
+        : [],
+      defaultModelId:
+        typeof (data as Record<string, unknown>).defaultModelId === 'string'
+          ? ((data as Record<string, unknown>).defaultModelId as string)
+          : null,
+      modeCatalog: Array.isArray((data as Record<string, unknown>).modeCatalog)
+        ? ((data as Record<string, unknown>).modeCatalog as ModeCatalogItem[])
+        : [],
+      filteredByMode:
+        typeof (data as Record<string, unknown>).filteredByMode === 'string'
+          ? ((data as Record<string, unknown>).filteredByMode as string)
+          : null,
       cached: Boolean((data as Record<string, unknown>).cached),
-      provider: typeof (data as Record<string, unknown>).provider === 'string' ? (data as Record<string, unknown>).provider as string : requestProviderId,
+      provider:
+        typeof (data as Record<string, unknown>).provider === 'string'
+          ? ((data as Record<string, unknown>).provider as string)
+          : requestProviderId,
     };
 
     if (
@@ -319,10 +346,14 @@ export class LLMService {
 
     // Also stop browser session if Browse was enabled
     // stopBrowserSession already catches all errors internally; .catch is a safety net for unhandled rejections
-    this.stopBrowserSession().catch(() => { /* cancellation cleanup errors are intentionally ignored */ });
+    this.stopBrowserSession().catch(() => {
+      /* cancellation cleanup errors are intentionally ignored */
+    });
 
     // Also stop MCP session if MCP was enabled for current chat
-    this.stopMcpSession().catch((e) => console.error('[cancelCurrentStream] stopMcpSession error:', e));
+    this.stopMcpSession().catch((e) =>
+      console.error('[cancelCurrentStream] stopMcpSession error:', e)
+    );
   }
 
   /**
@@ -551,9 +582,10 @@ export class LLMService {
       ...options, // ✅ Handler 传入的 options 优先（包含 sessionId、messageId）
     };
 
-    const outpaintMode = (typeof (mergedOptions as Record<string, unknown>).outpaintMode === 'string'
-      ? (mergedOptions as Record<string, unknown>).outpaintMode as string
-      : 'ratio');
+    const outpaintMode =
+      typeof (mergedOptions as Record<string, unknown>).outpaintMode === 'string'
+        ? ((mergedOptions as Record<string, unknown>).outpaintMode as string)
+        : 'ratio';
     const selectedModelId = String(
       mergedOptions.modelId || this._cachedModelConfig?.id || ''
     ).trim();

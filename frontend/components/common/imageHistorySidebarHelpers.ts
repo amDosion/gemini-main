@@ -316,10 +316,28 @@ export const selectImageHistoryPrimaryPreviewAttachment = (
   return fallback;
 };
 
-export const extractImageHistoryPrompts = (message: Message): ImageHistoryPromptParts => {
+export interface ExtractImageHistoryPromptsOptions {
+  /** Overrides the empty-originalPrompt fallback label (defaults to role-based text). */
+  fallbackLabel?: string;
+  /** Also fall back to an attachment-level enhancedPrompt when the message has none. */
+  includeAttachmentEnhanced?: boolean;
+  /** Recognize content that contains only a ✨ optimized prompt (no 📝 original). */
+  matchOptimizedOnly?: boolean;
+}
+
+export const extractImageHistoryPrompts = (
+  message: Message,
+  options: ExtractImageHistoryPromptsOptions = {}
+): ImageHistoryPromptParts => {
+  const { fallbackLabel, includeAttachmentEnhanced, matchOptimizedOnly } = options;
   const rawContent = (message.content || '').trim();
+
+  const attachmentEnhancedPrompt = includeAttachmentEnhanced
+    ? message.attachments?.find((att) => att.enhancedPrompt?.trim())?.enhancedPrompt?.trim()
+    : undefined;
+
   let originalPrompt = rawContent;
-  let enhancedPrompt = message.enhancedPrompt?.trim() || '';
+  let enhancedPrompt = message.enhancedPrompt?.trim() || attachmentEnhancedPrompt || '';
 
   const promptPairMatch = rawContent.match(/^📝\s*([\s\S]*?)(?:\n✨\s*([\s\S]*))?$/);
   if (promptPairMatch) {
@@ -327,10 +345,16 @@ export const extractImageHistoryPrompts = (message: Message): ImageHistoryPrompt
     if (!enhancedPrompt && promptPairMatch[2]) {
       enhancedPrompt = promptPairMatch[2].trim();
     }
+  } else if (matchOptimizedOnly) {
+    const optimizedOnlyMatch = rawContent.match(/^✨\s*([\s\S]*)$/);
+    if (!enhancedPrompt && optimizedOnlyMatch) {
+      enhancedPrompt = optimizedOnlyMatch[1].trim();
+    }
   }
 
   return {
-    originalPrompt: originalPrompt || (message.role === Role.USER ? '用户消息' : '模型响应'),
+    originalPrompt:
+      originalPrompt || fallbackLabel || (message.role === Role.USER ? '用户消息' : '模型响应'),
     enhancedPrompt,
   };
 };

@@ -4,6 +4,7 @@
 """
 
 import asyncio
+import functools
 import logging
 import os
 import shutil
@@ -19,6 +20,32 @@ DEFAULT_LOCAL_URL_PREFIX = "/api/storage/local-files"
 DEFAULT_LOCAL_STORAGE_RELATIVE_PATH = "backend/app/temp/local_storage"
 
 
+@functools.lru_cache(maxsize=8)
+def _compute_allowed_roots(raw: str) -> tuple[str, ...]:
+    """Resolve allow-root realpaths for a given raw env value (memoised).
+
+    svc-storage-14: keyed on the raw env string so the realpath work runs once
+    per distinct configuration instead of on every storage operation. A changed
+    env value yields a new cache key, so correctness is preserved.
+    """
+    roots = [
+        os.path.realpath(
+            os.path.join(get_project_root(), *DEFAULT_LOCAL_STORAGE_RELATIVE_PATH.split("/"))
+        )
+    ]
+    sep = os.pathsep if os.pathsep in raw else ","
+    for part in raw.split(sep):
+        candidate = part.strip()
+        if candidate:
+            roots.append(os.path.realpath(candidate))
+    return tuple(roots)
+
+
+def clear_allowed_roots_cache() -> None:
+    """Test hook: drop the memoised allow-root computation."""
+    _compute_allowed_roots.cache_clear()
+
+
 def _local_storage_allowed_roots() -> list[str]:
     """Operator-controlled allow list of local storage roots.
 
@@ -27,18 +54,8 @@ def _local_storage_allowed_roots() -> list[str]:
     storage base, so default deployments are unaffected. Operators broaden it via
     the LOCAL_STORAGE_ALLOWED_ROOTS env var (os.pathsep- or comma-separated).
     """
-    roots = [
-        os.path.realpath(
-            os.path.join(get_project_root(), *DEFAULT_LOCAL_STORAGE_RELATIVE_PATH.split("/"))
-        )
-    ]
     raw = os.getenv("LOCAL_STORAGE_ALLOWED_ROOTS", "") or ""
-    sep = os.pathsep if os.pathsep in raw else ","
-    for part in raw.split(sep):
-        candidate = part.strip()
-        if candidate:
-            roots.append(os.path.realpath(candidate))
-    return roots
+    return list(_compute_allowed_roots(raw))
 
 
 def _is_within_allowed_local_root(path: str) -> bool:

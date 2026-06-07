@@ -1,6 +1,7 @@
 import { safeCopyToClipboard } from '../../utils/safeOps';
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import type { Components, ExtraProps } from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -18,6 +19,7 @@ import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx';
 import typescript from 'react-syntax-highlighter/dist/esm/languages/prism/typescript';
 import yaml from 'react-syntax-highlighter/dist/esm/languages/prism/yaml';
 import { Copy, Check, ChevronDown, ChevronRight, Brain } from 'lucide-react';
+import { STREAMING_CURSOR_CLASSNAME } from '../../utils/cursorUtils';
 
 SyntaxHighlighter.registerLanguage('bash', bash);
 SyntaxHighlighter.registerLanguage('sh', bash);
@@ -67,6 +69,11 @@ const ThinkBlock: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
 
 interface MarkdownRendererProps {
   content: string;
+  /**
+   * 是否在渲染结果末尾追加流式光标。光标在 React 组件树内渲染,
+   * 不经过 Markdown sanitizer,因此可使用纯 Tailwind 动画类。
+   */
+  showCursor?: boolean;
 }
 
 const CodeBlock = ({
@@ -137,9 +144,11 @@ const sanitizeSchema = {
   },
 };
 
-const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
+const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, showCursor = false }) => {
   // 自定义组件映射，包含标准 HTML 元素和自定义标签（如 AI 模型的 <think>）
-  const customComponents: Record<string, unknown> = {
+  const customComponents: Components & {
+    think?: (props: { children?: React.ReactNode }) => React.ReactElement;
+  } = {
     // 处理 AI 模型的 <think> 标签（DeepSeek、Claude 等模型的思考过程）
     think: ({ children }: { children?: React.ReactNode }) => <ThinkBlock>{children}</ThinkBlock>,
     code({
@@ -148,13 +157,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
       className,
       children,
       ...props
-    }: {
-      node?: unknown;
-      inline?: boolean;
-      className?: string;
-      children?: React.ReactNode;
-      [key: string]: unknown;
-    }) {
+    }: React.ComponentPropsWithoutRef<'code'> & ExtraProps & { inline?: boolean }) {
       const match = /language-(\w+)/.exec(className || '');
       return !inline && match ? (
         <CodeBlock language={match[1]} children={children} {...props} />
@@ -167,7 +170,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
         </code>
       );
     },
-    a: ({ node, ...props }: { node?: unknown; [key: string]: unknown }) => (
+    a: ({ node, ...props }: React.ComponentPropsWithoutRef<'a'> & ExtraProps) => (
       <a
         target="_blank"
         rel="noopener noreferrer"
@@ -175,13 +178,13 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
         {...props}
       />
     ),
-    ul: ({ node, ...props }: { node?: unknown; [key: string]: unknown }) => (
+    ul: ({ node, ...props }: React.ComponentPropsWithoutRef<'ul'> & ExtraProps) => (
       <ul className="list-disc pl-5 my-2 space-y-1" {...props} />
     ),
-    ol: ({ node, ...props }: { node?: unknown; [key: string]: unknown }) => (
+    ol: ({ node, ...props }: React.ComponentPropsWithoutRef<'ol'> & ExtraProps) => (
       <ol className="list-decimal pl-5 my-2 space-y-1" {...props} />
     ),
-    blockquote: ({ node, ...props }: { node?: unknown; [key: string]: unknown }) => (
+    blockquote: ({ node, ...props }: React.ComponentPropsWithoutRef<'blockquote'> & ExtraProps) => (
       <blockquote
         className="border-l-4 border-slate-600 pl-4 italic text-slate-400 my-2"
         {...props}
@@ -197,6 +200,13 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
       >
         {content}
       </ReactMarkdown>
+      {showCursor && (
+        <span
+          className={STREAMING_CURSOR_CLASSNAME}
+          aria-hidden="true"
+          data-testid="streaming-cursor"
+        />
+      )}
     </div>
   );
 };

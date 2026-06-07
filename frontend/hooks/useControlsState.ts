@@ -70,7 +70,8 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
   const [outputCompressionQuality, setOutputCompressionQuality] = useState(100);
   const [enhancePrompt, setEnhancePrompt] = useState(true);
   const [enhancePromptModel, setEnhancePromptModel] = useState('');
-  const [enhancePromptThinkingLevel, setEnhancePromptThinkingLevel] = useState<ThinkingLevel>('auto');
+  const [enhancePromptThinkingLevel, setEnhancePromptThinkingLevel] =
+    useState<ThinkingLevel>('auto');
 
   // TongYi Specific Parameters
   const [promptExtend, setPromptExtend] = useState(false); // 阿里的 prompt_extend 参数
@@ -78,18 +79,21 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
   const [thinkingMode, setThinkingMode] = useState(true); // Wan 2.7 Image thinking_mode 参数
   const [enableSequential, setEnableSequential] = useState(false); // Wan 2.7 Image enable_sequential 组图模式
 
-
   // Out-Painting (旧参数，保留向后兼容)
-  const [outPaintingMode, setOutPaintingMode] = useState<'scale' | 'offset'>('scale');
-  const [scaleFactor, setScaleFactor] = useState(2.0);
-  const [offsetPixels, setOffsetPixels] = useState<OffsetPixels>({ left: 0, right: 0, top: 0, bottom: 0 });
+  const [offsetPixels, setOffsetPixels] = useState<OffsetPixels>({
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+  });
 
   // Out-Painting (新参数)
-  const [outpaintMode, setOutpaintMode] = useState<'ratio' | 'scale' | 'offset' | 'upscale'>('ratio');
+  const [outpaintMode, setOutpaintMode] = useState<'ratio' | 'scale' | 'offset' | 'upscale'>(
+    'ratio'
+  );
   const [xScale, setXScale] = useState(1.5);
   const [yScale, setYScale] = useState(1.5);
   const [upscaleFactor, setUpscaleFactor] = useState<'x2' | 'x3' | 'x4'>('x2');
-
 
   // Audio
   const [voice, setVoice] = useState('Puck');
@@ -109,7 +113,12 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
   const [maskDilation, setMaskDilation] = useState(0.06);
   const [guidanceScale, setGuidanceScale] = useState(15.0);
   // Mask 模式 (对应 Vertex AI MaskReferenceConfig.mask_mode)
-  const [maskMode, setMaskMode] = useState<'MASK_MODE_USER_PROVIDED' | 'MASK_MODE_BACKGROUND' | 'MASK_MODE_FOREGROUND' | 'MASK_MODE_SEMANTIC'>('MASK_MODE_USER_PROVIDED');
+  const [maskMode, setMaskMode] = useState<
+    | 'MASK_MODE_USER_PROVIDED'
+    | 'MASK_MODE_BACKGROUND'
+    | 'MASK_MODE_FOREGROUND'
+    | 'MASK_MODE_SEMANTIC'
+  >('MASK_MODE_USER_PROVIDED');
 
   // Reset UI state when mode changes (only generic resets, no mode-specific logic)
   // 高级参数保持默认展开状态
@@ -145,111 +154,203 @@ export function useControlsState(mode: AppMode, currentModel?: ModelConfig): Con
   return useMemo<ControlsState>(
     () => ({
       // Chat Controls
-      enableSearch, setEnableSearch,
-      enableThinking, setEnableThinking,
-      enableCodeExecution, setEnableCodeExecution,
-      enableUrlContext, setEnableUrlContext,
-      enableBrowser, setEnableBrowser,
-      enableRAG, setEnableRAG,
-      enableEnhancedRetrieval, setEnableEnhancedRetrieval,
-      enableDeepResearch, setEnableDeepResearch,
-      enableAutoDeepResearch, setEnableAutoDeepResearch,
-      deepResearchAgentId, setDeepResearchAgentId,
-      googleCacheMode, setGoogleCacheMode,
-      selectedMcpServerKey, setSelectedMcpServerKey,
+      enableSearch,
+      setEnableSearch,
+      enableThinking,
+      setEnableThinking,
+      enableCodeExecution,
+      setEnableCodeExecution,
+      enableUrlContext,
+      setEnableUrlContext,
+      enableBrowser,
+      setEnableBrowser,
+      enableRAG,
+      setEnableRAG,
+      enableEnhancedRetrieval,
+      setEnableEnhancedRetrieval,
+      enableDeepResearch,
+      setEnableDeepResearch,
+      enableAutoDeepResearch,
+      setEnableAutoDeepResearch,
+      deepResearchAgentId,
+      setDeepResearchAgentId,
+      googleCacheMode,
+      setGoogleCacheMode,
+      selectedMcpServerKey,
+      setSelectedMcpServerKey,
 
       // Generation Controls
-      aspectRatio, setAspectRatio,
-      resolution, setResolution,
-      videoSeconds, setVideoSeconds,
-      videoInputStrategy, setVideoInputStrategy,
-      videoExtensionCount, setVideoExtensionCount,
-      storyboardShotSeconds, setStoryboardShotSeconds,
-      generateAudio, setGenerateAudio,
-      subtitleMode, setSubtitleMode,
-      subtitleLanguage, setSubtitleLanguage,
-      subtitleScript, setSubtitleScript,
-      storyboardPrompt, setStoryboardPrompt,
-      storyboardSegments, setStoryboardSegments,
-      numberOfImages, setNumberOfImages,
-      style, setStyle,
-      quality, setQuality,
-      background, setBackground,
-      moderation, setModeration,
-      outputFormat, setOutputFormat,
-
+      aspectRatio,
+      setAspectRatio,
+      resolution,
+      setResolution,
+      videoSeconds,
+      setVideoSeconds,
+      videoInputStrategy,
+      setVideoInputStrategy,
+      videoExtensionCount,
+      setVideoExtensionCount,
+      storyboardShotSeconds,
+      setStoryboardShotSeconds,
+      generateAudio,
+      setGenerateAudio,
+      subtitleMode,
+      setSubtitleMode,
+      subtitleLanguage,
+      setSubtitleLanguage,
+      subtitleScript,
+      setSubtitleScript,
+      storyboardPrompt,
+      setStoryboardPrompt,
+      storyboardSegments,
+      setStoryboardSegments,
+      numberOfImages,
+      setNumberOfImages,
+      style,
+      setStyle,
+      quality,
+      setQuality,
+      background,
+      setBackground,
+      moderation,
+      setModeration,
+      outputFormat,
+      setOutputFormat,
 
       // Advanced Settings
-      showAdvanced, setShowAdvanced,
-      negativePrompt, setNegativePrompt,
-      seed, setSeed,
-      loraConfig, setLoraConfig,
+      showAdvanced,
+      setShowAdvanced,
+      negativePrompt,
+      setNegativePrompt,
+      seed,
+      setSeed,
+      loraConfig,
+      setLoraConfig,
 
       // Google Imagen Advanced Parameters
       // guidanceScale removed - not officially documented by Google Imagen
-      outputMimeType, setOutputMimeType,
-      outputCompressionQuality, setOutputCompressionQuality,
-      enhancePrompt, setEnhancePrompt,
-      enhancePromptModel, setEnhancePromptModel,
-      enhancePromptThinkingLevel, setEnhancePromptThinkingLevel,
+      outputMimeType,
+      setOutputMimeType,
+      outputCompressionQuality,
+      setOutputCompressionQuality,
+      enhancePrompt,
+      setEnhancePrompt,
+      enhancePromptModel,
+      setEnhancePromptModel,
+      enhancePromptThinkingLevel,
+      setEnhancePromptThinkingLevel,
 
       // TongYi Specific Parameters
-      promptExtend, setPromptExtend,
-      addMagicSuffix, setAddMagicSuffix,
-      thinkingMode, setThinkingMode,
-      enableSequential, setEnableSequential,
-
+      promptExtend,
+      setPromptExtend,
+      addMagicSuffix,
+      setAddMagicSuffix,
+      thinkingMode,
+      setThinkingMode,
+      enableSequential,
+      setEnableSequential,
 
       // Out-Painting (旧参数，保留向后兼容)
-      outPaintingMode, setOutPaintingMode,
-      scaleFactor, setScaleFactor,
-      offsetPixels, setOffsetPixels,
+      offsetPixels,
+      setOffsetPixels,
 
       // Out-Painting (新参数)
-      outpaintMode, setOutpaintMode,
-      xScale, setXScale,
-      yScale, setYScale,
-      upscaleFactor, setUpscaleFactor,
+      outpaintMode,
+      setOutpaintMode,
+      xScale,
+      setXScale,
+      yScale,
+      setYScale,
+      upscaleFactor,
+      setUpscaleFactor,
 
       // Audio
-      voice, setVoice,
+      voice,
+      setVoice,
 
       // PDF
-      pdfTemplate, setPdfTemplate,
-      pdfAdditionalInstructions, setPdfAdditionalInstructions,
+      pdfTemplate,
+      setPdfTemplate,
+      pdfAdditionalInstructions,
+      setPdfAdditionalInstructions,
 
       // Virtual Try-On
-      baseSteps, setBaseSteps,
+      baseSteps,
+      setBaseSteps,
 
       // Multi-Agent Controls
-      enableMultiAgent, setEnableMultiAgent,
+      enableMultiAgent,
+      setEnableMultiAgent,
 
       // Mask Edit Controls
-      editMode, setEditMode,
-      maskDilation, setMaskDilation,
-      guidanceScale, setGuidanceScale,
-      maskMode, setMaskMode,
+      editMode,
+      setEditMode,
+      maskDilation,
+      setMaskDilation,
+      guidanceScale,
+      setGuidanceScale,
+      maskMode,
+      setMaskMode,
     }),
     [
-      enableSearch, enableThinking, enableCodeExecution, enableUrlContext,
-      enableBrowser, enableRAG, enableEnhancedRetrieval, enableDeepResearch,
-      enableAutoDeepResearch, deepResearchAgentId, googleCacheMode, selectedMcpServerKey,
-      aspectRatio, resolution, videoSeconds, videoInputStrategy, videoExtensionCount, storyboardShotSeconds,
-      generateAudio, subtitleMode, subtitleLanguage, subtitleScript,
-      storyboardPrompt, storyboardSegments, numberOfImages, style,
-      quality, background, moderation, outputFormat,
-      showAdvanced, negativePrompt, seed, loraConfig,
-      outputMimeType, outputCompressionQuality, enhancePrompt, enhancePromptModel,
+      enableSearch,
+      enableThinking,
+      enableCodeExecution,
+      enableUrlContext,
+      enableBrowser,
+      enableRAG,
+      enableEnhancedRetrieval,
+      enableDeepResearch,
+      enableAutoDeepResearch,
+      deepResearchAgentId,
+      googleCacheMode,
+      selectedMcpServerKey,
+      aspectRatio,
+      resolution,
+      videoSeconds,
+      videoInputStrategy,
+      videoExtensionCount,
+      storyboardShotSeconds,
+      generateAudio,
+      subtitleMode,
+      subtitleLanguage,
+      subtitleScript,
+      storyboardPrompt,
+      storyboardSegments,
+      numberOfImages,
+      style,
+      quality,
+      background,
+      moderation,
+      outputFormat,
+      showAdvanced,
+      negativePrompt,
+      seed,
+      loraConfig,
+      outputMimeType,
+      outputCompressionQuality,
+      enhancePrompt,
+      enhancePromptModel,
       enhancePromptThinkingLevel,
-      promptExtend, addMagicSuffix, thinkingMode, enableSequential,
-      outPaintingMode, scaleFactor, offsetPixels,
-      outpaintMode, xScale, yScale, upscaleFactor,
+      promptExtend,
+      addMagicSuffix,
+      thinkingMode,
+      enableSequential,
+      offsetPixels,
+      outpaintMode,
+      xScale,
+      yScale,
+      upscaleFactor,
       voice,
-      pdfTemplate, pdfAdditionalInstructions,
+      pdfTemplate,
+      pdfAdditionalInstructions,
       baseSteps,
       enableMultiAgent,
-      editMode, maskDilation, guidanceScale, maskMode,
-    ],
+      editMode,
+      maskDilation,
+      guidanceScale,
+      maskMode,
+    ]
   );
 }
 

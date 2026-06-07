@@ -85,4 +85,3 @@ export class GlobalErrorBoundary extends React.Component<
 }
 
 export default GlobalErrorBoundary;
-

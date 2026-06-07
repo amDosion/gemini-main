@@ -738,7 +738,10 @@ class TestExtractImageUrls:
 class TestFileAndResultMediaUrls:
     def test_normalize_file_url_passthrough(self, engine):
         assert pm.normalize_possible_file_url(engine, "https://x.com/a.bin") == "https://x.com/a.bin"
-        assert pm.normalize_possible_file_url(engine, "relative/name.txt") == "relative/name.txt"
+        # svc-agent-3: only recognised schemes are valid file references; an
+        # absolute path is accepted, but an arbitrary relative string is not.
+        assert pm.normalize_possible_file_url(engine, "/abs/name.txt") == "/abs/name.txt"
+        assert pm.normalize_possible_file_url(engine, "relative/name.txt") is None
 
     def test_normalize_file_url_rejects_template(self, engine):
         assert pm.normalize_possible_file_url(engine, "{{x}}") is None

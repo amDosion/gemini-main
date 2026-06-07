@@ -117,15 +117,17 @@ const AppContent: React.FC = () => {
   // App Mode State
   const [appMode, setAppMode] = useState<AppMode>('chat');
   const [openWorkspaceModes, setOpenWorkspaceModes] = useState<AppMode[]>(['chat']);
-  const [workspaceReloadKeys, setWorkspaceReloadKeys] = useState<Partial<Record<AppMode, number>>>({});
+  const [workspaceReloadKeys, setWorkspaceReloadKeys] = useState<Partial<Record<AppMode, number>>>(
+    {}
+  );
   const [lastStudioMode, setLastStudioMode] = useState<AppMode>('image-gen');
   const [initialAttachments, setInitialAttachments] = useState<Attachment[] | undefined>(undefined);
   const [initialPrompt, setInitialPrompt] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    setOpenWorkspaceModes((current) => (
+    setOpenWorkspaceModes((current) =>
       current.includes(appMode) ? current : [...current, appMode]
-    ));
+    );
     if (isStudioAppMode(appMode)) {
       setLastStudioMode(appMode);
     }
@@ -395,9 +397,7 @@ const AppContent: React.FC = () => {
 
   const handleWorkspaceModeSelect = useCallback(
     (mode: AppMode) => {
-      setOpenWorkspaceModes((current) => (
-        current.includes(mode) ? current : [...current, mode]
-      ));
+      setOpenWorkspaceModes((current) => (current.includes(mode) ? current : [...current, mode]));
       handleModeSwitch(mode);
     },
     [handleModeSwitch]
@@ -405,9 +405,7 @@ const AppContent: React.FC = () => {
 
   const handleModeNavigationSelect = useCallback(
     (mode: AppMode) => {
-      setOpenWorkspaceModes((current) => (
-        current.includes(mode) ? current : [...current, mode]
-      ));
+      setOpenWorkspaceModes((current) => (current.includes(mode) ? current : [...current, mode]));
       const hasCachedLatest = selectLatestSessionForMode(mode);
       handleModeSwitch(mode);
       if (mode === appMode && !hasCachedLatest) {
@@ -439,11 +437,7 @@ const AppContent: React.FC = () => {
         const nextOpenMode = openWorkspaceModes
           .slice(modeIndex + 1)
           .find((item) => !closeSet.has(item));
-        const nextActiveMode =
-          previousOpenMode ||
-          nextOpenMode ||
-          nextOpenModes[0] ||
-          'chat';
+        const nextActiveMode = previousOpenMode || nextOpenMode || nextOpenModes[0] || 'chat';
         handleModeSwitch(nextActiveMode);
       }
     },
@@ -751,21 +745,21 @@ const AppContent: React.FC = () => {
             style={{ display: appMode === 'multi-agent' ? 'contents' : 'none' }}
           >
             <GlobalErrorBoundary>
-            <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
-              <MultiAgentView
-                {...commonProps}
-                messages={multiAgentViewMessages}
-                setAppMode={handleWorkspaceModeSelect}
-                isLoadingModels={isLoadingModels}
-                visibleModels={visibleModels}
-                allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
-                apiKey={config.apiKey ?? ''}
-                protocol={config.protocol ?? null}
-                onPromptSelect={handleWelcomePrompt}
-                onOpenSettings={() => handleOpenSettings('profiles')}
-                appMode="multi-agent"
-              />
-            </Suspense>
+              <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
+                <MultiAgentView
+                  {...commonProps}
+                  messages={multiAgentViewMessages}
+                  setAppMode={handleWorkspaceModeSelect}
+                  isLoadingModels={isLoadingModels}
+                  visibleModels={visibleModels}
+                  allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
+                  apiKey={config.apiKey ?? ''}
+                  protocol={config.protocol ?? null}
+                  onPromptSelect={handleWelcomePrompt}
+                  onOpenSettings={() => handleOpenSettings('profiles')}
+                  appMode="multi-agent"
+                />
+              </Suspense>
             </GlobalErrorBoundary>
           </div>
         )}
@@ -797,29 +791,29 @@ const AppContent: React.FC = () => {
           <div className="hidden">{renderWorkspaceViewStack()}</div>
           {isCloudStorageBrowserOpen && (
             <GlobalErrorBoundary>
-            <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
-              <CloudStorageView
-                activeStorageId={activeStorageId}
-                storageConfigs={storageConfigs}
-                onClose={() => setIsCloudStorageBrowserOpen(false)}
-              />
-            </Suspense>
+              <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
+                <CloudStorageView
+                  activeStorageId={activeStorageId}
+                  storageConfigs={storageConfigs}
+                  onClose={() => setIsCloudStorageBrowserOpen(false)}
+                />
+              </Suspense>
             </GlobalErrorBoundary>
           )}
           {isPersonaViewOpen && (
             <GlobalErrorBoundary>
-            <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
-              <PersonaManagementView
-                personas={personas}
-                activePersonaId={activePersonaId}
-                onSelectPersona={handlePersonaSelect}
-                onCreatePersona={createPersona}
-                onUpdatePersona={updatePersona}
-                onDeletePersona={deletePersona}
-                onRefreshPersonas={refreshPersonas}
-                onClose={() => setIsPersonaViewOpen(false)}
-              />
-            </Suspense>
+              <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
+                <PersonaManagementView
+                  personas={personas}
+                  activePersonaId={activePersonaId}
+                  onSelectPersona={handlePersonaSelect}
+                  onCreatePersona={createPersona}
+                  onUpdatePersona={updatePersona}
+                  onDeletePersona={deletePersona}
+                  onRefreshPersonas={refreshPersonas}
+                  onClose={() => setIsPersonaViewOpen(false)}
+                />
+              </Suspense>
             </GlobalErrorBoundary>
           )}
         </>

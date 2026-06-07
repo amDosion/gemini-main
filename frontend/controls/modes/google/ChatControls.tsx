@@ -1,6 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Globe, Brain, BrainCircuit, Code2, Link2, MonitorDot, Zap, Database, Search, UserCircle2, Wrench, Sparkles } from 'lucide-react';
+import {
+  Globe,
+  Brain,
+  BrainCircuit,
+  Code2,
+  Link2,
+  MonitorDot,
+  Zap,
+  Database,
+  Search,
+  UserCircle2,
+  Wrench,
+  Sparkles,
+} from 'lucide-react';
 import { ChatControlsProps } from '../../types';
 import { getPersonaIcon } from '../../../utils/iconUtils';
 import mcpConfigService from '../../../services/mcpConfigService';
@@ -20,7 +33,7 @@ const IconButton: React.FC<IconButtonProps> = ({
   onClick,
   icon,
   title,
-  activeClass
+  activeClass,
 }) => {
   return (
     <button
@@ -60,14 +73,18 @@ const isRootServerMap = (root: JsonObject): boolean => {
 };
 
 const detectTransport = (config: JsonObject): TransportType => {
-  const explicit = String(
-    config.serverType ?? config.server_type ?? config.type ?? ''
-  ).trim().toLowerCase();
+  const explicit = String(config.serverType ?? config.server_type ?? config.type ?? '')
+    .trim()
+    .toLowerCase();
 
   if (explicit === 'stdio' || explicit === 'sse' || explicit === 'http') {
     return explicit;
   }
-  if (explicit === 'streamablehttp' || explicit === 'streamable_http' || explicit === 'streamable-http') {
+  if (
+    explicit === 'streamablehttp' ||
+    explicit === 'streamable_http' ||
+    explicit === 'streamable-http'
+  ) {
     return 'streamable-http';
   }
   if (config.command) return 'stdio';
@@ -102,7 +119,8 @@ const parseMcpServerOptions = (configJson: string): McpServerOption[] => {
     return Object.entries(serverMap)
       .filter(([, config]) => !(config.disabled === true || config.enabled === false))
       .map(([key, config]) => {
-        const label = typeof config.name === 'string' && config.name.trim() ? config.name.trim() : key;
+        const label =
+          typeof config.name === 'string' && config.name.trim() ? config.name.trim() : key;
         const transport = detectTransport(config);
         return { key, label, transport, valid: isValidServerConfig(transport, config) };
       })
@@ -121,36 +139,54 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
   onSelectPersona,
   selectedMcpServerKey = '',
   setSelectedMcpServerKey,
-  enableSearch, setEnableSearch,
-  enableThinking, setEnableThinking,
-  enableCodeExecution, setEnableCodeExecution,
-  enableUrlContext, setEnableUrlContext,
-  enableBrowser, setEnableBrowser,
-  enableRAG, setEnableRAG,
-  enableEnhancedRetrieval, setEnableEnhancedRetrieval,
-  enableDeepResearch, setEnableDeepResearch,
-  enableAutoDeepResearch, setEnableAutoDeepResearch,
-  deepResearchAgentId, setDeepResearchAgentId,
+  enableSearch,
+  setEnableSearch,
+  enableThinking,
+  setEnableThinking,
+  enableCodeExecution,
+  setEnableCodeExecution,
+  enableUrlContext,
+  setEnableUrlContext,
+  enableBrowser,
+  setEnableBrowser,
+  enableRAG,
+  setEnableRAG,
+  enableEnhancedRetrieval,
+  setEnableEnhancedRetrieval,
+  enableDeepResearch,
+  setEnableDeepResearch,
+  enableAutoDeepResearch,
+  setEnableAutoDeepResearch,
+  deepResearchAgentId,
+  setDeepResearchAgentId,
   deepResearchModelCandidates = [],
   onOpenDocuments,
-  googleCacheMode = 'none', setGoogleCacheMode
+  googleCacheMode = 'none',
+  setGoogleCacheMode,
 }) => {
   const canSearch = currentModel?.capabilities.search || false;
   const canThink = currentModel?.capabilities.reasoning || false;
   const canCode = currentModel?.capabilities.coding || false;
   const canUrlContext = !currentModel?.id.includes('imagen') && !currentModel?.id.includes('veo');
-  const canBrowse = !currentModel?.id.includes('imagen') && !currentModel?.id.includes('veo') && setEnableBrowser;
-  const canRAG = !currentModel?.id.includes('imagen') && !currentModel?.id.includes('veo') && setEnableRAG;
+  const canBrowse =
+    !currentModel?.id.includes('imagen') && !currentModel?.id.includes('veo') && setEnableBrowser;
+  const canRAG =
+    !currentModel?.id.includes('imagen') && !currentModel?.id.includes('veo') && setEnableRAG;
   const canResearch = !currentModel?.id.includes('imagen') && !currentModel?.id.includes('veo');
   const canCache = currentModel?.id.includes('gemini') && setGoogleCacheMode;
   const canSelectPersona = typeof onSelectPersona === 'function' && personas.length > 0;
-  const canSelectMcp = !currentModel?.id.includes('imagen') && !currentModel?.id.includes('veo') && typeof setSelectedMcpServerKey === 'function';
+  const canSelectMcp =
+    !currentModel?.id.includes('imagen') &&
+    !currentModel?.id.includes('veo') &&
+    typeof setSelectedMcpServerKey === 'function';
   const [isPersonaMenuOpen, setIsPersonaMenuOpen] = useState(false);
   const [isMcpMenuOpen, setIsMcpMenuOpen] = useState(false);
   const [isAutoResearchMenuOpen, setIsAutoResearchMenuOpen] = useState(false);
   const [personaMenuPosition, setPersonaMenuPosition] = useState<MenuPosition | null>(null);
   const [mcpMenuPosition, setMcpMenuPosition] = useState<MenuPosition | null>(null);
-  const [autoResearchMenuPosition, setAutoResearchMenuPosition] = useState<MenuPosition | null>(null);
+  const [autoResearchMenuPosition, setAutoResearchMenuPosition] = useState<MenuPosition | null>(
+    null
+  );
   const [mcpServers, setMcpServers] = useState<McpServerOption[]>([]);
   const personaButtonRef = useRef<HTMLButtonElement>(null);
   const personaMenuRef = useRef<HTMLDivElement>(null);
@@ -199,7 +235,7 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
     enableDeepResearch,
     enableEnhancedRetrieval,
     setEnableDeepResearch,
-    setEnableEnhancedRetrieval
+    setEnableEnhancedRetrieval,
   ]);
 
   const toggleDeepResearch = useCallback(() => {
@@ -217,24 +253,22 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
     enableEnhancedRetrieval,
     setEnableAutoDeepResearch,
     setEnableDeepResearch,
-    setEnableEnhancedRetrieval
+    setEnableEnhancedRetrieval,
   ]);
 
-  const activateAutoDeepResearchWithModel = useCallback((modelId: string) => {
-    const normalizedModelId = modelId.trim();
-    if (!normalizedModelId) return;
+  const activateAutoDeepResearchWithModel = useCallback(
+    (modelId: string) => {
+      const normalizedModelId = modelId.trim();
+      if (!normalizedModelId) return;
 
-    setDeepResearchAgentId(normalizedModelId);
-    setEnableAutoDeepResearch(true);
-    if (enableDeepResearch) {
-      setEnableDeepResearch(false);
-    }
-  }, [
-    enableDeepResearch,
-    setDeepResearchAgentId,
-    setEnableAutoDeepResearch,
-    setEnableDeepResearch
-  ]);
+      setDeepResearchAgentId(normalizedModelId);
+      setEnableAutoDeepResearch(true);
+      if (enableDeepResearch) {
+        setEnableDeepResearch(false);
+      }
+    },
+    [enableDeepResearch, setDeepResearchAgentId, setEnableAutoDeepResearch, setEnableDeepResearch]
+  );
 
   const getMenuPosition = useCallback((button: HTMLButtonElement | null): MenuPosition | null => {
     if (!button) return null;
@@ -309,7 +343,7 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
     deepResearchModelCandidates,
     enableAutoDeepResearch,
     setDeepResearchAgentId,
-    setEnableAutoDeepResearch
+    setEnableAutoDeepResearch,
   ]);
 
   useEffect(() => {
@@ -493,7 +527,13 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
             <IconButton
               active={googleCacheMode !== 'none'}
               onClick={cycleCacheMode}
-              icon={<Zap size={15} strokeWidth={2.4} className={googleCacheMode !== 'none' ? 'fill-current' : ''} />}
+              icon={
+                <Zap
+                  size={15}
+                  strokeWidth={2.4}
+                  className={googleCacheMode !== 'none' ? 'fill-current' : ''}
+                />
+              }
               activeClass="bg-blue-600"
               title={getCacheTitle()}
             />
@@ -529,7 +569,7 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
             title={activePersona?.name || 'AI 角色选择'}
             className={`relative grid place-items-center h-9 w-9 rounded-xl shrink-0 transition-colors ${
               canSelectPersona
-                ? (activePersona || isPersonaMenuOpen)
+                ? activePersona || isPersonaMenuOpen
                   ? 'bg-blue-600 text-white'
                   : 'text-slate-300 hover:bg-slate-800/70 hover:text-slate-100'
                 : 'text-slate-600 cursor-not-allowed opacity-40'
@@ -554,7 +594,7 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
             title={activeMcpServer ? `MCP: ${activeMcpServer.label}` : 'MCP 工具选择'}
             className={`relative grid place-items-center h-9 w-9 rounded-xl shrink-0 transition-colors ${
               canSelectMcp
-                ? (activeMcpServer || isMcpMenuOpen)
+                ? activeMcpServer || isMcpMenuOpen
                   ? 'bg-blue-600 text-white'
                   : 'text-slate-300 hover:bg-slate-800/70 hover:text-slate-100'
                 : 'text-slate-600 cursor-not-allowed opacity-40'
@@ -565,163 +605,194 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
         </div>
       </div>
 
-      {isPersonaMenuOpen && canSelectPersona && personaMenuPosition && createPortal(
-        <div
-          ref={personaMenuRef}
-          className="fixed z-[9999] w-72 max-w-[92vw] rounded-xl border border-slate-700 bg-slate-900 shadow-2xl p-1"
-          style={{ top: personaMenuPosition.top, left: personaMenuPosition.left, transform: 'translateY(-100%)', transformOrigin: 'bottom right' }}
-        >
-          <div className="px-3 py-2 text-[11px] text-slate-400 border-b border-slate-800">
-            选择 AI 角色
-          </div>
-          <div className="overflow-y-auto custom-scrollbar py-1" style={{ maxHeight: personaMenuPosition.maxHeight }}>
-            {personas.map((persona) => {
-              const selected = persona.id === activePersona?.id;
-              return (
-                <button
-                  key={persona.id}
-                  onClick={() => {
-                    onSelectPersona?.(persona.id);
-                    setIsPersonaMenuOpen(false);
-                  }}
-                  title={`切换到：${persona.name}`}
-                  className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
-                    selected
-                      ? 'bg-blue-600/20 text-blue-300'
-                      : 'text-slate-300 hover:bg-slate-800'
-                  }`}
-                >
-                  <div className="text-xs font-medium truncate">{persona.name}</div>
-                  <div className="text-[10px] text-slate-500 truncate">{persona.description}</div>
-                </button>
-              );
-            })}
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {isMcpMenuOpen && canSelectMcp && mcpMenuPosition && createPortal(
-        <div
-          ref={mcpMenuRef}
-          className="fixed z-[9999] w-72 max-w-[92vw] rounded-xl border border-slate-700 bg-slate-900 shadow-2xl p-1"
-          style={{ top: mcpMenuPosition.top, left: mcpMenuPosition.left, transform: 'translateY(-100%)', transformOrigin: 'bottom right' }}
-        >
-          <div className="px-3 py-2 text-[11px] text-slate-400 border-b border-slate-800">
-            选择 MCP 服务
-          </div>
-          <div className="overflow-y-auto custom-scrollbar py-1" style={{ maxHeight: mcpMenuPosition.maxHeight }}>
-            <button
-              onClick={() => {
-                setSelectedMcpServerKey?.('');
-                setIsMcpMenuOpen(false);
-              }}
-              className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
-                !selectedMcpServerKey
-                  ? 'bg-blue-600/20 text-blue-300'
-                  : 'text-slate-300 hover:bg-slate-800'
-              }`}
-            >
-              <div className="text-xs font-medium truncate">不使用 MCP</div>
-              <div className="text-[10px] text-slate-500 truncate">仅使用模型内置能力</div>
-            </button>
-
-            {mcpServers.map((server) => {
-              const selected = server.key === selectedMcpServerKey;
-              return (
-                <button
-                  key={server.key}
-                  onClick={() => {
-                    setSelectedMcpServerKey?.(server.key);
-                    setIsMcpMenuOpen(false);
-                  }}
-                  title={`切换到 MCP：${server.label}`}
-                  className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
-                    selected
-                      ? 'bg-blue-600/20 text-blue-300'
-                      : 'text-slate-300 hover:bg-slate-800'
-                  }`}
-                >
-                  <div className="text-xs font-medium truncate">{server.label}</div>
-                  <div className="text-[10px] text-slate-500 truncate">
-                    {server.key} · {server.transport}
-                  </div>
-                </button>
-              );
-            })}
-
-            {mcpServers.length === 0 && (
-              <div className="px-3 py-3 text-[11px] text-slate-500">
-                暂无可用 MCP，请先在 Settings → MCP 中配置并启用服务。
-              </div>
-            )}
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {isAutoResearchMenuOpen && canResearch && autoResearchMenuPosition && createPortal(
-        <div
-          ref={autoResearchMenuRef}
-          className="fixed z-[9999] w-80 max-w-[92vw] rounded-xl border border-slate-700 bg-slate-900 shadow-2xl p-1"
-          style={{ top: autoResearchMenuPosition.top, left: autoResearchMenuPosition.left, transform: 'translateY(-100%)', transformOrigin: 'bottom right' }}
-        >
-          <div className="px-3 py-2 text-[11px] text-slate-400 border-b border-slate-800">
-            选择模型后自动启用深挖
-          </div>
-          <div className="overflow-y-auto custom-scrollbar py-1" style={{ maxHeight: autoResearchMenuPosition.maxHeight }}>
-            <div className="px-3 pt-2 pb-1 text-[11px] text-slate-400">
-              选择自动深挖模型
+      {isPersonaMenuOpen &&
+        canSelectPersona &&
+        personaMenuPosition &&
+        createPortal(
+          <div
+            ref={personaMenuRef}
+            className="fixed z-[9999] w-72 max-w-[92vw] rounded-xl border border-slate-700 bg-slate-900 shadow-2xl p-1"
+            style={{
+              top: personaMenuPosition.top,
+              left: personaMenuPosition.left,
+              transform: 'translateY(-100%)',
+              transformOrigin: 'bottom right',
+            }}
+          >
+            <div className="px-3 py-2 text-[11px] text-slate-400 border-b border-slate-800">
+              选择 AI 角色
             </div>
+            <div
+              className="overflow-y-auto custom-scrollbar py-1"
+              style={{ maxHeight: personaMenuPosition.maxHeight }}
+            >
+              {personas.map((persona) => {
+                const selected = persona.id === activePersona?.id;
+                return (
+                  <button
+                    key={persona.id}
+                    onClick={() => {
+                      onSelectPersona?.(persona.id);
+                      setIsPersonaMenuOpen(false);
+                    }}
+                    title={`切换到：${persona.name}`}
+                    className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
+                      selected
+                        ? 'bg-blue-600/20 text-blue-300'
+                        : 'text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    <div className="text-xs font-medium truncate">{persona.name}</div>
+                    <div className="text-[10px] text-slate-500 truncate">{persona.description}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>,
+          document.body
+        )}
 
-            {enableAutoDeepResearch && (
+      {isMcpMenuOpen &&
+        canSelectMcp &&
+        mcpMenuPosition &&
+        createPortal(
+          <div
+            ref={mcpMenuRef}
+            className="fixed z-[9999] w-72 max-w-[92vw] rounded-xl border border-slate-700 bg-slate-900 shadow-2xl p-1"
+            style={{
+              top: mcpMenuPosition.top,
+              left: mcpMenuPosition.left,
+              transform: 'translateY(-100%)',
+              transformOrigin: 'bottom right',
+            }}
+          >
+            <div className="px-3 py-2 text-[11px] text-slate-400 border-b border-slate-800">
+              选择 MCP 服务
+            </div>
+            <div
+              className="overflow-y-auto custom-scrollbar py-1"
+              style={{ maxHeight: mcpMenuPosition.maxHeight }}
+            >
               <button
                 onClick={() => {
-                  setEnableAutoDeepResearch(false);
-                  setIsAutoResearchMenuOpen(false);
+                  setSelectedMcpServerKey?.('');
+                  setIsMcpMenuOpen(false);
                 }}
-                className="w-full text-left px-3 py-2 rounded-lg transition-colors bg-blue-600/20 text-blue-300 hover:bg-blue-600/30"
+                className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
+                  !selectedMcpServerKey
+                    ? 'bg-blue-600/20 text-blue-300'
+                    : 'text-slate-300 hover:bg-slate-800'
+                }`}
               >
-                <div className="text-xs font-medium truncate">关闭自动深挖</div>
-                <div className="text-[10px] text-slate-300 truncate">
-                  当前模型：{activeDeepResearchModel?.name || deepResearchAgentId || '未选择'}
-                </div>
+                <div className="text-xs font-medium truncate">不使用 MCP</div>
+                <div className="text-[10px] text-slate-500 truncate">仅使用模型内置能力</div>
               </button>
-            )}
 
-            {deepResearchModelCandidates.map((model) => {
-              const selected = model.id === deepResearchAgentId;
-              return (
+              {mcpServers.map((server) => {
+                const selected = server.key === selectedMcpServerKey;
+                return (
+                  <button
+                    key={server.key}
+                    onClick={() => {
+                      setSelectedMcpServerKey?.(server.key);
+                      setIsMcpMenuOpen(false);
+                    }}
+                    title={`切换到 MCP：${server.label}`}
+                    className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
+                      selected
+                        ? 'bg-blue-600/20 text-blue-300'
+                        : 'text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    <div className="text-xs font-medium truncate">{server.label}</div>
+                    <div className="text-[10px] text-slate-500 truncate">
+                      {server.key} · {server.transport}
+                    </div>
+                  </button>
+                );
+              })}
+
+              {mcpServers.length === 0 && (
+                <div className="px-3 py-3 text-[11px] text-slate-500">
+                  暂无可用 MCP，请先在 Settings → MCP 中配置并启用服务。
+                </div>
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {isAutoResearchMenuOpen &&
+        canResearch &&
+        autoResearchMenuPosition &&
+        createPortal(
+          <div
+            ref={autoResearchMenuRef}
+            className="fixed z-[9999] w-80 max-w-[92vw] rounded-xl border border-slate-700 bg-slate-900 shadow-2xl p-1"
+            style={{
+              top: autoResearchMenuPosition.top,
+              left: autoResearchMenuPosition.left,
+              transform: 'translateY(-100%)',
+              transformOrigin: 'bottom right',
+            }}
+          >
+            <div className="px-3 py-2 text-[11px] text-slate-400 border-b border-slate-800">
+              选择模型后自动启用深挖
+            </div>
+            <div
+              className="overflow-y-auto custom-scrollbar py-1"
+              style={{ maxHeight: autoResearchMenuPosition.maxHeight }}
+            >
+              <div className="px-3 pt-2 pb-1 text-[11px] text-slate-400">选择自动深挖模型</div>
+
+              {enableAutoDeepResearch && (
                 <button
-                  key={model.id}
                   onClick={() => {
-                    activateAutoDeepResearchWithModel(model.id);
+                    setEnableAutoDeepResearch(false);
                     setIsAutoResearchMenuOpen(false);
                   }}
-                  className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
-                    selected && enableAutoDeepResearch
-                      ? 'bg-blue-600/20 text-blue-300'
-                      : selected
-                        ? 'bg-blue-600/20 text-blue-300'
-                      : 'text-slate-300 hover:bg-slate-800'
-                  }`}
-                  title={model.name}
+                  className="w-full text-left px-3 py-2 rounded-lg transition-colors bg-blue-600/20 text-blue-300 hover:bg-blue-600/30"
                 >
-                  <div className="text-xs font-medium truncate">{model.name}</div>
-                  <div className="text-[10px] text-slate-500 truncate">{model.id}</div>
+                  <div className="text-xs font-medium truncate">关闭自动深挖</div>
+                  <div className="text-[10px] text-slate-300 truncate">
+                    当前模型：{activeDeepResearchModel?.name || deepResearchAgentId || '未选择'}
+                  </div>
                 </button>
-              );
-            })}
+              )}
 
-            {deepResearchModelCandidates.length === 0 && (
-              <div className="px-3 py-3 text-[11px] text-slate-500">
-                当前模式下没有可用的思考型模型。
-              </div>
-            )}
-          </div>
-        </div>,
-        document.body
-      )}
+              {deepResearchModelCandidates.map((model) => {
+                const selected = model.id === deepResearchAgentId;
+                return (
+                  <button
+                    key={model.id}
+                    onClick={() => {
+                      activateAutoDeepResearchWithModel(model.id);
+                      setIsAutoResearchMenuOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
+                      selected && enableAutoDeepResearch
+                        ? 'bg-blue-600/20 text-blue-300'
+                        : selected
+                          ? 'bg-blue-600/20 text-blue-300'
+                          : 'text-slate-300 hover:bg-slate-800'
+                    }`}
+                    title={model.name}
+                  >
+                    <div className="text-xs font-medium truncate">{model.name}</div>
+                    <div className="text-[10px] text-slate-500 truncate">{model.id}</div>
+                  </button>
+                );
+              })}
+
+              {deepResearchModelCandidates.length === 0 && (
+                <div className="px-3 py-3 text-[11px] text-slate-500">
+                  当前模式下没有可用的思考型模型。
+                </div>
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
     </>
   );
 };

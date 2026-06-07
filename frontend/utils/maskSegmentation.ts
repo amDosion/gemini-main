@@ -31,6 +31,23 @@ interface MaskPreviewApiResponse {
   data?: MaskPreviewApiResponse;
 }
 
+/** Narrows an untrusted API payload to the {@link MaskPreviewApiResponse} envelope. */
+const toMaskPreviewResponse = (value: unknown): MaskPreviewApiResponse => {
+  return value && typeof value === 'object' ? (value as MaskPreviewApiResponse) : {};
+};
+
+/** Returns the first usable mask URL from a (possibly nested) envelope, or null. */
+const extractFirstMaskUrl = (envelope: MaskPreviewApiResponse): string | null => {
+  const masks = envelope.masks;
+  if (envelope.success === true && Array.isArray(masks) && masks.length > 0) {
+    const url = masks[0]?.url;
+    if (typeof url === 'string' && url.length > 0) {
+      return url;
+    }
+  }
+  return null;
+};
+
 export interface AutoMaskPreviewResult {
   /** 成功获取的 mask 预览 URL；失败时 null */
   maskUrl: string | null;
@@ -65,7 +82,7 @@ export const fetchAutoMaskPreview = async (
     const base64 = dataUrl.split(',')[1] || dataUrl;
 
     // 调用 mask 预览 API
-    const result = await apiClient.request<MaskPreviewApiResponse>(
+    const rawResult = await apiClient.request<unknown>(
       `/api/modes/${providerId || 'google'}/image-mask-preview`,
       {
         method: 'POST',
@@ -88,12 +105,11 @@ export const fetchAutoMaskPreview = async (
     );
 
     // 响应格式: { success: true, data: { success: true, masks: [...] }, provider: ..., mode: ... }
+    const result = toMaskPreviewResponse(rawResult);
     const maskData = result.data ?? result;
-    const firstMask = maskData?.success && maskData.masks && maskData.masks.length > 0
-      ? maskData.masks[0]
-      : undefined;
-    if (firstMask) {
-      return { maskUrl: firstMask.url, notice: null, error: null };
+    const maskUrl = extractFirstMaskUrl(maskData);
+    if (maskUrl) {
+      return { maskUrl, notice: null, error: null };
     }
 
     const errorMsg = maskData?.error || result?.error || 'Unknown error';

@@ -397,10 +397,6 @@ export interface TongyiControlsState {
 
 export interface OutPaintingControlsState {
   // Out-Painting (旧参数，保留向后兼容)
-  outPaintingMode: 'scale' | 'offset';
-  setOutPaintingMode: (v: 'scale' | 'offset') => void;
-  scaleFactor: number;
-  setScaleFactor: (v: number) => void;
   offsetPixels: OffsetPixels;
   setOffsetPixels: (v: React.SetStateAction<OffsetPixels>) => void;
 

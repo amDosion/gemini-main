@@ -3,7 +3,6 @@ import { safeCopyToClipboard } from '../../utils/safeOps';
 import React, { useMemo, useState } from 'react';
 import { Message, Role, ToolCall, ToolResult } from '../../types/types';
 import MarkdownRenderer from './MarkdownRenderer';
-import { injectCursorToContent } from '../../utils/cursorUtils';
 import { Bot, User, AlertCircle, Copy, Check, Download } from 'lucide-react';
 import { useMessageProcessor } from '../../hooks/useMessageProcessor';
 import { ThinkingBlock } from '../message/ThinkingBlock';
@@ -202,9 +201,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
                 {/* 4. Main Text Content with Cursor */}
                 {(displayContent || showMainCursor) && (
                   <div className="min-w-0">
-                    <MarkdownRenderer
-                      content={injectCursorToContent(displayContent, showMainCursor)}
-                    />
+                    <MarkdownRenderer content={displayContent} showCursor={showMainCursor} />
                   </div>
                 )}
 

@@ -35,11 +35,7 @@ from .client import (
     MCPTool,
     MCPToolResult
 )
-from .adapter import (
-    GeminiToolAdapter,
-    OpenAIToolAdapter,
-    UniversalToolAdapter
-)
+from .adapter import UniversalToolAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -379,13 +375,7 @@ class MCPManager:
         Raises:
             ValueError: 会话不存在
         """
-        client = self._session_pool.get_session(session_id)
-        if not client:
-            raise ValueError(f"Session not found: {session_id}")
-
-        adapter = GeminiToolAdapter(client)
-        await adapter.load_tools()
-        return adapter.to_gemini_tools()
+        return await self.get_tools_by_format(session_id, "gemini")
 
     async def get_openai_tools(
         self,
@@ -403,13 +393,7 @@ class MCPManager:
         Raises:
             ValueError: 会话不存在
         """
-        client = self._session_pool.get_session(session_id)
-        if not client:
-            raise ValueError(f"Session not found: {session_id}")
-
-        adapter = OpenAIToolAdapter(client)
-        await adapter.load_tools()
-        return adapter.to_openai_tools()
+        return await self.get_tools_by_format(session_id, "openai")
 
     async def get_tools_by_format(
         self,
@@ -418,6 +402,10 @@ class MCPManager:
     ) -> List[Dict[str, Any]]:
         """
         获取指定格式的工具列表
+
+        svc-mcp-11: single load path — every format request loads the tools once
+        via UniversalToolAdapter and converts, so the gemini/openai/anthropic
+        paths no longer each allocate a separate adapter and re-fetch the list.
 
         Args:
             session_id: 会话 ID

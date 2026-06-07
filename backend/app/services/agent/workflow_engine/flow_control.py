@@ -48,7 +48,10 @@ def resolve_max_parallel_nodes(engine: Any, initial_input: Dict[str, Any]) -> in
             parsed = int(float(raw))
         except Exception:
             parsed = engine.DEFAULT_MAX_PARALLEL_NODES
-        return max(1, min(parsed, 32))
+        # svc-agent-2: the server default is the hard ceiling. A caller may
+        # request *fewer* parallel nodes, but the per-execution payload can
+        # never amplify fan-out beyond the server-side limit.
+        return max(1, min(parsed, engine.DEFAULT_MAX_PARALLEL_NODES))
 
     return engine.DEFAULT_MAX_PARALLEL_NODES
 

@@ -180,7 +180,10 @@ def normalize_possible_file_url(engine: Any, value: Any) -> Optional[str]:
         or lower.startswith("/")
     ):
         return text
-    return text
+    # svc-agent-3: do not treat arbitrary strings as file references. Only
+    # values matching a recognised scheme (handled above) or a base64 data-URL
+    # are valid; anything else is not a file URL.
+    return None
 
 
 def normalize_possible_result_media_url(engine: Any, value: Any) -> Optional[str]:

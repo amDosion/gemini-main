@@ -15,7 +15,7 @@
 import { useCallback, useState } from 'react';
 import type { Edge, Node } from 'reactflow';
 
-import type { WorkflowEdge, WorkflowNode, WorkflowNodeData } from '../types';
+import type { WorkflowEdge, WorkflowFinalResult, WorkflowNode, WorkflowNodeData } from '../types';
 import type { ActiveTemplateMeta } from '../workflowTemplateLoader';
 import { formatWorkflowValidationError, validateWorkflow } from '../workflowUtils';
 import { buildWorkflowStructureFingerprint } from '../workflowEditorUtils';
@@ -63,7 +63,7 @@ export interface UseWorkflowExecuteHandlerResult {
   isExecuting: boolean;
   executeErrorBanner: string | null;
   setExecuteErrorBanner: React.Dispatch<React.SetStateAction<string | null>>;
-  finalResult: unknown;
+  finalResult: WorkflowFinalResult;
   setFinalResult: React.Dispatch<React.SetStateAction<unknown>>;
   finalError: string | null;
   setFinalError: React.Dispatch<React.SetStateAction<string | null>>;
@@ -89,6 +89,11 @@ export const useWorkflowExecuteHandler = ({
 }: UseWorkflowExecuteHandlerArgs): UseWorkflowExecuteHandlerResult => {
   const [isExecuting, setIsExecuting] = useState(false);
   const [executeErrorBanner, setExecuteErrorBanner] = useState<string | null>(null);
+  // The state setter stays `unknown`-typed so it remains assignable to the
+  // many downstream consumers (e.g. useResultPanelPreviewState,
+  // loadTemplateIntoEditor) that expect Dispatch<SetStateAction<unknown>>.
+  // The public getter is narrowed to WorkflowFinalResult at the return
+  // boundary below — every runtime write is a string, result object, or null.
   const [finalResult, setFinalResult] = useState<unknown>(null);
   const [finalError, setFinalError] = useState<string | null>(null);
   const [finalCompletedAt, setFinalCompletedAt] = useState<number | null>(null);
@@ -273,10 +278,7 @@ export const useWorkflowExecuteHandler = ({
         const nodeType = (node?.data?.type || node?.type || '').toLowerCase();
         if (nodeType === 'agent') {
           const taskType = normalizeWorkflowAgentTaskType(node?.data?.agentTaskType, null);
-          if (
-            taskType === 'image-edit' ||
-            taskType === 'vision-understand'
-          ) {
+          if (taskType === 'image-edit' || taskType === 'vision-understand') {
             const hasNodeImage = Boolean(String(node?.data?.agentReferenceImageUrl || '').trim());
             return !hasNodeImage;
           }
@@ -347,7 +349,7 @@ export const useWorkflowExecuteHandler = ({
     isExecuting,
     executeErrorBanner,
     setExecuteErrorBanner,
-    finalResult,
+    finalResult: finalResult as WorkflowFinalResult,
     setFinalResult,
     finalError,
     setFinalError,

@@ -112,3 +112,73 @@ describe('useSessions loadMoreSessions null safety (F3)', () => {
     expect(result.current.sessions).toHaveLength(1);
   });
 });
+
+describe('useSessions loadMoreSessions error surfacing (hooks-contexts-9)', () => {
+  it('exposes loadMoreError on network failure while keeping hasMore true for retry', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    // First page: one session, more available.
+    apiGetMock.mockResolvedValueOnce({
+      sessions: [createSession('s1')],
+      total: 1,
+      hasMore: true,
+      nextCursor: null,
+    });
+
+    const { result } = renderHook(() => useSessions('chat'));
+    await act(async () => {
+      await result.current.refreshSessions({ force: true });
+    });
+    await waitFor(() => expect(result.current.hasMoreSessions).toBe(true));
+    expect(result.current.loadMoreError).toBe(false);
+
+    // Next page fetch rejects (transient network error).
+    apiGetMock.mockRejectedValueOnce(new Error('network down'));
+
+    await act(async () => {
+      await result.current.loadMoreSessions();
+    });
+
+    // Error is surfaced for the UI, logged, and pagination stays open for retry.
+    expect(result.current.loadMoreError).toBe(true);
+    expect(result.current.hasMoreSessions).toBe(true);
+    expect(errorSpy).toHaveBeenCalled();
+  });
+
+  it('clears loadMoreError when a subsequent load attempt starts', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    apiGetMock.mockResolvedValueOnce({
+      sessions: [createSession('s1')],
+      total: 1,
+      hasMore: true,
+      nextCursor: null,
+    });
+
+    const { result } = renderHook(() => useSessions('chat'));
+    await act(async () => {
+      await result.current.refreshSessions({ force: true });
+    });
+    await waitFor(() => expect(result.current.hasMoreSessions).toBe(true));
+
+    apiGetMock.mockRejectedValueOnce(new Error('network down'));
+    await act(async () => {
+      await result.current.loadMoreSessions();
+    });
+    expect(result.current.loadMoreError).toBe(true);
+
+    // Retry succeeds: a real page resolves, error flag is reset.
+    apiGetMock.mockResolvedValueOnce({
+      sessions: [createSession('s2')],
+      total: 2,
+      hasMore: false,
+      nextCursor: null,
+    });
+    await act(async () => {
+      await result.current.loadMoreSessions();
+    });
+
+    expect(result.current.loadMoreError).toBe(false);
+    expect(result.current.sessions).toHaveLength(2);
+  });
+});

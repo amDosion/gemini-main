@@ -369,7 +369,7 @@ export interface PdfExtractionResult {
   success: boolean;
   templateType: string;
   templateName: string;
-  data: Record<string, any>;
+  data: Record<string, unknown>;
   rawText?: string;
   error?: string;
   modelResponse?: string;

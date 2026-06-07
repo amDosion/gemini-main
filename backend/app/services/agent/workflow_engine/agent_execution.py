@@ -193,8 +193,8 @@ async def execute_agent_node(
         latest_input_payload = initial_input
 
     base_prompt = llm_default_system_prompt or (agent.system_prompt or "")
-    node_instructions = node_data.get("instructions") or ""
-    if node_instructions.strip():
+    node_instructions = str(node_data.get("instructions") or "").strip()
+    if node_instructions:
         system_prompt = f"{base_prompt}\n\n--- 节点附加指令 ---\n{node_instructions}".strip()
     else:
         system_prompt = base_prompt
@@ -399,7 +399,7 @@ async def execute_agent_node(
         }
 
     if normalized_agent_task_type in {"image-gen", "image-edit"}:
-        tool_args: Dict[str, Any] = {
+        image_tool_args: Dict[str, Any] = {
             "prompt": previous_text,
             "model_id": model_id,
         }
@@ -441,7 +441,7 @@ async def execute_agent_node(
             for src_key, dst_key in default_to_tool_map.items():
                 default_value = default_image_options.get(src_key)
                 if _has_effective_value(default_value):
-                    tool_args[dst_key] = default_value
+                    image_tool_args[dst_key] = default_value
 
         agent_field_map = {
             "agentAspectRatio": "aspect_ratio",
@@ -474,11 +474,11 @@ async def execute_agent_node(
         for src_key, dst_key in agent_field_map.items():
             val = node_data.get(src_key)
             if _has_effective_value(val):
-                tool_args[dst_key] = val
+                image_tool_args[dst_key] = val
 
-        tool_args["provider_id"] = provider_id
+        image_tool_args["provider_id"] = provider_id
         if profile_id:
-            tool_args["profile_id"] = profile_id
+            image_tool_args["profile_id"] = profile_id
 
         latest_input = previous_text
         if normalized_agent_task_type == "image-edit":
@@ -492,18 +492,18 @@ async def execute_agent_node(
                 raise ValueError(
                     f"图片编辑节点 {node_id} 缺少参考图，请配置 agentReferenceImageUrl 或在上游提供 imageUrl"
                 )
-            tool_args["image_url"] = str(reference_image_url).strip()
+            image_tool_args["image_url"] = str(reference_image_url).strip()
             edit_prompt = (
                 node_data.get("agentEditPrompt")
                 or node_data.get("agent_edit_prompt")
                 or ""
             )
             if edit_prompt and edit_prompt.strip():
-                tool_args["edit_prompt"] = edit_prompt.strip()
+                image_tool_args["edit_prompt"] = edit_prompt.strip()
             if isinstance(image_edit_defaults, dict):
                 default_edit_mode = image_edit_defaults.get("editMode")
-                if default_edit_mode and engine._get_tool_arg(tool_args, "mode", "edit_mode", "editMode") is None:
-                    tool_args["mode"] = default_edit_mode
+                if default_edit_mode and engine._get_tool_arg(image_tool_args, "mode", "edit_mode", "editMode") is None:
+                    image_tool_args["mode"] = default_edit_mode
 
             preserve_product_identity = engine._to_bool(
                 node_data.get(
@@ -511,7 +511,7 @@ async def execute_agent_node(
                     node_data.get(
                         "agent_preserve_product_identity",
                         engine._get_tool_arg(
-                            tool_args,
+                            image_tool_args,
                             "preserve_product_identity",
                             "preserveProductIdentity",
                         ),
@@ -519,20 +519,20 @@ async def execute_agent_node(
                 ),
                 default=True,
             )
-            tool_args["preserve_product_identity"] = preserve_product_identity
+            image_tool_args["preserve_product_identity"] = preserve_product_identity
             max_retries = engine._to_int(
                 node_data.get(
                     "agentImageEditMaxRetries",
                     node_data.get(
                         "agent_image_edit_max_retries",
-                        engine._get_tool_arg(tool_args, "max_retries", "maxRetries"),
+                        engine._get_tool_arg(image_tool_args, "max_retries", "maxRetries"),
                     ),
                 ),
                 default=1,
                 minimum=0,
                 maximum=3,
             )
-            tool_args["max_retries"] = max_retries if max_retries is not None else 1
+            image_tool_args["max_retries"] = max_retries if max_retries is not None else 1
 
             product_match_threshold = engine._to_int(
                 node_data.get(
@@ -540,7 +540,7 @@ async def execute_agent_node(
                     node_data.get(
                         "agent_product_match_threshold",
                         engine._get_tool_arg(
-                            tool_args,
+                            image_tool_args,
                             "product_match_threshold",
                             "productMatchThreshold",
                         ),
@@ -551,18 +551,18 @@ async def execute_agent_node(
                 maximum=95,
             )
             if product_match_threshold is not None:
-                tool_args["product_match_threshold"] = product_match_threshold
+                image_tool_args["product_match_threshold"] = product_match_threshold
 
             preferred_mode = str(
-                engine._get_tool_arg(tool_args, "mode", "edit_mode", "editMode") or ""
+                engine._get_tool_arg(image_tool_args, "mode", "edit_mode", "editMode") or ""
             ).strip()
             image_result = await engine._run_image_edit_tool(
-                tool_args,
+                image_tool_args,
                 latest_input,
                 preferred_mode=preferred_mode,
             )
         else:
-            image_result = await engine._run_image_generate_tool(tool_args, latest_input)
+            image_result = await engine._run_image_generate_tool(image_tool_args, latest_input)
 
         summary_text = str(
             image_result.get("summaryText")
@@ -584,13 +584,13 @@ async def execute_agent_node(
         }
 
     if normalized_agent_task_type == "video-gen":
-        tool_args = {
+        video_tool_args = {
             "prompt": previous_text or "生成一段视频",
             "model_id": model_id,
             "provider_id": provider_id,
         }
         if profile_id:
-            tool_args["profile_id"] = profile_id
+            video_tool_args["profile_id"] = profile_id
 
         video_generation_defaults = (
             agent_card_defaults.get("videoGeneration")
@@ -622,7 +622,7 @@ async def execute_agent_node(
                 continue
             if isinstance(default_value, str) and not default_value.strip():
                 continue
-            tool_args[dst_key] = default_value
+            video_tool_args[dst_key] = default_value
 
         node_field_map = {
             "agentAspectRatio": "aspect_ratio",
@@ -670,7 +670,7 @@ async def execute_agent_node(
                 continue
             if isinstance(value, str) and not value.strip():
                 continue
-            tool_args[dst_key] = value
+            video_tool_args[dst_key] = value
 
         source_video_input = engine._resolve_agent_source_video_input(
             node_data,
@@ -679,7 +679,7 @@ async def execute_agent_node(
             input_packets,
         )
         if source_video_input is not None:
-            tool_args["source_video"] = source_video_input
+            video_tool_args["source_video"] = source_video_input
         source_image_url = engine._resolve_agent_reference_image_url(
             node_data=node_data,
             context=context,
@@ -687,7 +687,7 @@ async def execute_agent_node(
             input_packets=input_packets,
         )
         if source_image_url:
-            tool_args["source_image"] = source_image_url
+            video_tool_args["source_image"] = source_image_url
         raw_last_frame_image = (
             node_data.get("agentLastFrameImageUrl")
             or node_data.get("agent_last_frame_image_url")
@@ -701,7 +701,7 @@ async def execute_agent_node(
             )
             normalized_last_frame = engine._extract_first_image_url(resolved_last_frame)
             if normalized_last_frame:
-                tool_args["last_frame_image"] = normalized_last_frame
+                video_tool_args["last_frame_image"] = normalized_last_frame
         raw_video_mask_image = (
             node_data.get("agentVideoMaskImageUrl")
             or node_data.get("agent_video_mask_image_url")
@@ -715,7 +715,7 @@ async def execute_agent_node(
             )
             normalized_video_mask = engine._extract_first_image_url(resolved_video_mask)
             if normalized_video_mask:
-                tool_args["video_mask_image"] = normalized_video_mask
+                video_tool_args["video_mask_image"] = normalized_video_mask
         raw_audio_url = (
             node_data.get("agentAudioUrl")
             or node_data.get("agent_audio_url")
@@ -729,19 +729,19 @@ async def execute_agent_node(
             )
             normalized_audio = engine._extract_first_audio_url(resolved_audio)
             if normalized_audio:
-                tool_args["audio_url"] = normalized_audio
+                video_tool_args["audio_url"] = normalized_audio
             elif isinstance(resolved_audio, str) and resolved_audio.strip():
-                tool_args["audio_url"] = resolved_audio.strip()
-        if engine._to_bool(tool_args.get("continue_from_previous_last_frame"), default=False):
-            tool_args["use_last_frame_bridge"] = True
+                video_tool_args["audio_url"] = resolved_audio.strip()
+        if engine._to_bool(video_tool_args.get("continue_from_previous_last_frame"), default=False):
+            video_tool_args["use_last_frame_bridge"] = True
 
-        video_prompt = str(tool_args.get("prompt") or "").strip() or "生成一段视频"
+        video_prompt = str(video_tool_args.get("prompt") or "").strip() or "生成一段视频"
         video_result = await engine._run_video_generate_task(
             provider_id=provider_id,
             model_id=model_id,
             profile_id=profile_id,
             prompt=video_prompt,
-            tool_args=tool_args,
+            tool_args=video_tool_args,
         )
         summary_text = str(
             video_result.get("summaryText")
@@ -761,12 +761,12 @@ async def execute_agent_node(
         }
 
     if normalized_agent_task_type == "audio-gen":
-        tool_args = {
+        audio_tool_args = {
             "model_id": model_id,
             "provider_id": provider_id,
         }
         if profile_id:
-            tool_args["profile_id"] = profile_id
+            audio_tool_args["profile_id"] = profile_id
 
         audio_generation_defaults = (
             agent_card_defaults.get("audioGeneration")
@@ -789,7 +789,7 @@ async def execute_agent_node(
                 continue
             if isinstance(default_value, str) and not default_value.strip():
                 continue
-            tool_args[dst_key] = default_value
+            audio_tool_args[dst_key] = default_value
 
         node_field_map = {
             "agentVoice": "voice",
@@ -809,14 +809,14 @@ async def execute_agent_node(
                 continue
             if isinstance(value, str) and not value.strip():
                 continue
-            tool_args[dst_key] = value
+            audio_tool_args[dst_key] = value
 
         audio_result = await engine._run_audio_generate_task(
             provider_id=provider_id,
             model_id=model_id,
             profile_id=profile_id,
             text=previous_text,
-            tool_args=tool_args,
+            tool_args=audio_tool_args,
         )
         summary_text = str(
             audio_result.get("summaryText")

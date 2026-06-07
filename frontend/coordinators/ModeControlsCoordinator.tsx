@@ -33,10 +33,7 @@ import {
   MultiAgentControlsProps,
 } from '../controls/types';
 import { getProviderControls } from '../controls/modes/registry';
-import {
-  useModeControlsSchema,
-  ModeControlsSchema,
-} from '../hooks/useModeControlsSchema';
+import { useModeControlsSchema, ModeControlsSchema } from '../hooks/useModeControlsSchema';
 
 /**
  * 需要从后端 `/api/.../controls` 接口动态获取 schema 的模式集合。
@@ -110,21 +107,20 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
     enabled: isSchemaDriven && !!currentModel?.id,
   });
 
-  const schemaProps =
-    isSchemaDriven
-      ? {
-          controlsSchema:
-            controlsSchemaOverride !== undefined ? controlsSchemaOverride : internalSchema,
-          controlsSchemaLoading:
-            controlsSchemaLoadingOverride !== undefined
-              ? controlsSchemaLoadingOverride
-              : internalSchemaLoading,
-          controlsSchemaError:
-            controlsSchemaErrorOverride !== undefined
-              ? controlsSchemaErrorOverride
-              : internalSchemaError,
-        }
-      : {};
+  const schemaProps: WithControlsSchema<Record<never, never>> = isSchemaDriven
+    ? {
+        controlsSchema:
+          controlsSchemaOverride !== undefined ? controlsSchemaOverride : internalSchema,
+        controlsSchemaLoading:
+          controlsSchemaLoadingOverride !== undefined
+            ? controlsSchemaLoadingOverride
+            : internalSchemaLoading,
+        controlsSchemaError:
+          controlsSchemaErrorOverride !== undefined
+            ? controlsSchemaErrorOverride
+            : internalSchemaError,
+      }
+    : {};
 
   // 获取当前提供商的控件集
   const Controls = getProviderControls(providerId);

@@ -25,9 +25,7 @@ import {
   writeSessionHasMoreForMode,
 } from '../services/sessionCache';
 import { normalizeChatSession } from '../services/sessionNormalizer';
-import {
-  getPrivateCacheUserScope,
-} from '../services/privateCacheScope';
+import { getPrivateCacheUserScope } from '../services/privateCacheScope';
 import {
   capturePrivateCacheLifecycleSnapshot,
   isPrivateCacheLifecycleSnapshotCurrent,
@@ -89,16 +87,13 @@ export const useSessions = (
   // ✅ 使用 ref 跟踪上一次的 appMode，用于检测 mode 切换
   const prevAppModeRef = useRef<AppMode>(appMode);
   const appModeRef = useRef<AppMode>(appMode);
-  // Cache keys incorporate the private-cache user scope internally via scopedPrivateCacheKey.
-  // Scope changes are handled by usePrivateCacheScopeRevision (below) — no phantom dep needed here.
-  const sessionListCacheKey = useMemo(
-    () => getSessionListCacheKey(appMode),
-    [appMode]
-  );
-  const currentSessionIdCacheKey = useMemo(
-    () => getCurrentSessionIdCacheKey(appMode),
-    [appMode]
-  );
+  // hooks-contexts-10: Cache keys incorporate the private-cache user scope internally
+  // via scopedPrivateCacheKey, so privateCacheUserScope is genuinely part of the key
+  // computation and does NOT belong in this dep array as a phantom dependency. Scope
+  // changes are reset through usePrivateCacheScopeRevision (below) — the effect-driven
+  // reset path preferred over a phantom useMemo dep.
+  const sessionListCacheKey = useMemo(() => getSessionListCacheKey(appMode), [appMode]);
+  const currentSessionIdCacheKey = useMemo(() => getCurrentSessionIdCacheKey(appMode), [appMode]);
 
   // ✅ Sessions and currentSessionId use only per-mode cache partitions.
   const rawModeSessions = useCacheSubscription<ChatSession[]>(sessionListCacheKey, []);
@@ -120,6 +115,10 @@ export const useSessions = (
   const [isLoading, setIsLoading] = useState(false);
   const [hasMoreSessions, setHasMoreSessions] = useState(false); // ✅ 是否还有更多会话
   const [isLoadingMore, setIsLoadingMore] = useState(false); // ✅ 是否正在加载更多
+  // hooks-contexts-9: surface load-more failures so the UI can offer a retry
+  // affordance instead of failing silently. hasMore stays true on error (see
+  // loadMoreSessions catch), so the user can still trigger another attempt.
+  const [loadMoreError, setLoadMoreError] = useState(false);
 
   // ✅ B-3 / C-3: race-guard. Per-mode data cache is global via sessionCache.
   const refreshSeqRef = useRef(0);
@@ -215,34 +214,37 @@ export const useSessions = (
     return apiClient.get<SessionsPageResponse>(`/api/init/sessions/more?${params.toString()}`);
   }, []);
 
-  const fetchFirstSessionsPage = useCallback(async (mode: AppMode) => {
-    const result = (await fetchSessionsPage(mode, 0)) || {
-      sessions: [],
-      total: 0,
-      hasMore: false,
-      nextCursor: null,
-    };
-    const resultSessions = result.sessions || [];
-
-    if (!hasOutOfModeSessions(mode, resultSessions)) {
-      return result;
-    }
-
-    try {
-      const fallbackSessions = await db.getSessions(mode);
-      return {
-        sessions: fallbackSessions,
-        total: fallbackSessions.length,
+  const fetchFirstSessionsPage = useCallback(
+    async (mode: AppMode) => {
+      const result = (await fetchSessionsPage(mode, 0)) || {
+        sessions: [],
+        total: 0,
         hasMore: false,
         nextCursor: null,
       };
-    } catch {
-      return {
-        ...result,
-        sessions: filterSessionsForMode(mode, resultSessions),
-      };
-    }
-  }, [fetchSessionsPage]);
+      const resultSessions = result.sessions || [];
+
+      if (!hasOutOfModeSessions(mode, resultSessions)) {
+        return result;
+      }
+
+      try {
+        const fallbackSessions = await db.getSessions(mode);
+        return {
+          sessions: fallbackSessions,
+          total: fallbackSessions.length,
+          hasMore: false,
+          nextCursor: null,
+        };
+      } catch {
+        return {
+          ...result,
+          sessions: filterSessionsForMode(mode, resultSessions),
+        };
+      }
+    },
+    [fetchSessionsPage]
+  );
 
   // ✅ 保存 cacheStatus 的方法到 ref
   useEffect(() => {
@@ -253,70 +255,73 @@ export const useSessions = (
 
   // 刷新会话列表（强制从后端获取，按当前 appMode 过滤）
   // ✅ B-3 / C-3: race-guard + per-mode cache
-  const refreshSessions = useCallback(async (options: RefreshSessionsOptions = {}) => {
-    const requestedMode = appMode;
-    const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
-    const requestScope = lifecycleSnapshot.userScope;
-    const force = Boolean(options.force);
+  const refreshSessions = useCallback(
+    async (options: RefreshSessionsOptions = {}) => {
+      const requestedMode = appMode;
+      const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
+      const requestScope = lifecycleSnapshot.userScope;
+      const force = Boolean(options.force);
 
-    if (!force) {
-      const cached = readCachedSessionsForMode(requestedMode);
-      if (cached !== null) {
-        applyModeSessions(requestedMode, cached);
-        cacheStatusRef.current?.updateStatus(true, false, Date.now());
-        return;
-      }
-    }
-
-    if (
-      activeRefreshModeRef.current === requestedMode &&
-      activeRefreshScopeRef.current === requestScope
-    ) {
-      return;
-    }
-    activeRefreshModeRef.current = requestedMode;
-    activeRefreshScopeRef.current = requestScope;
-
-    // 单调 token: 旧 fetch resolve 时若 seq 不匹配则丢弃
-    const seq = ++refreshSeqRef.current;
-
-    try {
-      setIsLoading(true);
-      const result = await fetchFirstSessionsPage(requestedMode);
-
-      // race-guard: mode 已切换或有更新的 fetch,丢弃本次结果
-      if (
-        seq !== refreshSeqRef.current ||
-        requestedMode !== appModeRef.current ||
-        !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
-      ) {
-        return;
+      if (!force) {
+        const cached = readCachedSessionsForMode(requestedMode);
+        if (cached !== null) {
+          applyModeSessions(requestedMode, cached);
+          cacheStatusRef.current?.updateStatus(true, false, Date.now());
+          return;
+        }
       }
 
-      const preparedSessions = prepareSessions(
-        (result.sessions || []).map((session) => ({
-          ...session,
-          messages: session.messages || [],
-        }))
-      );
-      writeSessionHasMoreForMode(requestedMode, !!result.hasMore);
-      applyModeSessions(requestedMode, preparedSessions, !!result.hasMore);
-      // ✅ 使用 ref 调用 updateStatus，避免依赖 cacheStatus
-      cacheStatusRef.current?.updateStatus(false, false, Date.now());
-    } finally {
       if (
         activeRefreshModeRef.current === requestedMode &&
         activeRefreshScopeRef.current === requestScope
       ) {
-        activeRefreshModeRef.current = null;
-        activeRefreshScopeRef.current = null;
+        return;
       }
-      // 仅当本次请求仍是最新时清 loading
-      if (seq === refreshSeqRef.current && requestedMode === appModeRef.current) {
-        setIsLoading(false);
+      activeRefreshModeRef.current = requestedMode;
+      activeRefreshScopeRef.current = requestScope;
+
+      // 单调 token: 旧 fetch resolve 时若 seq 不匹配则丢弃
+      const seq = ++refreshSeqRef.current;
+
+      try {
+        setIsLoading(true);
+        const result = await fetchFirstSessionsPage(requestedMode);
+
+        // race-guard: mode 已切换或有更新的 fetch,丢弃本次结果
+        if (
+          seq !== refreshSeqRef.current ||
+          requestedMode !== appModeRef.current ||
+          !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
+        ) {
+          return;
+        }
+
+        const preparedSessions = prepareSessions(
+          (result.sessions || []).map((session) => ({
+            ...session,
+            messages: session.messages || [],
+          }))
+        );
+        writeSessionHasMoreForMode(requestedMode, !!result.hasMore);
+        applyModeSessions(requestedMode, preparedSessions, !!result.hasMore);
+        // ✅ 使用 ref 调用 updateStatus，避免依赖 cacheStatus
+        cacheStatusRef.current?.updateStatus(false, false, Date.now());
+      } finally {
+        if (
+          activeRefreshModeRef.current === requestedMode &&
+          activeRefreshScopeRef.current === requestScope
+        ) {
+          activeRefreshModeRef.current = null;
+          activeRefreshScopeRef.current = null;
+        }
+        // 仅当本次请求仍是最新时清 loading
+        if (seq === refreshSeqRef.current && requestedMode === appModeRef.current) {
+          setIsLoading(false);
+        }
       }
-    }
-  }, [appMode, applyModeSessions, fetchFirstSessionsPage, prepareSessions]); // ✅ 移除 cacheStatus 依赖
+    },
+    [appMode, applyModeSessions, fetchFirstSessionsPage, prepareSessions]
+  ); // ✅ 移除 cacheStatus 依赖
 
   // ✅ 滚动加载更多会话
   const isLoadingMoreRef = useRef(false);
@@ -330,6 +335,7 @@ export const useSessions = (
     setIsLoading(false);
     setHasMoreSessions(false);
     setIsLoadingMore(false);
+    setLoadMoreError(false);
   });
 
   const loadMoreSessions = useCallback(async () => {
@@ -340,6 +346,8 @@ export const useSessions = (
       const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
       isLoadingMoreRef.current = true;
       setIsLoadingMore(true);
+      // Clear any prior failure when a new attempt begins.
+      setLoadMoreError(false);
       const offset = sessions.length;
       const result = await fetchSessionsPage(requestedMode, offset);
 
@@ -358,10 +366,7 @@ export const useSessions = (
             messages: s.messages || [], // 确保 messages 存在
           }))
         );
-        updateCachedSessionsForMode(requestedMode, (prev) => [
-          ...prev,
-          ...preparedSessions,
-        ]);
+        updateCachedSessionsForMode(requestedMode, (prev) => [...prev, ...preparedSessions]);
         writeSessionHasMoreForMode(requestedMode, result.hasMore);
         if (requestedMode === appModeRef.current) {
           setHasMoreSessions(result.hasMore);
@@ -374,9 +379,12 @@ export const useSessions = (
         }
       }
     } catch (error) {
-      // C-6: On network error, keep hasMore=true so the user can retry by scrolling again.
-      // Log the failure so it is observable in devtools without permanently closing pagination.
+      // C-6 / hooks-contexts-9: On network error, intentionally keep hasMore=true so
+      // the user can retry by scrolling again — pagination must not be permanently
+      // closed by a transient failure. Surface the error via loadMoreError so the UI
+      // can show a retry affordance, and log it so it is observable in devtools.
       console.error('[useSessions] loadMoreSessions failed:', error);
+      setLoadMoreError(true);
     } finally {
       isLoadingMoreRef.current = false;
       setIsLoadingMore(false);
@@ -417,11 +425,7 @@ export const useSessions = (
       }
 
       if (declaredMode === appMode) {
-        applyModeSessions(
-          appMode,
-          declaredModeSessions,
-          initialData.sessionsHasMore ?? false
-        );
+        applyModeSessions(appMode, declaredModeSessions, initialData.sessionsHasMore ?? false);
         return;
       }
 
@@ -734,5 +738,8 @@ export const useSessions = (
     hasMoreSessions,
     isLoadingMore,
     loadMoreSessions,
+    // hooks-contexts-9: true when the last loadMoreSessions attempt failed; the
+    // UI can use this to render a retry affordance (hasMore remains true).
+    loadMoreError,
   };
 };

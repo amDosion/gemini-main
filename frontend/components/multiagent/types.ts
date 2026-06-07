@@ -1,6 +1,6 @@
 /**
  * Type Definitions for Multi-Agent Workflow Editor
- * 
+ *
  * Shared types used across all workflow components
  */
 
@@ -45,20 +45,20 @@ export interface WorkflowNodeData {
   modelOverrideProfileId?: string;
   tools?: string[];
   // Per-node configuration
-  instructions?: string;       // 节点级指令（追加到 agent system prompt）
-  inputMapping?: string;       // 输入映射模板，如 {{prev.output.text}}
+  instructions?: string; // 节点级指令（追加到 agent system prompt）
+  inputMapping?: string; // 输入映射模板，如 {{prev.output.text}}
   // Agent task parameters
-  agentTaskType?: string;      // 任务类型：chat / image-gen / image-edit / video-gen / audio-gen / data-analysis / ...
-  agentTemperature?: number;   // 节点级温度覆盖
-  agentMaxTokens?: number;     // 节点级最大输出 token 覆盖
+  agentTaskType?: string; // 任务类型：chat / image-gen / image-edit / video-gen / audio-gen / data-analysis / ...
+  agentTemperature?: number; // 节点级温度覆盖
+  agentMaxTokens?: number; // 节点级最大输出 token 覆盖
   agentPreferLatestModel?: boolean; // 优先自动选择最新可用模型
-  agentAspectRatio?: string;   // 图片宽高比
-  agentImageSize?: string;     // 图片尺寸
+  agentAspectRatio?: string; // 图片宽高比
+  agentImageSize?: string; // 图片尺寸
   agentResolutionTier?: string; // 图片分辨率档位或视频分辨率：1K / 2K / 4K / 720p / 1080p / 4k
   agentNumberOfImages?: number; // 图片数量
-  agentImageStyle?: string;    // 图片风格
+  agentImageStyle?: string; // 图片风格
   agentNegativePrompt?: string; // 反向提示词
-  agentSeed?: number;          // 随机种子
+  agentSeed?: number; // 随机种子
   agentPromptExtend?: boolean; // 启用提示词优化（provider支持时生效）
   agentAddMagicSuffix?: boolean; // 启用提示词魔法后缀（provider支持时生效）
   agentVideoDurationSeconds?: number; // 视频时长（秒）
@@ -76,20 +76,20 @@ export interface WorkflowNodeData {
   agentSubtitleLanguage?: string; // 字幕语言
   agentSubtitleScript?: string; // 字幕脚本
   agentStoryboardPrompt?: string; // 明确分镜提示词
-  agentSpeechSpeed?: number;   // 语音速度
-  agentAudioFormat?: string;   // 音频格式
-  agentVoice?: string;         // 语音 / 音色
-  agentOutputFormat?: string;  // 输出格式：text / json / markdown
+  agentSpeechSpeed?: number; // 语音速度
+  agentAudioFormat?: string; // 音频格式
+  agentVoice?: string; // 语音 / 音色
+  agentOutputFormat?: string; // 输出格式：text / json / markdown
   agentOutputMimeType?: string; // 输出 MIME 类型
   agentReferenceImageUrl?: string; // 参考图片 URL（图生图）
-  agentFileUrl?: string;       // 文件 URL（数据分析）
-  agentEditMode?: string;      // 图片编辑模式
-  agentEditPrompt?: string;    // 编辑指令（图片编辑）
+  agentFileUrl?: string; // 文件 URL（数据分析）
+  agentEditMode?: string; // 图片编辑模式
+  agentEditPrompt?: string; // 编辑指令（图片编辑）
   agentOutputLanguage?: string; // 图片编辑输出语言
   agentPreserveProductIdentity?: boolean;
   agentImageEditMaxRetries?: number;
   agentProductMatchThreshold?: number;
-  expression?: string;         // condition 节点表达式
+  expression?: string; // condition 节点表达式
   routerStrategy?: RouterStrategy;
   routerPrompt?: string;
   mergeStrategy?: MergeStrategy;
@@ -185,6 +185,17 @@ export interface ExecutionStatus {
   }>;
 }
 
+/**
+ * Final workflow result as returned by the backend execution contract.
+ *
+ * The backend may emit a plain text result (string), a structured result
+ * object (carrying fields such as finalOutput / outputs / imageUrl / text,
+ * which the result utilities deep-walk), or no result (null). Consumers that
+ * inspect the structured form should narrow at each access site; the result
+ * extraction helpers already accept `unknown`-compatible input.
+ */
+export type WorkflowFinalResult = string | Record<string, unknown> | null;
+
 export interface AgentRuntimeMetadata {
   kind: string;
   label: string;
@@ -246,7 +257,14 @@ export interface AgentDef {
   supportsOfficialOrchestration?: boolean;
   agentCard?: {
     defaults?: {
-      defaultTaskType?: 'chat' | 'image-gen' | 'image-edit' | 'video-gen' | 'audio-gen' | 'vision-understand' | 'data-analysis';
+      defaultTaskType?:
+        | 'chat'
+        | 'image-gen'
+        | 'image-edit'
+        | 'video-gen'
+        | 'audio-gen'
+        | 'vision-understand'
+        | 'data-analysis';
       imageGeneration?: {
         aspectRatio?: string;
         resolutionTier?: string;
