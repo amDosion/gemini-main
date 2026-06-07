@@ -175,3 +175,56 @@ def test_workflow_remote_reference_blocks_redirect_to_internal(monkeypatch):
     with pytest.raises(ValueError):
         refs.load_binary_from_reference(engine, "http://1.1.1.1/start", 1024 * 1024)
 
+def test_tongyi_execute_with_fallback_blocks_loopback_before_submit(monkeypatch):
+    # svc-providers-1: execute_with_fallback is the real entry point used by
+    # tongyi_service.expand_image. A loopback image_url must be rejected up-front
+    # before submit_task (which would forward the URL to DashScope) is called.
+    calls = {"submit": 0, "post": 0}
+
+    def _must_not_submit(*args, **kwargs):
+        calls["submit"] += 1
+        raise AssertionError("submit_task must not run for a blocked SSRF URL")
+
+    def _must_not_post(*args, **kwargs):
+        calls["post"] += 1
+        raise AssertionError("requests.post must not run for a blocked SSRF URL")
+
+    svc = image_expand_mod.ImageExpandService()
+    monkeypatch.setattr(svc, "submit_task", _must_not_submit)
+    monkeypatch.setattr(image_expand_mod.requests, "post", _must_not_post)
+
+    result = svc.execute_with_fallback(
+        image_url="http://127.0.0.1:9/secret.png",
+        api_key="test-key",
+        parameters={},
+    )
+    assert result.success is False
+    assert calls["submit"] == 0
+    assert calls["post"] == 0
+
+
+def test_tongyi_execute_with_fallback_allows_oss_scheme(monkeypatch):
+    # svc-providers-1: oss:// URLs are not HTTP fetches — DashScope handles them
+    # natively.  The SSRF guard must not block oss:// and must pass it through to
+    # submit_task unchanged.
+    submitted = {}
+
+    def _fake_submit(image_url, api_key, parameters, use_oss_resolve=False):
+        submitted["image_url"] = image_url
+        submitted["use_oss_resolve"] = use_oss_resolve
+        return False, None, "test-short-circuit"
+
+    svc = image_expand_mod.ImageExpandService()
+    monkeypatch.setattr(svc, "submit_task", _fake_submit)
+
+    result = svc.execute_with_fallback(
+        image_url="oss://test-bucket/path/to/image.png",
+        api_key="test-key",
+        parameters={},
+    )
+    # The call must reach submit_task (not be blocked by the SSRF guard).
+    assert "image_url" in submitted
+    assert submitted["image_url"] == "oss://test-bucket/path/to/image.png"
+    assert submitted["use_oss_resolve"] is True
+    # Submit returned failure (as arranged), so execute_with_fallback also fails.
+    assert result.success is False

@@ -10,6 +10,7 @@ MCP Manager - 高层 MCP 管理服务
 类似于 storage_manager.py 的架构设计
 """
 
+import asyncio
 from typing import Dict, Any, Optional, List
 import logging
 from contextlib import asynccontextmanager
@@ -43,6 +44,7 @@ class MCPSessionPool:
     def __init__(self):
         self._sessions: Dict[str, MCPClient] = {}
         self._configs: Dict[str, MCPServerConfig] = {}
+        self._lock = asyncio.Lock()
 
     async def get_or_create(
         self,
@@ -59,26 +61,27 @@ class MCPSessionPool:
         Returns:
             MCP 客户端实例
         """
-        # 检查是否已存在
-        if session_id in self._sessions:
-            client = self._sessions[session_id]
-            if client.is_connected:
-                logger.debug(f"Reusing existing session: {session_id}")
-                return client
-            else:
-                # 会话已断开，移除
-                logger.info(f"Session {session_id} disconnected, creating new one")
-                await self.remove(session_id)
+        async with self._lock:
+            # 检查是否已存在
+            if session_id in self._sessions:
+                client = self._sessions[session_id]
+                if client.is_connected:
+                    logger.debug(f"Reusing existing session: {session_id}")
+                    return client
+                else:
+                    # 会话已断开，移除
+                    logger.info(f"Session {session_id} disconnected, creating new one")
+                    await self.remove(session_id)
 
-        # 创建新会话
-        logger.info(f"Creating new MCP session: {session_id}")
-        client = MCPClient(config)
-        await client.connect()
+            # 创建新会话
+            logger.info(f"Creating new MCP session: {session_id}")
+            client = MCPClient(config)
+            await client.connect()
 
-        self._sessions[session_id] = client
-        self._configs[session_id] = config
+            self._sessions[session_id] = client
+            self._configs[session_id] = config
 
-        return client
+            return client
 
     async def remove(self, session_id: str) -> None:
         """

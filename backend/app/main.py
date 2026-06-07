@@ -247,6 +247,7 @@ if ROUTER_REGISTRY_AVAILABLE:
         logger.error(f"{LOG_PREFIXES['error']} Failed to register routes: {e}", exc_info=True)
         import traceback
         logger.error(f"{LOG_PREFIXES['error']} Registration traceback:\n{traceback.format_exc()}")
+        raise
 else:
     logger.error(f"{LOG_PREFIXES['error']} Router registry not available, routes will not be registered!")
 

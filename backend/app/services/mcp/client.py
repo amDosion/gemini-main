@@ -198,10 +198,12 @@ class MCPClient:
                 raise ValueError(f"Unsupported server type: {self.config.server_type}")
 
         except MCPStdioPolicyError:
+            await self.close()
             raise
         except Exception as e:
             logger.error(f"Failed to connect to MCP server: {e}")
-            raise RuntimeError(f"MCP connection failed: {e}")
+            await self.close()
+            raise RuntimeError(f"MCP connection failed: {e}") from e
 
     async def list_tools(self) -> List[MCPTool]:
         """

@@ -373,11 +373,37 @@ class StorageManager:
             
             if result.get('success'):
                 logger.info(f"Storage config test successful for user {self.user_id}")
-                return {
+                test_url = result.get('url')
+                success_response = {
                     "success": True,
                     "message": "Configuration test successful",
-                    "test_url": result.get('url')
+                    "test_url": test_url
                 }
+                # Delete the test file so it does not persist in user storage.
+                # Wrapped in try/finally logic: cleanup failure never masks the
+                # upload success result.
+                try:
+                    await StorageService.delete_item(
+                        provider=provider,
+                        config=decrypted_config,
+                        path=test_filename,
+                        is_directory=False,
+                        file_url=test_url,
+                    )
+                    logger.debug(
+                        "Deleted test file after config test: user=%s filename=%s",
+                        self.user_id,
+                        test_filename,
+                    )
+                except Exception as cleanup_exc:
+                    logger.warning(
+                        "Failed to delete test file after config test (non-fatal): "
+                        "user=%s filename=%s error=%s",
+                        self.user_id,
+                        test_filename,
+                        cleanup_exc,
+                    )
+                return success_response
             else:
                 return {
                     "success": False,

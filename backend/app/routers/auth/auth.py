@@ -474,11 +474,16 @@ async def refresh_token(
 
 
 @router.get("/me")
-async def get_current_user(
+def get_current_user(
     request: Request,
     db: Session = Depends(get_db)
 ):
-    """获取当前用户信息 - Header 优先，httpOnly access Cookie 兜底"""
+    """获取当前用户信息 - Header 优先，httpOnly access Cookie 兜底。
+
+    core-3: 本端点全部为同步 DB 调用（无 await）。声明为同步 def 后，FastAPI 会在
+    线程池中执行，避免在事件循环线程上阻塞（extract_user_id_from_token /
+    auth_service.get_current_user / db.query 均为同步 SessionLocal 查询）。
+    """
     auth_service = AuthService(db)
 
     access_token = _get_request_token(request, cookie_name="access_token")

@@ -17,7 +17,7 @@ import time
 import httpx
 import requests
 
-from ...utils.url_security import sync_get_with_redirect_guard
+from ...utils.url_security import UnsafeURLError, sync_get_with_redirect_guard, validate_outbound_http_url
 
 # 导入独立的上传服务
 from .file_upload import upload_bytes_to_dashscope
@@ -360,7 +360,18 @@ class ImageExpandService:
             OutPaintingResult
         """
         logger.info(f"[OutPainting] 原始图片 URL: {image_url}")
-        
+
+        # svc-providers-1: validate http(s) image_url against SSRF policy before it
+        # is forwarded server-side to DashScope (submit_task) or downloaded in the
+        # fallback path.  oss:// and other non-http schemes bypass this check — they
+        # are not HTTP fetches and are handled natively by DashScope.
+        if image_url.startswith("http://") or image_url.startswith("https://"):
+            try:
+                validate_outbound_http_url(image_url)
+            except UnsafeURLError as exc:
+                logger.warning(f"[OutPainting] image_url 被出站策略拒绝: {exc}")
+                return OutPaintingResult(success=False, error=f"图片 URL 被拒绝: {exc}")
+
         # ✅ 检测是否是 oss:// URL，如果是则需要启用 OssResourceResolve
         is_oss_url = image_url.startswith("oss://")
         if is_oss_url:
