@@ -1,27 +1,20 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
-import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 
-import { AppMode, Attachment, Role, ChatOptions } from './types/types';
+import { AppMode, Attachment, ChatOptions } from './types/types';
 import { llmService } from './services/llmService';
 import { initGlobalErrorHandlers, registerGlobalErrorNotifier } from './utils/globalErrorHandler';
 import { ConfigProfile } from './services/db'; // ✅ 新增：ConfigProfile 类型
 
 // Cleaner Imports via Barrel Files
 import {
-  AppLayout,
-  ChatView, // ✅ 保持同步加载（默认模式）
   SettingsModal,
-  ImageModal,
   LoadingSpinner,
   ErrorView,
   WelcomeScreen,
 } from './components';
 import { getErrorMessage } from './utils/errorMessage';
-import { GlobalErrorBoundary } from './components/common/GlobalErrorBoundary';
 
-// ✅ 懒加载非关键视图组件（命名导出需要转换为默认导出）
-// 顶层视图 lazy 包装抽离至 ./lazyViews（< 800 行合规）
-import { MultiAgentView, StudioView, CloudStorageView, PersonaManagementView } from './lazyViews';
 import {
   deleteMessageFromSession,
   submitWelcomePrompt,
@@ -30,10 +23,6 @@ import {
   openPersonaPanel,
 } from './appHandlers';
 import { AppRoutes } from './components/AppRoutes';
-import { WorkspaceTagViews } from './components/layout/WorkspaceTagViews';
-
-// Import Auth Components
-import { LoginPage, RegisterPage } from './components/auth';
 
 import {
   useSettings,
@@ -56,22 +45,9 @@ import { startTelemetrySpan } from './services/frontendTelemetry';
 import { resolveModelForModeSend } from './utils/modeModelSelection';
 import { apiClient } from './services/apiClient';
 import { authService } from './services/auth';
-
-const STUDIO_APP_MODES = new Set<AppMode>([
-  'image-gen',
-  'image-chat-edit',
-  'image-mask-edit',
-  'image-inpainting',
-  'image-background-edit',
-  'image-recontext',
-  'image-outpainting',
-  'video-gen',
-  'audio-gen',
-  'pdf-extract',
-  'virtual-try-on',
-]);
-
-const isStudioAppMode = (mode: AppMode): boolean => STUDIO_APP_MODES.has(mode);
+import { isStudioAppMode } from './utils/appModes';
+import { AppShell } from './components/app/AppShell';
+import { useWorkspaceModeHandlers } from './hooks/useWorkspaceModeHandlers';
 
 const AppContent: React.FC = () => {
   // --- Router Hooks ---
@@ -395,75 +371,22 @@ const AppContent: React.FC = () => {
     [appMode, baseHandleModeSwitch]
   );
 
-  const handleWorkspaceModeSelect = useCallback(
-    (mode: AppMode) => {
-      setOpenWorkspaceModes((current) => (current.includes(mode) ? current : [...current, mode]));
-      handleModeSwitch(mode);
-    },
-    [handleModeSwitch]
-  );
-
-  const handleModeNavigationSelect = useCallback(
-    (mode: AppMode) => {
-      setOpenWorkspaceModes((current) => (current.includes(mode) ? current : [...current, mode]));
-      const hasCachedLatest = selectLatestSessionForMode(mode);
-      handleModeSwitch(mode);
-      if (mode === appMode && !hasCachedLatest) {
-        refreshSessions();
-      }
-    },
-    [appMode, handleModeSwitch, refreshSessions, selectLatestSessionForMode]
-  );
-
-  const handleWorkspaceModesClose = useCallback(
-    (modes: AppMode[]) => {
-      const closeSet = new Set(modes);
-      if (openWorkspaceModes.length <= 1 || closeSet.size === 0) {
-        return;
-      }
-
-      const nextOpenModes = openWorkspaceModes.filter((item) => !closeSet.has(item));
-      if (nextOpenModes.length === 0 || nextOpenModes.length === openWorkspaceModes.length) {
-        return;
-      }
-
-      setOpenWorkspaceModes(nextOpenModes);
-
-      if (closeSet.has(appMode)) {
-        const modeIndex = openWorkspaceModes.indexOf(appMode);
-        const previousOpenMode = [...openWorkspaceModes.slice(0, modeIndex)]
-          .reverse()
-          .find((item) => !closeSet.has(item));
-        const nextOpenMode = openWorkspaceModes
-          .slice(modeIndex + 1)
-          .find((item) => !closeSet.has(item));
-        const nextActiveMode = previousOpenMode || nextOpenMode || nextOpenModes[0] || 'chat';
-        handleModeSwitch(nextActiveMode);
-      }
-    },
-    [appMode, handleModeSwitch, openWorkspaceModes]
-  );
-
-  const handleWorkspaceModeClose = useCallback(
-    (mode: AppMode) => {
-      handleWorkspaceModesClose([mode]);
-    },
-    [handleWorkspaceModesClose]
-  );
-
-  const handleWorkspaceModeReload = useCallback(
-    (mode: AppMode) => {
-      setWorkspaceReloadKeys((current) => ({
-        ...current,
-        [mode]: (current[mode] || 0) + 1,
-      }));
-
-      if (mode === appMode) {
-        refreshSessions({ force: true });
-      }
-    },
-    [appMode, refreshSessions]
-  );
+  // Workspace-tab 模式操作 handler 抽离至 ./hooks/useWorkspaceModeHandlers
+  const {
+    handleWorkspaceModeSelect,
+    handleModeNavigationSelect,
+    handleWorkspaceModesClose,
+    handleWorkspaceModeClose,
+    handleWorkspaceModeReload,
+  } = useWorkspaceModeHandlers({
+    appMode,
+    openWorkspaceModes,
+    setOpenWorkspaceModes,
+    setWorkspaceReloadKeys,
+    handleModeSwitch,
+    selectLatestSessionForMode,
+    refreshSessions,
+  });
 
   // ✅ B-7: 50ms debounce — 路由抖动期间(连续多次 location 变化)只创建一个 span。
   useEffect(() => {
@@ -692,137 +615,6 @@ const AppContent: React.FC = () => {
     [setMessages, updateSessionMessages]
   );
 
-  const renderWorkspaceViewStack = () => {
-    const hasChatView = openWorkspaceModes.includes('chat');
-    const hasMultiAgentView = openWorkspaceModes.includes('multi-agent');
-    const hasStudioView = openWorkspaceModes.some(isStudioAppMode);
-    const activeStudioMode = isStudioAppMode(appMode) ? appMode : lastStudioMode;
-
-    const commonProps = {
-      setAppMode: handleWorkspaceModeSelect,
-      onImageClick: handleImageClick, // ✅ 使用稳定的引用
-      loadingState,
-      onSend,
-      onStop: stopGeneration,
-      onSubmitResearchAction: submitResearchAction,
-      activeModelConfig,
-      onModelSelect: handleModelSelect,
-      onEditImage: handleEditImage,
-      onExpandImage: handleExpandImage, // Pass the new handler
-      providerId: config.providerId,
-      personas,
-      activePersonaId,
-      onSelectPersona: handlePersonaSelect,
-      sessionId: currentSessionId, // ✅ 传递 sessionId 用于查询附件
-      apiKey: config.apiKey, // ✅ 传递 apiKey 用于调用 API
-    };
-
-    return (
-      <>
-        {hasChatView && (
-          <div
-            key={`chat-${workspaceReloadKeys.chat || 0}`}
-            style={{ display: appMode === 'chat' ? 'contents' : 'none' }}
-          >
-            <ChatView
-              {...commonProps}
-              messages={chatViewMessages}
-              isLoadingModels={isLoadingModels}
-              visibleModels={visibleModels}
-              allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
-              apiKey={config.apiKey ?? ''}
-              protocol={config.protocol ?? null}
-              onPromptSelect={handleWelcomePrompt}
-              onOpenSettings={() => handleOpenSettings('profiles')}
-              appMode="chat"
-            />
-          </div>
-        )}
-
-        {hasMultiAgentView && (
-          <div
-            key={`multi-agent-${workspaceReloadKeys['multi-agent'] || 0}`}
-            style={{ display: appMode === 'multi-agent' ? 'contents' : 'none' }}
-          >
-            <GlobalErrorBoundary>
-              <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
-                <MultiAgentView
-                  {...commonProps}
-                  messages={multiAgentViewMessages}
-                  setAppMode={handleWorkspaceModeSelect}
-                  isLoadingModels={isLoadingModels}
-                  visibleModels={visibleModels}
-                  allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
-                  apiKey={config.apiKey ?? ''}
-                  protocol={config.protocol ?? null}
-                  onPromptSelect={handleWelcomePrompt}
-                  onOpenSettings={() => handleOpenSettings('profiles')}
-                  appMode="multi-agent"
-                />
-              </Suspense>
-            </GlobalErrorBoundary>
-          </div>
-        )}
-
-        {hasStudioView && (
-          <div style={{ display: isStudioAppMode(appMode) ? 'contents' : 'none' }}>
-            <StudioView
-              {...commonProps}
-              setAppMode={handleWorkspaceModeSelect}
-              messages={messages}
-              mode={activeStudioMode}
-              modeReloadKeys={workspaceReloadKeys}
-              visibleModels={visibleModels}
-              allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
-              initialPrompt={initialPrompt}
-              initialAttachments={initialAttachments}
-              onDeleteMessage={handleDeleteMessage}
-            />
-          </div>
-        )}
-      </>
-    );
-  };
-
-  const renderView = () => {
-    if (isCloudStorageBrowserOpen || isPersonaViewOpen) {
-      return (
-        <>
-          <div className="hidden">{renderWorkspaceViewStack()}</div>
-          {isCloudStorageBrowserOpen && (
-            <GlobalErrorBoundary>
-              <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
-                <CloudStorageView
-                  activeStorageId={activeStorageId}
-                  storageConfigs={storageConfigs}
-                  onClose={() => setIsCloudStorageBrowserOpen(false)}
-                />
-              </Suspense>
-            </GlobalErrorBoundary>
-          )}
-          {isPersonaViewOpen && (
-            <GlobalErrorBoundary>
-              <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
-                <PersonaManagementView
-                  personas={personas}
-                  activePersonaId={activePersonaId}
-                  onSelectPersona={handlePersonaSelect}
-                  onCreatePersona={createPersona}
-                  onUpdatePersona={updatePersona}
-                  onDeletePersona={deletePersona}
-                  onRefreshPersonas={refreshPersonas}
-                  onClose={() => setIsPersonaViewOpen(false)}
-                />
-              </Suspense>
-            </GlobalErrorBoundary>
-          )}
-        </>
-      );
-    }
-
-    return renderWorkspaceViewStack();
-  };
-
   // --- 准备 SettingsModal（需要在所有地方都能访问） ---
   // ✅ 必须在 Early Return 之前定义，否则会报错 "Cannot access before initialization"
   const settingsModal = isSettingsOpen && (
@@ -874,68 +666,82 @@ const AppContent: React.FC = () => {
   // 因为现在在认证阶段就知道是否有配置，不需要等待 initData 加载
 
   // --- 主应用内容 ---
+  // 外壳（ImageModal + SettingsModal + AppLayout + 工作区）抽离至 ./components/app/AppShell
   const mainAppElement = (
-    <>
-      <ImageModal
-        isOpen={!!previewImage}
-        imageUrl={previewImage}
-        onClose={() => setPreviewImage(null)}
-        onNext={handleNextImage}
-        onPrev={handlePrevImage}
-        hasNext={allImages.length > 1}
-        hasPrev={allImages.length > 1}
-      />
-
-      <AppLayout
-        sessions={sessions}
-        currentSessionId={currentSessionId}
-        onNewChat={handleNewChat}
-        onSelectSession={setCurrentSessionId}
-        onDeleteSession={deleteSession}
-        onUpdateSessionTitle={updateSessionTitle}
-        hasMoreSessions={hasMoreSessions}
-        isLoadingMore={isLoadingMore}
-        loadMoreSessions={loadMoreSessions}
-        isLoadingModels={isLoadingModels}
-        isModelMenuOpen={isModelMenuOpen}
-        setIsModelMenuOpen={setIsModelMenuOpen}
-        activeModelConfig={activeModelConfig}
-        configApiKey={config.apiKey}
-        visibleModels={visibleModels}
-        currentModelId={currentModelId}
-        onModelSelect={handleModelSelect}
-        onOpenSettings={handleOpenSettings}
-        onOpenCloudStorage={handleOpenCloudStorage}
-        appMode={appMode}
-        profiles={profiles}
-        activeProfileId={activeProfileId}
-        onActivateProfile={activateProfile}
-        currentUser={user}
-        onChangePassword={changePassword}
-        onLogout={logout}
-        cacheStatus={cacheStatus}
-        onRefreshSessions={refreshSessions}
-        isPersonaViewOpen={isPersonaViewOpen}
-        onOpenPersonaView={handleOpenPersonaView}
-        settings={settingsModal}
-        showModeNavigation={true}
-        setAppMode={handleModeNavigationSelect}
-        modeCatalog={modeCatalog}
-        workspaceTabs={
-          <WorkspaceTagViews
-            activeMode={appMode}
-            openModes={openWorkspaceModes}
-            modeCatalog={modeCatalog}
-            onSelectMode={handleWorkspaceModeSelect}
-            onCloseMode={handleWorkspaceModeClose}
-            onCloseModes={handleWorkspaceModesClose}
-            onReloadMode={handleWorkspaceModeReload}
-          />
-        }
-      >
-        {renderView()}
-      </AppLayout>
-    </>
+    <AppShell
+      previewImage={previewImage}
+      setPreviewImage={setPreviewImage}
+      allImages={allImages}
+      handleNextImage={handleNextImage}
+      handlePrevImage={handlePrevImage}
+      settingsModal={settingsModal}
+      profiles={profiles}
+      activeProfileId={activeProfileId}
+      activateProfile={activateProfile}
+      sessions={sessions}
+      currentSessionId={currentSessionId}
+      handleNewChat={handleNewChat}
+      setCurrentSessionId={setCurrentSessionId}
+      deleteSession={deleteSession}
+      updateSessionTitle={updateSessionTitle}
+      hasMoreSessions={hasMoreSessions}
+      isLoadingMore={isLoadingMore}
+      loadMoreSessions={loadMoreSessions}
+      isModelMenuOpen={isModelMenuOpen}
+      setIsModelMenuOpen={setIsModelMenuOpen}
+      currentModelId={currentModelId}
+      handleOpenSettings={handleOpenSettings}
+      handleOpenCloudStorage={handleOpenCloudStorage}
+      handleOpenPersonaView={handleOpenPersonaView}
+      user={user}
+      changePassword={changePassword}
+      logout={logout}
+      cacheStatus={cacheStatus}
+      refreshSessions={refreshSessions}
+      modeCatalog={modeCatalog}
+      handleModeNavigationSelect={handleModeNavigationSelect}
+      openWorkspaceModes={openWorkspaceModes}
+      handleWorkspaceModeClose={handleWorkspaceModeClose}
+      handleWorkspaceModesClose={handleWorkspaceModesClose}
+      handleWorkspaceModeReload={handleWorkspaceModeReload}
+      appMode={appMode}
+      lastStudioMode={lastStudioMode}
+      workspaceReloadKeys={workspaceReloadKeys}
+      handleWorkspaceModeSelect={handleWorkspaceModeSelect}
+      handleImageClick={handleImageClick}
+      loadingState={loadingState}
+      onSend={onSend}
+      stopGeneration={stopGeneration}
+      submitResearchAction={submitResearchAction}
+      activeModelConfig={activeModelConfig}
+      handleModelSelect={handleModelSelect}
+      handleEditImage={handleEditImage}
+      handleExpandImage={handleExpandImage}
+      config={config}
+      personas={personas}
+      activePersonaId={activePersonaId}
+      handlePersonaSelect={handlePersonaSelect}
+      chatViewMessages={chatViewMessages}
+      multiAgentViewMessages={multiAgentViewMessages}
+      messages={messages}
+      isLoadingModels={isLoadingModels}
+      visibleModels={visibleModels}
+      allVisibleModels={allVisibleModels}
+      handleWelcomePrompt={handleWelcomePrompt}
+      initialPrompt={initialPrompt}
+      initialAttachments={initialAttachments}
+      handleDeleteMessage={handleDeleteMessage}
+      isCloudStorageBrowserOpen={isCloudStorageBrowserOpen}
+      isPersonaViewOpen={isPersonaViewOpen}
+      activeStorageId={activeStorageId}
+      storageConfigs={storageConfigs}
+      setIsCloudStorageBrowserOpen={setIsCloudStorageBrowserOpen}
+      createPersona={createPersona}
+      updatePersona={updatePersona}
+      deletePersona={deletePersona}
+      refreshPersonas={refreshPersonas}
+      setIsPersonaViewOpen={setIsPersonaViewOpen}
+    />
   );
 
   // 路由分发抽离至 ./components/AppRoutes
