@@ -519,9 +519,11 @@ def test_local_path_to_data_url_reads_allow_rooted(provider, tmp_path, monkeypat
     # An allow-rooted local-files reference (resolved by the shared resolver) is read.
     img = tmp_path / "pic.png"
     img.write_bytes(b"\x89PNG\r\n\x1a\nDATA")
-    from app.services.tongyi import chat as chat_mod
+    # svc-providers-5: the multimodal helper moved into the chat_multimodal mixin,
+    # so the resolver call site (and patch target) now lives there.
+    from app.services.tongyi import chat_multimodal
 
-    monkeypatch.setattr(chat_mod, "resolve_local_public_file_path", lambda value: img)
+    monkeypatch.setattr(chat_multimodal, "resolve_local_public_file_path", lambda value: img)
     data_url = provider._local_path_to_data_url("/api/storage/local-files/x.png")
     assert data_url.startswith("data:image/png;base64,")
     assert base64.b64decode(data_url.split(",", 1)[1]) == b"\x89PNG\r\n\x1a\nDATA"

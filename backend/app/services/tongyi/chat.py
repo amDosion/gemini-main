@@ -24,7 +24,6 @@ from urllib.parse import urlparse
 from dashscope import Generation, MultiModalConversation
 import dashscope
 
-from ..storage.local_provider import resolve_local_public_file_path
 from ..common.base_provider import BaseProviderService
 from ..common.model_capabilities import ModelConfig, build_model_config
 from ..common.errors import (
@@ -39,6 +38,8 @@ from ..common.errors import (
     RequestIDManager
 )
 from .model_manager import ModelManager
+from .chat_multimodal import _QwenMultimodalMixin
+from .chat_errors import _QwenErrorHandlingMixin
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ def is_vision_model(model_id: str) -> bool:
     return model_id in VISION_MODELS or "-vl-" in lower_id or lower_id.endswith("-vl")
 
 
-class QwenNativeProvider(BaseProviderService):
+class QwenNativeProvider(_QwenMultimodalMixin, _QwenErrorHandlingMixin, BaseProviderService):
     """通义千问原生 SDK Provider"""
 
     # 万相模型列表（静态维护）
@@ -396,198 +397,6 @@ class QwenNativeProvider(BaseProviderService):
 
     # ==================== 多模态（视觉模型）支持 ====================
 
-    def _is_image_like_attachment(self, attachment: Dict[str, Any]) -> bool:
-        mime_type = str(
-            attachment.get("mimeType")
-            or attachment.get("mime_type")
-            or ""
-        ).strip().lower()
-        if mime_type.startswith("image/"):
-            return True
-
-        candidate = str(
-            attachment.get("url")
-            or attachment.get("tempUrl")
-            or attachment.get("temp_url")
-            or attachment.get("fileUri")
-            or attachment.get("file_uri")
-            or ""
-        ).strip().lower()
-        if not candidate:
-            return False
-        if candidate.startswith("data:image/"):
-            return True
-        if candidate.startswith(("http://", "https://", "oss://")):
-            return True
-        if candidate.startswith("/") and any(candidate.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg")):
-            return True
-        return any(candidate.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg"))
-
-    def _guess_image_mime_type(self, source: str, explicit_mime: str = "") -> str:
-        normalized_explicit = str(explicit_mime or "").strip().lower()
-        if normalized_explicit.startswith("image/"):
-            return normalized_explicit
-
-        raw = str(source or "").strip()
-        if raw.lower().startswith("data:image/"):
-            header = raw.split(",", 1)[0]
-            if ":" in header:
-                mime_part = header.split(":", 1)[1]
-                mime_type = mime_part.split(";", 1)[0].strip().lower()
-                if mime_type.startswith("image/"):
-                    return mime_type
-
-        guessed = str(mimetypes.guess_type(raw)[0] or "").strip().lower()
-        if guessed.startswith("image/"):
-            return guessed
-        return "image/png"
-
-    def _local_path_to_data_url(self, path_value: str, explicit_mime: str = "") -> Optional[str]:
-        raw_path = str(path_value or "").strip()
-        if not raw_path:
-            return None
-
-        try:
-            # CANON-028: only read files that resolve within the allowed local-storage
-            # root (shared allow-root resolver). Arbitrary filesystem paths and
-            # file:// URLs are denied — no raw Path(...).read_bytes() on user/model input.
-            candidate = resolve_local_public_file_path(raw_path)
-            if candidate is None or not candidate.exists() or not candidate.is_file():
-                return None
-
-            data = candidate.read_bytes()
-            if not data:
-                return None
-
-            mime_type = self._guess_image_mime_type(str(candidate), explicit_mime=explicit_mime)
-            encoded = base64.b64encode(data).decode("ascii")
-            return f"data:{mime_type};base64,{encoded}"
-        except Exception:
-            logger.debug("[Qwen Provider] Failed to convert local image path to data URL", exc_info=True)
-            return None
-
-    def _normalize_multimodal_image_ref(self, ref_value: Any, explicit_mime: str = "") -> Optional[str]:
-        if ref_value is None:
-            return None
-
-        if isinstance(ref_value, dict):
-            nested = (
-                ref_value.get("url")
-                or ref_value.get("image")
-                or ref_value.get("tempUrl")
-                or ref_value.get("temp_url")
-                or ref_value.get("fileUri")
-                or ref_value.get("file_uri")
-            )
-            return self._normalize_multimodal_image_ref(
-                nested,
-                explicit_mime=str(ref_value.get("mimeType") or ref_value.get("mime_type") or explicit_mime or ""),
-            )
-
-        raw = str(ref_value or "").strip()
-        if not raw:
-            return None
-
-        lowered = raw.lower()
-        if lowered.startswith(("http://", "https://", "oss://", "data:image/")):
-            return raw
-
-        local_data_url = self._local_path_to_data_url(raw, explicit_mime=explicit_mime)
-        if local_data_url:
-            return local_data_url
-
-        compact = raw.replace("\n", "").replace("\r", "")
-        if (
-            len(compact) >= 128
-            and re.fullmatch(r"[A-Za-z0-9+/=]+", compact)
-            and " " not in compact
-        ):
-            mime_type = self._guess_image_mime_type(raw, explicit_mime=explicit_mime)
-            return f"data:{mime_type};base64,{compact}"
-
-        return raw
-
-    def _coerce_multimodal_messages(self, messages: list) -> List[Dict[str, Any]]:
-        normalized_messages: List[Dict[str, Any]] = []
-
-        for message in messages or []:
-            if not isinstance(message, dict):
-                continue
-
-            role = str(message.get("role") or "user").strip().lower() or "user"
-            if role == "model":
-                role = "assistant"
-
-            content = message.get("content")
-            attachments = message.get("attachments") if isinstance(message.get("attachments"), list) else []
-
-            multimodal_content: List[Dict[str, Any]] = []
-            seen_images = set()
-
-            if isinstance(content, list):
-                for item in content:
-                    if isinstance(item, str):
-                        text_piece = item.strip()
-                        if text_piece:
-                            multimodal_content.append({"text": text_piece})
-                        continue
-                    if not isinstance(item, dict):
-                        continue
-
-                    text_piece = str(item.get("text") or "").strip()
-                    if text_piece:
-                        multimodal_content.append({"text": text_piece})
-
-                    image_source = None
-                    if "image" in item:
-                        image_source = item.get("image")
-                    elif "image_url" in item:
-                        image_url = item.get("image_url")
-                        image_source = image_url.get("url") if isinstance(image_url, dict) else image_url
-                    elif "url" in item and str(item.get("type") or "").strip().lower() in {"image", "input_image"}:
-                        image_source = item.get("url")
-
-                    normalized_image = self._normalize_multimodal_image_ref(
-                        image_source,
-                        explicit_mime=str(item.get("mimeType") or item.get("mime_type") or ""),
-                    )
-                    if normalized_image and normalized_image not in seen_images:
-                        seen_images.add(normalized_image)
-                        multimodal_content.append({"image": normalized_image})
-            else:
-                text_value = str(content or "").strip()
-                if text_value:
-                    multimodal_content.append({"text": text_value})
-
-            for attachment in attachments:
-                if not isinstance(attachment, dict) or not self._is_image_like_attachment(attachment):
-                    continue
-
-                image_candidate = (
-                    attachment.get("url")
-                    or attachment.get("tempUrl")
-                    or attachment.get("temp_url")
-                    or attachment.get("fileUri")
-                    or attachment.get("file_uri")
-                )
-                normalized_image = self._normalize_multimodal_image_ref(
-                    image_candidate,
-                    explicit_mime=str(attachment.get("mimeType") or attachment.get("mime_type") or ""),
-                )
-                if normalized_image and normalized_image not in seen_images:
-                    seen_images.add(normalized_image)
-                    multimodal_content.insert(0, {"image": normalized_image})
-
-            if not multimodal_content:
-                multimodal_content.append({"text": str(content or "")})
-
-            normalized_messages.append({
-                "role": role,
-                "content": multimodal_content,
-            })
-
-        return normalized_messages
-
     def _sync_multimodal_chat(self, messages: list, model: str, **kwargs) -> Any:
         """
         同步多模态聊天调用（视觉模型）
@@ -747,104 +556,6 @@ class QwenNativeProvider(BaseProviderService):
                 )
             raise
 
-    def _format_multimodal_stream_chunk(self, chunk: Any) -> Dict[str, Any]:
-        """
-        格式化多模态流式 chunk
-
-        MultiModalConversation 的响应格式与 Generation 略有不同
-
-        Args:
-            chunk: DashScope MultiModalConversationResponse 对象
-
-        Returns:
-            StreamChunk 格式
-        """
-        output = chunk.output
-
-        # 多模态响应的 choices 结构
-        choices = output.get("choices", []) if isinstance(output, dict) else getattr(output, "choices", [])
-        choice = choices[0] if choices else {}
-        message = choice.get("message", {})
-        finish_reason = choice.get("finish_reason")
-
-        # 提取内容（多模态响应的 content 可能是列表）
-        content = message.get("content", "")
-        if isinstance(content, list):
-            # 从列表中提取文本内容
-            text_parts = [item.get("text", "") for item in content if isinstance(item, dict) and "text" in item]
-            content = "".join(text_parts)
-
-        result = {
-            "content": content,
-            "chunk_type": "content"
-        }
-
-        # 提取 usage 信息
-        usage = chunk.usage if hasattr(chunk, "usage") else None
-        if usage:
-            prompt_tokens = getattr(usage, "input_tokens", 0) or 0
-            completion_tokens = getattr(usage, "output_tokens", 0) or 0
-            total_tokens = getattr(usage, "total_tokens", 0) or (prompt_tokens + completion_tokens)
-
-            if finish_reason == "stop":
-                result.update({
-                    "chunk_type": "done",
-                    "prompt_tokens": prompt_tokens,
-                    "completion_tokens": completion_tokens,
-                    "total_tokens": total_tokens,
-                    "finish_reason": finish_reason
-                })
-                logger.info(f"[Qwen VL] Stream ended: prompt={prompt_tokens}, completion={completion_tokens}")
-            else:
-                result.update({
-                    "prompt_tokens": prompt_tokens,
-                    "completion_tokens": completion_tokens,
-                    "total_tokens": total_tokens
-                })
-                if finish_reason:
-                    result["finish_reason"] = finish_reason
-
-        return result
-
-    def _format_multimodal_response(self, response: Any) -> Dict[str, Any]:
-        """
-        格式化多模态响应为 ChatResponse
-
-        Args:
-            response: DashScope MultiModalConversationResponse 对象
-
-        Returns:
-            ChatResponse 格式
-        """
-        output = response.output
-
-        # 多模态响应的 choices 结构
-        choices = output.get("choices", []) if isinstance(output, dict) else getattr(output, "choices", [])
-        choice = choices[0] if choices else {}
-        message = choice.get("message", {})
-
-        # 提取内容（多模态响应的 content 可能是列表）
-        content = message.get("content", "")
-        if isinstance(content, list):
-            text_parts = [item.get("text", "") for item in content if isinstance(item, dict) and "text" in item]
-            content = "".join(text_parts)
-
-        # 提取 usage 信息
-        usage = response.usage if hasattr(response, "usage") else None
-        usage_dict = {
-            "prompt_tokens": getattr(usage, "input_tokens", 0) if usage else 0,
-            "completion_tokens": getattr(usage, "output_tokens", 0) if usage else 0,
-            "total_tokens": getattr(usage, "total_tokens", 0) if usage else 0
-        }
-
-        return {
-            "content": content,
-            "role": message.get("role", "assistant"),
-            "usage": usage_dict,
-            "model": "qwen-vl",
-            "finish_reason": choice.get("finish_reason", "stop")
-        }
-
     # ==================== 响应格式化 ====================
 
     def _format_response(self, response: Any) -> Dict[str, Any]:
@@ -984,68 +695,6 @@ class QwenNativeProvider(BaseProviderService):
         return result
 
     # ==================== 辅助方法 ====================
-
-    def _get_error_map(self) -> Dict[str, type]:
-        """
-        获取 DashScope 特定的错误码映射
-
-        Returns:
-            错误码到异常类的映射
-        """
-        return {
-            "InvalidApiKey": APIKeyError,
-            "InvalidAPIKey": APIKeyError,
-            "Throttling.RateQuota": RateLimitError,
-            "Throttling.AllocationQuota": RateLimitError,
-            "InvalidModel": ModelNotFoundError,
-            "UnsupportedModel": ModelNotFoundError,
-            "InvalidParameter": InvalidRequestError,
-            "InvalidInput": InvalidRequestError,
-        }
-
-    def _handle_error(self, error_code: str, error_message: str, error_map: Dict[str, type],
-                      operation: str = "unknown", model: Optional[str] = None):
-        """
-        处理 DashScope API 错误，使用统一错误处理系统
-
-        Args:
-            error_code: 错误码
-            error_message: 错误信息
-            error_map: 错误码到异常类的映射
-            operation: 操作类型 (chat, stream_chat, multimodal_chat 等)
-            model: 模型名称
-        """
-        # 创建错误上下文
-        context = ErrorContext(
-            provider_id="qwen",
-            client_type="primary" if self.connection_mode == "official" else "secondary",
-            operation=operation,
-            request_id=self.request_id,
-            model=model,
-            additional_context={
-                "error_code": error_code,
-                "connection_mode": self.connection_mode
-            }
-        )
-
-        # 查找对应的异常类
-        exception_class = error_map.get(error_code)
-
-        if exception_class == APIKeyError:
-            raise APIKeyError(context=context)
-        elif exception_class == RateLimitError:
-            raise RateLimitError(context=context)
-        elif exception_class == ModelNotFoundError:
-            raise ModelNotFoundError(context=context)
-        elif exception_class == InvalidRequestError:
-            raise InvalidRequestError(context=context)
-        else:
-            # 未知错误，使用 OperationError
-            raise OperationError(
-                message=f"[{error_code}] {error_message}",
-                context=context,
-                recoverable=True
-            )
 
     async def chat(self, messages: list, model: str, **kwargs) -> Dict[str, Any]:
         """
