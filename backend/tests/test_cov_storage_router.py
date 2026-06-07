@@ -1284,12 +1284,15 @@ def test_upload_to_lsky_sync_success(monkeypatch):
     fake_requests = types.SimpleNamespace(post=fake_post)
     monkeypatch.setitem(__import__("sys").modules, "requests", fake_requests)
 
+    # Public IP literal domain passes the SSRF egress guard without DNS, keeping
+    # this test focused on the upload-logic happy path. (SSRF rejection of
+    # private/internal domains is covered by test_storage_router_lsky_upload_ssrf.py.)
     out = storage_mod.upload_to_lsky_sync(
-        "a.png", b"x", "image/png", {"domain": "https://lsky.test/", "token": "tok", "strategyId": 1}
+        "a.png", b"x", "image/png", {"domain": "https://8.8.8.8/", "token": "tok", "strategyId": 1}
     )
     assert out["success"] is True
     assert out["url"] == "https://img/abc.png"
-    assert captured["url"] == "https://lsky.test/api/v1/upload"
+    assert captured["url"] == "https://8.8.8.8/api/v1/upload"
     assert captured["headers"]["Authorization"] == "Bearer tok"
 
 
@@ -1302,7 +1305,7 @@ def test_upload_to_lsky_sync_failure_response(monkeypatch):
     monkeypatch.setitem(__import__("sys").modules, "requests", fake_requests)
 
     out = storage_mod.upload_to_lsky_sync(
-        "a.png", b"x", "image/png", {"domain": "https://lsky.test", "token": "tok"}
+        "a.png", b"x", "image/png", {"domain": "https://8.8.8.8", "token": "tok"}
     )
     assert out["success"] is False
     assert out["error"] == "rejected"

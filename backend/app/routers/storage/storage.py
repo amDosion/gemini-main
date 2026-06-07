@@ -39,7 +39,9 @@ from ...core.encryption import ConfigDecryptionError, decrypt_config
 from ...middleware.case_conversion_middleware import case_conversion_options
 from ...utils.url_security import (
     UnsafeURLError,
+    _ensure_client_pinned,
     validate_outbound_http_url,
+    validate_storage_egress_url,
 )
 
 router = APIRouter(prefix="/api/storage", tags=["storage"])
@@ -220,6 +222,9 @@ async def _open_safe_stream_with_redirect_guard(
     redirect_status_codes = {301, 302, 303, 307, 308}
     hosts_allowlist = allowed_hosts or set()
     client = httpx.AsyncClient(timeout=timeout)
+    # W02R-016: pin DNS at connect time so a rebinding flip between validation and
+    # connect cannot reach an internal host (per-hop revalidation alone re-resolves).
+    _ensure_client_pinned(client)
 
     try:
         current_url = _resolve_safe_preview_fetch_url(url, hosts_allowlist)
@@ -2038,7 +2043,12 @@ def upload_to_lsky_sync(filename: str, content: bytes, content_type: str, config
     data = {"strategy_id": strategy_id} if strategy_id else {}
     
     try:
-        response = requests.post(upload_url, files=files, headers=headers, data=data, timeout=60)
+        # SSRF guard: reject private/loopback targets before any network call
+        try:
+            upload_url = validate_storage_egress_url(upload_url)
+        except UnsafeURLError as exc:
+            return {"success": False, "error": str(exc)}
+        response = requests.post(upload_url, files=files, headers=headers, data=data, timeout=60, allow_redirects=False)
         result = response.json()
         
         if result.get("status") and result.get("data", {}).get("links", {}).get("url"):
@@ -2149,6 +2159,7 @@ async def process_upload_task(task_id: str, _db: Session = None):
             safe_source_url = _validate_outbound_http_url(task.source_url)
             logger.info(f"[UploadTask] 下载图片: {safe_source_url}")
             async with httpx.AsyncClient(timeout=30.0) as client:
+                _ensure_client_pinned(client)  # W02R-016: pin DNS at connect time
                 response, final_url = await _safe_get_with_redirect_guard(client, safe_source_url)
                 response.raise_for_status()
                 image_content = response.content

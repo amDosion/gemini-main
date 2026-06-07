@@ -118,11 +118,15 @@ class TestCreateClientFactories:
         assert "endpoint_url" not in kwargs
 
     def test_s3_create_client_with_endpoint_and_path_style(self):
+        # Public IP literal endpoint: passes the SSRF egress guard without DNS so
+        # this test stays focused on boto3 client-param passthrough. (The SSRF
+        # rejection of private/internal endpoints is covered by
+        # test_s3_provider_ssrf_guard.py.)
         provider = S3Provider(
             {
                 "access_key_id": "ak",
                 "secret_access_key": "sk",
-                "endpoint": "https://minio.local",
+                "endpoint": "https://8.8.8.8",
                 "force_path_style": True,
             }
         )
@@ -131,7 +135,7 @@ class TestCreateClientFactories:
             provider._create_client()
 
         _, kwargs = boto3_mock.client.call_args
-        assert kwargs["endpoint_url"] == "https://minio.local"
+        assert kwargs["endpoint_url"] == "https://8.8.8.8"
 
 
 # ===========================================================================

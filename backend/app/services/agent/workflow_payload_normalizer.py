@@ -818,10 +818,24 @@ def _validate_and_normalize_agent_card(raw_agent_card: Optional[Dict[str, Any]])
     return normalized_card
 
 
+# DoS guard bounds for a client-supplied workflow graph. Generous enough for any
+# realistic multi-agent workflow, low enough to prevent resource-exhaustion via a
+# pathologically large payload.
+MAX_WORKFLOW_NODES = 500
+MAX_WORKFLOW_EDGES = 2000
+
+
 def _validate_workflow_execute_payload(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]) -> Optional[str]:
     """基础工作流结构校验，防止坏图进入执行引擎。"""
     if not isinstance(nodes, list) or len(nodes) == 0:
         return "工作流至少需要一个节点"
+    # DoS guard: the graph is client-supplied and the checks below run full
+    # forward+reverse reachability (O(N+E)). Bound the size before traversing so a
+    # giant payload cannot exhaust CPU/memory.
+    if len(nodes) > MAX_WORKFLOW_NODES:
+        return f"工作流节点数量超过上限（{MAX_WORKFLOW_NODES}）"
+    if isinstance(edges, list) and len(edges) > MAX_WORKFLOW_EDGES:
+        return f"工作流连线数量超过上限（{MAX_WORKFLOW_EDGES}）"
 
     node_ids: List[str] = []
     node_types: Dict[str, str] = {}

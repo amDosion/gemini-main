@@ -32,8 +32,6 @@ LEGACY_GOOGLE_RUNTIME_SYMBOLS = (
 # Agent Engine Services
 from .memory_bank_service import BaseMemoryService, InMemoryMemoryService, VertexAiMemoryBankService
 from .memory_manager import MemoryManager
-from .code_executor import BaseCodeExecutor, BuiltInCodeExecutor, AgentEngineSandboxCodeExecutor
-from .sandbox_manager import SandboxManager
 from .a2a_protocol import A2AProtocolHandler
 from .agent_card import AgentCardManager
 from .agent_executor import AgentExecutor
@@ -53,7 +51,6 @@ from .workflows.image_edit_workflow import ImageEditWorkflow
 from .workflows.excel_analysis_workflow import ExcelAnalysisWorkflow
 from .adk_runner import ADKRunner
 from .adk_agent import ADKAgent
-from .interactions_service import VertexAiInteractionsService
 
 # Official Google GenAI SDK Compatibility Layer
 # 包装接口保留可用；底层 google.genai.Client 由 GeminiClientPool 提供并复用
@@ -70,10 +67,6 @@ __all__ = [
     "InMemoryMemoryService",
     "VertexAiMemoryBankService",
     "MemoryManager",
-    "BaseCodeExecutor",
-    "BuiltInCodeExecutor",
-    "AgentEngineSandboxCodeExecutor",
-    "SandboxManager",
     "A2AProtocolHandler",
     "AgentCardManager",
     "AgentExecutor",
@@ -104,7 +97,6 @@ __all__ = [
     "ExcelAnalysisWorkflow",  # Excel 分析工作流
     "ADKRunner",
     "ADKAgent",
-    "VertexAiInteractionsService",
     # Official Google GenAI SDK Compatibility Layer
     # 包装类保留可用；底层 google.genai.Client 由 GeminiClientPool 统一提供
     "Client",

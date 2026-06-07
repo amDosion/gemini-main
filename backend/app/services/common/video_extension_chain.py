@@ -180,9 +180,17 @@ async def load_video_bytes_from_source(
             return local_path.read_bytes(), mimetypes.guess_type(local_path.name)[0] or mime_type
         raise ValueError(f"Local storage video file was not found: {url[:120]}")
 
-    local_path = Path(url)
-    if local_path.exists() and local_path.is_file():
-        return local_path.read_bytes(), mimetypes.guess_type(local_path.name)[0] or mime_type
+    # CANON-027/028: do NOT read an arbitrary local filesystem path. Legit local
+    # media is served via the allow-rooted DEFAULT_LOCAL_URL_PREFIX branch above; a
+    # raw absolute / file:// path from a (user/model-influenced) source is denied
+    # rather than read straight off disk.
+    if (
+        url.startswith("/")
+        or url.startswith("file://")
+        or local_url.startswith("/")
+        or local_url.startswith("file://")
+    ):
+        raise ValueError(f"Local file reference is not an allowed storage path: {url[:120]}")
 
     safe_url = validate_outbound_http_url(url)
     async with httpx.AsyncClient(timeout=60.0) as client:

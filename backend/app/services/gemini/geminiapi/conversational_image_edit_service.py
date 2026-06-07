@@ -1559,11 +1559,14 @@ class ConversationalImageEditService:
                         return None
 
                     def convert_local_image_path_to_data_url(path_text: str) -> Optional[Dict[str, Any]]:
-                        parsed_path = path_text
-                        if path_text.startswith("file://"):
-                            parsed_path = path_text[7:]
-                        candidate = Path(parsed_path).expanduser()
-                        if not candidate.exists() or not candidate.is_file():
+                        # CANON-027/028: only read files that resolve INSIDE the
+                        # allow-rooted local storage. A raw absolute / file:// path
+                        # (resolve_local_public_file_path returns None for those) is
+                        # denied rather than read off disk.
+                        from ...storage.local_provider import resolve_local_public_file_path
+
+                        candidate = resolve_local_public_file_path(path_text)
+                        if candidate is None or not candidate.exists() or not candidate.is_file():
                             return None
                         guessed_mime = str(mimetypes.guess_type(str(candidate))[0] or "").lower()
                         if guessed_mime and not guessed_mime.startswith("image/"):
@@ -1630,9 +1633,12 @@ class ConversationalImageEditService:
                             processed_img['url'] = url
                             processed_img['mime_type'] = img_item.get('mime_type', 'image/png')
                         elif url.startswith('/') or url.startswith('file://') or Path(url).expanduser().exists():
-                            local_path = url[7:] if url.startswith('file://') else url
-                            candidate = Path(local_path).expanduser()
-                            if candidate.exists() and candidate.is_file():
+                            # CANON-027/028: resolve only within the allow-rooted local
+                            # storage; a raw absolute / file:// path is denied (not read).
+                            from ...storage.local_provider import resolve_local_public_file_path
+
+                            candidate = resolve_local_public_file_path(url)
+                            if candidate is not None and candidate.exists() and candidate.is_file():
                                 guessed_mime = str(mimetypes.guess_type(str(candidate))[0] or "").lower()
                                 if not guessed_mime or guessed_mime.startswith("image/"):
                                     mime_type = guessed_mime or img_item.get('mime_type', 'image/png')

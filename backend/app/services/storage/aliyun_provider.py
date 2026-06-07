@@ -10,6 +10,7 @@ from typing import Dict, Any, Optional
 from urllib.parse import urlparse
 from ...core.encryption import ConfigDecryptionError, looks_like_fernet_token
 from .base import BaseStorageProvider, UploadResult
+from ...utils.url_security import UnsafeURLError, validate_storage_egress_url
 
 
 class AliyunProvider(BaseStorageProvider):
@@ -50,6 +51,12 @@ class AliyunProvider(BaseStorageProvider):
         self._require_plaintext_credentials()
 
         oss_endpoint = self._clean_endpoint(endpoint)
+        try:
+            validate_storage_egress_url(
+                oss_endpoint if "://" in oss_endpoint else f"https://{oss_endpoint}"
+            )
+        except UnsafeURLError as exc:
+            raise ValueError(f"阿里云 OSS endpoint 不被允许（SSRF 防护）: {exc}") from exc
         auth = oss2.Auth(access_key_id, access_key_secret)
         return oss2.Bucket(auth, oss_endpoint, bucket_name)
 

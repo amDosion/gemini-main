@@ -127,14 +127,13 @@ class GeminiRecontextImageService:
             return self._part_from_bytes(local_path.read_bytes(), mime_type)
 
         if text.startswith("/") or text.startswith("file://") or Path(text).expanduser().exists():
-            path_text = text[7:] if text.startswith("file://") else text
-            path = Path(path_text).expanduser()
-            if not path.exists() or not path.is_file():
-                return None
-            mime_type = mimetypes.guess_type(str(path))[0] or "image/png"
-            if not mime_type.startswith("image/"):
-                raise ValueError(f"Reference file is not an image: {path}")
-            return self._part_from_bytes(path.read_bytes(), mime_type)
+            # CANON-027/028: legit local references arrive as allow-rooted
+            # /api/storage/local-files/ URLs (handled above via
+            # resolve_local_public_file_path). A raw absolute / file:// path is a
+            # local-file-read vector and is denied rather than read off disk.
+            raise ValueError(
+                "Local reference must be an /api/storage/local-files/ URL, not a raw filesystem path"
+            )
 
         if is_base64_url(text):
             match = re.match(r"^data:(.*?);base64,(.*)$", text)

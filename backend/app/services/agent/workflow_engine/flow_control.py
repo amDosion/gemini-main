@@ -15,9 +15,20 @@ from ....utils.safe_expression_eval import safe_eval_expression
 logger = logging.getLogger(__name__)
 
 
+# Hard upper bound on a client-supplied loop iteration count. The workflow graph
+# is user-controlled, so an unbounded ``max_iterations`` would let a single loop
+# node run effectively forever (resource-exhaustion DoS). Clamp it to a sane cap.
+MAX_LOOP_ITERATIONS = 1000
+
+
 def resolve_max_visits(engine: Any, node_type: str, node_data: Dict[str, Any]) -> int:
     if node_type == "loop":
-        max_iterations = int(node_data.get("max_iterations") or node_data.get("maxIterations") or 3)
+        try:
+            max_iterations = int(node_data.get("max_iterations") or node_data.get("maxIterations") or 3)
+        except (TypeError, ValueError):
+            max_iterations = 3
+        # DoS guard: client-controlled iteration count is clamped to [0, MAX].
+        max_iterations = max(0, min(max_iterations, MAX_LOOP_ITERATIONS))
         return max(2, max_iterations + 2)
     return engine.DEFAULT_MAX_NODE_VISITS
 

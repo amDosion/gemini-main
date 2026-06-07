@@ -141,14 +141,23 @@ def _resolve_single_allowed_ip(host: str, port: int) -> str:
     validated IP. The caller connects to exactly this IP, eliminating the
     check-then-reconnect DNS-rebinding window. Raises ``UnsafeURLError`` for a
     disallowed host/IP or a failed resolution.
+
+    Consistency: a host the OPERATOR explicitly allowlisted (env
+    ``STORAGE_PREVIEW_ALLOWED_PRIVATE_HOSTS``) bypasses the restricted-IP/hostname
+    checks here too, so it matches :func:`validate_storage_egress_url`. Without
+    this, an allowlisted self-hosted private endpoint would pass validation but be
+    rejected at connect time by the pinning backend.
     """
+    host_norm = str(host or "").strip().strip(".").lower()
+    operator_allowed = host_norm in operator_allowed_private_hosts()
+
     ip_literal = _try_parse_ip_host(host)
     if ip_literal is not None:
-        if _is_disallowed_ip(ip_literal):
+        if _is_disallowed_ip(ip_literal) and not operator_allowed:
             raise UnsafeURLError("URL 指向受限地址")
         return str(ip_literal)
 
-    if _is_disallowed_hostname(host):
+    if _is_disallowed_hostname(host) and not operator_allowed:
         raise UnsafeURLError("URL 主机不被允许")
 
     try:
@@ -156,7 +165,8 @@ def _resolve_single_allowed_ip(host: str, port: int) -> str:
     except socket.gaierror as exc:
         raise UnsafeURLError("URL 主机解析失败") from exc
 
-    _check_resolved_addr_infos(addr_infos)
+    if not operator_allowed:
+        _check_resolved_addr_infos(addr_infos)
 
     for info in addr_infos:
         if info and len(info) >= 5 and info[4]:
@@ -212,6 +222,56 @@ async def validate_outbound_http_url_async(
 
     _check_resolved_addr_infos(addr_infos)
     return raw_url
+
+
+def operator_allowed_private_hosts() -> set[str]:
+    """Deploy-time allowlist of restricted (private/loopback/metadata) hosts that
+    outbound egress may still reach.
+
+    Read from the OPERATOR-controlled env ``STORAGE_PREVIEW_ALLOWED_PRIVATE_HOSTS``
+    (CANON-007 / W02R-013); default empty = no restricted host is reachable. Must
+    never be self-populated from a user's own storage/provider config, otherwise an
+    authenticated user could allowlist their own internal target and turn a
+    configured endpoint into an SSRF primitive.
+    """
+    try:  # local import avoids a utils->core import cycle at module load
+        from ..core.config import settings
+
+        raw = getattr(settings, "storage_preview_allowed_private_hosts_raw", "") or ""
+    except Exception:  # noqa: BLE001 - config unavailable => deny all restricted hosts
+        raw = ""
+    return {h.strip().lower() for h in str(raw).split(",") if h.strip()}
+
+
+def validate_storage_egress_url(
+    url: str,
+    *,
+    allow_hosts: Optional[set[str]] = None,
+) -> str:
+    """SSRF-validate a USER-CONFIGURED outbound endpoint (storage provider domain,
+    custom provider ``base_url``) and return the normalized URL.
+
+    Public destinations pass. A restricted (private/loopback/metadata) destination
+    is allowed ONLY when the OPERATOR allowlisted its host — via the explicit
+    ``allow_hosts`` set or, when omitted, :func:`operator_allowed_private_hosts`.
+    A non-http(s) scheme or a missing host is always rejected, even for an
+    allowlisted host, so the bypass can never smuggle a ``file://``/odd-scheme URL.
+    Raises :class:`UnsafeURLError` on denial.
+    """
+    raw = str(url or "").strip()
+    if not raw:
+        raise UnsafeURLError("url 不能为空")
+    try:
+        return validate_outbound_http_url(raw)
+    except UnsafeURLError:
+        parsed = urlparse(raw)
+        host = (parsed.hostname or "").strip().strip(".").lower()
+        allowed = allow_hosts if allow_hosts is not None else operator_allowed_private_hosts()
+        # Only an operator-allowlisted host on a valid http(s) URL may bypass the
+        # restricted-address check. Scheme/host errors are never bypassed.
+        if parsed.scheme in {"http", "https"} and host and host in allowed:
+            return raw
+        raise
 
 
 def resolve_safe_redirect_url(current_url: str, location: str) -> str:

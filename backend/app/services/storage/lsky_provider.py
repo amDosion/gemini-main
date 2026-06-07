@@ -9,6 +9,11 @@ from typing import Dict, Any, Optional
 import httpx
 
 from .base import BaseStorageProvider, UploadResult
+from ...utils.url_security import (
+    UnsafeURLError,
+    _ensure_client_pinned,
+    validate_storage_egress_url,
+)
 
 
 # Module-level lazy httpx.AsyncClient with connection pooling. Reusing a
@@ -34,6 +39,10 @@ async def _get_async_http_client() -> httpx.AsyncClient:
                     timeout=httpx.Timeout(60.0),
                     limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
                 )
+                # W02R-016: pin DNS at connect time so a rebinding flip between
+                # validate_storage_egress_url() and the actual request cannot reach
+                # an internal host. Consistent with get_with_redirect_guard.
+                _ensure_client_pinned(_http_client)
     return _http_client
 
 
@@ -79,6 +88,16 @@ class LskyProvider(BaseStorageProvider):
 
         # 构建上传 URL
         upload_url = f"{domain.rstrip('/')}/api/v1/upload"
+
+        # SSRF 防护：用户配置的 domain 在出站前必须通过安全策略校验，避免被指向内网/回环/元数据地址
+        try:
+            upload_url = validate_storage_egress_url(upload_url)
+        except UnsafeURLError as exc:
+            return UploadResult(
+                success=False,
+                error=f"兰空图床 domain 被 SSRF 安全策略拒绝: {exc}",
+                provider="lsky",
+            )
 
         # 准备表单数据
         files = {
@@ -228,6 +247,17 @@ class LskyProvider(BaseStorageProvider):
         page_size = max(1, min(limit, 200))
         headers = self._build_headers()
         base = domain.rstrip("/")
+        # SSRF 防护：校验用户配置的 domain，拒绝内网/回环/元数据地址
+        try:
+            validate_storage_egress_url(base)
+        except UnsafeURLError as exc:
+            return {
+                "supported": False,
+                "items": [],
+                "next_cursor": None,
+                "has_more": False,
+                "message": f"兰空图床 domain 被 SSRF 安全策略拒绝: {exc}",
+            }
         candidate_urls = [
             f"{base}/api/v1/images",
             f"{base}/api/v1/manage/images",
@@ -340,6 +370,16 @@ class LskyProvider(BaseStorageProvider):
 
         headers = self._build_headers()
         base = domain.rstrip("/")
+        # SSRF 防护：校验用户配置的 domain，拒绝内网/回环/元数据地址
+        try:
+            validate_storage_egress_url(base)
+        except UnsafeURLError as exc:
+            return {
+                "supported": False,
+                "path": path,
+                "total_count": None,
+                "message": f"兰空图床 domain 被 SSRF 安全策略拒绝: {exc}",
+            }
         candidate_urls = [
             f"{base}/api/v1/images",
             f"{base}/api/v1/manage/images",

@@ -489,3 +489,49 @@ async def test_ensure_starter_templates_resolves_agent_presets_to_agent_manager_
     assert refreshed_node_data["agentName"]
     assert "inlineUseActiveProfile" not in refreshed_node_data
     assert "inlineSystemPrompt" not in refreshed_node_data
+
+
+def test_validate_workflow_rejects_too_many_nodes():
+    # DoS guard: an unbounded client-supplied node count would force the
+    # full forward+reverse reachability traversal over a giant graph.
+    from app.services.agent.workflow_payload_normalizer import (
+        MAX_WORKFLOW_NODES,
+        _validate_workflow_execute_payload,
+    )
+
+    nodes = [{"id": f"n{i}", "data": {"type": "agent"}} for i in range(MAX_WORKFLOW_NODES + 1)]
+    err = _validate_workflow_execute_payload(nodes, [])
+    assert err is not None
+
+
+def test_validate_workflow_rejects_too_many_edges():
+    from app.services.agent.workflow_payload_normalizer import (
+        MAX_WORKFLOW_EDGES,
+        _validate_workflow_execute_payload,
+    )
+
+    nodes = [
+        {"id": "start", "data": {"type": "start"}},
+        {"id": "end", "data": {"type": "end"}},
+    ]
+    edges = [
+        {"id": f"e{i}", "source": "start", "target": "end"}
+        for i in range(MAX_WORKFLOW_EDGES + 1)
+    ]
+    err = _validate_workflow_execute_payload(nodes, edges)
+    assert err is not None
+
+
+def test_validate_workflow_allows_reasonable_size():
+    # A normal small workflow must NOT be rejected by the count guard.
+    from app.services.agent.workflow_payload_normalizer import _validate_workflow_execute_payload
+
+    nodes = [
+        {"id": "start", "data": {"type": "start"}},
+        {"id": "end", "data": {"type": "end"}},
+    ]
+    edges = [{"id": "e0", "source": "start", "target": "end"}]
+    err = _validate_workflow_execute_payload(nodes, edges)
+    # may be None (valid) or a non-count structural message, but must not be the
+    # count-cap rejection.
+    assert err is None or ("数量" not in err and "too many" not in err.lower())

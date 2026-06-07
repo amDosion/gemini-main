@@ -172,3 +172,33 @@ async def test_extension_chain_generates_base_when_source_video_belongs_to_activ
     assert calls[1]["kwargs"]["source_image"]["mime_type"] == "image/png"
     assert result["continued_from_video"] is False
     assert result["total_duration_seconds"] == 16
+
+
+@pytest.mark.asyncio
+async def test_load_video_bytes_rejects_arbitrary_absolute_local_path(tmp_path):
+    # Residual LFI: a raw absolute path from a (user/model-influenced) source URL
+    # must NOT be read off disk. Legit local media comes via the allow-rooted
+    # DEFAULT_LOCAL_URL_PREFIX branch; arbitrary paths are denied (CANON-027/028).
+    secret = tmp_path / "secret.mp4"
+    secret.write_bytes(b"SECRET-DO-NOT-LEAK")
+
+    with pytest.raises(ValueError):
+        await video_extension_chain.load_video_bytes_from_source({"url": str(secret)})
+
+
+@pytest.mark.asyncio
+async def test_load_video_bytes_rejects_file_scheme_local_path(tmp_path):
+    secret = tmp_path / "secret2.mp4"
+    secret.write_bytes(b"SECRET-2")
+
+    with pytest.raises(ValueError):
+        await video_extension_chain.load_video_bytes_from_source({"url": f"file://{secret}"})
+
+
+@pytest.mark.asyncio
+async def test_load_video_bytes_rejects_percent_encoded_absolute_path():
+    # Defense-in-depth: a percent-encoded absolute path (decoded form starts with
+    # "/") must be explicitly denied by the local-path guard, not merely rejected
+    # incidentally downstream.
+    with pytest.raises(ValueError):
+        await video_extension_chain.load_video_bytes_from_source({"url": "%2Fetc%2Fpasswd"})

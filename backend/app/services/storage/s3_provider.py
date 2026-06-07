@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 from urllib.parse import urlparse
 from .base import BaseStorageProvider, UploadResult
+from app.utils.url_security import validate_storage_egress_url, UnsafeURLError
 
 
 class S3Provider(BaseStorageProvider):
@@ -40,6 +41,12 @@ class S3Provider(BaseStorageProvider):
         
         # 如果指定了自定义 endpoint（用于 S3 兼容服务）
         if endpoint:
+            # SSRF 防护：在创建 boto3 客户端之前验证用户配置的 endpoint
+            _url_to_check = endpoint if '://' in endpoint else f'https://{endpoint}'
+            try:
+                validate_storage_egress_url(_url_to_check)
+            except UnsafeURLError as exc:
+                raise ValueError(f'S3 endpoint 被 SSRF 安全策略拒绝: {exc}') from exc
             client_params['endpoint_url'] = endpoint
         
         return boto3.client(**client_params)
