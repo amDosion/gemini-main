@@ -368,7 +368,18 @@ class _PinningAsyncBackend(httpcore.AsyncNetworkBackend):
     async def connect_tcp(
         self, host, port, timeout=None, local_address=None, socket_options=None
     ):
-        pinned_ip = _resolve_single_allowed_ip(host, int(port))
+        # M1: resolution calls blocking socket.getaddrinfo; offload it to the
+        # default executor under a bounded wait_for so a slow/hostile resolver for
+        # a user-supplied host cannot stall the event loop (mirrors
+        # validate_outbound_http_url_async). A timeout is treated as fail-closed.
+        loop = asyncio.get_running_loop()
+        try:
+            pinned_ip = await asyncio.wait_for(
+                loop.run_in_executor(None, _resolve_single_allowed_ip, host, int(port)),
+                timeout=_DEFAULT_DNS_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError as exc:
+            raise UnsafeURLError("URL 主机解析超时") from exc
         return await self._inner.connect_tcp(
             pinned_ip,
             port,

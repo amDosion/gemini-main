@@ -135,8 +135,20 @@ def load_binary_from_reference(
     if parsed.scheme in ("", "file"):
         if not settings.workflow_allow_local_file_reference:
             raise ValueError("本地文件引用已禁用，请使用 data URL 或可访问的 http/https URL")
+        # M2: even when the operator enables local references, the resolved path
+        # must live under an allow-root (LOCAL_STORAGE_ALLOWED_ROOTS / default) so
+        # the flag cannot read arbitrary server files. Reject ~ expansion and let
+        # the allow-root check (realpath-based) reject ../ escapes and symlinks.
+        from ...storage.local_provider import _is_within_allowed_local_root
+
         path_value = parsed.path if parsed.scheme == "file" else ref_text
-        candidate = Path(path_value).expanduser()
+        if "~" in path_value:
+            raise ValueError("本地文件引用不允许使用 ~ 家目录路径")
+        candidate = Path(path_value)
+        if not _is_within_allowed_local_root(str(candidate)):
+            raise ValueError(
+                "本地文件引用不在允许的根目录范围内；如需放行请设置 LOCAL_STORAGE_ALLOWED_ROOTS"
+            )
         if not candidate.exists() or not candidate.is_file():
             raise ValueError(f"本地文件不存在: {candidate}")
         raw = candidate.read_bytes()

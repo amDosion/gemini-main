@@ -62,3 +62,53 @@ def test_sync_guard_injects_pinning_backend_into_client():
         assert isinstance(client._transport._pool._network_backend, us._PinningSyncBackend)
     finally:
         client.close()
+
+
+# --- M1: async pinning backend must not block the event loop on DNS resolution ---
+# _PinningAsyncBackend.connect_tcp runs the blocking getaddrinfo; it must offload to
+# an executor under a bounded asyncio.wait_for (like validate_outbound_http_url_async),
+# not call socket.getaddrinfo synchronously on the event loop.
+
+
+@pytest.mark.asyncio
+async def test_pinning_async_backend_bounds_slow_resolution(monkeypatch):
+    import time
+
+    # Tight timeout + a resolver that blocks far longer than it.
+    monkeypatch.setattr(us, "_DEFAULT_DNS_TIMEOUT_SECONDS", 0.1)
+
+    def slow_getaddrinfo(host, port):
+        time.sleep(1.0)
+        return [(2, 1, 6, "", ("1.2.3.4", port))]
+
+    monkeypatch.setattr(us, "_getaddrinfo", slow_getaddrinfo)
+
+    backend = us._PinningAsyncBackend()
+
+    async def fake_inner(ip, port, **kwargs):  # would only run if resolution returned
+        return "CONN"
+
+    monkeypatch.setattr(backend._inner, "connect_tcp", fake_inner)
+
+    # With offload+timeout the slow resolution is bounded -> UnsafeURLError.
+    # (Without the fix, the sync resolve blocks then returns, and connect_tcp
+    # would resolve successfully instead of timing out.)
+    with pytest.raises(us.UnsafeURLError):
+        await backend.connect_tcp("slow.example", 443)
+
+
+@pytest.mark.asyncio
+async def test_pinning_async_backend_connects_to_pinned_ip(monkeypatch):
+    monkeypatch.setattr(us, "_getaddrinfo", lambda h, p: [(2, 1, 6, "", ("1.2.3.4", p))])
+    backend = us._PinningAsyncBackend()
+    captured = {}
+
+    async def fake_inner(ip, port, **kwargs):
+        captured["ip"] = ip
+        captured["port"] = port
+        return "CONN"
+
+    monkeypatch.setattr(backend._inner, "connect_tcp", fake_inner)
+    result = await backend.connect_tcp("ok.example", 443)
+    assert result == "CONN"
+    assert captured["ip"] == "1.2.3.4"
