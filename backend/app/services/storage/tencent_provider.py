@@ -194,10 +194,10 @@ class TencentProvider(BaseStorageProvider):
             client = self._create_client()
             
             # 删除对象
-            response = client.delete_object(
+            response = await asyncio.to_thread(lambda: client.delete_object(
                 Bucket=bucket,
                 Key=object_key
-            )
+            ))
             
             # 检查响应状态（204 或 200 表示成功）
             status_code = response.get('ResponseMetadata', {}).get('HTTPStatusCode')
@@ -240,7 +240,7 @@ class TencentProvider(BaseStorageProvider):
                     if marker:
                         list_params["Marker"] = marker
 
-                    response = client.list_objects(**list_params)
+                    response = await asyncio.to_thread(lambda: client.list_objects(**list_params))
                     for obj in response.get("Contents", []):
                         key = obj.get("Key")
                         if key:
@@ -260,7 +260,7 @@ class TencentProvider(BaseStorageProvider):
                     return {"success": True, "supported": True, "message": "目录为空或不存在"}
 
                 for key in keys:
-                    client.delete_object(Bucket=bucket, Key=key)
+                    await asyncio.to_thread(lambda: client.delete_object(Bucket=bucket, Key=key))
 
                 return {"success": True, "supported": True, "message": None}
 
@@ -268,7 +268,7 @@ class TencentProvider(BaseStorageProvider):
             if not object_key:
                 return {"success": False, "supported": False, "message": "path is required"}
 
-            response = client.delete_object(Bucket=bucket, Key=object_key)
+            response = await asyncio.to_thread(lambda: client.delete_object(Bucket=bucket, Key=object_key))
             status_code = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
             ok = status_code in [200, 204]
             return {"success": ok, "supported": True, "message": None if ok else "删除失败"}
@@ -326,7 +326,7 @@ class TencentProvider(BaseStorageProvider):
                 source_prefix = source_key.rstrip("/") + "/"
                 target_prefix = target_key.rstrip("/") + "/"
 
-                exist_resp = client.list_objects(Bucket=bucket, Prefix=target_prefix, MaxKeys=1)
+                exist_resp = await asyncio.to_thread(lambda: client.list_objects(Bucket=bucket, Prefix=target_prefix, MaxKeys=1))
                 if exist_resp.get("Contents"):
                     return {"success": False, "supported": True, "message": "目标目录已存在"}
 
@@ -340,7 +340,7 @@ class TencentProvider(BaseStorageProvider):
                     }
                     if marker:
                         list_params["Marker"] = marker
-                    resp = client.list_objects(**list_params)
+                    resp = await asyncio.to_thread(lambda: client.list_objects(**list_params))
                     for obj in resp.get("Contents", []):
                         key = obj.get("Key")
                         if key:
@@ -362,27 +362,27 @@ class TencentProvider(BaseStorageProvider):
                 for key in keys:
                     suffix = key[len(source_prefix):]
                     new_key = f"{target_prefix}{suffix}" if suffix else target_prefix
-                    _copy_object(key, new_key)
-                    client.delete_object(Bucket=bucket, Key=key)
+                    await asyncio.to_thread(_copy_object, key, new_key)
+                    await asyncio.to_thread(lambda: client.delete_object(Bucket=bucket, Key=key))
                 return {"success": True, "supported": True, "message": None}
 
             # 文件重命名
             try:
-                client.head_object(Bucket=bucket, Key=source_key)
+                await asyncio.to_thread(lambda: client.head_object(Bucket=bucket, Key=source_key))
             except CosServiceError as e:
                 if e.get_status_code() == 404:
                     return {"success": False, "supported": True, "message": "源文件不存在"}
                 raise
 
             try:
-                client.head_object(Bucket=bucket, Key=target_key)
+                await asyncio.to_thread(lambda: client.head_object(Bucket=bucket, Key=target_key))
                 return {"success": False, "supported": True, "message": "目标文件已存在"}
             except CosServiceError as e:
                 if e.get_status_code() != 404:
                     raise
 
-            _copy_object(source_key, target_key)
-            client.delete_object(Bucket=bucket, Key=source_key)
+            await asyncio.to_thread(_copy_object, source_key, target_key)
+            await asyncio.to_thread(lambda: client.delete_object(Bucket=bucket, Key=source_key))
             return {"success": True, "supported": True, "message": None}
         except ValueError as e:
             return {"success": False, "supported": False, "message": str(e)}
@@ -425,7 +425,7 @@ class TencentProvider(BaseStorageProvider):
             if cursor:
                 request_params["Marker"] = cursor
 
-            response = client.list_objects(**request_params)
+            response = await asyncio.to_thread(lambda: client.list_objects(**request_params))
 
             items: list[dict] = []
 
@@ -531,7 +531,7 @@ class TencentProvider(BaseStorageProvider):
                 if marker:
                     request_params["Marker"] = marker
 
-                response = client.list_objects(**request_params)
+                response = await asyncio.to_thread(lambda: client.list_objects(**request_params))
                 total_count += len(response.get("CommonPrefixes") or [])
 
                 for obj in response.get("Contents", []):
@@ -609,10 +609,10 @@ class TencentProvider(BaseStorageProvider):
             client = self._create_client()
             
             # 尝试列出 bucket（限制1个对象，仅测试连接）
-            response = client.list_objects(
+            response = await asyncio.to_thread(lambda: client.list_objects(
                 Bucket=bucket,
                 MaxKeys=1
-            )
+            ))
             
             # 检查响应状态
             if response.get('ResponseMetadata', {}).get('HTTPStatusCode') == 200:

@@ -3,6 +3,7 @@ Google Drive 存储提供商
 支持上传文件到 Google Drive
 """
 
+import asyncio
 from google.oauth2.credentials import Credentials
 from google.auth.exceptions import RefreshError
 from googleapiclient.discovery import build
@@ -179,23 +180,27 @@ class GoogleProvider(BaseStorageProvider):
             )
             
             # 上传文件
-            file = service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id,webViewLink,webContentLink'
-            ).execute()
+            file = await asyncio.to_thread(
+                lambda: service.files().create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields='id,webViewLink,webContentLink'
+                ).execute()
+            )
             
             file_id = file.get('id')
             
             # 设置文件为公开访问
             try:
-                service.permissions().create(
-                    fileId=file_id,
-                    body={
-                        'type': 'anyone',
-                        'role': 'reader'
-                    }
-                ).execute()
+                await asyncio.to_thread(
+                    lambda: service.permissions().create(
+                        fileId=file_id,
+                        body={
+                            'type': 'anyone',
+                            'role': 'reader'
+                        }
+                    ).execute()
+                )
             except HttpError:
                 # 权限设置失败不影响上传成功
                 pass
@@ -274,7 +279,7 @@ class GoogleProvider(BaseStorageProvider):
             service = self._create_service()
             
             # 删除文件
-            service.files().delete(fileId=file_id).execute()
+            await asyncio.to_thread(lambda: service.files().delete(fileId=file_id).execute())
             
             return True
         
@@ -304,16 +309,20 @@ class GoogleProvider(BaseStorageProvider):
 
         try:
             service = self._create_service()
-            folder_id, normalized_path = self._resolve_target_folder(service, path)
+            folder_id, normalized_path = await asyncio.to_thread(
+                lambda: self._resolve_target_folder(service, path)
+            )
 
-            response = service.files().list(
-                q=f"'{folder_id}' in parents and trashed = false",
-                pageSize=max(1, min(limit, 1000)),
-                pageToken=cursor,
-                fields="nextPageToken, files(id,name,mimeType,size,modifiedTime,webViewLink,webContentLink)",
-                supportsAllDrives=True,
-                includeItemsFromAllDrives=True
-            ).execute()
+            response = await asyncio.to_thread(
+                lambda: service.files().list(
+                    q=f"'{folder_id}' in parents and trashed = false",
+                    pageSize=max(1, min(limit, 1000)),
+                    pageToken=cursor,
+                    fields="nextPageToken, files(id,name,mimeType,size,modifiedTime,webViewLink,webContentLink)",
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True
+                ).execute()
+            )
 
             items: list[dict] = []
             for file in response.get("files", []):
@@ -400,19 +409,23 @@ class GoogleProvider(BaseStorageProvider):
 
         try:
             service = self._create_service()
-            folder_id, normalized_path = self._resolve_target_folder(service, path)
+            folder_id, normalized_path = await asyncio.to_thread(
+                lambda: self._resolve_target_folder(service, path)
+            )
             page_token = None
             total_count = 0
 
             while True:
-                response = service.files().list(
-                    q=f"'{folder_id}' in parents and trashed = false",
-                    pageSize=1000,
-                    pageToken=page_token,
-                    fields="nextPageToken, files(id)",
-                    supportsAllDrives=True,
-                    includeItemsFromAllDrives=True
-                ).execute()
+                response = await asyncio.to_thread(
+                    lambda: service.files().list(
+                        q=f"'{folder_id}' in parents and trashed = false",
+                        pageSize=1000,
+                        pageToken=page_token,
+                        fields="nextPageToken, files(id)",
+                        supportsAllDrives=True,
+                        includeItemsFromAllDrives=True
+                    ).execute()
+                )
 
                 total_count += len(response.get("files", []))
                 page_token = response.get("nextPageToken")
@@ -469,7 +482,9 @@ class GoogleProvider(BaseStorageProvider):
     ) -> Dict[str, Any]:
         try:
             service = self._create_service()
-            item, _ = self._resolve_item_by_path(service, path)
+            item, _ = await asyncio.to_thread(
+                lambda: self._resolve_item_by_path(service, path)
+            )
 
             is_folder = item.get("mimeType") == self.FOLDER_MIME_TYPE
             if is_directory and not is_folder:
@@ -477,10 +492,12 @@ class GoogleProvider(BaseStorageProvider):
             if not is_directory and is_folder:
                 return {"success": False, "supported": True, "message": "目标是目录"}
 
-            service.files().delete(
-                fileId=item["id"],
-                supportsAllDrives=True
-            ).execute()
+            await asyncio.to_thread(
+                lambda: service.files().delete(
+                    fileId=item["id"],
+                    supportsAllDrives=True
+                ).execute()
+            )
             return {"success": True, "supported": True, "message": None}
         except ValueError as e:
             return {"success": False, "supported": False, "message": str(e)}
@@ -506,7 +523,9 @@ class GoogleProvider(BaseStorageProvider):
 
         try:
             service = self._create_service()
-            item, normalized_path = self._resolve_item_by_path(service, path)
+            item, normalized_path = await asyncio.to_thread(
+                lambda: self._resolve_item_by_path(service, path)
+            )
             is_folder = item.get("mimeType") == self.FOLDER_MIME_TYPE
 
             if is_directory and not is_folder:
@@ -516,18 +535,26 @@ class GoogleProvider(BaseStorageProvider):
 
             path_parts = normalized_path.split("/")
             parent_path = "/".join(path_parts[:-1]) if len(path_parts) > 1 else ""
-            parent_id, _ = self._resolve_target_folder(service, parent_path) if parent_path else (self.config.get("folder_id") or "root", "")
+            parent_id, _ = (
+                await asyncio.to_thread(lambda: self._resolve_target_folder(service, parent_path))
+                if parent_path
+                else (self.config.get("folder_id") or "root", "")
+            )
 
-            existing = self._find_child_in_parent(service, parent_id, clean_name)
+            existing = await asyncio.to_thread(
+                lambda: self._find_child_in_parent(service, parent_id, clean_name)
+            )
             if existing and existing.get("id") != item.get("id"):
                 return {"success": False, "supported": True, "message": "同名文件已存在"}
 
-            service.files().update(
-                fileId=item["id"],
-                body={"name": clean_name},
-                fields="id,name",
-                supportsAllDrives=True
-            ).execute()
+            await asyncio.to_thread(
+                lambda: service.files().update(
+                    fileId=item["id"],
+                    body={"name": clean_name},
+                    fields="id,name",
+                    supportsAllDrives=True
+                ).execute()
+            )
             return {"success": True, "supported": True, "message": None}
         except ValueError as e:
             return {"success": False, "supported": False, "message": str(e)}
@@ -564,7 +591,7 @@ class GoogleProvider(BaseStorageProvider):
             service = self._create_service()
             
             # 尝试获取用户信息（测试 API 访问）
-            about = service.about().get(fields='user').execute()
+            about = await asyncio.to_thread(lambda: service.about().get(fields='user').execute())
             
             user_email = about.get('user', {}).get('emailAddress', 'Unknown')
             

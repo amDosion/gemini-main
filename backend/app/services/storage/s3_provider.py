@@ -233,9 +233,8 @@ class S3Provider(BaseStorageProvider):
             client = self._create_client()
             
             # 删除对象
-            response = client.delete_object(
-                Bucket=bucket,
-                Key=object_key
+            response = await asyncio.to_thread(
+                lambda: client.delete_object(Bucket=bucket, Key=object_key)
             )
             
             # 检查响应状态（204/200 表示成功）
@@ -277,7 +276,7 @@ class S3Provider(BaseStorageProvider):
                     }
                     if continuation_token:
                         list_params["ContinuationToken"] = continuation_token
-                    resp = client.list_objects_v2(**list_params)
+                    resp = await asyncio.to_thread(lambda: client.list_objects_v2(**list_params))
                     for obj in resp.get("Contents", []):
                         key = obj.get("Key")
                         if key:
@@ -291,9 +290,11 @@ class S3Provider(BaseStorageProvider):
 
                 for index in range(0, len(keys), 1000):
                     chunk = keys[index:index + 1000]
-                    client.delete_objects(
-                        Bucket=bucket,
-                        Delete={"Objects": [{"Key": key} for key in chunk], "Quiet": True}
+                    await asyncio.to_thread(
+                        lambda _chunk=chunk: client.delete_objects(
+                            Bucket=bucket,
+                            Delete={"Objects": [{"Key": k} for k in _chunk], "Quiet": True}
+                        )
                     )
 
                 return {"success": True, "supported": True, "message": None}
@@ -302,7 +303,7 @@ class S3Provider(BaseStorageProvider):
             if not object_key:
                 return {"success": False, "supported": False, "message": "path is required"}
 
-            response = client.delete_object(Bucket=bucket, Key=object_key)
+            response = await asyncio.to_thread(lambda: client.delete_object(Bucket=bucket, Key=object_key))
             status_code = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
             ok = status_code in [200, 204]
             return {"success": ok, "supported": True, "message": None if ok else "删除失败"}
@@ -355,7 +356,9 @@ class S3Provider(BaseStorageProvider):
                 source_prefix = source_key.rstrip("/") + "/"
                 target_prefix = target_key.rstrip("/") + "/"
 
-                exists_resp = client.list_objects_v2(Bucket=bucket, Prefix=target_prefix, MaxKeys=1)
+                exists_resp = await asyncio.to_thread(
+                    lambda: client.list_objects_v2(Bucket=bucket, Prefix=target_prefix, MaxKeys=1)
+                )
                 if exists_resp.get("KeyCount", 0) > 0:
                     return {"success": False, "supported": True, "message": "目标目录已存在"}
 
@@ -369,7 +372,7 @@ class S3Provider(BaseStorageProvider):
                     }
                     if continuation_token:
                         list_params["ContinuationToken"] = continuation_token
-                    resp = client.list_objects_v2(**list_params)
+                    resp = await asyncio.to_thread(lambda: client.list_objects_v2(**list_params))
                     for obj in resp.get("Contents", []):
                         key = obj.get("Key")
                         if key:
@@ -384,35 +387,39 @@ class S3Provider(BaseStorageProvider):
                 for key in keys:
                     suffix = key[len(source_prefix):]
                     new_key = f"{target_prefix}{suffix}" if suffix else target_prefix
-                    client.copy_object(
-                        Bucket=bucket,
-                        Key=new_key,
-                        CopySource={"Bucket": bucket, "Key": key}
+                    await asyncio.to_thread(
+                        lambda _k=key, _nk=new_key: client.copy_object(
+                            Bucket=bucket,
+                            Key=_nk,
+                            CopySource={"Bucket": bucket, "Key": _k}
+                        )
                     )
-                    client.delete_object(Bucket=bucket, Key=key)
+                    await asyncio.to_thread(lambda _k=key: client.delete_object(Bucket=bucket, Key=_k))
                 return {"success": True, "supported": True, "message": None}
 
             # 文件重命名
             try:
-                client.head_object(Bucket=bucket, Key=source_key)
+                await asyncio.to_thread(lambda: client.head_object(Bucket=bucket, Key=source_key))
             except ClientError as e:
                 if _is_not_found(e):
                     return {"success": False, "supported": True, "message": "源文件不存在"}
                 raise
 
             try:
-                client.head_object(Bucket=bucket, Key=target_key)
+                await asyncio.to_thread(lambda: client.head_object(Bucket=bucket, Key=target_key))
                 return {"success": False, "supported": True, "message": "目标文件已存在"}
             except ClientError as e:
                 if not _is_not_found(e):
                     raise
 
-            client.copy_object(
-                Bucket=bucket,
-                Key=target_key,
-                CopySource={"Bucket": bucket, "Key": source_key}
+            await asyncio.to_thread(
+                lambda: client.copy_object(
+                    Bucket=bucket,
+                    Key=target_key,
+                    CopySource={"Bucket": bucket, "Key": source_key}
+                )
             )
-            client.delete_object(Bucket=bucket, Key=source_key)
+            await asyncio.to_thread(lambda: client.delete_object(Bucket=bucket, Key=source_key))
             return {"success": True, "supported": True, "message": None}
         except ValueError as e:
             return {"success": False, "supported": False, "message": str(e)}
@@ -456,7 +463,7 @@ class S3Provider(BaseStorageProvider):
             if cursor:
                 request_params["ContinuationToken"] = cursor
 
-            response = client.list_objects_v2(**request_params)
+            response = await asyncio.to_thread(lambda: client.list_objects_v2(**request_params))
 
             items: list[dict] = []
 
@@ -559,7 +566,7 @@ class S3Provider(BaseStorageProvider):
                 if continuation_token:
                     request_params["ContinuationToken"] = continuation_token
 
-                response = client.list_objects_v2(**request_params)
+                response = await asyncio.to_thread(lambda: client.list_objects_v2(**request_params))
                 total_count += len(response.get("CommonPrefixes") or [])
 
                 for obj in response.get("Contents", []):
@@ -627,9 +634,8 @@ class S3Provider(BaseStorageProvider):
             client = self._create_client()
             
             # 尝试列出 bucket（限制1个对象，仅测试连接）
-            response = client.list_objects_v2(
-                Bucket=bucket,
-                MaxKeys=1
+            response = await asyncio.to_thread(
+                lambda: client.list_objects_v2(Bucket=bucket, MaxKeys=1)
             )
             
             # 检查响应状态

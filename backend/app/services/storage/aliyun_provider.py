@@ -177,11 +177,13 @@ class AliyunProvider(BaseStorageProvider):
             max_keys = max(1, min(limit, 1000))
             bucket = self._create_bucket_client()
 
-            result = bucket.list_objects(
-                prefix=prefix,
-                delimiter="/",
-                marker=cursor or "",
-                max_keys=max_keys
+            result = await asyncio.to_thread(
+                lambda: bucket.list_objects(
+                    prefix=prefix,
+                    delimiter="/",
+                    marker=cursor or "",
+                    max_keys=max_keys
+                )
             )
 
             items: list[dict] = []
@@ -269,11 +271,13 @@ class AliyunProvider(BaseStorageProvider):
             total_count = 0
 
             while True:
-                result = bucket.list_objects(
-                    prefix=prefix,
-                    delimiter="/",
-                    marker=marker,
-                    max_keys=1000
+                result = await asyncio.to_thread(
+                    lambda: bucket.list_objects(
+                        prefix=prefix,
+                        delimiter="/",
+                        marker=marker,
+                        max_keys=1000
+                    )
                 )
 
                 total_count += len(result.prefix_list or [])
@@ -329,7 +333,7 @@ class AliyunProvider(BaseStorageProvider):
             if not object_key:
                 return False
             bucket = self._create_bucket_client()
-            result = bucket.delete_object(object_key)
+            result = await asyncio.to_thread(lambda: bucket.delete_object(object_key))
             return result.status in [200, 204]
         except Exception:
             return False
@@ -352,7 +356,9 @@ class AliyunProvider(BaseStorageProvider):
                 keys: list[str] = []
 
                 while True:
-                    result = bucket.list_objects(prefix=prefix, marker=marker, max_keys=1000)
+                    result = await asyncio.to_thread(
+                        lambda: bucket.list_objects(prefix=prefix, marker=marker, max_keys=1000)
+                    )
                     for obj in result.object_list or []:
                         key = getattr(obj, "key", None)
                         if key:
@@ -367,7 +373,7 @@ class AliyunProvider(BaseStorageProvider):
                     return {"success": True, "supported": True, "message": "目录为空或不存在"}
 
                 for key in keys:
-                    bucket.delete_object(key)
+                    await asyncio.to_thread(lambda: bucket.delete_object(key))
 
                 return {"success": True, "supported": True, "message": None}
 
@@ -375,7 +381,7 @@ class AliyunProvider(BaseStorageProvider):
             if not object_key:
                 return {"success": False, "supported": False, "message": "path is required"}
 
-            result = bucket.delete_object(object_key)
+            result = await asyncio.to_thread(lambda: bucket.delete_object(object_key))
             ok = result.status in [200, 204]
             return {"success": ok, "supported": True, "message": None if ok else "删除失败"}
         except ValueError as e:
@@ -416,14 +422,18 @@ class AliyunProvider(BaseStorageProvider):
                 source_prefix = source_relative.rstrip("/") + "/"
                 target_prefix = target_relative.rstrip("/") + "/"
 
-                existing_target = bucket.list_objects(prefix=target_prefix, max_keys=1)
+                existing_target = await asyncio.to_thread(
+                    lambda: bucket.list_objects(prefix=target_prefix, max_keys=1)
+                )
                 if existing_target.object_list:
                     return {"success": False, "supported": True, "message": "目标目录已存在"}
 
                 marker = ""
                 keys: list[str] = []
                 while True:
-                    result = bucket.list_objects(prefix=source_prefix, marker=marker, max_keys=1000)
+                    result = await asyncio.to_thread(
+                        lambda: bucket.list_objects(prefix=source_prefix, marker=marker, max_keys=1000)
+                    )
                     for obj in result.object_list or []:
                         key = getattr(obj, "key", None)
                         if key:
@@ -440,17 +450,17 @@ class AliyunProvider(BaseStorageProvider):
                 for key in keys:
                     suffix = key[len(source_prefix):]
                     new_key = f"{target_prefix}{suffix}" if suffix else target_prefix
-                    bucket.copy_object(bucket_name, key, new_key)
-                    bucket.delete_object(key)
+                    await asyncio.to_thread(lambda: bucket.copy_object(bucket_name, key, new_key))
+                    await asyncio.to_thread(lambda: bucket.delete_object(key))
                 return {"success": True, "supported": True, "message": None}
 
-            if not bucket.object_exists(source_relative):
+            if not await asyncio.to_thread(lambda: bucket.object_exists(source_relative)):
                 return {"success": False, "supported": True, "message": "源文件不存在"}
-            if bucket.object_exists(target_relative):
+            if await asyncio.to_thread(lambda: bucket.object_exists(target_relative)):
                 return {"success": False, "supported": True, "message": "目标文件已存在"}
 
-            bucket.copy_object(bucket_name, source_relative, target_relative)
-            bucket.delete_object(source_relative)
+            await asyncio.to_thread(lambda: bucket.copy_object(bucket_name, source_relative, target_relative))
+            await asyncio.to_thread(lambda: bucket.delete_object(source_relative))
             return {"success": True, "supported": True, "message": None}
         except ValueError as e:
             return {"success": False, "supported": False, "message": str(e)}
