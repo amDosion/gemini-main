@@ -126,36 +126,6 @@ export const uploadToCloudStorageSync = async (
   }
 };
 
-/**
- * 异步上传图片到云存储（不阻塞前端，用于后台更新数据库）
- * @deprecated 建议使用 uploadToCloudStorageSync 同步上传
- */
-export const uploadToCloudStorage = async (
-  imageSource: string | File,
-  messageId: string,
-  attachmentId: string,
-  sessionId: string,
-  filename?: string
-): Promise<void> => {
-  try {
-    const finalFilename = filename || `image-${Date.now()}.png`;
-    const isFile = imageSource instanceof File;
-    const sourceUrl = typeof imageSource === 'string' ? imageSource : '';
-
-    // 使用统一函数转换为 File
-    const file = await sourceToFile(imageSource, finalFilename);
-
-    // 提交到后端异步上传队列（不等待完成）
-    const result = await storageUpload.uploadFileAsync(file, {
-      sessionId,
-      messageId,
-      attachmentId,
-    });
-  } catch (err) {
-    reportError('附件上传失败', err);
-  }
-};
-
 // ============================================================
 // URL 类型检测与转换工具函数
 // ============================================================
@@ -370,6 +340,22 @@ export const fetchAttachmentStatus = async (
   }
 };
 
+/** Backend response shape for /api/attachments/resolve-continuity */
+interface ContinuityResolveResponse {
+  attachmentId: string;
+  mimeType?: string;
+  filename?: string;
+  url?: string;
+  status?: 'pending' | 'uploading' | 'completed' | 'failed';
+  taskId?: string;
+  messageId?: string;
+  sessionId?: string;
+  userId?: string;
+  size?: number;
+  cloudUrl?: string;
+  createdAt?: number;
+}
+
 // ============================================================
 // CONTINUITY LOGIC 统一函数
 // ============================================================
@@ -445,7 +431,7 @@ export const prepareAttachmentForApi = async (
       return null;
     }
 
-    const resolved = await readJsonResponse<any>(response);
+    const resolved = await readJsonResponse<ContinuityResolveResponse>(response);
     return {
       id: resolved.attachmentId,
       mimeType: resolved.mimeType || 'image/png',

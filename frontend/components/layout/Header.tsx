@@ -13,6 +13,14 @@ import type { SystemConfigPayload, SystemStatusPayload } from '../../services/sy
 import { systemAdminService } from '../../services/systemAdmin';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { ConfirmDialog } from '../common/ConfirmDialog';
+import {
+  normalizeNumberInput,
+  SYSTEM_STATUS_POLL_INTERVAL_MS,
+} from './headerHelpers';
+import { HeaderUserInfoDialog } from './HeaderUserInfoDialog';
+import { HeaderSystemConfigDialog } from './HeaderSystemConfigDialog';
+import { HeaderModelSelector } from './HeaderModelSelector';
+import { HeaderProfileSelector } from './HeaderProfileSelector';
 
 interface HeaderProps {
   isSidebarOpen: boolean;
@@ -37,14 +45,43 @@ interface HeaderProps {
   onLogout?: () => void;
 }
 
-import {
-  normalizeNumberInput,
-  SYSTEM_STATUS_POLL_INTERVAL_MS,
-} from './headerHelpers';
-import { HeaderUserInfoDialog } from './HeaderUserInfoDialog';
-import { HeaderSystemConfigDialog } from './HeaderSystemConfigDialog';
-import { HeaderModelSelector } from './HeaderModelSelector';
-import { HeaderProfileSelector } from './HeaderProfileSelector';
+const USER_INFO_FIELD_LABELS: Partial<Record<keyof AuthUser, string>> = {
+  id: '用户ID',
+  name: '用户名',
+  email: '邮箱',
+  status: '状态',
+  isAdmin: '是否管理员',
+  createdAt: '注册时间',
+  updatedAt: '最近更新时间',
+  lastLoginAt: '最近登录时间',
+};
+
+const USER_INFO_FIELD_ORDER: Array<keyof AuthUser> = [
+  'id',
+  'name',
+  'email',
+  'status',
+  'isAdmin',
+  'createdAt',
+  'updatedAt',
+  'lastLoginAt',
+];
+
+const formatDateTime = (value?: string | null) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('zh-CN', { hour12: false });
+};
+
+const formatUserFieldValue = (field: string, value: unknown) => {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'boolean') return value ? '是' : '否';
+  if (field === 'createdAt' || field === 'updatedAt' || field === 'lastLoginAt') {
+    return formatDateTime(String(value));
+  }
+  return String(value);
+};
 
 export const Header: React.FC<HeaderProps> = ({
   isSidebarOpen,
@@ -94,44 +131,6 @@ export const Header: React.FC<HeaderProps> = ({
 
   // Get Current Profile
   const activeProfile = profiles.find((p) => p.id === activeProfileId);
-
-  const USER_INFO_FIELD_LABELS: Partial<Record<keyof AuthUser, string>> = {
-    id: '用户ID',
-    name: '用户名',
-    email: '邮箱',
-    status: '状态',
-    isAdmin: '是否管理员',
-    createdAt: '注册时间',
-    updatedAt: '最近更新时间',
-    lastLoginAt: '最近登录时间',
-  };
-
-  const USER_INFO_FIELD_ORDER: Array<keyof AuthUser> = [
-    'id',
-    'name',
-    'email',
-    'status',
-    'isAdmin',
-    'createdAt',
-    'updatedAt',
-    'lastLoginAt',
-  ];
-
-  const formatDateTime = (value?: string | null) => {
-    if (!value) return '—';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleString('zh-CN', { hour12: false });
-  };
-
-  const formatUserFieldValue = (field: string, value: unknown) => {
-    if (value === null || value === undefined || value === '') return '—';
-    if (typeof value === 'boolean') return value ? '是' : '否';
-    if (field === 'createdAt' || field === 'updatedAt' || field === 'lastLoginAt') {
-      return formatDateTime(String(value));
-    }
-    return String(value);
-  };
 
   const userInfoEntries = useMemo(() => {
     if (!currentUser) return [] as Array<{ field: keyof AuthUser; label: string; value: string }>;
@@ -314,7 +313,7 @@ export const Header: React.FC<HeaderProps> = ({
         .join(', ');
       const freedMB = ((result.freedBytes || 0) / 1024 / 1024).toFixed(2);
       showSuccess(`清理完成 (释放 ${freedMB} MB): ${entries}`);
-      loadSystemStatus();
+      void loadSystemStatus();
     } catch (error) {
       const message = error instanceof Error ? error.message : '系统清理失败';
       showError(message);

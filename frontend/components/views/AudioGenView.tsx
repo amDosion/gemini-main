@@ -478,16 +478,17 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
                   {msg.attachments?.map((att) => {
                     const isAudio = att.mimeType.startsWith('audio/');
                     const isActive = activeAudioUrl === att.url;
+                    const stableKey = `${msg.id}:${getAttachmentStableKey(att)}`;
 
-                    return (
-                      <div
-                        key={`${msg.id}:${getAttachmentStableKey(att)}`}
-                        onClick={() => att.url && isAudio && handleAudioClick(att.url)}
-                        className={`relative group mt-2 rounded-lg overflow-hidden border transition-all ${isAudio ? 'cursor-pointer' : ''
-                          } ${isActive ? 'ring-2 ring-cyan-500 border-transparent' : 'border-slate-700 hover:border-slate-500'
-                          }`}
-                      >
-                        {isAudio ? (
+                    if (isAudio && att.url) {
+                      return (
+                        <button
+                          key={stableKey}
+                          type="button"
+                          onClick={() => handleAudioClick(att.url!)}
+                          aria-label={`Play ${att.name || 'Generated Audio'}`}
+                          className={`relative group mt-2 rounded-lg overflow-hidden border transition-all w-full text-left ${isActive ? 'ring-2 ring-cyan-500 border-transparent' : 'border-slate-700 hover:border-slate-500'}`}
+                        >
                           <div className="p-4 bg-slate-900/50 flex items-center gap-3">
                             <div className={`p-2 rounded-lg ${isActive ? 'bg-cyan-500/20 text-cyan-400' : 'bg-slate-800 text-slate-400'
                               }`}>
@@ -505,15 +506,21 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
                               <div className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
                             )}
                           </div>
-                        ) : (
-                          <div className="p-2 bg-slate-900 flex items-center gap-2 text-xs">
-                            <Volume2 size={14} /> {att.name}
-                          </div>
-                        )}
+                        </button>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={stableKey}
+                        className="relative group mt-2 rounded-lg overflow-hidden border transition-all border-slate-700"
+                      >
+                        <div className="p-2 bg-slate-900 flex items-center gap-2 text-xs">
+                          <Volume2 size={14} /> {att.name}
+                        </div>
                       </div>
                     );
                   })}
-
                   {/* Error State */}
                   {msg.isError && (
                     <div className="flex items-center gap-2 text-red-400 text-xs mt-2 p-2 bg-red-900/10 rounded">
@@ -650,9 +657,10 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
         {activeAudioUrl && (
           <div className="absolute bottom-4 right-4 z-20 flex gap-2 relative">
             <button
-              onClick={() => window.open(activeAudioUrl, '_blank')}
+              onClick={() => window.open(activeAudioUrl, '_blank', 'noopener,noreferrer')}
               className="p-2.5 bg-black/60 backdrop-blur-md hover:bg-black/80 text-white rounded-xl border border-white/10 transition-colors shadow-lg"
               title="Open in new tab"
+              aria-label="Open audio in new tab"
             >
               <Maximize2 size={20} />
             </button>
@@ -680,6 +688,7 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
             onClick={resetParams}
             className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
             title="重置为默认值"
+            aria-label="Reset audio parameters to defaults"
           >
             <RotateCcw size={12} />
           </button>
@@ -712,7 +721,7 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
         />
       </div>
     </div>
-  ), [loadingState, activeAudioUrl, audioRef, isPlaying, currentTime, duration, getActiveAudioText, handleDownload, controls, providerId, resetParams, audioMode, activeModelConfig, onStop, messages, initialPrompt, handleSend]);
+  ), [loadingState, activeAudioUrl, isPlaying, currentTime, duration, getActiveAudioText, handleDownload, controls, providerId, resetParams, audioMode, activeModelConfig, onStop, messages, initialPrompt, handleSend]);
 
   return (
     <GenViewLayout

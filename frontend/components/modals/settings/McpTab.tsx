@@ -59,6 +59,10 @@ export const McpTab: React.FC = () => {
   const toolsCacheRef = useRef<
     Record<string, { expiresAt: number; tools: Array<{ name: string; description?: string }> }>
   >({});
+  // Keep a ref in sync with sourceType so async handlers always read the current value
+  // without closing over a stale copy (stale-closure fix for csm-13).
+  const sourceTypeRef = useRef<ServerMapSource>('none');
+  sourceTypeRef.current = sourceType;
   const skybridgeHostType = useMemo(() => getSkybridgeHostType(), []);
 
   useEscapeClose(isDialogOpen, () => setIsDialogOpen(false));
@@ -241,7 +245,7 @@ export const McpTab: React.FC = () => {
   ) => {
     setIsSaving(true);
     setError(null);
-    const source = previousSource || sourceType;
+    const source = previousSource ?? sourceTypeRef.current;
     try {
       const nextRoot = buildPersistedRoot(rootConfig, source, nextServers);
       const payload = JSON.stringify(nextRoot, null, 2);
@@ -492,13 +496,13 @@ export const McpTab: React.FC = () => {
       return;
     }
 
-    let argsPayload: Record<string, any> = {};
+    let argsPayload: Record<string, unknown> = {};
     const argsText = String(invokeState.argsText || '{}').trim();
     if (argsText) {
       try {
-        const parsed = JSON.parse(argsText);
+        const parsed = JSON.parse(argsText) as unknown;
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          argsPayload = parsed;
+          argsPayload = parsed as Record<string, unknown>;
         } else {
           updateInvokeState(serverKey, { error: 'Tool arguments must be a JSON object' });
           return;

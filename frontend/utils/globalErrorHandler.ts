@@ -8,6 +8,7 @@
 type ErrorNotifier = (message: string) => void;
 
 let _notifier: ErrorNotifier | null = null;
+let _initialized = false;
 
 /** 注册 Toast 通知函数（在 App 挂载后调用） */
 export function registerGlobalErrorNotifier(notifier: ErrorNotifier): void {
@@ -37,6 +38,9 @@ function isIgnorable(error: unknown): boolean {
 
 /** 初始化全局错误监听 */
 export function initGlobalErrorHandlers(): void {
+  if (_initialized) return;
+  _initialized = true;
+
   // 未处理的 Promise rejection
   window.addEventListener('unhandledrejection', (event) => {
     if (isIgnorable(event.reason)) {

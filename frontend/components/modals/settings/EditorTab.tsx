@@ -53,22 +53,21 @@ export const EditorTab: React.FC<EditorTabProps> = ({
         profiles: ConfigProfile[],
         excludeId?: string
     ): ConfigProfile | null => {
-        try {
-            const matchingProfiles = profiles.filter(
-                p => p.providerId === providerId && p.id !== excludeId
-            );
-            
-            if (matchingProfiles.length === 0) {
-                return null;
-            }
-            
-            // 返回最近更新的配置
-            return matchingProfiles.reduce((latest, current) => 
-                current.updatedAt > latest.updatedAt ? current : latest
-            );
-        } catch (error) {
+        if (!Array.isArray(profiles)) {
             return null;
         }
+        const matchingProfiles = profiles.filter(
+            p => p.providerId === providerId && p.id !== excludeId
+        );
+
+        if (matchingProfiles.length === 0) {
+            return null;
+        }
+
+        // 返回最近更新的配置
+        return matchingProfiles.reduce((latest, current) =>
+            current.updatedAt > latest.updatedAt ? current : latest
+        );
     };
 
     /**
@@ -500,12 +499,9 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                             <OllamaModelManager
                                 baseUrl={formData.baseUrl || 'http://localhost:11434'}
                                 apiKey={formData.apiKey}
-                                onModelSelect={(modelId) => {
-                                    // 可选：选择模型时的回调
-                                }}
                                 onModelsChanged={() => {
                                     // 模型下载/删除后刷新验证列表
-                                    handleVerify();
+                                    handleVerify().catch(console.error);
                                 }}
                             />
                         </div>

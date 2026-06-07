@@ -30,6 +30,15 @@ interface WorkflowExecuteRequest {
   };
 }
 
+interface ModeExecutionPayload {
+  executionId?: string;
+  status?: string;
+}
+
+interface ModeExecutionResponse extends ModeExecutionPayload {
+  data?: ModeExecutionPayload;
+}
+
 interface UseWorkflowExecutionControllerParams {
   providerId?: string;
   modelId?: string;
@@ -61,8 +70,8 @@ const createExecutePayload = (workflow: WorkflowExecuteRequest, workflowPrompt: 
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    sourceHandle: (edge as any).sourceHandle,
-    targetHandle: (edge as any).targetHandle,
+    sourceHandle: edge.sourceHandle,
+    targetHandle: edge.targetHandle,
   }));
 
   const workflowInput =
@@ -77,7 +86,7 @@ const createExecutePayload = (workflow: WorkflowExecuteRequest, workflowPrompt: 
   const templateId = String(workflow?.meta?.templateId || '').trim();
   const templateName = String(workflow?.meta?.templateName || '').trim();
   const executionSource = templateId ? 'template' : 'editor';
-  const requestMeta: Record<string, any> = {
+  const requestMeta: Record<string, string> = {
     title: workflowPrompt ? workflowPrompt.slice(0, 80) : '工作流执行',
     source: executionSource,
   };
@@ -189,7 +198,7 @@ export const useWorkflowExecutionController = ({
         }
         const normalizedModelId = String(modelId || '').trim() || 'workflow-runtime';
 
-        const modeResponse = await requestJson<any>(
+        const modeResponse = await requestJson<ModeExecutionResponse>(
           `/api/modes/${encodeURIComponent(normalizedProviderId)}/multi-agent`,
           {
             method: 'POST',

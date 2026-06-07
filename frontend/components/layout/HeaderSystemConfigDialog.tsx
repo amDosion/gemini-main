@@ -59,15 +59,21 @@ export const HeaderSystemConfigDialog: React.FC<HeaderSystemConfigDialogProps> =
     <>
       <div className="fixed inset-0 z-[170] bg-black/60" onClick={closeSystemConfigDialog} />
       <div className="fixed inset-0 z-[171] flex items-center justify-center p-4">
-        <div className="w-full max-w-5xl max-h-[90vh] bg-slate-900 border border-slate-700 rounded-xl shadow-2xl ring-1 ring-black/50 flex flex-col overflow-hidden">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="system-config-title"
+          className="w-full max-w-5xl max-h-[90vh] bg-slate-900 border border-slate-700 rounded-xl shadow-2xl ring-1 ring-black/50 flex flex-col overflow-hidden"
+        >
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
             <div>
-              <h3 className="text-base font-semibold text-white">系统配置</h3>
+              <h3 id="system-config-title" className="text-base font-semibold text-white">系统配置</h3>
               <p className="text-xs text-slate-400 mt-0.5">仅管理员可见，保存后立即生效</p>
             </div>
             <button
               type="button"
               onClick={closeSystemConfigDialog}
+              aria-label="关闭"
               className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
               disabled={isSavingSystemConfig}
             >

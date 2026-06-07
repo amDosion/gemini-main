@@ -21,7 +21,7 @@ import {
 } from '../../../services/privateCacheInvalidation';
 import { usePrivateCacheLifecycleRevision } from '../../../hooks/usePrivateCacheScopeRevision';
 import { removeRecordKey } from '../../../services/boundedRecordCache';
-import type { ExecutionStatus } from '../../multiagent/types';
+import type { ExecutionStatus, WorkflowEdge, WorkflowNode } from '../../multiagent/types';
 import {
   extractAudioUrls,
   extractImageUrls,
@@ -37,6 +37,30 @@ import type { WorkflowHistoryItem, WorkflowLoadRequest } from './types';
 import { useWorkflowHistoryPreviewState } from './useWorkflowHistoryPreviewState';
 import { isWorkflowExecutionAbortError } from './workflowExecutionErrors';
 import type { WorkflowHistoryMediaPreviewItem } from '../../../services/workflowHistoryService';
+
+/** Shape of the /api/workflows/history list response. */
+interface WorkflowHistoryListResponse {
+  executions: Record<string, unknown>[];
+}
+
+/** Shape of the /api/workflows/history/:id detail response. */
+interface WorkflowHistoryDetailResponse {
+  workflow?: {
+    nodes?: WorkflowNode[];
+    edges?: WorkflowEdge[];
+  };
+  input?: Record<string, unknown>;
+  title?: string;
+  task?: string;
+  resultSummary?: {
+    imageCount?: number;
+    audioCount?: number;
+    videoCount?: number;
+    [key: string]: unknown;
+  };
+  result?: unknown;
+  [key: string]: unknown;
+}
 
 interface UseWorkflowHistoryControllerParams {
   setExecutionStatus: Dispatch<SetStateAction<ExecutionStatus | undefined>>;
@@ -262,7 +286,7 @@ export const useWorkflowHistoryController = ({
       setHistoryError(null);
     }
     try {
-      const payload = await requestJson<any>('/api/workflows/history?limit=100', {
+      const payload = await requestJson<WorkflowHistoryListResponse>('/api/workflows/history?limit=100', {
         withAuth: true,
         signal: controller.signal,
         timeoutMs: 0,
@@ -320,7 +344,7 @@ export const useWorkflowHistoryController = ({
         setLoadingHistoryId(executionId);
       }
       try {
-        const payload = await requestJson<any>(`/api/workflows/history/${executionId}`, {
+        const payload = await requestJson<WorkflowHistoryDetailResponse>(`/api/workflows/history/${executionId}`, {
           withAuth: true,
           signal: controller.signal,
           timeoutMs: 0,
@@ -332,7 +356,7 @@ export const useWorkflowHistoryController = ({
         const input = payload?.input || {};
         const nodes = Array.isArray(workflow?.nodes) ? workflow.nodes : [];
         const edges = Array.isArray(workflow?.edges) ? workflow.edges : [];
-        const promptFromInput = input?.task || input?.prompt || '';
+        const promptFromInput = String(input?.task || input?.prompt || '');
         const workflowName =
           payload?.title || payload?.task || `执行记录 ${executionId.slice(0, 8)}`;
 

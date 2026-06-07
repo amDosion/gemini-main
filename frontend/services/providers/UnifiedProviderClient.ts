@@ -276,9 +276,6 @@ export class UnifiedProviderClient implements ILLMProvider {
         throw new Error(`Chat failed: ${error}`);
       }
 
-      // 检查响应类型
-      const contentType = response.headers.get('content-type');
-
       // Read SSE stream
       const reader = response.body?.getReader();
       if (!reader) {
@@ -302,9 +299,6 @@ export class UnifiedProviderClient implements ILLMProvider {
             const chunk = JSON.parse(dataStr);
             chunkCount++;
 
-            if (chunkCount <= 3 || chunk.chunkType === 'done' || chunk.chunkType === 'error') {
-            }
-
             if (chunk.chunkType === 'error') {
               streamError = new Error(chunk.error || 'Unknown error');
               return;
@@ -326,7 +320,6 @@ export class UnifiedProviderClient implements ILLMProvider {
             }
 
             if (chunk.chunkType === 'tool_result') {
-              const hasScreenshot = chunk.screenshotUrl || chunk.screenshot;
               pendingUpdates.push({
                 text: '',
                 browserOperationId: chunk.browserOperationId,
@@ -376,7 +369,7 @@ export class UnifiedProviderClient implements ILLMProvider {
             streamError = error instanceof Error ? error : new Error(String(error));
           }
         },
-        onError: (error: ParseError) => {
+        onError: (_error: ParseError) => {
           // For malformed lines, keep stream resilient and continue parsing following events.
         },
       });
@@ -456,11 +449,11 @@ export class UnifiedProviderClient implements ILLMProvider {
   ): Promise<any> {
     const normalizedOptions = normalizeLegacyModeOptions(mode, options);
     const normalizedExtra = pruneUndefinedEntries({ ...(extra || {}) });
-    const { kept: sanitizedOptions, droppedKeys: droppedOptionKeys } = pickAllowedEntries(
+    const { kept: sanitizedOptions } = pickAllowedEntries(
       normalizedOptions,
       MODE_OPTION_KEYS
     );
-    const { kept: sanitizedExtra, droppedKeys: droppedExtraKeys } = pickAllowedEntries(
+    const { kept: sanitizedExtra } = pickAllowedEntries(
       normalizedExtra,
       MODE_EXTRA_KEYS
     );
@@ -472,20 +465,12 @@ export class UnifiedProviderClient implements ILLMProvider {
       extra: sanitizedExtra,
     };
 
-    // ✅ 详细日志：记录发送给后端的参数（特别是 image-gen 模式）
-    if (mode === 'image-gen') {
-      if (droppedOptionKeys.length > 0 || droppedExtraKeys.length > 0) {
-      }
-    }
-
     const headers = new Headers({
       'Content-Type': 'application/json',
     });
 
     // ✅ 统一路由: /api/modes/{provider}/{mode}
     const url = `/api/modes/${this.id}/${mode}`;
-    if (mode === 'image-gen') {
-    }
 
     const response = await fetchWithTimeout(url, {
       method: 'POST',
@@ -685,14 +670,6 @@ export class UnifiedProviderClient implements ILLMProvider {
         }
       }
     }
-
-    attachments.forEach((att, idx) => {
-      const urlPreview = att.url
-        ? att.url.length > 50
-          ? att.url.substring(0, 50) + '...'
-          : att.url
-        : 'N/A';
-    });
 
     // ✅ 使用统一模式处理方法
     const editMode = mode || 'image-chat-edit';

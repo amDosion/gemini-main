@@ -11,7 +11,7 @@
  */
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ChatOptions, Attachment, AppMode, Message, ModelConfig } from '../../types/types';
-import { Wand2, Image as ImageIcon, Paperclip, X, Expand, Crop, Sparkles, Send, Mic } from 'lucide-react';
+import { Wand2, Image as ImageIcon, Paperclip, Expand, Crop, Sparkles, Send, Mic } from 'lucide-react';
 import { processUserAttachments } from '../../hooks/handlers/attachmentUtils';
 import { useClipboardAttachments } from '../../hooks/useClipboardAttachments';
 import { ModeControlsSchema, useModeControlsSchema } from '../../hooks/useModeControlsSchema';
@@ -298,7 +298,6 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
 
   // 删除附件
   const removeAttachment = useCallback((id: string) => {
-    const attachmentToRemove = activeAttachments.find(att => att.id === id);
     // ✅ 注意：不在这里 revoke Blob URL
     // 原因：如果附件已经发送到消息中，消息可能仍在使用这个 Blob URL
     // 只有在确认附件不再被使用时才 revoke（例如消息被删除时）
@@ -349,20 +348,6 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
         return prefixMap[mode] || 'file';
       };
       
-      // ✅ 调试日志：确认发送前的附件数量
-      activeAttachments.forEach((att, idx) => {
-      });
-      
-      // ✅ 新增：记录画布图片的完整元数据（如果有）
-      if (activeCanvasAttachment) {
-        const formatUrlForLog = (url: string | undefined): string => {
-          if (!url) return 'N/A';
-          if (url.startsWith('data:')) return `Base64 (${url.length} 字符)`;
-          return url.length > 80 ? url.substring(0, 80) + '...' : url;
-        };
-      } else {
-      }
-
       // ✅ 互斥逻辑：有附件用附件，没附件用画布图片
       const requestAttachments =
         mode === 'video-gen'
@@ -482,28 +467,39 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
 
       // ✅ Outpainting 模式特有参数（传递给 ExpandService）
       if (mode === 'image-outpainting') {
+        type OutpaintOptions = Omit<ChatOptions, 'upscaleFactor'> & {
+          outpaintMode?: 'ratio' | 'scale' | 'offset' | 'upscale';
+          xScale?: number;
+          yScale?: number;
+          leftOffset?: number;
+          rightOffset?: number;
+          topOffset?: number;
+          bottomOffset?: number;
+          outputRatio?: string;
+          upscaleFactor?: 'x2' | 'x3' | 'x4';
+        };
+        const outpaintOptions = options as OutpaintOptions;
         // 扩图模式：ratio | scale | offset | upscale
-        (options as any).outpaintMode = controls.outpaintMode;
+        outpaintOptions.outpaintMode = controls.outpaintMode;
 
         // 根据扩图模式传递不同的参数
         if (controls.outpaintMode === 'scale') {
           // 缩放模式：x_scale, y_scale
-          (options as any).xScale = controls.xScale;
-          (options as any).yScale = controls.yScale;
+          outpaintOptions.xScale = controls.xScale;
+          outpaintOptions.yScale = controls.yScale;
         } else if (controls.outpaintMode === 'offset') {
           // 偏移模式：left_offset, right_offset, top_offset, bottom_offset
-          (options as any).leftOffset = controls.offsetPixels.left;
-          (options as any).rightOffset = controls.offsetPixels.right;
-          (options as any).topOffset = controls.offsetPixels.top;
-          (options as any).bottomOffset = controls.offsetPixels.bottom;
+          outpaintOptions.leftOffset = controls.offsetPixels.left;
+          outpaintOptions.rightOffset = controls.offsetPixels.right;
+          outpaintOptions.topOffset = controls.offsetPixels.top;
+          outpaintOptions.bottomOffset = controls.offsetPixels.bottom;
         } else if (controls.outpaintMode === 'ratio') {
           // 比例模式：使用 aspectRatio
-          (options as any).outputRatio = controls.aspectRatio;
+          outpaintOptions.outputRatio = controls.aspectRatio;
         } else if (controls.outpaintMode === 'upscale') {
           // 放大模式：upscale_factor
-          (options as any).upscaleFactor = controls.upscaleFactor;
+          outpaintOptions.upscaleFactor = controls.upscaleFactor;
         }
-
       }
 
       onSend(prompt, options, finalAttachments, mode);

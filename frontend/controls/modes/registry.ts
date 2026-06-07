@@ -19,6 +19,11 @@ import { ImageGenControls as TongYiImageGenControls } from './tongyi/ImageGenCon
 import { ImageGenControls as GrokImageGenControls } from './grok/ImageGenControls';
 import { VideoGenControls as GrokVideoGenControls } from './grok/VideoGenControls';
 
+// Each slot holds a component with its own concrete prop type. `any` is required here
+// because TypeScript's contravariant component type parameter prevents assigning
+// React.FC<ConcreteProps> to React.ComponentType<BaseProps | object | unknown>.
+// Call sites in ModeControlsCoordinator cast to the concrete prop type before rendering.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ProviderModeControls = {
   ChatControls: React.ComponentType<any>;
   ImageGenControls: React.ComponentType<any>;
@@ -88,6 +93,11 @@ export function getProviderControls(providerId?: string): ProviderModeControls {
   return merged;
 }
 
+// Maps each AppMode to the corresponding ProviderModeControls slot key.
+// Modes absent from this map intentionally have no side-panel control component:
+//   'image-upscale'      — no parameters to configure; backend uses defaults
+//   'image-segmentation' — selection is handled inline in the canvas, not in the panel
+//   'product-recontext'  — uses the shared image-edit flow without a dedicated panel
 const modeToControlKey: Partial<Record<AppMode, keyof ProviderModeControls>> = {
   chat: 'ChatControls',
   'image-gen': 'ImageGenControls',

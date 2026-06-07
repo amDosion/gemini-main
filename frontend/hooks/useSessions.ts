@@ -89,15 +89,15 @@ export const useSessions = (
   // ✅ 使用 ref 跟踪上一次的 appMode，用于检测 mode 切换
   const prevAppModeRef = useRef<AppMode>(appMode);
   const appModeRef = useRef<AppMode>(appMode);
-  const privateCacheUserScope = getPrivateCacheUserScope();
-
+  // Cache keys incorporate the private-cache user scope internally via scopedPrivateCacheKey.
+  // Scope changes are handled by usePrivateCacheScopeRevision (below) — no phantom dep needed here.
   const sessionListCacheKey = useMemo(
     () => getSessionListCacheKey(appMode),
-    [appMode, privateCacheUserScope]
+    [appMode]
   );
   const currentSessionIdCacheKey = useMemo(
     () => getCurrentSessionIdCacheKey(appMode),
-    [appMode, privateCacheUserScope]
+    [appMode]
   );
 
   // ✅ Sessions and currentSessionId use only per-mode cache partitions.
@@ -374,7 +374,9 @@ export const useSessions = (
         }
       }
     } catch (error) {
-      // ✅ C-6: 网络错误不要永久关闭分页;保持 hasMore=true 允许重试
+      // C-6: On network error, keep hasMore=true so the user can retry by scrolling again.
+      // Log the failure so it is observable in devtools without permanently closing pagination.
+      console.error('[useSessions] loadMoreSessions failed:', error);
     } finally {
       isLoadingMoreRef.current = false;
       setIsLoadingMore(false);

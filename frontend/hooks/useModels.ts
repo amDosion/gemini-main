@@ -312,14 +312,10 @@ export const useModels = (
   }, [configReady, providerId, profileCacheKey, appMode, privateCacheResetNonce]);
 
   // 当前模式模型（由后端按 mode 过滤返回）
-  const visibleModels = useMemo(() => {
-    return modeModels;
-  }, [modeModels]);
+  const visibleModels = modeModels;
 
   // 完整模型（供模式导航和能力展示）
-  const allVisibleModels = useMemo(() => {
-    return availableModels;
-  }, [availableModels]);
+  const allVisibleModels = availableModels;
 
   // 当可见模型集变化时，保证 currentModelId 有效
   useEffect(() => {

@@ -79,12 +79,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                         <form onSubmit={handleSubmit} className="w-full space-y-3">
                             {/* Email Input */}
                             <div className="space-y-1 text-left">
-                                <label className="text-[10px] uppercase text-slate-500 font-bold tracking-wider ml-1">Email</label>
+                                <label htmlFor="login-email" className="text-[10px] uppercase text-slate-500 font-bold tracking-wider ml-1">Email</label>
                                 <div className="relative group/input">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                         <Mail className="h-4 w-4 text-slate-500 group-focus-within/input:text-indigo-400 transition-colors" />
                                     </div>
                                     <input
+                                        id="login-email"
                                         type="email"
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
@@ -97,12 +98,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
                             {/* Password Input */}
                             <div className="space-y-1 text-left">
-                                <label className="text-[10px] uppercase text-slate-500 font-bold tracking-wider ml-1">Password</label>
+                                <label htmlFor="login-password" className="text-[10px] uppercase text-slate-500 font-bold tracking-wider ml-1">Password</label>
                                 <div className="relative group/input">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                         <Lock className="h-4 w-4 text-slate-500 group-focus-within/input:text-indigo-400 transition-colors" />
                                     </div>
                                     <input
+                                        id="login-password"
                                         type="password"
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}

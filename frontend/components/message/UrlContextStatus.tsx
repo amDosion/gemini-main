@@ -3,6 +3,19 @@ import React from 'react';
 import { UrlContextMetadata } from '../../types/types';
 import { Link2, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
 
+/** Allow only http/https URLs; returns undefined for any other scheme. */
+function safeHref(url: string): string | undefined {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return url;
+    }
+  } catch {
+    // malformed URL — do not render as href
+  }
+  return undefined;
+}
+
 interface UrlContextStatusProps {
   metadata: UrlContextMetadata | null | undefined;
 }
@@ -27,7 +40,7 @@ export const UrlContextStatus: React.FC<UrlContextStatusProps> = ({ metadata }) 
                             {isSuccess ? <CheckCircle2 size={14} className="text-emerald-500 shrink-0" /> : 
                              isUnsafe ? <AlertTriangle size={14} className="text-orange-500 shrink-0" /> :
                              <XCircle size={14} className="text-red-500 shrink-0" />}
-                            <a href={item.retrievedUrl} target="_blank" rel="noreferrer" className="truncate text-slate-300 hover:text-blue-400 hover:underline" title={item.retrievedUrl}>
+                            <a href={safeHref(item.retrievedUrl)} target="_blank" rel="noopener noreferrer" className="truncate text-slate-300 hover:text-blue-400 hover:underline" title={item.retrievedUrl}>
                                 {item.retrievedUrl}
                             </a>
                         </div>

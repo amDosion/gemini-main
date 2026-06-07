@@ -40,7 +40,7 @@ const IconButton: React.FC<IconButtonProps> = ({
   );
 };
 
-type JsonObject = Record<string, any>;
+type JsonObject = Record<string, unknown>;
 type TransportType = 'stdio' | 'sse' | 'http' | 'streamable-http' | 'unknown';
 type MenuPosition = { top: number; left: number; maxHeight: number };
 

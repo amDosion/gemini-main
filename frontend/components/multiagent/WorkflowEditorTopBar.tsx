@@ -138,6 +138,7 @@ export const WorkflowEditorTopBar: React.FC<WorkflowEditorTopBarProps> = ({
               disabled={!canUndo}
               className={groupedIconButtonClass}
               title="撤销"
+              aria-label="撤销"
             >
               <Undo2 size={13} />
             </button>
@@ -146,6 +147,7 @@ export const WorkflowEditorTopBar: React.FC<WorkflowEditorTopBarProps> = ({
               disabled={!canRedo}
               className={groupedIconButtonClass}
               title="重做"
+              aria-label="重做"
             >
               <Redo2 size={13} />
             </button>
@@ -154,6 +156,7 @@ export const WorkflowEditorTopBar: React.FC<WorkflowEditorTopBarProps> = ({
               disabled={!canDeleteSelectedNode}
               className={groupedIconButtonClass}
               title="删除选中节点"
+              aria-label="删除选中节点"
             >
               <Trash2 size={13} />
             </button>
@@ -208,6 +211,7 @@ export const WorkflowEditorTopBar: React.FC<WorkflowEditorTopBarProps> = ({
                 onClick={onExit}
                 className={groupedIconButtonClass}
                 title="返回聊天界面"
+                aria-label="返回聊天界面"
               >
                 <MessageSquare size={13} />
               </button>
@@ -225,6 +229,7 @@ export const WorkflowEditorTopBar: React.FC<WorkflowEditorTopBarProps> = ({
             onClick={onDismissExecuteErrorBanner}
             className="p-0.5 rounded hover:bg-rose-500/20 text-rose-200/80 hover:text-rose-100 transition-colors"
             title="关闭错误提示"
+            aria-label="关闭错误提示"
           >
             <X size={12} />
           </button>

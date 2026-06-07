@@ -112,23 +112,25 @@ class ApiClient {
 
   /**
    * 尝试刷新 token
+   *
+   * 使用 .finally() 链接在共享 promise 上重置状态，确保所有并发调用者
+   * 都能观察到相同的 promise 生命周期，而不会因 finally 块过早清空状态
+   * 导致新进入的调用者拿到已重置的引用。
    */
-  private async tryRefreshToken(): Promise<boolean> {
-    // 如果已经在刷新中，等待结果
+  private tryRefreshToken(): Promise<boolean> {
+    // 如果已经在刷新中，直接返回同一个 promise，所有等待方共享结果
     if (this.isRefreshing && this.refreshPromise) {
       return this.refreshPromise;
     }
 
     this.isRefreshing = true;
-    this.refreshPromise = authService.refreshToken();
-
-    try {
-      const result = await this.refreshPromise;
-      return result;
-    } finally {
+    // 将 .finally() 挂在共享 promise 上，确保状态在所有消费者 settle 后重置
+    this.refreshPromise = authService.refreshToken().finally(() => {
       this.isRefreshing = false;
       this.refreshPromise = null;
-    }
+    });
+
+    return this.refreshPromise;
   }
 
   // 便捷方法

@@ -168,7 +168,7 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
     // 等 activeModelConfig 就绪才 fetch，避免 mount 时 modelId 未定义的浪费请求
     { enabled: !!activeModelConfig?.id }
   );
-  const schemaMaxCount = (genSchema?.constraints as Record<string, unknown>)?.max_image_count;
+  const schemaMaxCount = genSchema?.constraints?.max_image_count;
   const maxImageCount = typeof schemaMaxCount === 'number' ? schemaMaxCount : isOpenAI ? 1 : 4;
   const supportsOutputMimeControls = Boolean(genSchema?.paramOptions?.output_mime_type?.length);
   const supportsOutputFormatControls = Boolean(genSchema?.paramOptions?.output_format?.length);
@@ -257,47 +257,47 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
     []
   );
 
-	  const getDisplayImageAttachments = useCallback(
-	    (attachments?: Attachment[]) => {
-	      return (attachments || []).filter((attachment) =>
-	        Boolean(attachment.file || getGeneratedAttachmentUrl(attachment))
-	      );
-	    },
-	    [getGeneratedAttachmentUrl]
-	  );
+  const getDisplayImageAttachments = useCallback(
+    (attachments?: Attachment[]) => {
+      return (attachments || []).filter((attachment) =>
+        Boolean(attachment.file || getGeneratedAttachmentUrl(attachment))
+      );
+    },
+    [getGeneratedAttachmentUrl]
+  );
 
-	  const displayImages = useMemo(() => {
-	    return getDisplayImageAttachments(activeBatchMessage?.attachments).map((att, index) => {
-	      const fallbackId = att.id || `${activeBatchMessage?.id || 'image-gen'}-${index}`;
-	      const sourceAttachment = att.id ? att : { ...att, id: fallbackId };
-	      const displayUrl = getGeneratedAttachmentUrl(sourceAttachment);
-	      if (displayUrl) {
-	        return displayUrl === sourceAttachment.url
-	          ? sourceAttachment
-	          : { ...sourceAttachment, url: displayUrl };
-	      }
-	      return sourceAttachment;
-	    });
-	  }, [
-	    activeBatchMessage?.attachments,
-	    activeBatchMessage?.id,
-	    getDisplayImageAttachments,
-	    getGeneratedAttachmentUrl,
-	  ]);
+  const displayImages = useMemo(() => {
+    return getDisplayImageAttachments(activeBatchMessage?.attachments).map((att, index) => {
+      const fallbackId = att.id || `${activeBatchMessage?.id || 'image-gen'}-${index}`;
+      const sourceAttachment = att.id ? att : { ...att, id: fallbackId };
+      const displayUrl = getGeneratedAttachmentUrl(sourceAttachment);
+      if (displayUrl) {
+        return displayUrl === sourceAttachment.url
+          ? sourceAttachment
+          : { ...sourceAttachment, url: displayUrl };
+      }
+      return sourceAttachment;
+    });
+  }, [
+    activeBatchMessage?.attachments,
+    activeBatchMessage?.id,
+    getDisplayImageAttachments,
+    getGeneratedAttachmentUrl,
+  ]);
 
   const carouselItems = useMemo<CarouselMediaItem[]>(
     () =>
-	      displayImages.map((att, idx) => ({
-	        id: att.id || `${idx}`,
-	        url: att.url || null,
-	        thumbUrl: att.url || null,
-	        source: {
-	          ...att,
-	          attachmentId: att.id,
-	          url: att.url || undefined,
-	        },
-	        alt: `缩略图 ${idx + 1}`,
-	      })),
+        displayImages.map((att, idx) => ({
+          id: att.id || `${idx}`,
+          url: att.url || null,
+          thumbUrl: att.url || null,
+          source: {
+            ...att,
+            attachmentId: att.id,
+            url: att.url || undefined,
+          },
+          alt: `缩略图 ${idx + 1}`,
+        })),
     [displayImages]
   );
 
@@ -441,7 +441,7 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
     emptyText: 'No generation history.',
     fallbackSelection: 'first',
     getDisplayAttachments: getDisplayImageAttachments,
-	    getAttachmentUrl: getGeneratedAttachmentUrl,
+    getAttachmentUrl: getGeneratedAttachmentUrl,
     extractPrompts: extractHistoryPrompts,
     onSelectItem: ({ message }) => {
       setSelectedMsgId(message.id);
@@ -629,7 +629,16 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
       handleCarouselPrev,
       handleCarouselNext,
       handleCarouselSelect,
-      canvas,
+      canvas.canvasStyle,
+      canvas.handleWheel,
+      canvas.handleMouseDown,
+      canvas.handleMouseMove,
+      canvas.handleMouseUp,
+      canvas.handleZoomIn,
+      canvas.handleZoomOut,
+      canvas.handleReset,
+      canvas.isDragging,
+      canvas.zoom,
     ]
   );
 

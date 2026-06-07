@@ -71,6 +71,20 @@ export interface AuthError {
   code?: string;
 }
 
+/** Raw shape returned by GET /auth/config (after camelCase middleware). */
+interface AuthConfigRaw {
+  allowRegistration: boolean;
+}
+
+/**
+ * Raw shape returned by POST /auth/register.
+ * Backend returns either a wrapped form { user, hasActiveProfile } or
+ * the User object directly; both shapes are handled below.
+ */
+type RegisterResponseRaw =
+  | { user: User; hasActiveProfile?: boolean }
+  | (User & { user?: undefined });
+
 /**
  * 检查 token 是否过期
  */
@@ -231,7 +245,7 @@ class AuthService {
         if (!response.ok) {
           throw new Error('Failed to fetch auth config');
         }
-        const data = await readJsonResponse<any>(response);
+        const data = await readJsonResponse<AuthConfigRaw>(response);
         const result: AuthConfig = {
           // ✅ 后端统一返回 snake_case，中间件转换为 camelCase
           allowRegistration: data.allowRegistration ?? false,
@@ -269,7 +283,7 @@ class AuthService {
       const error = await parseHttpError(response, 'Registration failed');
       throw new Error(error.message);
     }
-    const result = await readJsonResponse<any>(response);
+    const result = await readJsonResponse<RegisterResponseRaw>(response);
     removeAccessToken();
     this.clearUserCache();
     await this.clearPrivateBrowserCaches();
@@ -297,7 +311,7 @@ class AuthService {
       const error = await parseHttpError(response, 'Login failed');
       throw new Error(error.message);
     }
-    const result = await readJsonResponse<any>(response);
+    const result = await readJsonResponse<LoginResponse>(response);
     removeAccessToken();
     // ✅ Wave 2 perf: 清除可能存在的上一用户缓存（新用户登录场景）
     this.clearUserCache();
@@ -384,33 +398,29 @@ class AuthService {
 
     const generationAtStart = this.userCacheGeneration;
     const promise = (async (): Promise<User | null> => {
-      try {
-        const response = await fetchWithTimeout(`${this.baseUrl}/me`, {
-          method: 'GET',
-          withAuth: true,
-          skipAuth: true,
-        });
-        if (!response.ok) {
-          if (response.status === 401) {
-            await this.clearLocalPrivateSessionState();
-            return null;
-          }
-          throw new Error('Failed to get current user');
-        }
-        const result = await readJsonResponse<any>(response);
-
-        if (!this.isUserCacheGenerationCurrent(generationAtStart)) {
+      const response = await fetchWithTimeout(`${this.baseUrl}/me`, {
+        method: 'GET',
+        withAuth: true,
+        skipAuth: true,
+      });
+      if (!response.ok) {
+        if (response.status === 401) {
+          await this.clearLocalPrivateSessionState();
           return null;
         }
-
-        const scopeApplied = await this.applyAuthenticatedUserScope(result, generationAtStart);
-        if (!scopeApplied) {
-          return null;
-        }
-        return result;
-      } catch (error) {
-        throw error;
+        throw new Error('Failed to get current user');
       }
+      const result = await readJsonResponse<User>(response);
+
+      if (!this.isUserCacheGenerationCurrent(generationAtStart)) {
+        return null;
+      }
+
+      const scopeApplied = await this.applyAuthenticatedUserScope(result, generationAtStart);
+      if (!scopeApplied) {
+        return null;
+      }
+      return result;
     })();
 
     // 仅在成功（user 非空）时保留缓存；null/失败 不缓存以允许后续重试

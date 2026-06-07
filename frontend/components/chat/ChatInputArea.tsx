@@ -101,12 +101,14 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     if (initialPrompt) setInput(initialPrompt);
   }, [initialPrompt]);
 
+  // Mount-only seed: initialAttachments is a one-time initial value, not a reactive prop.
+  // Responding to subsequent changes is the caller's responsibility via activeAttachments.
   useEffect(() => {
     if (initialAttachments !== undefined) {
       updateAttachments(initialAttachments);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialAttachments]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mount-only seed
+  }, []);
 
   // File handling
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -419,6 +421,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
         {isLoading ? (
           <button 
             onClick={onStop}
+            aria-label="Stop generation"
             className="p-3 rounded-full bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all hover:scale-105 active:scale-95 mb-0.5"
           >
             <StopCircle size={20} />
@@ -426,6 +429,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
         ) : (
           <button 
             onClick={handleSend}
+            aria-label="Send message"
             disabled={!input.trim() && attachments.length === 0 && !hasActiveContext}
             className={`p-3 rounded-full transition-all duration-300 shadow-lg mb-0.5 ${
               (!input.trim() && attachments.length === 0 && !hasActiveContext)

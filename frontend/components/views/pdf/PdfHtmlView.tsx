@@ -2,8 +2,15 @@ import React from 'react';
 import { Download } from 'lucide-react';
 import { downloadBlobInBrowser } from '../../../services/downloadService';
 
+// Recursive union type matching the backend PDF extraction payload.
+// PdfExtractData is intentionally used as a mutually recursive alias via
+// the interface below; TypeScript resolves this lazily.
+type PdfExtractPrimitive = string | number | boolean | null;
+type PdfExtractValue = PdfExtractPrimitive | PdfExtractData | PdfExtractValue[];
+interface PdfExtractData extends Record<string, PdfExtractValue> {}
+
 interface PdfHtmlViewProps {
-  data: Record<string, any>;
+  data: PdfExtractData;
 }
 
 export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data }) => {
@@ -24,7 +31,7 @@ export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data }) => {
   };
 
   // 渲染数组为表格
-  const renderArrayTable = (items: Record<string, unknown>[], title: string) => {
+  const renderArrayTable = (items: PdfExtractValue[], title: string) => {
     if (items.length === 0) return <p className="text-slate-500 italic text-sm">无数据</p>;
     
     const firstItem = items[0];
@@ -42,12 +49,12 @@ export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data }) => {
               </tr>
             </thead>
             <tbody>
-              {items.map((item, idx) => (
-                <tr key={idx} className="hover:bg-slate-800/30">
+              {(items as Record<string, PdfExtractValue>[]).map((item, idx) => (
+                <tr key={`${idx}-${String(item[headers[0]] ?? '')}`} className="hover:bg-slate-800/30">
                   <td className="px-3 py-2 text-slate-500 border border-slate-700/50">{idx + 1}</td>
                   {headers.map(h => (
                     <td key={h} className="px-3 py-2 text-slate-200 border border-slate-700/50">
-                      {renderValue((item as Record<string, any>)[h])}
+                      {renderValue(item[h])}
                     </td>
                   ))}
                 </tr>
@@ -62,7 +69,7 @@ export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data }) => {
     return (
       <ol className="list-decimal list-inside space-y-1 mt-2 text-slate-200">
         {items.map((item, idx) => (
-          <li key={idx}>{renderValue(item)}</li>
+          <li key={`${idx}-${String(item)}`}>{renderValue(item)}</li>
         ))}
       </ol>
     );
@@ -87,7 +94,7 @@ export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data }) => {
   };
 
   // 递归渲染对象
-  const renderObject = (obj: Record<string, any>, level: number = 1): React.ReactNode => {
+  const renderObject = (obj: PdfExtractData, level: number = 1): React.ReactNode => {
     return (
       <div className={level > 1 ? 'ml-4 pl-4 border-l-2 border-slate-700' : ''}>
         {Object.entries(obj).map(([key, value]) => {
@@ -104,7 +111,7 @@ export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data }) => {
             return (
               <div key={key} className="mb-4">
                 {renderHeading(key, level)}
-                {renderObject(value, level + 1)}
+                {renderObject(value as PdfExtractData, level + 1)}
               </div>
             );
           }
@@ -122,7 +129,7 @@ export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data }) => {
 
   // 生成可下载的 HTML 文档
   const generateDownloadHtml = (): string => {
-    const generateHtmlContent = (obj: Record<string, any>, level: number = 1): string => {
+    const generateHtmlContent = (obj: PdfExtractData, level: number = 1): string => {
       let html = '';
       const HeadingTag = `h${Math.min(level, 6)}`;
 
@@ -139,7 +146,7 @@ export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data }) => {
             value.forEach((item, idx) => {
               html += `<tr><td>${idx + 1}</td>`;
               headers.forEach(h => {
-                html += `<td>${escapeHtml(String((item as Record<string, any>)[h] ?? '-'))}</td>`;
+                html += `<td>${escapeHtml(String((item as Record<string, PdfExtractValue>)[h] ?? '-'))}</td>`;
               });
               html += '</tr>';
             });
@@ -151,7 +158,7 @@ export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data }) => {
           }
         } else if (typeof value === 'object' && value !== null) {
           html += `<${HeadingTag} class="section-title">${escapeHtml(key)}</${HeadingTag}>`;
-          html += `<div class="nested">${generateHtmlContent(value, level + 1)}</div>`;
+          html += `<div class="nested">${generateHtmlContent(value as PdfExtractData, level + 1)}</div>`;
         } else {
           html += `<div class="field"><span class="label">${escapeHtml(key)}:</span> <span class="value">${escapeHtml(String(value ?? '-'))}</span></div>`;
         }

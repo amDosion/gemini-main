@@ -1,9 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PlusCircle, Database, Trash2, Edit3, Check, Layers, List, Copy, Zap, Cpu, Globe, Sparkles, Server, AlertTriangle, ChevronLeft, Loader2, Eye, Box, MoreHorizontal, Flame } from 'lucide-react';
 import { ConfigProfile } from '../../../services/db';
-import { ModelConfig, ApiProtocol } from '../../../types/types';
-import { LLMFactory } from '../../../services/LLMFactory';
+import { ModelConfig } from '../../../types/types';
 import { getAuthHeaders } from '../../../services/apiClient';
 import { v4 as uuidv4 } from 'uuid';
 import { ConfirmDialog } from '../../common/ConfirmDialog';
@@ -41,6 +40,16 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
     const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
+
+    // Ref to abort in-flight model fetch when a new call starts or on unmount
+    const abortControllerRef = useRef<AbortController | null>(null);
+
+    useEffect(() => {
+        return () => {
+            abortControllerRef.current?.abort();
+        };
+    }, []);
+
     const handleDeleteClick = (id: string) => {
         setDeleteTargetId(id);
         setOpenMenuId(null);
@@ -72,15 +81,6 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
         };
     }, []);
 
-    // --- 日志：记录 profiles 数据（仅在开发模式下且数据变化时） ---
-    useEffect(() => {
-        // 始终输出日志以便调试
-        const profileCount = profiles?.length || 0;
-        
-        if (profileCount === 0 && profiles) {
-        }
-    }, [profiles, activeProfileId]);
-
     const getProviderIcon = (pid: string) => {
         if (pid.includes('google')) return <Zap size={20} />;
         if (pid.includes('deepseek')) return <Cpu size={20} />;
@@ -106,6 +106,11 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
     };
 
     const handleInspectProfile = async (profile: ConfigProfile) => {
+        // Abort any previous in-flight request before starting a new one
+        abortControllerRef.current?.abort();
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
         setPreviewProfile(profile);
         setPreviewError(null);
         setPreviewModels([]);
@@ -118,6 +123,7 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
             // 这样前端不需要处理加密的 API key
             const response = await fetch(`/api/models/${profile.providerId}?use_cache=false`, {
                 headers: getAuthHeaders(),
+                signal: controller.signal,
             });
 
             if (!response.ok) {
@@ -140,6 +146,10 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
                 setPreviewError("No models found. Check API Key or connectivity.");
             }
         } catch (e) {
+            if (e instanceof DOMException && e.name === 'AbortError') {
+                // Request was intentionally cancelled; leave state as-is
+                return;
+            }
             setPreviewError((getErrorMessage(e)) || "Failed to fetch models.");
         } finally {
             setIsPreviewLoading(false);

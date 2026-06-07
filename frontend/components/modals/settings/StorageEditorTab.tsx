@@ -3,6 +3,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { createPortal } from 'react-dom';
 import { Save, X, Cloud, Server, HardDrive, Database } from 'lucide-react';
 import {
@@ -210,7 +211,7 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
     }
 
     const storageConfig: StorageConfig = {
-      id: initialData?.id || `storage_${Date.now()}`,
+      id: initialData?.id || `storage_${uuidv4()}`,
       name: name.trim(),
       provider,
       enabled,

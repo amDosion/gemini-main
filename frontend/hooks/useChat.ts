@@ -31,7 +31,6 @@ import {
   HandlerMode,
   ResearchActionSubmitHandler,
 } from './handlers/types';
-import { getUrlType } from './handlers/attachmentUtils';
 import {
   AUTO_RESEARCH_CONTEXT_WINDOW,
   AUTO_RESEARCH_EVIDENCE_WINDOW,
@@ -497,16 +496,6 @@ export const useChat = (
 
       // ✅ 调试日志：检查 thoughts/textResponse/enhancedPrompt 是否被添加到消息中
 
-      // ✅ 详细日志：记录附件显示使用的URL类型
-      if (displayModelMessage.attachments && displayModelMessage.attachments.length > 0) {
-        displayModelMessage.attachments.forEach((att, idx) => {
-          const urlType = getUrlType(att.url, att.uploadStatus);
-
-          const hasCloudUrl =
-            att.uploadStatus === 'completed' &&
-            (att.url?.startsWith('http://') || att.url?.startsWith('https://'));
-        });
-      }
 
       setMessagesIfCurrentSession((prev) =>
         prev.map((msg) => (msg.id === modelMessageId ? displayModelMessage : msg))
@@ -586,12 +575,6 @@ export const useChat = (
             // ✅ 重要：当前会话的 messages 状态保留 Blob URL 用于显示
             // 不需要更新 setMessages，因为 UI 显示使用的是 messages 状态，不是数据库中的
 
-            // ✅ 详细日志：记录保存到数据库的附件URL类型
-            if (dbModelMessage.attachments && dbModelMessage.attachments.length > 0) {
-              dbModelMessage.attachments.forEach((att, idx) => {
-                const urlType = getUrlType(att.url, att.uploadStatus);
-              });
-            }
           })
           .catch((persistError) => {
             // hooks-contexts-1: never silently drop a background persistence failure

@@ -48,6 +48,7 @@ const ThinkBlock: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   return (
     <div className="my-3 rounded-lg border border-slate-700/50 bg-slate-900/50 overflow-hidden">
       <button
+        aria-expanded={isExpanded}
         onClick={() => setIsExpanded(!isExpanded)}
         className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-400 hover:text-slate-300 hover:bg-slate-800/50 transition-colors"
       >
@@ -132,7 +133,7 @@ const sanitizeSchema = {
     // (CSS injection / UI redress, e.g. position:fixed overlays). className only.
     '*': [...(defaultSchema.attributes?.['*'] || []), 'className'],
     img: [...(defaultSchema.attributes?.['img'] || []), 'src', 'alt', 'width', 'height', 'loading'],
-    a: [...(defaultSchema.attributes?.['a'] || []), 'href', 'target', 'rel'],
+    a: [...(defaultSchema.attributes?.['a'] || []), 'target', 'rel'],
   },
 };
 

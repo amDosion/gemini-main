@@ -287,7 +287,7 @@ const ShortcutItem: React.FC<{ keys: string[]; description: string }> = ({ keys,
     <span className="text-sm text-gray-700">{description}</span>
     <div className="flex items-center gap-1">
       {keys.map((key, index) => (
-        <React.Fragment key={index}>
+        <React.Fragment key={key}>
           {index > 0 && <span className="text-gray-400 text-xs">+</span>}
           <kbd className="px-2 py-1 text-xs font-mono bg-gray-100 border border-gray-300 rounded">
             {key}

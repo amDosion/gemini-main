@@ -3,7 +3,7 @@
  *
  * 1:1 抽离自 `App.tsx` L22-38（< 800 行合规拆分）。
  *
- * 仅 App.tsx 使用；将 lazy 包装集中此处，主组件不再持有 5 个 dynamic import 块。
+ * 仅 App.tsx 使用；将 lazy 包装集中此处，主组件不再持有 4 个 dynamic import 块。
  */
 
 import { lazy } from 'react';
@@ -24,8 +24,4 @@ export const PersonaManagementView = lazy(() =>
   import('./components/views/PersonaManagementView').then((m) => ({
     default: m.PersonaManagementView,
   }))
-);
-
-export const LiveAPIView = lazy(() =>
-  import('./components/live/LiveAPIView').then((m) => ({ default: m.LiveAPIView }))
 );

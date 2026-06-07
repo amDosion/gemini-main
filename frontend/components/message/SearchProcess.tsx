@@ -19,7 +19,7 @@ export const SearchProcess: React.FC<SearchProcessProps> = ({ queries, entryPoin
         {queries.length > 0 ? (
         <div className="space-y-2">
             {queries.map((query, idx) => (
-            <div key={idx} className="flex items-start gap-2 text-xs text-slate-400">
+            <div key={query + idx} className="flex items-start gap-2 text-xs text-slate-400">
                 <div className="mt-1.5 w-1 h-1 rounded-full bg-blue-500 shrink-0"></div>
                 <div>
                     <span className="opacity-70 mr-1">Searching:</span>

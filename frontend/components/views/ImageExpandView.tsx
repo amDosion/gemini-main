@@ -246,28 +246,38 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
   }, [selectedMsgId]);
 
   // 键盘导航 ↑/↓
-  useEffect(() => {
-    if (filteredHistoryBatches.length === 0) return;
+  // 使用 ref-mirror 模式持有 filteredHistoryBatches，避免每次历史变化都重挂 window keydown
+  // listener；isInteractiveKeyboardTarget 为 useCallback 稳定引用，deps 收敛后 effect 仅在
+  // mount/unmount 时运行。
+  const isInteractiveKeyboardTarget = useCallback((target: EventTarget | null): boolean => {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+    const tagName = target.tagName;
+    const isFormInput = tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
+    const isEditable =
+      target.isContentEditable || Boolean(target.closest('[contenteditable="true"]'));
+    return isFormInput || isEditable;
+  }, []);
 
+  const filteredHistoryBatchesRef = useRef(filteredHistoryBatches);
+  filteredHistoryBatchesRef.current = filteredHistoryBatches;
+
+  useEffect(() => {
     const handleHistoryNavigation = (e: KeyboardEvent) => {
       if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-      const target = e.target as HTMLElement | null;
-      if (target) {
-        const tagName = target.tagName;
-        if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') return;
-        if (target.isContentEditable || Boolean(target.closest('[contenteditable="true"]'))) return;
-      }
+      if (isInteractiveKeyboardTarget(e.target)) return;
+      const batches = filteredHistoryBatchesRef.current;
+      if (batches.length === 0) return;
+
       e.preventDefault();
       closeHoverPreview();
       setSelectedMsgId((prevId) => {
-        const currentIndex = prevId ? filteredHistoryBatches.findIndex((m) => m.id === prevId) : 0;
+        const currentIndex = prevId ? batches.findIndex((m) => m.id === prevId) : 0;
         const safeCurrentIndex = currentIndex >= 0 ? currentIndex : 0;
         const delta = e.key === 'ArrowUp' ? -1 : 1;
-        const nextIndex = Math.max(
-          0,
-          Math.min(filteredHistoryBatches.length - 1, safeCurrentIndex + delta)
-        );
-        return filteredHistoryBatches[nextIndex]?.id || prevId;
+        const nextIndex = Math.max(0, Math.min(batches.length - 1, safeCurrentIndex + delta));
+        return batches[nextIndex]?.id || prevId;
       });
     };
 
@@ -275,7 +285,7 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
     return () => {
       window.removeEventListener('keydown', handleHistoryNavigation);
     };
-  }, [filteredHistoryBatches, closeHoverPreview]);
+  }, [closeHoverPreview, isInteractiveKeyboardTarget]);
 
   // ── Hover preview view wrapper ──
   // useHoverPromptPreview 已托管 position 计算 / rAF 同步 / scroll+resize listener。

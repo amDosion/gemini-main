@@ -128,11 +128,16 @@ export const useWorkflowExecutionStream = () => {
       if (!safeExecutionId) {
         throw new Error('未获取到 executionId');
       }
+      // Validate that the ID matches an expected alphanumeric/UUID pattern
+      // before embedding it in a URL to prevent path-segment injection.
+      if (!/^[0-9a-f-]{1,128}$/i.test(safeExecutionId)) {
+        throw new Error(`executionId 格式无效: ${safeExecutionId}`);
+      }
 
       appendSystemLog('已提交执行任务，正在连接状态流...', 'info');
 
       await new Promise<void>((resolve, reject) => {
-        const eventSource = new EventSource(`/api/workflows/${safeExecutionId}/status`);
+        const eventSource = new EventSource(`/api/workflows/${encodeURIComponent(safeExecutionId)}/status`);
         let finished = false;
         let lastEventAt = Date.now();
         let pollingTimer: number | undefined;

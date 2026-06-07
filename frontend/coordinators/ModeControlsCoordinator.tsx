@@ -5,7 +5,7 @@
  * 用于 View 组件右侧的参数面板
  *
  * 架构说明：
- * - 控件注册表维护“通用实现 + provider 差异覆盖”
+ * - 控件注册表维护"通用实现 + provider 差异覆盖"
  * - 协调者按 providerId + mode 分发渲染
  *
  * 使用方式：
@@ -19,17 +19,8 @@
  */
 import React from 'react';
 import { AppMode, ModelConfig } from '../types/types';
-import { ControlsState } from '../controls/types';
-import { getProviderControls } from '../controls/modes/registry';
-import { useModeControlsSchema } from '../hooks/useModeControlsSchema';
-
-/**
- * 需要从后端 `/api/.../controls` 接口动态获取 schema 的模式集合。
- * 这些模式下，Coordinator 内部调用 `useModeControlsSchema`，调用方仅传 mode/providerId/currentModel。
- * 调用方仍可显式传 controlsSchema / controlsSchemaLoading / controlsSchemaError 进行覆盖（用于测试或视图级共用 schema）。
- */
-const SCHEMA_DRIVEN_MODES = new Set<AppMode>(['video-gen']);
 import {
+  ControlsState,
   ChatControlsProps,
   ImageGenControlsProps,
   ImageEditControlsProps,
@@ -41,6 +32,28 @@ import {
   PdfExtractControlsProps,
   MultiAgentControlsProps,
 } from '../controls/types';
+import { getProviderControls } from '../controls/modes/registry';
+import {
+  useModeControlsSchema,
+  ModeControlsSchema,
+} from '../hooks/useModeControlsSchema';
+
+/**
+ * 需要从后端 `/api/.../controls` 接口动态获取 schema 的模式集合。
+ * 这些模式下，Coordinator 内部调用 `useModeControlsSchema`，调用方仅传 mode/providerId/currentModel。
+ * 调用方仍可显式传 controlsSchema / controlsSchemaLoading / controlsSchemaError 进行覆盖（用于测试或视图级共用 schema）。
+ */
+const SCHEMA_DRIVEN_MODES = new Set<AppMode>(['video-gen']);
+
+/**
+ * Helper type: intersects T with the three schema override fields so they can be
+ * spread onto schema-driven controls without unsafe casts.
+ */
+type WithControlsSchema<T> = T & {
+  controlsSchema?: ModeControlsSchema | null;
+  controlsSchemaLoading?: boolean;
+  controlsSchemaError?: string | null;
+};
 
 type ModeControlsCoordinatorProps = {
   mode: AppMode;
@@ -52,6 +65,13 @@ type ModeControlsCoordinatorProps = {
   controls?: ControlsState;
   /** 最大图片数量（image-gen 模式） */
   maxImageCount?: number;
+  /**
+   * Schema override props for schema-driven modes (e.g. video-gen).
+   * When provided, these take precedence over the internally fetched schema.
+   */
+  controlsSchema?: ModeControlsSchema | null;
+  controlsSchemaLoading?: boolean;
+  controlsSchemaError?: string | null;
 } & Partial<ChatControlsProps> &
   Partial<ImageGenControlsProps> &
   Partial<ImageEditControlsProps> &
@@ -72,6 +92,9 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
     onModelSelect,
     controls,
     maxImageCount,
+    controlsSchema: controlsSchemaOverride,
+    controlsSchemaLoading: controlsSchemaLoadingOverride,
+    controlsSchemaError: controlsSchemaErrorOverride,
     ...controlProps
   } = props;
 
@@ -86,22 +109,22 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
   } = useModeControlsSchema(providerId, mode, currentModel?.id, {
     enabled: isSchemaDriven && !!currentModel?.id,
   });
-  const schemaProps = isSchemaDriven
-    ? {
-        controlsSchema:
-          (controlProps as { controlsSchema?: unknown }).controlsSchema !== undefined
-            ? (controlProps as { controlsSchema?: unknown }).controlsSchema
-            : internalSchema,
-        controlsSchemaLoading:
-          (controlProps as { controlsSchemaLoading?: unknown }).controlsSchemaLoading !== undefined
-            ? (controlProps as { controlsSchemaLoading?: unknown }).controlsSchemaLoading
-            : internalSchemaLoading,
-        controlsSchemaError:
-          (controlProps as { controlsSchemaError?: unknown }).controlsSchemaError !== undefined
-            ? (controlProps as { controlsSchemaError?: unknown }).controlsSchemaError
-            : internalSchemaError,
-      }
-    : {};
+
+  const schemaProps =
+    isSchemaDriven
+      ? {
+          controlsSchema:
+            controlsSchemaOverride !== undefined ? controlsSchemaOverride : internalSchema,
+          controlsSchemaLoading:
+            controlsSchemaLoadingOverride !== undefined
+              ? controlsSchemaLoadingOverride
+              : internalSchemaLoading,
+          controlsSchemaError:
+            controlsSchemaErrorOverride !== undefined
+              ? controlsSchemaErrorOverride
+              : internalSchemaError,
+        }
+      : {};
 
   // 获取当前提供商的控件集
   const Controls = getProviderControls(providerId);
@@ -132,6 +155,9 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
     case 'image-inpainting':
     case 'image-background-edit':
     case 'image-recontext':
+    // product-recontext shares ImageEditControls; the component detects the mode
+    // variant internally (e.g. showRecontextCountHint) via the `mode` prop.
+    case 'product-recontext':
       return (
         <Controls.ImageEditControls
           mode={mode}
@@ -217,8 +243,19 @@ export const ModeControlsCoordinator: React.FC<ModeControlsCoordinatorProps> = (
         />
       );
 
-    default:
+    // These modes operate through their own dedicated view surfaces and have no
+    // right-panel parameter controls at this time.
+    case 'image-upscale':
+    case 'image-segmentation':
       return null;
+
+    default: {
+      // Compile-time exhaustiveness check: if a new AppMode value is added and
+      // not handled above, TypeScript will flag `mode` as not assignable to `never`.
+      const _exhaustive: never = mode;
+      void _exhaustive;
+      return null;
+    }
   }
 };
 

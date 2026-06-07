@@ -283,16 +283,6 @@ export interface MultiAgentControlsProps {
 }
 
 // ============================================
-// Coordinator Props
-// ============================================
-
-export interface ModeControlsCoordinatorProps {
-  mode: AppMode;
-  providerId: string;
-  currentModel?: ModelConfig;
-}
-
-// ============================================
 // Controls State (for useControlsState hook)
 // ============================================
 

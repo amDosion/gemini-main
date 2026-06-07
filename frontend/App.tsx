@@ -17,6 +17,7 @@ import {
   WelcomeScreen,
 } from './components';
 import { getErrorMessage } from './utils/errorMessage';
+import { GlobalErrorBoundary } from './components/common/GlobalErrorBoundary';
 
 // ✅ 懒加载非关键视图组件（命名导出需要转换为默认导出）
 // 顶层视图 lazy 包装抽离至 ./lazyViews（< 800 行合规）
@@ -105,7 +106,6 @@ const AppContent: React.FC = () => {
     nonCriticalData,
     isLoading: isInitLoading,
     error: initError,
-    isConfigReady,
     retry,
   } = useInitData(shouldLoadInitData);
 
@@ -637,7 +637,6 @@ const AppContent: React.FC = () => {
       showError,
       createNewSession,
       activePersonaId,
-      activePersona,
       visibleModels,
       allVisibleModels,
       currentModelId,
@@ -751,6 +750,7 @@ const AppContent: React.FC = () => {
             key={`multi-agent-${workspaceReloadKeys['multi-agent'] || 0}`}
             style={{ display: appMode === 'multi-agent' ? 'contents' : 'none' }}
           >
+            <GlobalErrorBoundary>
             <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
               <MultiAgentView
                 {...commonProps}
@@ -766,6 +766,7 @@ const AppContent: React.FC = () => {
                 appMode="multi-agent"
               />
             </Suspense>
+            </GlobalErrorBoundary>
           </div>
         )}
 
@@ -795,6 +796,7 @@ const AppContent: React.FC = () => {
         <>
           <div className="hidden">{renderWorkspaceViewStack()}</div>
           {isCloudStorageBrowserOpen && (
+            <GlobalErrorBoundary>
             <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
               <CloudStorageView
                 activeStorageId={activeStorageId}
@@ -802,8 +804,10 @@ const AppContent: React.FC = () => {
                 onClose={() => setIsCloudStorageBrowserOpen(false)}
               />
             </Suspense>
+            </GlobalErrorBoundary>
           )}
           {isPersonaViewOpen && (
+            <GlobalErrorBoundary>
             <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
               <PersonaManagementView
                 personas={personas}
@@ -816,6 +820,7 @@ const AppContent: React.FC = () => {
                 onClose={() => setIsPersonaViewOpen(false)}
               />
             </Suspense>
+            </GlobalErrorBoundary>
           )}
         </>
       );

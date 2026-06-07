@@ -5,7 +5,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Plus, MessageSquare, X, Wand2, Crop, Expand, Video, Mic,
-  Trash2, Edit2, Check, ChevronRight, FileText, Shirt, Network
+  Trash2, Edit2, Check, FileText, Shirt, Network
 } from 'lucide-react';
 import { ChatSession, AppMode } from '../../types/types';
 import { CacheIndicator } from '../common/CacheIndicator';
@@ -104,13 +104,16 @@ export const SessionList: React.FC<SessionListProps> = ({
     setEditingSessionId(id);
     setEditingTitle(title);
   };
-  const handleSaveEdit = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
+  const commitEdit = (id: string) => {
     if (onUpdateSessionTitle && editingTitle.trim()) {
       onUpdateSessionTitle(id, editingTitle.trim());
     }
     setEditingSessionId(null);
     setEditingTitle('');
+  };
+  const handleSaveEdit = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    commitEdit(id);
   };
   const handleCancelEdit = () => {
     setEditingSessionId(null);
@@ -135,6 +138,7 @@ export const SessionList: React.FC<SessionListProps> = ({
       {/* New Chat + Search */}
       <div className="px-3 py-2 flex items-center gap-2 shrink-0">
         <button
+          type="button"
           onClick={() => {
             setSearchInput(''); setSearchQuery('');
             onNewChat();
@@ -186,23 +190,24 @@ export const SessionList: React.FC<SessionListProps> = ({
                     value={editingTitle}
                     onChange={(e) => setEditingTitle(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleSaveEdit(e as any, session.id);
+                      if (e.key === 'Enter') commitEdit(session.id);
                       else if (e.key === 'Escape') handleCancelEdit();
                     }}
                     className="flex-1 bg-slate-700 text-white text-sm px-2 py-1 rounded outline-none focus:ring-2 focus:ring-indigo-500"
                     autoFocus
                     onClick={(e) => e.stopPropagation()}
                   />
-                  <button onClick={(e) => handleSaveEdit(e, session.id)} className="p-1 rounded hover:bg-green-600/20 text-green-400 transition-colors flex-shrink-0" title="Save">
+                  <button type="button" onClick={(e) => handleSaveEdit(e, session.id)} className="p-1 rounded hover:bg-green-600/20 text-green-400 transition-colors flex-shrink-0" title="Save">
                     <Check size={14} />
                   </button>
-                  <button onClick={(e) => { e.stopPropagation(); handleCancelEdit(); }} className="p-1 rounded hover:bg-slate-600 text-slate-400 transition-colors flex-shrink-0" title="Cancel">
+                  <button type="button" onClick={(e) => { e.stopPropagation(); handleCancelEdit(); }} className="p-1 rounded hover:bg-slate-600 text-slate-400 transition-colors flex-shrink-0" title="Cancel">
                     <X size={14} />
                   </button>
                 </div>
               ) : (
                 <>
                   <button
+                    type="button"
                     onClick={() => {
                       onSelectSession(session.id);
                       onSessionSelected?.();
@@ -222,18 +227,18 @@ export const SessionList: React.FC<SessionListProps> = ({
                         <div className="flex items-center bg-slate-950 border border-red-700/60 rounded-lg px-2 py-1 gap-1.5 shadow-lg shadow-red-900/30 animate-[fadeIn_0.15s_ease-out]">
                           <Trash2 size={14} className="text-red-400" />
                           <span className="text-xs text-red-300 font-medium whitespace-nowrap">Delete?</span>
-                          <button onClick={(e) => handleConfirmDelete(e, session.id)} className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs font-medium transition-colors">Yes</button>
-                          <button onClick={handleCancelDelete} className="px-2 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-xs font-medium transition-colors">No</button>
+                          <button type="button" onClick={(e) => handleConfirmDelete(e, session.id)} className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs font-medium transition-colors">Yes</button>
+                          <button type="button" onClick={handleCancelDelete} className="px-2 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-xs font-medium transition-colors">No</button>
                         </div>
                       ) : (
                         <>
                           {onUpdateSessionTitle && (
-                            <button onClick={(e) => handleStartEdit(e, session.id, session.title)} className="p-1.5 rounded bg-slate-800 hover:bg-indigo-600 text-indigo-400 hover:text-white transition-colors border border-slate-700" title="编辑标题">
+                            <button type="button" aria-label="Edit title" onClick={(e) => handleStartEdit(e, session.id, session.title)} className="p-1.5 rounded bg-slate-800 hover:bg-indigo-600 text-indigo-400 hover:text-white transition-colors border border-slate-700" title="编辑标题">
                               <Edit2 size={14} />
                             </button>
                           )}
                           {onDeleteSession && (
-                            <button onClick={(e) => handleDeleteSession(e, session.id)} className="p-1.5 rounded bg-slate-800 hover:bg-red-600 text-red-400 hover:text-white transition-colors border border-slate-700" title="删除会话">
+                            <button type="button" aria-label="Delete session" onClick={(e) => handleDeleteSession(e, session.id)} className="p-1.5 rounded bg-slate-800 hover:bg-red-600 text-red-400 hover:text-white transition-colors border border-slate-700" title="删除会话">
                               <Trash2 size={14} />
                             </button>
                           )}
@@ -256,7 +261,7 @@ export const SessionList: React.FC<SessionListProps> = ({
         {!searchQuery && hasMoreSessions && (
           <div className="py-4 text-center">
             {isLoadingMore ? <LoadingSpinner fullscreen={false} showMessage={false} className="min-h-0" /> : (
-              <button onClick={loadMoreSessions} className="text-xs text-slate-500 hover:text-slate-400 transition-colors">加载更多会话...</button>
+              <button type="button" onClick={loadMoreSessions} className="text-xs text-slate-500 hover:text-slate-400 transition-colors">加载更多会话...</button>
             )}
           </div>
         )}

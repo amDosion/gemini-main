@@ -23,6 +23,14 @@ import {
   isMaskPreviewAccessDenied,
 } from './maskHelpers';
 
+/** Typed shape of the image-mask-preview API response envelope. */
+interface MaskPreviewApiResponse {
+  success?: boolean;
+  masks?: Array<{ url: string }>;
+  error?: string;
+  data?: MaskPreviewApiResponse;
+}
+
 export interface AutoMaskPreviewResult {
   /** 成功获取的 mask 预览 URL；失败时 null */
   maskUrl: string | null;
@@ -48,14 +56,16 @@ export const fetchAutoMaskPreview = async (
   try {
     // 获取图片的 base64 数据
     const response = await fetch(activeImageUrl);
+    if (!response.ok) {
+      throw new Error(`Image fetch failed: ${response.status}`);
+    }
     const blob = await response.blob();
     const dataUrl = await fileToBase64(blob);
     // 移除 data:image/...;base64, 前缀
     const base64 = dataUrl.split(',')[1] || dataUrl;
 
     // 调用 mask 预览 API
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await apiClient.request<any>(
+    const result = await apiClient.request<MaskPreviewApiResponse>(
       `/api/modes/${providerId || 'google'}/image-mask-preview`,
       {
         method: 'POST',
@@ -78,9 +88,12 @@ export const fetchAutoMaskPreview = async (
     );
 
     // 响应格式: { success: true, data: { success: true, masks: [...] }, provider: ..., mode: ... }
-    const maskData = result.data || result;
-    if (maskData?.success && maskData?.masks?.length > 0) {
-      return { maskUrl: maskData.masks[0].url, notice: null, error: null };
+    const maskData = result.data ?? result;
+    const firstMask = maskData?.success && maskData.masks && maskData.masks.length > 0
+      ? maskData.masks[0]
+      : undefined;
+    if (firstMask) {
+      return { maskUrl: firstMask.url, notice: null, error: null };
     }
 
     const errorMsg = maskData?.error || result?.error || 'Unknown error';

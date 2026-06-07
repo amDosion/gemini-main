@@ -96,42 +96,65 @@ export interface AgentNodeDefaultAnalysis {
   overridden: AgentNodeDefaultFieldStatus[];
 }
 
+// Local extension type for videoGeneration defaults. The base AgentDef type does not yet declare
+// videoInputStrategy and audioUrl; this cast adds those two optional fields without losing
+// type safety on the rest of the properties.
+type VideoGenerationDefaultsExtended = {
+  aspectRatio?: string;
+  resolution?: string;
+  durationSeconds?: number;
+  videoExtensionCount?: number;
+  continueFromPreviousVideo?: boolean;
+  continueFromPreviousLastFrame?: boolean;
+  generateAudio?: boolean;
+  subtitleMode?: string;
+  subtitleLanguage?: string;
+  subtitleScript?: string;
+  storyboardPrompt?: string;
+  negativePrompt?: string;
+  seed?: number;
+  promptExtend?: boolean;
+  // Not yet declared in AgentDef.agentCard.defaults.videoGeneration:
+  videoInputStrategy?: string;
+  audioUrl?: string;
+} | undefined;
+
 export const buildAgentNodeDefaultsFromAgent = (agent?: AgentDef | null): Partial<WorkflowNodeData> => {
   const card = agent?.agentCard;
-  if (!card || typeof card !== 'object') {
+  if (!card) {
     return {};
   }
-  const defaults = (card as any).defaults;
-  if (!defaults || typeof defaults !== 'object') {
+  const defaults = card.defaults;
+  if (!defaults) {
     return {};
   }
 
   const updates: Partial<WorkflowNodeData> = {};
-  const defaultTaskType = toSafeString((defaults as any).defaultTaskType);
+  const defaultTaskType = toSafeString(defaults.defaultTaskType);
   if (defaultTaskType) {
     updates.agentTaskType = defaultTaskType;
   }
 
-  const llmDefaults = (defaults as any).llm;
-  if (llmDefaults && typeof llmDefaults === 'object') {
-    const providerId = toSafeString((llmDefaults as any).providerId);
-    const modelId = toSafeString((llmDefaults as any).modelId);
-    const profileId = toSafeString((llmDefaults as any).profileId);
+  const llmDefaults = defaults.llm;
+  if (llmDefaults) {
+    const providerId = toSafeString(llmDefaults.providerId);
+    const modelId = toSafeString(llmDefaults.modelId);
+    const profileId = toSafeString(llmDefaults.profileId);
     if (providerId) updates.agentProviderId = providerId;
     if (modelId) updates.agentModelId = modelId;
     if (profileId) updates.modelOverrideProfileId = profileId;
-    if (typeof (llmDefaults as any).temperature === 'number') {
-      updates.agentTemperature = (llmDefaults as any).temperature;
+    if (typeof llmDefaults.temperature === 'number') {
+      updates.agentTemperature = llmDefaults.temperature;
     }
-    if (typeof (llmDefaults as any).maxTokens === 'number') {
-      updates.agentMaxTokens = (llmDefaults as any).maxTokens;
+    if (typeof llmDefaults.maxTokens === 'number') {
+      updates.agentMaxTokens = llmDefaults.maxTokens;
     }
-    if (typeof (llmDefaults as any).preferLatestModel === 'boolean') {
-      updates.agentPreferLatestModel = (llmDefaults as any).preferLatestModel;
+    if (typeof llmDefaults.preferLatestModel === 'boolean') {
+      updates.agentPreferLatestModel = llmDefaults.preferLatestModel;
     }
   }
 
-  const imageGeneration = (defaults as any).imageGeneration;
+  const imageGeneration = defaults.imageGeneration;
   if (imageGeneration && typeof imageGeneration === 'object') {
     if (typeof imageGeneration.aspectRatio === 'string') updates.agentAspectRatio = imageGeneration.aspectRatio;
     if (typeof imageGeneration.resolutionTier === 'string') updates.agentResolutionTier = imageGeneration.resolutionTier;
@@ -143,7 +166,7 @@ export const buildAgentNodeDefaultsFromAgent = (agent?: AgentDef | null): Partia
     if (typeof imageGeneration.addMagicSuffix === 'boolean') updates.agentAddMagicSuffix = imageGeneration.addMagicSuffix;
   }
 
-  const imageEdit = (defaults as any).imageEdit;
+  const imageEdit = defaults.imageEdit;
   if (imageEdit && typeof imageEdit === 'object') {
     if (typeof imageEdit.editMode === 'string') updates.agentEditMode = imageEdit.editMode;
     if (typeof imageEdit.aspectRatio === 'string' && imageEdit.aspectRatio) updates.agentAspectRatio = imageEdit.aspectRatio;
@@ -159,8 +182,10 @@ export const buildAgentNodeDefaultsFromAgent = (agent?: AgentDef | null): Partia
     if (typeof imageEdit.outputLanguage === 'string') updates.agentOutputLanguage = imageEdit.outputLanguage;
   }
 
-  const videoGeneration = (defaults as any).videoGeneration;
-  if (videoGeneration && typeof videoGeneration === 'object') {
+  // Cast to VideoGenerationDefaultsExtended to include videoInputStrategy and audioUrl which
+  // exist in the runtime agent card data but are not yet declared in AgentDef.agentCard.defaults.videoGeneration.
+  const videoGeneration = defaults.videoGeneration as VideoGenerationDefaultsExtended;
+  if (videoGeneration) {
     if (typeof videoGeneration.aspectRatio === 'string') updates.agentAspectRatio = videoGeneration.aspectRatio;
     if (typeof videoGeneration.resolution === 'string') {
       const normalizedResolution = normalizeWorkflowVideoResolution(videoGeneration.resolution);
@@ -186,19 +211,19 @@ export const buildAgentNodeDefaultsFromAgent = (agent?: AgentDef | null): Partia
     if (typeof videoGeneration.promptExtend === 'boolean') updates.agentPromptExtend = videoGeneration.promptExtend;
   }
 
-  const audioGeneration = (defaults as any).audioGeneration;
+  const audioGeneration = defaults.audioGeneration;
   if (audioGeneration && typeof audioGeneration === 'object') {
     if (typeof audioGeneration.voice === 'string') updates.agentVoice = audioGeneration.voice;
     if (typeof audioGeneration.responseFormat === 'string') updates.agentAudioFormat = audioGeneration.responseFormat;
     if (typeof audioGeneration.speed === 'number') updates.agentSpeechSpeed = audioGeneration.speed;
   }
 
-  const dataAnalysis = (defaults as any).dataAnalysis;
+  const dataAnalysis = defaults.dataAnalysis;
   if (dataAnalysis && typeof dataAnalysis === 'object') {
     if (typeof dataAnalysis.outputFormat === 'string') updates.agentOutputFormat = dataAnalysis.outputFormat;
   }
 
-  const visionUnderstand = (defaults as any).visionUnderstand;
+  const visionUnderstand = defaults.visionUnderstand;
   if (visionUnderstand && typeof visionUnderstand === 'object') {
     if (typeof visionUnderstand.outputFormat === 'string') updates.agentOutputFormat = visionUnderstand.outputFormat;
   }

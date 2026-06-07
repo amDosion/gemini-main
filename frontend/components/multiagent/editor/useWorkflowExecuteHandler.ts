@@ -63,8 +63,8 @@ export interface UseWorkflowExecuteHandlerResult {
   isExecuting: boolean;
   executeErrorBanner: string | null;
   setExecuteErrorBanner: React.Dispatch<React.SetStateAction<string | null>>;
-  finalResult: any;
-  setFinalResult: React.Dispatch<React.SetStateAction<any>>;
+  finalResult: unknown;
+  setFinalResult: React.Dispatch<React.SetStateAction<unknown>>;
   finalError: string | null;
   setFinalError: React.Dispatch<React.SetStateAction<string | null>>;
   finalCompletedAt: number | null;
@@ -89,7 +89,7 @@ export const useWorkflowExecuteHandler = ({
 }: UseWorkflowExecuteHandlerArgs): UseWorkflowExecuteHandlerResult => {
   const [isExecuting, setIsExecuting] = useState(false);
   const [executeErrorBanner, setExecuteErrorBanner] = useState<string | null>(null);
-  const [finalResult, setFinalResult] = useState<any>(null);
+  const [finalResult, setFinalResult] = useState<unknown>(null);
   const [finalError, setFinalError] = useState<string | null>(null);
   const [finalCompletedAt, setFinalCompletedAt] = useState<number | null>(null);
   const [finalRuntime, setFinalRuntime] = useState<string>('');

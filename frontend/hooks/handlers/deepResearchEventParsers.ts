@@ -36,10 +36,10 @@ export type DeepResearchStatus =
   | 'failed'
   | 'cancelled';
 
-export const isRecord = (value: unknown): value is Record<string, any> =>
+export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-export const extractTextFromDelta = (delta: Record<string, any>): string => {
+export const extractTextFromDelta = (delta: Record<string, unknown>): string => {
   if (typeof delta.text === 'string') return delta.text;
   if (isRecord(delta.content) && typeof delta.content.text === 'string') {
     return delta.content.text;
@@ -48,7 +48,7 @@ export const extractTextFromDelta = (delta: Record<string, any>): string => {
   return '';
 };
 
-const pickToolName = (payload: Record<string, any>, fallbackType: string): string => {
+const pickToolName = (payload: Record<string, unknown>, fallbackType: string): string => {
   const direct = payload.name || payload.tool || payload.label;
   if (typeof direct === 'string' && direct.trim()) {
     return direct.trim();
@@ -80,7 +80,7 @@ const pickToolName = (payload: Record<string, any>, fallbackType: string): strin
   return fallbackType || 'unknown';
 };
 
-const pickToolArgs = (payload: Record<string, any>): Record<string, any> => {
+const pickToolArgs = (payload: Record<string, unknown>): Record<string, unknown> => {
   if (isRecord(payload.args)) return payload.args;
   if (isRecord(payload.arguments)) return payload.arguments;
   if (isRecord(payload.input)) return payload.input;
@@ -91,7 +91,7 @@ const pickToolArgs = (payload: Record<string, any>): Record<string, any> => {
     if (isRecord(nested.arguments)) return nested.arguments;
   }
 
-  const args: Record<string, any> = {};
+  const args: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(payload)) {
     if (
       ['type', 'id', 'callId', 'call_id', 'name', 'tool', 'error', 'result', 'output'].includes(key)
@@ -104,7 +104,7 @@ const pickToolArgs = (payload: Record<string, any>): Record<string, any> => {
 };
 
 export const normalizeToolCall = (
-  payload: Record<string, any>,
+  payload: Record<string, unknown>,
   fallbackType: string,
   fallbackId: string
 ): ToolCall => {
@@ -123,7 +123,7 @@ export const normalizeToolCall = (
 };
 
 export const normalizeToolResult = (
-  payload: Record<string, any>,
+  payload: Record<string, unknown>,
   fallbackType: string,
   fallbackId: string,
   calls: ToolCall[],
@@ -168,7 +168,7 @@ export const normalizeToolResult = (
 };
 
 export const extractRequiredAction = (
-  eventPayload: Record<string, any>
+  eventPayload: Record<string, unknown>
 ): ResearchRequiredAction | undefined => {
   const candidates = [
     eventPayload.requiresAction,
@@ -294,7 +294,7 @@ export const extractRequiredActionName = (
   return findUnresolvedToolCall(toolCalls, toolResults)?.name;
 };
 
-export const extractStatusText = (eventPayload: Record<string, any>): string | undefined => {
+export const extractStatusText = (eventPayload: Record<string, unknown>): string | undefined => {
   const status = eventPayload.status;
   if (typeof status === 'string' && status.trim()) {
     return status.trim();

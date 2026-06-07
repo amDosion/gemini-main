@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Icon } from '@iconify/react';
 import { Database, Edit3, Cloud, Image, Wrench } from 'lucide-react';
 import { ConfigProfile } from '../../services/db';
@@ -35,6 +35,9 @@ interface SettingsModalProps {
 
 type SettingsTab = 'profiles' | 'editor' | 'storage' | 'storage-editor' | 'imagen' | 'mcp';
 
+const FOCUSABLE_SELECTORS =
+  'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
@@ -58,7 +61,45 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [editingProfile, setEditingProfile] = useState<ConfigProfile | null>(null);
   const [editingStorage, setEditingStorage] = useState<StorageConfig | null>(null);
 
+  const containerRef = useRef<HTMLDivElement>(null);
+
   useEscapeClose(isOpen, onClose);
+
+  // Focus the dialog container when it opens so screen readers announce it.
+  useEffect(() => {
+    if (isOpen) {
+      containerRef.current?.focus();
+    }
+  }, [isOpen]);
+
+  // Focus trap: keep Tab/Shift+Tab cycling within the dialog.
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const container = containerRef.current;
+      if (!container) return;
+      const focusable = Array.from(
+        container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS)
+      ).filter(el => !el.closest('[inert]'));
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -125,13 +166,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col md:flex-row overflow-hidden animate-[fadeIn_0.2s_ease-out]">
+    <div
+      ref={containerRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settings-modal-title"
+      tabIndex={-1}
+      className="fixed inset-0 z-[100] bg-slate-950 flex flex-col md:flex-row overflow-hidden animate-[fadeIn_0.2s_ease-out]"
+    >
 
       {/* Sidebar / Top Nav */}
       <div className="w-full md:w-64 bg-slate-900/50 border-b md:border-b-0 md:border-r border-slate-800 p-2 md:p-4 flex flex-col shrink-0">
         <div className="px-2 md:px-4 py-2 md:py-4 mb-2 md:mb-4 flex items-center justify-between md:block">
           <div>
-            <h2 className="text-lg md:text-xl font-bold text-white tracking-tight">Settings</h2>
+            <h2 id="settings-modal-title" className="text-lg md:text-xl font-bold text-white tracking-tight">Settings</h2>
             <p className="text-[10px] md:text-xs text-slate-500 mt-1 hidden md:block">Configure Providers & Keys</p>
           </div>
           {/* Mobile Close Button (Optional if we want one here, but we have footer close) */}

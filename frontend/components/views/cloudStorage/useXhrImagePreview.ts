@@ -45,6 +45,12 @@ interface PreviewDownloadHandle {
   release: () => void;
 }
 
+// --- Module-level download queue (deliberate singleton) ---
+// These three variables form a cross-instance download deduplicator and
+// concurrency limiter. They are intentionally module-scoped so that multiple
+// useXhrImagePreview hook instances share the same in-flight registry and queue,
+// preventing duplicate XHR requests for the same preview URL when the same
+// image is rendered more than once on screen simultaneously.
 const MAX_CONCURRENT_PREVIEW_DOWNLOADS = 4;
 const inflightPreviewDownloads = new Map<string, PreviewDownloadEntry>();
 const queuedPreviewDownloadKeys: string[] = [];
@@ -141,8 +147,10 @@ const acquirePreviewBlobDownload = (
     };
   }
 
-  let resolvePromise!: (value: DownloadBlobResult) => void;
-  let rejectPromise!: (reason?: unknown) => void;
+  // Initialise with no-ops; the Promise executor runs synchronously so these
+  // are always replaced with the real resolve/reject before the entry is used.
+  let resolvePromise: (value: DownloadBlobResult) => void = () => undefined;
+  let rejectPromise: (reason?: unknown) => void = () => undefined;
   const promise = new Promise<DownloadBlobResult>((resolve, reject) => {
     resolvePromise = resolve;
     rejectPromise = reject;
@@ -178,6 +186,7 @@ const acquirePreviewBlobDownload = (
   };
 };
 
+/** @internal Exposed only for unit tests — do not import in production code. */
 export const __resetInflightPreviewDownloadsForTest = (): void => {
   inflightPreviewDownloads.clear();
   queuedPreviewDownloadKeys.splice(0, queuedPreviewDownloadKeys.length);

@@ -8,8 +8,23 @@ type TimeoutMessage =
 
 export interface FetchWithTimeoutOptions extends RequestInit {
   timeoutMs?: number;
+  /**
+   * When true, sets `credentials: "include"` so browser cookies are sent with
+   * the request. This is the primary auth mechanism for same-origin API calls.
+   * It does NOT add a Bearer token header; use `includeBearer` for that.
+   */
   withAuth?: boolean;
+  /**
+   * Suppresses the Bearer token Authorization header when `includeBearer` is
+   * also true. Has no effect on cookie credentials (`withAuth`).
+   */
   skipAuth?: boolean;
+  /**
+   * When true (and `withAuth` is also true), appends the in-memory access token
+   * as a Bearer Authorization header. Intended for non-browser clients or
+   * endpoints that require explicit token auth in addition to cookies.
+   * `skipAuth` can be used to suppress the header on a per-request basis.
+   */
   includeBearer?: boolean;
   timeoutMessage?: TimeoutMessage;
   abortMessage?: string;
@@ -138,6 +153,21 @@ export async function readJsonResponse<T>(response: Response): Promise<T> {
   return response.json();
 }
 
+/**
+ * Fetches a resource with an optional timeout, automatic signal merging, and
+ * configurable auth behaviour.
+ *
+ * Auth model:
+ * - `withAuth: true` — sets `credentials: "include"` (cookie auth, default for
+ *   same-origin backend calls).
+ * - `withAuth: true, includeBearer: true` — also appends the in-memory access
+ *   token as a Bearer Authorization header (for non-cookie clients).
+ * - `skipAuth: true` — suppresses the Bearer header even when `includeBearer`
+ *   is true; has no effect on cookie credentials.
+ *
+ * These options are intentionally separate: cookie auth and Bearer token auth
+ * serve different transport mechanisms and are opt-in independently.
+ */
 export async function fetchWithTimeout(
   input: RequestInfo | URL,
   options: FetchWithTimeoutOptions = {}

@@ -100,6 +100,8 @@ const ResearchRequiredActionCard: React.FC<ResearchRequiredActionCardProps> = ({
             return (
               <button
                 key={option}
+                type="button"
+                aria-label={`Submit option: ${option}`}
                 onClick={() => void submitValue(option, option)}
                 disabled={!onSubmitAction || !!submittingOption}
                 className="inline-flex items-center gap-1 rounded-md border border-amber-300/35 bg-amber-400/10 px-2 py-1 text-xs hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-60"
@@ -122,6 +124,7 @@ const ResearchRequiredActionCard: React.FC<ResearchRequiredActionCardProps> = ({
           rows={3}
         />
         <button
+          type="button"
           onClick={() => void handleCustomSubmit()}
           disabled={!onSubmitAction || !!submittingOption || !customInput.trim()}
           className="inline-flex items-center gap-1 rounded-md border border-amber-300/35 bg-amber-400/10 px-2 py-1 text-xs hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-60"

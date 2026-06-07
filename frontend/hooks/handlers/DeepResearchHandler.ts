@@ -76,7 +76,7 @@ export class DeepResearchHandler extends BaseHandler {
           const formData = new FormData();
           formData.append('file', fileBlob, attachment.name || 'document');
 
-          const uploadData = await uploadFormDataWithXhr<any>({
+          const uploadData = await uploadFormDataWithXhr<{ file_search_store_name: string }>({
             url: '/api/file-search/upload',
             formData,
             headers: getAuthHeaders(),

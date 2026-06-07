@@ -2,8 +2,6 @@
  * 云存储配置类型定义
  */
 
-import { ReactNode } from "react";
-
 export type StorageProvider = 'lsky' | 'aliyun-oss' | 'local' | 'tencent-cos' | 'google-drive' | 's3-compatible';
 
 export interface StorageConfig {
@@ -29,7 +27,6 @@ export interface LskyConfig {
  * 阿里云 OSS 配置
  */
 export interface AliyunOSSConfig {
-  [x: string]: ReactNode;
   accessKeyId: string;        // Access Key ID
   accessKeySecret: string;    // Access Key Secret
   bucket: string;             // Bucket 名称

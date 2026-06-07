@@ -26,6 +26,7 @@ interface ToolCallDisplayProps {
 
 const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({ toolCall, toolResult, isExecuting }) => {
   const [isExpanded, setIsExpanded] = useState(true);
+  const contentId = `tool-content-${toolCall.id}`;
 
   const renderToolIcon = () => {
     switch (toolCall.type) {
@@ -94,8 +95,11 @@ const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({ toolCall, toolResult,
 
   return (
     <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 my-2">
-      <div
-        className="flex items-center justify-between cursor-pointer"
+      <button
+        type="button"
+        className="flex items-center justify-between w-full text-left"
+        aria-expanded={isExpanded}
+        aria-controls={contentId}
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className="flex items-center min-w-0">
@@ -114,10 +118,10 @@ const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({ toolCall, toolResult,
             <ChevronRightIcon className="h-5 w-5 text-gray-400" />
           )}
         </div>
-      </div>
+      </button>
 
       {isExpanded && (
-        <div className="mt-3 space-y-3">
+        <div id={contentId} className="mt-3 space-y-3">
           <div>
             <h4 className="text-sm font-semibold text-gray-400 mb-1">Parameters</h4>
             <pre className="bg-gray-800 p-2 rounded overflow-x-auto text-sm">

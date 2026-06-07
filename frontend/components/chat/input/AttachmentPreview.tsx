@@ -75,11 +75,13 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
                       </div>
                   )}
               </div>
-              <button 
-                onClick={() => removeAttachment(att.id)} 
+              <button
+                type="button"
+                onClick={() => removeAttachment(att.id)}
+                aria-label={`Remove ${att.name}`}
                 className="absolute -top-1 -right-1 bg-slate-800 text-slate-400 rounded-full p-0.5 border border-slate-600 hover:text-white hover:bg-red-900/50 z-10"
               >
-                <X size={10} />
+                <X size={10} aria-hidden="true" />
               </button>
               {roleOptions.length > 0 && onRoleChange && (
                 <label className="mt-1 block text-[10px] text-slate-500">

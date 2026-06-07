@@ -160,7 +160,8 @@ export const useSettings = (initialData?: {
   // Use useMemo for stable hiddenModels array reference
   const hiddenModels = useMemo(
     () => activeProfile?.hiddenModels || [],
-    [activeProfile?.hiddenModels?.join(',')]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeProfile?.hiddenModels]
   );
 
   // Construct AppConfig
@@ -276,8 +277,8 @@ export const useSettings = (initialData?: {
         // 用户未登录，静默失败，不打印错误
         return;
       }
-      // 其他错误正常打印
       // Keep the previous state unchanged if loading fails
+      console.error('[useSettings] refreshSettings failed:', error)
     }
   }, []);
 

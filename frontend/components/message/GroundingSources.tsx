@@ -6,6 +6,16 @@ interface GroundingSourcesProps {
   chunks?: GroundingChunk[];
 }
 
+/** Returns the URI only when its scheme is http or https; otherwise undefined. */
+function getSafeUri(uri: string): string | undefined {
+  try {
+    const { protocol } = new URL(uri);
+    return protocol === 'http:' || protocol === 'https:' ? uri : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export const GroundingSources: React.FC<GroundingSourcesProps> = ({ chunks }) => {
   if (!chunks || chunks.length === 0) return null;
 
@@ -16,11 +26,14 @@ export const GroundingSources: React.FC<GroundingSourcesProps> = ({ chunks }) =>
         Sources found
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {chunks.map((chunk, idx) =>
-          chunk.web ? (
+        {chunks.map((chunk, idx) => {
+          if (!chunk.web) return null;
+          const safeUri = getSafeUri(chunk.web.uri);
+          if (!safeUri) return null;
+          return (
             <a
               key={idx}
-              href={chunk.web.uri}
+              href={safeUri}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-700/50 transition-all border border-slate-800 hover:border-slate-600 group/link bg-slate-900/50"
@@ -33,20 +46,12 @@ export const GroundingSources: React.FC<GroundingSourcesProps> = ({ chunks }) =>
                   {chunk.web.title}
                 </div>
                 <div className="text-[10px] text-slate-500 truncate">
-                  {
-                    (() => {
-                      try {
-                        return new URL(chunk.web.uri);
-                      } catch {
-                        return null;
-                      }
-                    })()?.hostname
-                  }
+                  {new URL(safeUri).hostname}
                 </div>
               </div>
             </a>
-          ) : null
-        )}
+          );
+        })}
       </div>
     </div>
   );

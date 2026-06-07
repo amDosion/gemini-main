@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Save, Loader2, X, Image as ImageIcon, RefreshCw, AlertTriangle } from 'lucide-react';
 import { db } from '../../../services/db';
@@ -51,6 +51,8 @@ export const VertexAIConfiguration: React.FC<VertexAIConfigurationProps> = ({
     const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
     // Load error state: set when the initial config fetch fails
     const [loadError, setLoadError] = useState<string | null>(null);
+    // Stores the savedModels from initial load so handleVerify avoids a redundant network request
+    const savedModelsRef = useRef<ModelConfig[]>([]);
 
     // Load Imagen configuration
     useEffect(() => {
@@ -111,6 +113,8 @@ export const VertexAIConfiguration: React.FC<VertexAIConfigurationProps> = ({
                     
                     // Restore selected models (only saved models are selected, hidden models are not)
                     setSelectedModels(new Set(data.savedModels.map((sm: ModelConfig) => sm.id)));
+                    // Cache saved models so handleVerify can use them without a second network request
+                    savedModelsRef.current = data.savedModels;
                 }
             } catch (error) {
                 setLoadError(getErrorMessage(error) || 'Failed to load Vertex AI configuration');
@@ -185,18 +189,15 @@ export const VertexAIConfiguration: React.FC<VertexAIConfigurationProps> = ({
                 
                 setVerifiedModels(uniqueModels);
                 
-                // ✅ Verify Connection 时，不使用数据库中的旧模型列表
-                // 只恢复已保存的模型选择状态（哪些模型被选中），但使用最新获取的模型数据
-                // 这样可以确保显示的是最新的模型列表，而不是数据库中的旧数据
-                // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
-                const configData = await db.request<ImagenConfigResponse>('/vertex-ai/config?editMode=true');
-                if (configData.savedModels && configData.savedModels.length > 0) {
-                    // 只恢复选中状态，使用最新获取的模型数据
-                    const savedModelIds = configData.savedModels.map((sm: ModelConfig) => sm.id);
-                    const validSavedModels = savedModelIds.filter(id => 
+                // Restore selection from the saved models captured at initial load —
+                // avoids a redundant network request to /vertex-ai/config.
+                const cachedSavedModels = savedModelsRef.current;
+                if (cachedSavedModels.length > 0) {
+                    const savedModelIds = cachedSavedModels.map((sm: ModelConfig) => sm.id);
+                    const validSavedModels = savedModelIds.filter(id =>
                         uniqueModels.some(m => m.id === id)
                     );
-                    
+
                     if (validSavedModels.length > 0) {
                         setSelectedModels(new Set(validSavedModels));
                         return; // Exit early if we restored selection from saved models

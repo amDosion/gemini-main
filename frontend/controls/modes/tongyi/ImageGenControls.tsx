@@ -393,18 +393,22 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = ({
                 <Wand2 size={12} className="text-pink-400" />
                 <span className="text-xs text-slate-300">魔法词组</span>
               </div>
-              <div
+              <button
+                type="button"
+                role="switch"
+                aria-checked={addMagicSuffix}
+                aria-label="魔法词组"
                 onClick={() => setAddMagicSuffix(!addMagicSuffix)}
                 className={`w-10 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-200 ${
                   addMagicSuffix ? 'bg-pink-600' : 'bg-slate-600'
                 }`}
               >
-                <div
+                <span
                   className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
                     addMagicSuffix ? 'translate-x-4' : 'translate-x-0'
                   }`}
                 />
-              </div>
+              </button>
             </div>
             <p className="text-[10px] text-slate-500 mt-1">自动添加"超清，4K，电影级构图"等质量增强词</p>
             </>

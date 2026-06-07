@@ -55,7 +55,9 @@ const emitEvent = (event: FrontendTelemetryEvent) => {
   }
 
   if (typeof window !== 'undefined') {
-    (window as any).__frontendTelemetryBuffer = [...eventBuffer];
+    if (import.meta.env.DEV) {
+      (window as unknown as Record<string, unknown>).__frontendTelemetryBuffer = [...eventBuffer];
+    }
     window.dispatchEvent(new CustomEvent('frontend-telemetry', { detail: event }));
   }
 };

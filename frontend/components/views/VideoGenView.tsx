@@ -610,7 +610,7 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
     setVideoDuration(0);
     stopVideoProgressAnimation();
     syncVideoProgressUi(0, 0);
-  }, [activeVideoUrl, stopVideoProgressAnimation]);
+  }, [activeVideoUrl, stopVideoProgressAnimation, syncVideoProgressUi]);
 
   useEffect(() => {
     const video = activeVideoRef.current;

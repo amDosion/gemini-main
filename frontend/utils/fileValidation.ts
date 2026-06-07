@@ -42,10 +42,17 @@ export function getAcceptedTypes(mode: AppMode): string[] {
       return ['image/*'];
     case 'video-gen':
       return ['image/*', 'video/*'];
-    case 'audio-gen':
-      return [];
     case 'pdf-extract':
       return ['.pdf', 'application/pdf'];
+    case 'image-upscale':
+    case 'image-segmentation':
+    case 'product-recontext':
+      return ['image/*'];
+    case 'multi-agent':
+      // multi-agent mode drives text/tool workflows — attachments are not supported.
+    case 'audio-gen':
+      // audio-gen generates audio from text prompts only — no file input accepted.
+      return [];
     default:
       return [];
   }
@@ -55,7 +62,8 @@ export function getAcceptedTypes(mode: AppMode): string[] {
  * 检查文件类型是否有效（支持通配符匹配）
  */
 export function isValidFileType(file: File, acceptedTypes: string[]): boolean {
-  if (acceptedTypes.length === 0) return true;
+  // An empty accepted-types list means the mode accepts no attachments — reject all.
+  if (acceptedTypes.length === 0) return false;
   const filename = file.name.toLowerCase();
   
   return acceptedTypes.some(type => {

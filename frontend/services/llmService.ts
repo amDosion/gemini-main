@@ -47,6 +47,16 @@ interface ModelCache {
   providerId: string;
 }
 
+/** Type guard for providers that support the executeMode dispatch surface. */
+// executeMode return type is intentionally any — the payload is heterogeneous across modes.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function hasExecuteMode(
+  provider: unknown
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+): provider is { executeMode: (mode: string, modelId: string, prompt: string, attachments: unknown[], options: unknown, extra: unknown) => Promise<any> } {
+  return typeof provider === 'object' && provider !== null && 'executeMode' in provider && typeof (provider as Record<string, unknown>).executeMode === 'function';
+}
+
 const emptyModelsPayload = (
   providerId: string,
   filteredByMode?: AppMode | string
@@ -133,6 +143,8 @@ export class LLMService {
 
   private debugLog(...args: unknown[]): void {
     if (this.isVerboseLoggingEnabled()) {
+      // eslint-disable-next-line no-console
+      console.debug(...args);
     }
   }
 
@@ -163,73 +175,69 @@ export class LLMService {
       return cachedData.payload;
     }
 
-    try {
-      // ✅ 调用后端 API：/api/models/{provider}?mode={mode}
-      // 后端会：
-      // 1. 从 config_profiles / vertex_ai_config 读取 provider 模型集合
-      // 2. 计算 provider 级 modeCatalog
-      // 3. 按 mode 返回对应模型列表（若未传 mode 则返回完整列表）
-      const params = new URLSearchParams();
-      // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
-      params.append('useCache', String(useCache));
-      if (options.includeHidden) {
-        params.append('includeHidden', 'true');
-      }
-      if (mode) {
-        params.append('mode', mode);
-      }
-
-      const response = await fetchWithTimeout(
-        `/api/models/${requestProviderId}?${params.toString()}`,
-        {
-          method: 'GET',
-          cache: 'no-store',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          withAuth: true,
-          timeoutMs: 30000,
-        }
-      );
-
-      if (!response.ok) {
-        const parsedError = await parseHttpError(response, '');
-        const suffix = parsedError.message ? ` ${parsedError.message}` : '';
-        throw new Error(`Backend API error: ${response.status}${suffix}`);
-      }
-
-      const data = await readJsonResponse<any>(response);
-      const payload: ModelsApiResponse = {
-        models: Array.isArray(data.models) ? data.models : [],
-        defaultModelId: typeof data.defaultModelId === 'string' ? data.defaultModelId : null,
-        modeCatalog: Array.isArray(data.modeCatalog) ? data.modeCatalog : [],
-        filteredByMode: typeof data.filteredByMode === 'string' ? data.filteredByMode : null,
-        cached: Boolean(data.cached),
-        provider: typeof data.provider === 'string' ? data.provider : requestProviderId,
-      };
-
-      if (
-        this.providerId !== requestProviderId ||
-        !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
-      ) {
-        return emptyModelsPayload(requestProviderId, mode);
-      }
-
-      // 缓存所有请求结果（mode 和非 mode 各自独立缓存）。
-      // 如果请求期间只是模型缓存被清理，不丢弃已经返回的同 provider 新鲜 payload；
-      // 仅跳过写缓存，避免把清理前的请求重新灌回缓存。
-      if (generationAtStart === this.modelCacheGeneration) {
-        cacheManager.set(scopedCacheKey, {
-          payload,
-          timestamp: now,
-          providerId: requestProviderId,
-        });
-      }
-
-      return payload;
-    } catch (error) {
-      throw error;
+    // ✅ 调用后端 API：/api/models/{provider}?mode={mode}
+    // 后端会：
+    // 1. 从 config_profiles / vertex_ai_config 读取 provider 模型集合
+    // 2. 计算 provider 级 modeCatalog
+    // 3. 按 mode 返回对应模型列表（若未传 mode 则返回完整列表）
+    const params = new URLSearchParams();
+    // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
+    params.append('useCache', String(useCache));
+    if (options.includeHidden) {
+      params.append('includeHidden', 'true');
     }
+    if (mode) {
+      params.append('mode', mode);
+    }
+
+    const response = await fetchWithTimeout(
+      `/api/models/${requestProviderId}?${params.toString()}`,
+      {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        withAuth: true,
+        timeoutMs: 30000,
+      }
+    );
+
+    if (!response.ok) {
+      const parsedError = await parseHttpError(response, '');
+      const suffix = parsedError.message ? ` ${parsedError.message}` : '';
+      throw new Error(`Backend API error: ${response.status}${suffix}`);
+    }
+
+    const data = await readJsonResponse<unknown>(response);
+    const payload: ModelsApiResponse = {
+      models: Array.isArray((data as Record<string, unknown>).models) ? (data as Record<string, unknown>).models as ModelConfig[] : [],
+      defaultModelId: typeof (data as Record<string, unknown>).defaultModelId === 'string' ? (data as Record<string, unknown>).defaultModelId as string : null,
+      modeCatalog: Array.isArray((data as Record<string, unknown>).modeCatalog) ? (data as Record<string, unknown>).modeCatalog as ModeCatalogItem[] : [],
+      filteredByMode: typeof (data as Record<string, unknown>).filteredByMode === 'string' ? (data as Record<string, unknown>).filteredByMode as string : null,
+      cached: Boolean((data as Record<string, unknown>).cached),
+      provider: typeof (data as Record<string, unknown>).provider === 'string' ? (data as Record<string, unknown>).provider as string : requestProviderId,
+    };
+
+    if (
+      this.providerId !== requestProviderId ||
+      !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
+    ) {
+      return emptyModelsPayload(requestProviderId, mode);
+    }
+
+    // 缓存所有请求结果（mode 和非 mode 各自独立缓存）。
+    // 如果请求期间只是模型缓存被清理，不丢弃已经返回的同 provider 新鲜 payload；
+    // 仅跳过写缓存，避免把清理前的请求重新灌回缓存。
+    if (generationAtStart === this.modelCacheGeneration) {
+      cacheManager.set(scopedCacheKey, {
+        payload,
+        timestamp: now,
+        providerId: requestProviderId,
+      });
+    }
+
+    return payload;
   }
 
   public async getAvailableModels(
@@ -333,7 +341,7 @@ export class LLMService {
 
       if (response.ok) {
       } else {
-        const error = await response.text();
+        await response.text();
       }
     } catch (e) {
       // Silently ignore network errors (browser may not have been active)
@@ -471,9 +479,9 @@ export class LLMService {
     // 合并 options（如果提供了）
     const finalOptions = options ? { ...this._cachedOptions, ...options } : this._cachedOptions;
 
-    if ('id' in provider && typeof (provider as any).id === 'string') {
+    if (provider instanceof UnifiedProviderClient) {
       // 这是 UnifiedProviderClient，它有 editImage 方法支持 mode 参数
-      return (provider as UnifiedProviderClient).editImage(
+      return provider.editImage(
         this._cachedModelConfig.id,
         prompt,
         referenceImages,
@@ -543,7 +551,9 @@ export class LLMService {
       ...options, // ✅ Handler 传入的 options 优先（包含 sessionId、messageId）
     };
 
-    const outpaintMode = (mergedOptions as any).outpaintMode || 'ratio';
+    const outpaintMode = (typeof (mergedOptions as Record<string, unknown>).outpaintMode === 'string'
+      ? (mergedOptions as Record<string, unknown>).outpaintMode as string
+      : 'ratio');
     const selectedModelId = String(
       mergedOptions.modelId || this._cachedModelConfig?.id || ''
     ).trim();
@@ -559,7 +569,7 @@ export class LLMService {
       '[outPaintImage] sessionId:',
       mergedOptions.sessionId || mergedOptions.frontendSessionId || 'N/A'
     );
-    this.debugLog('[outPaintImage] messageId:', (mergedOptions as any).messageId || 'N/A');
+    this.debugLog('[outPaintImage] messageId:', mergedOptions.messageId ?? 'N/A');
     this.debugLog('[outPaintImage] outpaintMode:', outpaintMode);
     this.debugLog('[outPaintImage] selectedModelId:', selectedModelId);
     this.debugLog('[outPaintImage] outPainting options:', mergedOptions.outPainting);
@@ -567,11 +577,11 @@ export class LLMService {
 
     // ✅ 新架构: 使用 UnifiedProviderClient.executeMode('image-outpainting', ...) 统一处理
     // 路由: /api/modes/{provider}/image-outpainting → modes.py → GoogleService.expand_image() → ExpandService
-    if (this.currentProvider && 'executeMode' in this.currentProvider) {
-      const unifiedProvider = this.currentProvider as any;
+    const currentProviderForOutpaint = this.currentProvider;
+    if (hasExecuteMode(currentProviderForOutpaint)) {
       const prompt = mergedOptions.prompt || 'Extend the image naturally';
 
-      const result = await unifiedProvider.executeMode(
+      const result = await currentProviderForOutpaint.executeMode(
         'image-outpainting',
         selectedModelId,
         prompt,
@@ -648,15 +658,15 @@ export class LLMService {
       '[virtualTryOn] sessionId:',
       mergedOptions.sessionId || mergedOptions.frontendSessionId || 'N/A'
     );
-    this.debugLog('[virtualTryOn] messageId:', (mergedOptions as any).messageId || 'N/A');
+    this.debugLog('[virtualTryOn] messageId:', mergedOptions.messageId ?? 'N/A');
     this.debugLog('[virtualTryOn] numberOfImages:', mergedOptions.numberOfImages);
     this.debugLog('[virtualTryOn] attachments:', attachments.length);
     this.debugLog('========== [llmService.virtualTryOn] 参数传递结束 ==========');
 
     // ✅ 新架构: 使用 UnifiedProviderClient.executeMode('virtual-try-on', ...) 统一处理
-    if (this.currentProvider && 'executeMode' in this.currentProvider) {
-      const unifiedProvider = this.currentProvider as any;
-      const result = await unifiedProvider.executeMode(
+    const currentProviderForTryOn = this.currentProvider;
+    if (hasExecuteMode(currentProviderForTryOn)) {
+      const result = await currentProviderForTryOn.executeMode(
         'virtual-try-on',
         mergedOptions.modelId || '',
         prompt,
@@ -684,9 +694,9 @@ export class LLMService {
       ...options,
     };
 
-    if (this.currentProvider && 'executeMode' in this.currentProvider) {
-      const unifiedProvider = this.currentProvider as any;
-      return unifiedProvider.executeMode(
+    const currentProviderForPdf = this.currentProvider;
+    if (hasExecuteMode(currentProviderForPdf)) {
+      return currentProviderForPdf.executeMode(
         'pdf-extract',
         this._cachedModelConfig.id,
         prompt,

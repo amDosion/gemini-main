@@ -54,9 +54,6 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
     requestRunRef.current = runId;
     const isCurrentRun = () => isMountedRef.current && requestRunRef.current === runId;
 
-    // Reset mounted flag on mount
-    isMountedRef.current = true;
-
     // ✅ 条件加载：只有在 shouldLoad 为 true 时才加载数据
     if (!shouldLoad) {
       abortControllerRef.current?.abort();

@@ -563,7 +563,7 @@ export const useWorkflowCanvasActions = ({
         ? buildAgentNodeBindingPatch(droppedAgent, baseData, { visualMode: 'force' })
         : {};
       const newNode: Node<WorkflowNodeData> = {
-        id: `node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id: `node-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
         type: config.type,
         position,
         data: {

@@ -218,6 +218,7 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
           <span className="text-xs text-slate-300">风格</span>
         </div>
         <select
+          aria-label="风格"
           value={style}
           onChange={(e) => setStyle(e.target.value)}
           className="w-full px-3 py-2 text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-300 focus:outline-none focus:border-emerald-500"
@@ -297,11 +298,12 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
           </div>
           <input
             type="range"
+            aria-label="生成数量"
             min={1}
             max={maxImageCount}
             step={1}
             value={numberOfImages}
-            onChange={(e) => setNumberOfImages(parseInt(e.target.value))}
+            onChange={(e) => setNumberOfImages(parseInt(e.target.value, 10))}
             className="w-full h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer accent-blue-500"
           />
           <div className="flex justify-between text-[10px] text-slate-500 px-0.5">
@@ -361,11 +363,12 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
                     </div>
                     <input
                       type="range"
+                      aria-label="压缩质量"
                       min={compressionRange?.min ?? 1}
                       max={compressionRange?.max ?? 100}
                       step={compressionRange?.step ?? 1}
                       value={outputCompressionQuality}
-                      onChange={(e) => setOutputCompressionQuality(parseInt(e.target.value))}
+                      onChange={(e) => setOutputCompressionQuality(parseInt(e.target.value, 10))}
                       className="w-full h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer accent-indigo-500"
                     />
                   </div>
@@ -387,8 +390,9 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
               </div>
               <input
                 type="number"
+                aria-label="Seed"
                 value={seed === -1 ? '' : seed}
-                onChange={(e) => setSeed(e.target.value ? parseInt(e.target.value) : -1)}
+                onChange={(e) => setSeed(e.target.value ? parseInt(e.target.value, 10) : -1)}
                 placeholder="随机 (-1)"
                 min={seedRange?.min}
                 max={seedRange?.max}
@@ -400,6 +404,7 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
             <div className="space-y-2">
               <span className="text-xs text-slate-300">负向提示词</span>
               <textarea
+                aria-label="负向提示词"
                 value={negativePrompt}
                 onChange={(e) => setNegativePrompt(e.target.value)}
                 placeholder="不想出现的内容..."
