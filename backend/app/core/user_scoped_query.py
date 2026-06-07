@@ -8,7 +8,7 @@
 """
 
 from sqlalchemy.orm import Session, Query
-from typing import TypeVar, Type, Optional, List, Any, Dict
+from typing import TypeVar, Type, Optional, List
 from ..models.db_models import (
     ChatSession, MessageIndex, ConfigProfile,
     Persona, StorageConfig, MessageAttachment,
@@ -86,17 +86,36 @@ class UserScopedQuery:
         """
         return self.query(model).filter(model.id == id).first()
     
-    def get_all(self, model: Type[UserScopedModel]) -> List[UserScopedModel]:
+    def get_all(
+        self,
+        model: Type[UserScopedModel],
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> List[UserScopedModel]:
         """
-        获取所有记录（自动过滤用户）
-        
+        获取记录列表（自动过滤用户）
+
+        Callers that need to enumerate a potentially large table MUST pass an
+        explicit limit to avoid unbounded queries.  Passing neither
+        limit nor offset is permitted only for small, user-scoped
+        tables (e.g. personas, storage configs) where the row count is
+        naturally bounded by user quota.  For session history or message
+        tables, use :meth:`query` directly with explicit pagination.
+
         Args:
             model: 数据库模型类
+            limit: 最多返回的记录数，None 表示不限制（仅适用于小表）
+            offset: 跳过的记录数，用于分页
             
         Returns:
             记录列表
         """
-        return self.query(model).all()
+        q = self.query(model)
+        if offset is not None:
+            q = q.offset(offset)
+        if limit is not None:
+            q = q.limit(limit)
+        return q.all()
     
     def create(self, model: Type[UserScopedModel], **kwargs) -> UserScopedModel:
         """

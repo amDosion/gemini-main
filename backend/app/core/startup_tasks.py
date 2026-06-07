@@ -181,6 +181,12 @@ async def initialize_encryption_keys(log_prefixes: Dict[str, str]):
     """
     初始化加密密钥（从 .env 文件读取）
 
+    Note (core-14): This function contains no await expressions and does synchronous
+    I/O only. It is intentionally declared async because it is invoked via
+    asyncio.gather() in run_all_startup_tasks(), which requires awaitables. Keeping
+    the async signature also preserves forward-compatibility if key retrieval is later
+    migrated to a cloud secret manager with async APIs.
+
     Args:
         log_prefixes: 日志前缀字典
 

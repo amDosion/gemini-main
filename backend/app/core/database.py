@@ -51,10 +51,12 @@ def _base_to_dict(self):
     这样保持了架构的一致性：后端内部统一使用 snake_case
 
     支持的类级别配置（可在 Model 子类中定义）：
-    - _exclude_fields: set[str]     排除的字段名（不包含在输出中）
-    - _json_merge_fields: set[str]  需要解析并合并（flatten）到结果的 JSON Text 字段
-    - _field_defaults: dict          字段为 None 时的替代默认值
-    - _datetime_format: str          DateTime 格式: 'timestamp_ms'(默认) | 'isoformat'
+    - _exclude_fields: set[str]       排除的字段名（不包含在输出中）
+    - _json_merge_fields: set[str]    需要解析并合并（flatten）到结果的 JSON Text 字段
+    - _json_merge_allowlist: set[str] _json_merge_fields 合并时允许的 key 白名单；
+                                      若未定义则仅过滤与 ORM 列同名的 key，防止列值被覆盖。
+    - _field_defaults: dict            字段为 None 时的替代默认值
+    - _datetime_format: str            DateTime 格式: 'timestamp_ms'(默认) | 'isoformat'
 
     *_json 列自动检测：名称以 _json 结尾的 Text 列会自动调用 json.loads()
     解析并以去掉 _json 后缀的 key 输出（如 config_json → config）。
@@ -62,8 +64,13 @@ def _base_to_dict(self):
     result = {}
     exclude = getattr(self.__class__, '_exclude_fields', set())
     merge_json = getattr(self.__class__, '_json_merge_fields', set())
+    # Optional per-class allowlist for merge keys (prevents column-name shadowing when defined).
+    merge_allowlist = getattr(self.__class__, '_json_merge_allowlist', None)
     defaults = getattr(self.__class__, '_field_defaults', {})
     dt_format = getattr(self.__class__, '_datetime_format', 'timestamp_ms')
+
+    # Collect all column names up-front so we can guard against shadowing them during merge.
+    column_names: set = {col.name for col in self.__table__.columns}
 
     for column in self.__table__.columns:
         key = column.name
@@ -78,7 +85,15 @@ def _base_to_dict(self):
                 try:
                     parsed = _json.loads(value)
                     if isinstance(parsed, dict):
-                        result.update(parsed)
+                        if merge_allowlist is not None:
+                            # Strict allowlist: only accept explicitly permitted keys.
+                            safe = {k: v for k, v in parsed.items() if k in merge_allowlist}
+                        else:
+                            # No allowlist defined: fall back to blocking column-name shadowing.
+                            # This prevents a corrupt/tampered metadata_json from overwriting
+                            # ORM-column values (e.g. id, role, content, user_id) in the output.
+                            safe = {k: v for k, v in parsed.items() if k not in column_names}
+                        result.update(safe)
                 except (_json.JSONDecodeError, TypeError):
                     pass
             continue
@@ -122,5 +137,9 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        # Roll back any partial writes before propagating so the session is clean.
+        db.rollback()
+        raise
     finally:
         db.close()

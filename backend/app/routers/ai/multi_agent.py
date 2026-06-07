@@ -42,15 +42,8 @@ from ...services.agent.adk_builtin_tools import (
     build_adk_builtin_tools,
     build_sheet_stage_envelope,
     normalize_sheet_artifact_ref,
-    normalize_sheet_stage,
-    validate_sheet_artifact_binding,
     validate_sheet_export_precheck,
 )
-from ...services.agent.sheet_policy_hooks import (
-    apply_row_level_policy_hook,
-    assert_stage_row_level_policy_pair,
-)
-from ...services.agent.export_policy import enforce_sheet_export_constraint
 from ...services.agent.adk_artifact_service import (
     ADKArtifactBindingError,
     ADKArtifactLineageError,
@@ -2794,7 +2787,8 @@ async def execute_excel_analysis_workflow(
 
 @router.get("/workflows/adk-samples/templates")
 async def list_adk_samples_templates(
-    request_obj: Request
+    request_obj: Request,
+    db: Session = Depends(get_db),
 ):
     """
     列出可用的 ADK samples 模板
@@ -2804,16 +2798,10 @@ async def list_adk_samples_templates(
     """
     try:
         from ...services.gemini.agent.adk_samples_importer import ADKSamplesImporter
-        from ...core.database import SessionLocal
-        
-        db = SessionLocal()
-        try:
-            importer = ADKSamplesImporter(db=db)
-            templates = await importer.list_available_templates()
-            return {"templates": templates, "count": len(templates)}
-        finally:
-            db.close()
-        
+
+        importer = ADKSamplesImporter(db=db)
+        templates = await importer.list_available_templates()
+        return {"templates": templates, "count": len(templates)}
     except Exception as e:
         logger.error(f"[Multi-Agent API] Error listing ADK samples templates: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

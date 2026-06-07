@@ -16,7 +16,6 @@ import secrets
 import json
 import base64
 import functools
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -133,7 +132,7 @@ class JWTSecretManager:
                 data = {
                     'secret': encrypted_secret,
                     'encrypted': True,
-                    'created_at': str(Path(__file__).stat().st_mtime)  # 使用文件修改时间作为参考
+                    'created_at': datetime.now(timezone.utc).isoformat()  # actual secret creation time
                 }
                 with open(JWT_SECRET_ENCRYPTED_FILE, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=2)

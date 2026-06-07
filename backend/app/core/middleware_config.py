@@ -71,7 +71,8 @@ def _resolve_hsts_max_age() -> int:
 
 
 def _build_hsts_header(max_age: int) -> str:
-    return f"max-age={max_age}; includeSubDomains"
+    # preload: max_age >= 31536000 (1 year) is required for HSTS preload list submission
+    return f"max-age={max_age}; includeSubDomains; preload"
 
 
 def _resolve_gzip_minimum_size() -> int:

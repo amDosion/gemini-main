@@ -4,6 +4,7 @@ FastAPI 依赖注入
 提供服务实例的依赖注入和统一认证依赖
 """
 
+import functools
 from typing import Optional
 from fastapi import Header, HTTPException, Request, Depends
 from ..utils.rate_limiter import RateLimiter
@@ -98,34 +99,27 @@ def get_current_user_optional(request: Request) -> Optional[str]:
 
 
 # ==================== 其他依赖（单例） ====================
+# lru_cache(maxsize=1) replaces the previous mutable-global pattern.
+# CPython's GIL makes the first call atomic; lru_cache itself is thread-safe.
+# Tests that need a fresh instance can call get_rate_limiter.cache_clear() etc.
 
-_rate_limiter_instance: RateLimiter | None = None
-_research_cache_instance: ResearchCache | None = None
-_validator_instance: PromptSecurityValidator | None = None
 
-
+@functools.lru_cache(maxsize=1)
 def get_rate_limiter() -> RateLimiter:
     """获取 RateLimiter 单例"""
-    global _rate_limiter_instance
-    if _rate_limiter_instance is None:
-        _rate_limiter_instance = RateLimiter()
-    return _rate_limiter_instance
+    return RateLimiter()
 
 
+@functools.lru_cache(maxsize=1)
 def get_research_cache() -> ResearchCache:
     """获取 ResearchCache 单例"""
-    global _research_cache_instance
-    if _research_cache_instance is None:
-        _research_cache_instance = ResearchCache()
-    return _research_cache_instance
+    return ResearchCache()
 
 
+@functools.lru_cache(maxsize=1)
 def get_validator() -> PromptSecurityValidator:
     """获取 PromptSecurityValidator 单例"""
-    global _validator_instance
-    if _validator_instance is None:
-        _validator_instance = PromptSecurityValidator()
-    return _validator_instance
+    return PromptSecurityValidator()
 
 
 # ==================== 缓存服务依赖 ====================

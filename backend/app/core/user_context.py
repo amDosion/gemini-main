@@ -180,5 +180,10 @@ def extract_user_id_from_token(token: str) -> Optional[str]:
         return None
     except JWTError:
         return None
-    except Exception:
+    except Exception as e:  # unexpected error; log at WARNING with traceback
+        logger.warning(
+            "[UserContext] Unexpected error in extract_user_id_from_token: %s",
+            e,
+            exc_info=True,
+        )
         return None

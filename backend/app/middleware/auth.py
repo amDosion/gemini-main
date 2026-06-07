@@ -4,9 +4,7 @@
 from typing import Optional, Callable
 from functools import wraps
 
-from fastapi import Request, HTTPException, Depends
-
-from ..core.jwt_utils import decode_token, TokenPayload
+from fastapi import Request, HTTPException
 
 
 # 不需要认证的路径

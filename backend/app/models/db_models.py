@@ -46,7 +46,7 @@ class UserSettings(Base):
     __tablename__ = "user_settings"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(String, unique=True, index=True, nullable=False, default="default")  # 用户ID，默认"default"支持单用户
+    user_id = Column(String, unique=True, index=True, nullable=False)  # 用户ID；单用户匿名模式由服务层显式处理，不依赖列默认值
     active_profile_id = Column(String, nullable=True)  # 当前活动的配置ID
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -588,7 +588,7 @@ def generate_user_id() -> str:
 
 def generate_uuid() -> str:
     """生成通用 UUID 字符串"""
-    import uuid
+    # uuid imported at module level (line 4)
     return str(uuid.uuid4())
 
 
@@ -1134,6 +1134,12 @@ class LoginAttempt(Base):
     success = Column(Boolean, default=False)  # 是否成功
     user_agent = Column(Text, nullable=True)  # 用户代理
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    # 复合索引：按 IP + success + created_at 查询（防暴力破解检查热路径）
+    # 镜像 IPLoginHistory 上已有的复合索引模式；旧库通过 startup_tasks 幂等补建。
+    __table_args__ = (
+        Index('ix_login_attempts_ip_success_time', 'ip_address', 'success', 'created_at'),
+    )
 
     # 使用基类 to_dict()：DateTime → isoformat
     _datetime_format = 'isoformat'

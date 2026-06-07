@@ -18,7 +18,7 @@ import hmac
 import bcrypt
 import threading
 from pathlib import Path
-from typing import Optional
+from typing import Mapping, Optional
 import logging
 import os
 import sys
@@ -87,7 +87,7 @@ def verify_admin_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def resolve_key_service_credentials(env: Optional[dict] = None):
+def resolve_key_service_credentials(env: Optional[Mapping[str, str]] = None):
     """读取并校验 Key Service 凭证，fail-closed（S1/S3）。
 
     Returns:
@@ -199,6 +199,11 @@ class KeyServiceServer:
         if self.running:
             return
         
+        # Set running=True before starting threads so that _run_client_server /
+        # _run_admin_server see the flag as True from the very first iteration of
+        # their accept loops (utils-key-main-13).
+        self.running = True
+
         # 启动 Client IPC Server（应用进程访问）
         client_thread = threading.Thread(
             target=self._run_client_server,
@@ -212,8 +217,6 @@ class KeyServiceServer:
             daemon=True
         )
         admin_thread.start()
-        
-        self.running = True
         logger.info("[KeyService] ✅ Key Service 已启动")
         logger.info(f"  - Client Socket: {self.client_socket_path}")
         logger.info(f"  - Admin Socket: {self.admin_socket_path}")
@@ -240,6 +243,12 @@ class KeyServiceServer:
         try:
             if platform.system() == 'Windows':
                 # Windows 使用 TCP Socket（命名管道在 Python 中较复杂）
+                # SECURITY NOTE (utils-key-main-2): The port file written below is
+                # not ACL-restricted; any local user can read it and attempt to
+                # connect to the loopback port.  This is weaker isolation than the
+                # Unix socket (which is chmod 0o600).  For production Windows
+                # deployments, restrict the file using icacls / win32security, or
+                # replace this with a Windows Named Pipe backed by a restrictive DACL.
                 self.client_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.client_server_socket.bind(('127.0.0.1', 0))
                 port = self.client_server_socket.getsockname()[1]
@@ -279,6 +288,8 @@ class KeyServiceServer:
         try:
             if platform.system() == 'Windows':
                 # Windows 使用 TCP Socket
+                # SECURITY NOTE (utils-key-main-2): Same weaker isolation caveat as
+                # the client socket above — port file is not ACL-restricted.
                 self.admin_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.admin_server_socket.bind(('127.0.0.1', 0))
                 port = self.admin_server_socket.getsockname()[1]
@@ -330,8 +341,13 @@ class KeyServiceServer:
             conn.send(json.dumps(response).encode())
             
         except Exception as e:
-            logger.error(f"[KeyService] 处理 Client 请求失败: {e}")
-            conn.send(json.dumps({'error': str(e)}).encode())
+            # Send a generic message to the caller; log details server-side only
+            # to avoid leaking internal error information (utils-key-main-3).
+            logger.error("[KeyService] 处理 Client 请求失败", exc_info=True)
+            try:
+                conn.send(json.dumps({'error': '内部错误'}).encode())
+            except Exception:
+                pass
         finally:
             conn.close()
     
@@ -360,8 +376,13 @@ class KeyServiceServer:
             conn.send(json.dumps(response).encode())
             
         except Exception as e:
-            logger.error(f"[KeyService] 处理 Admin 请求失败: {e}")
-            conn.send(json.dumps({'error': str(e)}).encode())
+            # Send a generic message to the caller; log details server-side only
+            # to avoid leaking internal error information (utils-key-main-3).
+            logger.error("[KeyService] 处理 Admin 请求失败", exc_info=True)
+            try:
+                conn.send(json.dumps({'error': '内部错误'}).encode())
+            except Exception:
+                pass
         finally:
             conn.close()
 

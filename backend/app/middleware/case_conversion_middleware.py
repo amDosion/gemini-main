@@ -259,9 +259,19 @@ class CaseConversionMiddleware:
 
                 modified_receive = converted_receive
             else:
-                # 非 http.request 消息，创建透传
+                # 非 http.request 消息：一次性返回 first_message，后续委托原始 receive
+                # 与 converted_receive 保持同样的一次性模式，确保后续调用（如断开检测）
+                # 能正确委托到原始 receive，而不是永远重播 first_message。
+                passthrough_sent = False
+
                 async def passthrough_receive() -> Message:
-                    return first_message
+                    nonlocal passthrough_sent
+                    if not passthrough_sent:
+                        passthrough_sent = True
+                        return first_message
+                    # 后续调用：等待原始 receive（用于检测客户端断开）
+                    return await receive()
+
                 modified_receive = passthrough_receive
 
         # ========== 响应处理 ==========
