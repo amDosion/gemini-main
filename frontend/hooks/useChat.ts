@@ -514,82 +514,89 @@ export const useChat = (
 
       // 10. Handle upload task (if any)
       if (finalResult.uploadTask) {
-        finalResult.uploadTask.then(({ dbAttachments, dbUserAttachments }) => {
-          // ✅ 保存到数据库（使用 dbAttachments，带 uploadTaskId）
-          // 注意：dbUserAttachments 已经处理过，可能清空了 Blob URL（用于数据库持久化）
-          const dbUserMessage: Message = dbUserAttachments
-            ? { ...userMessage, attachments: dbUserAttachments as Attachment[] }
-            : userMessage;
+        finalResult.uploadTask
+          .then(({ dbAttachments, dbUserAttachments }) => {
+            // ✅ 保存到数据库（使用 dbAttachments，带 uploadTaskId）
+            // 注意：dbUserAttachments 已经处理过，可能清空了 Blob URL（用于数据库持久化）
+            const dbUserMessage: Message = dbUserAttachments
+              ? { ...userMessage, attachments: dbUserAttachments as Attachment[] }
+              : userMessage;
 
-          const dbModelMessage: Message = {
-            ...initialModelMessage,
-            content: finalResult.content,
-            attachments: dbAttachments as Attachment[],
-            toolCalls: finalResult.toolCalls ? [...finalResult.toolCalls] : undefined,
-            toolResults: finalResult.toolResults ? [...finalResult.toolResults] : undefined,
-            responseKind: finalResult.responseKind || initialModelMessage.responseKind,
-            researchStatus: finalResult.researchStatus || initialModelMessage.researchStatus,
-            researchInteractionId:
-              finalResult.researchInteractionId || initialModelMessage.researchInteractionId,
-            researchRequiredAction: finalResult.researchRequiredAction,
-            ...(finalResult.thoughts && { thoughts: finalResult.thoughts }),
-            ...(finalResult.textResponse && { textResponse: finalResult.textResponse }),
-            ...(finalResult.enhancedPrompt && { enhancedPrompt: finalResult.enhancedPrompt }),
-            ...(finalResult.continuationStrategy && {
-              continuationStrategy: finalResult.continuationStrategy,
-            }),
-            ...(typeof finalResult.videoExtensionCount === 'number' && {
-              videoExtensionCount: finalResult.videoExtensionCount,
-            }),
-            ...(typeof finalResult.videoExtensionApplied === 'number' && {
-              videoExtensionApplied: finalResult.videoExtensionApplied,
-            }),
-            ...(typeof finalResult.totalDurationSeconds === 'number' && {
-              totalDurationSeconds: finalResult.totalDurationSeconds,
-            }),
-            ...(finalResult.continuedFromVideo && {
-              continuedFromVideo: finalResult.continuedFromVideo,
-            }),
-            ...(typeof finalResult.storyboardShotSeconds === 'number' && {
-              storyboardShotSeconds: finalResult.storyboardShotSeconds,
-            }),
-            ...(typeof finalResult.generateAudio === 'boolean' && {
-              generateAudio: finalResult.generateAudio,
-            }),
-            ...(finalResult.subtitleMode && { subtitleMode: finalResult.subtitleMode }),
-            ...(finalResult.subtitleLanguage && { subtitleLanguage: finalResult.subtitleLanguage }),
-            ...(finalResult.subtitleAttachmentIds &&
-              finalResult.subtitleAttachmentIds.length > 0 && {
-                subtitleAttachmentIds: [...finalResult.subtitleAttachmentIds],
+            const dbModelMessage: Message = {
+              ...initialModelMessage,
+              content: finalResult.content,
+              attachments: dbAttachments as Attachment[],
+              toolCalls: finalResult.toolCalls ? [...finalResult.toolCalls] : undefined,
+              toolResults: finalResult.toolResults ? [...finalResult.toolResults] : undefined,
+              responseKind: finalResult.responseKind || initialModelMessage.responseKind,
+              researchStatus: finalResult.researchStatus || initialModelMessage.researchStatus,
+              researchInteractionId:
+                finalResult.researchInteractionId || initialModelMessage.researchInteractionId,
+              researchRequiredAction: finalResult.researchRequiredAction,
+              ...(finalResult.thoughts && { thoughts: finalResult.thoughts }),
+              ...(finalResult.textResponse && { textResponse: finalResult.textResponse }),
+              ...(finalResult.enhancedPrompt && { enhancedPrompt: finalResult.enhancedPrompt }),
+              ...(finalResult.continuationStrategy && {
+                continuationStrategy: finalResult.continuationStrategy,
               }),
-            ...(finalResult.trackedFeature && { trackedFeature: finalResult.trackedFeature }),
-            ...(finalResult.trackingOverlayText && {
-              trackingOverlayText: finalResult.trackingOverlayText,
-            }),
-          };
+              ...(typeof finalResult.videoExtensionCount === 'number' && {
+                videoExtensionCount: finalResult.videoExtensionCount,
+              }),
+              ...(typeof finalResult.videoExtensionApplied === 'number' && {
+                videoExtensionApplied: finalResult.videoExtensionApplied,
+              }),
+              ...(typeof finalResult.totalDurationSeconds === 'number' && {
+                totalDurationSeconds: finalResult.totalDurationSeconds,
+              }),
+              ...(finalResult.continuedFromVideo && {
+                continuedFromVideo: finalResult.continuedFromVideo,
+              }),
+              ...(typeof finalResult.storyboardShotSeconds === 'number' && {
+                storyboardShotSeconds: finalResult.storyboardShotSeconds,
+              }),
+              ...(typeof finalResult.generateAudio === 'boolean' && {
+                generateAudio: finalResult.generateAudio,
+              }),
+              ...(finalResult.subtitleMode && { subtitleMode: finalResult.subtitleMode }),
+              ...(finalResult.subtitleLanguage && {
+                subtitleLanguage: finalResult.subtitleLanguage,
+              }),
+              ...(finalResult.subtitleAttachmentIds &&
+                finalResult.subtitleAttachmentIds.length > 0 && {
+                  subtitleAttachmentIds: [...finalResult.subtitleAttachmentIds],
+                }),
+              ...(finalResult.trackedFeature && { trackedFeature: finalResult.trackedFeature }),
+              ...(finalResult.trackingOverlayText && {
+                trackingOverlayText: finalResult.trackingOverlayText,
+              }),
+            };
 
-          // ✅ 保存到数据库的消息（会清空 Blob URL）
-          const dbMessages = [
-            ...baseMessages.filter((m) => m.id !== userMessage.id),
-            dbUserMessage,
-            dbModelMessage,
-          ];
+            // ✅ 保存到数据库的消息（会清空 Blob URL）
+            const dbMessages = [
+              ...baseMessages.filter((m) => m.id !== userMessage.id),
+              dbUserMessage,
+              dbModelMessage,
+            ];
 
-          // ✅ 保存到数据库（会清空 Blob URL，用于持久化）
-          updateSessionMessages(resolvedSessionId, dbMessages, {
-            strategy: 'merge-by-id',
-          });
-
-          // ✅ 重要：当前会话的 messages 状态保留 Blob URL 用于显示
-          // 不需要更新 setMessages，因为 UI 显示使用的是 messages 状态，不是数据库中的
-
-          // ✅ 详细日志：记录保存到数据库的附件URL类型
-          if (dbModelMessage.attachments && dbModelMessage.attachments.length > 0) {
-            dbModelMessage.attachments.forEach((att, idx) => {
-              const urlType = getUrlType(att.url, att.uploadStatus);
+            // ✅ 保存到数据库（会清空 Blob URL，用于持久化）
+            updateSessionMessages(resolvedSessionId, dbMessages, {
+              strategy: 'merge-by-id',
             });
-          }
-        });
+
+            // ✅ 重要：当前会话的 messages 状态保留 Blob URL 用于显示
+            // 不需要更新 setMessages，因为 UI 显示使用的是 messages 状态，不是数据库中的
+
+            // ✅ 详细日志：记录保存到数据库的附件URL类型
+            if (dbModelMessage.attachments && dbModelMessage.attachments.length > 0) {
+              dbModelMessage.attachments.forEach((att, idx) => {
+                const urlType = getUrlType(att.url, att.uploadStatus);
+              });
+            }
+          })
+          .catch((persistError) => {
+            // hooks-contexts-1: never silently drop a background persistence failure
+            console.error('[useChat] 上传任务后台持久化失败:', persistError);
+          });
       } else {
         // 没有上传任务，直接保存到数据库（会清空 Blob URL）
         const finalMessages = [...updatedMessages, displayModelMessage];
