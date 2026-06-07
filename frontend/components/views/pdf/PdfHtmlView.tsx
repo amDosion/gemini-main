@@ -29,14 +29,17 @@ export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data: rawData }) => {
   // 渲染单个值
   const renderValue = (value: unknown): React.ReactNode => {
     if (value === null || value === undefined) return <span className="text-slate-500">-</span>;
-    if (typeof value === 'boolean') return <span className={value ? 'text-green-400' : 'text-red-400'}>{value ? '是' : '否'}</span>;
+    if (typeof value === 'boolean')
+      return (
+        <span className={value ? 'text-green-400' : 'text-red-400'}>{value ? '是' : '否'}</span>
+      );
     return <span className="text-slate-100">{String(value)}</span>;
   };
 
   // 渲染数组为表格
   const renderArrayTable = (items: PdfExtractValue[], title: string) => {
     if (items.length === 0) return <p className="text-slate-500 italic text-sm">无数据</p>;
-    
+
     const firstItem = items[0];
     if (typeof firstItem === 'object' && firstItem !== null) {
       const headers = Object.keys(firstItem);
@@ -45,17 +48,27 @@ export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data: rawData }) => {
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="bg-slate-800/80">
-                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 border border-slate-700">#</th>
-                {headers.map(h => (
-                  <th key={h} className="px-3 py-2 text-left text-xs font-medium text-slate-400 border border-slate-700">{h}</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 border border-slate-700">
+                  #
+                </th>
+                {headers.map((h) => (
+                  <th
+                    key={h}
+                    className="px-3 py-2 text-left text-xs font-medium text-slate-400 border border-slate-700"
+                  >
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {(items as Record<string, PdfExtractValue>[]).map((item, idx) => (
-                <tr key={`${idx}-${String(item[headers[0]] ?? '')}`} className="hover:bg-slate-800/30">
+                <tr
+                  key={`${idx}-${String(item[headers[0]] ?? '')}`}
+                  className="hover:bg-slate-800/30"
+                >
                   <td className="px-3 py-2 text-slate-500 border border-slate-700/50">{idx + 1}</td>
-                  {headers.map(h => (
+                  {headers.map((h) => (
                     <td key={h} className="px-3 py-2 text-slate-200 border border-slate-700/50">
                       {renderValue(item[h])}
                     </td>
@@ -67,7 +80,7 @@ export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data: rawData }) => {
         </div>
       );
     }
-    
+
     // 简单数组
     return (
       <ol className="list-decimal list-inside space-y-1 mt-2 text-slate-200">
@@ -87,12 +100,18 @@ export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data: rawData }) => {
     ][Math.min(level - 1, 2)];
 
     switch (Math.min(level + 1, 6)) {
-      case 2: return <h2 className={classes}>{text}</h2>;
-      case 3: return <h3 className={classes}>{text}</h3>;
-      case 4: return <h4 className={classes}>{text}</h4>;
-      case 5: return <h5 className={classes}>{text}</h5>;
-      case 6: return <h6 className={classes}>{text}</h6>;
-      default: return <h2 className={classes}>{text}</h2>;
+      case 2:
+        return <h2 className={classes}>{text}</h2>;
+      case 3:
+        return <h3 className={classes}>{text}</h3>;
+      case 4:
+        return <h4 className={classes}>{text}</h4>;
+      case 5:
+        return <h5 className={classes}>{text}</h5>;
+      case 6:
+        return <h6 className={classes}>{text}</h6>;
+      default:
+        return <h2 className={classes}>{text}</h2>;
     }
   };
 
@@ -109,7 +128,7 @@ export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data: rawData }) => {
               </div>
             );
           }
-          
+
           if (typeof value === 'object' && value !== null) {
             return (
               <div key={key} className="mb-4">
@@ -118,9 +137,12 @@ export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data: rawData }) => {
               </div>
             );
           }
-          
+
           return (
-            <div key={key} className="flex items-start gap-3 py-2 px-3 rounded-lg bg-slate-800/30 mb-2">
+            <div
+              key={key}
+              className="flex items-start gap-3 py-2 px-3 rounded-lg bg-slate-800/30 mb-2"
+            >
               <span className="text-slate-400 font-medium min-w-[120px] shrink-0">{key}:</span>
               {renderValue(value)}
             </div>
@@ -144,11 +166,13 @@ export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data: rawData }) => {
           } else if (typeof value[0] === 'object' && value[0] !== null) {
             const headers = Object.keys(value[0]);
             html += '<table><thead><tr><th>#</th>';
-            headers.forEach(h => { html += `<th>${escapeHtml(h)}</th>`; });
+            headers.forEach((h) => {
+              html += `<th>${escapeHtml(h)}</th>`;
+            });
             html += '</tr></thead><tbody>';
             value.forEach((item, idx) => {
               html += `<tr><td>${idx + 1}</td>`;
-              headers.forEach(h => {
+              headers.forEach((h) => {
                 html += `<td>${escapeHtml(String((item as Record<string, PdfExtractValue>)[h] ?? '-'))}</td>`;
               });
               html += '</tr>';
@@ -156,7 +180,9 @@ export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data: rawData }) => {
             html += '</tbody></table>';
           } else {
             html += '<ol>';
-            value.forEach(item => { html += `<li>${escapeHtml(String(item))}</li>`; });
+            value.forEach((item) => {
+              html += `<li>${escapeHtml(String(item))}</li>`;
+            });
             html += '</ol>';
           }
         } else if (typeof value === 'object' && value !== null) {
