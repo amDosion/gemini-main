@@ -341,24 +341,23 @@ def encrypt_config(config: Dict[str, Any]) -> Dict[str, Any]:
                     # 已经加密，直接使用
                     encrypted_config[field] = value
                 else:
-                    # 未加密，进行加密
-                    try:
-                        encrypted_bytes = fernet.encrypt(value.encode('utf-8'))
-                        encrypted_config[field] = encrypted_bytes.decode('utf-8')
-                    except Exception as e:
-                        logger.error(f"[Encryption] Failed to encrypt field '{field}': {e}")
-                        # Keep original value if encryption fails
-                        encrypted_config[field] = value
+                    # 未加密，进行加密。
+                    # core-4: FAIL CLOSED — never silently fall back to plaintext.
+                    # If encryption fails we raise, so the caller fails the save
+                    # rather than persisting a secret in the clear.
+                    encrypted_bytes = fernet.encrypt(value.encode('utf-8'))
+                    encrypted_config[field] = encrypted_bytes.decode('utf-8')
             else:
                 # Keep non-sensitive fields unchanged
                 encrypted_config[field] = value
-        
+
         return encrypted_config
-        
+
     except Exception as e:
-        logger.error(f"[Encryption] Encryption failed: {e}")
-        # Return original config if encryption fails
-        return config
+        # core-4: do NOT return the plaintext config on failure. Encryption of
+        # sensitive fields must be all-or-nothing; surface the error to the caller.
+        logger.error(f"[Encryption] Encryption failed (failing closed): {e}")
+        raise
 
 
 def decrypt_config(config: Dict[str, Any]) -> Dict[str, Any]:

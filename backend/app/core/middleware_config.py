@@ -189,10 +189,20 @@ def configure_middlewares(
 
     # 2. CORS 中间件（跨域资源共享）
     # 注意：使用 httpOnly Cookie 时，allow_origins 不能为 "*"
-    cors_origins = os.getenv(
-        "CORS_ORIGINS",
-        "http://localhost:21573,http://127.0.0.1:21573"
-    ).split(",")
+    _default_cors = "http://localhost:21573,http://127.0.0.1:21573"
+    cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", _default_cors).split(",") if o.strip()]
+
+    # core-2: a wildcard origin is invalid and unsafe together with
+    # allow_credentials=True (cookie auth). Refuse "*" rather than silently
+    # shipping a credentialed wildcard CORS policy; fall back to safe defaults
+    # if the operator supplied only "*".
+    if "*" in cors_origins:
+        logger.warning(
+            f"{prefixes.get('warning', '⚠️')} CORS_ORIGINS 含通配符 '*'，与 allow_credentials=True 不兼容且不安全，已忽略通配符"
+        )
+        cors_origins = [o for o in cors_origins if o != "*"]
+    if not cors_origins:
+        cors_origins = [o.strip() for o in _default_cors.split(",")]
 
     app.add_middleware(
         CORSMiddleware,

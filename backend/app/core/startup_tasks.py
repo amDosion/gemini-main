@@ -192,16 +192,13 @@ async def initialize_encryption_keys(log_prefixes: Dict[str, str]):
         from .jwt_utils import JWTSecretManager
 
         # 确保 ENCRYPTION_KEY 已读取（从 .env 文件）
+        # core-1: never log key material (not even a masked prefix/suffix) — length only.
         encryption_key = EncryptionKeyManager.get_or_create_key()
-        # 显示前 8 个字符和后 4 个字符，中间用 ... 代替
-        masked_key = f"{encryption_key[:8]}...{encryption_key[-4:]}" if len(encryption_key) > 12 else encryption_key
-        logger.info(f"{log_prefixes['success']} ENCRYPTION_KEY 已初始化（长度: {len(encryption_key)}, 值: {masked_key}）")
+        logger.info(f"{log_prefixes['success']} ENCRYPTION_KEY 已初始化（长度: {len(encryption_key)}）")
 
         # 确保 JWT_SECRET_KEY 已读取（从 .env 文件）
         jwt_secret = JWTSecretManager.get_or_create_secret()
-        # 显示前 8 个字符和后 4 个字符，中间用 ... 代替
-        masked_secret = f"{jwt_secret[:8]}...{jwt_secret[-4:]}" if len(jwt_secret) > 12 else jwt_secret
-        logger.info(f"{log_prefixes['success']} JWT_SECRET_KEY 已初始化（长度: {len(jwt_secret)}, 值: {masked_secret}）")
+        logger.info(f"{log_prefixes['success']} JWT_SECRET_KEY 已初始化（长度: {len(jwt_secret)}）")
     except Exception as e:
         logger.error(f"{log_prefixes['error']} 密钥初始化失败: {e}")
         raise

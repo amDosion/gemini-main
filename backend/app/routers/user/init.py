@@ -217,6 +217,21 @@ async def get_non_critical_init_data(
         storage_result = await _safe(_query_storage_configs(user_id, db), "storage")
         vertex_ai_result = await _safe(_query_vertex_ai_config(user_id, db), "vertex_ai")
 
+        # models-middleware-2: _query_vertex_ai_config returns the config under
+        # "vertex_ai_config" (existing) or "imagen_config" (defaults) — never
+        # "imagenConfig", so this field was always None. Read the correct key.
+        # models-middleware-1: never ship the service-account credential blob to the
+        # client; redact it and expose only a presence flag.
+        imagen_config = None
+        if isinstance(vertex_ai_result, dict):
+            imagen_config = vertex_ai_result.get("vertex_ai_config") or vertex_ai_result.get("imagen_config")
+            if isinstance(imagen_config, dict) and imagen_config.get("vertex_ai_credentials_json"):
+                imagen_config = {
+                    **imagen_config,
+                    "vertex_ai_credentials_json": None,
+                    "has_vertex_ai_credentials": True,
+                }
+
         return {
             "sessions": sessions_result.get("sessions", []) if isinstance(sessions_result, dict) else [],
             "sessionsTotal": sessions_result.get("total", 0) if isinstance(sessions_result, dict) else 0,
@@ -225,7 +240,7 @@ async def get_non_critical_init_data(
             "personas": personas_result.get("personas", []) if isinstance(personas_result, dict) else [],
             "storageConfigs": storage_result.get("storage_configs", []) if isinstance(storage_result, dict) else [],
             "activeStorageId": storage_result.get("active_storage_id") if isinstance(storage_result, dict) else None,
-            "imagenConfig": vertex_ai_result.get("imagenConfig") if isinstance(vertex_ai_result, dict) else None
+            "imagenConfig": imagen_config
         }
     except Exception as e:
         logger.error(f"Failed to load non-critical initialization data for user {user_id}: {e}", exc_info=True)
