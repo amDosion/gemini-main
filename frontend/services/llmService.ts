@@ -223,27 +223,14 @@ export class LLMService {
       throw new Error(`Backend API error: ${response.status}${suffix}`);
     }
 
-    const data = await readJsonResponse<unknown>(response);
+    const data = (await readJsonResponse<unknown>(response)) as Record<string, unknown>;
     const payload: ModelsApiResponse = {
-      models: Array.isArray((data as Record<string, unknown>).models)
-        ? ((data as Record<string, unknown>).models as ModelConfig[])
-        : [],
-      defaultModelId:
-        typeof (data as Record<string, unknown>).defaultModelId === 'string'
-          ? ((data as Record<string, unknown>).defaultModelId as string)
-          : null,
-      modeCatalog: Array.isArray((data as Record<string, unknown>).modeCatalog)
-        ? ((data as Record<string, unknown>).modeCatalog as ModeCatalogItem[])
-        : [],
-      filteredByMode:
-        typeof (data as Record<string, unknown>).filteredByMode === 'string'
-          ? ((data as Record<string, unknown>).filteredByMode as string)
-          : null,
-      cached: Boolean((data as Record<string, unknown>).cached),
-      provider:
-        typeof (data as Record<string, unknown>).provider === 'string'
-          ? ((data as Record<string, unknown>).provider as string)
-          : requestProviderId,
+      models: Array.isArray(data.models) ? (data.models as ModelConfig[]) : [],
+      defaultModelId: typeof data.defaultModelId === 'string' ? data.defaultModelId : null,
+      modeCatalog: Array.isArray(data.modeCatalog) ? (data.modeCatalog as ModeCatalogItem[]) : [],
+      filteredByMode: typeof data.filteredByMode === 'string' ? data.filteredByMode : null,
+      cached: Boolean(data.cached),
+      provider: typeof data.provider === 'string' ? data.provider : requestProviderId,
     };
 
     if (
@@ -582,9 +569,10 @@ export class LLMService {
       ...options, // ✅ Handler 传入的 options 优先（包含 sessionId、messageId）
     };
 
+    const mergedOptionsRecord = mergedOptions as Record<string, unknown>;
     const outpaintMode =
-      typeof (mergedOptions as Record<string, unknown>).outpaintMode === 'string'
-        ? ((mergedOptions as Record<string, unknown>).outpaintMode as string)
+      typeof mergedOptionsRecord.outpaintMode === 'string'
+        ? mergedOptionsRecord.outpaintMode
         : 'ratio';
     const selectedModelId = String(
       mergedOptions.modelId || this._cachedModelConfig?.id || ''

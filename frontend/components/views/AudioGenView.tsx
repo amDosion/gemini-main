@@ -65,6 +65,19 @@ const getWordStableKey = (word: Word): string => {
   return `${word.startTime}:${word.endTime}:${word.text}`;
 };
 
+// Resolve the text prompt that produced a model message: the immediately
+// preceding USER message's content. Returns '' when unavailable.
+const getPrecedingUserText = (messages: Message[], modelMsg: Message): string => {
+  const modelMsgIndex = messages.findIndex((m) => m.id === modelMsg.id);
+  if (modelMsgIndex > 0) {
+    const userMsg = messages[modelMsgIndex - 1];
+    if (userMsg && userMsg.role === Role.USER && userMsg.content) {
+      return userMsg.content;
+    }
+  }
+  return '';
+};
+
 // Component for true Karaoke-style lyrics display
 const KaraokeLyrics: React.FC<{ text: string; currentTime: number; duration: number }> = React.memo(
   ({ text, currentTime, duration }) => {
@@ -437,12 +450,9 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
         if (audioAtt?.url) {
           setActiveAudioUrl(audioAtt.url);
           // Find the corresponding user message to get the text content
-          const modelMsgIndex = messages.findIndex((m) => m.id === lastModelMsg.id);
-          if (modelMsgIndex > 0) {
-            const userMsg = messages[modelMsgIndex - 1];
-            if (userMsg && userMsg.role === Role.USER && userMsg.content) {
-              setActiveAudioText(userMsg.content);
-            }
+          const userText = getPrecedingUserText(messages, lastModelMsg);
+          if (userText) {
+            setActiveAudioText(userText);
           }
         }
       }
@@ -483,12 +493,9 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
       // Find the message containing this audio
       const modelMsg = messages.find((m) => m.attachments?.some((a) => a.url === url));
       if (modelMsg) {
-        const modelMsgIndex = messages.findIndex((m) => m.id === modelMsg.id);
-        if (modelMsgIndex > 0) {
-          const userMsg = messages[modelMsgIndex - 1];
-          if (userMsg && userMsg.role === Role.USER && userMsg.content) {
-            setActiveAudioText(userMsg.content);
-          }
+        const userText = getPrecedingUserText(messages, modelMsg);
+        if (userText) {
+          setActiveAudioText(userText);
         }
       }
     },
@@ -519,16 +526,7 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
     if (activeAudioText) return activeAudioText;
     // Fallback: try to find from current active audio URL
     const modelMsg = messages.find((m) => m.attachments?.some((a) => a.url === activeAudioUrl));
-    if (modelMsg) {
-      const modelMsgIndex = messages.findIndex((m) => m.id === modelMsg.id);
-      if (modelMsgIndex > 0) {
-        const userMsg = messages[modelMsgIndex - 1];
-        if (userMsg && userMsg.role === Role.USER && userMsg.content) {
-          return userMsg.content;
-        }
-      }
-    }
-    return '';
+    return modelMsg ? getPrecedingUserText(messages, modelMsg) : '';
   }, [messages, activeAudioUrl, activeAudioText]);
 
   // Mobile History Toggle

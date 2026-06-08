@@ -76,6 +76,11 @@ const mergeMessagesById = (existingMessages: Message[], incomingMessages: Messag
 const hasOutOfModeSessions = (mode: AppMode, sessions: ChatSession[]): boolean =>
   sessions.some((session) => getSessionMode(normalizeChatSession(session)) !== mode);
 
+// Newest-first ordering, used everywhere session lists are materialized. Returns
+// a new array; the input is never mutated.
+const sortSessionsByCreatedAtDesc = (sessions: ChatSession[]): ChatSession[] =>
+  [...sessions].sort((a, b) => b.createdAt - a.createdAt);
+
 export const useSessions = (
   appMode: AppMode,
   initialData?: {
@@ -178,7 +183,7 @@ export const useSessions = (
 
   const selectLatestSessionForMode = useCallback((mode: AppMode) => {
     const modeSessions = readCachedSessionsForMode(mode) ?? [];
-    const latestSession = [...modeSessions].sort((a, b) => b.createdAt - a.createdAt)[0];
+    const latestSession = sortSessionsByCreatedAtDesc(modeSessions)[0];
     writeCurrentSessionIdForMode(mode, latestSession?.id ?? null);
     return Boolean(latestSession);
   }, []);
@@ -194,7 +199,7 @@ export const useSessions = (
       return;
     }
 
-    const latestSession = [...sessions].sort((a, b) => b.createdAt - a.createdAt)[0];
+    const latestSession = sortSessionsByCreatedAtDesc(sessions)[0];
     if (latestSession) {
       writeCurrentSessionIdForMode(appMode, latestSession.id);
     }
@@ -210,7 +215,7 @@ export const useSessions = (
   const prepareSessions = useCallback((sourceSessions: ChatSession[]) => {
     const recoveredSessions = sourceSessions.map(normalizeChatSession);
 
-    return [...recoveredSessions].sort((a, b) => b.createdAt - a.createdAt);
+    return sortSessionsByCreatedAtDesc(recoveredSessions);
   }, []);
 
   const fetchSessionsPage = useCallback(async (mode: AppMode, offset: number) => {

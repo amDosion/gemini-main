@@ -107,6 +107,16 @@ const cacheMemoryKey = (cacheKey: string): string => `${MEDIA_OBJECT_URL_PREFIX}
 const cacheMemoryScopePrefix = (userScope: string): string =>
   `${MEDIA_OBJECT_URL_PREFIX}media:${getScopeCacheSegment(userScope)}:`;
 
+// Diagnostics consistently key off the same identity triple; build it once so the
+// repeated `{ cacheKey, sourceUrl, userScope }` literal does not drift across sites.
+const diagnosticIdentity = (
+  source: Pick<MediaCacheIdentity, 'cacheKey' | 'sourceUrl' | 'userScope'>
+): Pick<MediaCacheIdentity, 'cacheKey' | 'sourceUrl' | 'userScope'> => ({
+  cacheKey: source.cacheKey,
+  sourceUrl: source.sourceUrl,
+  userScope: source.userScope,
+});
+
 const deleteObjectUrlMemory = (cacheKey: string): void => {
   const key = cacheMemoryKey(cacheKey);
   const entry = cacheManager.get<MemoryEntry>(key);
@@ -134,9 +144,7 @@ export const evictCachedMediaObjectUrl = (
   cacheManager.remove(key);
   revokeTrackedObjectUrl(entry.objectUrl);
   recordDiagnostic('clear-entry', {
-    cacheKey: identity.cacheKey,
-    sourceUrl: identity.sourceUrl,
-    userScope: identity.userScope,
+    ...diagnosticIdentity(identity),
     reason: 'object-url-error',
   });
   return true;
@@ -190,9 +198,7 @@ export const getCachedMediaObjectUrlSync = (
       revokeTrackedObjectUrl(entry.objectUrl);
     }
     recordDiagnostic('clear-entry', {
-      cacheKey: identity.cacheKey,
-      sourceUrl: identity.sourceUrl,
-      userScope: identity.userScope,
+      ...diagnosticIdentity(identity),
       reason: 'failed-object-url',
     });
     return null;
@@ -201,11 +207,7 @@ export const getCachedMediaObjectUrlSync = (
 
   entry.lastAccessedAt = now;
   cacheManager.set(cacheMemoryKey(identity.cacheKey), entry);
-  recordDiagnostic('memory-hit', {
-    cacheKey: identity.cacheKey,
-    sourceUrl: identity.sourceUrl,
-    userScope: identity.userScope,
-  });
+  recordDiagnostic('memory-hit', diagnosticIdentity(identity));
   return entry.objectUrl;
 };
 
@@ -245,9 +247,7 @@ const createUncachedMediaResult = (
   reason: string
 ): CachedMedia => {
   recordDiagnostic('cache-write-memory-only', {
-    cacheKey: identity.cacheKey,
-    sourceUrl: identity.sourceUrl,
-    userScope: identity.userScope,
+    ...diagnosticIdentity(identity),
     size: blob.size,
     reason,
   });
@@ -299,9 +299,7 @@ export const getCachedMediaObjectUrl = async (
   if (!isCurrentLifecycle()) return null;
   if (!metadata) {
     recordDiagnostic('persistent-miss', {
-      cacheKey: identity.cacheKey,
-      sourceUrl: identity.sourceUrl,
-      userScope: identity.userScope,
+      ...diagnosticIdentity(identity),
       reason: 'metadata-miss',
     });
     return null;
@@ -312,18 +310,14 @@ export const getCachedMediaObjectUrl = async (
     await cache?.delete(storageCacheRequest(identity.cacheKey));
     await deleteMediaCacheMetadata(identity.cacheKey);
     recordDiagnostic('persistent-miss', {
-      cacheKey: identity.cacheKey,
-      sourceUrl: identity.sourceUrl,
-      userScope: identity.userScope,
+      ...diagnosticIdentity(identity),
       reason: 'user-scope-mismatch',
     });
     return null;
   }
   if (!options.allowStale && metadata.versionSignature !== identity.versionSignature) {
     recordDiagnostic('persistent-miss', {
-      cacheKey: identity.cacheKey,
-      sourceUrl: identity.sourceUrl,
-      userScope: identity.userScope,
+      ...diagnosticIdentity(identity),
       reason: 'version-mismatch',
     });
     return null;
@@ -333,9 +327,7 @@ export const getCachedMediaObjectUrl = async (
   if (!isCurrentLifecycle()) return null;
   if (!cache) {
     recordDiagnostic('persistent-miss', {
-      cacheKey: identity.cacheKey,
-      sourceUrl: identity.sourceUrl,
-      userScope: identity.userScope,
+      ...diagnosticIdentity(identity),
       reason: 'cache-storage-unavailable',
     });
     return null;
@@ -345,9 +337,7 @@ export const getCachedMediaObjectUrl = async (
   if (!response) {
     await deleteMediaCacheMetadata(identity.cacheKey);
     recordDiagnostic('persistent-miss', {
-      cacheKey: identity.cacheKey,
-      sourceUrl: identity.sourceUrl,
-      userScope: identity.userScope,
+      ...diagnosticIdentity(identity),
       reason: 'blob-miss',
     });
     return null;
@@ -376,9 +366,7 @@ export const getCachedMediaObjectUrl = async (
     return null;
   }
   recordDiagnostic('persistent-hit', {
-    cacheKey: identity.cacheKey,
-    sourceUrl: identity.sourceUrl,
-    userScope: identity.userScope,
+    ...diagnosticIdentity(identity),
     size: metadata.size,
   });
   return objectUrl;
@@ -446,11 +434,7 @@ const fetchMediaBlob = async (
     if (metadata?.lastModified) headers.set('If-Modified-Since', metadata.lastModified);
   }
 
-  recordDiagnostic('network-fetch', {
-    cacheKey: identity.cacheKey,
-    sourceUrl: identity.sourceUrl,
-    userScope: identity.userScope,
-  });
+  recordDiagnostic('network-fetch', diagnosticIdentity(identity));
   const response = await fetch(
     identity.sourceUrl,
     identity.temporary
@@ -478,11 +462,7 @@ export const fetchAndStoreMedia = async (
   const inFlightKey = `${identity.cacheKey}:${identity.versionSignature}`;
   const existing = inFlightFetches.get(inFlightKey);
   if (existing) {
-    recordDiagnostic('network-dedupe', {
-      cacheKey: identity.cacheKey,
-      sourceUrl: identity.sourceUrl,
-      userScope: identity.userScope,
-    });
+    recordDiagnostic('network-dedupe', diagnosticIdentity(identity));
     return existing;
   }
 
@@ -553,9 +533,7 @@ export const fetchAndStoreMedia = async (
         }
       }
       recordDiagnostic('network-304', {
-        cacheKey: downloadIdentity.cacheKey,
-        sourceUrl: downloadIdentity.sourceUrl,
-        userScope: downloadIdentity.userScope,
+        ...diagnosticIdentity(downloadIdentity),
         size: previousMetadata?.size,
       });
       return { objectUrl, status: 'not-modified', metadata: previousMetadata };
@@ -599,9 +577,7 @@ export const fetchAndStoreMedia = async (
     }
     if (!metadata) {
       recordDiagnostic('cache-write-memory-only', {
-        cacheKey: downloadIdentity.cacheKey,
-        sourceUrl: downloadIdentity.sourceUrl,
-        userScope: downloadIdentity.userScope,
+        ...diagnosticIdentity(downloadIdentity),
         size: blob.size,
       });
     }
@@ -683,9 +659,7 @@ export const saveMediaBlobToCache = async (
   }
   if (!metadata) {
     recordDiagnostic('cache-write-memory-only', {
-      cacheKey: identity.cacheKey,
-      sourceUrl: identity.sourceUrl,
-      userScope: identity.userScope,
+      ...diagnosticIdentity(identity),
       size: blob.size,
     });
   }
@@ -712,9 +686,7 @@ export const clearUserMediaCache = async (userScope: string): Promise<void> => {
       await cache?.delete(storageCacheRequest(entry.cacheKey));
       await deleteMediaCacheMetadata(entry.cacheKey);
       recordDiagnostic('clear-entry', {
-        cacheKey: entry.cacheKey,
-        sourceUrl: entry.sourceUrl,
-        userScope: entry.userScope,
+        ...diagnosticIdentity(entry),
         size: entry.size,
         reason: 'user-scope',
       });
@@ -731,9 +703,7 @@ export const clearAllMediaCache = async (): Promise<void> => {
     metadata.map(async (entry) => {
       await deleteMediaCacheMetadata(entry.cacheKey);
       recordDiagnostic('clear-entry', {
-        cacheKey: entry.cacheKey,
-        sourceUrl: entry.sourceUrl,
-        userScope: entry.userScope,
+        ...diagnosticIdentity(entry),
         size: entry.size,
         reason: 'all',
       });

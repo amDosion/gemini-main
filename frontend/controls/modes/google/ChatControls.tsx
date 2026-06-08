@@ -118,14 +118,15 @@ const parseMcpServerOptions = (configJson: string): McpServerOption[] => {
 
     return Object.entries(serverMap)
       .filter(([, config]) => !(config.disabled === true || config.enabled === false))
-      .map(([key, config]) => {
-        const label =
-          typeof config.name === 'string' && config.name.trim() ? config.name.trim() : key;
+      .reduce<McpServerOption[]>((options, [key, config]) => {
         const transport = detectTransport(config);
-        return { key, label, transport, valid: isValidServerConfig(transport, config) };
-      })
-      .filter((item) => item.valid)
-      .map(({ key, label, transport }) => ({ key, label, transport }))
+        if (isValidServerConfig(transport, config)) {
+          const label =
+            typeof config.name === 'string' && config.name.trim() ? config.name.trim() : key;
+          options.push({ key, label, transport });
+        }
+        return options;
+      }, [])
       .sort((a, b) => a.label.localeCompare(b.label));
   } catch {
     return [];
@@ -770,11 +771,9 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
                       setIsAutoResearchMenuOpen(false);
                     }}
                     className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
-                      selected && enableAutoDeepResearch
+                      selected
                         ? 'bg-blue-600/20 text-blue-300'
-                        : selected
-                          ? 'bg-blue-600/20 text-blue-300'
-                          : 'text-slate-300 hover:bg-slate-800'
+                        : 'text-slate-300 hover:bg-slate-800'
                     }`}
                     title={model.name}
                   >

@@ -6,9 +6,7 @@ export interface UseWorkspaceModeHandlersParams {
   appMode: AppMode;
   openWorkspaceModes: AppMode[];
   setOpenWorkspaceModes: React.Dispatch<React.SetStateAction<AppMode[]>>;
-  setWorkspaceReloadKeys: React.Dispatch<
-    React.SetStateAction<Partial<Record<AppMode, number>>>
-  >;
+  setWorkspaceReloadKeys: React.Dispatch<React.SetStateAction<Partial<Record<AppMode, number>>>>;
   handleModeSwitch: (mode: AppMode) => void;
   selectLatestSessionForMode: (mode: AppMode) => boolean;
   refreshSessions: (options?: { force?: boolean }) => void | Promise<void>;
@@ -41,24 +39,31 @@ export const useWorkspaceModeHandlers = (
     refreshSessions,
   } = params;
 
-  const handleWorkspaceModeSelect = useCallback(
+  const openWorkspaceMode = useCallback(
     (mode: AppMode) => {
       setOpenWorkspaceModes((current) => (current.includes(mode) ? current : [...current, mode]));
+    },
+    [setOpenWorkspaceModes]
+  );
+
+  const handleWorkspaceModeSelect = useCallback(
+    (mode: AppMode) => {
+      openWorkspaceMode(mode);
       handleModeSwitch(mode);
     },
-    [handleModeSwitch, setOpenWorkspaceModes]
+    [handleModeSwitch, openWorkspaceMode]
   );
 
   const handleModeNavigationSelect = useCallback(
     (mode: AppMode) => {
-      setOpenWorkspaceModes((current) => (current.includes(mode) ? current : [...current, mode]));
+      openWorkspaceMode(mode);
       const hasCachedLatest = selectLatestSessionForMode(mode);
       handleModeSwitch(mode);
       if (mode === appMode && !hasCachedLatest) {
         refreshSessions();
       }
     },
-    [appMode, handleModeSwitch, refreshSessions, selectLatestSessionForMode, setOpenWorkspaceModes]
+    [appMode, handleModeSwitch, openWorkspaceMode, refreshSessions, selectLatestSessionForMode]
   );
 
   const handleWorkspaceModesClose = useCallback(

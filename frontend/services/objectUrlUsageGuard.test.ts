@@ -26,9 +26,11 @@ const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);
 const isSourceFile = (filePath: string): boolean => {
   const extension = path.extname(filePath);
   if (!SOURCE_EXTENSIONS.has(extension)) return false;
-  return !filePath.includes(`${path.sep}node_modules${path.sep}`) &&
+  return (
+    !filePath.includes(`${path.sep}node_modules${path.sep}`) &&
     !filePath.endsWith('.test.ts') &&
-    !filePath.endsWith('.test.tsx');
+    !filePath.endsWith('.test.tsx')
+  );
 };
 
 const walkFiles = (dir: string): string[] => {
@@ -50,84 +52,63 @@ const stripLineComment = (line: string): string => {
   return line;
 };
 
+// Walk + read every source file ONCE; all four guards scan this shared snapshot
+// instead of re-walking and re-reading the whole frontend/ tree four times. This
+// keeps the checks deterministic (one snapshot) and fast enough to never trip the
+// test timeout under parallel test-suite I/O.
+const SOURCE_FILES: ReadonlyArray<{ relativePath: string; lines: readonly string[] }> = walkFiles(
+  FRONTEND_DIR
+).map((filePath) => ({
+  relativePath: path.relative(process.cwd(), filePath),
+  lines: fs.readFileSync(filePath, 'utf8').split(/\r?\n/),
+}));
+
+const findViolations = (
+  matches: (sourceLine: string) => boolean,
+  isAllowed: (relativePath: string) => boolean
+): string[] =>
+  SOURCE_FILES.flatMap(({ relativePath, lines }) =>
+    isAllowed(relativePath)
+      ? []
+      : lines.flatMap((line, index) =>
+          matches(stripLineComment(line)) ? [`${relativePath}:${index + 1}: ${line.trim()}`] : []
+        )
+  );
+
 describe('object URL lifecycle guard', () => {
   it('keeps direct object URL browser APIs inside the shared media cache lifecycle', () => {
-    const violations = walkFiles(FRONTEND_DIR).flatMap((filePath) => {
-      const relativePath = path.relative(process.cwd(), filePath);
-      if (ALLOWED_DIRECT_OBJECT_URL_FILES.has(relativePath)) return [];
-
-      return fs
-        .readFileSync(filePath, 'utf8')
-        .split(/\r?\n/)
-        .flatMap((line, index) => {
-          const sourceLine = stripLineComment(line);
-          if (
-            !sourceLine.includes('URL.createObjectURL') &&
-            !sourceLine.includes('URL.revokeObjectURL')
-          ) {
-            return [];
-          }
-          return [`${relativePath}:${index + 1}: ${line.trim()}`];
-        });
-    });
+    const violations = findViolations(
+      (sourceLine) =>
+        sourceLine.includes('URL.createObjectURL') || sourceLine.includes('URL.revokeObjectURL'),
+      (relativePath) => ALLOWED_DIRECT_OBJECT_URL_FILES.has(relativePath)
+    );
 
     expect(violations).toEqual([]);
   });
 
   it('keeps synchronous media object URL reads inside shared cache loaders', () => {
-    const violations = walkFiles(FRONTEND_DIR).flatMap((filePath) => {
-      const relativePath = path.relative(process.cwd(), filePath);
-      if (ALLOWED_SYNC_MEDIA_CACHE_READ_FILES.has(relativePath)) return [];
-
-      return fs
-        .readFileSync(filePath, 'utf8')
-        .split(/\r?\n/)
-        .flatMap((line, index) => {
-          const sourceLine = stripLineComment(line);
-          if (!sourceLine.includes('getCachedMediaObjectUrlSync')) {
-            return [];
-          }
-          return [`${relativePath}:${index + 1}: ${line.trim()}`];
-        });
-    });
+    const violations = findViolations(
+      (sourceLine) => sourceLine.includes('getCachedMediaObjectUrlSync'),
+      (relativePath) => ALLOWED_SYNC_MEDIA_CACHE_READ_FILES.has(relativePath)
+    );
 
     expect(violations).toEqual([]);
   });
 
   it('keeps synchronous preview object URL reads inside the preview cache module', () => {
-    const violations = walkFiles(FRONTEND_DIR).flatMap((filePath) => {
-      const relativePath = path.relative(process.cwd(), filePath);
-      if (ALLOWED_SYNC_PREVIEW_CACHE_READ_FILES.has(relativePath)) return [];
-
-      return fs
-        .readFileSync(filePath, 'utf8')
-        .split(/\r?\n/)
-        .flatMap((line, index) => {
-          const sourceLine = stripLineComment(line);
-          if (!sourceLine.includes('getCachedPreviewObjectUrlSync')) {
-            return [];
-          }
-          return [`${relativePath}:${index + 1}: ${line.trim()}`];
-        });
-    });
+    const violations = findViolations(
+      (sourceLine) => sourceLine.includes('getCachedPreviewObjectUrlSync'),
+      (relativePath) => ALLOWED_SYNC_PREVIEW_CACHE_READ_FILES.has(relativePath)
+    );
 
     expect(violations).toEqual([]);
   });
 
   it('requires runtime preview cache callers to opt out of memory object urls', () => {
-    const violations = walkFiles(FRONTEND_DIR).flatMap((filePath) => {
-      const relativePath = path.relative(process.cwd(), filePath);
-
-      return fs
-        .readFileSync(filePath, 'utf8')
-        .split(/\r?\n/)
-        .flatMap((line, index) => {
-          const sourceLine = stripLineComment(line);
-          if (!sourceLine.includes('getCachedPreviewObjectUrl(')) return [];
-          if (ALLOWED_MEMORY_PREVIEW_CACHE_CALL_FILES.has(relativePath)) return [];
-          return [`${relativePath}:${index + 1}: ${line.trim()}`];
-        });
-    });
+    const violations = findViolations(
+      (sourceLine) => sourceLine.includes('getCachedPreviewObjectUrl('),
+      (relativePath) => ALLOWED_MEMORY_PREVIEW_CACHE_CALL_FILES.has(relativePath)
+    );
 
     expect(violations).toEqual([]);
   });

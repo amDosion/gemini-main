@@ -58,12 +58,18 @@ def _local_storage_allowed_roots() -> list[str]:
     return list(_compute_allowed_roots(raw))
 
 
+def _path_is_contained(target: str, root: str) -> bool:
+    """True when ``target`` is ``root`` itself or lives beneath it.
+
+    Both arguments must already be realpath-resolved. The ``os.sep`` boundary
+    avoids ``/root_evil`` matching the sibling of ``/root``.
+    """
+    return target == root or target.startswith(root + os.sep)
+
+
 def _is_within_allowed_local_root(path: str) -> bool:
     target = os.path.realpath(path)
-    for root in _local_storage_allowed_roots():
-        if target == root or target.startswith(root + os.sep):
-            return True
-    return False
+    return any(_path_is_contained(target, root) for root in _local_storage_allowed_roots())
 
 
 def resolve_local_storage_runtime_config(config: Optional[Dict[str, Any]] = None) -> tuple[str, str]:
@@ -107,7 +113,7 @@ def resolve_local_public_file_path(file_url: str, config: Optional[Dict[str, Any
 
     root = os.path.realpath(storage_path)
     target = os.path.realpath(os.path.join(root, relative_path))
-    if target != root and not target.startswith(root + os.sep):
+    if not _path_is_contained(target, root):
         return None
 
     return Path(target)
@@ -127,7 +133,7 @@ class LocalProvider(BaseStorageProvider):
         relative = self._normalize_relative_path(relative_path)
         target = os.path.realpath(os.path.join(root, relative))
 
-        if target != root and not target.startswith(root + os.sep):
+        if not _path_is_contained(target, root):
             raise ValueError("非法目录路径")
 
         if not os.path.exists(target):
@@ -308,7 +314,7 @@ class LocalProvider(BaseStorageProvider):
             file_path_abs = os.path.realpath(file_path)
             storage_path_abs = os.path.realpath(storage_path)
 
-            if file_path_abs != storage_path_abs and not file_path_abs.startswith(storage_path_abs + os.sep):
+            if not _path_is_contained(file_path_abs, storage_path_abs):
                 return False
 
             # 删除文件
@@ -474,7 +480,7 @@ class LocalProvider(BaseStorageProvider):
             if not normalized:
                 return {"success": False, "supported": False, "message": "path is required"}
             target = os.path.realpath(os.path.join(root, normalized))
-            if target != root and not target.startswith(root + os.sep):
+            if not _path_is_contained(target, root):
                 return {"success": False, "supported": False, "message": "非法目录路径"}
 
             if not os.path.exists(target):
@@ -508,14 +514,14 @@ class LocalProvider(BaseStorageProvider):
                 return {"success": False, "supported": False, "message": "path is required"}
 
             source = os.path.realpath(os.path.join(root, normalized))
-            if source != root and not source.startswith(root + os.sep):
+            if not _path_is_contained(source, root):
                 return {"success": False, "supported": False, "message": "非法路径"}
             if not os.path.exists(source):
                 return {"success": False, "supported": True, "message": "目标不存在"}
 
             parent = os.path.dirname(source)
             target = os.path.realpath(os.path.join(parent, new_name))
-            if target != root and not target.startswith(root + os.sep):
+            if not _path_is_contained(target, root):
                 return {"success": False, "supported": False, "message": "非法目标路径"}
             if os.path.exists(target):
                 return {"success": False, "supported": True, "message": "同名文件已存在"}

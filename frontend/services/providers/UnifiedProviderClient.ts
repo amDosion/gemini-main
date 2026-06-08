@@ -232,7 +232,6 @@ export class UnifiedProviderClient implements ILLMProvider {
 
       const decoder = new TextDecoder();
       let chunkCount = 0;
-      let totalTextLength = 0;
       const pendingUpdates: StreamUpdate[] = [];
       let streamError: Error | null = null;
 
@@ -304,7 +303,6 @@ export class UnifiedProviderClient implements ILLMProvider {
             }
 
             const text = chunk.text || '';
-            totalTextLength += text.length;
             pendingUpdates.push({
               text,
               chunkType: chunk.chunkType,
@@ -439,8 +437,7 @@ export class UnifiedProviderClient implements ILLMProvider {
 
     // ✅ 处理图片生成、编辑、试衣结果（后端已处理，返回标准化格式）
     // 对于 image-gen、image-edit、virtual-try-on 模式，后端返回 { images: [...] }
-    const isImageMode =
-      mode === 'image-gen' || mode.startsWith('image-') || mode === 'virtual-try-on';
+    const isImageMode = mode.startsWith('image-') || mode === 'virtual-try-on';
     const imageData = data.data as ImageModeData;
     if (isImageMode && imageData.images) {
       // 将后端格式转换为 ImageGenerationResult[]

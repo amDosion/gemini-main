@@ -6,7 +6,7 @@
  */
 
 import { Message, Role, ToolCall, ToolResult } from '../types/types';
-import type { StreamUpdate } from './handlers/types';
+import type { HandlerResult, StreamUpdate } from './handlers/types';
 
 export const AUTO_RESEARCH_CONTEXT_WINDOW = 6;
 export const AUTO_RESEARCH_EVIDENCE_WINDOW = 20;
@@ -200,5 +200,61 @@ export const applyStreamUpdateToModelMessage = (
     researchRequiredAction: Object.prototype.hasOwnProperty.call(update, 'researchRequiredAction')
       ? update.researchRequiredAction
       : message.researchRequiredAction,
+  };
+};
+
+/**
+ * 构建 display / db 两份 model message 共有的结果字段。
+ *
+ * `attachments` 与 grounding/urlContext/browserOperationId 在两处不同，由调用方自行内联，
+ * 这里仅收敛两处完全一致的内容、工具、研究状态与可选元数据展开逻辑（消除重复）。
+ */
+export const buildModelMessageResultFields = (
+  finalResult: HandlerResult,
+  initialModelMessage: Message
+): Partial<Message> => {
+  return {
+    content: finalResult.content,
+    toolCalls: finalResult.toolCalls ? [...finalResult.toolCalls] : undefined,
+    toolResults: finalResult.toolResults ? [...finalResult.toolResults] : undefined,
+    responseKind: finalResult.responseKind || initialModelMessage.responseKind,
+    researchStatus: finalResult.researchStatus || initialModelMessage.researchStatus,
+    researchInteractionId:
+      finalResult.researchInteractionId || initialModelMessage.researchInteractionId,
+    researchRequiredAction: finalResult.researchRequiredAction,
+    ...(finalResult.thoughts && { thoughts: finalResult.thoughts }),
+    ...(finalResult.textResponse && { textResponse: finalResult.textResponse }),
+    ...(finalResult.enhancedPrompt && { enhancedPrompt: finalResult.enhancedPrompt }),
+    ...(finalResult.continuationStrategy && {
+      continuationStrategy: finalResult.continuationStrategy,
+    }),
+    ...(typeof finalResult.videoExtensionCount === 'number' && {
+      videoExtensionCount: finalResult.videoExtensionCount,
+    }),
+    ...(typeof finalResult.videoExtensionApplied === 'number' && {
+      videoExtensionApplied: finalResult.videoExtensionApplied,
+    }),
+    ...(typeof finalResult.totalDurationSeconds === 'number' && {
+      totalDurationSeconds: finalResult.totalDurationSeconds,
+    }),
+    ...(finalResult.continuedFromVideo && {
+      continuedFromVideo: finalResult.continuedFromVideo,
+    }),
+    ...(typeof finalResult.storyboardShotSeconds === 'number' && {
+      storyboardShotSeconds: finalResult.storyboardShotSeconds,
+    }),
+    ...(typeof finalResult.generateAudio === 'boolean' && {
+      generateAudio: finalResult.generateAudio,
+    }),
+    ...(finalResult.subtitleMode && { subtitleMode: finalResult.subtitleMode }),
+    ...(finalResult.subtitleLanguage && { subtitleLanguage: finalResult.subtitleLanguage }),
+    ...(finalResult.subtitleAttachmentIds &&
+      finalResult.subtitleAttachmentIds.length > 0 && {
+        subtitleAttachmentIds: [...finalResult.subtitleAttachmentIds],
+      }),
+    ...(finalResult.trackedFeature && { trackedFeature: finalResult.trackedFeature }),
+    ...(finalResult.trackingOverlayText && {
+      trackingOverlayText: finalResult.trackingOverlayText,
+    }),
   };
 };

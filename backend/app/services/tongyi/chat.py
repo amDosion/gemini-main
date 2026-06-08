@@ -16,11 +16,6 @@
 from typing import Dict, Any, Optional, List
 import logging
 import asyncio
-import re
-import base64
-import mimetypes
-from pathlib import Path
-from urllib.parse import urlparse
 from dashscope import Generation, MultiModalConversation
 import dashscope
 
@@ -29,10 +24,6 @@ from ..common.model_capabilities import ModelConfig, build_model_config
 from ..common.errors import (
     ProviderError,
     OperationError,
-    APIKeyError,
-    RateLimitError,
-    ModelNotFoundError,
-    InvalidRequestError,
     ErrorContext,
     ExecutionTimer,
     RequestIDManager

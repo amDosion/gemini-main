@@ -649,9 +649,6 @@ class UploadWorkerPool:
                 config=config.config
             )
             upload_duration = (datetime.now() - upload_start).total_seconds()
-            # ✅ Bug修复: result 是字典，需要转换为字符串再截断，或只显示关键信息
-            result_str = str(result)
-            result_preview = result_str
 
             # ========== 步骤 5: 处理上传结果 ==========
             if result.get('success'):
@@ -758,8 +755,7 @@ class UploadWorkerPool:
         路径格式：backend/app/temp/...
         """
         from ...core.path_utils import resolve_relative_path, ensure_relative_path
-        from ...models.db_models import MessageAttachment
-        
+
         # 类型1: source_file_path（已有）
         if task.source_file_path:
             source_path = task.source_file_path

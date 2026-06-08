@@ -61,12 +61,7 @@ export interface WorkspaceAreaProps {
   isLoadingModels: boolean;
   visibleModels: ModelConfig[];
   allVisibleModels: ModelConfig[];
-  handleWelcomePrompt: (
-    text: string,
-    mode: AppMode,
-    modelId: string,
-    requiredCap: string
-  ) => void;
+  handleWelcomePrompt: (text: string, mode: AppMode, modelId: string, requiredCap: string) => void;
   handleOpenSettings: (tab?: string) => void;
 
   // --- Studio init ---
@@ -169,6 +164,17 @@ export const WorkspaceArea: React.FC<WorkspaceAreaProps> = (props) => {
       apiKey: config.apiKey, // ✅ 传递 apiKey 用于调用 API
     };
 
+    // chat / multi-agent 共享的欢迎页 + 模型菜单 props（StudioView 不消费这些）
+    const chatLikeProps = {
+      isLoadingModels,
+      visibleModels,
+      allVisibleModels, // ✅ 传递完整模型列表
+      apiKey: config.apiKey ?? '',
+      protocol: config.protocol ?? null,
+      onPromptSelect: handleWelcomePrompt,
+      onOpenSettings: () => handleOpenSettings('profiles'),
+    };
+
     return (
       <>
         {hasChatView && (
@@ -178,14 +184,8 @@ export const WorkspaceArea: React.FC<WorkspaceAreaProps> = (props) => {
           >
             <ChatView
               {...commonProps}
+              {...chatLikeProps}
               messages={chatViewMessages}
-              isLoadingModels={isLoadingModels}
-              visibleModels={visibleModels}
-              allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
-              apiKey={config.apiKey ?? ''}
-              protocol={config.protocol ?? null}
-              onPromptSelect={handleWelcomePrompt}
-              onOpenSettings={() => handleOpenSettings('profiles')}
               appMode="chat"
             />
           </div>
@@ -200,15 +200,8 @@ export const WorkspaceArea: React.FC<WorkspaceAreaProps> = (props) => {
               <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
                 <MultiAgentView
                   {...commonProps}
+                  {...chatLikeProps}
                   messages={multiAgentViewMessages}
-                  setAppMode={handleWorkspaceModeSelect}
-                  isLoadingModels={isLoadingModels}
-                  visibleModels={visibleModels}
-                  allVisibleModels={allVisibleModels} // ✅ 传递完整模型列表
-                  apiKey={config.apiKey ?? ''}
-                  protocol={config.protocol ?? null}
-                  onPromptSelect={handleWelcomePrompt}
-                  onOpenSettings={() => handleOpenSettings('profiles')}
                   appMode="multi-agent"
                 />
               </Suspense>
@@ -220,7 +213,6 @@ export const WorkspaceArea: React.FC<WorkspaceAreaProps> = (props) => {
           <div style={{ display: isStudioAppMode(appMode) ? 'contents' : 'none' }}>
             <StudioView
               {...commonProps}
-              setAppMode={handleWorkspaceModeSelect}
               messages={messages}
               mode={activeStudioMode}
               modeReloadKeys={workspaceReloadKeys}

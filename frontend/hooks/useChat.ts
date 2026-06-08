@@ -43,6 +43,7 @@ import {
   STREAM_UPDATE_BATCH_INTERVAL_MS,
   composeModelMessageUpdaters,
   applyStreamUpdateToModelMessage,
+  buildModelMessageResultFields,
   type ModelMessageUpdater,
 } from './useChatHelpers';
 
@@ -445,57 +446,15 @@ export const useChat = (
       // 9. Update UI with result
       const displayModelMessage: Message = {
         ...initialModelMessage,
-        content: finalResult.content,
         attachments: finalResult.attachments as Attachment[],
         groundingMetadata: finalResult.groundingMetadata,
         urlContextMetadata: finalResult.urlContextMetadata,
         browserOperationId: finalResult.browserOperationId,
-        toolCalls: finalResult.toolCalls ? [...finalResult.toolCalls] : undefined,
-        toolResults: finalResult.toolResults ? [...finalResult.toolResults] : undefined,
-        responseKind: finalResult.responseKind || initialModelMessage.responseKind,
-        researchStatus: finalResult.researchStatus || initialModelMessage.researchStatus,
-        researchInteractionId:
-          finalResult.researchInteractionId || initialModelMessage.researchInteractionId,
-        researchRequiredAction: finalResult.researchRequiredAction,
-        // 存储 thoughts、textResponse、enhancedPrompt（如果存在）
-        ...(finalResult.thoughts && { thoughts: finalResult.thoughts }),
-        ...(finalResult.textResponse && { textResponse: finalResult.textResponse }),
-        ...(finalResult.enhancedPrompt && { enhancedPrompt: finalResult.enhancedPrompt }),
-        ...(finalResult.continuationStrategy && {
-          continuationStrategy: finalResult.continuationStrategy,
-        }),
-        ...(typeof finalResult.videoExtensionCount === 'number' && {
-          videoExtensionCount: finalResult.videoExtensionCount,
-        }),
-        ...(typeof finalResult.videoExtensionApplied === 'number' && {
-          videoExtensionApplied: finalResult.videoExtensionApplied,
-        }),
-        ...(typeof finalResult.totalDurationSeconds === 'number' && {
-          totalDurationSeconds: finalResult.totalDurationSeconds,
-        }),
-        ...(finalResult.continuedFromVideo && {
-          continuedFromVideo: finalResult.continuedFromVideo,
-        }),
-        ...(typeof finalResult.storyboardShotSeconds === 'number' && {
-          storyboardShotSeconds: finalResult.storyboardShotSeconds,
-        }),
-        ...(typeof finalResult.generateAudio === 'boolean' && {
-          generateAudio: finalResult.generateAudio,
-        }),
-        ...(finalResult.subtitleMode && { subtitleMode: finalResult.subtitleMode }),
-        ...(finalResult.subtitleLanguage && { subtitleLanguage: finalResult.subtitleLanguage }),
-        ...(finalResult.subtitleAttachmentIds &&
-          finalResult.subtitleAttachmentIds.length > 0 && {
-            subtitleAttachmentIds: [...finalResult.subtitleAttachmentIds],
-          }),
-        ...(finalResult.trackedFeature && { trackedFeature: finalResult.trackedFeature }),
-        ...(finalResult.trackingOverlayText && {
-          trackingOverlayText: finalResult.trackingOverlayText,
-        }),
+        // content/toolCalls/研究状态/可选元数据（thoughts、视频续接、字幕等）与 db 消息共用同一构建逻辑
+        ...buildModelMessageResultFields(finalResult, initialModelMessage),
       };
 
       // ✅ 调试日志：检查 thoughts/textResponse/enhancedPrompt 是否被添加到消息中
-
 
       setMessagesIfCurrentSession((prev) =>
         prev.map((msg) => (msg.id === modelMessageId ? displayModelMessage : msg))
@@ -513,51 +472,9 @@ export const useChat = (
 
             const dbModelMessage: Message = {
               ...initialModelMessage,
-              content: finalResult.content,
               attachments: dbAttachments as Attachment[],
-              toolCalls: finalResult.toolCalls ? [...finalResult.toolCalls] : undefined,
-              toolResults: finalResult.toolResults ? [...finalResult.toolResults] : undefined,
-              responseKind: finalResult.responseKind || initialModelMessage.responseKind,
-              researchStatus: finalResult.researchStatus || initialModelMessage.researchStatus,
-              researchInteractionId:
-                finalResult.researchInteractionId || initialModelMessage.researchInteractionId,
-              researchRequiredAction: finalResult.researchRequiredAction,
-              ...(finalResult.thoughts && { thoughts: finalResult.thoughts }),
-              ...(finalResult.textResponse && { textResponse: finalResult.textResponse }),
-              ...(finalResult.enhancedPrompt && { enhancedPrompt: finalResult.enhancedPrompt }),
-              ...(finalResult.continuationStrategy && {
-                continuationStrategy: finalResult.continuationStrategy,
-              }),
-              ...(typeof finalResult.videoExtensionCount === 'number' && {
-                videoExtensionCount: finalResult.videoExtensionCount,
-              }),
-              ...(typeof finalResult.videoExtensionApplied === 'number' && {
-                videoExtensionApplied: finalResult.videoExtensionApplied,
-              }),
-              ...(typeof finalResult.totalDurationSeconds === 'number' && {
-                totalDurationSeconds: finalResult.totalDurationSeconds,
-              }),
-              ...(finalResult.continuedFromVideo && {
-                continuedFromVideo: finalResult.continuedFromVideo,
-              }),
-              ...(typeof finalResult.storyboardShotSeconds === 'number' && {
-                storyboardShotSeconds: finalResult.storyboardShotSeconds,
-              }),
-              ...(typeof finalResult.generateAudio === 'boolean' && {
-                generateAudio: finalResult.generateAudio,
-              }),
-              ...(finalResult.subtitleMode && { subtitleMode: finalResult.subtitleMode }),
-              ...(finalResult.subtitleLanguage && {
-                subtitleLanguage: finalResult.subtitleLanguage,
-              }),
-              ...(finalResult.subtitleAttachmentIds &&
-                finalResult.subtitleAttachmentIds.length > 0 && {
-                  subtitleAttachmentIds: [...finalResult.subtitleAttachmentIds],
-                }),
-              ...(finalResult.trackedFeature && { trackedFeature: finalResult.trackedFeature }),
-              ...(finalResult.trackingOverlayText && {
-                trackingOverlayText: finalResult.trackingOverlayText,
-              }),
+              // 与 displayModelMessage 共用结果字段构建逻辑（仅 attachments 不同：db 版用清理后的 dbAttachments）
+              ...buildModelMessageResultFields(finalResult, initialModelMessage),
             };
 
             // ✅ 保存到数据库的消息（会清空 Blob URL）
@@ -574,7 +491,6 @@ export const useChat = (
 
             // ✅ 重要：当前会话的 messages 状态保留 Blob URL 用于显示
             // 不需要更新 setMessages，因为 UI 显示使用的是 messages 状态，不是数据库中的
-
           })
           .catch((persistError) => {
             // hooks-contexts-1: never silently drop a background persistence failure
