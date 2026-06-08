@@ -218,7 +218,13 @@ class MCPSessionPool:
         logger.info("[MCPSessionPool] All MCP sessions closed")
 
     def get_session(self, session_id: str) -> Optional[MCPClient]:
-        """获取会话（不创建），并更新最近访问时间。"""
+        """获取会话（不创建），并更新最近访问时间。
+
+        Invariant: must be called only from the asyncio event-loop thread (like
+        every other pool method). The last-used update below deliberately skips
+        the async lock — safe under the single-threaded event loop, but it would
+        be a genuine data race if invoked from a worker thread.
+        """
         client = self._sessions.get(session_id)
         if client is not None:
             # Update last-used without acquiring the async lock; monotonic write

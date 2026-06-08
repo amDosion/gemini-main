@@ -131,6 +131,12 @@ def get_vertex_ai_credentials_from_db(
                     f"loading credentials (user_id={user_id}): {e}",
                     exc_info=True,
                 )
+                # Return a fully-empty config (no project/location/credentials) so the
+                # caller falls back to *complete* ADC defaults. Returning the resolved
+                # project/location with credentials=None would route to the user's
+                # project under the ADC identity — the wrong-identity mix this module
+                # otherwise fails-fast on.
+                return None, None, None
             except Exception as e:
                 # SDK / OAuth / 解密层错误（如 GoogleAuthError、ValueError from
                 # from_service_account_info、加密层异常）：必须传播，禁止静默 fallback ADC，

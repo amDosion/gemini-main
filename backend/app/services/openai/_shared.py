@@ -93,46 +93,9 @@ CHAT_ALLOWED_OPTION_KEYS: Set[str] = {
 
 
 
-GPT_IMAGE_2_MAX_SIZE_BY_ASPECT_RATIO = {
-    "1:1": "2880x2880",
-    "4:3": "2880x2160",
-    "3:4": "2160x2880",
-    "16:9": "3840x2160",
-    "9:16": "2160x3840",
-    "3:2": "3456x2304",
-    "2:3": "2304x3456",
-}
-
-GPT_IMAGE_2_SIZE_BY_RESOLUTION_AND_ASPECT_RATIO = {
-    "1K": {
-        "1:1": "1024x1024",
-        "4:3": "1152x864",
-        "3:4": "864x1152",
-        "16:9": "1280x720",
-        "9:16": "720x1280",
-        "3:2": "1536x1024",
-        "2:3": "1024x1536",
-    },
-    "2K": {
-        "1:1": "2048x2048",
-        "4:3": "2048x1536",
-        "3:4": "1536x2048",
-        "16:9": "2048x1152",
-        "9:16": "1152x2048",
-        "3:2": "2304x1536",
-        "2:3": "1536x2304",
-    },
-    "MAX": GPT_IMAGE_2_MAX_SIZE_BY_ASPECT_RATIO,
-    "4K": GPT_IMAGE_2_MAX_SIZE_BY_ASPECT_RATIO,
-}
-
-
-GPT_IMAGE_2_MIN_PIXELS = 655_360
-GPT_IMAGE_2_MAX_PIXELS = 8_294_400
-GPT_IMAGE_2_MAX_EDGE = 3840
-GPT_IMAGE_2_MAX_ASPECT_RATIO = 3.0
-DALL_E_2_SIZES = {"256x256", "512x512", "1024x1024"}
-DALL_E_3_SIZES = {"1024x1024", "1024x1792", "1792x1024"}
+# GPT-Image-2 size/aspect tables, pixel/edge bounds, and DALL·E size sets live in
+# _sizes.py (the size helpers that consume them were extracted there); they are no
+# longer defined here to avoid a duplicate, drifting copy.
 
 
 

@@ -54,9 +54,7 @@ _SHELL_COMMANDS = {
     "fish",
     "pwsh",
     "powershell",
-    "powershell.exe",
     "cmd",
-    "cmd.exe",
 }
 
 
@@ -84,9 +82,16 @@ def _normalize_command_name(command: Optional[str]) -> str:
     if not raw:
         return ""
     name = Path(raw).name.strip().lower()
-    for suffix in _EXECUTABLE_SUFFIXES:
-        if name.endswith(suffix) and len(name) > len(suffix):
-            return name[: -len(suffix)]
+    # Strip every trailing executable suffix so even pathological names like
+    # 'node.exe.cmd' normalise to the bare command for allowlist comparison.
+    changed = True
+    while changed:
+        changed = False
+        for suffix in _EXECUTABLE_SUFFIXES:
+            if name.endswith(suffix) and len(name) > len(suffix):
+                name = name[: -len(suffix)]
+                changed = True
+                break
     return name
 
 
