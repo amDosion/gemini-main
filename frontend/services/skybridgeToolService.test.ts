@@ -70,23 +70,22 @@ describe('skybridgeToolService', () => {
 
     const fakeParent = {
       postMessage: vi.fn((payload: any) => {
-        window.dispatchEvent(
-          new MessageEvent('message', {
-            // services-1: listener accepts responses only from the same origin
-            // it posted to; simulate the legitimate same-origin host reply.
-            origin: window.location.origin,
-            data: {
-              jsonrpc: '2.0',
-              id: payload.id,
-              result: {
-                content: [{ type: 'text', text: 'hello from mcp' }],
-                structuredContent: { ok: true },
-                isError: false,
-                _meta: { requestId: 'req-1' },
-              },
+        // services-1: the listener accepts a reply only from the host frame
+        // (event.source === window.parent); simulate that source on the event.
+        const event = new MessageEvent('message', {
+          data: {
+            jsonrpc: '2.0',
+            id: payload.id,
+            result: {
+              content: [{ type: 'text', text: 'hello from mcp' }],
+              structuredContent: { ok: true },
+              isError: false,
+              _meta: { requestId: 'req-1' },
             },
-          })
-        );
+          },
+        });
+        Object.defineProperty(event, 'source', { value: window.parent });
+        window.dispatchEvent(event);
       }),
     };
 
@@ -118,19 +117,18 @@ describe('skybridgeToolService', () => {
 
     const fakeParent = {
       postMessage: vi.fn((payload: any) => {
-        window.dispatchEvent(
-          new MessageEvent('message', {
-            origin: window.location.origin,
-            data: {
-              jsonrpc: '2.0',
-              id: payload.id,
-              error: {
-                code: -32603,
-                message: 'tool failed',
-              },
+        const event = new MessageEvent('message', {
+          data: {
+            jsonrpc: '2.0',
+            id: payload.id,
+            error: {
+              code: -32603,
+              message: 'tool failed',
             },
-          })
-        );
+          },
+        });
+        Object.defineProperty(event, 'source', { value: window.parent });
+        window.dispatchEvent(event);
       }),
     };
 

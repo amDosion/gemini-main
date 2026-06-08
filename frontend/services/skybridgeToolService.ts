@@ -81,8 +81,11 @@ const callMcpAppTool = async (
     name: toolName,
     arguments: normalizeArgs(argsPayload) ?? undefined,
   };
-  // Capture the origin we target so the listener can reject messages from other frames.
-  const expectedOrigin = window.location.origin;
+  // The reply must come from the host frame we posted to. Validating event.source
+  // against window.parent (rather than event.origin) accepts the legitimate reply
+  // whether the host embeds us same- or cross-origin, while still rejecting replies
+  // injected by any other frame — the correct isolation for iframe<->host RPC.
+  const hostWindow = window.parent;
 
   return new Promise((resolve, reject) => {
     const cleanup = (listener: (event: MessageEvent) => void, timeoutId: number) => {
@@ -91,8 +94,8 @@ const callMcpAppTool = async (
     };
 
     const listener = (event: MessageEvent) => {
-      // Reject messages from any origin other than the one we sent postMessage to.
-      if (event.origin !== expectedOrigin) return;
+      // Only accept replies from the host frame we sent the request to.
+      if (event.source !== hostWindow) return;
       const data = event.data as JsonRpcSuccessResponse<unknown> | JsonRpcErrorResponse | null;
       if (!data || data.jsonrpc !== '2.0' || data.id !== requestId) {
         return;
