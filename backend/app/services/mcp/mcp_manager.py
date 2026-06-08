@@ -317,6 +317,17 @@ class MCPManager:
         """
         await self._session_pool.remove(session_id)
 
+    def _require_client(self, session_id: str) -> MCPClient:
+        """Return the pooled client for ``session_id`` or raise ``ValueError``.
+
+        Shared lookup for the tool-access methods so the not-found error
+        semantics stay identical across them.
+        """
+        client = self._session_pool.get_session(session_id)
+        if not client:
+            raise ValueError(f"Session not found: {session_id}")
+        return client
+
     async def list_tools(
         self,
         session_id: str
@@ -333,10 +344,7 @@ class MCPManager:
         Raises:
             ValueError: 会话不存在
         """
-        client = self._session_pool.get_session(session_id)
-        if not client:
-            raise ValueError(f"Session not found: {session_id}")
-
+        client = self._require_client(session_id)
         return await client.list_tools()
 
     async def call_tool(
@@ -359,10 +367,7 @@ class MCPManager:
         Raises:
             ValueError: 会话不存在
         """
-        client = self._session_pool.get_session(session_id)
-        if not client:
-            raise ValueError(f"Session not found: {session_id}")
-
+        client = self._require_client(session_id)
         return await client.call_tool(tool_name, arguments)
 
     async def get_gemini_tools(
@@ -423,10 +428,7 @@ class MCPManager:
         Raises:
             ValueError: 会话不存在或格式不支持
         """
-        client = self._session_pool.get_session(session_id)
-        if not client:
-            raise ValueError(f"Session not found: {session_id}")
-
+        client = self._require_client(session_id)
         adapter = UniversalToolAdapter(client)
         await adapter.load_tools()
         return adapter.to_format(format_type)

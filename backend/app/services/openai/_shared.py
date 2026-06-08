@@ -91,8 +91,6 @@ CHAT_ALLOWED_OPTION_KEYS: Set[str] = {
 
 
 
-
-
 # GPT-Image-2 size/aspect tables, pixel/edge bounds, and DALL·E size sets live in
 # _sizes.py (the size helpers that consume them were extracted there); they are no
 # longer defined here to avoid a duplicate, drifting copy.
