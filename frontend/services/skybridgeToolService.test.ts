@@ -72,6 +72,9 @@ describe('skybridgeToolService', () => {
       postMessage: vi.fn((payload: any) => {
         window.dispatchEvent(
           new MessageEvent('message', {
+            // services-1: listener accepts responses only from the same origin
+            // it posted to; simulate the legitimate same-origin host reply.
+            origin: window.location.origin,
             data: {
               jsonrpc: '2.0',
               id: payload.id,
@@ -117,6 +120,7 @@ describe('skybridgeToolService', () => {
       postMessage: vi.fn((payload: any) => {
         window.dispatchEvent(
           new MessageEvent('message', {
+            origin: window.location.origin,
             data: {
               jsonrpc: '2.0',
               id: payload.id,

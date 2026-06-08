@@ -93,7 +93,11 @@ describe('ImageMaskEditView auto mask feedback', () => {
         masks: [{ url: maskImageUrl, mime_type: 'image/png', labels: [] }],
       },
     });
+    // utils-coordinators-6: fetchAutoMaskPreview now checks response.ok before
+    // reading the blob, so the mock must report a successful response.
     vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
       blob: async () => new Blob(['raw'], { type: 'image/png' }),
     })));
   });

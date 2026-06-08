@@ -87,13 +87,21 @@ export const useSessions = (
   // ✅ 使用 ref 跟踪上一次的 appMode，用于检测 mode 切换
   const prevAppModeRef = useRef<AppMode>(appMode);
   const appModeRef = useRef<AppMode>(appMode);
-  // hooks-contexts-10: Cache keys incorporate the private-cache user scope internally
-  // via scopedPrivateCacheKey, so privateCacheUserScope is genuinely part of the key
-  // computation and does NOT belong in this dep array as a phantom dependency. Scope
-  // changes are reset through usePrivateCacheScopeRevision (below) — the effect-driven
-  // reset path preferred over a phantom useMemo dep.
-  const sessionListCacheKey = useMemo(() => getSessionListCacheKey(appMode), [appMode]);
-  const currentSessionIdCacheKey = useMemo(() => getCurrentSessionIdCacheKey(appMode), [appMode]);
+  // The cache key value embeds the private-cache user scope internally, so it
+  // MUST be a useMemo dependency: when the scope changes (user switch / private
+  // cache reset) the key has to recompute so the subscription re-points to the
+  // new user's partition. Removing it leaves the hook subscribed to the previous
+  // scope's key. (Reverts an incorrect hooks-contexts-10 change.)
+  const privateCacheUserScope = getPrivateCacheUserScope();
+
+  const sessionListCacheKey = useMemo(
+    () => getSessionListCacheKey(appMode),
+    [appMode, privateCacheUserScope]
+  );
+  const currentSessionIdCacheKey = useMemo(
+    () => getCurrentSessionIdCacheKey(appMode),
+    [appMode, privateCacheUserScope]
+  );
 
   // ✅ Sessions and currentSessionId use only per-mode cache partitions.
   const rawModeSessions = useCacheSubscription<ChatSession[]>(sessionListCacheKey, []);

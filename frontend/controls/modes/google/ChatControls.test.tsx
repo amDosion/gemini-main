@@ -162,7 +162,11 @@ describe('Google ChatControls — capability toggles', () => {
   it('cycles the google cache mode none -> exact -> semantic -> none', () => {
     const setGoogleCacheMode = vi.fn();
     const { rerender } = render(
-      <ChatControls {...baseProps()} setGoogleCacheMode={setGoogleCacheMode} googleCacheMode="none" />
+      <ChatControls
+        {...baseProps()}
+        setGoogleCacheMode={setGoogleCacheMode}
+        googleCacheMode="none"
+      />
     );
 
     fireEvent.click(screen.getByTitle('上下文缓存：关闭'));
@@ -234,9 +238,7 @@ describe('Google ChatControls — mutually exclusive research modes', () => {
       setDeepResearchAgentId,
       setEnableAutoDeepResearch,
       setEnableDeepResearch,
-      deepResearchModelCandidates: [
-        { ...chatModel, id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
-      ],
+      deepResearchModelCandidates: [{ ...chatModel, id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' }],
     });
 
     // Open the auto-deep-research menu.

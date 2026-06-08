@@ -54,6 +54,12 @@ export const useInitData = (shouldLoad: boolean): UseInitDataReturn => {
     requestRunRef.current = runId;
     const isCurrentRun = () => isMountedRef.current && requestRunRef.current === runId;
 
+    // This effect re-runs on scope/retry changes and its cleanup sets
+    // isMountedRef = false, so it MUST be re-armed at the start of every run —
+    // otherwise a post-cleanup re-run (e.g. private-cache scope change) discards
+    // its own results. (Reverts an incorrect hooks-contexts-11 removal.)
+    isMountedRef.current = true;
+
     // ✅ 条件加载：只有在 shouldLoad 为 true 时才加载数据
     if (!shouldLoad) {
       abortControllerRef.current?.abort();

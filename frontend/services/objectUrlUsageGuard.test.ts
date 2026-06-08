@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 const FRONTEND_DIR = path.resolve(process.cwd(), 'frontend');
 const ALLOWED_DIRECT_OBJECT_URL_FILES = new Set([
   path.join('frontend', 'services', 'mediaCache.ts'),
+  // services-11: object-URL lifecycle extracted into this mediaCache sibling.
+  path.join('frontend', 'services', 'mediaCacheObjectUrls.ts'),
 ]);
 const ALLOWED_SYNC_MEDIA_CACHE_READ_FILES = new Set([
   path.join('frontend', 'hooks', 'useCachedImageSrc.ts'),
