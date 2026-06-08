@@ -7,14 +7,14 @@
 ```
 backend/app/services/
 └── mcp/                    # 🔧 MCP 服务模块
-    ├── mcp_manager.py      # 🎯 管理层（会话池、配置管理）
-    ├── __init__.py         # 模块导出
-    ├── types.py            # 类型定义
-    ├── schema_utils.py     # Schema 转换和过滤
-    ├── client.py           # MCP 客户端（官方 SDK）
-    ├── adapter.py          # 工具适配器
-    ├── examples.py         # 使用示例
-    └── README.md           # 本文档
+    ├── mcp_manager.py        # 🎯 管理层（会话池、配置管理）
+    ├── __init__.py           # 模块导出
+    ├── types.py              # 类型定义
+    ├── schema_utils.py       # Schema 转换和过滤
+    ├── client.py             # MCP 客户端（官方 SDK）
+    ├── adapter.py            # 工具适配器
+    ├── result_normalizer.py  # 工具结果归一化
+    └── README.md             # 本文档
 ```
 
 ### 分层职责
@@ -269,7 +269,7 @@ for tool_call in response.choices[0].message.tool_calls:
 
 ## 📖 完整示例
 
-参见 [`examples.py`](./examples.py)，包含：
+参见上文「核心组件」与「与 AI 模型集成」章节，涵盖：
 
 1. 基本用法
 2. MCPManager 使用
@@ -277,13 +277,6 @@ for tool_call in response.choices[0].message.tool_calls:
 4. OpenAI 集成
 5. 会话池管理
 6. 上下文管理器
-
-运行示例：
-
-```bash
-cd backend
-python -m app.services.mcp.examples
-```
 
 ---
 
@@ -388,7 +381,6 @@ class MCPManager:
 - [MCP 官方文档](https://modelcontextprotocol.io/)
 - [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)
 - [Google Gemini MCP 集成](https://github.com/google/generative-ai-python)
-- [项目协作文档](../../../../.kiro/steering/mcp-usage-guide.md)
 
 ---
 

@@ -50,7 +50,7 @@
 ### 4.3 Sorftime 工具级结构化映射
 - 不再仅做“通用 JSON 提取”，而是按工具名细分映射。
 - 例如 trend 类工具统一转换为标准 `timeSeries`：
-  - `kind: "timeSeries"`
+  - `kind: "time_series"`
   - `metric`
   - `dimension`
   - `series[]`

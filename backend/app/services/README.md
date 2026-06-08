@@ -282,7 +282,6 @@ service = ProviderFactory.create("tongyi", api_key="...")
 - [Gemini 服务架构](./gemini/docs/README.md)
 - [OpenAI 服务架构](./openai/README.md)
 - [Tongyi 服务架构](./tongyi/README.md)
-- [路由与逻辑分离架构设计](../../docs/路由与逻辑分离架构设计文档.md)
 
 ## 更新日志
 

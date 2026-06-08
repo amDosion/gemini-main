@@ -95,23 +95,24 @@
 
 | 测试文件 | 状态 |
 |---------|------|
-| `backend/tests/test_workflow_final_status_contract.py` | Pending |
-| `backend/tests/test_workflow_preview_budget_contract.py` | Pending |
+| `backend/tests/test_workflow_runtime_contracts.py` | 现有 |
+| `backend/tests/test_workflow_agent_execution.py` | 现有 |
+| `backend/tests/test_workflow_result_summary.py` | 现有 |
+| `backend/tests/test_workflow_contract_normalization.py` | 现有 |
 
 ### 媒体执行变更
 
 | 测试文件 | 状态 |
 |---------|------|
-| `backend/tests/test_workflow_engine_media_execution.py` | Pending |
-| `backend/tests/test_workflow_engine_media_helpers.py` | Pending |
-| `backend/tests/test_workflow_engine_media_output_sanitization.py` | Pending |
+| `backend/tests/test_workflow_video_generate_kwargs.py` | 现有 |
+| `backend/tests/test_workflow_agent_execution.py` | 现有 |
 
 ### 模板 / 能力分类变更
 
 | 测试文件 | 状态 |
 |---------|------|
-| `backend/tests/test_workflow_template_coverage_report.py` | Pending |
-| `backend/tests/test_workflow_available_models_media_classification.py` | Pending |
+| `backend/tests/test_workflow_template_validation.py` | 现有 |
+| `backend/tests/test_workflow_template_sample_service.py` | 现有 |
 
 ## 当前结构目标
 

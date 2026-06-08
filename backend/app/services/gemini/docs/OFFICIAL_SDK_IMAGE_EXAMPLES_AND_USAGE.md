@@ -334,8 +334,8 @@ response = client.models.segment_image(
 
 ## 十、相关文档
 
-- [OFFICIAL_SDK_IMAGE_API_REFERENCE.md](./OFFICIAL_SDK_IMAGE_API_REFERENCE.md)：模型列表、平台差异、类型定义、迁移说明。
-- [IMAGE_SERVICE_RESTRUCTURE_DESIGN.md](./IMAGE_SERVICE_RESTRUCTURE_DESIGN.md)：本服务图像能力架构与重构设计。
+- [README.md](./README.md)：Gemini 服务模块架构概述、模型列表与平台差异。
+- [VIRTUAL_TRYON_STANDALONE_DESIGN.md](./VIRTUAL_TRYON_STANDALONE_DESIGN.md)：虚拟试衣 / recontext_image 图像能力架构与重构设计。
 
 ---
 

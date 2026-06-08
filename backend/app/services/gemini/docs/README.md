@@ -46,14 +46,16 @@ Google Gemini Provider 服务模块 - 提供完整的 Google AI 服务集成。
 | `[Common]` | API 无关的通用组件 |
 
 ```
-gemini/                                         # 共 121 个 Python 文件
+gemini/                                         # 共 126 个 Python 文件
 ├── __init__.py                                 # [Hybrid] 模块导出（含 provider-neutral/legacy Multi-Agent 说明）
 ├── google_service.py                           # [Hybrid] 主协调器 (Main Coordinator)
 ├── client_pool.py                              # [Hybrid] 统一客户端池管理
+├── http_options.py                             # [Hybrid] 池层共享的 HTTP 配置类型
+├── credentials.py                              # [Hybrid] VertexAIConfig 查询 + service-account JSON 解密
 ├── image_generator.py                          # [Hybrid] 图像生成入口 - 使用 ImagenCoordinator
 │
 ├── # ═══════════════════════════════════════════════════════════════════════
-├── # common/ - 通用组件（19 个文件）
+├── # common/ - 通用组件（17 个文件）
 ├── # ═══════════════════════════════════════════════════════════════════════
 ├── common/
 │   ├── __init__.py
@@ -92,22 +94,24 @@ gemini/                                         # 共 121 个 Python 文件
 │   └── video_storyboard.py                     # [Common] 视频故事板
 │
 ├── # ═══════════════════════════════════════════════════════════════════════
-├── # coordinators/ - 协调器（5 个文件）
+├── # coordinators/ - 协调器（6 个文件）
 ├── # ═══════════════════════════════════════════════════════════════════════
 ├── coordinators/
 │   ├── __init__.py
+│   ├── _config_cache.py                        # [Common] 模式配置缓存
 │   ├── imagen_coordinator.py                   # [Hybrid] Imagen 协调器 - Factory 模式选择 API 实现
 │   ├── image_edit_coordinator.py               # [Hybrid] 图像编辑协调器 - 智能路由编辑请求
 │   ├── video_generation_coordinator.py         # [Hybrid] Veo 视频协调器 - 选择 Gemini API / Vertex AI
 │   └── video_understanding_coordinator.py      # [Hybrid] 视频理解协调器
 │
 ├── # ═══════════════════════════════════════════════════════════════════════
-├── # geminiapi/ - Gemini API 专用实现（8 个文件）
+├── # geminiapi/ - Gemini API 专用实现（9 个文件）
 ├── # ═══════════════════════════════════════════════════════════════════════
 ├── geminiapi/
 │   ├── __init__.py
 │   ├── imagen_gemini_api.py                    # [Gemini API] ⭐ GeminiAPIImageGenerator - 使用 api_key 认证
 │   ├── image_edit_gemini_api.py                # [Gemini API] ⭐ GeminiAPIImageEditor - STUB (图片编辑不支持!)
+│   ├── recontext_image_service.py              # [Gemini API] GeminiRecontextImageService - 重新上下文化
 │   ├── video_generation_service.py             # [Gemini API] ⭐ GeminiAPIVideoGenerationService
 │   ├── video_understanding_service.py          # [Gemini API] 视频理解服务
 │   ├── conversational_image_edit_service.py    # [Gemini API] 对话式编辑服务 - 使用 Chat SDK
@@ -115,10 +119,11 @@ gemini/                                         # 共 121 个 Python 文件
 │   └── main.py                                 # [Gemini API] 主入口
 │
 ├── # ═══════════════════════════════════════════════════════════════════════
-├── # vertexai/ - Vertex AI 专用实现（13 个文件）
+├── # vertexai/ - Vertex AI 专用实现（14 个文件）
 ├── # ═══════════════════════════════════════════════════════════════════════
 ├── vertexai/
 │   ├── __init__.py
+│   ├── _vertex_config.py                       # [Vertex AI] Vertex 配置加载辅助
 │   ├── imagen_vertex_ai.py                     # [Vertex AI] ⭐ VertexAIImageGenerator - 使用服务账号认证
 │   ├── image_edit_vertex_ai.py                 # [Vertex AI] ⭐ VertexAIImageEditor - 完整图片编辑实现
 │   ├── video_generation_service.py             # [Vertex AI] ⭐ VertexAIVideoGenerationService
@@ -133,14 +138,20 @@ gemini/                                         # 共 121 个 Python 文件
 │   └── vertex_edit_base.py                     # [Vertex AI] Vertex 编辑基类
 │
 ├── # ═══════════════════════════════════════════════════════════════════════
-├── # _deprecated/ - 已弃用（2 个文件）
+├── # _deprecated/ - 已弃用（8 个文件）
 ├── # ═══════════════════════════════════════════════════════════════════════
 ├── _deprecated/
 │   ├── __init__.py
-│   └── simple_image_edit_service.py            # [Deprecated] 简单编辑服务
+│   ├── simple_image_edit_service.py            # [Deprecated] 简单编辑服务
+│   ├── sdk_initializer.py                      # [Deprecated] 请改用 client_pool.get_client_pool()
+│   ├── official_sdk_adapter.py                 # [Deprecated] 请改用 client_pool.get_client_pool()
+│   ├── genai_agent_client.py                   # [Deprecated] get_genai_client - 旧 GenAI 客户端池
+│   ├── agent_common.py                         # [Deprecated] 旧 agent 公共基类
+│   ├── agent_models.py                         # [Deprecated] 旧 Models API 包装器
+│   └── agent_interactions.py                   # [Deprecated] 旧 Interactions API 包装器
 │
 ├── # ═══════════════════════════════════════════════════════════════════════
-├── # agent/ - Agent Engine 高级功能（44 个文件）
+├── # agent/ - Agent Engine 高级功能（41 个文件）
 ├── # ═══════════════════════════════════════════════════════════════════════
 ├── agent/
 │   ├── __init__.py                             # [Google runtime] 模块导出（含 legacy orchestration symbols）
@@ -149,7 +160,6 @@ gemini/                                         # 共 121 个 Python 文件
 │   ├── client.py                               # [Hybrid] ⭐ Official GenAI SDK 兼容客户端
 │   ├── models.py                               # [Hybrid] Models API 包装器
 │   ├── interactions.py                         # [Hybrid] Interactions API 包装器 (Deep Research)
-│   ├── interactions_service.py                 # [Vertex AI] Vertex AI Interactions Service
 │   ├── types.py                                # [Common] SDK 类型定义
 │   ├── common.py                               # [Common] 公共基类和工具
 │   ├── version.py                              # [Common] 版本信息
@@ -218,11 +228,10 @@ gemini/                                         # 共 121 个 Python 文件
 │   └── utils.py                                # [Common] detect_mime_type, validate_api_key, retry_with_backoff
 │
 └── # ═══════════════════════════════════════════════════════════════════════
-    # genai_agent/ - GenAI Agent 服务（8 个文件）
+    # genai_agent/ - GenAI Agent 服务（7 个文件）
     # ═══════════════════════════════════════════════════════════════════════
     genai_agent/
     ├── __init__.py                             # [Common] 模块导出
-    ├── client.py                               # [Gemini API] ⭐ GenAI Client 池管理 - 使用 api_key 认证
     ├── service.py                              # [Common] GenAIAgentService 主服务类
     ├── research_agent.py                       # [Common] ResearchAgent 研究智能体
     ├── advanced_features.py                    # [Common] AdvancedResearchAgent 高级研究智能体
@@ -238,8 +247,8 @@ gemini/                                         # 共 121 个 Python 文件
 | **[Gemini API]** | 8 | 使用 API Key 认证的专用实现（geminiapi/） |
 | **[Vertex AI]** | 13 | 使用服务账号认证的专用实现（vertexai/） |
 | **[Hybrid]** | 10 | 支持两种 API 的协调器/适配器 |
-| **[Common]** | 90 | API 无关的通用组件（common/、base/、agent/ 等） |
-| **总计** | **121** | |
+| **[Common]** | 95 | API 无关的通用组件（common/、base/、agent/ 等） |
+| **总计** | **126** | |
 
 ### 关键实现差异
 
@@ -262,7 +271,7 @@ gemini/                                         # 共 121 个 Python 文件
 | `imagen_gemini_api.py` | `GeminiAPIImageGenerator` | 使用 `Client(api_key=...)` 进行图像生成 |
 | `video_generation_service.py` | `GeminiAPIVideoGenerationService` | 使用 `client.models.generate_videos()` + `client.files.download()` 生成并下载视频 |
 | `image_edit_gemini_api.py` | `GeminiAPIImageEditor` | **STUB** - 始终抛出 `NotSupportedError` |
-| `genai_agent/client.py` | `get_genai_client()` | GenAI 客户端池管理，使用 api_key |
+| `_deprecated/genai_agent_client.py` | `get_genai_client()` | **已弃用** GenAI 客户端池，请改用 `client_pool.get_client_pool()` |
 
 #### Vertex AI 专用文件（5 个）
 | 文件 | 类名 | 说明 |
@@ -534,14 +543,15 @@ result = service.virtual_tryon(
 
 ### 数据库配置
 
-Vertex AI 凭据可以通过数据库 `ConfigProfile` 表配置：
+Vertex AI 凭据可以通过数据库 `VertexAIConfig` 表配置：
 
 ```python
 # 从数据库获取用户的 Vertex AI 配置
-from .agent import get_vertex_ai_credentials_from_db
+from app.services.gemini.credentials import get_vertex_ai_credentials_from_db
 
-credentials = get_vertex_ai_credentials_from_db(db, user_id)
-# Returns: {"project": "...", "location": "...", "credentials_json": "..."}
+project, location, credentials = get_vertex_ai_credentials_from_db(user_id, db)
+# Returns: Tuple[project, location, credentials]
+#   - credentials 为 service_account.Credentials 对象（解密成功时），否则 None
 ```
 
 ## 错误处理

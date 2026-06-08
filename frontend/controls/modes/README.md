@@ -9,10 +9,18 @@ modes/
 ├── google/                   # 通用实现（当前主实现）
 ├── openai/                   # 仅放 OpenAI 差异实现
 │   ├── ImageGenControls.tsx
+│   ├── ImageEditControls.tsx
+│   ├── ImageMaskEditControls.tsx
+│   ├── ImageOutpaintControls.tsx
+│   ├── VirtualTryOnControls.tsx
 │   └── index.ts              # 其余直接导出通用实现
 ├── tongyi/                   # 仅放 TongYi 差异实现
 │   ├── ImageGenControls.tsx
 │   ├── ImageEditControls.tsx
+│   └── index.ts              # 其余直接导出通用实现
+├── grok/                     # 仅放 Grok 差异实现
+│   ├── ImageGenControls.tsx
+│   ├── VideoGenControls.tsx
 │   └── index.ts              # 其余直接导出通用实现
 ├── registry.ts               # providerId + mode 分发注册表
 ├── index.ts                  # 统一导出

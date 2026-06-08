@@ -222,7 +222,7 @@ VirtualTryOnView (handleSend)
 | 项目 | 状态 | 说明 |
 |------|------|------|
 | **后端** 虚拟试衣 API | ✅ 已实现 | 通过统一 modes 路由 `POST /api/modes/google/virtual-try-on` 调用 `TryOnService.virtual_tryon`（无独立 `routers/tryon.py`） |
-| **前端** `VirtualTryOnView` 重构 | ✅ 已实现 | 双槽位（人物 / 服装）、`开始试衣`、试衣历史、直接调 `/api/tryon/virtual` |
+| **前端** `VirtualTryOnView` 重构 | ✅ 已实现 | 双槽位（人物 / 服装）、`开始试衣`、试衣历史、通过 `onSend` → `useChat` → `VirtualTryOnHandler` 调统一 modes 路由 `POST /api/modes/google/virtual-try-on`（无独立 `/api/tryon/virtual`） |
 | **掩码预览 / tryOnTarget** | 已移除 | 与 recontext API 无关，不再作为试衣流程的一部分 |
 | **Modes 路径** `virtual-try-on` | 未改动 | 仍可用；前端独立模式已切到专用 API |
 

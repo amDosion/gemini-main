@@ -578,5 +578,4 @@ orchestrator = Orchestrator(
 
 ## 相关文档
 
-- [设计文档](../../../../.kiro/specs/multi-agent-adk-integration/design.md)
-- [任务清单](../../../../.kiro/specs/multi-agent-adk-integration/tasks.md)
+- 设计文档与任务清单（原 `.kiro/specs/multi-agent-adk-integration/` 规范目录）已不在仓库中。

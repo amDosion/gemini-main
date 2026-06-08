@@ -10,7 +10,9 @@
 | `modes/google/` | 通用主实现 |
 | `modes/tongyi/` | TongYi 差异实现 |
 | `modes/openai/` | OpenAI 差异实现 |
+| `modes/grok/` | Grok 差异实现 |
 | `modes/registry.ts` | `providerId + mode` 分发注册表 |
+| `shared/` | 跨控件复用的子控件与 schema 工具 |
 | `types.ts` | 类型定义 |
 | `modes/index.ts` | 控件统一导出（含向后兼容导出） |
 
@@ -30,7 +32,8 @@
 modes/
 ├── google/         # 主实现（所有控件）
 ├── tongyi/         # 专有: ImageGen, ImageEdit（其余按需复用）
-└── openai/         # 专有: ImageGen (DALL-E)
+├── openai/         # 专有: ImageGen, ImageEdit, ImageMaskEdit, ImageOutpaint, VirtualTryOn（其余按需复用）
+└── grok/           # 专有: ImageGen, VideoGen（其余按需复用）
 ```
 
 后端 schema 接口：

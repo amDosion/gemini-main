@@ -46,6 +46,8 @@ tongyi/
 │
 ├── # === Chat Service ===
 ├── chat.py                     # 通义千问聊天服务 (QwenNativeProvider)
+├── chat_multimodal.py          # 多模态流式/响应格式化 Mixin (_QwenMultimodalMixin)
+├── chat_errors.py              # DashScope 错误处理 Mixin (_QwenErrorHandlingMixin)
 │
 ├── # === Image Services ===
 ├── image_generation.py         # 文生图服务 (ImageGenerationService)
@@ -53,12 +55,18 @@ tongyi/
 ├── image_expand.py             # 图像扩展服务 (ImageExpandService)
 ├── file_upload.py              # 文件上传服务
 │
+├── # === Other Media Services ===
+├── video_generation.py         # 视频生成服务
+├── speech_generation.py        # 语音生成服务
+├── virtual_tryon.py            # 虚拟试衣服务
+│
 ├── # === Prompt Optimizer (新增) ===
 ├── prompt_optimizer/           # Prompt 智能优化模块
 │   ├── __init__.py
 │   ├── language_detector.py    # 语言检测（中文/英文）
 │   ├── generation_optimizer.py # 文生图 Prompt 优化
-│   └── edit_optimizer.py       # 图像编辑 Prompt 优化
+│   ├── edit_optimizer.py       # 图像编辑 Prompt 优化
+│   └── video_optimizer.py      # 视频 Prompt 优化
 │
 ├── # === Model Management ===
 ├── model_manager.py            # 模型管理器

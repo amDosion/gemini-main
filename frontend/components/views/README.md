@@ -117,7 +117,7 @@
 ## 关键特性
 
 ### CONTINUITY LOGIC（所有 View 组件）
-- **位置**: `frontend/hooks/handlers/attachmentUtils.ts` line 786-942
+- **位置**: `frontend/hooks/handlers/attachmentUtils.ts` 的 `processUserAttachments`（line 545 起）
 - **逻辑**: 如果用户没有上传新附件，但画布上有图片，自动使用画布上的图片
 - **优势**: 支持连续编辑工作流，无需重复上传图片
 

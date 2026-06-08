@@ -32,14 +32,20 @@ OpenAI Provider 服务模块 - 提供 OpenAI API 服务集成。
 
 ```
 openai/
-├── __init__.py             # 模块导出
-├── _shared.py              # 共享客户端/参数过滤/媒体辅助函数
-├── openai_service.py       # 主协调器 (Main Coordinator)
-├── chat_handler.py         # 聊天服务
-├── image_generator.py      # 图像生成服务 (DALL-E)
-├── video_generator.py      # 视频生成服务 (Sora)
-├── speech_generator.py     # 语音合成服务 (TTS)
-└── model_manager.py        # 模型管理器
+├── __init__.py                 # 模块导出
+├── _shared.py                  # 共享客户端/参数过滤/媒体辅助函数 (重新导出 _sizes/_prompt_enhance)
+├── _sizes.py                   # 图像尺寸/宽高比查表与模型识别 (从 _shared 拆分)
+├── _prompt_enhance.py          # 视觉提示词增强异步辅助 (从 _shared 拆分)
+├── openai_service.py           # 主协调器 (Main Coordinator)
+├── chat_handler.py             # 聊天服务
+├── image_generator.py          # 图像生成服务 (GPT Image)
+├── image_editor.py             # 图片编辑 / reference image 生成
+├── image_route_contract.py     # 图像端点路由契约
+├── responses_image.py          # Responses API 图像生成/编辑协调器
+├── pdf_extractor.py            # Responses API PDF 文件输入提取
+├── video_generator.py          # 视频生成服务 (Sora)
+├── speech_generator.py         # 语音合成服务 (TTS)
+└── model_manager.py            # 模型管理器
 ```
 
 ## 核心组件

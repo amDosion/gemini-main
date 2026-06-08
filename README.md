@@ -153,8 +153,8 @@ Built with **React 19 + TypeScript + Tailwind CSS** on the frontend and **FastAP
 git clone git@github.com:amDosion/gemini-main.git
 cd gemini-main
 
-# Automated setup: creates venv, installs deps, starts both servers
-./scripts/start_all.sh
+# Automated setup (Windows): creates venv, installs deps, starts both servers
+./scripts/start_all.ps1
 ```
 
 The script will:
@@ -256,7 +256,7 @@ gemini-main/
 │   │   └── tasks/              # Background task definitions
 │   └── tests/                  # Pytest test suite
 ├── scripts/
-│   ├── start_all.sh / .py      # Cross-platform bootstrap & run
+│   ├── start_all.ps1           # Windows bootstrap & run
 │   ├── ci/                     # CI contract-check scripts
 │   └── e2e/                    # End-to-end test scripts
 ├── .github/workflows/          # GitHub Actions CI

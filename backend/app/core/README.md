@@ -13,8 +13,7 @@ core/
 ├── database.py                 # 数据库连接和会话管理
 ├── logger.py                   # 日志配置
 ├── encryption.py               # 数据加密/解密工具
-├── jwt_utils.py                # JWT 令牌工具
-├── jwt_secret_manager.py       # JWT 密钥安全管理
+├── jwt_utils.py                # JWT 令牌工具 + JWT 密钥安全管理（JWTSecretManager）
 ├── password.py                 # 密码哈希工具
 ├── dependencies.py             # FastAPI 依赖注入
 ├── user_context.py             # 用户上下文管理
@@ -201,25 +200,25 @@ csrf_token = generate_csrf_token()
 - `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`: 访问令牌过期时间（分钟，默认：`15`）
 - `JWT_REFRESH_TOKEN_EXPIRE_DAYS`: 刷新令牌过期时间（天，默认：`7`）
 
-**注意**：JWT Secret Key 由 `jwt_secret_manager.py` 管理，不再从环境变量读取。
+**注意**：JWT Secret Key 由 `jwt_utils.py` 中的 `JWTSecretManager` 管理，仅从环境变量 `JWT_SECRET_KEY` 读取。
 
 ---
 
-### 6. `jwt_secret_manager.py` - JWT 密钥安全管理
+### 6. `jwt_utils.py`（`JWTSecretManager`）- JWT 密钥安全管理
 
-**功能**：安全地管理 JWT Secret Key，提供自动生成、加密存储和密钥轮换功能。
+**功能**：安全地管理 JWT Secret Key，提供加密存储和密钥轮换功能（`JWTSecretManager` 类位于 `jwt_utils.py` 中）。
 
 **特性**：
-- 自动生成强随机密钥（64 字节）
+- 生成强随机密钥（`secrets.token_urlsafe(64)`）
 - 加密存储到 `backend/credentials/.jwt_secret.enc`
 - 支持密钥轮换（自动清理 refresh tokens）
-- CLI 工具支持（`manage_jwt_secret.py`）
+- 仅从环境变量 `JWT_SECRET_KEY` 读取密钥，未设置时抛出 `RuntimeError`（不再运行时自动写入 `.env`）
 
 **使用示例**：
 ```python
-from ..core.jwt_secret_manager import JWTSecretManager
+from ..core.jwt_utils import JWTSecretManager
 
-# 获取或创建密钥（自动）
+# 从环境变量获取密钥（未设置 JWT_SECRET_KEY 时抛出 RuntimeError）
 secret = JWTSecretManager.get_or_create_secret()
 
 # 生成新密钥
@@ -227,18 +226,6 @@ new_secret = JWTSecretManager.generate_secret_key()
 
 # 轮换密钥（会清理所有 refresh tokens）
 rotated_secret = JWTSecretManager.rotate_secret(revoke_tokens=True)
-```
-
-**CLI 工具**：
-```bash
-# 查看密钥状态
-python -m backend.scripts.manage_jwt_secret status
-
-# 生成新密钥
-python -m backend.scripts.manage_jwt_secret generate
-
-# 轮换密钥
-python -m backend.scripts.manage_jwt_secret rotate
 ```
 
 **文件位置**：
@@ -356,7 +343,7 @@ user_id = require_user_id(request)
 **特性**：
 - 自动添加 `user_id` 过滤条件
 - 防止跨用户数据访问
-- 支持多种查询方法（`get`, `list`, `create`, `update`, `delete`）
+- 支持多种查询方法（`get`, `get_all`, `create`, `update`, `delete`, `count`, `exists`）
 - 支持用户隔离的模型类型
 
 **使用示例**：
@@ -368,16 +355,17 @@ from ..models.db_models import ConfigProfile
 scoped = UserScopedQuery(db, user_id="user123")
 
 # 查询用户自己的配置
-profile = scoped.get(ConfigProfile, profile_id="profile123")
+profile = scoped.get(ConfigProfile, "profile123")
 
 # 列出用户的所有配置
-profiles = scoped.list(ConfigProfile)
+profiles = scoped.get_all(ConfigProfile)
 
 # 创建新配置（自动设置 user_id）
-new_profile = scoped.create(ConfigProfile, {
-    "name": "My Profile",
-    "provider_id": "google"
-})
+new_profile = scoped.create(
+    ConfigProfile,
+    name="My Profile",
+    provider_id="google",
+)
 ```
 
 **支持的用户隔离模型**：
@@ -512,9 +500,7 @@ logger.py ──→ setup_logger()
   ↓
 encryption.py ──→ encrypt_data(), decrypt_data()
   ↓
-jwt_secret_manager.py ──→ get_jwt_secret_key()
-  ↓
-jwt_utils.py ──→ create_access_token(), decode_token()
+jwt_utils.py ──→ JWTSecretManager, create_access_token(), decode_token()
   ↓
 user_context.py ──→ get_current_user_id(), require_user_id()
   ↓
@@ -604,7 +590,7 @@ decrypted_key = decrypt_data(encrypted_key, silent=True)
 
 ### 3. JWT 安全
 
-- ✅ 使用 `jwt_secret_manager.py` 管理密钥
+- ✅ 使用 `jwt_utils.py` 中的 `JWTSecretManager` 管理密钥
 - ✅ 定期轮换 JWT 密钥（建议每 90 天）
 - ✅ 使用强随机密钥
 
@@ -648,10 +634,7 @@ decrypted_key = decrypt_data(encrypted_key, silent=True)
 **解决方案**：
 1. 检查 `ENCRYPTION_KEY` 是否正确
 2. 验证 `backend/credentials/.jwt_secret.enc` 文件是否存在
-3. 使用 CLI 工具检查密钥状态：
-   ```bash
-   python -m backend.scripts.manage_jwt_secret status
-   ```
+3. 确认环境变量 `JWT_SECRET_KEY` 已设置（`JWTSecretManager.get_or_create_secret()` 仅从环境变量读取）
 
 ### 问题 4: "API key decryption failed"
 
@@ -695,7 +678,7 @@ decrypted_key = decrypt_data(encrypted_key, silent=True)
 
 1. **环境变量加载顺序**：`config.py`、`database.py`、`jwt_utils.py` 都会加载 `.env` 文件，确保在模块导入前环境变量已设置。
 
-2. **循环依赖**：`jwt_utils.py` 使用延迟导入避免与 `jwt_secret_manager.py` 的循环依赖。
+2. **循环依赖**：`jwt_utils.py`（含 `JWTSecretManager`）使用延迟导入避免与其他模块的循环依赖。
 
 3. **数据库连接**：使用 `get_db()` 依赖注入时，会话会在请求结束后自动关闭。
 

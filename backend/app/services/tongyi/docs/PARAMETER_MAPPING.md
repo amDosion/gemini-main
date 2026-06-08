@@ -154,7 +154,7 @@ request = ImageGenerationRequest(
 | `size` | Optional[str] | None | 输出尺寸 |
 | `watermark` | bool | False | 是否添加水印 |
 | `seed` | Optional[int] | None | 随机种子 |
-| `prompt_extend` | bool | True | API 级别的 prompt 扩展 |
+| `prompt_extend` | bool | False | API 级别的 prompt 扩展 |
 | `enable_prompt_optimize` | bool | False | 启用编辑 Prompt 智能优化 |
 
 ### 3.3 完整对照表
@@ -342,7 +342,7 @@ options = ImageEditOptions(
 │          └── add_magic_suffix → "超清，4K，电影级构图"                         │
 │                                                                              │
 │  └── DashScope API 调用                                                      │
-│      └── _generate_z_image() / _generate_qwen_image() / _generate_wan_v2()  │
+│      └── _generate_z_image() / _generate_qwen_image() / _generate_wan_v2_image() │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
