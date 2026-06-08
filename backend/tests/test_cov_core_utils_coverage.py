@@ -403,6 +403,11 @@ class TestGetProjectRoot:
 
 
 class TestEnsureCredentialsDir:
+    @pytest.mark.skipif(
+        os.name == "nt",
+        reason="POSIX file mode 0o700 cannot be enforced on Windows; the graceful "
+        "chmod-failure path is covered by test_chmod_failure_is_warned_not_raised",
+    )
     def test_creates_and_tightens_perms(self, monkeypatch, tmp_path):
         cred = tmp_path / "credentials"
         monkeypatch.setattr(pu, "CREDENTIALS_DIR", cred)

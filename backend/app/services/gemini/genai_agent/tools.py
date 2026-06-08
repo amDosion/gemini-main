@@ -17,6 +17,25 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+
+async def _kill_process_quietly(process: Optional["asyncio.subprocess.Process"]) -> None:
+    """Best-effort terminate-and-reap of a subprocess.
+
+    Used when code execution times out or errors: killing and awaiting the child
+    prevents an orphaned process and releases its handles so the temporary working
+    directory can be cleaned up (notably on Windows).
+    """
+    if process is None or process.returncode is not None:
+        return
+    try:
+        process.kill()
+        await process.wait()
+    except ProcessLookupError:
+        pass
+    except Exception as exc:  # pragma: no cover - defensive cleanup
+        logger.debug("[ToolManager] Failed to terminate code subprocess: %s", exc)
+
+
 # URL 检测正则表达式（使用共享工具中的实现）
 def is_url(text: str) -> bool:
     """
@@ -507,6 +526,7 @@ class ToolManager:
             script_path = Path(tmp_dir) / "script.py"
             script_path.write_text(clean_code, encoding="utf-8")
             start = asyncio.get_running_loop().time()
+            process = None
             try:
                 process = await asyncio.create_subprocess_exec(
                     sys.executable,
@@ -541,6 +561,11 @@ class ToolManager:
                     "return_code": process.returncode,
                 }
             except asyncio.TimeoutError:
+                # Kill the timed-out child and reap it before returning. Otherwise
+                # the process is orphaned (it keeps running on every platform) and
+                # on Windows its open handle to the temp cwd makes the enclosing
+                # TemporaryDirectory cleanup raise PermissionError.
+                await _kill_process_quietly(process)
                 return {
                     "success": False,
                     "status": "timeout",
@@ -551,6 +576,7 @@ class ToolManager:
                 }
             except Exception as e:
                 logger.error(f"[ToolManager] Code execution failed: {e}", exc_info=True)
+                await _kill_process_quietly(process)
                 return {
                     "success": False,
                     "status": "error",

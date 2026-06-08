@@ -71,11 +71,23 @@ def _normalize_stdio_policy(raw_policy: Optional[str]) -> str:
     )
 
 
+# Windows executable suffixes that shutil.which() appends when resolving a bare
+# command (e.g. 'node' -> 'node.exe', 'npx' -> 'npx.cmd'). They must be stripped
+# so a resolved real-path basename matches the extensionless allowlist entries on
+# every platform; otherwise the stdio allowlist rejects all default commands on
+# Windows.
+_EXECUTABLE_SUFFIXES = (".exe", ".cmd", ".bat", ".com", ".ps1")
+
+
 def _normalize_command_name(command: Optional[str]) -> str:
     raw = (command or "").strip()
     if not raw:
         return ""
-    return Path(raw).name.strip().lower()
+    name = Path(raw).name.strip().lower()
+    for suffix in _EXECUTABLE_SUFFIXES:
+        if name.endswith(suffix) and len(name) > len(suffix):
+            return name[: -len(suffix)]
+    return name
 
 
 def _is_explicit_command_path(command: str) -> bool:
