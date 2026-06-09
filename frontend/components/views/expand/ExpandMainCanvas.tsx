@@ -87,19 +87,12 @@ export const ExpandMainCanvas: React.FC<ExpandMainCanvasProps> = ({
   activeAttachments,
   setActiveAttachments,
 }) => {
+  const matchesActiveImage = (attachment: Attachment): boolean =>
+    attachment.url === activeImageUrl ||
+    attachment.tempUrl === activeImageUrl ||
+    attachment.fileUri === activeImageUrl;
   const activeSourceAttachment =
-    activeAttachments.find(
-      (attachment) =>
-        attachment.url === activeImageUrl ||
-        attachment.tempUrl === activeImageUrl ||
-        attachment.fileUri === activeImageUrl
-    ) ||
-    initialAttachments?.find(
-      (attachment) =>
-        attachment.url === activeImageUrl ||
-        attachment.tempUrl === activeImageUrl ||
-        attachment.fileUri === activeImageUrl
-    );
+    activeAttachments.find(matchesActiveImage) || initialAttachments?.find(matchesActiveImage);
 
   return (
     <div className="flex-1 flex flex-row h-full">

@@ -103,21 +103,24 @@ export const useMaskIO = ({
 
         if (activeImageUrl) {
           setIsPreviewingMask(true);
-          const result = await fetchAutoMaskPreview(activeImageUrl, providerId, mode);
-          if (result.maskUrl) {
-            setMaskPreviewUrl(result.maskUrl);
-            setMaskPreviewNotice(null);
-            setMaskPreviewError(null);
-          } else if (result.notice) {
-            setMaskPreviewUrl(null);
-            setMaskPreviewNotice(result.notice);
-            setMaskPreviewError(null);
-          } else if (result.error) {
-            setMaskPreviewUrl(null);
-            setMaskPreviewError(result.error);
-            showError(result.error);
+          try {
+            const result = await fetchAutoMaskPreview(activeImageUrl, providerId, mode);
+            if (result.maskUrl) {
+              setMaskPreviewUrl(result.maskUrl);
+              setMaskPreviewNotice(null);
+              setMaskPreviewError(null);
+            } else if (result.notice) {
+              setMaskPreviewUrl(null);
+              setMaskPreviewNotice(result.notice);
+              setMaskPreviewError(null);
+            } else if (result.error) {
+              setMaskPreviewUrl(null);
+              setMaskPreviewError(result.error);
+              showError(result.error);
+            }
+          } finally {
+            setIsPreviewingMask(false);
           }
-          setIsPreviewingMask(false);
         } else {
           setMaskPreviewUrl(null);
           setMaskPreviewNotice(null);

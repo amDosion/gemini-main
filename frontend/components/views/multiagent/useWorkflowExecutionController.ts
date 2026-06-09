@@ -172,7 +172,13 @@ export const useWorkflowExecutionController = ({
           );
         }
         showError(`工作流执行失败: ${errorMessage}`);
-        await fetchWorkflowHistory();
+        // 错误收尾阶段刷新历史失败不应再次抛出:从 catch 处理器中抛出的异常不会被同一个
+        // catch 捕获,会逃逸成 unhandled rejection。
+        try {
+          await fetchWorkflowHistory();
+        } catch {
+          // 忽略错误收尾期间的历史刷新失败
+        }
       };
 
       try {

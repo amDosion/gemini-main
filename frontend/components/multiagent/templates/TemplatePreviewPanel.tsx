@@ -63,6 +63,8 @@ export const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({
   copyFeedback,
   templateActionFeedback,
 }) => {
+  const runtimeLabel = selectedTemplate ? resolveTemplateRuntimeLabel(selectedTemplate) : '';
+  const canManageSelected = canManageTemplate(selectedTemplate);
   return (
     <div className="w-1/2 overflow-y-auto bg-slate-900/40">
       {selectedTemplate ? (
@@ -101,16 +103,12 @@ export const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({
               </div>
             ) : (
               <div className="flex items-start justify-between gap-2 mb-2">
-                <h3 className="text-lg font-semibold text-slate-100">
-                  {selectedTemplate.name}
-                </h3>
+                <h3 className="text-lg font-semibold text-slate-100">{selectedTemplate.name}</h3>
                 <button
                   onClick={handleStartRenameTemplate}
-                  disabled={!canManageTemplate(selectedTemplate)}
+                  disabled={!canManageSelected}
                   className="px-2.5 py-1.5 text-xs bg-slate-800 border border-slate-700 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-                  title={
-                    canManageTemplate(selectedTemplate) ? '编辑模板标题' : '只读模板不可编辑'
-                  }
+                  title={canManageSelected ? '编辑模板标题' : '只读模板不可编辑'}
                 >
                   <Pencil size={13} />
                   编辑标题
@@ -127,9 +125,9 @@ export const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({
             <span className="text-xs px-2 py-1 bg-slate-900 text-slate-200 border border-slate-700 rounded">
               {resolveTemplateOriginLabel(selectedTemplate)}
             </span>
-            {resolveTemplateRuntimeLabel(selectedTemplate) && (
+            {runtimeLabel && (
               <span className="text-xs px-2 py-1 bg-amber-500/10 text-amber-200 border border-amber-500/20 rounded">
-                {resolveTemplateRuntimeLabel(selectedTemplate)}
+                {runtimeLabel}
               </span>
             )}
             {selectedTemplate.tags.map((tag) => (
@@ -144,8 +142,7 @@ export const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({
 
           {selectedTemplate.origin?.isLocked && (
             <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-100">
-              这是官方 Starter 模板。建议先复制后再编辑，系统会持续按 starter catalog
-              维护这类模板。
+              这是官方 Starter 模板。建议先复制后再编辑，系统会持续按 starter catalog 维护这类模板。
             </div>
           )}
           {selectedTemplate.copiedFromStarterKey && !selectedTemplate.origin?.isLocked && (
@@ -156,8 +153,8 @@ export const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({
           )}
           {selectedTemplate.isLegacyStarterCopy && (
             <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-100">
-              这是遗留 Starter 副本：仍嵌入旧版 inline Agent 定义。建议复制官方新版
-              Starter，或改成 `agentId / agentName` 绑定统一 Agent。
+              这是遗留 Starter 副本：仍嵌入旧版 inline Agent 定义。建议复制官方新版 Starter，或改成
+              `agentId / agentName` 绑定统一 Agent。
             </div>
           )}
 
@@ -167,17 +164,13 @@ export const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-400">节点数量</span>
                 <span className="font-medium text-slate-200">
-                  {selectedTemplate.config.nodes.length ||
-                    selectedTemplate.estimatedNodeCount ||
-                    0}
+                  {selectedTemplate.config.nodes.length || selectedTemplate.estimatedNodeCount || 0}
                 </span>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-400">连接数量</span>
                 <span className="font-medium text-slate-200">
-                  {selectedTemplate.config.edges.length ||
-                    selectedTemplate.estimatedEdgeCount ||
-                    0}
+                  {selectedTemplate.config.edges.length || selectedTemplate.estimatedEdgeCount || 0}
                 </span>
               </div>
               {selectedTemplate.bindingStrategy && (
@@ -195,9 +188,7 @@ export const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({
             <div className="pt-4 border-t border-slate-700">
               <h4 className="text-sm font-semibold text-slate-200 mb-2">输入建议</h4>
               {selectedTemplate.promptHint && (
-                <div className="text-xs text-slate-400 mb-2">
-                  {selectedTemplate.promptHint}
-                </div>
+                <div className="text-xs text-slate-400 mb-2">{selectedTemplate.promptHint}</div>
               )}
               {selectedTemplate.promptExample && (
                 <pre className="text-[11px] text-slate-300 bg-slate-950/80 border border-slate-700 rounded p-2 whitespace-pre-wrap break-all">
@@ -340,12 +331,8 @@ export const TemplatePreviewPanel: React.FC<TemplatePreviewPanelProps> = ({
                   >
                     <span className="text-lg">{node.data.icon}</span>
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-slate-100 truncate">
-                        {node.data.label}
-                      </div>
-                      <div className="text-xs text-slate-500 truncate">
-                        {node.data.description}
-                      </div>
+                      <div className="font-medium text-slate-100 truncate">{node.data.label}</div>
+                      <div className="text-xs text-slate-500 truncate">{node.data.description}</div>
                     </div>
                   </div>
                 ))

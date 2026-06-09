@@ -1,4 +1,3 @@
-
 /**
  * Cloud Storage Configuration Tab
  */
@@ -25,7 +24,7 @@ export const StorageTab: React.FC<StorageTabProps> = ({
   onDeleteStorage,
   onActivateStorage,
   onCreateNew,
-  onEditStorage
+  onEditStorage,
 }) => {
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -36,10 +35,15 @@ export const StorageTab: React.FC<StorageTabProps> = ({
   };
 
   const handleDeleteConfirm = async () => {
-    if (deleteTargetId) {
-      await onDeleteStorage(deleteTargetId);
+    // finally 保证无论成功或失败都关闭确认弹窗:否则删除失败时 deleteTargetId 残留,
+    // ConfirmDialog 卡在打开态且再次确认会重复抛错。
+    try {
+      if (deleteTargetId) {
+        await onDeleteStorage(deleteTargetId);
+      }
+    } finally {
+      setDeleteTargetId(null);
     }
-    setDeleteTargetId(null);
   };
 
   const handleDeleteCancel = () => {
@@ -95,15 +99,15 @@ export const StorageTab: React.FC<StorageTabProps> = ({
           <div className="flex items-center gap-2 mb-1">
             <h2 className="text-base md:text-lg font-medium text-white">Cloud Storage</h2>
           </div>
-          <p className="text-xs text-slate-500">
-            Configure image storage services.
-          </p>
+          <p className="text-xs text-slate-500">Configure image storage services.</p>
         </div>
         <button
           onClick={onCreateNew}
           className="flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs md:text-sm font-medium transition-colors shadow-lg shadow-indigo-500/20"
         >
-          <Plus size={14} className="md:w-4 md:h-4" /> <span className="hidden md:inline">New Storage</span><span className="md:hidden">New</span>
+          <Plus size={14} className="md:w-4 md:h-4" />{' '}
+          <span className="hidden md:inline">New Storage</span>
+          <span className="md:hidden">New</span>
         </button>
       </div>
 
@@ -122,14 +126,17 @@ export const StorageTab: React.FC<StorageTabProps> = ({
 
               const endpointSummary =
                 (config.provider === 'lsky' && 'domain' in config.config && config.config.domain) ||
-                (config.provider === 'aliyun-oss' && 'bucket' in config.config && config.config.bucket) ||
+                (config.provider === 'aliyun-oss' &&
+                  'bucket' in config.config &&
+                  config.config.bucket) ||
                 'No endpoint summary';
 
               return (
                 <div
                   key={config.id}
-                  className={`group rounded-xl border bg-slate-900/50 border-slate-800 hover:border-slate-700 transition-all p-4 md:p-5 h-full flex flex-col ${isActive ? 'border-indigo-500/50 shadow-lg shadow-indigo-900/10' : ''
-                    }`}
+                  className={`group rounded-xl border bg-slate-900/50 border-slate-800 hover:border-slate-700 transition-all p-4 md:p-5 h-full flex flex-col ${
+                    isActive ? 'border-indigo-500/50 shadow-lg shadow-indigo-900/10' : ''
+                  }`}
                 >
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex items-center gap-2 min-w-0">
@@ -139,9 +146,14 @@ export const StorageTab: React.FC<StorageTabProps> = ({
                       <div className="relative shrink-0" data-storage-card-actions>
                         <button
                           type="button"
-                          onClick={() => setOpenMenuId((prev) => (prev === config.id ? null : config.id))}
-                          className={`p-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-all ${isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
-                            }`}
+                          onClick={() =>
+                            setOpenMenuId((prev) => (prev === config.id ? null : config.id))
+                          }
+                          className={`p-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-all ${
+                            isMenuOpen
+                              ? 'opacity-100'
+                              : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+                          }`}
                           title="Actions"
                         >
                           <MoreHorizontal size={14} />

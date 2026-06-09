@@ -1,5 +1,5 @@
 import { safeCopyToClipboard } from '../../utils/safeOps';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { Components, ExtraProps } from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
@@ -146,51 +146,59 @@ const sanitizeSchema = {
 
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, showCursor = false }) => {
   // 自定义组件映射，包含标准 HTML 元素和自定义标签（如 AI 模型的 <think>）
-  const customComponents: Components & {
-    think?: (props: { children?: React.ReactNode }) => React.ReactElement;
-  } = {
-    // 处理 AI 模型的 <think> 标签（DeepSeek、Claude 等模型的思考过程）
-    think: ({ children }: { children?: React.ReactNode }) => <ThinkBlock>{children}</ThinkBlock>,
-    code({
-      node,
-      inline,
-      className,
-      children,
-      ...props
-    }: React.ComponentPropsWithoutRef<'code'> & ExtraProps & { inline?: boolean }) {
-      const match = /language-(\w+)/.exec(className || '');
-      return !inline && match ? (
-        <CodeBlock language={match[1]} children={children} {...props} />
-      ) : (
-        <code
-          className={`${className} bg-slate-800 text-orange-300 px-1 py-0.5 rounded text-sm`}
+  const customComponents = useMemo<
+    Components & {
+      think?: (props: { children?: React.ReactNode }) => React.ReactElement;
+    }
+  >(
+    () => ({
+      // 处理 AI 模型的 <think> 标签（DeepSeek、Claude 等模型的思考过程）
+      think: ({ children }: { children?: React.ReactNode }) => <ThinkBlock>{children}</ThinkBlock>,
+      code({
+        node,
+        inline,
+        className,
+        children,
+        ...props
+      }: React.ComponentPropsWithoutRef<'code'> & ExtraProps & { inline?: boolean }) {
+        const match = /language-(\w+)/.exec(className || '');
+        return !inline && match ? (
+          <CodeBlock language={match[1]} children={children} {...props} />
+        ) : (
+          <code
+            className={`${className} bg-slate-800 text-orange-300 px-1 py-0.5 rounded text-sm`}
+            {...props}
+          >
+            {children}
+          </code>
+        );
+      },
+      a: ({ node, ...props }: React.ComponentPropsWithoutRef<'a'> & ExtraProps) => (
+        <a
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-400 hover:underline"
           {...props}
-        >
-          {children}
-        </code>
-      );
-    },
-    a: ({ node, ...props }: React.ComponentPropsWithoutRef<'a'> & ExtraProps) => (
-      <a
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-blue-400 hover:underline"
-        {...props}
-      />
-    ),
-    ul: ({ node, ...props }: React.ComponentPropsWithoutRef<'ul'> & ExtraProps) => (
-      <ul className="list-disc pl-5 my-2 space-y-1" {...props} />
-    ),
-    ol: ({ node, ...props }: React.ComponentPropsWithoutRef<'ol'> & ExtraProps) => (
-      <ol className="list-decimal pl-5 my-2 space-y-1" {...props} />
-    ),
-    blockquote: ({ node, ...props }: React.ComponentPropsWithoutRef<'blockquote'> & ExtraProps) => (
-      <blockquote
-        className="border-l-4 border-slate-600 pl-4 italic text-slate-400 my-2"
-        {...props}
-      />
-    ),
-  };
+        />
+      ),
+      ul: ({ node, ...props }: React.ComponentPropsWithoutRef<'ul'> & ExtraProps) => (
+        <ul className="list-disc pl-5 my-2 space-y-1" {...props} />
+      ),
+      ol: ({ node, ...props }: React.ComponentPropsWithoutRef<'ol'> & ExtraProps) => (
+        <ol className="list-decimal pl-5 my-2 space-y-1" {...props} />
+      ),
+      blockquote: ({
+        node,
+        ...props
+      }: React.ComponentPropsWithoutRef<'blockquote'> & ExtraProps) => (
+        <blockquote
+          className="border-l-4 border-slate-600 pl-4 italic text-slate-400 my-2"
+          {...props}
+        />
+      ),
+    }),
+    []
+  );
 
   return (
     <div className="prose prose-invert prose-sm sm:prose-base max-w-none break-words">

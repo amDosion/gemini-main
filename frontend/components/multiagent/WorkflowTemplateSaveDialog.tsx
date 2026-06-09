@@ -256,7 +256,8 @@ export const WorkflowTemplateSaveDialog: React.FC<WorkflowTemplateSaveDialogProp
     } else {
       setName('');
       setDescription('');
-      setCategory(normalizeInitialCategory(availableCategories, activeTemplate));
+      // category 由 fetchCategories 在分类加载完成后初始化，避免使用未就绪的
+      // availableCategories（首次打开时为空）导致短暂置空 category。
       setTagsInput('');
     }
     setError(null);
@@ -340,11 +341,14 @@ export const WorkflowTemplateSaveDialog: React.FC<WorkflowTemplateSaveDialogProp
 
       if (!response.ok) {
         let message = isUpdateMode ? '更新模板失败' : '保存模板失败';
+        const text = await response.text();
         try {
-          const errorPayload = await response.json();
-          message = errorPayload?.detail || errorPayload?.message || message;
+          const errorPayload = JSON.parse(text) as { detail?: unknown; message?: unknown };
+          const detail = typeof errorPayload?.detail === 'string' ? errorPayload.detail : undefined;
+          const fallback =
+            typeof errorPayload?.message === 'string' ? errorPayload.message : undefined;
+          message = detail || fallback || message;
         } catch {
-          const text = await response.text();
           if (text) {
             message = text;
           }

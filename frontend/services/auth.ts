@@ -7,11 +7,7 @@ import {
   listenTokenRefresh,
   listenLogout,
 } from './authSync';
-import {
-  getAccessToken,
-  removeAccessToken,
-  removeRefreshToken,
-} from './authTokenStore';
+import { getAccessToken, removeAccessToken, removeRefreshToken } from './authTokenStore';
 import { fetchWithTimeout, parseHttpError, readJsonResponse } from './http';
 import { clearPrivateClientCaches } from './privateClientCache';
 import { getPrivateCacheUserScope, setPrivateCacheUserScope } from './privateCacheScope';
@@ -85,28 +81,31 @@ type RegisterResponseRaw =
   | { user: User; hasActiveProfile?: boolean }
   | (User & { user?: undefined });
 
+/** Decode the JWT payload segment; returns null on any malformed input. */
+function decodeJwtPayload(token: string): { exp?: unknown } | null {
+  try {
+    return JSON.parse(atob(token.split('.')[1]));
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 检查 token 是否过期
  */
 function isTokenExpired(token: string): boolean {
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    // 提前 5 分钟判断为过期（缓冲时间）
-    return payload.exp * 1000 < Date.now() + 5 * 60 * 1000;
-  } catch {
-    return true;
-  }
+  const payload = decodeJwtPayload(token);
+  if (!payload) return true;
+  // 提前 5 分钟判断为过期（缓冲时间）
+  return Number(payload.exp) * 1000 < Date.now() + 5 * 60 * 1000;
 }
 
 function getTokenExpiresAt(token: string | null): number | null {
   if (!token) return null;
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    const exp = Number(payload.exp);
-    return Number.isFinite(exp) ? exp * 1000 : null;
-  } catch {
-    return null;
-  }
+  const payload = decodeJwtPayload(token);
+  if (!payload) return null;
+  const exp = Number(payload.exp);
+  return Number.isFinite(exp) ? exp * 1000 : null;
 }
 
 function getJsonHeaders(): HeadersInit {
@@ -140,7 +139,9 @@ class AuthService {
   }
 
   private isUserCacheGenerationCurrent(generation: number | null | undefined): boolean {
-    return generation === null || generation === undefined || generation === this.userCacheGeneration;
+    return (
+      generation === null || generation === undefined || generation === this.userCacheGeneration
+    );
   }
 
   private async applyAuthenticatedUserScope(

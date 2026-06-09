@@ -18,7 +18,7 @@ export interface TelemetrySpan {
   end: (
     status?: 'ok' | 'error',
     detail?: Record<string, unknown>,
-    tags?: Record<string, string | number | boolean>,
+    tags?: Record<string, string | number | boolean>
   ) => void;
 }
 
@@ -32,10 +32,7 @@ const eventBuffer: FrontendTelemetryEvent[] = [];
 
 let telemetryStarted = false;
 let activeLogger: TelemetryLogger = {
-  log: (event) => {
-    if (import.meta.env.DEV) {
-    }
-  },
+  log: () => {},
 };
 
 const nowMs = () => Date.now();
@@ -64,7 +61,7 @@ const emitEvent = (event: FrontendTelemetryEvent) => {
 
 const observeEntries = (
   options: PerformanceObserverInit,
-  onEntries: (entries: PerformanceEntry[]) => void,
+  onEntries: (entries: PerformanceEntry[]) => void
 ): (() => void) => {
   if (typeof window === 'undefined' || typeof window.PerformanceObserver === 'undefined') {
     return () => undefined;
@@ -86,7 +83,9 @@ const collectNavigationMetrics = () => {
     return;
   }
 
-  const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+  const navEntry = performance.getEntriesByType('navigation')[0] as
+    | PerformanceNavigationTiming
+    | undefined;
   if (!navEntry) return;
 
   emitEvent({
@@ -114,9 +113,8 @@ const collectNavigationMetrics = () => {
   });
 };
 
-const setupPaintObserver = () => observeEntries(
-  { type: 'paint', buffered: true },
-  (entries) => {
+const setupPaintObserver = () =>
+  observeEntries({ type: 'paint', buffered: true }, (entries) => {
     entries.forEach((entry) => {
       if (entry.name !== 'first-paint' && entry.name !== 'first-contentful-paint') return;
       emitEvent({
@@ -127,8 +125,7 @@ const setupPaintObserver = () => observeEntries(
         timestamp: nowMs(),
       });
     });
-  },
-);
+  });
 
 const setupLcpObserver = () => {
   let latestLcp: PerformanceEntry | null = null;
@@ -139,7 +136,7 @@ const setupLcpObserver = () => {
       if (entries.length > 0) {
         latestLcp = entries[entries.length - 1];
       }
-    },
+    }
   );
 
   const reportLcp = () => {
@@ -184,16 +181,13 @@ const setupClsObserver = () => {
   let clsValue = 0;
   let reported = false;
 
-  const observerCleanup = observeEntries(
-    { type: 'layout-shift', buffered: true },
-    (entries) => {
-      entries.forEach((entry) => {
-        const shift = entry as any;
-        if (shift?.hadRecentInput) return;
-        clsValue += Number(shift?.value || 0);
-      });
-    },
-  );
+  const observerCleanup = observeEntries({ type: 'layout-shift', buffered: true }, (entries) => {
+    entries.forEach((entry) => {
+      const shift = entry as any;
+      if (shift?.hadRecentInput) return;
+      clsValue += Number(shift?.value || 0);
+    });
+  });
 
   const reportCls = () => {
     if (reported) return;
@@ -233,9 +227,8 @@ const setupClsObserver = () => {
   };
 };
 
-const setupFirstInputObserver = () => observeEntries(
-  { type: 'first-input', buffered: true },
-  (entries) => {
+const setupFirstInputObserver = () =>
+  observeEntries({ type: 'first-input', buffered: true }, (entries) => {
     const firstInput = entries[0] as any;
     if (!firstInput) return;
     const fid = Number(firstInput.processingStart || 0) - Number(firstInput.startTime || 0);
@@ -246,8 +239,7 @@ const setupFirstInputObserver = () => observeEntries(
       unit: 'ms',
       timestamp: nowMs(),
     });
-  },
-);
+  });
 
 export const startFrontendTelemetry = (options: TelemetryBootstrapOptions = {}) => {
   if (options.logger) {
@@ -276,7 +268,7 @@ export const stopFrontendTelemetry = () => {
 export const startTelemetrySpan = (
   name: string,
   detail: Record<string, unknown> = {},
-  tags: Record<string, string | number | boolean> = {},
+  tags: Record<string, string | number | boolean> = {}
 ): TelemetrySpan => {
   const startedAt = nowPerf();
   const startedTimestamp = nowMs();
@@ -312,7 +304,7 @@ export const startTelemetrySpan = (
 export const captureFrontendError = (
   error: unknown,
   detail: Record<string, unknown> = {},
-  tags: Record<string, string | number | boolean> = {},
+  tags: Record<string, string | number | boolean> = {}
 ) => {
   const normalized = error instanceof Error ? error : new Error(String(error));
 
@@ -328,4 +320,3 @@ export const captureFrontendError = (
     },
   });
 };
-

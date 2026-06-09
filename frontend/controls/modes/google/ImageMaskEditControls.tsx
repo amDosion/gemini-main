@@ -5,10 +5,7 @@
  * 基于后端 mask_edit_service.py 的参数设计
  */
 import React, { useEffect, useMemo } from 'react';
-import {
-  ChevronUp, ChevronDown, FileImage,
-  SlidersHorizontal, Sparkles, X
-} from 'lucide-react';
+import { ChevronUp, ChevronDown, FileImage, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 import { ImageMaskEditControlsProps } from '../../types';
 import { useModeControlsSchema } from '../../../hooks/useModeControlsSchema';
 import ImageCountSliderControl from '../../shared/ImageCountSliderControl';
@@ -38,10 +35,9 @@ export const ImageMaskEditControls: React.FC<ImageMaskEditControlsProps> = ({
   const defaults = schema?.defaults ?? {};
   const editModeOptions = useMemo(
     () =>
-      (schema?.paramOptions?.edit_mode ?? [])
-        .filter(
-          (option): option is { label: string; value: string } => typeof option.value === 'string'
-        ),
+      (schema?.paramOptions?.edit_mode ?? []).filter(
+        (option): option is { label: string; value: string } => typeof option.value === 'string'
+      ),
     [schema]
   );
   const imageCountOptions = useMemo(
@@ -60,7 +56,8 @@ export const ImageMaskEditControls: React.FC<ImageMaskEditControlsProps> = ({
     [imageCountOptions, schemaMaxImageCount]
   );
   const minImageCount = validImageCountOptions[0] ?? 1;
-  const maxImageCount = validImageCountOptions[validImageCountOptions.length - 1] ?? schemaMaxImageCount;
+  const maxImageCount =
+    validImageCountOptions[validImageCountOptions.length - 1] ?? schemaMaxImageCount;
   const outputMimeOptions = useMemo(
     () =>
       (schema?.paramOptions?.output_mime_type ?? []).filter(
@@ -90,8 +87,11 @@ export const ImageMaskEditControls: React.FC<ImageMaskEditControlsProps> = ({
     (typeof outputMimeOptions[0]?.value === 'string' ? outputMimeOptions[0].value : undefined) ??
     'image/png';
   const defaultCompressionQuality =
-    typeof defaults.output_compression_quality === 'number' ? defaults.output_compression_quality : 100;
-  const defaultNegativePrompt = typeof defaults.negative_prompt === 'string' ? defaults.negative_prompt : '';
+    typeof defaults.output_compression_quality === 'number'
+      ? defaults.output_compression_quality
+      : 100;
+  const defaultNegativePrompt =
+    typeof defaults.negative_prompt === 'string' ? defaults.negative_prompt : '';
 
   // 优先使用 controls 对象，fallback 到单独 props
   const editMode = controls?.editMode ?? propEditMode ?? defaultEditMode;
@@ -108,7 +108,8 @@ export const ImageMaskEditControls: React.FC<ImageMaskEditControlsProps> = ({
   const setOutputMimeType = controls?.setOutputMimeType ?? propSetOutputMimeType ?? (() => {});
   const outputCompressionQuality =
     controls?.outputCompressionQuality ?? propOutputCompressionQuality ?? defaultCompressionQuality;
-  const setOutputCompressionQuality = controls?.setOutputCompressionQuality ?? propSetOutputCompressionQuality ?? (() => {});
+  const setOutputCompressionQuality =
+    controls?.setOutputCompressionQuality ?? propSetOutputCompressionQuality ?? (() => {});
   const showAdvanced = controls?.showAdvanced ?? propShowAdvanced ?? false;
   const setShowAdvanced = controls?.setShowAdvanced ?? propSetShowAdvanced ?? (() => {});
 
@@ -123,9 +124,7 @@ export const ImageMaskEditControls: React.FC<ImageMaskEditControlsProps> = ({
   const compressionStep = compressionRange?.step ?? 1;
 
   useEffect(() => {
-    const validModes = editModeOptions
-      .map((option) => option.value)
-      .filter((value): value is string => typeof value === 'string');
+    const validModes = editModeOptions.map((option) => option.value);
     if (validModes.length > 0 && !validModes.includes(editMode)) {
       setEditMode(validModes[0]);
     }
@@ -138,9 +137,7 @@ export const ImageMaskEditControls: React.FC<ImageMaskEditControlsProps> = ({
   }, [numberOfImages, validImageCountOptions, setNumberOfImages]);
 
   useEffect(() => {
-    const validMimeTypes = outputMimeOptions
-      .map((option) => option.value)
-      .filter((value): value is string => typeof value === 'string');
+    const validMimeTypes = outputMimeOptions.map((option) => option.value);
     if (validMimeTypes.length > 0 && !validMimeTypes.includes(outputMimeType)) {
       setOutputMimeType(validMimeTypes[0]);
     }
@@ -154,7 +151,7 @@ export const ImageMaskEditControls: React.FC<ImageMaskEditControlsProps> = ({
         </div>
       )}
       {/* ==================== 基础参数 ==================== */}
-      
+
       {/* 编辑模式 */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
@@ -167,7 +164,9 @@ export const ImageMaskEditControls: React.FC<ImageMaskEditControlsProps> = ({
           className="w-full px-3 py-2 text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-300 focus:outline-none focus:border-pink-500"
         >
           {editModeOptions.map((mode) => (
-            <option key={mode.value} value={mode.value}>{mode.label}</option>
+            <option key={mode.value} value={mode.value}>
+              {mode.label}
+            </option>
           ))}
         </select>
       </div>
@@ -216,7 +215,9 @@ export const ImageMaskEditControls: React.FC<ImageMaskEditControlsProps> = ({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-slate-300">引导比例</span>
-                  <span className="text-xs text-pink-400 font-mono">{guidanceScale.toFixed(1)}</span>
+                  <span className="text-xs text-pink-400 font-mono">
+                    {guidanceScale.toFixed(1)}
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -239,8 +240,8 @@ export const ImageMaskEditControls: React.FC<ImageMaskEditControlsProps> = ({
                 <div className="flex gap-2">
                   {outputMimeOptions.map((opt) => (
                     <button
-                      key={String(opt.value)}
-                      onClick={() => typeof opt.value === 'string' && setOutputMimeType(opt.value)}
+                      key={opt.value}
+                      onClick={() => setOutputMimeType(opt.value)}
                       className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
                         outputMimeType === opt.value
                           ? 'bg-cyan-600 text-white'
@@ -258,7 +259,9 @@ export const ImageMaskEditControls: React.FC<ImageMaskEditControlsProps> = ({
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-slate-300">压缩质量</span>
-                    <span className="text-xs text-pink-400 font-mono">{outputCompressionQuality}%</span>
+                    <span className="text-xs text-pink-400 font-mono">
+                      {outputCompressionQuality}%
+                    </span>
                   </div>
                   <input
                     type="range"

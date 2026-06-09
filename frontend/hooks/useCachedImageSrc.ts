@@ -34,12 +34,7 @@ interface UseCachedImageSrcResult {
 const getBlobSourceSignature = (blob: Blob | null | undefined): string => {
   if (!blob) return '';
   const file = typeof File !== 'undefined' && blob instanceof File ? blob : null;
-  return [
-    blob.type || '',
-    blob.size || 0,
-    file?.name || '',
-    file?.lastModified || '',
-  ].join(':');
+  return [blob.type || '', blob.size || 0, file?.name || '', file?.lastModified || ''].join(':');
 };
 
 const getSourceSignature = (
@@ -70,13 +65,20 @@ const getSourceSignature = (
     source?.userScope || '',
     getBlobSourceSignature(source?.file),
     fallbackSrc || '',
-  ].map((value) => String(value)).join('\u001f');
+  ]
+    .map((value) => String(value))
+    .join('\u001f');
 
 const isBlobObjectUrl = (value: string | null | undefined): boolean =>
-  String(value || '').trim().toLowerCase().startsWith('blob:');
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .startsWith('blob:');
 
 const isUnrenderableTemporarySrc = (value: string | null | undefined): boolean => {
-  const src = String(value || '').trim().toLowerCase();
+  const src = String(value || '')
+    .trim()
+    .toLowerCase();
   return src.startsWith('blob:') || src.startsWith('local-blob:');
 };
 
@@ -94,7 +96,9 @@ const isAuthenticatedStorageSrc = (value: string | null | undefined): boolean =>
 };
 
 const isTemporaryImageSrc = (value: string | null | undefined): boolean => {
-  const src = String(value || '').trim().toLowerCase();
+  const src = String(value || '')
+    .trim()
+    .toLowerCase();
   return src.startsWith('blob:') || src.startsWith('data:') || src.startsWith('local-blob:');
 };
 
@@ -175,29 +179,24 @@ export const useCachedImageSrc = (
   const shouldUseVersionStrictCache =
     Boolean(identity?.temporary) && Boolean(normalizedSource?.file);
   const cacheAllowStale = preferStale && !shouldUseVersionStrictCache;
-  const cachedReadOptions = useMemo(
-    () => {
-      if (!shouldBypassMemoryCache) {
-        return { allowStale: cacheAllowStale };
-      }
-      return replaceCachedObjectUrl
-        ? {
-            allowStale: cacheAllowStale,
-            allowMemory: false,
-            replaceObjectUrl: true,
-          }
-        : {
-            allowStale: cacheAllowStale,
-            allowMemory: false,
-          };
-    },
-    [cacheAllowStale, replaceCachedObjectUrl, shouldBypassMemoryCache]
-  );
+  const cachedReadOptions = useMemo(() => {
+    if (!shouldBypassMemoryCache) {
+      return { allowStale: cacheAllowStale };
+    }
+    return replaceCachedObjectUrl
+      ? {
+          allowStale: cacheAllowStale,
+          allowMemory: false,
+          replaceObjectUrl: true,
+        }
+      : {
+          allowStale: cacheAllowStale,
+          allowMemory: false,
+        };
+  }, [cacheAllowStale, replaceCachedObjectUrl, shouldBypassMemoryCache]);
   const fetchOptions = useMemo(
     () =>
-      shouldBypassMemoryCache || replaceCachedObjectUrl
-        ? { replaceObjectUrl: true }
-        : undefined,
+      shouldBypassMemoryCache || replaceCachedObjectUrl ? { replaceObjectUrl: true } : undefined,
     [replaceCachedObjectUrl, shouldBypassMemoryCache]
   );
 
@@ -307,7 +306,7 @@ export const useCachedImageSrc = (
           return;
         }
         setResolvedSrc(canExposeRawFallback ? fallbackSrc : null);
-        setStatus(fallbackSrc ? 'error' : 'error');
+        setStatus('error');
       }
     },
     [
@@ -346,9 +345,7 @@ export const useCachedImageSrc = (
       const normalizedFailedSrc = String(failedSrc || '').trim();
       const currentSrc = currentSrcRef.current;
       const hasStableFallback = Boolean(
-        fallbackSrc &&
-        !isTemporaryImageSrc(fallbackSrc) &&
-        !isAuthenticatedStorageSrc(fallbackSrc)
+        fallbackSrc && !isTemporaryImageSrc(fallbackSrc) && !isAuthenticatedStorageSrc(fallbackSrc)
       );
 
       if (

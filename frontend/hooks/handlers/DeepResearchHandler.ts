@@ -63,15 +63,13 @@ export class DeepResearchHandler extends BaseHandler {
         const uploadedStores: string[] = [];
 
         for (const attachment of attachments) {
-          let fileBlob: Blob;
-
           const sourceUrl = getPreferredAttachmentUrl(attachment);
           if (!sourceUrl) {
             throw new Error(`附件缺少可读取 URL: ${attachment.name || attachment.id}`);
           }
 
           const response = await fetch(sourceUrl);
-          fileBlob = await response.blob();
+          const fileBlob = await response.blob();
 
           const formData = new FormData();
           formData.append('file', fileBlob, attachment.name || 'document');
@@ -480,11 +478,18 @@ export class DeepResearchHandler extends BaseHandler {
 
       const finalizeByCancel = async () => {
         if (isComplete) return;
-        await fetch(`/api/research/stream/cancel/${currentInteractionId}`, {
-          method: 'POST',
-          headers,
-        });
-        finalizeCancelled('Deep Research 已停止');
+        // 取消请求失败(离线/后端不可达)不应阻断收尾:否则外层 Promise 永不 resolve、
+        // watchdog 永不清除,消息流永久挂起。无论 fetch 结果如何都走 finally 收尾。
+        try {
+          await fetch(`/api/research/stream/cancel/${currentInteractionId}`, {
+            method: 'POST',
+            headers,
+          });
+        } catch {
+          // 忽略取消请求本身的网络错误
+        } finally {
+          finalizeCancelled('Deep Research 已停止');
+        }
       };
 
       context.registerCancel?.(() => {

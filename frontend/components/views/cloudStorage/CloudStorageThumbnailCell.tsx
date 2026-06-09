@@ -6,12 +6,9 @@ import type { StorageBrowseItem } from '../../../types/storage';
 import {
   buildStoragePreviewCandidates,
   getInitialStoragePreviewIndex,
-  getNextStoragePreviewIndex
+  getNextStoragePreviewIndex,
 } from '../../../services/storagePreviewService';
-import {
-  getFileExtension,
-  getFileKind
-} from './filePresentation';
+import { getFileExtension, getFileKind } from './filePresentation';
 import { useXhrImagePreview } from './useXhrImagePreview';
 import { CloudStoragePreviewImage } from './CloudStoragePreviewImage';
 import { CloudStorageGeneratedThumbnail } from './CloudStorageGeneratedThumbnail';
@@ -36,12 +33,14 @@ export const CloudStorageThumbnailCell: React.FC<CloudStorageThumbnailCellProps>
   disablePreview = false,
   disableVideoPreview = false,
   visibilityRoot = null,
-  previewRootMargin = '240px'
+  previewRootMargin = '240px',
 }) => {
   const kind = getFileKind(item);
   const ext = getFileExtension(item.name);
   const previewAnchorRef = useRef<HTMLDivElement | null>(null);
-  const [shouldLoadPreview, setShouldLoadPreview] = useState(() => kind !== 'image' && kind !== 'video');
+  const [shouldLoadPreview, setShouldLoadPreview] = useState(
+    () => kind !== 'image' && kind !== 'video'
+  );
   const [videoFrameReady, setVideoFrameReady] = useState(false);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const didRequestVideoFrameRef = useRef(false);
@@ -101,12 +100,17 @@ export const CloudStorageThumbnailCell: React.FC<CloudStorageThumbnailCellProps>
       setVideoPreviewExhausted(false);
       return;
     }
-    const nextState = getInitialStoragePreviewIndex(previewCandidates, failedPreviewUrlsRef.current);
+    const nextState = getInitialStoragePreviewIndex(
+      previewCandidates,
+      failedPreviewUrlsRef.current
+    );
     setVideoPreviewIndex(nextState.index);
     setVideoPreviewExhausted(nextState.exhausted);
   }, [kind, previewCandidates, failedPreviewUrlsRef]);
 
-  const videoPreviewUrl = videoPreviewExhausted ? null : (previewCandidates[videoPreviewIndex] || null);
+  const videoPreviewUrl = videoPreviewExhausted
+    ? null
+    : previewCandidates[videoPreviewIndex] || null;
 
   const handleVideoPreviewError = useCallback(() => {
     const currentUrl = previewCandidates[videoPreviewIndex];
@@ -147,7 +151,7 @@ export const CloudStorageThumbnailCell: React.FC<CloudStorageThumbnailCellProps>
     }
 
     setVideoFrameReady(true);
-  }, [item.path]);
+  }, []);
 
   return (
     <div ref={previewAnchorRef} className={`${sizeClassName} shrink-0`}>

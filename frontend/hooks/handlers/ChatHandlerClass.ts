@@ -219,6 +219,9 @@ export class ChatHandler extends BaseHandler {
         browserOperationId: lastBrowserOperationId,
         toolCalls: accumulatedToolCalls,
         toolResults: accumulatedToolResults,
+        // 与无附件分支保持一致:文件上传路径同样需要回传推理内容,否则带附件的对话
+        // 轮次产生的 thinking/reasoning 会被静默丢弃。
+        thoughts: accumulatedThoughts.length > 0 ? accumulatedThoughts : undefined,
         uploadTask: uploadTask(),
       };
     }

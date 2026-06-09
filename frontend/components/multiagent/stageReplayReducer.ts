@@ -37,7 +37,10 @@ export const createInitialStageReplayState = (): StageReplayState => ({
   result: null,
 });
 
-const findAnchor = (context: StageReplayContext | null, anchorId: string): StageReplayAnchor | null => {
+const findAnchor = (
+  context: StageReplayContext | null,
+  anchorId: string
+): StageReplayAnchor | null => {
   if (!context || !anchorId) return null;
   return context.anchors.find((anchor) => anchor.id === anchorId) || null;
 };
@@ -122,9 +125,11 @@ export const stageReplayReducer = (
       }
 
       if (!selectedAnchor.canReplay) {
+        // 选中一个被阻止回放的锚点应反映为 failed(回放失败),而非 ready(待回放)——
+        // 后者的标签会与同时设置的 blockedReason 自相矛盾。
         return {
           ...prev,
-          status: 'ready',
+          status: 'failed',
           selectedAnchorId: selectedAnchor.id,
           errorMessage: selectedAnchor.blockedReason,
           result: null,

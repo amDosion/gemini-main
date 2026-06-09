@@ -1,9 +1,9 @@
 /**
  * ImageCompare 组件
- * 
+ *
  * 图片对比组件，支持滑块对比模式
  * 用于对比原图和编辑/扩图后的图片
- * 
+ *
  * 注意：为确保对比效果正确，两张图片会被统一缩放到相同的显示区域
  */
 
@@ -62,12 +62,6 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({
     indigo: '#6366f1',
   };
 
-  // 计算统一的显示比例（以结果图为基准）
-  const getUnifiedAspectRatio = useCallback(() => {
-    if (!imageDimensions.after) return 1;
-    return imageDimensions.after.width / imageDimensions.after.height;
-  }, [imageDimensions.after]);
-
   // 计算滑块位置
   const updateSliderPosition = useCallback((clientX: number) => {
     if (!containerRef.current) return;
@@ -92,34 +86,46 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({
   }, []);
 
   // 指针事件：统一支持鼠标、触摸、触控笔，并在拖动时捕获指针。
-  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (typeof e.currentTarget.setPointerCapture === 'function') {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    }
-    setDraggingState(true);
-    updateSliderPosition(e.clientX);
-  }, [setDraggingState, updateSliderPosition]);
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.currentTarget.setPointerCapture === 'function') {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+      setDraggingState(true);
+      updateSliderPosition(e.clientX);
+    },
+    [setDraggingState, updateSliderPosition]
+  );
 
-  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (!draggingRef.current) return;
-    e.preventDefault();
-    e.stopPropagation();
-    updateSliderPosition(e.clientX);
-  }, [updateSliderPosition]);
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!draggingRef.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+      updateSliderPosition(e.clientX);
+    },
+    [updateSliderPosition]
+  );
 
-  const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    releasePointerCapture(e.currentTarget, e.pointerId);
-    setDraggingState(false);
-  }, [releasePointerCapture, setDraggingState]);
+  const handlePointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      releasePointerCapture(e.currentTarget, e.pointerId);
+      setDraggingState(false);
+    },
+    [releasePointerCapture, setDraggingState]
+  );
 
-  const handlePointerCancel = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    releasePointerCapture(e.currentTarget, e.pointerId);
-    setDraggingState(false);
-  }, [releasePointerCapture, setDraggingState]);
+  const handlePointerCancel = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      releasePointerCapture(e.currentTarget, e.pointerId);
+      setDraggingState(false);
+    },
+    [releasePointerCapture, setDraggingState]
+  );
 
   const handleOpacityChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setBeforeOpacity(Number(e.target.value));
@@ -155,15 +161,18 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({
   );
 
   // 检查比例是否一致（允许 5% 误差）
-  const aspectRatioMismatch = useCallback(() => {
+  const hasAspectRatioMismatch = (() => {
     if (!imageDimensions.before || !imageDimensions.after) return false;
     const beforeRatio = imageDimensions.before.width / imageDimensions.before.height;
     const afterRatio = imageDimensions.after.width / imageDimensions.after.height;
     const diff = Math.abs(beforeRatio - afterRatio) / afterRatio;
     return diff > 0.05; // 超过 5% 视为不一致
-  }, [imageDimensions]);
+  })();
 
-  const aspectRatio = getUnifiedAspectRatio();
+  // 计算统一的显示比例（以结果图为基准）
+  const aspectRatio = imageDimensions.after
+    ? imageDimensions.after.width / imageDimensions.after.height
+    : 1;
 
   return (
     <div
@@ -174,12 +183,12 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
       onLostPointerCapture={() => setDraggingState(false)}
-      style={{ 
+      style={{
         cursor: isDragging ? 'ew-resize' : 'col-resize',
         touchAction: 'none',
         lineHeight: 0,
         aspectRatio: aspectRatio > 0 ? `${aspectRatio}` : undefined,
-        ...style 
+        ...style,
       }}
     >
       {afterImage && (
@@ -203,7 +212,7 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({
       )}
 
       {/* 比例不一致提示 */}
-      {aspectRatioMismatch() && (
+      {hasAspectRatioMismatch && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 bg-yellow-500/90 backdrop-blur-sm px-4 py-2 rounded-lg text-xs text-black font-medium shadow-lg">
           ⚠️ 图片比例不一致，对比可能有偏差
         </div>
@@ -251,9 +260,9 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({
         style={{ left: `${sliderPosition}%` }}
       >
         <div className={`w-full h-full ${accentColors[accentColor]} shadow-lg`} />
-        
+
         {/* 滑块手柄 */}
-        <div 
+        <div
           className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 rounded-full ${accentColors[accentColor]} shadow-xl flex items-center justify-center`}
         >
           <div className="flex gap-0.5">
@@ -290,7 +299,9 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({
           className="h-1.5 w-28 cursor-pointer"
           style={{ accentColor: accentHexColors[accentColor] }}
         />
-        <span className="w-8 text-right font-mono text-[10px] text-slate-300">{beforeOpacity}%</span>
+        <span className="w-8 text-right font-mono text-[10px] text-slate-300">
+          {beforeOpacity}%
+        </span>
       </div>
     </div>
   );

@@ -2,7 +2,15 @@
  * OpenAI GPT Image controls shared by text-to-image and image-to-image modes.
  */
 import React, { useEffect, useMemo, useRef } from 'react';
-import { FileImage, Gauge, Image as ImageIcon, Layers, Ratio, ShieldCheck, SlidersHorizontal } from 'lucide-react';
+import {
+  FileImage,
+  Gauge,
+  Image as ImageIcon,
+  Layers,
+  Ratio,
+  ShieldCheck,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { AppMode, ModelConfig } from '../../../types/types';
 import { ControlsState } from '../../types';
 import PromptEnhanceControl from '../../shared/PromptEnhanceControl';
@@ -15,6 +23,10 @@ import {
 
 type OptionValue = string | number | boolean;
 type Option = { label: string; value: OptionValue };
+
+// 模块级稳定空函数:作为缺失 setter 的回退。内联 (() => {}) 每次渲染换新身份,
+// 当这些 setter 出现在 useEffect 依赖数组里时会导致 effect 每渲染都重跑。
+const NOOP = (): void => {};
 
 export interface OpenAIImageControlsProps {
   providerId?: string;
@@ -99,29 +111,29 @@ export const OpenAIImageControls: React.FC<OpenAIImageControlsProps> = ({
   const compressionRange = schema?.numericRanges?.output_compression_quality;
 
   const aspectRatio = controls?.aspectRatio ?? propAspectRatio ?? defaultAspectRatio;
-  const setAspectRatio = controls?.setAspectRatio ?? propSetAspectRatio ?? (() => {});
+  const setAspectRatio = controls?.setAspectRatio ?? propSetAspectRatio ?? NOOP;
   const resolution = controls?.resolution ?? propResolution ?? defaultResolution;
-  const setResolution = controls?.setResolution ?? propSetResolution ?? (() => {});
+  const setResolution = controls?.setResolution ?? propSetResolution ?? NOOP;
   const numberOfImages = controls?.numberOfImages ?? propNumberOfImages ?? 1;
-  const setNumberOfImages = controls?.setNumberOfImages ?? propSetNumberOfImages ?? (() => {});
+  const setNumberOfImages = controls?.setNumberOfImages ?? propSetNumberOfImages ?? NOOP;
   const quality = controls?.quality ?? defaultQuality;
-  const setQuality = controls?.setQuality ?? (() => {});
+  const setQuality = controls?.setQuality ?? NOOP;
   const background = controls?.background ?? defaultBackground;
-  const setBackground = controls?.setBackground ?? (() => {});
+  const setBackground = controls?.setBackground ?? NOOP;
   const moderation = controls?.moderation ?? defaultModeration;
-  const setModeration = controls?.setModeration ?? (() => {});
+  const setModeration = controls?.setModeration ?? NOOP;
   const outputFormat = controls?.outputFormat ?? defaultOutputFormat;
-  const setOutputFormat = controls?.setOutputFormat ?? (() => {});
+  const setOutputFormat = controls?.setOutputFormat ?? NOOP;
   const outputCompressionQuality =
     controls?.outputCompressionQuality ??
     (typeof defaults.output_compression_quality === 'number'
       ? defaults.output_compression_quality
-      : compressionRange?.max ?? 100);
-  const setOutputCompressionQuality = controls?.setOutputCompressionQuality ?? (() => {});
+      : (compressionRange?.max ?? 100));
+  const setOutputCompressionQuality = controls?.setOutputCompressionQuality ?? NOOP;
   const defaultEnhancePrompt =
     typeof defaults.enhance_prompt === 'boolean' ? defaults.enhance_prompt : false;
   const enhancePrompt = controls?.enhancePrompt ?? false;
-  const setEnhancePrompt = controls?.setEnhancePrompt ?? (() => {});
+  const setEnhancePrompt = controls?.setEnhancePrompt ?? NOOP;
   const canToggleEnhancePrompt = typeof controls?.setEnhancePrompt === 'function';
   const enhancePromptModel = controls?.enhancePromptModel ?? '';
   const setEnhancePromptModel = controls?.setEnhancePromptModel;

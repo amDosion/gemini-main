@@ -81,11 +81,12 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
   }, []);
 
   const fetchProviders = useCallback(async () => {
-    await fetch('/api/agents/available-models', {
+    const res = await fetch('/api/agents/available-models', {
       headers: getHeaders(),
-    }).then((res) => {
-      if (res.ok) return res.json().then((data) => setProviders(normalizeProviderModels(data)));
     });
+    if (res.ok) {
+      setProviders(normalizeProviderModels(await res.json()));
+    }
   }, [getHeaders]);
 
   const fetchAgents = useCallback(async () => {
@@ -113,6 +114,8 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
       if (controller.signal.aborted || requestId !== latestFetchRequestIdRef.current) {
         return;
       }
+      // 真实失败(网络/5xx/鉴权)时给出可见反馈,避免列表静默清空、用户无从感知
+      setNotice({ type: 'error', text: '加载 Agent 列表失败，请重试' });
     } finally {
       if (requestId === latestFetchRequestIdRef.current) {
         fetchAbortControllerRef.current = null;

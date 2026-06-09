@@ -1,16 +1,21 @@
 /**
  * 云存储上传服务（混合方案）
- * 
+ *
  * 优先级：
  * 1. 后端 API（推荐）- 通过后端统一处理上传
  * 2. 前端直连（降级）- 后端不可用时直接调用云存储 API
- * 
+ *
  * 支持的存储提供商：
  * - 兰空图床 (Lsky Pro V2)
  * - 阿里云 OSS
  */
 
-import { StorageConfig, StorageUploadResult, LskyConfig, AliyunOSSConfig } from '../../types/storage';
+import {
+  StorageConfig,
+  StorageUploadResult,
+  LskyConfig,
+  AliyunOSSConfig,
+} from '../../types/storage';
 import { fetchWithTimeout, parseHttpError, readJsonResponse, requestJson } from '../http';
 
 const API_BASE = '/api';
@@ -51,9 +56,6 @@ export class StorageUploadService {
       const available = response.ok;
 
       if (this.useBackend !== available) {
-        if (available) {
-        } else {
-        }
         this.useBackend = available;
       }
 
@@ -61,7 +63,7 @@ export class StorageUploadService {
       this.lastCheckTime = Date.now();
 
       return available;
-    } catch (error) {
+    } catch {
       // 检测超时或失败时，不永久标记后端不可用
       // 而是保持 null 状态，下次上传时重新检测
       // 不设置 this.useBackend = false，保持 null 状态
@@ -72,52 +74,41 @@ export class StorageUploadService {
   /**
    * 通过后端 API 上传文件
    */
-  private async uploadViaBackend(
-    file: File,
-    storageId?: string
-  ): Promise<StorageUploadResult> {
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
+  private async uploadViaBackend(file: File, storageId?: string): Promise<StorageUploadResult> {
+    const formData = new FormData();
+    formData.append('file', file);
 
-      // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
-      const url = storageId
-        ? `${API_BASE}/storage/upload?storageId=${storageId}`
-        : `${API_BASE}/storage/upload`;
+    // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
+    const url = storageId
+      ? `${API_BASE}/storage/upload?storageId=${storageId}`
+      : `${API_BASE}/storage/upload`;
 
-      const response = await fetchWithTimeout(url, {
-        method: 'POST',
-        withAuth: true,
-        body: formData,
-        timeoutMs: 120000,
-      });
+    const response = await fetchWithTimeout(url, {
+      method: 'POST',
+      withAuth: true,
+      body: formData,
+      timeoutMs: 120000,
+    });
 
-      if (!response.ok) {
-        const error = await parseHttpError(response, `上传失败: HTTP ${response.status}`);
-        throw new Error(error.message);
-      }
-
-      const result = await readJsonResponse<any>(response);
-
-      return {
-        success: result.success,
-        url: result.url,
-        provider: result.provider,
-      };
-    } catch (error) {
-      throw error;
+    if (!response.ok) {
+      const error = await parseHttpError(response, `上传失败: HTTP ${response.status}`);
+      throw new Error(error.message);
     }
+
+    const result = await readJsonResponse<any>(response);
+
+    return {
+      success: result.success,
+      url: result.url,
+      provider: result.provider,
+    };
   }
 
   /**
    * 直接上传到兰空图床
    */
-  private async uploadToLskyDirect(
-    file: File,
-    config: LskyConfig
-  ): Promise<StorageUploadResult> {
+  private async uploadToLskyDirect(file: File, config: LskyConfig): Promise<StorageUploadResult> {
     try {
-
       const formData = new FormData();
       formData.append('file', file, file.name);
 
@@ -129,8 +120,8 @@ export class StorageUploadService {
       const response = await fetch(uploadUrl, {
         method: 'POST',
         headers: {
-          'Authorization': authToken,
-          'Accept': 'application/json',
+          Authorization: authToken,
+          Accept: 'application/json',
         },
         body: formData,
       });
@@ -169,28 +160,16 @@ export class StorageUploadService {
     file: File,
     config: AliyunOSSConfig
   ): Promise<StorageUploadResult> {
-    try {
-      
-      return {
-        success: false,
-        error: '阿里云 OSS 前端直连需要配置 STS 临时凭证，请使用后端 API',
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : '阿里云 OSS 上传失败',
-      };
-    }
+    return {
+      success: false,
+      error: '阿里云 OSS 前端直连需要配置 STS 临时凭证，请使用后端 API',
+    };
   }
 
   /**
    * 前端直连上传（降级方案）
    */
-  private async uploadDirect(
-    file: File,
-    config: StorageConfig
-  ): Promise<StorageUploadResult> {
-
+  private async uploadDirect(file: File, config: StorageConfig): Promise<StorageUploadResult> {
     if (config.provider === 'lsky') {
       return this.uploadToLskyDirect(file, config.config as LskyConfig);
     } else if (config.provider === 'aliyun-oss') {
@@ -205,15 +184,12 @@ export class StorageUploadService {
 
   /**
    * 上传文件到云存储（混合方案）
-   * 
+   *
    * @param file 要上传的文件
    * @param storageId 存储配置 ID（可选，不指定则使用当前激活的配置）
    * @returns 上传结果，包含图片 URL
    */
-  async uploadFile(
-    file: File,
-    storageId?: string
-  ): Promise<StorageUploadResult> {
+  async uploadFile(file: File, storageId?: string): Promise<StorageUploadResult> {
     try {
       // 1. 检测后端是否可用
       const backendAvailable = await this.checkBackendAvailable();
@@ -231,7 +207,6 @@ export class StorageUploadService {
         success: false,
         error: '后端服务不可用，请确保后端服务正在运行',
       };
-
     } catch (error) {
       return {
         success: false,
@@ -242,24 +217,20 @@ export class StorageUploadService {
 
   /**
    * 上传 Blob 到云存储
-   * 
+   *
    * @param blob Blob 对象
    * @param filename 文件名
    * @param storageId 存储配置 ID（可选）
    * @returns 上传结果
    */
-  async uploadBlob(
-    blob: Blob,
-    filename: string,
-    storageId?: string
-  ): Promise<StorageUploadResult> {
+  async uploadBlob(blob: Blob, filename: string, storageId?: string): Promise<StorageUploadResult> {
     const file = new File([blob], filename, { type: blob.type });
     return this.uploadFile(file, storageId);
   }
 
   /**
    * 上传 Base64 图片到云存储
-   * 
+   *
    * @param base64 Base64 编码的图片数据
    * @param filename 文件名
    * @param storageId 存储配置 ID（可选）
@@ -274,7 +245,7 @@ export class StorageUploadService {
       // 将 Base64 转换为 Blob
       const response = await fetch(base64);
       const blob = await response.blob();
-      
+
       return this.uploadBlob(blob, filename, storageId);
     } catch (error) {
       return {
@@ -286,7 +257,7 @@ export class StorageUploadService {
 
   /**
    * 上传图片 URL 到云存储（先下载再上传）
-   * 
+   *
    * @param imageUrl 图片 URL
    * @param filename 文件名
    * @param storageId 存储配置 ID（可选）
@@ -321,7 +292,7 @@ export class StorageUploadService {
 
   /**
    * 测试存储配置是否可用
-   * 
+   *
    * @param config 存储配置
    * @returns 测试结果
    */
@@ -340,8 +311,16 @@ export class StorageUploadService {
         ctx.fillRect(0, 0, 1, 1);
       }
 
-      const blob = await new Promise<Blob>((resolve) => {
-        canvas.toBlob((b) => resolve(b!), 'image/png');
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        // toBlob 在画布无法序列化(上下文丢失/安全策略)时回调 null;此前的 resolve(b!)
+        // 会让 Promise 携带 null,下游 new File([null]) 生成损坏文件并导致配置测试假阳性。
+        canvas.toBlob((b) => {
+          if (b) {
+            resolve(b);
+          } else {
+            reject(new Error('canvas.toBlob returned null'));
+          }
+        }, 'image/png');
       });
 
       const testFile = new File([blob], 'test.png', { type: 'image/png' });
@@ -368,9 +347,9 @@ export class StorageUploadService {
 
   /**
    * 异步上传文件到云存储（不阻塞前端）
-   * 
+   *
    * 前端提交文件后立即返回，后端在后台处理上传并更新数据库
-   * 
+   *
    * @param file 要上传的文件
    * @param options 额外选项
    * @returns 上传任务信息
@@ -392,47 +371,41 @@ export class StorageUploadService {
     enqueueError?: string | null;
     queuePosition?: number;
   }> {
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
+    const formData = new FormData();
+    formData.append('file', file);
 
-      const params = new URLSearchParams();
-      // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
-      params.append('sessionId', options.sessionId);
-      params.append('messageId', options.messageId);
-      params.append('attachmentId', options.attachmentId);
-      if (options.storageId) {
-        params.append('storageId', options.storageId);
-      }
-
-      const result = await requestJson<any>(`${API_BASE}/storage/upload-async?${params.toString()}`, {
-        method: 'POST',
-        withAuth: true,
-        body: formData,
-        timeoutMs: 120000,
-        errorMessage: '创建上传任务失败',
-      });
-      if (result.enqueued === false) {
-      }
-      
-      return {
-        taskId: result.taskId,
-        attachmentId: result.attachmentId,
-        status: result.status,
-        message: result.message,
-        enqueued: result.enqueued,
-        enqueueError: result.enqueueError,
-        queuePosition: result.queuePosition
-      };
-    } catch (error) {
-      throw error;
+    const params = new URLSearchParams();
+    // ✅ Query 参数使用 camelCase（中间件自动转换为 snake_case）
+    params.append('sessionId', options.sessionId);
+    params.append('messageId', options.messageId);
+    params.append('attachmentId', options.attachmentId);
+    if (options.storageId) {
+      params.append('storageId', options.storageId);
     }
+
+    const result = await requestJson<any>(`${API_BASE}/storage/upload-async?${params.toString()}`, {
+      method: 'POST',
+      withAuth: true,
+      body: formData,
+      timeoutMs: 120000,
+      errorMessage: '创建上传任务失败',
+    });
+
+    return {
+      taskId: result.taskId,
+      attachmentId: result.attachmentId,
+      status: result.status,
+      message: result.message,
+      enqueued: result.enqueued,
+      enqueueError: result.enqueueError,
+      queuePosition: result.queuePosition,
+    };
   }
 
   /**
    * 通过后端上传图片 URL（推荐用于扩图）
    * 后端会下载图片并上传到云存储，避免前端下载
-   * 
+   *
    * @param imageUrl 图片 URL（DashScope 临时 URL）
    * @param filename 文件名
    * @param options 额外选项
@@ -455,41 +428,35 @@ export class StorageUploadService {
     enqueueError?: string | null;
     queuePosition?: number;
   }> {
-    try {
-      const result = await requestJson<any>(`${API_BASE}/storage/upload-from-url`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        withAuth: true,
-        timeoutMs: 30000,
-        errorMessage: '创建上传任务失败',
-        body: JSON.stringify({
-          url: imageUrl,
-          filename,
-          sessionId: options?.sessionId,
-          storageId: options?.storageId,
-          messageId: options?.messageId,
-          attachmentId: options?.attachmentId
-        })
-      });
-      if (result.enqueued === false) {
-      }
+    const result = await requestJson<any>(`${API_BASE}/storage/upload-from-url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      withAuth: true,
+      timeoutMs: 30000,
+      errorMessage: '创建上传任务失败',
+      body: JSON.stringify({
+        url: imageUrl,
+        filename,
+        sessionId: options?.sessionId,
+        storageId: options?.storageId,
+        messageId: options?.messageId,
+        attachmentId: options?.attachmentId,
+      }),
+    });
 
-      return {
-        taskId: result.taskId,
-        status: result.status,
-        message: result.message,
-        enqueued: result.enqueued,
-        enqueueError: result.enqueueError,
-        queuePosition: result.queuePosition
-      };
-    } catch (error) {
-      throw error;
-    }
+    return {
+      taskId: result.taskId,
+      status: result.status,
+      message: result.message,
+      enqueued: result.enqueued,
+      enqueueError: result.enqueueError,
+      queuePosition: result.queuePosition,
+    };
   }
 
   /**
    * 查询上传任务状态
-   * 
+   *
    * @param taskId 任务 ID
    * @returns 任务状态信息
    */
@@ -501,23 +468,19 @@ export class StorageUploadService {
     createdAt?: number;
     completedAt?: number;
   }> {
-    try {
-      const result = await requestJson<any>(`${API_BASE}/storage/upload-status/${taskId}`, {
-        withAuth: true,
-        errorMessage: '查询上传状态失败',
-      });
-      
-      return {
-        taskId: result.id,
-        status: result.status,
-        targetUrl: result.targetUrl,
-        errorMessage: result.errorMessage,
-        createdAt: result.createdAt,
-        completedAt: result.completedAt
-      };
-    } catch (error) {
-      throw error;
-    }
+    const result = await requestJson<any>(`${API_BASE}/storage/upload-status/${taskId}`, {
+      withAuth: true,
+      errorMessage: '查询上传状态失败',
+    });
+
+    return {
+      taskId: result.id,
+      status: result.status,
+      targetUrl: result.targetUrl,
+      errorMessage: result.errorMessage,
+      createdAt: result.createdAt,
+      completedAt: result.completedAt,
+    };
   }
 
   /**
@@ -527,9 +490,12 @@ export class StorageUploadService {
     if (this.uploadLogsSupported === false) {
       return [];
     }
-    const response = await fetchWithTimeout(`${API_BASE}/storage/upload-logs/${taskId}?tail=${tail}`, {
-      withAuth: true,
-    });
+    const response = await fetchWithTimeout(
+      `${API_BASE}/storage/upload-logs/${taskId}?tail=${tail}`,
+      {
+        withAuth: true,
+      }
+    );
     if (response.status === 404) {
       // 后端未更新/路由未注册：避免在轮询里刷屏
       this.uploadLogsSupported = false;
@@ -546,7 +512,7 @@ export class StorageUploadService {
 
   /**
    * 轮询上传任务直到完成
-   * 
+   *
    * @param taskId 任务 ID
    * @param maxRetries 最大重试次数（默认 60 次，即 2 分钟）
    * @param interval 轮询间隔（毫秒，默认 2000ms）
@@ -558,21 +524,17 @@ export class StorageUploadService {
     interval: number = 2000
   ): Promise<string> {
     for (let i = 0; i < maxRetries; i++) {
-      await new Promise(resolve => setTimeout(resolve, interval));
+      await new Promise((resolve) => setTimeout(resolve, interval));
 
-      try {
-        const status = await this.getUploadTaskStatus(taskId);
+      const status = await this.getUploadTaskStatus(taskId);
 
-        if (status.status === 'completed' && status.targetUrl) {
-          return status.targetUrl;
-        } else if (status.status === 'failed') {
-          throw new Error(status.errorMessage || '上传失败');
-        }
-
-        // 继续轮询
-      } catch (error) {
-        throw error;
+      if (status.status === 'completed' && status.targetUrl) {
+        return status.targetUrl;
       }
+      if (status.status === 'failed') {
+        throw new Error(status.errorMessage || '上传失败');
+      }
+      // 继续轮询
     }
 
     throw new Error('上传超时（2分钟）');
@@ -590,7 +552,7 @@ declare global {
 }
 
 if (!String.prototype.rstrip) {
-  String.prototype.rstrip = function(chars: string): string {
+  String.prototype.rstrip = function (chars: string): string {
     let str = this.toString();
     while (str.endsWith(chars)) {
       str = str.slice(0, -chars.length);

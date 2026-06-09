@@ -7,9 +7,7 @@ import {
   writeCachedHistoryPreference,
   writeCachedHistoryStates,
 } from '../services/sessionCache';
-import {
-  getPrivateCacheUserScope,
-} from '../services/privateCacheScope';
+import { getPrivateCacheUserScope } from '../services/privateCacheScope';
 import { usePrivateCacheScopeRevision } from './usePrivateCacheScopeRevision';
 
 interface HistoryListItem {
@@ -245,7 +243,9 @@ export function useHistoryListActions<T extends HistoryListItem>({
         showFavoritesOnly: value,
         updatedAt: Date.now(),
       });
-      db.updateSessionHistoryPreference(sessionId, { showFavoritesOnly: value });
+      db.updateSessionHistoryPreference(sessionId, { showFavoritesOnly: value }).catch((err) => {
+        console.error('[useHistoryListActions] Failed to persist showFavoritesOnly:', err);
+      });
     },
     [sessionId]
   );
@@ -255,15 +255,10 @@ export function useHistoryListActions<T extends HistoryListItem>({
     return items.filter((item) => favoriteIds.has(item.id));
   }, [items, showFavoritesOnly, favoriteIds]);
 
-  const favoriteCount = useMemo(() => {
-    let count = 0;
-    items.forEach((item) => {
-      if (favoriteIds.has(item.id)) {
-        count += 1;
-      }
-    });
-    return count;
-  }, [items, favoriteIds]);
+  const favoriteCount = useMemo(
+    () => items.reduce((count, item) => count + (favoriteIds.has(item.id) ? 1 : 0), 0),
+    [items, favoriteIds]
+  );
 
   return {
     showFavoritesOnly,

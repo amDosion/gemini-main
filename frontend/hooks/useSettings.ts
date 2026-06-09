@@ -122,11 +122,7 @@ export const useSettings = (initialData?: {
 
   // ✅ 只接收当前用户 scope 下的新 initialData；scope 切换后同一个旧对象不会被重新灌回
   useEffect(() => {
-    if (
-      initialData &&
-      !fullSettings &&
-      appliedInitialDataRef.current !== initialData
-    ) {
+    if (initialData && !fullSettings && appliedInitialDataRef.current !== initialData) {
       setFullSettings({
         profiles: initialData.profiles,
         activeProfileId: initialData.activeProfileId,
@@ -255,7 +251,8 @@ export const useSettings = (initialData?: {
         return;
       }
 
-      let { apiKey, baseUrl, protocol, providerId, isProxy } = activeProfile;
+      const { baseUrl, protocol, providerId } = activeProfile;
+      let { apiKey } = activeProfile;
 
       // 不再走 import.meta.env.VITE_API_KEY fallback——build-time 注入会把 provider key
       // 编译进前端 bundle（明文可提取）。请通过 profile UI 配置 Google API key，
@@ -278,7 +275,7 @@ export const useSettings = (initialData?: {
         return;
       }
       // Keep the previous state unchanged if loading fails
-      console.error('[useSettings] refreshSettings failed:', error)
+      console.error('[useSettings] refreshSettings failed:', error);
     }
   }, []);
 
@@ -501,9 +498,9 @@ export const useSettings = (initialData?: {
     baseUrl: string,
     hiddenModels: string[],
     protocol: ApiProtocol,
-    dashscopeApiKey: string,
+    _dashscopeApiKey: string,
     onSaved?: () => void,
-    targetProviderId?: string
+    _targetProviderId?: string
   ) => {
     // This legacy method is becoming less relevant with Profiles,
     // but we can map it to "Update Active Profile" for compatibility.

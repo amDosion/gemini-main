@@ -20,60 +20,72 @@ export class ImageOutpaintingHandler extends BaseHandler {
     const outpaintOptions = {
       ...context.options,
       frontendSessionId: context.sessionId,
-      sessionId: context.sessionId,  // 向后兼容
-      messageId: context.modelMessageId  // ✅ 后端需要 messageId 来创建附件记录
+      sessionId: context.sessionId, // 向后兼容
+      messageId: context.modelMessageId, // ✅ 后端需要 messageId 来创建附件记录
     };
 
     // ✅ 修复：outPaintImage 现在返回数组，不需要再包装
     const results = await llmService.outPaintImage(
       context.attachments[0],
-      outpaintOptions  // ✅ 传递包含 sessionId 和 messageId 的 options
+      outpaintOptions // ✅ 传递包含 sessionId 和 messageId 的 options
     );
 
     // ✅ 后端已处理图片（返回 attachmentId, uploadStatus, taskId）
     // 直接使用后端返回的结果，与 VirtualTryOnHandler 一致
-    const displayAttachments: Attachment[] = results.map((res: {
-      url: string;
-      mimeType: string;
-      filename?: string;
-      attachmentId?: string;
-      uploadStatus?: string;
-      taskId?: string;
-      cloudUrl?: string;
-      sessionId?: string;
-      messageId?: string;
-      userId?: string;
-      size?: number;
-      enhancedPrompt?: string;
-      openaiResponseId?: string;
-    }) => ({
-      id: res.attachmentId || `outpaint-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      mimeType: res.mimeType || 'image/png',
-      name: res.filename || `outpainted-${Date.now()}.png`,
-      url: res.url,
-      uploadStatus: (res.uploadStatus || 'pending') as 'pending' | 'uploading' | 'completed' | 'failed',
-      uploadTaskId: res.taskId,
-      cloudUrl: res.cloudUrl,
-      sessionId: res.sessionId,
-      messageId: res.messageId,
-      userId: res.userId,
-      size: res.size,
-      enhancedPrompt: res.enhancedPrompt,
-      openaiResponseId: res.openaiResponseId,
-    } as Attachment));
+    const displayAttachments: Attachment[] = results.map(
+      (res: {
+        url: string;
+        mimeType: string;
+        filename?: string;
+        attachmentId?: string;
+        uploadStatus?: string;
+        taskId?: string;
+        cloudUrl?: string;
+        sessionId?: string;
+        messageId?: string;
+        userId?: string;
+        size?: number;
+        enhancedPrompt?: string;
+        openaiResponseId?: string;
+      }) =>
+        ({
+          id:
+            res.attachmentId || `outpaint-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          mimeType: res.mimeType || 'image/png',
+          name: res.filename || `outpainted-${Date.now()}.png`,
+          url: res.url,
+          uploadStatus: (res.uploadStatus || 'pending') as
+            | 'pending'
+            | 'uploading'
+            | 'completed'
+            | 'failed',
+          uploadTaskId: res.taskId,
+          cloudUrl: res.cloudUrl,
+          sessionId: res.sessionId,
+          messageId: res.messageId,
+          userId: res.userId,
+          size: res.size,
+          enhancedPrompt: res.enhancedPrompt,
+          openaiResponseId: res.openaiResponseId,
+        }) as Attachment
+    );
 
-    const enhancedPrompt = results.find((res: { enhancedPrompt?: string }) => res.enhancedPrompt)?.enhancedPrompt;
-    const firstResult = results[0] as {
-      thoughts?: Array<{ type: 'text' | 'image'; content: string }>;
-      text?: string;
-    } | undefined;
+    const enhancedPrompt = results.find(
+      (res: { enhancedPrompt?: string }) => res.enhancedPrompt
+    )?.enhancedPrompt;
+    const firstResult = results[0] as
+      | {
+          thoughts?: Array<{ type: 'text' | 'image'; content: string }>;
+          text?: string;
+        }
+      | undefined;
     const thoughts = firstResult?.thoughts || [];
     const textResponse = firstResult?.text;
 
     // ✅ 后端已创建附件记录和上传任务（AI 返回的结果图片）
     const uploadTask = async () => ({
       dbAttachments: displayAttachments,
-      dbUserAttachments: context.attachments
+      dbUserAttachments: context.attachments,
     });
 
     return {
@@ -87,7 +99,6 @@ export class ImageOutpaintingHandler extends BaseHandler {
   }
 }
 
-
 export class VirtualTryOnHandler extends BaseHandler {
   protected async doExecute(context: ExecutionContext): Promise<HandlerResult> {
     if (!context.attachments || context.attachments.length < 2) {
@@ -99,41 +110,48 @@ export class VirtualTryOnHandler extends BaseHandler {
     const tryOnOptions = {
       ...context.options,
       frontendSessionId: context.sessionId,
-      sessionId: context.sessionId,  // 向后兼容
-      messageId: context.modelMessageId  // ✅ 后端需要 messageId 来创建附件记录
+      sessionId: context.sessionId, // 向后兼容
+      messageId: context.modelMessageId, // ✅ 后端需要 messageId 来创建附件记录
     };
 
     const results = await llmService.virtualTryOn(
-      context.text, 
+      context.text,
       context.attachments,
-      tryOnOptions  // ✅ 传递包含 sessionId 和 messageId 的 options
+      tryOnOptions // ✅ 传递包含 sessionId 和 messageId 的 options
     );
 
     // ✅ 后端已处理图片（返回 attachmentId, uploadStatus, taskId）
     // 直接使用后端返回的结果，与 ImageEditHandler 一致
-    const displayAttachments: Attachment[] = results.map((res: { 
-      url: string; 
-      mimeType: string; 
-      filename?: string;
-      attachmentId?: string;
-      uploadStatus?: string;
-      taskId?: string;
-      openaiResponseId?: string;
-    }) => ({
-      id: res.attachmentId || `vto-${Date.now()}`,
-      mimeType: res.mimeType || 'image/png',
-      name: res.filename || `tryon-${Date.now()}.png`,
-      url: res.url,
-      uploadStatus: (res.uploadStatus || 'pending') as 'pending' | 'uploading' | 'completed' | 'failed',
-      uploadTaskId: res.taskId,
-      openaiResponseId: res.openaiResponseId,
-    } as Attachment));
+    const displayAttachments: Attachment[] = results.map(
+      (res: {
+        url: string;
+        mimeType: string;
+        filename?: string;
+        attachmentId?: string;
+        uploadStatus?: string;
+        taskId?: string;
+        openaiResponseId?: string;
+      }) =>
+        ({
+          id: res.attachmentId || `vto-${Date.now()}`,
+          mimeType: res.mimeType || 'image/png',
+          name: res.filename || `tryon-${Date.now()}.png`,
+          url: res.url,
+          uploadStatus: (res.uploadStatus || 'pending') as
+            | 'pending'
+            | 'uploading'
+            | 'completed'
+            | 'failed',
+          uploadTaskId: res.taskId,
+          openaiResponseId: res.openaiResponseId,
+        }) as Attachment
+    );
 
     // ✅ 与 ImageEditHandler 保持一致：处理用户上传的附件（人物图、服装图）
     const uploadTask = async () => {
       // ✅ 后端已创建附件记录和上传任务（AI 返回的结果图片）
       const dbAttachments = displayAttachments;
-      
+
       // ✅ 处理用户上传的附件（人物图、服装图）
       // 注意：用户上传的文件需要前端通过 FormData 上传到后端
       // 后端使用 AttachmentService.process_user_upload() 统一处理
@@ -143,7 +161,7 @@ export class VirtualTryOnHandler extends BaseHandler {
           if (att.uploadStatus === 'completed' && att.url?.startsWith('http')) {
             return att;
           }
-          
+
           // ✅ 如果有 File 对象，上传到后端（后端会统一处理）
           if (att.file) {
             try {
@@ -153,8 +171,7 @@ export class VirtualTryOnHandler extends BaseHandler {
                 attachmentId: att.id || uuidv4(),
                 storageId: context.storageId,
               });
-              
-              
+
               return {
                 ...att,
                 id: result.attachmentId || att.id,
@@ -165,7 +182,7 @@ export class VirtualTryOnHandler extends BaseHandler {
               return { ...att, uploadStatus: 'failed' as const };
             }
           }
-          
+
           // ✅ 对于 Base64/Blob URL，需要转换为 File 对象并上传
           // 这是 Virtual Try-On 特有的逻辑，因为人物图/服装图通常是本地上传的
           if (att.url && (att.url.startsWith('data:') || att.url.startsWith('blob:'))) {
@@ -175,15 +192,14 @@ export class VirtualTryOnHandler extends BaseHandler {
               const blob = await response.blob();
               const filename = att.name || `tryon-input-${Date.now()}.png`;
               const file = new File([blob], filename, { type: blob.type || 'image/png' });
-              
+
               const result = await storageUpload.uploadFileAsync(file, {
                 sessionId: context.sessionId,
                 messageId: context.userMessageId,
                 attachmentId: att.id || uuidv4(),
                 storageId: context.storageId,
               });
-              
-              
+
               return {
                 ...att,
                 id: result.attachmentId || att.id,
@@ -194,12 +210,12 @@ export class VirtualTryOnHandler extends BaseHandler {
               return { ...att, uploadStatus: 'failed' as const };
             }
           }
-          
+
           // 其他情况，直接返回
           return att;
         })
       );
-      
+
       return { dbAttachments, dbUserAttachments };
     };
 
@@ -227,11 +243,19 @@ export class VideoGenHandler extends BaseHandler {
       : context.text;
     const videoGenerationMeta = {
       ...(result.continuationStrategy ? { continuationStrategy: result.continuationStrategy } : {}),
-      ...(typeof result.videoExtensionCount === 'number' ? { videoExtensionCount: result.videoExtensionCount } : {}),
-      ...(typeof result.videoExtensionApplied === 'number' ? { videoExtensionApplied: result.videoExtensionApplied } : {}),
-      ...(typeof result.totalDurationSeconds === 'number' ? { totalDurationSeconds: result.totalDurationSeconds } : {}),
+      ...(typeof result.videoExtensionCount === 'number'
+        ? { videoExtensionCount: result.videoExtensionCount }
+        : {}),
+      ...(typeof result.videoExtensionApplied === 'number'
+        ? { videoExtensionApplied: result.videoExtensionApplied }
+        : {}),
+      ...(typeof result.totalDurationSeconds === 'number'
+        ? { totalDurationSeconds: result.totalDurationSeconds }
+        : {}),
       ...(result.continuedFromVideo ? { continuedFromVideo: true } : {}),
-      ...(typeof result.storyboardShotSeconds === 'number' ? { storyboardShotSeconds: result.storyboardShotSeconds } : {}),
+      ...(typeof result.storyboardShotSeconds === 'number'
+        ? { storyboardShotSeconds: result.storyboardShotSeconds }
+        : {}),
       ...(typeof result.generateAudio === 'boolean' ? { generateAudio: result.generateAudio } : {}),
       ...(result.subtitleMode ? { subtitleMode: result.subtitleMode } : {}),
       ...(result.subtitleLanguage ? { subtitleLanguage: result.subtitleLanguage } : {}),
@@ -240,28 +264,39 @@ export class VideoGenHandler extends BaseHandler {
     };
 
     if (result.attachmentId || result.uploadStatus || result.taskId) {
-      const displayAttachments: Attachment[] = [{
-        id: result.attachmentId || uuidv4(),
-        mimeType: result.mimeType || 'video/mp4',
-        name: result.filename || `generated-${Date.now()}.mp4`,
-        url: result.url,
-        fileUri: result.gcsUri || result.providerFileUri || result.providerFileName || result.fileUri,
-        uploadStatus: (result.uploadStatus || 'pending') as 'pending' | 'uploading' | 'completed' | 'failed',
-        uploadTaskId: result.taskId,
-        cloudUrl: result.cloudUrl,
-        messageId: result.messageId,
-        sessionId: result.sessionId,
-        userId: result.userId,
-        createdAt: result.createdAt,
-        enhancedPrompt,
-      }];
+      const displayAttachments: Attachment[] = [
+        {
+          id: result.attachmentId || uuidv4(),
+          mimeType: result.mimeType || 'video/mp4',
+          name: result.filename || `generated-${Date.now()}.mp4`,
+          url: result.url,
+          fileUri:
+            result.gcsUri || result.providerFileUri || result.providerFileName || result.fileUri,
+          uploadStatus: (result.uploadStatus || 'pending') as
+            | 'pending'
+            | 'uploading'
+            | 'completed'
+            | 'failed',
+          uploadTaskId: result.taskId,
+          cloudUrl: result.cloudUrl,
+          messageId: result.messageId,
+          sessionId: result.sessionId,
+          userId: result.userId,
+          createdAt: result.createdAt,
+          enhancedPrompt,
+        },
+      ];
       for (const sidecar of result.sidecarFiles || []) {
         displayAttachments.push({
           id: sidecar.attachmentId || uuidv4(),
           mimeType: sidecar.mimeType,
           name: sidecar.filename || `subtitle-${Date.now()}`,
           url: sidecar.url,
-          uploadStatus: (sidecar.uploadStatus || 'pending') as 'pending' | 'uploading' | 'completed' | 'failed',
+          uploadStatus: (sidecar.uploadStatus || 'pending') as
+            | 'pending'
+            | 'uploading'
+            | 'completed'
+            | 'failed',
           uploadTaskId: sidecar.taskId,
           cloudUrl: sidecar.cloudUrl,
           messageId: sidecar.messageId,
@@ -282,7 +317,11 @@ export class VideoGenHandler extends BaseHandler {
           url: asset.url,
           role: asset.role || 'last_frame',
           kind: asset.kind || 'video_last_frame',
-          uploadStatus: (asset.uploadStatus || 'pending') as 'pending' | 'uploading' | 'completed' | 'failed',
+          uploadStatus: (asset.uploadStatus || 'pending') as
+            | 'pending'
+            | 'uploading'
+            | 'completed'
+            | 'failed',
           uploadTaskId: asset.taskId,
           cloudUrl: asset.cloudUrl,
           messageId: asset.messageId,
@@ -291,7 +330,12 @@ export class VideoGenHandler extends BaseHandler {
         });
       }
       const subtitleAttachmentIds = displayAttachments
-        .filter((attachment) => attachment.kind === 'subtitle' || attachment.mimeType === 'text/vtt' || attachment.mimeType === 'application/x-subrip')
+        .filter(
+          (attachment) =>
+            attachment.kind === 'subtitle' ||
+            attachment.mimeType === 'text/vtt' ||
+            attachment.mimeType === 'application/x-subrip'
+        )
         .map((attachment) => attachment.id)
         .filter((value): value is string => typeof value === 'string' && value.length > 0);
 
@@ -310,9 +354,9 @@ export class VideoGenHandler extends BaseHandler {
     }
     const displayAttachments = [processed.displayAttachment];
     const uploadTask = async () => ({
-      dbAttachments: [await processed.dbAttachmentPromise]
+      dbAttachments: [await processed.dbAttachmentPromise],
     });
-    
+
     return {
       content: displayContent,
       attachments: displayAttachments,
@@ -325,20 +369,19 @@ export class VideoGenHandler extends BaseHandler {
 export class AudioGenHandler extends BaseHandler {
   protected async doExecute(context: ExecutionContext): Promise<HandlerResult> {
     const result = await llmService.generateSpeech(context.text);
-    const results = [result];
-    
-    const processed = await Promise.all(
-      results.map(res => processMediaResult({ ...res, filename: 'speech.mp3' }, context, 'audio'))
+    const processed = await processMediaResult(
+      { ...result, filename: 'speech.mp3' },
+      context,
+      'audio'
     );
 
-    const displayAttachments = processed.map(p => p.displayAttachment);
     const uploadTask = async () => ({
-      dbAttachments: await Promise.all(processed.map(p => p.dbAttachmentPromise))
+      dbAttachments: [await processed.dbAttachmentPromise],
     });
 
     return {
       content: `Speech generated for: "${context.text}"`,
-      attachments: displayAttachments,
+      attachments: [processed.displayAttachment],
       uploadTask: uploadTask(),
     };
   }

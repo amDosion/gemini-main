@@ -128,16 +128,12 @@ export const validateWorkflow = (
       if (
         hasReferenceImage &&
         hasExplicitAgentTaskType &&
-        (
-          !normalizedTaskType ||
-          ![
-            'vision-understand',
-            'image-edit',
-            'video-gen',
-          ].includes(normalizedTaskType)
-        )
+        (!normalizedTaskType ||
+          !['vision-understand', 'image-edit', 'video-gen'].includes(normalizedTaskType))
       ) {
-        errors.push('节点配置了参考图时，任务类型必须是 vision-understand、image-edit 或 video-gen');
+        errors.push(
+          '节点配置了参考图时，任务类型必须是 vision-understand、image-edit 或 video-gen'
+        );
       }
     }
 
@@ -168,17 +164,17 @@ export const validateWorkflow = (
 
   // Validate edges
   edges.forEach((edge) => {
-    const sourceNode = nodes.find((n) => n.id === edge.source);
-    const targetNode = nodes.find((n) => n.id === edge.target);
+    const hasSource = nodeIdSet.has(edge.source);
+    const hasTarget = nodeIdSet.has(edge.target);
 
-    if (!sourceNode) {
+    if (!hasSource) {
       edgeErrors.push(`连接 ${edge.id} 的源节点不存在`);
     }
-    if (!targetNode) {
+    if (!hasTarget) {
       edgeErrors.push(`连接 ${edge.id} 的目标节点不存在`);
     }
 
-    if (!sourceNode || !targetNode) {
+    if (!hasSource || !hasTarget) {
       return;
     }
     outgoingByNode.get(edge.source)?.push(edge);
@@ -187,7 +183,7 @@ export const validateWorkflow = (
 
   nodes.forEach((node) => {
     if (node.data.type === 'condition') {
-      const outgoingCount = edges.filter((e) => e.source === node.id).length;
+      const outgoingCount = (outgoingByNode.get(node.id) || []).length;
       if (outgoingCount < 2) {
         if (!nodeErrors[node.id]) {
           nodeErrors[node.id] = [];

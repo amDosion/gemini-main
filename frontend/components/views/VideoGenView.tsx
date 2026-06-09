@@ -513,7 +513,20 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
     }
 
     if (video.paused) {
-      await video.play();
+      // play() 在播放被源切换打断或被自动播放策略拒绝时抛 AbortError/NotAllowedError;
+      // 所有调用方都用 void 丢弃返回值,不吞掉会变成 unhandled rejection。
+      try {
+        await video.play();
+      } catch (err) {
+        if (
+          !(
+            err instanceof DOMException &&
+            (err.name === 'AbortError' || err.name === 'NotAllowedError')
+          )
+        ) {
+          throw err;
+        }
+      }
     } else {
       video.pause();
     }

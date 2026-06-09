@@ -463,76 +463,28 @@ export interface TemplateSampleInput {
   fileUrls: string[];
 }
 
+const toTrimmedStringList = (value: unknown): string[] =>
+  Array.isArray(value) ? value.map((item) => String(item || '').trim()).filter(Boolean) : [];
+
+const mergeUrlList = (camelCaseValue: unknown, snakeCaseValue: unknown): string[] =>
+  Array.from(
+    new Set([...toTrimmedStringList(camelCaseValue), ...toTrimmedStringList(snakeCaseValue)])
+  );
+
 export const normalizeTemplateSampleInput = (value: unknown): TemplateSampleInput => {
   const safeValue = isPlainObject(value) ? value : {};
-  const imageUrls = Array.from(
-    new Set([
-      ...(Array.isArray(safeValue.imageUrls)
-        ? safeValue.imageUrls
-            .map((item: Record<string, unknown>) => String(item || '').trim())
-            .filter(Boolean)
-        : []),
-      ...(Array.isArray(safeValue.image_urls)
-        ? safeValue.image_urls
-            .map((item: Record<string, unknown>) => String(item || '').trim())
-            .filter(Boolean)
-        : []),
-    ])
-  );
-  const prompts = Array.isArray(safeValue.prompts)
-    ? safeValue.prompts
-        .map((item: Record<string, unknown>) => String(item || '').trim())
-        .filter(Boolean)
-    : [];
+  const imageUrls = mergeUrlList(safeValue.imageUrls, safeValue.image_urls);
+  const prompts = toTrimmedStringList(safeValue.prompts);
   const task = String(safeValue.task || safeValue.prompt || safeValue.text || '').trim();
   const imageUrlRaw = String(safeValue.imageUrl || safeValue.image_url || '').trim();
   const imageUrl = imageUrlRaw || imageUrls[0] || '';
-  const videoUrls = Array.from(
-    new Set([
-      ...(Array.isArray(safeValue.videoUrls)
-        ? safeValue.videoUrls
-            .map((item: Record<string, unknown>) => String(item || '').trim())
-            .filter(Boolean)
-        : []),
-      ...(Array.isArray(safeValue.video_urls)
-        ? safeValue.video_urls
-            .map((item: Record<string, unknown>) => String(item || '').trim())
-            .filter(Boolean)
-        : []),
-    ])
-  );
+  const videoUrls = mergeUrlList(safeValue.videoUrls, safeValue.video_urls);
   const videoUrlRaw = String(safeValue.videoUrl || safeValue.video_url || '').trim();
   const videoUrl = videoUrlRaw || videoUrls[0] || '';
-  const audioUrls = Array.from(
-    new Set([
-      ...(Array.isArray(safeValue.audioUrls)
-        ? safeValue.audioUrls
-            .map((item: Record<string, unknown>) => String(item || '').trim())
-            .filter(Boolean)
-        : []),
-      ...(Array.isArray(safeValue.audio_urls)
-        ? safeValue.audio_urls
-            .map((item: Record<string, unknown>) => String(item || '').trim())
-            .filter(Boolean)
-        : []),
-    ])
-  );
+  const audioUrls = mergeUrlList(safeValue.audioUrls, safeValue.audio_urls);
   const audioUrlRaw = String(safeValue.audioUrl || safeValue.audio_url || '').trim();
   const audioUrl = audioUrlRaw || audioUrls[0] || '';
-  const fileUrls = Array.from(
-    new Set([
-      ...(Array.isArray(safeValue.fileUrls)
-        ? safeValue.fileUrls
-            .map((item: Record<string, unknown>) => String(item || '').trim())
-            .filter(Boolean)
-        : []),
-      ...(Array.isArray(safeValue.file_urls)
-        ? safeValue.file_urls
-            .map((item: Record<string, unknown>) => String(item || '').trim())
-            .filter(Boolean)
-        : []),
-    ])
-  );
+  const fileUrls = mergeUrlList(safeValue.fileUrls, safeValue.file_urls);
   const fileUrlRaw = String(safeValue.fileUrl || safeValue.file_url || '').trim();
   const fileUrl = fileUrlRaw || fileUrls[0] || '';
   return {
@@ -548,7 +500,6 @@ export const normalizeTemplateSampleInput = (value: unknown): TemplateSampleInpu
     fileUrls,
   };
 };
-
 
 export const resolveTemplateInputPlaceholder = (
   rawValue: unknown,

@@ -107,7 +107,6 @@ export const uploadToCloudStorageSync = async (
   try {
     const finalFilename = filename || `image-${Date.now()}.png`;
 
-    // 判断输入类型（用于日志）
     // 使用统一函数转换为 File
     const file = await sourceToFile(imageSource, finalFilename);
 
@@ -116,10 +115,9 @@ export const uploadToCloudStorageSync = async (
 
     if (result.success && result.url) {
       return result.url;
-    } else {
-      reportError('上传云存储失败', new Error(result.error || 'upload returned no url'));
-      return '';
     }
+    reportError('上传云存储失败', new Error(result.error || 'upload returned no url'));
+    return '';
   } catch (error) {
     reportError('上传云存储异常', error);
     return '';
@@ -474,8 +472,7 @@ const findLocalBlobAttachmentInMessages = (
 const normalizeAttachmentForMediaRequest = async (att: Attachment): Promise<Attachment> => {
   const preferredUrl = getPreferredAttachmentUrl(att);
   const file = att.file;
-  const shouldInlineFile =
-    file && (!preferredUrl || isBlobUrl(preferredUrl) || isBlobUrl(att.url));
+  const shouldInlineFile = file && (!preferredUrl || isBlobUrl(preferredUrl) || isBlobUrl(att.url));
 
   if (shouldInlineFile) {
     try {
@@ -549,8 +546,6 @@ export const processUserAttachments = async (
   sessionId: string | null,
   filePrefix: string = 'canvas'
 ): Promise<Attachment[]> => {
-  const result: Attachment[] = [];
-
   if (attachments.length === 0 && activeImageUrl && isLocalBlobAttachmentUrl(activeImageUrl)) {
     const localAttachment = findLocalBlobAttachmentInMessages(activeImageUrl, messages);
     return localAttachment ? normalizeAttachmentsForMediaRequest([localAttachment]) : [];
@@ -558,28 +553,8 @@ export const processUserAttachments = async (
 
   // ✅ 1. 如果有画布图片且没有新上传附件，使用画布图片（CONTINUITY LOGIC）
   if (attachments.length === 0 && activeImageUrl) {
-    const activeUrlType = activeImageUrl.startsWith('data:')
-      ? 'Base64'
-      : activeImageUrl.startsWith('blob:')
-        ? 'Blob'
-        : activeImageUrl.startsWith('http')
-          ? 'HTTP'
-          : 'Other';
-
-    // 提取 Base64 的 MIME 类型
-    let activeMimeType = 'unknown';
-    if (activeUrlType === 'Base64') {
-      const mimeMatch = activeImageUrl.match(/^data:([^;]+);/);
-      activeMimeType = mimeMatch ? mimeMatch[1] : 'unknown';
-    }
-
     const prepared = await prepareAttachmentForApi(activeImageUrl, messages, sessionId, filePrefix);
-
-    if (prepared) {
-      result.push(prepared);
-    } else {
-    }
-    return result;
+    return prepared ? [prepared] : [];
   }
 
   // ✅ 2. 如果有新上传的附件，处理附件
@@ -589,11 +564,10 @@ export const processUserAttachments = async (
     // ✅ 3. 如果同时有画布图片，也添加（支持"附件 + 画布图片"组合）
     // 检查画布图片是否已经在附件中（避免重复）
     if (activeImageUrl && !isLocalBlobAttachmentUrl(activeImageUrl)) {
-      const isCanvasImageInAttachments = processedAttachments.some(
-        (att) =>
-          [att.url, att.tempUrl, att.cloudUrl, att.fileUri, getPreferredAttachmentUrl(att)].some(
-            (url) => url === activeImageUrl
-          )
+      const isCanvasImageInAttachments = processedAttachments.some((att) =>
+        [att.url, att.tempUrl, att.cloudUrl, att.fileUri, getPreferredAttachmentUrl(att)].some(
+          (url) => url === activeImageUrl
+        )
       );
 
       if (!isCanvasImageInAttachments) {

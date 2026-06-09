@@ -357,11 +357,11 @@ export class LLMService {
         withAuth: true,
       });
 
-      if (response.ok) {
-      } else {
+      if (!response.ok) {
+        // Drain the body on error responses to free the connection.
         await response.text();
       }
-    } catch (e) {
+    } catch {
       // Silently ignore network errors (browser may not have been active)
     }
   }

@@ -7,9 +7,7 @@ import {
   capturePrivateCacheLifecycleSnapshot,
   isPrivateCacheLifecycleSnapshotCurrent,
 } from '../services/privateCacheInvalidation';
-import {
-  scopedPrivateSingletonCacheKey,
-} from '../services/privateCacheScope';
+import { scopedPrivateSingletonCacheKey } from '../services/privateCacheScope';
 import { useCacheSubscription, useCacheUpdater } from './useCacheSubscription';
 import { usePrivateCacheScopeRevision } from './usePrivateCacheScopeRevision';
 
@@ -31,14 +29,9 @@ const getPersonasFingerprint = (personas: Persona[]): string =>
 
 const getInitialPersonasSignature = (
   initialData: { personas: Persona[] } | undefined
-): string | null =>
-  initialData?.personas ? getPersonasFingerprint(initialData.personas) : null;
+): string | null => (initialData?.personas ? getPersonasFingerprint(initialData.personas) : null);
 
-export const usePersonas = (
-  initialData?: {
-    personas: Persona[];
-  }
-) => {
+export const usePersonas = (initialData?: { personas: Persona[] }) => {
   const initialDataSignature = getInitialPersonasSignature(initialData);
   const latestInitialDataSignatureRef = useRef<string | null>(initialDataSignature);
   const appliedInitialDataSignatureRef = useRef<string | null>(null);
@@ -49,12 +42,8 @@ export const usePersonas = (
   // ✅ 订阅 CacheManager 中的数据
   const personas = useCacheSubscription<Persona[]>(personasCacheKey, EMPTY_PERSONAS);
   const activePersonaId = useCacheSubscription<string>(activePersonaIdCacheKey, '');
-  const {
-    set: setPersonasCache,
-  } = useCacheUpdater<Persona[]>(personasCacheKey, EMPTY_PERSONAS);
-  const {
-    set: setActivePersonaIdCache,
-  } = useCacheUpdater<string>(activePersonaIdCacheKey, '');
+  const { set: setPersonasCache } = useCacheUpdater<Persona[]>(personasCacheKey, EMPTY_PERSONAS);
+  const { set: setActivePersonaIdCache } = useCacheUpdater<string>(activePersonaIdCacheKey, '');
 
   const isPersonaCacheScopeCurrent = useCallback(
     (lifecycleSnapshot?: ReturnType<typeof capturePrivateCacheLifecycleSnapshot>): boolean => {
@@ -62,9 +51,7 @@ export const usePersonas = (
         personasCacheKey === scopedPrivateSingletonCacheKey(CACHE_DOMAINS.PERSONAS) &&
         activePersonaIdCacheKey === scopedPrivateSingletonCacheKey(CACHE_DOMAINS.ACTIVE_PERSONA_ID);
       if (!cacheKeysCurrent) return false;
-      return lifecycleSnapshot
-        ? isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
-        : true;
+      return lifecycleSnapshot ? isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot) : true;
     },
     [activePersonaIdCacheKey, personasCacheKey]
   );
@@ -105,7 +92,7 @@ export const usePersonas = (
     // ✅ 如果当前 activePersonaId 不在新的 personas 中，重置为第一个
     if (initialData.personas.length > 0) {
       const currentActiveId = cacheManager.get<string>(activePersonaIdCacheKey) ?? '';
-      const currentPersonaExists = initialData.personas.find(p => p.id === currentActiveId);
+      const currentPersonaExists = initialData.personas.find((p) => p.id === currentActiveId);
       if (!currentPersonaExists) {
         setActivePersonaIdCache(initialData.personas[0].id);
       }
@@ -124,121 +111,129 @@ export const usePersonas = (
 
   // ✅ 保存到后端（后端会自动处理时间戳）
   const saveToBackend = useCallback(async (newPersonas: Persona[]) => {
-    try {
-      await db.savePersonas(newPersonas);
-    } catch (error) {
-      throw error;
-    }
+    await db.savePersonas(newPersonas);
   }, []);
 
-  const createPersona = useCallback(async (persona: Omit<Persona, 'id'>) => {
-    const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
-    assertPersonaCacheScopeCurrent();
-    const newPersona = { ...persona, id: uuidv4() };
-    const currentPersonas = cacheManager.get<Persona[]>(personasCacheKey) ?? [];
-    const updated = [...currentPersonas, newPersona];
-    setPersonasCache(updated);
-    try {
-      await saveToBackend(updated);
-    } catch (error) {
-      if (isPersonaCacheScopeCurrent(lifecycleSnapshot)) {
-        setPersonasCache(currentPersonas);
+  const createPersona = useCallback(
+    async (persona: Omit<Persona, 'id'>) => {
+      const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
+      assertPersonaCacheScopeCurrent();
+      const newPersona = { ...persona, id: uuidv4() };
+      const currentPersonas = cacheManager.get<Persona[]>(personasCacheKey) ?? [];
+      const updated = [...currentPersonas, newPersona];
+      setPersonasCache(updated);
+      try {
+        await saveToBackend(updated);
+      } catch (error) {
+        if (isPersonaCacheScopeCurrent(lifecycleSnapshot)) {
+          setPersonasCache(currentPersonas);
+        }
+        throw error;
       }
-      throw error;
-    }
-    return newPersona;
-  }, [
-    assertPersonaCacheScopeCurrent,
-    isPersonaCacheScopeCurrent,
-    personasCacheKey,
-    saveToBackend,
-    setPersonasCache,
-  ]);
+      return newPersona;
+    },
+    [
+      assertPersonaCacheScopeCurrent,
+      isPersonaCacheScopeCurrent,
+      personasCacheKey,
+      saveToBackend,
+      setPersonasCache,
+    ]
+  );
 
-  const updatePersona = useCallback(async (id: string, updates: Partial<Persona>) => {
-    const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
-    assertPersonaCacheScopeCurrent();
-    const currentPersonas = cacheManager.get<Persona[]>(personasCacheKey) ?? [];
-    const updated = currentPersonas.map(p => p.id === id ? { ...p, ...updates } : p);
-    setPersonasCache(updated);
-    try {
-      await saveToBackend(updated);
-    } catch (error) {
-      if (isPersonaCacheScopeCurrent(lifecycleSnapshot)) {
-        setPersonasCache(currentPersonas);
+  const updatePersona = useCallback(
+    async (id: string, updates: Partial<Persona>) => {
+      const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
+      assertPersonaCacheScopeCurrent();
+      const currentPersonas = cacheManager.get<Persona[]>(personasCacheKey) ?? [];
+      const updated = currentPersonas.map((p) => (p.id === id ? { ...p, ...updates } : p));
+      setPersonasCache(updated);
+      try {
+        await saveToBackend(updated);
+      } catch (error) {
+        if (isPersonaCacheScopeCurrent(lifecycleSnapshot)) {
+          setPersonasCache(currentPersonas);
+        }
+        throw error;
       }
-      throw error;
-    }
-  }, [
-    assertPersonaCacheScopeCurrent,
-    isPersonaCacheScopeCurrent,
-    personasCacheKey,
-    saveToBackend,
-    setPersonasCache,
-  ]);
+    },
+    [
+      assertPersonaCacheScopeCurrent,
+      isPersonaCacheScopeCurrent,
+      personasCacheKey,
+      saveToBackend,
+      setPersonasCache,
+    ]
+  );
 
-  const deletePersona = useCallback(async (id: string) => {
-    const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
-    assertPersonaCacheScopeCurrent();
-    const currentPersonas = cacheManager.get<Persona[]>(personasCacheKey) ?? [];
-    // Prevent deleting the last one
-    if (currentPersonas.length <= 1) return;
-    
-    const updated = currentPersonas.filter(p => p.id !== id);
-    setPersonasCache(updated);
-    
-    try {
-      await saveToBackend(updated);
-      if (!isPersonaCacheScopeCurrent(lifecycleSnapshot)) {
-        return;
-      }
-      
-      const currentActiveId = cacheManager.get<string>(activePersonaIdCacheKey) ?? '';
-      if (currentActiveId === id) {
-        setActivePersonaIdCache(updated[0].id);
-      }
-    } catch (error) {
-      if (isPersonaCacheScopeCurrent(lifecycleSnapshot)) {
-        setPersonasCache(currentPersonas);
-      }
-      throw error;
-    }
-  }, [
-    activePersonaIdCacheKey,
-    assertPersonaCacheScopeCurrent,
-    isPersonaCacheScopeCurrent,
-    personasCacheKey,
-    saveToBackend,
-    setActivePersonaIdCache,
-    setPersonasCache,
-  ]);
+  const deletePersona = useCallback(
+    async (id: string) => {
+      const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
+      assertPersonaCacheScopeCurrent();
+      const currentPersonas = cacheManager.get<Persona[]>(personasCacheKey) ?? [];
+      // Prevent deleting the last one
+      if (currentPersonas.length <= 1) return;
 
-  const setActivePersonaId = useCallback((id: string) => {
-    assertPersonaCacheScopeCurrent();
-    setActivePersonaIdCache(id);
-  }, [assertPersonaCacheScopeCurrent, setActivePersonaIdCache]);
+      const updated = currentPersonas.filter((p) => p.id !== id);
+      setPersonasCache(updated);
+
+      try {
+        await saveToBackend(updated);
+        if (!isPersonaCacheScopeCurrent(lifecycleSnapshot)) {
+          return;
+        }
+
+        const currentActiveId = cacheManager.get<string>(activePersonaIdCacheKey) ?? '';
+        if (currentActiveId === id) {
+          setActivePersonaIdCache(updated[0].id);
+        }
+      } catch (error) {
+        if (isPersonaCacheScopeCurrent(lifecycleSnapshot)) {
+          setPersonasCache(currentPersonas);
+        }
+        throw error;
+      }
+    },
+    [
+      activePersonaIdCacheKey,
+      assertPersonaCacheScopeCurrent,
+      isPersonaCacheScopeCurrent,
+      personasCacheKey,
+      saveToBackend,
+      setActivePersonaIdCache,
+      setPersonasCache,
+    ]
+  );
+
+  const setActivePersonaId = useCallback(
+    (id: string) => {
+      assertPersonaCacheScopeCurrent();
+      setActivePersonaIdCache(id);
+    },
+    [assertPersonaCacheScopeCurrent, setActivePersonaIdCache]
+  );
 
   const refreshPersonas = useCallback(async () => {
     const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
     assertPersonaCacheScopeCurrent();
-    try {
-      // 刷新功能：重新从后端获取最新的 Personas 数据（不删除、不重置）
-      const refreshedPersonas = await db.getPersonas();
-      if (!isPersonaCacheScopeCurrent(lifecycleSnapshot)) {
-        return;
+    // 刷新功能：重新从后端获取最新的 Personas 数据（不删除、不重置）
+    const refreshedPersonas = await db.getPersonas();
+    if (!isPersonaCacheScopeCurrent(lifecycleSnapshot)) {
+      return;
+    }
+    // 更新缓存
+    setPersonasCache(refreshedPersonas);
+    // 如果当前激活的 Persona 不在新列表中，选择第一个
+    if (refreshedPersonas.length > 0) {
+      const currentActiveId = cacheManager.get<string>(activePersonaIdCacheKey) ?? '';
+      const currentPersonaExists = refreshedPersonas.find((p) => p.id === currentActiveId);
+      if (!currentPersonaExists) {
+        setActivePersonaIdCache(refreshedPersonas[0].id);
       }
-      // 更新缓存
-      setPersonasCache(refreshedPersonas);
-      // 如果当前激活的 Persona 不在新列表中，选择第一个
-      if (refreshedPersonas.length > 0) {
-        const currentActiveId = cacheManager.get<string>(activePersonaIdCacheKey) ?? '';
-        const currentPersonaExists = refreshedPersonas.find(p => p.id === currentActiveId);
-        if (!currentPersonaExists) {
-          setActivePersonaIdCache(refreshedPersonas[0].id);
-        }
-      }
-    } catch (error) {
-      throw error;
+    } else {
+      // 刷新后列表为空时清空激活 ID,与 initialData 同步逻辑保持一致,避免 activePersonaId
+      // 仍指向已不存在的 persona。
+      setActivePersonaIdCache('');
     }
   }, [
     activePersonaIdCacheKey,
@@ -248,7 +243,7 @@ export const usePersonas = (
     setPersonasCache,
   ]);
 
-  const activePersona = personas.find(p => p.id === activePersonaId) || personas[0];
+  const activePersona = personas.find((p) => p.id === activePersonaId) || personas[0];
 
   return {
     personas,
@@ -258,6 +253,6 @@ export const usePersonas = (
     createPersona,
     updatePersona,
     deletePersona,
-    refreshPersonas
+    refreshPersonas,
   };
 };

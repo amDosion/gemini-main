@@ -11,7 +11,10 @@ import VideoExtensionControl from '../../shared/VideoExtensionControl';
 import VideoInputStrategyControl from '../../shared/VideoInputStrategyControl';
 import { useModeControlsSchema } from '../../../hooks/useModeControlsSchema';
 import { useEnhancePromptModels } from '../../../hooks/useEnhancePromptModels';
-import { buildVideoControlContract, getVideoExtensionOptions } from '../../../utils/videoControlSchema';
+import {
+  buildVideoControlContract,
+  getVideoExtensionOptions,
+} from '../../../utils/videoControlSchema';
 import { getUnsupportedParams } from '../../shared/modeControlSchemaUtils';
 import {
   buildVideoInputStrategyOptions,
@@ -34,23 +37,40 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
   currentModel,
   availableModels,
   onModelSelect,
-  aspectRatio: propAspectRatio, setAspectRatio: propSetAspectRatio,
-  resolution: propResolution, setResolution: propSetResolution,
-  videoSeconds: propVideoSeconds, setVideoSeconds: propSetVideoSeconds,
-  videoInputStrategy: propVideoInputStrategy, setVideoInputStrategy: propSetVideoInputStrategy,
-  videoExtensionCount: propVideoExtensionCount, setVideoExtensionCount: propSetVideoExtensionCount,
-  storyboardShotSeconds: propStoryboardShotSeconds, setStoryboardShotSeconds: propSetStoryboardShotSeconds,
-  generateAudio: propGenerateAudio, setGenerateAudio: propSetGenerateAudio,
-  subtitleMode: propSubtitleMode, setSubtitleMode: propSetSubtitleMode,
-  subtitleLanguage: propSubtitleLanguage, setSubtitleLanguage: propSetSubtitleLanguage,
-  subtitleScript: propSubtitleScript, setSubtitleScript: propSetSubtitleScript,
-  storyboardPrompt: propStoryboardPrompt, setStoryboardPrompt: propSetStoryboardPrompt,
-  storyboardSegments: propStoryboardSegments, setStoryboardSegments: propSetStoryboardSegments,
-  showAdvanced: propShowAdvanced, setShowAdvanced: propSetShowAdvanced,
-  negativePrompt: propNegativePrompt, setNegativePrompt: propSetNegativePrompt,
-  seed: propSeed, setSeed: propSetSeed,
-  enhancePrompt: propEnhancePrompt, setEnhancePrompt: propSetEnhancePrompt,
-  enhancePromptModel: propEnhancePromptModel, setEnhancePromptModel: propSetEnhancePromptModel,
+  aspectRatio: propAspectRatio,
+  setAspectRatio: propSetAspectRatio,
+  resolution: propResolution,
+  setResolution: propSetResolution,
+  videoSeconds: propVideoSeconds,
+  setVideoSeconds: propSetVideoSeconds,
+  videoInputStrategy: propVideoInputStrategy,
+  setVideoInputStrategy: propSetVideoInputStrategy,
+  videoExtensionCount: propVideoExtensionCount,
+  setVideoExtensionCount: propSetVideoExtensionCount,
+  storyboardShotSeconds: propStoryboardShotSeconds,
+  setStoryboardShotSeconds: propSetStoryboardShotSeconds,
+  generateAudio: propGenerateAudio,
+  setGenerateAudio: propSetGenerateAudio,
+  subtitleMode: propSubtitleMode,
+  setSubtitleMode: propSetSubtitleMode,
+  subtitleLanguage: propSubtitleLanguage,
+  setSubtitleLanguage: propSetSubtitleLanguage,
+  subtitleScript: propSubtitleScript,
+  setSubtitleScript: propSetSubtitleScript,
+  storyboardPrompt: propStoryboardPrompt,
+  setStoryboardPrompt: propSetStoryboardPrompt,
+  storyboardSegments: propStoryboardSegments,
+  setStoryboardSegments: propSetStoryboardSegments,
+  showAdvanced: propShowAdvanced,
+  setShowAdvanced: propSetShowAdvanced,
+  negativePrompt: propNegativePrompt,
+  setNegativePrompt: propSetNegativePrompt,
+  seed: propSeed,
+  setSeed: propSetSeed,
+  enhancePrompt: propEnhancePrompt,
+  setEnhancePrompt: propSetEnhancePrompt,
+  enhancePromptModel: propEnhancePromptModel,
+  setEnhancePromptModel: propSetEnhancePromptModel,
 }) => {
   const schema = controlsSchema;
   const videoControlContract = useMemo(() => buildVideoControlContract(schema), [schema]);
@@ -69,22 +89,32 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
     [schema]
   );
   const rawInputStrategies = useMemo(
-    () => buildVideoInputStrategyOptions({
-      providerId,
-      currentModel,
-      availableModels,
-      schemaStrategies: schemaInputStrategies,
-    }),
+    () =>
+      buildVideoInputStrategyOptions({
+        providerId,
+        currentModel,
+        availableModels,
+        schemaStrategies: schemaInputStrategies,
+      }),
     [availableModels, currentModel, providerId, schemaInputStrategies]
   );
   const availableInputStrategies = useMemo(
     () => rawInputStrategies.filter((strategy) => !isVideoExtensionStrategyId(strategy.id)),
     [rawInputStrategies]
   );
-  const availableStoryboardShotSeconds = useMemo(() => schema?.paramOptions?.storyboard_shot_seconds ?? [], [schema]);
-  const availableGenerateAudioOptions = useMemo(() => schema?.paramOptions?.generate_audio ?? [], [schema]);
+  const availableStoryboardShotSeconds = useMemo(
+    () => schema?.paramOptions?.storyboard_shot_seconds ?? [],
+    [schema]
+  );
+  const availableGenerateAudioOptions = useMemo(
+    () => schema?.paramOptions?.generate_audio ?? [],
+    [schema]
+  );
   const availableSubtitleModes = useMemo(() => schema?.paramOptions?.subtitle_mode ?? [], [schema]);
-  const availableSubtitleLanguages = useMemo(() => schema?.paramOptions?.subtitle_language ?? [], [schema]);
+  const availableSubtitleLanguages = useMemo(
+    () => schema?.paramOptions?.subtitle_language ?? [],
+    [schema]
+  );
   const defaults = schema?.defaults ?? {};
   const seedRange = schema?.numericRanges?.seed;
   const enhancePromptMandatory = videoControlContract.fieldPolicies.enhancePromptMandatory;
@@ -116,13 +146,14 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
     (typeof defaults.seconds === 'number' ? String(defaults.seconds) : undefined) ??
     videoControlContract.defaultVideoSeconds;
   const schemaDefaultVideoInputStrategy =
-    (typeof defaults.video_input_strategy === 'string' ? defaults.video_input_strategy : undefined) ??
+    (typeof defaults.video_input_strategy === 'string'
+      ? defaults.video_input_strategy
+      : undefined) ??
     (typeof defaults.videoInputStrategy === 'string' ? defaults.videoInputStrategy : undefined);
   const defaultVideoInputStrategy =
     schemaDefaultVideoInputStrategy && !isVideoExtensionStrategyId(schemaDefaultVideoInputStrategy)
       ? schemaDefaultVideoInputStrategy
-      : availableInputStrategies[0]?.id ?? '';
-  const defaultShowAdvanced = false;
+      : (availableInputStrategies[0]?.id ?? '');
   const defaultNegativePrompt = videoControlContract.defaultNegativePrompt;
   const defaultSeed = videoControlContract.defaultSeed;
   const defaultEnhancePrompt = videoControlContract.defaultEnhancePrompt;
@@ -138,26 +169,37 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
   const defaultStoryboardPrompt = videoControlContract.defaultStoryboardPrompt;
   const videoSeconds = controls?.videoSeconds ?? propVideoSeconds ?? defaultVideoSeconds;
   const setVideoSeconds = controls?.setVideoSeconds ?? propSetVideoSeconds ?? (() => {});
-  const videoInputStrategy = controls?.videoInputStrategy ?? propVideoInputStrategy ?? defaultVideoInputStrategy;
-  const setVideoInputStrategy = controls?.setVideoInputStrategy ?? propSetVideoInputStrategy ?? (() => {});
-  const videoExtensionCount = controls?.videoExtensionCount ?? propVideoExtensionCount ?? defaultVideoExtensionCount;
-  const setVideoExtensionCount = controls?.setVideoExtensionCount ?? propSetVideoExtensionCount ?? (() => {});
-  const storyboardShotSeconds = controls?.storyboardShotSeconds ?? propStoryboardShotSeconds ?? defaultStoryboardShotSeconds;
-  const setStoryboardShotSeconds = controls?.setStoryboardShotSeconds ?? propSetStoryboardShotSeconds ?? (() => {});
+  const videoInputStrategy =
+    controls?.videoInputStrategy ?? propVideoInputStrategy ?? defaultVideoInputStrategy;
+  const setVideoInputStrategy =
+    controls?.setVideoInputStrategy ?? propSetVideoInputStrategy ?? (() => {});
+  const videoExtensionCount =
+    controls?.videoExtensionCount ?? propVideoExtensionCount ?? defaultVideoExtensionCount;
+  const setVideoExtensionCount =
+    controls?.setVideoExtensionCount ?? propSetVideoExtensionCount ?? (() => {});
+  const storyboardShotSeconds =
+    controls?.storyboardShotSeconds ?? propStoryboardShotSeconds ?? defaultStoryboardShotSeconds;
+  const setStoryboardShotSeconds =
+    controls?.setStoryboardShotSeconds ?? propSetStoryboardShotSeconds ?? (() => {});
   const generateAudio = controls?.generateAudio ?? propGenerateAudio ?? defaultGenerateAudio;
   const setGenerateAudio = controls?.setGenerateAudio ?? propSetGenerateAudio ?? (() => {});
   const subtitleMode = controls?.subtitleMode ?? propSubtitleMode ?? defaultSubtitleMode;
   const setSubtitleMode = controls?.setSubtitleMode ?? propSetSubtitleMode ?? (() => {});
-  const subtitleLanguage = controls?.subtitleLanguage ?? propSubtitleLanguage ?? defaultSubtitleLanguage;
-  const setSubtitleLanguage = controls?.setSubtitleLanguage ?? propSetSubtitleLanguage ?? (() => {});
+  const subtitleLanguage =
+    controls?.subtitleLanguage ?? propSubtitleLanguage ?? defaultSubtitleLanguage;
+  const setSubtitleLanguage =
+    controls?.setSubtitleLanguage ?? propSetSubtitleLanguage ?? (() => {});
   const subtitleScript = controls?.subtitleScript ?? propSubtitleScript ?? defaultSubtitleScript;
   const setSubtitleScript = controls?.setSubtitleScript ?? propSetSubtitleScript ?? (() => {});
-  const storyboardPrompt = controls?.storyboardPrompt ?? propStoryboardPrompt ?? defaultStoryboardPrompt;
-  const setStoryboardPrompt = controls?.setStoryboardPrompt ?? propSetStoryboardPrompt ?? (() => {});
+  const storyboardPrompt =
+    controls?.storyboardPrompt ?? propStoryboardPrompt ?? defaultStoryboardPrompt;
+  const setStoryboardPrompt =
+    controls?.setStoryboardPrompt ?? propSetStoryboardPrompt ?? (() => {});
   const storyboardSegments = controls?.storyboardSegments ?? propStoryboardSegments ?? [];
-  const setStoryboardSegments = controls?.setStoryboardSegments ?? propSetStoryboardSegments ?? (() => {});
+  const setStoryboardSegments =
+    controls?.setStoryboardSegments ?? propSetStoryboardSegments ?? (() => {});
   const subtitlesEnabled = subtitleMode !== 'none';
-  const showAdvanced = controls?.showAdvanced ?? propShowAdvanced ?? defaultShowAdvanced;
+  const showAdvanced = controls?.showAdvanced ?? propShowAdvanced ?? false;
   const setShowAdvanced = controls?.setShowAdvanced ?? propSetShowAdvanced ?? (() => {});
   const negativePrompt = controls?.negativePrompt ?? propNegativePrompt ?? defaultNegativePrompt;
   const setNegativePrompt = controls?.setNegativePrompt ?? propSetNegativePrompt ?? (() => {});
@@ -167,12 +209,15 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
   const setEnhancePrompt = controls?.setEnhancePrompt ?? propSetEnhancePrompt ?? (() => {});
   const enhancePromptModels = useEnhancePromptModels(providerId);
   const enhancePromptModel = controls?.enhancePromptModel ?? propEnhancePromptModel ?? '';
-  const setEnhancePromptModel = controls?.setEnhancePromptModel ?? propSetEnhancePromptModel ?? (() => {});
+  const setEnhancePromptModel =
+    controls?.setEnhancePromptModel ?? propSetEnhancePromptModel ?? (() => {});
   const appliedSchemaDefaultsRef = useRef<string | null>(null);
   const handleVideoInputStrategyChange = useCallback(
     (nextStrategyId: string) => {
       setVideoInputStrategy(nextStrategyId);
-      const nextStrategy = availableInputStrategies.find((strategy) => strategy.id === nextStrategyId);
+      const nextStrategy = availableInputStrategies.find(
+        (strategy) => strategy.id === nextStrategyId
+      );
       const targetModelId = nextStrategy?.targetModelId;
       if (targetModelId && targetModelId !== currentModel?.id) {
         onModelSelect?.(targetModelId);
@@ -180,7 +225,9 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
     },
     [availableInputStrategies, currentModel?.id, onModelSelect, setVideoInputStrategy]
   );
-  const showExtensionControls = videoControlContract.validVideoExtensionCounts.some((count) => count > 0);
+  const showExtensionControls = videoControlContract.validVideoExtensionCounts.some(
+    (count) => count > 0
+  );
   const schemaHasRequiredControls =
     Boolean(schema) &&
     (!showAspectRatioControl || availableRatios.length > 0) &&
@@ -299,9 +346,9 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
       return videoSeconds;
     }
     return (
-      Object.entries(videoControlContract.extensionOptionsBySeconds)
-        .find(([, options]) => options.some((option) => option.count > 0))?.[0] ??
-      videoSeconds
+      Object.entries(videoControlContract.extensionOptionsBySeconds).find(([, options]) =>
+        options.some((option) => option.count > 0)
+      )?.[0] ?? videoSeconds
     );
   }, [videoControlContract, videoSeconds]);
 
@@ -323,9 +370,18 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
       if (enabled && extensionBaseSeconds !== videoSeconds) {
         setVideoSeconds(extensionBaseSeconds);
       }
-      setVideoExtensionCount(enabled ? (videoExtensionCount > 0 ? videoExtensionCount : firstPositiveExtensionCount) : 0);
+      setVideoExtensionCount(
+        enabled ? (videoExtensionCount > 0 ? videoExtensionCount : firstPositiveExtensionCount) : 0
+      );
     },
-    [extensionBaseSeconds, firstPositiveExtensionCount, setVideoExtensionCount, setVideoSeconds, videoExtensionCount, videoSeconds]
+    [
+      extensionBaseSeconds,
+      firstPositiveExtensionCount,
+      setVideoExtensionCount,
+      setVideoSeconds,
+      videoExtensionCount,
+      videoSeconds,
+    ]
   );
 
   useEffect(() => {
@@ -336,10 +392,19 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
   }, [derivedExtensionOptions, setVideoExtensionCount, videoExtensionCount]);
 
   useEffect(() => {
-    if (showExtensionControls && derivedExtensionOptions.length === 0 && videoExtensionCount !== 0) {
+    if (
+      showExtensionControls &&
+      derivedExtensionOptions.length === 0 &&
+      videoExtensionCount !== 0
+    ) {
       setVideoExtensionCount(0);
     }
-  }, [derivedExtensionOptions.length, setVideoExtensionCount, showExtensionControls, videoExtensionCount]);
+  }, [
+    derivedExtensionOptions.length,
+    setVideoExtensionCount,
+    showExtensionControls,
+    videoExtensionCount,
+  ]);
 
   const baseDurationSeconds = useMemo(() => {
     const parsed = parseInt(String(extensionBaseSeconds || ''), 10);
@@ -466,7 +531,9 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
           modelOptions={enhancePromptModels}
           allowAutoModel
           disabled={enhancePromptMandatory}
-          disabledHint={enhancePromptMandatory ? '当前 Veo 3.1 模型必须启用 AI 增强提示词。' : undefined}
+          disabledHint={
+            enhancePromptMandatory ? '当前 Veo 3.1 模型必须启用 AI 增强提示词。' : undefined
+          }
           thinkingLevel={controls?.enhancePromptThinkingLevel ?? 'auto'}
           onThinkingLevelChange={controls?.setEnhancePromptThinkingLevel}
         />
@@ -498,7 +565,9 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
                 <input
                   type="number"
                   value={seed === -1 ? '' : seed}
-                  onChange={(event) => setSeed(event.target.value ? parseInt(event.target.value, 10) : -1)}
+                  onChange={(event) =>
+                    setSeed(event.target.value ? parseInt(event.target.value, 10) : -1)
+                  }
                   placeholder="随机 (-1)"
                   min={seedRange?.min}
                   max={seedRange?.max}
@@ -543,7 +612,11 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
                 <select
                   aria-label="分镜镜头时长"
                   value={String(storyboardShotSeconds)}
-                  onChange={(event) => setStoryboardShotSeconds(parseInt(event.target.value, 10) || defaultStoryboardShotSeconds)}
+                  onChange={(event) =>
+                    setStoryboardShotSeconds(
+                      parseInt(event.target.value, 10) || defaultStoryboardShotSeconds
+                    )
+                  }
                   className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
                 >
                   {availableStoryboardShotSeconds.map((option) => (
@@ -563,7 +636,9 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setSubtitleMode(subtitlesEnabled ? 'none' : defaultSubtitleEnabledMode)}
+                  onClick={() =>
+                    setSubtitleMode(subtitlesEnabled ? 'none' : defaultSubtitleEnabledMode)
+                  }
                   className={`w-10 h-6 flex items-center rounded-full p-1 transition-colors duration-200 ${
                     subtitlesEnabled ? 'bg-fuchsia-600' : 'bg-slate-600'
                   }`}
@@ -597,16 +672,18 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
                     ))}
                   </select>
                 </label>
-                {!generateAudio && <div className="space-y-2">
-                  <span className="text-xs text-slate-300">字幕脚本</span>
-                  <textarea
-                    aria-label="字幕脚本"
-                    value={subtitleScript}
-                    onChange={(event) => setSubtitleScript(event.target.value)}
-                    placeholder="每行一句，或使用 | 分隔。不会再从提示词自动生成字幕。"
-                    className="w-full h-24 bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-300 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500"
-                  />
-                </div>}
+                {!generateAudio && (
+                  <div className="space-y-2">
+                    <span className="text-xs text-slate-300">字幕脚本</span>
+                    <textarea
+                      aria-label="字幕脚本"
+                      value={subtitleScript}
+                      onChange={(event) => setSubtitleScript(event.target.value)}
+                      placeholder="每行一句，或使用 | 分隔。不会再从提示词自动生成字幕。"
+                      className="w-full h-24 bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-300 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -618,7 +695,11 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
 
 const VideoGenControlsFromApi: React.FC<VideoGenControlsProps> = (props) => {
   const { providerId = 'google', currentModel } = props;
-  const { schema, loading, error } = useModeControlsSchema(providerId, 'video-gen', currentModel?.id);
+  const { schema, loading, error } = useModeControlsSchema(
+    providerId,
+    'video-gen',
+    currentModel?.id
+  );
 
   return (
     <VideoGenControlsBody
@@ -631,7 +712,11 @@ const VideoGenControlsFromApi: React.FC<VideoGenControlsProps> = (props) => {
 };
 
 export const VideoGenControls: React.FC<VideoGenControlsProps> = (props) => {
-  if ('controlsSchema' in props || 'controlsSchemaLoading' in props || 'controlsSchemaError' in props) {
+  if (
+    'controlsSchema' in props ||
+    'controlsSchemaLoading' in props ||
+    'controlsSchemaError' in props
+  ) {
     return (
       <VideoGenControlsBody
         {...props}

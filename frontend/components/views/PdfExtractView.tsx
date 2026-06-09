@@ -36,6 +36,14 @@ import {
   PdfHtmlView,
 } from './pdf';
 
+// 默认模板（后端不可用时使用）
+const DEFAULT_TEMPLATES: PdfExtractionTemplate[] = [
+  { id: 'invoice', name: 'Invoice', description: 'Extract invoice details', icon: '🧾' },
+  { id: 'form', name: 'Form', description: 'Extract form fields', icon: '📋' },
+  { id: 'receipt', name: 'Receipt', description: 'Extract receipt data', icon: '🧾' },
+  { id: 'contract', name: 'Contract', description: 'Extract contract terms', icon: '📄' },
+];
+
 interface PdfExtractViewProps {
   messages: Message[];
   setAppMode: (mode: AppMode) => void;
@@ -63,14 +71,6 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // 默认模板（后端不可用时使用）
-  const DEFAULT_TEMPLATES: PdfExtractionTemplate[] = [
-    { id: 'invoice', name: 'Invoice', description: 'Extract invoice details', icon: '🧾' },
-    { id: 'form', name: 'Form', description: 'Extract form fields', icon: '📋' },
-    { id: 'receipt', name: 'Receipt', description: 'Extract receipt data', icon: '🧾' },
-    { id: 'contract', name: 'Contract', description: 'Extract contract terms', icon: '📄' },
-  ];
-
   const [selectedTemplate, setSelectedTemplate] = useState<string>('invoice');
   const [templates, setTemplates] = useState<PdfExtractionTemplate[]>(DEFAULT_TEMPLATES);
   const [viewMode, setViewMode] = useState<ViewMode>('table');
@@ -80,10 +80,7 @@ export const PdfExtractView: React.FC<PdfExtractViewProps> = ({
   // ✅ 参数面板状态
   const [prompt, setPrompt] = useState('Extract details from this document.');
   const [activeAttachments, setActiveAttachments] = useState<Attachment[]>([]);
-  const {
-    handlePaste: handleAttachmentPaste,
-    appendFiles,
-  } = useClipboardAttachments({
+  const { handlePaste: handleAttachmentPaste, appendFiles } = useClipboardAttachments({
     mode: 'pdf-extract',
     attachments: activeAttachments,
     onAttachmentsChange: setActiveAttachments,

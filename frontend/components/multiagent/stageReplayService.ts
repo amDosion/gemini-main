@@ -76,7 +76,12 @@ const parseArtifactRef = (value: unknown): SheetStageArtifactRef | null => {
   const rawVersion = pickFirstValue(value, ['artifact_version', 'artifactVersion']);
   const artifactVersion = Number(rawVersion);
   const artifactSessionId = pickFirstString(value, ['artifact_session_id', 'artifactSessionId']);
-  if (!artifactKey || !Number.isFinite(artifactVersion) || artifactVersion <= 0 || !artifactSessionId) {
+  if (
+    !artifactKey ||
+    !Number.isFinite(artifactVersion) ||
+    artifactVersion <= 0 ||
+    !artifactSessionId
+  ) {
     return null;
   }
   return {
@@ -170,7 +175,10 @@ const isEnvelopeCandidateRecord = (record: UnknownRecord): boolean => {
   return hasStage && hasStatus && hasSession && hasArtifact;
 };
 
-const parseEnvelopeRecord = (value: unknown, sourcePath: string): StageReplayEnvelopeRecord | null => {
+const parseEnvelopeRecord = (
+  value: unknown,
+  sourcePath: string
+): StageReplayEnvelopeRecord | null => {
   if (!isRecord(value) || !isEnvelopeCandidateRecord(value)) {
     return null;
   }
@@ -214,7 +222,9 @@ const parseEnvelopeRecord = (value: unknown, sourcePath: string): StageReplayEnv
     status,
     sessionId,
     artifact: parseArtifactRef(value.artifact),
-    inputArtifact: data ? parseArtifactRef(pickFirstValue(data, ['input_artifact', 'inputArtifact'])) : null,
+    inputArtifact: data
+      ? parseArtifactRef(pickFirstValue(data, ['input_artifact', 'inputArtifact']))
+      : null,
     invocationId,
     payload: data ? data.payload : undefined,
     sourcePath,
@@ -262,7 +272,10 @@ const collectEnvelopeRecords = (snapshot: unknown): StageReplayEnvelopeRecord[] 
   return candidates;
 };
 
-const buildAnchorBlockedReason = (record: StageReplayEnvelopeRecord | null, timelineItem: SheetStageTimelineItem): string => {
+const buildAnchorBlockedReason = (
+  record: StageReplayEnvelopeRecord | null,
+  timelineItem: SheetStageTimelineItem
+): string => {
   if (timelineItem.status !== 'completed') {
     return '仅支持 completed 阶段作为回放锚点。';
   }
@@ -338,7 +351,9 @@ const appendDiffEntries = (
   }
 
   if (isRecord(originalValue) && isRecord(replayedValue)) {
-    const keys = Array.from(new Set([...Object.keys(originalValue), ...Object.keys(replayedValue)])).sort();
+    const keys = Array.from(
+      new Set([...Object.keys(originalValue), ...Object.keys(replayedValue)])
+    ).sort();
     keys.forEach((key) => {
       if (entries.length >= maxEntries) return;
       const nextPath = path === '$' ? `$.${key}` : `${path}.${key}`;
@@ -348,11 +363,7 @@ const appendDiffEntries = (
   }
 
   const change: StageReplayDiffChange =
-    originalValue === undefined
-      ? 'added'
-      : replayedValue === undefined
-        ? 'removed'
-        : 'changed';
+    originalValue === undefined ? 'added' : replayedValue === undefined ? 'removed' : 'changed';
 
   entries.push({
     path,
@@ -368,11 +379,20 @@ export const buildStageReplayDiff = (
   maxEntries: number = 80
 ): StageReplayDiffEntry[] => {
   const entries: StageReplayDiffEntry[] = [];
-  appendDiffEntries(originalValue, replayedValue, '$', entries, Math.max(1, Math.floor(maxEntries)));
+  appendDiffEntries(
+    originalValue,
+    replayedValue,
+    '$',
+    entries,
+    Math.max(1, Math.floor(maxEntries))
+  );
   return entries;
 };
 
-const buildReplayRequestBody = (context: StageReplayContext, anchor: StageReplayAnchor): UnknownRecord => {
+const buildReplayRequestBody = (
+  context: StageReplayContext,
+  anchor: StageReplayAnchor
+): UnknownRecord => {
   if (!anchor.canReplay || !anchor.inputArtifact) {
     throw new Error(anchor.blockedReason || '当前锚点不可回放');
   }
@@ -543,19 +563,16 @@ export const replayStageFromAnchor = async (
 
   const requestBody = buildReplayRequestBody(context, anchor);
 
-  const response = await requestJson<any>(
-    '/api/multi-agent/workflows/excel-analysis/stage',
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-      signal,
-      timeoutMs: 0,
-      withAuth: true,
-    }
-  );
+  const response = await requestJson<unknown>('/api/multi-agent/workflows/excel-analysis/stage', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+    signal,
+    timeoutMs: 0,
+    withAuth: true,
+  });
 
   const replayState = extractSheetStageProtocolState(response);
   if (!replayState.valid || !replayState.envelope) {

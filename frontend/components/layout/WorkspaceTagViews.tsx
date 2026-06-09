@@ -1,9 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ChevronDown,
-  RefreshCw,
-  X,
-} from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ChevronDown, RefreshCw, X } from 'lucide-react';
 import { AppMode, ModeCatalogItem } from '../../types/types';
 
 interface WorkspaceTagViewsProps {
@@ -80,7 +76,7 @@ export const WorkspaceTagViews: React.FC<WorkspaceTagViewsProps> = ({
     };
   }, [openMenuMode]);
 
-  const orderedModes = useMemo(() => openModes, [openModes]);
+  const orderedModes = openModes;
 
   const closeModes = (modes: AppMode[]) => {
     const uniqueModes = [...new Set(modes)].filter((mode) => openModes.includes(mode));
@@ -119,9 +115,7 @@ export const WorkspaceTagViews: React.FC<WorkspaceTagViewsProps> = ({
     const left = orderedModes
       .slice(0, Math.max(0, visibleIndex))
       .filter((item) => !pinnedModes.has(item));
-    const right = orderedModes
-      .slice(visibleIndex + 1)
-      .filter((item) => !pinnedModes.has(item));
+    const right = orderedModes.slice(visibleIndex + 1).filter((item) => !pinnedModes.has(item));
     const others = orderedModes.filter((item) => item !== mode && !pinnedModes.has(item));
 
     return {
@@ -231,7 +225,6 @@ export const WorkspaceTagViews: React.FC<WorkspaceTagViewsProps> = ({
                   <X size={12} />
                 </button>
               )}
-
             </div>
           );
         })}
@@ -247,45 +240,47 @@ export const WorkspaceTagViews: React.FC<WorkspaceTagViewsProps> = ({
         <RefreshCw size={14} />
       </button>
 
-      {openMenuMode && menuPosition && (() => {
-        const isPinned = pinnedModes.has(openMenuMode);
-        const closeTargets = getMenuCloseTargets(openMenuMode);
+      {openMenuMode &&
+        menuPosition &&
+        (() => {
+          const isPinned = pinnedModes.has(openMenuMode);
+          const closeTargets = getMenuCloseTargets(openMenuMode);
 
-        return (
-          <div
-            role="menu"
-            className="absolute z-50 min-w-[168px] rounded-md border border-slate-700 bg-slate-950 py-1 shadow-xl shadow-black/40"
-            style={{ left: menuPosition.left, top: menuPosition.top }}
-          >
-            <WorkspaceTagMenuButton
-              icon={<span aria-hidden="true">📌</span>}
-              label={isPinned ? '取消固定选项卡' : '固定选项卡'}
-              onClick={() => togglePinnedMode(openMenuMode)}
-            />
-            <WorkspaceTagMenuButton
-              label="关闭选项卡"
-              disabled={closeTargets.current.length === 0}
-              onClick={() => runCloseAction(closeTargets.current)}
-            />
-            <div className="my-1 h-px bg-slate-800" />
-            <WorkspaceTagMenuButton
-              label="关闭左侧"
-              disabled={closeTargets.left.length === 0}
-              onClick={() => runCloseAction(closeTargets.left)}
-            />
-            <WorkspaceTagMenuButton
-              label="关闭右侧"
-              disabled={closeTargets.right.length === 0}
-              onClick={() => runCloseAction(closeTargets.right)}
-            />
-            <WorkspaceTagMenuButton
-              label="关闭其他"
-              disabled={closeTargets.others.length === 0}
-              onClick={() => runCloseAction(closeTargets.others)}
-            />
-          </div>
-        );
-      })()}
+          return (
+            <div
+              role="menu"
+              className="absolute z-50 min-w-[168px] rounded-md border border-slate-700 bg-slate-950 py-1 shadow-xl shadow-black/40"
+              style={{ left: menuPosition.left, top: menuPosition.top }}
+            >
+              <WorkspaceTagMenuButton
+                icon={<span aria-hidden="true">📌</span>}
+                label={isPinned ? '取消固定选项卡' : '固定选项卡'}
+                onClick={() => togglePinnedMode(openMenuMode)}
+              />
+              <WorkspaceTagMenuButton
+                label="关闭选项卡"
+                disabled={closeTargets.current.length === 0}
+                onClick={() => runCloseAction(closeTargets.current)}
+              />
+              <div className="my-1 h-px bg-slate-800" />
+              <WorkspaceTagMenuButton
+                label="关闭左侧"
+                disabled={closeTargets.left.length === 0}
+                onClick={() => runCloseAction(closeTargets.left)}
+              />
+              <WorkspaceTagMenuButton
+                label="关闭右侧"
+                disabled={closeTargets.right.length === 0}
+                onClick={() => runCloseAction(closeTargets.right)}
+              />
+              <WorkspaceTagMenuButton
+                label="关闭其他"
+                disabled={closeTargets.others.length === 0}
+                onClick={() => runCloseAction(closeTargets.others)}
+              />
+            </div>
+          );
+        })()}
     </div>
   );
 };

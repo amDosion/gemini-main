@@ -260,21 +260,9 @@ export const useWorkflowEditorLoading = ({
       return;
     }
 
-    const statusPreviewImages = Array.isArray(executionStatus?.resultPreviewImageUrls)
-      ? executionStatus.resultPreviewImageUrls
-          .map((item) => String(item || '').trim())
-          .filter(Boolean)
-      : [];
-    const statusPreviewAudioUrls = Array.isArray(executionStatus?.resultPreviewAudioUrls)
-      ? executionStatus.resultPreviewAudioUrls
-          .map((item) => String(item || '').trim())
-          .filter(Boolean)
-      : [];
-    const statusPreviewVideoUrls = Array.isArray(executionStatus?.resultPreviewVideoUrls)
-      ? executionStatus.resultPreviewVideoUrls
-          .map((item) => String(item || '').trim())
-          .filter(Boolean)
-      : [];
+    const statusPreviewImages = toPreviewStringList(executionStatus?.resultPreviewImageUrls);
+    const statusPreviewAudioUrls = toPreviewStringList(executionStatus?.resultPreviewAudioUrls);
+    const statusPreviewVideoUrls = toPreviewStringList(executionStatus?.resultPreviewVideoUrls);
     const previewSignature = [
       statusPreviewImages.join('|'),
       statusPreviewAudioUrls.join('|'),
@@ -308,11 +296,7 @@ export const useWorkflowEditorLoading = ({
     setFinalError(executionStatus?.finalError || null);
     setFinalCompletedAt(executionStatus?.completedAt || Date.now());
     setFinalRuntime(String(executionStatus?.finalRuntime || '').trim());
-    setFinalRuntimeHints(
-      Array.isArray(executionStatus?.runtimeHints)
-        ? executionStatus.runtimeHints.map((hint) => String(hint || '').trim()).filter(Boolean)
-        : []
-    );
+    setFinalRuntimeHints(toPreviewStringList(executionStatus?.runtimeHints));
   }, [
     executionStatus?.executionId,
     executionStatus?.completedAt,

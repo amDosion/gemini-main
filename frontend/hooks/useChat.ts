@@ -242,10 +242,6 @@ export const useChat = (
         throw new Error('请先在工具栏“自动深挖”菜单中选择 Deep Research 专用模型。');
       }
 
-      // ✅ 详细日志：记录 image-gen 模式下传递给 llmService 的参数
-      if (mode === 'image-gen') {
-      }
-
       llmService.startNewChat(contextHistory, currentModel, enhancedOptions);
 
       // 2. Create User Message (before preprocessing)
@@ -453,8 +449,6 @@ export const useChat = (
         // content/toolCalls/研究状态/可选元数据（thoughts、视频续接、字幕等）与 db 消息共用同一构建逻辑
         ...buildModelMessageResultFields(finalResult, initialModelMessage),
       };
-
-      // ✅ 调试日志：检查 thoughts/textResponse/enhancedPrompt 是否被添加到消息中
 
       setMessagesIfCurrentSession((prev) =>
         prev.map((msg) => (msg.id === modelMessageId ? displayModelMessage : msg))

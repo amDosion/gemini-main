@@ -1,6 +1,6 @@
 /**
  * Chat Edit 专用输入区域组件
- * 
+ *
  * 功能：
  * - 用于图片编辑、扩图、修复、视频生成、音频生成等模式的输入区域
  * - 处理附件上传、预览、删除
@@ -11,7 +11,16 @@
  */
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ChatOptions, Attachment, AppMode, Message, ModelConfig } from '../../types/types';
-import { Wand2, Image as ImageIcon, Paperclip, Expand, Crop, Sparkles, Send, Mic } from 'lucide-react';
+import {
+  Wand2,
+  Image as ImageIcon,
+  Paperclip,
+  Expand,
+  Crop,
+  Sparkles,
+  Send,
+  Mic,
+} from 'lucide-react';
 import { processUserAttachments } from '../../hooks/handlers/attachmentUtils';
 import { useClipboardAttachments } from '../../hooks/useClipboardAttachments';
 import { ModeControlsSchema, useModeControlsSchema } from '../../hooks/useModeControlsSchema';
@@ -64,12 +73,17 @@ interface ChatEditInputAreaProps {
 
 // 根据模式获取按钮文本和图标
 const getModeButtonConfig = (mode: AppMode, hasAttachmentsOrImage: boolean) => {
-  const configs: Partial<Record<AppMode, { 
-    text: string; 
-    loadingText: string; 
-    icon: React.ReactNode;
-    placeholder: string;
-  }>> = {
+  const configs: Partial<
+    Record<
+      AppMode,
+      {
+        text: string;
+        loadingText: string;
+        icon: React.ReactNode;
+        placeholder: string;
+      }
+    >
+  > = {
     'image-chat-edit': {
       text: hasAttachmentsOrImage ? '开始编辑' : '请先上传图片',
       loadingText: '编辑中...',
@@ -120,12 +134,15 @@ const getModeButtonConfig = (mode: AppMode, hasAttachmentsOrImage: boolean) => {
     },
   };
 
-  return configs[mode] || configs['image-chat-edit'] || {
-    text: hasAttachmentsOrImage ? '开始操作' : '请先上传图片',
-    loadingText: '处理中...',
-    icon: <Wand2 size={18} />,
-    placeholder: hasAttachmentsOrImage ? '描述操作内容...' : '请先上传图片...',
-  };
+  return (
+    configs[mode] ||
+    configs['image-chat-edit'] || {
+      text: hasAttachmentsOrImage ? '开始操作' : '请先上传图片',
+      loadingText: '处理中...',
+      icon: <Wand2 size={18} />,
+      placeholder: hasAttachmentsOrImage ? '描述操作内容...' : '请先上传图片...',
+    }
+  );
 };
 
 const SCHEMA_BACKED_IMAGE_EDIT_MODES = new Set<AppMode>([
@@ -150,6 +167,19 @@ const IMAGE_COUNT_OPTION_MODES = new Set<AppMode>([
 
 const VIDEO_EXTENSION_PROMPT_PLACEHOLDER =
   '全局/基础视频提示词：描述主体、风格、镜头和约束；延长分镜只写每段变化...';
+
+// 根据模式选择 filePrefix（纯映射，无闭包依赖）
+const MODE_FILE_PREFIX: Partial<Record<AppMode, string>> = {
+  'image-chat-edit': 'canvas',
+  'image-outpainting': 'expand',
+  'image-inpainting': 'inpaint',
+  'image-mask-edit': 'mask',
+  'image-recontext': 'recontext',
+  'image-background-edit': 'background',
+  'video-gen': 'video',
+  'audio-gen': 'audio',
+};
+const getFilePrefix = (mode: AppMode): string => MODE_FILE_PREFIX[mode] || 'file';
 
 const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
   onSend,
@@ -179,21 +209,15 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
 }) => {
   const { showError } = useToastContext();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const attachmentLimit = maxAttachments;
   const requiresAttachmentForMode = !['video-gen', 'audio-gen'].includes(mode);
   const requiresPromptForMode = mode !== 'image-outpainting';
   const supportsAttachments = mode !== 'audio-gen';
   const normalizedProviderId = (providerId || '').trim().toLowerCase();
   const shouldUseImageEditSchema =
     ['openai', 'tongyi'].includes(normalizedProviderId) && SCHEMA_BACKED_IMAGE_EDIT_MODES.has(mode);
-  const fetchedImageEditSchema = useModeControlsSchema(
-    providerId,
-    mode,
-    currentModel?.id,
-    {
-      enabled: shouldUseImageEditSchema && controlsSchema === undefined,
-    },
-  );
+  const fetchedImageEditSchema = useModeControlsSchema(providerId, mode, currentModel?.id, {
+    enabled: shouldUseImageEditSchema && controlsSchema === undefined,
+  });
   const effectiveControlsSchema =
     controlsSchema === undefined ? fetchedImageEditSchema.schema : controlsSchema;
   const attachmentAccept = useMemo(() => {
@@ -213,7 +237,7 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
   const shouldUseOpenAIImageEditSchema =
     normalizedProviderId === 'openai' && SCHEMA_BACKED_IMAGE_EDIT_MODES.has(mode);
   const openAIParamOptions = shouldUseOpenAIImageEditSchema
-    ? effectiveControlsSchema?.paramOptions ?? {}
+    ? (effectiveControlsSchema?.paramOptions ?? {})
     : {};
   const tongyiUnsupportedParams = useMemo(
     () =>
@@ -257,7 +281,7 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
     mode,
     attachments: activeAttachments,
     onAttachmentsChange,
-    maxAttachments: attachmentLimit,
+    maxAttachments,
     acceptedTypes: attachmentAccept,
     disabled: isLoading || !supportsAttachments,
     onError: showError,
@@ -288,28 +312,34 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
   );
 
   // 文件上传处理（✅ 支持多文件选择）
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files || files.length === 0) return;
 
-    appendFiles(files);
-    if (e.target) e.target.value = '';
-  }, [appendFiles]);
+      appendFiles(files);
+      if (e.target) e.target.value = '';
+    },
+    [appendFiles]
+  );
 
   // 删除附件
-  const removeAttachment = useCallback((id: string) => {
-    // ✅ 注意：不在这里 revoke Blob URL
-    // 原因：如果附件已经发送到消息中，消息可能仍在使用这个 Blob URL
-    // 只有在确认附件不再被使用时才 revoke（例如消息被删除时）
+  const removeAttachment = useCallback(
+    (id: string) => {
+      // ✅ 注意：不在这里 revoke Blob URL
+      // 原因：如果附件已经发送到消息中，消息可能仍在使用这个 Blob URL
+      // 只有在确认附件不再被使用时才 revoke（例如消息被删除时）
 
-    const newAtts = activeAttachments.filter(att => att.id !== id);
-    onAttachmentsChange(newAtts);
+      const newAtts = activeAttachments.filter((att) => att.id !== id);
+      onAttachmentsChange(newAtts);
 
-    // 如果删除后没有附件了，清空 activeImageUrl（由父组件管理）
-    if (newAtts.length === 0) {
-      onActiveImageUrlChange(null);
-    }
-  }, [activeAttachments, onAttachmentsChange, onActiveImageUrlChange]);
+      // 如果删除后没有附件了，清空 activeImageUrl（由父组件管理）
+      if (newAtts.length === 0) {
+        onActiveImageUrlChange(null);
+      }
+    },
+    [activeAttachments, onAttachmentsChange, onActiveImageUrlChange]
+  );
 
   // ✅ 注意：不在这里清理 Blob URLs
   // 原因：用户消息中的附件可能仍在使用这些 Blob URL
@@ -318,7 +348,8 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
   // 发送逻辑
   const handleGenerate = useCallback(async () => {
     const missingRequiredPrompt = requiresPromptForMode && !prompt.trim();
-    const missingRequiredAttachment = requiresAttachmentForMode && activeAttachments.length === 0 && !activeImageUrl;
+    const missingRequiredAttachment =
+      requiresAttachmentForMode && activeAttachments.length === 0 && !activeImageUrl;
     if (externalDisabled) {
       if (externalDisabledReason) {
         showError(externalDisabledReason);
@@ -332,22 +363,7 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
       // 1. 如果用户上传了附件，使用上传的附件（优先，不传递 activeImageUrl）
       // 2. 如果没有上传附件，使用画布中的图片（CONTINUITY LOGIC，传递 activeImageUrl）
       // 3. processUserAttachments 会自动处理这个逻辑
-      
-      // 根据模式选择 filePrefix
-      const getFilePrefix = (mode: AppMode): string => {
-        const prefixMap: Partial<Record<AppMode, string>> = {
-          'image-chat-edit': 'canvas',
-          'image-outpainting': 'expand',
-          'image-inpainting': 'inpaint',
-          'image-mask-edit': 'mask',
-          'image-recontext': 'recontext',
-          'image-background-edit': 'background',
-          'video-gen': 'video',
-          'audio-gen': 'audio',
-        };
-        return prefixMap[mode] || 'file';
-      };
-      
+
       // ✅ 互斥逻辑：有附件用附件，没附件用画布图片
       const requestAttachments =
         mode === 'video-gen'
@@ -377,12 +393,10 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
         activeAttachments.length === 0
           ? activeCanvasAttachment?.openaiResponseId
           : undefined;
-      const supportsOutputMimeOptions = ![
-        'image-recontext',
-        'product-recontext',
-        'video-gen',
-        'audio-gen',
-      ].includes(mode) && normalizedProviderId !== 'openai' && !supportsOpenAIOutputFormatControls;
+      const supportsOutputMimeOptions =
+        !['image-recontext', 'product-recontext', 'video-gen', 'audio-gen'].includes(mode) &&
+        normalizedProviderId !== 'openai' &&
+        !supportsOpenAIOutputFormatControls;
 
       // 构建 ChatOptions
       const options: ChatOptions = {
@@ -395,7 +409,8 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
               resolution: controls.resolution,
               seconds: controls.videoSeconds,
               videoInputStrategy: controls.videoInputStrategy || undefined,
-              videoExtensionCount: controls.videoExtensionCount > 0 ? controls.videoExtensionCount : undefined,
+              videoExtensionCount:
+                controls.videoExtensionCount > 0 ? controls.videoExtensionCount : undefined,
               storyboardShotSeconds: controls.storyboardShotSeconds,
               generateAudio: controls.generateAudio,
               subtitleMode: controls.subtitleMode || undefined,
@@ -449,10 +464,14 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
         ...(openAIContinuationResponseId
           ? { openaiPreviousResponseId: openAIContinuationResponseId }
           : {}),
-        ...(normalizedProviderId === 'tongyi' && SCHEMA_BACKED_IMAGE_EDIT_MODES.has(mode) && supportsTongyiPromptExtend
+        ...(normalizedProviderId === 'tongyi' &&
+        SCHEMA_BACKED_IMAGE_EDIT_MODES.has(mode) &&
+        supportsTongyiPromptExtend
           ? { promptExtend: controls.promptExtend }
           : {}),
-        ...(normalizedProviderId === 'tongyi' && SCHEMA_BACKED_IMAGE_EDIT_MODES.has(mode) && supportsTongyiThinkingMode
+        ...(normalizedProviderId === 'tongyi' &&
+        SCHEMA_BACKED_IMAGE_EDIT_MODES.has(mode) &&
+        supportsTongyiThinkingMode
           ? { thinkingMode: controls.thinkingMode }
           : {}),
       };
@@ -504,7 +523,7 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
 
       onSend(prompt, options, finalAttachments, mode);
       setPrompt(''); // 发送后清空提示词
-      
+
       // 发送后清空附件预览
       if (activeAttachments.length > 0) {
         onAttachmentsChange([]);
@@ -542,24 +561,31 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
   ]);
 
   // 键盘快捷键
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleGenerate();
-    }
-  }, [handleGenerate]);
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleGenerate();
+      }
+    },
+    [handleGenerate]
+  );
 
   // 根据模式获取按钮配置
   const hasAttachmentsOrImage = activeAttachments.length > 0 || !!activeImageUrl;
-  const modeConfig = useMemo(() => getModeButtonConfig(mode, hasAttachmentsOrImage), [mode, hasAttachmentsOrImage]);
-  
+  const modeConfig = useMemo(
+    () => getModeButtonConfig(mode, hasAttachmentsOrImage),
+    [mode, hasAttachmentsOrImage]
+  );
+
   // 使用自定义文本或模式默认文本
   const finalButtonText = buttonText || modeConfig.text;
   const finalLoadingText = loadingText || modeConfig.loadingText;
   const finalButtonIcon = buttonIcon || modeConfig.icon;
   const isVideoExtensionEnabled = mode === 'video-gen' && controls.videoExtensionCount > 0;
   const finalPlaceholder =
-    placeholder || (isVideoExtensionEnabled ? VIDEO_EXTENSION_PROMPT_PLACEHOLDER : modeConfig.placeholder);
+    placeholder ||
+    (isVideoExtensionEnabled ? VIDEO_EXTENSION_PROMPT_PLACEHOLDER : modeConfig.placeholder);
 
   // 判断是否必须有附件（video-gen 参考图可选）
   const isDisabled =
@@ -567,9 +593,12 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
     isLoading ||
     externalDisabled ||
     (requiresAttachmentForMode && activeAttachments.length === 0 && !activeImageUrl);
-  const attachmentTitle = mode === 'video-gen'
-    ? (activeAttachments.length >= attachmentLimit ? `已达到最大数量 (${attachmentLimit})` : '点击上传图片或视频（支持多选，作为视频参考）')
-    : (activeAttachments.length >= attachmentLimit ? `已达到最大数量 (${attachmentLimit})` : '点击上传图片（支持多选）');
+  const attachmentTitle =
+    activeAttachments.length >= maxAttachments
+      ? `已达到最大数量 (${maxAttachments})`
+      : mode === 'video-gen'
+        ? '点击上传图片或视频（支持多选，作为视频参考）'
+        : '点击上传图片（支持多选）';
 
   return (
     <div className="border-t border-slate-800 p-3 space-y-2 bg-slate-900/80">
@@ -604,17 +633,17 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
         {supportsAttachments && (
           <label
             className={`p-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 cursor-pointer transition-colors border border-indigo-500/50 flex-shrink-0 shadow-lg relative ${
-              activeAttachments.length >= attachmentLimit ? 'opacity-50 cursor-not-allowed' : ''
+              activeAttachments.length >= maxAttachments ? 'opacity-50 cursor-not-allowed' : ''
             }`}
             title={attachmentTitle}
           >
             <input
               type="file"
               accept={attachmentAccept}
-              multiple={attachmentLimit > 1}
+              multiple={maxAttachments > 1}
               className="hidden"
               onChange={handleFileSelect}
-              disabled={activeAttachments.length >= attachmentLimit}
+              disabled={activeAttachments.length >= maxAttachments}
             />
             {activeAttachments.length === 0 ? (
               <ImageIcon size={18} className="text-white" />
@@ -651,9 +680,7 @@ const ChatEditInputArea: React.FC<ChatEditInputAreaProps> = ({
       </div>
 
       {externalDisabledReason && (
-        <div className="text-[11px] text-amber-400">
-          {externalDisabledReason}
-        </div>
+        <div className="text-[11px] text-amber-400">{externalDisabledReason}</div>
       )}
     </div>
   );

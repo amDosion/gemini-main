@@ -107,10 +107,6 @@ const normalizeAnalysisTypeForExecute = (value: unknown): string => {
   return WORKFLOW_ALLOWED_ANALYSIS_TYPES.has(normalized) ? normalized : 'comprehensive';
 };
 
-const normalizeImageEditModeForExecute = (value: unknown): string | null => {
-  return normalizeWorkflowImageEditMode(value);
-};
-
 const normalizeNodeSizeForExecute = (
   value: unknown,
   minimum: number,
@@ -120,6 +116,34 @@ const normalizeNodeSizeForExecute = (
   if (!Number.isFinite(parsed)) return undefined;
   return Math.max(minimum, Math.min(maximum, Math.round(parsed)));
 };
+
+// Reconcile a media URL group with camelCase/snake_case list + single-URL
+// aliases into a canonical `{ listKey, singleKey }` pair (or removes them all
+// when empty). Mutates `payload` in place.
+const reconcileUrlGroup = (
+  payload: Record<string, unknown>,
+  listKey: string,
+  listSnakeKey: string,
+  singleKey: string,
+  singleSnakeKey: string
+): void => {
+  let urls = normalizeWorkflowStringList(payload[listKey]);
+  if (urls.length === 0) {
+    urls = normalizeWorkflowStringList(payload[listSnakeKey]);
+  }
+  const single = String(payload[singleKey] || payload[singleSnakeKey] || '').trim();
+  if (single) {
+    urls = normalizeWorkflowStringList([single, ...urls]);
+  }
+  if (urls.length > 0) {
+    payload[listKey] = urls;
+    payload[singleKey] = urls[0];
+  } else {
+    delete payload[listKey];
+    delete payload[singleKey];
+    delete payload[singleSnakeKey];
+  }
+};
 export const normalizeWorkflowInputForExecute = (
   rawInput: unknown,
   fallbackTask: string
@@ -128,73 +152,10 @@ export const normalizeWorkflowInputForExecute = (
   const task = String(payload.task || payload.prompt || payload.text || fallbackTask || '').trim();
   payload.task = task || String(fallbackTask || '').trim();
 
-  let imageUrls = normalizeWorkflowStringList(payload.imageUrls);
-  if (imageUrls.length === 0) {
-    imageUrls = normalizeWorkflowStringList(payload.image_urls);
-  }
-  const singleImageUrl = String(payload.imageUrl || payload.image_url || '').trim();
-  if (singleImageUrl) {
-    imageUrls = normalizeWorkflowStringList([singleImageUrl, ...imageUrls]);
-  }
-  if (imageUrls.length > 0) {
-    payload.imageUrls = imageUrls;
-    payload.imageUrl = imageUrls[0];
-  } else {
-    delete payload.imageUrls;
-    delete payload.imageUrl;
-    delete payload.image_url;
-  }
-
-  let videoUrls = normalizeWorkflowStringList(payload.videoUrls);
-  if (videoUrls.length === 0) {
-    videoUrls = normalizeWorkflowStringList(payload.video_urls);
-  }
-  const singleVideoUrl = String(payload.videoUrl || payload.video_url || '').trim();
-  if (singleVideoUrl) {
-    videoUrls = normalizeWorkflowStringList([singleVideoUrl, ...videoUrls]);
-  }
-  if (videoUrls.length > 0) {
-    payload.videoUrls = videoUrls;
-    payload.videoUrl = videoUrls[0];
-  } else {
-    delete payload.videoUrls;
-    delete payload.videoUrl;
-    delete payload.video_url;
-  }
-
-  let audioUrls = normalizeWorkflowStringList(payload.audioUrls);
-  if (audioUrls.length === 0) {
-    audioUrls = normalizeWorkflowStringList(payload.audio_urls);
-  }
-  const singleAudioUrl = String(payload.audioUrl || payload.audio_url || '').trim();
-  if (singleAudioUrl) {
-    audioUrls = normalizeWorkflowStringList([singleAudioUrl, ...audioUrls]);
-  }
-  if (audioUrls.length > 0) {
-    payload.audioUrls = audioUrls;
-    payload.audioUrl = audioUrls[0];
-  } else {
-    delete payload.audioUrls;
-    delete payload.audioUrl;
-    delete payload.audio_url;
-  }
-
-  let fileUrls = normalizeWorkflowStringList(payload.fileUrls);
-  if (fileUrls.length === 0) {
-    fileUrls = normalizeWorkflowStringList(payload.file_urls);
-  }
-  const singleFileUrl = String(payload.fileUrl || payload.file_url || '').trim();
-  if (singleFileUrl) {
-    fileUrls = normalizeWorkflowStringList([singleFileUrl, ...fileUrls]);
-  }
-  if (fileUrls.length > 0) {
-    payload.fileUrls = fileUrls;
-    payload.fileUrl = fileUrls[0];
-  } else {
-    delete payload.fileUrls;
-    delete payload.fileUrl;
-    delete payload.file_url;
-  }
+  reconcileUrlGroup(payload, 'imageUrls', 'image_urls', 'imageUrl', 'image_url');
+  reconcileUrlGroup(payload, 'videoUrls', 'video_urls', 'videoUrl', 'video_url');
+  reconcileUrlGroup(payload, 'audioUrls', 'audio_urls', 'audioUrl', 'audio_url');
+  reconcileUrlGroup(payload, 'fileUrls', 'file_urls', 'fileUrl', 'file_url');
 
   if (payload.analysisType !== undefined) {
     payload.analysisType = normalizeAnalysisTypeForExecute(payload.analysisType);
@@ -289,7 +250,7 @@ export const normalizeWorkflowNodeDataForExecute = (
 
   for (const fieldName of ['toolEditMode', 'agentEditMode']) {
     if (data[fieldName] === undefined) continue;
-    const normalized = normalizeImageEditModeForExecute(data[fieldName]);
+    const normalized = normalizeWorkflowImageEditMode(data[fieldName]);
     if (!normalized) {
       delete data[fieldName];
     } else {

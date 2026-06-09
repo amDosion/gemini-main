@@ -80,6 +80,21 @@ export const useSessionSync = ({
   }, []);
 
   useEffect(() => {
+    // 恢复会话模式：优先使用存储模式，否则回退到最后一条带 mode 的消息，再退回 'chat'。
+    // gen 模式切换时通过 skipModeRestoreFlag 跳过本轮恢复。
+    const restoreMode = (storedMode: AppMode | undefined, msgs: Message[]) => {
+      if (skipModeRestoreFlag.current) {
+        skipModeRestoreFlag.current = false;
+        return;
+      }
+      if (storedMode) {
+        setAppMode(storedMode);
+        return;
+      }
+      const lastMsg = [...msgs].reverse().find((m) => m.mode);
+      setAppMode((lastMsg?.mode || 'chat') as AppMode);
+    };
+
     if (currentSessionId) {
       // Use sessionsRef.current instead of getSession to avoid unnecessary triggers
       const session = sessionsRef.current.find((s) => s.id === currentSessionId);
@@ -94,18 +109,7 @@ export const useSessionSync = ({
             setMessages(session.messages);
 
             // 检查是否跳过 mode 恢复（gen 模式下的会话切换）
-            if (skipModeRestoreFlag.current) {
-              skipModeRestoreFlag.current = false;
-            } else {
-              const storedMode = session.mode;
-              if (storedMode) {
-                setAppMode(storedMode as AppMode);
-              } else {
-                const lastMsg = [...session.messages].reverse().find((m) => m.mode);
-                const restoredMode = lastMsg?.mode || 'chat';
-                setAppMode(restoredMode as AppMode);
-              }
-            }
+            restoreMode(session.mode, session.messages);
 
             // Update llmService
             const latestModelConfig = activeModelConfigRef.current;
@@ -162,18 +166,7 @@ export const useSessionSync = ({
                   setMessages(fullMessages);
 
                   // 检查是否跳过 mode 恢复
-                  if (skipModeRestoreFlag.current) {
-                    skipModeRestoreFlag.current = false;
-                  } else {
-                    const storedMode = fullSession.mode;
-                    if (storedMode) {
-                      setAppMode(storedMode as AppMode);
-                    } else {
-                      const lastMsg = [...fullMessages].reverse().find((m) => m.mode);
-                      const restoredMode = lastMsg?.mode || 'chat';
-                      setAppMode(restoredMode as AppMode);
-                    }
-                  }
+                  restoreMode(fullSession.mode, fullMessages);
 
                   // Update llmService
                   const latestModelConfig = activeModelConfigRef.current;

@@ -26,7 +26,7 @@ import {
   flatToolbarSearchWrapClass,
   flatToolbarSectionClass,
   flatToolbarSeparatorClass,
-  flatToolbarTitleClass
+  flatToolbarTitleClass,
 } from '../common/flatToolbarStyles';
 
 interface PersonaManagementViewProps {
@@ -89,7 +89,7 @@ export const PersonaManagementView: React.FC<PersonaManagementViewProps> = ({
       groups[category].push(persona);
     });
 
-    return Object.entries(groups).filter(([_, items]) => items.length > 0);
+    return Object.entries(groups).filter(([, items]) => items.length > 0);
   }, [filteredPersonas]);
 
   const selectedPersona = useMemo(() => {
@@ -119,19 +119,15 @@ export const PersonaManagementView: React.FC<PersonaManagementViewProps> = ({
     }
   }, [personas, activePersonaId, selectedPersonaId]);
 
+  // 清理因 personas 变化而失效的悬浮 ID（合并自两个同模式 effect）。
   useEffect(() => {
-    if (!openActionPersonaId) return;
-    if (!personas.some((persona) => persona.id === openActionPersonaId)) {
+    if (openActionPersonaId && !personas.some((persona) => persona.id === openActionPersonaId)) {
       setOpenActionPersonaId(null);
     }
-  }, [openActionPersonaId, personas]);
-
-  useEffect(() => {
-    if (!personaToDelete) return;
-    if (!personas.some((persona) => persona.id === personaToDelete.id)) {
+    if (personaToDelete && !personas.some((persona) => persona.id === personaToDelete.id)) {
       setPersonaToDelete(null);
     }
-  }, [personaToDelete, personas]);
+  }, [openActionPersonaId, personaToDelete, personas]);
 
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
@@ -197,15 +193,15 @@ export const PersonaManagementView: React.FC<PersonaManagementViewProps> = ({
     <div className="min-h-full">
       <div className={`${sidebarSectionClass} px-3 py-2.5`}>
         <div className="flex items-center justify-between gap-3">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Personas</span>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            Personas
+          </span>
           <span className="text-xs text-slate-300 whitespace-nowrap">{roleCountLabel}</span>
         </div>
       </div>
 
       {groupedPersonas.length === 0 && (
-        <p className="px-3 py-3 text-xs text-slate-500">
-          {emptyPersonaMessage}
-        </p>
+        <p className="px-3 py-3 text-xs text-slate-500">{emptyPersonaMessage}</p>
       )}
 
       {groupedPersonas.map(([category, items]) => {
@@ -233,7 +229,10 @@ export const PersonaManagementView: React.FC<PersonaManagementViewProps> = ({
                   const isActionOpen = openActionPersonaId === persona.id;
 
                   return (
-                    <div key={persona.id} className="group relative border-t border-slate-800/60 first:border-t-0">
+                    <div
+                      key={persona.id}
+                      className="group relative border-t border-slate-800/60 first:border-t-0"
+                    >
                       <button
                         type="button"
                         onClick={() => {
@@ -248,7 +247,9 @@ export const PersonaManagementView: React.FC<PersonaManagementViewProps> = ({
                       >
                         <div
                           className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${
-                            isSelected ? 'bg-indigo-600 text-white' : 'bg-slate-800/80 text-slate-400'
+                            isSelected
+                              ? 'bg-indigo-600 text-white'
+                              : 'bg-slate-800/80 text-slate-400'
                           }`}
                         >
                           <Icon size={15} />
@@ -269,14 +270,18 @@ export const PersonaManagementView: React.FC<PersonaManagementViewProps> = ({
                       <div
                         data-persona-item-actions
                         className={`absolute right-2 top-2 transition-opacity ${
-                          isActionOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+                          isActionOpen
+                            ? 'opacity-100'
+                            : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
                         }`}
                       >
                         <button
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation();
-                            setOpenActionPersonaId((prev) => (prev === persona.id ? null : persona.id));
+                            setOpenActionPersonaId((prev) =>
+                              prev === persona.id ? null : persona.id
+                            );
                           }}
                           className="inline-flex h-6 w-6 items-center justify-center rounded text-slate-500 transition-colors hover:bg-slate-800/80 hover:text-white"
                           title="Actions"
@@ -377,11 +382,7 @@ export const PersonaManagementView: React.FC<PersonaManagementViewProps> = ({
 
           <span className={flatToolbarSeparatorClass}>｜</span>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className={flatToolbarButtonClass}
-          >
+          <button type="button" onClick={onClose} className={flatToolbarButtonClass}>
             <ArrowLeft size={12} />
             Back
           </button>
@@ -403,7 +404,9 @@ export const PersonaManagementView: React.FC<PersonaManagementViewProps> = ({
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="truncate text-base font-semibold text-white">{selectedPersona.name}</h3>
+                    <h3 className="truncate text-base font-semibold text-white">
+                      {selectedPersona.name}
+                    </h3>
                     <span className="inline-flex h-5 items-center rounded-full border border-slate-700 px-2 text-[11px] text-slate-300">
                       {selectedPersona.category || 'General'}
                     </span>
@@ -436,7 +439,8 @@ export const PersonaManagementView: React.FC<PersonaManagementViewProps> = ({
               <div className="flex gap-2.5">
                 <Info size={15} className="mt-0.5 shrink-0" />
                 <p>
-                  Personas act as system prompts. Editing them changes the behavior of the AI for subsequent messages.
+                  Personas act as system prompts. Editing them changes the behavior of the AI for
+                  subsequent messages.
                 </p>
               </div>
             </section>
@@ -458,9 +462,7 @@ export const PersonaManagementView: React.FC<PersonaManagementViewProps> = ({
         isOpen={personaToDelete !== null}
         title="Delete persona?"
         message={
-          personaToDelete
-            ? `Are you sure you want to delete "${personaToDelete.name}"?`
-            : ''
+          personaToDelete ? `Are you sure you want to delete "${personaToDelete.name}"?` : ''
         }
         confirmLabel="Delete"
         cancelLabel="Cancel"

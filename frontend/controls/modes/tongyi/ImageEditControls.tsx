@@ -1,6 +1,6 @@
 /**
  * 通义图像编辑专用控件（仅 Panel 模式）
- * 
+ *
  * 后端支持参数（来源: backend/app/services/tongyi/image_edit.py）:
  * - n: 图片数量
  * - negative_prompt: 负面提示词
@@ -13,11 +13,18 @@
 import React, { useEffect, useMemo } from 'react';
 import { Ratio, ChevronUp, ChevronDown, Dices } from 'lucide-react';
 import { ImageEditControlsProps } from '../../types';
-import { getPixelResolutionFromSchema, useModeControlsSchema } from '../../../hooks/useModeControlsSchema';
+import {
+  getPixelResolutionFromSchema,
+  useModeControlsSchema,
+} from '../../../hooks/useModeControlsSchema';
 import { useEnhancePromptModels } from '../../../hooks/useEnhancePromptModels';
 import PromptEnhanceControl from '../../shared/PromptEnhanceControl';
 import ImageCountSliderControl from '../../shared/ImageCountSliderControl';
 import { getUnsupportedParams } from '../../shared/modeControlSchemaUtils';
+
+// 模块级稳定空函数:作为缺失 setter 的回退。内联 (() => {}) 每次渲染都换新身份,
+// 当这些 setter 出现在 useEffect 依赖数组里时会导致 effect 每渲染都重跑。
+const NOOP = (): void => {};
 
 export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   providerId = 'tongyi',
@@ -48,59 +55,64 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
     [schema]
   );
 
-  const defaultAspectRatio = typeof defaults.aspect_ratio === 'string' ? defaults.aspect_ratio : '1:1';
+  const defaultAspectRatio =
+    typeof defaults.aspect_ratio === 'string' ? defaults.aspect_ratio : '1:1';
   const defaultResolution = typeof defaults.resolution === 'string' ? defaults.resolution : '1K';
   const defaultImageCount =
     (typeof defaults.number_of_images === 'number' ? defaults.number_of_images : undefined) ??
     imageCountOptions[0] ??
     1;
-  const defaultNegativePrompt = typeof defaults.negative_prompt === 'string' ? defaults.negative_prompt : '';
+  const defaultNegativePrompt =
+    typeof defaults.negative_prompt === 'string' ? defaults.negative_prompt : '';
   const defaultSeed = typeof defaults.seed === 'number' ? defaults.seed : -1;
-  const defaultPromptExtend = typeof defaults.prompt_extend === 'boolean' ? defaults.prompt_extend : false;
-  const defaultEnhancePrompt = typeof defaults.enhance_prompt === 'boolean' ? defaults.enhance_prompt : false;
+  const defaultPromptExtend =
+    typeof defaults.prompt_extend === 'boolean' ? defaults.prompt_extend : false;
+  const defaultEnhancePrompt =
+    typeof defaults.enhance_prompt === 'boolean' ? defaults.enhance_prompt : false;
 
   // 优先使用 controls 对象，fallback 到单独 props
   const numberOfImages = controls?.numberOfImages ?? propNumberOfImages ?? defaultImageCount;
-  const setNumberOfImages = controls?.setNumberOfImages ?? propSetNumberOfImages ?? (() => {});
+  const setNumberOfImages = controls?.setNumberOfImages ?? propSetNumberOfImages ?? NOOP;
   const aspectRatio = controls?.aspectRatio ?? propAspectRatio ?? defaultAspectRatio;
-  const setAspectRatio = controls?.setAspectRatio ?? propSetAspectRatio ?? (() => {});
+  const setAspectRatio = controls?.setAspectRatio ?? propSetAspectRatio ?? NOOP;
   const resolution = controls?.resolution ?? propResolution ?? defaultResolution;
-  const setResolution = controls?.setResolution ?? propSetResolution ?? (() => {});
+  const setResolution = controls?.setResolution ?? propSetResolution ?? NOOP;
   const showAdvanced = controls?.showAdvanced ?? propShowAdvanced ?? false;
-  const setShowAdvanced = controls?.setShowAdvanced ?? propSetShowAdvanced ?? (() => {});
+  const setShowAdvanced = controls?.setShowAdvanced ?? propSetShowAdvanced ?? NOOP;
 
   // TongYi 专用参数
   const negativePrompt = controls?.negativePrompt ?? defaultNegativePrompt;
-  const setNegativePrompt = controls?.setNegativePrompt ?? (() => {});
+  const setNegativePrompt = controls?.setNegativePrompt ?? NOOP;
   const seed = controls?.seed ?? defaultSeed;
-  const setSeed = controls?.setSeed ?? (() => {});
+  const setSeed = controls?.setSeed ?? NOOP;
   const promptExtend = controls?.promptExtend ?? defaultPromptExtend;
-  const setPromptExtend = controls?.setPromptExtend ?? (() => {});
+  const setPromptExtend = controls?.setPromptExtend ?? NOOP;
   const enhancePrompt = controls?.enhancePrompt ?? promptExtend ?? defaultEnhancePrompt;
   const setEnhancePrompt = controls?.setEnhancePrompt ?? setPromptExtend;
   const enhancePromptModel = controls?.enhancePromptModel ?? '';
   const setEnhancePromptModel = controls?.setEnhancePromptModel;
   const enhancePromptThinkingLevel = controls?.enhancePromptThinkingLevel ?? 'auto';
   const setEnhancePromptThinkingLevel = controls?.setEnhancePromptThinkingLevel;
-  const enhancePromptModels = useEnhancePromptModels(
-    providerId,
-    undefined,
-    { requiresVision: true, includeHidden: true }
-  );
+  const enhancePromptModels = useEnhancePromptModels(providerId, undefined, {
+    requiresVision: true,
+    includeHidden: true,
+  });
   const maxImageCount =
-    (typeof schema?.constraints?.max_image_count === 'number' ? schema.constraints.max_image_count : undefined) ??
-    Math.max(...imageCountOptions, 1);
+    (typeof schema?.constraints?.max_image_count === 'number'
+      ? schema.constraints.max_image_count
+      : undefined) ?? Math.max(...imageCountOptions, 1);
   const minImageCount = imageCountOptions.length > 0 ? Math.min(...imageCountOptions) : 1;
-  const maxSelectableImageCount = imageCountOptions.length > 0
-    ? Math.min(maxImageCount, Math.max(...imageCountOptions))
-    : maxImageCount;
+  const maxSelectableImageCount =
+    imageCountOptions.length > 0
+      ? Math.min(maxImageCount, Math.max(...imageCountOptions))
+      : maxImageCount;
   const availableRatios = useMemo(() => {
     return schema?.aspectRatios ?? [];
   }, [schema]);
   const availableResolutionTiers = useMemo(() => {
     return schema?.resolutionTiers ?? [];
   }, [schema]);
-  
+
   // 计算当前像素分辨率
   const currentPixelResolution = useMemo(() => {
     const schemaPixelRes = getPixelResolutionFromSchema(schema, aspectRatio, resolution);
@@ -154,7 +166,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
         max={maxSelectableImageCount}
         label="图片数量"
       />
-      
+
       {/* 图片比例 + 分辨率联动 */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
@@ -224,15 +236,15 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
           <div className="mt-4 space-y-4">
             {/* 负面提示词 */}
             {supportsNegativePrompt && (
-            <div className="space-y-2">
-              <span className="text-xs text-slate-300">负面提示词</span>
-              <textarea
-                value={negativePrompt}
-                onChange={(e) => setNegativePrompt(e.target.value)}
-                placeholder="不想出现的元素..."
-                className="w-full h-16 bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-pink-500/50"
-              />
-            </div>
+              <div className="space-y-2">
+                <span className="text-xs text-slate-300">负面提示词</span>
+                <textarea
+                  value={negativePrompt}
+                  onChange={(e) => setNegativePrompt(e.target.value)}
+                  placeholder="不想出现的元素..."
+                  className="w-full h-16 bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-pink-500/50"
+                />
+              </div>
             )}
 
             {/* Seed */}
@@ -259,16 +271,16 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
             </div>
 
             {supportsLocalPromptEnhance && (
-            <PromptEnhanceControl
-              enabled={enhancePrompt}
-              onEnabledChange={setEnhancePrompt}
-              modelId={enhancePromptModel}
-              onModelIdChange={setEnhancePromptModel}
-              modelOptions={enhancePromptModels}
-              allowAutoModel
-              thinkingLevel={enhancePromptThinkingLevel}
-              onThinkingLevelChange={setEnhancePromptThinkingLevel}
-            />
+              <PromptEnhanceControl
+                enabled={enhancePrompt}
+                onEnabledChange={setEnhancePrompt}
+                modelId={enhancePromptModel}
+                onModelIdChange={setEnhancePromptModel}
+                modelOptions={enhancePromptModels}
+                allowAutoModel
+                thinkingLevel={enhancePromptThinkingLevel}
+                onThinkingLevelChange={setEnhancePromptThinkingLevel}
+              />
             )}
           </div>
         )}

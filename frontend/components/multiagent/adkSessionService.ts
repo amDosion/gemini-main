@@ -61,7 +61,13 @@ export const CANDIDATE_ID_KEYS = [
   'toolCallId',
 ];
 
-export const CANDIDATE_NAME_KEYS = ['name', 'function_name', 'functionName', 'tool_name', 'toolName'];
+export const CANDIDATE_NAME_KEYS = [
+  'name',
+  'function_name',
+  'functionName',
+  'tool_name',
+  'toolName',
+];
 
 export const CANDIDATE_HINT_KEYS = [
   'hint',
@@ -111,7 +117,13 @@ export const CANDIDATE_NONCE_EXPIRES_KEYS = [
   'deadline',
 ];
 
-export const CANDIDATE_TENANT_KEYS = ['tenant_id', 'tenantId', 'tenant', 'tenant_scope', 'tenantScope'];
+export const CANDIDATE_TENANT_KEYS = [
+  'tenant_id',
+  'tenantId',
+  'tenant',
+  'tenant_scope',
+  'tenantScope',
+];
 
 export const CANDIDATE_CONTEXT_KEYS = [
   'ticket',
@@ -137,7 +149,13 @@ export const EXPORT_PRECHECK_CONTAINER_KEYS = new Set([
   'pre_check',
 ]);
 
-export const EXPORT_PRECHECK_ISSUES_KEYS = ['issues', 'errors', 'reasons', 'violations', 'findings'];
+export const EXPORT_PRECHECK_ISSUES_KEYS = [
+  'issues',
+  'errors',
+  'reasons',
+  'violations',
+  'findings',
+];
 
 export const EXPORT_PRECHECK_CODE_KEYS = [
   'code',
@@ -194,7 +212,11 @@ export const ADK_RUNTIME_ERROR_CODES: AdkRuntimeErrorCode[] = [
 export const ADK_RUNTIME_ERROR_CODE_SET = new Set<string>(ADK_RUNTIME_ERROR_CODES);
 export const RUNTIME_STRATEGY_KEYS = ['runtime_strategy', 'runtimeStrategy'];
 export const STRICT_MODE_KEYS = ['strict_mode', 'strictMode'];
-export const BACKEND_RUNTIME_STRATEGY_OPTIONS = ['official_only', 'official_or_legacy', 'allow_legacy'];
+export const BACKEND_RUNTIME_STRATEGY_OPTIONS = [
+  'official_only',
+  'official_or_legacy',
+  'allow_legacy',
+];
 export const RUNTIME_STRATEGY_OPTIONS_KEYS = [
   'runtime_strategy_values',
   'runtimeStrategyValues',
@@ -479,13 +501,11 @@ export const collectStringList = (value: unknown): string[] => {
   return [];
 };
 
-
 export const toBoolean = (value: unknown): boolean => {
   if (typeof value === 'boolean') return value;
   const text = toSafeString(value).toLowerCase();
   return text === '1' || text === 'true' || text === 'yes';
 };
-
 
 // API + error formatters 抽离至 ./adkSessionApi（JIRA #2 Step 1）
 export {
@@ -503,10 +523,7 @@ export {
 } from './adkSessionApi';
 
 // Runtime policy / Confirm action support 抽离至 ./adkRuntimePolicy（JIRA #2 Step 2）
-export {
-  extractAdkRuntimePolicyState,
-  extractAdkConfirmActionSupport,
-} from './adkRuntimePolicy';
+export { extractAdkRuntimePolicyState, extractAdkConfirmActionSupport } from './adkRuntimePolicy';
 
 // Export precheck issues 抽离至 ./adkExportPrecheck（JIRA #2 Step 3）
 export { extractAdkExportPrecheckIssues } from './adkExportPrecheck';

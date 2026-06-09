@@ -55,6 +55,8 @@ export const OllamaModelManager: React.FC<OllamaModelManagerProps> = ({
   const [selectedModel, setSelectedModel] = useState<OllamaModel | null>(null);
   const [modelInfo, setModelInfo] = useState<OllamaModelInfo | null>(null);
   const [isLoadingInfo, setIsLoadingInfo] = useState(false);
+  // 记录当前正在请求详情的模型名，避免快速切换时旧请求覆盖新选中模型的详情
+  const infoRequestNameRef = useRef<string | null>(null);
 
   // 删除确认
   const [deleteTargetModel, setDeleteTargetModel] = useState<string | null>(null);
@@ -86,26 +88,36 @@ export const OllamaModelManager: React.FC<OllamaModelManagerProps> = ({
   }, [baseUrl, apiKey]);
 
   // 查看模型详情
-  const handleViewDetails = async (model: OllamaModel) => {
-    if (selectedModel?.name === model.name) {
-      setSelectedModel(null);
+  const handleViewDetails = useCallback(
+    async (model: OllamaModel) => {
+      if (selectedModel?.name === model.name) {
+        infoRequestNameRef.current = null;
+        setSelectedModel(null);
+        setModelInfo(null);
+        return;
+      }
+
+      infoRequestNameRef.current = model.name;
+      setSelectedModel(model);
+      setIsLoadingInfo(true);
       setModelInfo(null);
-      return;
-    }
 
-    setSelectedModel(model);
-    setIsLoadingInfo(true);
-    setModelInfo(null);
-
-    try {
-      const info = await getModelInfo(model.name, baseUrl, apiKey);
-      setModelInfo(info);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load model info');
-    } finally {
-      setIsLoadingInfo(false);
-    }
-  };
+      try {
+        const info = await getModelInfo(model.name, baseUrl, apiKey);
+        // 仅当此请求仍对应当前选中的模型时才应用结果，避免旧请求覆盖新选中模型的详情
+        if (infoRequestNameRef.current !== model.name) return;
+        setModelInfo(info);
+      } catch (e) {
+        if (infoRequestNameRef.current !== model.name) return;
+        setError(e instanceof Error ? e.message : 'Failed to load model info');
+      } finally {
+        if (infoRequestNameRef.current === model.name) {
+          setIsLoadingInfo(false);
+        }
+      }
+    },
+    [selectedModel?.name, baseUrl, apiKey]
+  );
 
   // 删除模型
   const handleDelete = async (modelName: string) => {

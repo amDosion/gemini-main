@@ -117,15 +117,15 @@ function normalizeFieldPolicies(
         : null,
     subtitleModeAvailable:
       fieldPolicies?.subtitleMode?.available ?? subtitleModeSupportedValues.length > 0,
-    subtitleModeSingleSidecarFormat:
-      fieldPolicies?.subtitleMode?.singleSidecarFormat ?? false,
+    subtitleModeSingleSidecarFormat: fieldPolicies?.subtitleMode?.singleSidecarFormat ?? false,
     subtitleModeDefaultEnabled:
       fieldPolicies?.subtitleMode?.defaultEnabledMode ??
       subtitleModeSupportedValues.find((value) => value !== 'none') ??
       null,
     subtitleModeSupportedValues,
     storyboardPromptPreferred:
-      fieldPolicies?.storyboardPrompt?.preferred ?? constraints.supports_storyboard_prompting === true,
+      fieldPolicies?.storyboardPrompt?.preferred ??
+      constraints.supports_storyboard_prompting === true,
     storyboardPromptDeprecatedCompanionFields:
       fieldPolicies?.storyboardPrompt?.deprecatedCompanionFields ?? [],
   };
@@ -141,13 +141,18 @@ function buildLegacyExtensionOptionsBySeconds(
   const addedSeconds = Number(schema?.constraints?.video_extension_added_seconds);
   const maxSourceVideoSeconds = Number(schema?.constraints?.max_source_video_seconds);
   const maxOutputVideoSeconds = Number(schema?.constraints?.max_output_video_seconds);
-  const upperBound = Number.isFinite(maxOutputVideoSeconds) && maxOutputVideoSeconds > 0
-    ? maxOutputVideoSeconds
-    : Number.isFinite(maxSourceVideoSeconds) && maxSourceVideoSeconds > 0
-      ? maxSourceVideoSeconds
-      : 0;
+  const upperBound =
+    Number.isFinite(maxOutputVideoSeconds) && maxOutputVideoSeconds > 0
+      ? maxOutputVideoSeconds
+      : Number.isFinite(maxSourceVideoSeconds) && maxSourceVideoSeconds > 0
+        ? maxSourceVideoSeconds
+        : 0;
 
-  if (!availableVideoExtensionCounts.length || !Number.isFinite(addedSeconds) || addedSeconds <= 0) {
+  if (
+    !availableVideoExtensionCounts.length ||
+    !Number.isFinite(addedSeconds) ||
+    addedSeconds <= 0
+  ) {
     return {};
   }
 
@@ -165,7 +170,10 @@ function buildLegacyExtensionOptionsBySeconds(
         .filter((option) => upperBound <= 0 || option.totalSeconds <= upperBound)
         .map((option) => ({
           ...option,
-          label: option.count === 0 ? `${option.totalSeconds}s (base)` : `${option.totalSeconds}s (+${option.count} extensions)`,
+          label:
+            option.count === 0
+              ? `${option.totalSeconds}s (base)`
+              : `${option.totalSeconds}s (+${option.count} extensions)`,
         }));
       return [baseSeconds, options];
     })
@@ -178,9 +186,7 @@ function buildExtensionOptionsBySeconds(
 ): Record<string, VideoContractExtensionOption[]> {
   const backendMatrix = schema?.videoContract?.extensionDurationMatrix;
   if (backendMatrix && backendMatrix.length > 0) {
-    return Object.fromEntries(
-      backendMatrix.map((entry) => [entry.baseSeconds, entry.options])
-    );
+    return Object.fromEntries(backendMatrix.map((entry) => [entry.baseSeconds, entry.options]));
   }
   return buildLegacyExtensionOptionsBySeconds(schema, validSeconds);
 }
@@ -246,8 +252,10 @@ export function buildVideoControlContract(
       (typeof schema?.constraints?.max_output_video_seconds === 'number'
         ? schema.constraints.max_output_video_seconds
         : null),
-    requireDurationSeconds: schema?.videoContract?.extensionConstraints?.requireDurationSeconds ?? [],
-    requireResolutionValues: schema?.videoContract?.extensionConstraints?.requireResolutionValues ?? [],
+    requireDurationSeconds:
+      schema?.videoContract?.extensionConstraints?.requireDurationSeconds ?? [],
+    requireResolutionValues:
+      schema?.videoContract?.extensionConstraints?.requireResolutionValues ?? [],
   };
   const defaultAspectRatio =
     (typeof defaults.aspect_ratio === 'string' ? defaults.aspect_ratio : undefined) ??
@@ -262,17 +270,20 @@ export function buildVideoControlContract(
     (typeof defaults.seconds === 'number' ? String(defaults.seconds) : undefined) ??
     validSeconds[0] ??
     '8';
-  const validCountsForDefaultSeconds = validVideoExtensionCountsBySeconds[defaultVideoSeconds] ?? [];
+  const validCountsForDefaultSeconds =
+    validVideoExtensionCountsBySeconds[defaultVideoSeconds] ?? [];
   const defaultVideoExtensionCount =
     typeof defaults.video_extension_count === 'number' &&
-    (validCountsForDefaultSeconds.length === 0 || validCountsForDefaultSeconds.includes(defaults.video_extension_count))
+    (validCountsForDefaultSeconds.length === 0 ||
+      validCountsForDefaultSeconds.includes(defaults.video_extension_count))
       ? defaults.video_extension_count
-      : validCountsForDefaultSeconds[0] ?? 0;
+      : (validCountsForDefaultSeconds[0] ?? 0);
   const defaultStoryboardShotSeconds =
     typeof defaults.storyboard_shot_seconds === 'number' &&
-    (validStoryboardShotSeconds.length === 0 || validStoryboardShotSeconds.includes(defaults.storyboard_shot_seconds))
+    (validStoryboardShotSeconds.length === 0 ||
+      validStoryboardShotSeconds.includes(defaults.storyboard_shot_seconds))
       ? defaults.storyboard_shot_seconds
-      : validStoryboardShotSeconds[0] ?? 4;
+      : (validStoryboardShotSeconds[0] ?? 4);
   const defaultGenerateAudio =
     typeof defaults.generate_audio === 'boolean'
       ? defaults.generate_audio
@@ -285,24 +296,23 @@ export function buildVideoControlContract(
       ? defaults.subtitle_mode
       : validSubtitleModes.includes('none')
         ? 'none'
-        : fieldPolicies.subtitleModeDefaultEnabled ?? validSubtitleModes[0] ?? 'none';
+        : (fieldPolicies.subtitleModeDefaultEnabled ?? validSubtitleModes[0] ?? 'none');
   const defaultSubtitleLanguage =
     typeof defaults.subtitle_language === 'string' &&
-    (validSubtitleLanguages.length === 0 || validSubtitleLanguages.includes(defaults.subtitle_language))
+    (validSubtitleLanguages.length === 0 ||
+      validSubtitleLanguages.includes(defaults.subtitle_language))
       ? defaults.subtitle_language
-      : validSubtitleLanguages[0] ?? '';
-  const defaultSubtitleScript = typeof defaults.subtitle_script === 'string' ? defaults.subtitle_script : '';
+      : (validSubtitleLanguages[0] ?? '');
+  const defaultSubtitleScript =
+    typeof defaults.subtitle_script === 'string' ? defaults.subtitle_script : '';
   const defaultStoryboardPrompt =
     typeof defaults.storyboard_prompt === 'string' ? defaults.storyboard_prompt : '';
   const defaultNegativePrompt =
     typeof defaults.negative_prompt === 'string' ? defaults.negative_prompt : '';
   const defaultSeed = typeof defaults.seed === 'number' ? defaults.seed : -1;
+  // When the schema does not specify enhance_prompt, video generation defaults it on.
   const defaultEnhancePrompt =
-    typeof defaults.enhance_prompt === 'boolean'
-      ? defaults.enhance_prompt
-      : fieldPolicies.enhancePromptEffectiveDefault ||
-        fieldPolicies.enhancePromptMandatory ||
-        true;
+    typeof defaults.enhance_prompt === 'boolean' ? defaults.enhance_prompt : true;
 
   return {
     defaultAspectRatio,
@@ -351,9 +361,9 @@ export function isVideoControlSelectionValid(
     contract.validResolutionTiers.length === 0 ||
     contract.validResolutionTiers.includes(selection.resolution);
   const secondsValid =
-    contract.validSeconds.length === 0 ||
-    contract.validSeconds.includes(selection.videoSeconds);
-  const validCountsForSeconds = contract.validVideoExtensionCountsBySeconds[selection.videoSeconds] ?? [];
+    contract.validSeconds.length === 0 || contract.validSeconds.includes(selection.videoSeconds);
+  const validCountsForSeconds =
+    contract.validVideoExtensionCountsBySeconds[selection.videoSeconds] ?? [];
   const videoExtensionCountValid =
     selection.videoExtensionCount === undefined ||
     (validCountsForSeconds.length > 0

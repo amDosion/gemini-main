@@ -105,7 +105,7 @@ const parseMcpServerOptions = (configJson: string): McpServerOption[] => {
     const parsed = JSON.parse((configJson || '').trim() || '{}');
     if (!isPlainObject(parsed)) return [];
 
-    let serverMap: Record<string, JsonObject> = {};
+    const serverMap: Record<string, JsonObject> = {};
     if (isPlainObject(parsed.mcpServers)) {
       Object.entries(parsed.mcpServers).forEach(([key, value]) => {
         if (isPlainObject(value)) serverMap[key] = value;

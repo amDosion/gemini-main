@@ -160,15 +160,12 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
   }, [selectedMsgId, historyBatches]);
 
   // ✅ 当前批次的所有图片（支持多张）
-	  const displayImages = useMemo(() => {
-	    return (activeBatchMessage?.attachments || [])
-	      .map((attachment, index) =>
-	        getDisplayImageAttachment(
-	          attachment,
-	          `${activeBatchMessage?.id || 'tryon'}-${index}`
-	        )
-	      )
-	      .filter((attachment): attachment is Attachment => Boolean(attachment));
+  const displayImages = useMemo(() => {
+    return (activeBatchMessage?.attachments || [])
+      .map((attachment, index) =>
+        getDisplayImageAttachment(attachment, `${activeBatchMessage?.id || 'tryon'}-${index}`)
+      )
+      .filter((attachment): attachment is Attachment => Boolean(attachment));
   }, [activeBatchMessage?.attachments, activeBatchMessage?.id]);
 
   const isBatchError = activeBatchMessage?.isError;
@@ -345,11 +342,11 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
                 {msg.content && <p className="mb-2">{msg.content}</p>}
 
                 {/* 附件显示 */}
-	                {msg.attachments
-	                  ?.map((attachment, index) =>
-	                    getDisplayImageAttachment(attachment, `${msg.id}-${index}`)
-	                  )
-	                  .filter((att): att is Attachment => Boolean(att))
+                {msg.attachments
+                  ?.map((attachment, index) =>
+                    getDisplayImageAttachment(attachment, `${msg.id}-${index}`)
+                  )
+                  .filter((att): att is Attachment => Boolean(att))
                   .map((att, idx) => (
                     <div
                       key={`${msg.id}:${getAttachmentStableKey(att)}`}
@@ -482,9 +479,7 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
                     ? 'grid-cols-1 place-items-center'
                     : displayImages.length === 2
                       ? 'grid-cols-1 md:grid-cols-2 place-items-start'
-                      : displayImages.length === 3
-                        ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-2 place-items-start'
-                        : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-2 place-items-start'
+                      : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-2 place-items-start'
                 }`}
               >
                 {displayImages.map((att, idx) => {

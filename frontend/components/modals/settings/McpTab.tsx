@@ -550,7 +550,7 @@ export const McpTab: React.FC = () => {
               : 'Tool returned error'
             : undefined,
           mode: 'skybridge',
-          notice: `Executed via skybridge host (${getSkybridgeHostType() || 'unknown'})`,
+          notice: `Executed via skybridge host (${skybridgeHostType || 'unknown'})`,
         });
         return;
       } catch (skybridgeError: unknown) {

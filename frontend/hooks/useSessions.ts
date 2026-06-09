@@ -483,25 +483,9 @@ export const useSessions = (
     refreshSessions,
   ]);
 
-  const prepareSessionForDb = useCallback((session: ChatSession): ChatSession => {
-    if (!session.messages || session.messages.length === 0) {
-      return session;
-    }
-
-    const cleanedMessages = session.messages.map((message) => {
-      if (!message.attachments || message.attachments.length === 0) {
-        return message;
-      }
-
-      // 直接传原始 attachments,后端 PR-1 在 upsert 时权威清洗 blob/base64
-      return message;
-    });
-
-    return {
-      ...session,
-      messages: cleanedMessages,
-    };
-  }, []);
+  // 后端 PR-1 (b0bd8ee) 在 upsert 时权威清洗 blob/base64 attachments，前端无需
+  // 预清洗，直接持久化原始 session。
+  const prepareSessionForDb = useCallback((session: ChatSession): ChatSession => session, []);
 
   // Save session to database (with error handling for offline mode)
   // 使用 cachedDb 实现写穿透

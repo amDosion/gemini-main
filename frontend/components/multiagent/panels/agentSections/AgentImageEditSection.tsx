@@ -17,18 +17,19 @@ export interface AgentImageEditSectionProps {
   updateNodeData: (patch: Partial<CustomNodeData>) => void;
 }
 
+const _ratios = ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9', '21:9'];
+const _tiers = [
+  { v: '1K', l: '1K 标准' },
+  { v: '2K', l: '2K 高清' },
+  { v: '4K', l: '4K 超清' },
+];
+
 export const AgentImageEditSection: React.FC<AgentImageEditSectionProps> = ({
   nodeData,
   updateNodeData,
 }) => {
   const _tier = nodeData.agentResolutionTier || '1K';
   const _ratio = nodeData.agentAspectRatio || '1:1';
-  const _ratios = ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9', '21:9'];
-  const _tiers = [
-    { v: '1K', l: '1K 标准' },
-    { v: '2K', l: '2K 高清' },
-    { v: '4K', l: '4K 超清' },
-  ];
   const _hasRef = !!nodeData.agentReferenceImageUrl;
   return (
     <div className="space-y-3 p-2.5 rounded-lg border border-purple-500/20 bg-purple-500/5">

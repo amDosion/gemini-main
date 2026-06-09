@@ -8,7 +8,7 @@
  * 渲染条件 `loadingState === 'idle'` 内化为组件早返 — 调用方不再需要 `&&` 包裹。
  */
 
-import { memo, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import {
   Wand2,
   Upload,
@@ -59,6 +59,14 @@ export const MaskToolbar = memo(
     onBrushSizeChange,
   }: MaskToolbarProps) => {
     const [isExtractMenuOpen, setIsExtractMenuOpen] = useState(false);
+
+    // 加载开始时关闭下拉:组件在非 idle 时返回 null(隐藏),否则加载结束重新渲染时
+    // isExtractMenuOpen 仍是加载前的 true,下拉会意外保持展开。
+    useEffect(() => {
+      if (loadingState !== 'idle') {
+        setIsExtractMenuOpen(false);
+      }
+    }, [loadingState]);
 
     if (loadingState !== 'idle') return null;
 

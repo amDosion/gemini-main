@@ -521,8 +521,8 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
     [onSend, audioMode]
   );
 
-  // Get current audio text for lyrics display
-  const getActiveAudioText = useCallback((): string => {
+  // Current audio text for lyrics display.
+  const activeAudioTextForDisplay = useMemo((): string => {
     if (activeAudioText) return activeAudioText;
     // Fallback: try to find from current active audio URL
     const modelMsg = messages.find((m) => m.attachments?.some((a) => a.url === activeAudioUrl));
@@ -706,11 +706,11 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
                 />
 
                 {/* Karaoke Lyrics Display */}
-                {getActiveAudioText() && (
+                {activeAudioTextForDisplay && (
                   <AudioProgressDisplay
                     audioRef={audioRef}
                     src={activeAudioUrl}
-                    text={getActiveAudioText()}
+                    text={activeAudioTextForDisplay}
                     isPlaying={isPlaying}
                   />
                 )}
@@ -807,13 +807,12 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
       loadingState,
       activeAudioUrl,
       isPlaying,
-      getActiveAudioText,
+      activeAudioTextForDisplay,
       handleDownload,
       controls,
       providerId,
       resetParams,
       audioMode,
-      activeModelConfig,
       onStop,
       messages,
       initialPrompt,

@@ -1,13 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Message, Role, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
-import {
-  Image as ImageIcon,
-  Layers,
-  Clock,
-  SlidersHorizontal,
-  RotateCcw,
-  Sparkles,
-} from 'lucide-react';
+import { Image as ImageIcon, Clock, SlidersHorizontal, RotateCcw, Sparkles } from 'lucide-react';
 import { GenViewLayout } from '../common/GenViewLayout';
 import { ImageResultCanvas } from '../common/ImageResultCanvas';
 import { type CarouselMediaItem } from '../common/ImageCarouselControls';
@@ -51,13 +44,11 @@ interface ImageGenViewProps {
 
 export const ImageGenView: React.FC<ImageGenViewProps> = ({
   messages,
-  setAppMode,
   onImageClick,
   loadingState,
   onSend,
   onStop,
   activeModelConfig,
-  visibleModels = [],
   allVisibleModels = [], // ✅ 新增
   initialPrompt,
   onEditImage,
@@ -456,7 +447,10 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
             onExpand: onExpandImage
               ? () => onExpandImage(displayImages[carouselIndex].url!, displayImages[carouselIndex])
               : undefined,
-            onFullscreen: () => onImageClick(displayImages[carouselIndex].url!),
+            onFullscreen: () => {
+              const u = displayImages[carouselIndex]?.url;
+              if (u) onImageClick(u);
+            },
           }}
           spinnerColorClass="border-emerald-500/30 border-t-emerald-500"
           spinnerBadgeText="GEN"
@@ -471,7 +465,7 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
                 <ThinkingBlock
                   content={displayedThinkingContent}
                   isOpen={isThinkingOpen}
-                  onToggle={() => setIsThinkingOpen(!isThinkingOpen)}
+                  onToggle={() => setIsThinkingOpen((prev) => !prev)}
                   isComplete={false}
                 />
               </div>
@@ -483,7 +477,7 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
                 <ThinkingBlock
                   content={displayedThinkingContent}
                   isOpen={isThinkingOpen}
-                  onToggle={() => setIsThinkingOpen(!isThinkingOpen)}
+                  onToggle={() => setIsThinkingOpen((prev) => !prev)}
                   isComplete={true}
                 />
               </div>

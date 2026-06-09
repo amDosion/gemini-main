@@ -79,7 +79,6 @@ interface ImageExpandViewProps {
 
 export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
   messages,
-  setAppMode,
   onImageClick,
   loadingState,
   onSend,
@@ -87,7 +86,6 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
   activeModelConfig,
   onModelSelect,
   visibleModels = [],
-  allVisibleModels = [], // 新增
   initialAttachments,
   providerId,
   sessionId: currentSessionId, // ✅ 接收 sessionId
@@ -177,21 +175,21 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
   }, [selectedMsgId, filteredHistoryBatches]);
 
   // ✅ 新增：当前批次的所有图片
-	  const displayImages = useMemo(() => {
-	    return (activeBatchMessage?.attachments || [])
-	      .filter((att) => Boolean(att.file || getPreferredImageAttachmentUrl(att)))
-	      .map((att, index) => {
-	        const fallbackId = att.id || `${activeBatchMessage?.id || 'image-expand'}-${index}`;
-	        const sourceAttachment = att.id ? att : { ...att, id: fallbackId };
-	        const displayUrl = getPreferredImageAttachmentUrl(sourceAttachment);
-	        if (displayUrl) {
-	          return displayUrl === sourceAttachment.url
-	            ? sourceAttachment
-	            : { ...sourceAttachment, url: displayUrl };
-	        }
-	        return sourceAttachment;
-	      });
-	  }, [activeBatchMessage?.attachments, activeBatchMessage?.id]);
+  const displayImages = useMemo(() => {
+    return (activeBatchMessage?.attachments || [])
+      .filter((att) => Boolean(att.file || getPreferredImageAttachmentUrl(att)))
+      .map((att, index) => {
+        const fallbackId = att.id || `${activeBatchMessage?.id || 'image-expand'}-${index}`;
+        const sourceAttachment = att.id ? att : { ...att, id: fallbackId };
+        const displayUrl = getPreferredImageAttachmentUrl(sourceAttachment);
+        if (displayUrl) {
+          return displayUrl === sourceAttachment.url
+            ? sourceAttachment
+            : { ...sourceAttachment, url: displayUrl };
+        }
+        return sourceAttachment;
+      });
+  }, [activeBatchMessage?.attachments, activeBatchMessage?.id]);
 
   // ── Hover preview helpers（view wrappers）──
 
@@ -363,17 +361,17 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
 
   const carouselItems = useMemo<CarouselMediaItem[]>(
     () =>
-	      displayImages.map((att, idx) => ({
-	        id: att.id || `${idx}`,
-	        url: att.url || null,
-	        thumbUrl: att.url || null,
-	        source: {
-	          ...att,
-	          attachmentId: att.id,
-	          url: att.url || undefined,
-	        },
-	        alt: `缩略图 ${idx + 1}`,
-	      })),
+      displayImages.map((att, idx) => ({
+        id: att.id || `${idx}`,
+        url: att.url || null,
+        thumbUrl: att.url || null,
+        source: {
+          ...att,
+          attachmentId: att.id,
+          url: att.url || undefined,
+        },
+        alt: `缩略图 ${idx + 1}`,
+      })),
     [displayImages]
   );
 

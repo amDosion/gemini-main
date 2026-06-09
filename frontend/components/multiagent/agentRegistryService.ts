@@ -46,13 +46,6 @@ export interface AgentListFetchResult {
 
 const toSafeString = (value: unknown): string => String(value ?? '').trim();
 
-const normalizeAgentTaskFilter = (value: unknown): AgentTaskFilter => {
-  const normalized = toSafeString(value).toLowerCase().replace(/_/g, '-');
-  return AGENT_TASK_FILTER_OPTIONS.includes(normalized as AgentTaskFilter)
-    ? (normalized as AgentTaskFilter)
-    : 'all';
-};
-
 const parseAgentTaskFilterKey = (value: unknown): AgentTaskFilter | null => {
   const normalized = toSafeString(value).toLowerCase().replace(/_/g, '-');
   return AGENT_TASK_FILTER_OPTIONS.includes(normalized as AgentTaskFilter)

@@ -137,16 +137,16 @@ export const useWorkflowHistoryImageBrowser = ({
       const directImageUrls = toRenderableImageUrls(item.resultImageUrls);
       const seededImageUrls = toRenderableImageUrls(seedPreviewImages[executionId]);
       const sharedEntry = readWorkflowPreviewImagesCacheEntry(executionId);
-      const localEntry = localPreviewCache[executionId] || (
-        sharedEntry
+      const localEntry =
+        localPreviewCache[executionId] ||
+        (sharedEntry
           ? {
               imageUrls: sharedEntry.imageUrls,
               loading: false,
               requestedLimit: sharedEntry.requestedLimit,
               error: sharedEntry.error,
             }
-          : undefined
-      );
+          : undefined);
       const localImageUrls = toRenderableImageUrls(localEntry?.imageUrls);
       const previewImageUrls = seededImageUrls.length > 0 ? seededImageUrls : localImageUrls;
       const imageCount = Math.max(
@@ -270,10 +270,7 @@ export const useWorkflowHistoryImageBrowser = ({
 
       void getWorkflowPreviewImagesWithCache(executionId, requestLimit)
         .then(({ imageUrls, skippedCount, count }) => {
-          if (
-            !mountedRef.current ||
-            !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
-          ) {
+          if (!mountedRef.current || !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)) {
             return;
           }
           warnSkippedHistoryBrowserPreviewImages(executionId, count, skippedCount);
@@ -301,10 +298,9 @@ export const useWorkflowHistoryImageBrowser = ({
           }
           const message = error instanceof Error ? error.message : '加载图片预览失败';
           showError(message);
-          const cachedImageUrls =
-            localPreviewCache[executionId]?.imageUrls ||
-            readWorkflowPreviewImagesCacheEntry(executionId)?.imageUrls ||
-            [];
+          // 从共享模块级缓存读取,而非 effect 闭包里捕获的 localPreviewCache:后者是该次
+          // effect 运行时的旧值,promise reject 时可能已过期,会用陈旧 URL 覆盖共享缓存。
+          const cachedImageUrls = readWorkflowPreviewImagesCacheEntry(executionId)?.imageUrls || [];
           writeWorkflowPreviewImagesCacheEntry(executionId, {
             imageUrls: cachedImageUrls,
             requestedLimit: requestLimit,
@@ -337,20 +333,20 @@ export const useWorkflowHistoryImageBrowser = ({
     showError,
   ]);
 
-  useEffect(
-    () => {
-      mountedRef.current = true;
-      return () => {
-        mountedRef.current = false;
-      };
-    },
-    []
-  );
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
-  usePrivateCacheLifecycleRevision(() => {
-    if (!mountedRef.current) return;
-    resetLocalBrowserCache();
-  }, { includeCacheReset: true });
+  usePrivateCacheLifecycleRevision(
+    () => {
+      if (!mountedRef.current) return;
+      resetLocalBrowserCache();
+    },
+    { includeCacheReset: true }
+  );
 
   return {
     cards,

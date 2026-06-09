@@ -69,7 +69,7 @@ export const WorkflowResultImageCanvas: React.FC<WorkflowResultImageCanvasProps>
   const fallbackCards = useMemo<WorkflowResultImageCard[]>(
     () =>
       normalizedImageUrls.map((url, index) => ({
-        id: `workflow-result-image-card-${index}-${url}`,
+        id: `workflow-result-image-card-${index}`,
         title: `媒体图片 ${index + 1}`,
         imageUrl: url,
         indexLabel: `${index + 1}/${normalizedImageUrls.length}`,
@@ -116,10 +116,6 @@ export const WorkflowResultImageCanvas: React.FC<WorkflowResultImageCanvasProps>
   });
 
   useEffect(() => {
-    if (!open) {
-      setCarouselStartIndex(null);
-      return;
-    }
     setCarouselStartIndex(null);
   }, [displayCards, open]);
 

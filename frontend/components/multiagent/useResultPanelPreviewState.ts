@@ -25,6 +25,24 @@ const RESULT_PANEL_PREVIEW_MEDIA_FETCH_LIMIT = 12;
 
 type ResultPanelPreviewFetchOutcome = 'succeeded' | 'failed';
 
+// Upsert an execution-scoped value into a bounded record, always protecting and
+// capping by the active execution id. Centralizes the repeated upsert boilerplate.
+const upsertExecutionScopedRecord = <T>(
+  setter: Dispatch<SetStateAction<Record<string, T>>>,
+  executionId: string,
+  value: NoInfer<T>
+): void => {
+  setter((prev) =>
+    upsertBoundedRecord({
+      record: prev,
+      key: executionId,
+      value,
+      maxEntries: RESULT_PANEL_PREVIEW_CACHE_MAX_ENTRIES,
+      protectedKeys: [executionId],
+    })
+  );
+};
+
 interface ResultPanelPreviewMediaState {
   audioUrls: string[];
   videoUrls: string[];
@@ -65,11 +83,23 @@ export const useResultPanelPreviewState = ({
   setNodes,
   addLog,
 }: UseResultPanelPreviewStateParams): UseResultPanelPreviewStateResult => {
-  const [resultPanelPreviewCache, setResultPanelPreviewCache] = useState<Record<string, string[]>>({});
-  const [resultPanelPreviewFetchOutcomeByExecutionId, setResultPanelPreviewFetchOutcomeByExecutionId] = useState<Record<string, ResultPanelPreviewFetchOutcome>>({});
-  const [resultPanelPreviewMediaCache, setResultPanelPreviewMediaCache] = useState<Record<string, ResultPanelPreviewMediaState>>({});
-  const [resultPanelPreviewMediaFetchOutcomeByExecutionId, setResultPanelPreviewMediaFetchOutcomeByExecutionId] = useState<Record<string, ResultPanelPreviewFetchOutcome>>({});
-  const [resultPanelPreviewLoadingExecutionId, setResultPanelPreviewLoadingExecutionId] = useState<string | null>(null);
+  const [resultPanelPreviewCache, setResultPanelPreviewCache] = useState<Record<string, string[]>>(
+    {}
+  );
+  const [
+    resultPanelPreviewFetchOutcomeByExecutionId,
+    setResultPanelPreviewFetchOutcomeByExecutionId,
+  ] = useState<Record<string, ResultPanelPreviewFetchOutcome>>({});
+  const [resultPanelPreviewMediaCache, setResultPanelPreviewMediaCache] = useState<
+    Record<string, ResultPanelPreviewMediaState>
+  >({});
+  const [
+    resultPanelPreviewMediaFetchOutcomeByExecutionId,
+    setResultPanelPreviewMediaFetchOutcomeByExecutionId,
+  ] = useState<Record<string, ResultPanelPreviewFetchOutcome>>({});
+  const [resultPanelPreviewLoadingExecutionId, setResultPanelPreviewLoadingExecutionId] = useState<
+    string | null
+  >(null);
   const previewLoadCountRef = useRef<Record<string, number>>({});
 
   const executionId = useMemo(
@@ -77,7 +107,10 @@ export const useResultPanelPreviewState = ({
     [executionStatus?.executionId]
   );
   const executionFinalStatus = useMemo(
-    () => String(executionStatus?.finalStatus || '').trim().toLowerCase(),
+    () =>
+      String(executionStatus?.finalStatus || '')
+        .trim()
+        .toLowerCase(),
     [executionStatus?.finalStatus]
   );
   const executionStatusPreviewImageUrls = useMemo(() => {
@@ -132,7 +165,8 @@ export const useResultPanelPreviewState = ({
   }, []);
 
   const startPreviewLoad = useCallback((targetExecutionId: string) => {
-    previewLoadCountRef.current[targetExecutionId] = (previewLoadCountRef.current[targetExecutionId] || 0) + 1;
+    previewLoadCountRef.current[targetExecutionId] =
+      (previewLoadCountRef.current[targetExecutionId] || 0) + 1;
     setResultPanelPreviewLoadingExecutionId(targetExecutionId);
   }, []);
 
@@ -140,7 +174,9 @@ export const useResultPanelPreviewState = ({
     const nextCount = Math.max(0, (previewLoadCountRef.current[targetExecutionId] || 0) - 1);
     if (nextCount <= 0) {
       delete previewLoadCountRef.current[targetExecutionId];
-      setResultPanelPreviewLoadingExecutionId((current) => (current === targetExecutionId ? null : current));
+      setResultPanelPreviewLoadingExecutionId((current) =>
+        current === targetExecutionId ? null : current
+      );
       return;
     }
     previewLoadCountRef.current[targetExecutionId] = nextCount;
@@ -162,7 +198,10 @@ export const useResultPanelPreviewState = ({
     if (executionStatusPreviewImageUrls.length > 0) {
       return;
     }
-    const hasPreviewCacheEntry = Object.prototype.hasOwnProperty.call(resultPanelPreviewCache, executionId);
+    const hasPreviewCacheEntry = Object.prototype.hasOwnProperty.call(
+      resultPanelPreviewCache,
+      executionId
+    );
     const previewFetchOutcome = resultPanelPreviewFetchOutcomeByExecutionId[executionId];
     if (previewFetchOutcome === 'failed') {
       return;
@@ -171,7 +210,9 @@ export const useResultPanelPreviewState = ({
       return;
     }
     const existingResultImageUrls = extractImageUrls(executionStatus?.finalResult);
-    const hasRenderableResultImage = existingResultImageUrls.some((item) => isDirectlyRenderableImageUrl(item));
+    const hasRenderableResultImage = existingResultImageUrls.some((item) =>
+      isDirectlyRenderableImageUrl(item)
+    );
     if (hasRenderableResultImage) {
       return;
     }
@@ -186,20 +227,12 @@ export const useResultPanelPreviewState = ({
         );
         if (!cancelled) {
           const boundedImageUrls = toBoundedImageUrls(imageUrls);
-          setResultPanelPreviewCache((prev) => upsertBoundedRecord({
-            record: prev,
-            key: executionId,
-            value: boundedImageUrls,
-            maxEntries: RESULT_PANEL_PREVIEW_CACHE_MAX_ENTRIES,
-            protectedKeys: [executionId],
-          }));
-          setResultPanelPreviewFetchOutcomeByExecutionId((prev) => upsertBoundedRecord({
-            record: prev,
-            key: executionId,
-            value: 'succeeded',
-            maxEntries: RESULT_PANEL_PREVIEW_CACHE_MAX_ENTRIES,
-            protectedKeys: [executionId],
-          }));
+          upsertExecutionScopedRecord(setResultPanelPreviewCache, executionId, boundedImageUrls);
+          upsertExecutionScopedRecord(
+            setResultPanelPreviewFetchOutcomeByExecutionId,
+            executionId,
+            'succeeded'
+          );
           if (skippedCount > 0) {
             addLog(
               'system',
@@ -211,20 +244,12 @@ export const useResultPanelPreviewState = ({
         }
       } catch (error) {
         if (!cancelled) {
-          setResultPanelPreviewCache((prev) => upsertBoundedRecord({
-            record: prev,
-            key: executionId,
-            value: [],
-            maxEntries: RESULT_PANEL_PREVIEW_CACHE_MAX_ENTRIES,
-            protectedKeys: [executionId],
-          }));
-          setResultPanelPreviewFetchOutcomeByExecutionId((prev) => upsertBoundedRecord({
-            record: prev,
-            key: executionId,
-            value: 'failed',
-            maxEntries: RESULT_PANEL_PREVIEW_CACHE_MAX_ENTRIES,
-            protectedKeys: [executionId],
-          }));
+          upsertExecutionScopedRecord(setResultPanelPreviewCache, executionId, []);
+          upsertExecutionScopedRecord(
+            setResultPanelPreviewFetchOutcomeByExecutionId,
+            executionId,
+            'failed'
+          );
           addLog('system', '系统', 'warn', `加载最终结果图片预览失败: ${error}`);
         }
       } finally {
@@ -258,8 +283,13 @@ export const useResultPanelPreviewState = ({
       return;
     }
     const cachedMedia = resultPanelPreviewMediaCache[executionId];
-    const hasCachedPreviewMedia = Boolean(cachedMedia?.audioUrls?.length || cachedMedia?.videoUrls?.length);
-    const hasPreviewCacheEntry = Object.prototype.hasOwnProperty.call(resultPanelPreviewMediaCache, executionId);
+    const hasCachedPreviewMedia = Boolean(
+      cachedMedia?.audioUrls?.length || cachedMedia?.videoUrls?.length
+    );
+    const hasPreviewCacheEntry = Object.prototype.hasOwnProperty.call(
+      resultPanelPreviewMediaCache,
+      executionId
+    );
     const previewFetchOutcome = resultPanelPreviewMediaFetchOutcomeByExecutionId[executionId];
     if (previewFetchOutcome === 'failed') {
       return;
@@ -270,10 +300,18 @@ export const useResultPanelPreviewState = ({
 
     const existingResultAudioUrls = extractAudioUrls(executionStatus?.finalResult);
     const existingResultVideoUrls = extractVideoUrls(executionStatus?.finalResult);
-    const hasExecutionStatusPreviewAudio = executionStatusPreviewAudioUrls.some((item) => isDirectlyRenderableAudioUrl(item));
-    const hasExecutionStatusPreviewVideo = executionStatusPreviewVideoUrls.some((item) => isDirectlyRenderableVideoUrl(item));
-    const needsAudioPreview = !existingResultAudioUrls.some((item) => isDirectlyRenderableAudioUrl(item)) && !hasExecutionStatusPreviewAudio;
-    const needsVideoPreview = !existingResultVideoUrls.some((item) => isDirectlyRenderableVideoUrl(item)) && !hasExecutionStatusPreviewVideo;
+    const hasExecutionStatusPreviewAudio = executionStatusPreviewAudioUrls.some((item) =>
+      isDirectlyRenderableAudioUrl(item)
+    );
+    const hasExecutionStatusPreviewVideo = executionStatusPreviewVideoUrls.some((item) =>
+      isDirectlyRenderableVideoUrl(item)
+    );
+    const needsAudioPreview =
+      !existingResultAudioUrls.some((item) => isDirectlyRenderableAudioUrl(item)) &&
+      !hasExecutionStatusPreviewAudio;
+    const needsVideoPreview =
+      !existingResultVideoUrls.some((item) => isDirectlyRenderableVideoUrl(item)) &&
+      !hasExecutionStatusPreviewVideo;
     if (!needsAudioPreview && !needsVideoPreview) {
       return;
     }
@@ -288,11 +326,29 @@ export const useResultPanelPreviewState = ({
       try {
         const [audioResult, videoResult] = await Promise.all([
           needsAudioPreview
-            ? fetchWorkflowPreviewMediaWithMeta(executionId, 'audio', RESULT_PANEL_PREVIEW_MEDIA_FETCH_LIMIT)
-            : Promise.resolve({ mediaType: 'audio' as const, items: [], skippedCount: 0, count: 0 }),
+            ? fetchWorkflowPreviewMediaWithMeta(
+                executionId,
+                'audio',
+                RESULT_PANEL_PREVIEW_MEDIA_FETCH_LIMIT
+              )
+            : Promise.resolve({
+                mediaType: 'audio' as const,
+                items: [],
+                skippedCount: 0,
+                count: 0,
+              }),
           needsVideoPreview
-            ? fetchWorkflowPreviewMediaWithMeta(executionId, 'video', RESULT_PANEL_PREVIEW_MEDIA_FETCH_LIMIT)
-            : Promise.resolve({ mediaType: 'video' as const, items: [], skippedCount: 0, count: 0 }),
+            ? fetchWorkflowPreviewMediaWithMeta(
+                executionId,
+                'video',
+                RESULT_PANEL_PREVIEW_MEDIA_FETCH_LIMIT
+              )
+            : Promise.resolve({
+                mediaType: 'video' as const,
+                items: [],
+                skippedCount: 0,
+                count: 0,
+              }),
         ]);
 
         if (cancelled) {
@@ -303,20 +359,12 @@ export const useResultPanelPreviewState = ({
           audioUrls: toBoundedMediaUrls(audioResult.items.map((item) => item.previewUrl)),
           videoUrls: toBoundedMediaUrls(videoResult.items.map((item) => item.previewUrl)),
         };
-        setResultPanelPreviewMediaCache((prev) => upsertBoundedRecord({
-          record: prev,
-          key: executionId,
-          value: nextMediaState,
-          maxEntries: RESULT_PANEL_PREVIEW_CACHE_MAX_ENTRIES,
-          protectedKeys: [executionId],
-        }));
-        setResultPanelPreviewMediaFetchOutcomeByExecutionId((prev) => upsertBoundedRecord({
-          record: prev,
-          key: executionId,
-          value: 'succeeded',
-          maxEntries: RESULT_PANEL_PREVIEW_CACHE_MAX_ENTRIES,
-          protectedKeys: [executionId],
-        }));
+        upsertExecutionScopedRecord(setResultPanelPreviewMediaCache, executionId, nextMediaState);
+        upsertExecutionScopedRecord(
+          setResultPanelPreviewMediaFetchOutcomeByExecutionId,
+          executionId,
+          'succeeded'
+        );
 
         if (audioResult.skippedCount > 0) {
           addLog(
@@ -336,23 +384,15 @@ export const useResultPanelPreviewState = ({
         }
       } catch (error) {
         if (!cancelled) {
-          setResultPanelPreviewMediaCache((prev) => upsertBoundedRecord({
-            record: prev,
-            key: executionId,
-            value: {
-              audioUrls: [],
-              videoUrls: [],
-            },
-            maxEntries: RESULT_PANEL_PREVIEW_CACHE_MAX_ENTRIES,
-            protectedKeys: [executionId],
-          }));
-          setResultPanelPreviewMediaFetchOutcomeByExecutionId((prev) => upsertBoundedRecord({
-            record: prev,
-            key: executionId,
-            value: 'failed',
-            maxEntries: RESULT_PANEL_PREVIEW_CACHE_MAX_ENTRIES,
-            protectedKeys: [executionId],
-          }));
+          upsertExecutionScopedRecord(setResultPanelPreviewMediaCache, executionId, {
+            audioUrls: [],
+            videoUrls: [],
+          });
+          upsertExecutionScopedRecord(
+            setResultPanelPreviewMediaFetchOutcomeByExecutionId,
+            executionId,
+            'failed'
+          );
           addLog('system', '系统', 'warn', `加载最终结果媒体预览失败: ${error}`);
         }
       } finally {
@@ -401,9 +441,10 @@ export const useResultPanelPreviewState = ({
   }, [executionStatusPreviewImageUrls, resultPanelPreviewImageUrls]);
 
   const resultPanelPreviewMedia = useMemo<ResultPanelPreviewMediaState>(() => {
-    const dedup = (urls: string[]) => Array.from(new Set(urls)).slice(0, RESULT_PANEL_PREVIEW_MEDIA_FETCH_LIMIT);
+    const dedup = (urls: string[]) =>
+      Array.from(new Set(urls)).slice(0, RESULT_PANEL_PREVIEW_MEDIA_FETCH_LIMIT);
     const cachedMedia = executionId
-      ? (resultPanelPreviewMediaCache[executionId] || { audioUrls: [], videoUrls: [] })
+      ? resultPanelPreviewMediaCache[executionId] || { audioUrls: [], videoUrls: [] }
       : { audioUrls: [], videoUrls: [] };
     return {
       audioUrls: dedup([...executionStatusPreviewAudioUrls, ...cachedMedia.audioUrls]),
@@ -425,7 +466,9 @@ export const useResultPanelPreviewState = ({
       const existingUrls = extractImageUrls(payload)
         .map((item) => String(item || '').trim())
         .filter(Boolean);
-      const hasAllPreviewImages = resultPanelPreviewImageUrls.every((previewUrl) => existingUrls.includes(previewUrl));
+      const hasAllPreviewImages = resultPanelPreviewImageUrls.every((previewUrl) =>
+        existingUrls.includes(previewUrl)
+      );
       if (hasAllPreviewImages) {
         return payload;
       }
@@ -437,28 +480,33 @@ export const useResultPanelPreviewState = ({
       return merged === prev ? prev : merged;
     });
 
-    setNodes((nds) => nds.map((node) => {
-      const nodeType = String(node?.data?.type || node?.type || '').toLowerCase();
-      if (nodeType !== 'end') {
-        return node;
-      }
-      const baseResult = node.data?.result ?? finalResult;
-      const mergedResult = mergeIfMissing(baseResult);
-      if (mergedResult === baseResult) {
-        return node;
-      }
-      return {
-        ...node,
-        data: {
-          ...node.data,
-          result: mergedResult,
-        },
-      };
-    }));
+    setNodes((nds) =>
+      nds.map((node) => {
+        const nodeType = String(node?.data?.type || node?.type || '').toLowerCase();
+        if (nodeType !== 'end') {
+          return node;
+        }
+        const baseResult = node.data?.result ?? finalResult;
+        const mergedResult = mergeIfMissing(baseResult);
+        if (mergedResult === baseResult) {
+          return node;
+        }
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            result: mergedResult,
+          },
+        };
+      })
+    );
   }, [finalResult, resultPanelPreviewImageUrls, setFinalResult, setNodes]);
 
   useEffect(() => {
-    if (resultPanelPreviewMedia.audioUrls.length === 0 && resultPanelPreviewMedia.videoUrls.length === 0) {
+    if (
+      resultPanelPreviewMedia.audioUrls.length === 0 &&
+      resultPanelPreviewMedia.videoUrls.length === 0
+    ) {
       return;
     }
 
@@ -468,7 +516,9 @@ export const useResultPanelPreviewState = ({
         const existingAudioUrls = extractAudioUrls(merged)
           .map((item) => String(item || '').trim())
           .filter(Boolean);
-        const hasAllPreviewAudio = resultPanelPreviewMedia.audioUrls.every((previewUrl) => existingAudioUrls.includes(previewUrl));
+        const hasAllPreviewAudio = resultPanelPreviewMedia.audioUrls.every((previewUrl) =>
+          existingAudioUrls.includes(previewUrl)
+        );
         if (!hasAllPreviewAudio) {
           merged = mergePreviewMediaIntoResult(merged, 'audio', resultPanelPreviewMedia.audioUrls);
         }
@@ -477,7 +527,9 @@ export const useResultPanelPreviewState = ({
         const existingVideoUrls = extractVideoUrls(merged)
           .map((item) => String(item || '').trim())
           .filter(Boolean);
-        const hasAllPreviewVideo = resultPanelPreviewMedia.videoUrls.every((previewUrl) => existingVideoUrls.includes(previewUrl));
+        const hasAllPreviewVideo = resultPanelPreviewMedia.videoUrls.every((previewUrl) =>
+          existingVideoUrls.includes(previewUrl)
+        );
         if (!hasAllPreviewVideo) {
           merged = mergePreviewMediaIntoResult(merged, 'video', resultPanelPreviewMedia.videoUrls);
         }
@@ -490,34 +542,40 @@ export const useResultPanelPreviewState = ({
       return merged === prev ? prev : merged;
     });
 
-    setNodes((nds) => nds.map((node) => {
-      const nodeType = String(node?.data?.type || node?.type || '').toLowerCase();
-      if (nodeType !== 'end') {
-        return node;
-      }
-      const baseResult = node.data?.result ?? finalResult;
-      const mergedResult = mergeIfMissing(baseResult);
-      if (mergedResult === baseResult) {
-        return node;
-      }
-      return {
-        ...node,
-        data: {
-          ...node.data,
-          result: mergedResult,
-        },
-      };
-    }));
+    setNodes((nds) =>
+      nds.map((node) => {
+        const nodeType = String(node?.data?.type || node?.type || '').toLowerCase();
+        if (nodeType !== 'end') {
+          return node;
+        }
+        const baseResult = node.data?.result ?? finalResult;
+        const mergedResult = mergeIfMissing(baseResult);
+        if (mergedResult === baseResult) {
+          return node;
+        }
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            result: mergedResult,
+          },
+        };
+      })
+    );
   }, [finalResult, resultPanelPreviewMedia, setFinalResult, setNodes]);
 
   const handleRetryResultPreview = useCallback(() => {
     if (!executionId) return;
     delete previewLoadCountRef.current[executionId];
-    setResultPanelPreviewLoadingExecutionId((current) => (current === executionId ? null : current));
+    setResultPanelPreviewLoadingExecutionId((current) =>
+      current === executionId ? null : current
+    );
     setResultPanelPreviewCache((prev) => removeRecordKey(prev, executionId));
     setResultPanelPreviewFetchOutcomeByExecutionId((prev) => removeRecordKey(prev, executionId));
     setResultPanelPreviewMediaCache((prev) => removeRecordKey(prev, executionId));
-    setResultPanelPreviewMediaFetchOutcomeByExecutionId((prev) => removeRecordKey(prev, executionId));
+    setResultPanelPreviewMediaFetchOutcomeByExecutionId((prev) =>
+      removeRecordKey(prev, executionId)
+    );
     addLog('system', '系统', 'info', '已触发结果媒体重新加载');
   }, [addLog, executionId]);
 

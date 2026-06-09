@@ -634,7 +634,7 @@ export const extractSheetStageProtocolState = (snapshot: unknown): SheetStagePro
     };
   }
 
-  const best = validCandidates.slice().sort((left, right) => {
+  const best = validCandidates.sort((left, right) => {
     if (right.score !== left.score) {
       return right.score - left.score;
     }

@@ -1,10 +1,10 @@
 /**
  * Workflow Tutorial Component
- * 
+ *
  * Interactive tutorial to guide new users through the workflow editor.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { X, ChevronLeft, ChevronRight, Check } from 'lucide-react';
 
 interface TutorialStep {
@@ -61,7 +61,8 @@ const tutorialSteps: TutorialStep[] = [
   },
   {
     title: '快捷键',
-    description: '使用 Ctrl+Z/Ctrl+Y 撤销/重做，Ctrl+E 导出，Ctrl+I 导入。按 Ctrl+/ 查看所有快捷键。',
+    description:
+      '使用 Ctrl+Z/Ctrl+Y 撤销/重做，Ctrl+E 导出，Ctrl+I 导入。按 Ctrl+/ 查看所有快捷键。',
   },
   {
     title: '完成！',
@@ -81,19 +82,10 @@ export const WorkflowTutorial: React.FC<WorkflowTutorialProps> = ({
   onComplete,
 }) => {
   const [currentStep, setCurrentStep] = useState(0);
-  const [isCompleted, setIsCompleted] = useState(false);
 
   const step = tutorialSteps[currentStep];
   const isFirstStep = currentStep === 0;
   const isLastStep = currentStep === tutorialSteps.length - 1;
-
-  useEffect(() => {
-    // Check if tutorial has been completed before
-    const completed = localStorage.getItem('workflow-tutorial-completed');
-    if (completed) {
-      setIsCompleted(true);
-    }
-  }, []);
 
   const handleNext = () => {
     if (isLastStep) {
@@ -111,7 +103,6 @@ export const WorkflowTutorial: React.FC<WorkflowTutorialProps> = ({
 
   const handleComplete = () => {
     localStorage.setItem('workflow-tutorial-completed', 'true');
-    setIsCompleted(true);
     onComplete?.();
     onClose();
   };
@@ -145,9 +136,7 @@ export const WorkflowTutorial: React.FC<WorkflowTutorialProps> = ({
 
         {/* Content */}
         <div className="p-6">
-          <p className="text-gray-700 text-lg leading-relaxed mb-4">
-            {step.description}
-          </p>
+          <p className="text-gray-700 text-lg leading-relaxed mb-4">{step.description}</p>
 
           {step.action && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">

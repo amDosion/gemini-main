@@ -277,13 +277,13 @@ export const useWorkflowResultMedia = ({
     const dedup = new Set<string>();
     renderedResultItems.forEach((item) => {
       item.imageUrls.forEach((imageUrl) => {
-        if (imageUrl && isDirectlyRenderableImageUrl(imageUrl) && !dedup.has(imageUrl)) {
+        if (imageUrl && isDirectlyRenderableImageUrl(imageUrl)) {
           dedup.add(imageUrl);
         }
       });
     });
     mergedResultPanelPreviewImageUrls.forEach((imageUrl) => {
-      if (imageUrl && isDirectlyRenderableImageUrl(imageUrl) && !dedup.has(imageUrl)) {
+      if (imageUrl && isDirectlyRenderableImageUrl(imageUrl)) {
         dedup.add(imageUrl);
       }
     });
@@ -294,13 +294,13 @@ export const useWorkflowResultMedia = ({
     const dedup = new Set<string>();
     renderedResultItems.forEach((item) => {
       item.audioUrls.forEach((audioUrl) => {
-        if (audioUrl && isDirectlyRenderableAudioUrl(audioUrl) && !dedup.has(audioUrl)) {
+        if (audioUrl && isDirectlyRenderableAudioUrl(audioUrl)) {
           dedup.add(audioUrl);
         }
       });
     });
     resultPanelPreviewAudioUrls.forEach((audioUrl) => {
-      if (audioUrl && isDirectlyRenderableAudioUrl(audioUrl) && !dedup.has(audioUrl)) {
+      if (audioUrl && isDirectlyRenderableAudioUrl(audioUrl)) {
         dedup.add(audioUrl);
       }
     });
@@ -311,13 +311,13 @@ export const useWorkflowResultMedia = ({
     const dedup = new Set<string>();
     renderedResultItems.forEach((item) => {
       item.videoUrls.forEach((videoUrl) => {
-        if (videoUrl && isDirectlyRenderableVideoUrl(videoUrl) && !dedup.has(videoUrl)) {
+        if (videoUrl && isDirectlyRenderableVideoUrl(videoUrl)) {
           dedup.add(videoUrl);
         }
       });
     });
     resultPanelPreviewVideoUrls.forEach((videoUrl) => {
-      if (videoUrl && isDirectlyRenderableVideoUrl(videoUrl) && !dedup.has(videoUrl)) {
+      if (videoUrl && isDirectlyRenderableVideoUrl(videoUrl)) {
         dedup.add(videoUrl);
       }
     });

@@ -129,7 +129,6 @@ export const MaskCanvasPainter = memo(
     onToggleMaskInvert,
     selectionRects,
     currentSelectionRect,
-    isSelecting: _isSelecting,
     onSelectionStart,
     onSelectionMove,
     onSelectionEnd,
@@ -145,7 +144,6 @@ export const MaskCanvasPainter = memo(
     maskCanvasUrl,
     brushCursorRef,
     onBrushCursorMove,
-    maskCanvasRef: _maskCanvasRef,
     displayCanvasRef,
   }: MaskCanvasPainterProps) => {
     // 根据当前工具设置光标样式

@@ -203,9 +203,7 @@ export const ImageHistoryHoverPreviewPanel: React.FC<ImageHistoryHoverPreviewPan
                           : 'border-slate-700 hover:border-slate-500'
                       }`}
                       onClick={() => {
-                        const selectedMessage = items.find(
-                          (item) => item.id === hoverPreview.messageId
-                        );
+                        const selectedMessage = selectedPreviewMessage;
                         onSelectedMessageIdChange?.(hoverPreview.messageId);
                         if (selectedMessage) {
                           const displayAttachments = getDisplayAttachments(

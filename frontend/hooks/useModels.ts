@@ -65,17 +65,15 @@ const isImagenEditModel = (model: ModelConfig): boolean => {
 };
 
 const filterModelsForMode = (models: ModelConfig[], mode?: AppMode): ModelConfig[] => {
-  const activeModels = models.filter((model) => !deprecatedGoogleImageModels.has(model.id.toLowerCase()));
+  const activeModels = models.filter(
+    (model) => !deprecatedGoogleImageModels.has(model.id.toLowerCase())
+  );
 
   if (mode === 'image-recontext' || mode === 'product-recontext') {
     return activeModels.filter(isGeminiImageModel);
   }
 
-  if (mode === 'image-background-edit') {
-    return activeModels.filter(isImagenEditModel);
-  }
-
-  if (mode === 'image-mask-edit') {
+  if (mode === 'image-background-edit' || mode === 'image-mask-edit') {
     return activeModels.filter(isImagenEditModel);
   }
 
@@ -142,10 +140,9 @@ export const useModels = (
     setPrivateCacheResetNonce((value) => value + 1);
   }, []);
 
-  usePrivateCacheLifecycleRevision(
-    resetModelStateForPrivateScopeChange,
-    { includeCacheReset: true }
-  );
+  usePrivateCacheLifecycleRevision(resetModelStateForPrivateScopeChange, {
+    includeCacheReset: true,
+  });
 
   // 手动选择模型时打标，避免后续自动切换覆盖用户意图
   const setCurrentModelIdWithUserFlag = useCallback((id: string | ((prev: string) => string)) => {
@@ -294,11 +291,9 @@ export const useModels = (
           }
         }
       } finally {
-        if (
-          !cancelled &&
-          modeRequestId === modeRequestSeqRef.current &&
-          isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
-        ) {
+        // 同 refreshModels:本次为最新且未取消时必须清除 loading,即使结果因 lifecycle
+        // 失效被丢弃,否则 spinner 可能永久卡住。
+        if (!cancelled && modeRequestId === modeRequestSeqRef.current) {
           setIsLoadingModels(false);
         }
       }
@@ -383,10 +378,10 @@ export const useModels = (
       setCurrentModelId('');
       setModeCatalog([]);
     } finally {
-      if (
-        modeRequestId === modeRequestSeqRef.current &&
-        isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
-      ) {
+      // 只要本次是最新请求就必须清除 loading,即使结果因 lifecycle 快照失效(如切换 profile)
+      // 被丢弃也是如此 —— 否则没有后续请求接管时 spinner 会永久卡住。被更新请求取代时
+      // 由那次请求负责清除,故仍保留 seq 判断。
+      if (modeRequestId === modeRequestSeqRef.current) {
         setIsLoadingModels(false);
       }
     }

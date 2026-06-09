@@ -204,8 +204,13 @@ export abstract class BaseHandler implements ModeHandler {
               });
             },
           })
-          .catch((error) => {
-            // 捕获 Promise rejection，记录错误但不影响主流程（修复问题7）
+          .catch((error: unknown) => {
+            // 轮询启动/执行失败时让附件脱离 pending 状态，避免永久卡住（修复问题7）
+            context.onProgressUpdate?.({
+              attachmentId: attachment.id,
+              status: 'failed',
+              message: error instanceof Error ? error.message : 'polling failed',
+            });
           });
       }
     });

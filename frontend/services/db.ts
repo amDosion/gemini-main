@@ -56,24 +56,20 @@ class ApiDB {
   ): Promise<T> {
     const { timeoutMs = API_TIMEOUT, ...fetchOptions } = options || {};
 
-    try {
-      const res = await fetchWithTimeout(`${API_BASE}${endpoint}`, {
-        ...fetchOptions,
-        withAuth: true,
-        timeoutMs,
-        timeoutMessage: () => `Request timeout after ${timeoutMs}ms: ${endpoint}`,
-        abortMessage: 'Request cancelled by user',
-      });
+    const res = await fetchWithTimeout(`${API_BASE}${endpoint}`, {
+      ...fetchOptions,
+      withAuth: true,
+      timeoutMs,
+      timeoutMessage: () => `Request timeout after ${timeoutMs}ms: ${endpoint}`,
+      abortMessage: 'Request cancelled by user',
+    });
 
-      if (!res.ok) {
-        const parsedError = await parseHttpError(res, '');
-        const suffix = parsedError.message ? ` ${parsedError.message}` : '';
-        throw new Error(`API Error: ${res.status}${suffix}`);
-      }
-      return readJsonResponse<T>(res);
-    } catch (error) {
-      throw error;
+    if (!res.ok) {
+      const parsedError = await parseHttpError(res, '');
+      const suffix = parsedError.message ? ` ${parsedError.message}` : '';
+      throw new Error(`API Error: ${res.status}${suffix}`);
     }
+    return readJsonResponse<T>(res);
   }
 
   // ==================== Sessions ====================

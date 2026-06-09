@@ -110,7 +110,10 @@ export const useWorkflowExecutionStream = () => {
       };
 
       const initialConsumedState = consumeExecutionState(executeResult);
-      const initialFinalizePlan = resolveConsumedStateFinalizePlan(initialConsumedState, Date.now());
+      const initialFinalizePlan = resolveConsumedStateFinalizePlan(
+        initialConsumedState,
+        Date.now()
+      );
       if (initialFinalizePlan.kind === 'completed') {
         applyCompletedState(initialFinalizePlan.payload);
         return;
@@ -137,16 +140,16 @@ export const useWorkflowExecutionStream = () => {
       appendSystemLog('已提交执行任务，正在连接状态流...', 'info');
 
       await new Promise<void>((resolve, reject) => {
-        const eventSource = new EventSource(`/api/workflows/${encodeURIComponent(safeExecutionId)}/status`);
+        const eventSource = new EventSource(
+          `/api/workflows/${encodeURIComponent(safeExecutionId)}/status`
+        );
         let finished = false;
         let lastEventAt = Date.now();
         let pollingTimer: number | undefined;
         let hardTimeoutTimer: number | undefined;
         let pollingErrorStreak = 0;
         const isAbortLikeError = (error: unknown) =>
-          isWorkflowExecutionAbortError(error) ||
-          executionController.signal.aborted ||
-          finished;
+          isWorkflowExecutionAbortError(error) || executionController.signal.aborted || finished;
 
         const markEvent = () => {
           lastEventAt = Date.now();
@@ -267,7 +270,10 @@ export const useWorkflowExecutionStream = () => {
 
         hardTimeoutTimer = window.setTimeout(() => {
           if (finished || executionController.signal.aborted) return;
-          const timeoutMinutes = Math.max(1, Math.round(workflowExecutionPolicy.hardTimeoutMs / 60_000));
+          const timeoutMinutes = Math.max(
+            1,
+            Math.round(workflowExecutionPolicy.hardTimeoutMs / 60_000)
+          );
           const timeoutMessage = `执行超时（${timeoutMinutes}分钟），已停止实时等待并标记为已暂停；请在工作流历史中查看后续状态。`;
           void (async () => {
             try {
@@ -277,7 +283,9 @@ export const useWorkflowExecutionStream = () => {
               );
               if (finished || executionController.signal.aborted) return;
               const consumedTimeoutState = consumeExecutionState(timeoutPayload);
-              if (finalizeFromConsumedState(consumedTimeoutState, { pausedError: timeoutMessage })) {
+              if (
+                finalizeFromConsumedState(consumedTimeoutState, { pausedError: timeoutMessage })
+              ) {
                 return;
               }
             } catch (timeoutError) {
@@ -304,7 +312,8 @@ export const useWorkflowExecutionStream = () => {
 
         eventSource.onerror = () => {
           if (finished) return;
-          markEvent();
+          // 不调用 markEvent():SSE 断开时重置 idle 时钟会把首次轮询兜底推迟一整个
+          // sseIdleThresholdMs,造成断流后最长 ~15s 既无 SSE 也无轮询的状态空窗。
           eventSource.close();
           appendSystemLog('状态流连接中断，已切换到轮询兜底...', 'warn');
         };

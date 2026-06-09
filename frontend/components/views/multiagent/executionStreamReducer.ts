@@ -52,11 +52,7 @@ const normalizeSnapshot = (payload: unknown): NormalizedWorkflowSnapshot =>
   normalizeSnapshotForApply(payload) as NormalizedWorkflowSnapshot;
 
 const normalizePreviewUrls = (value: unknown): string[] =>
-  Array.isArray(value)
-    ? value
-        .map((item) => String(item || '').trim())
-        .filter(Boolean)
-    : [];
+  Array.isArray(value) ? value.map((item) => String(item || '').trim()).filter(Boolean) : [];
 
 const normalizeBoundedPreviewUrls = (value: unknown, limit: number): string[] =>
   normalizePreviewUrls(value).slice(0, Math.max(0, limit));
@@ -123,7 +119,12 @@ export const resolveConsumedStateFinalizePlan = (
   ) {
     return {
       kind: 'terminal',
-      payload: buildTerminalPayload(consumedState.normalizedPayload, consumedState.status, now, options),
+      payload: buildTerminalPayload(
+        consumedState.normalizedPayload,
+        consumedState.status,
+        now,
+        options
+      ),
     };
   }
   return { kind: 'none' };
@@ -170,7 +171,9 @@ export const executionStreamReducer = (
     case 'apply_snapshot': {
       const normalizedSnapshot = normalizeSnapshot(action.snapshot);
       const snapshotNodeRuntimes: Record<string, string> = {};
-      const nodeResults = isRecord(normalizedSnapshot?.nodeResults) ? normalizedSnapshot.nodeResults : {};
+      const nodeResults = isRecord(normalizedSnapshot?.nodeResults)
+        ? normalizedSnapshot.nodeResults
+        : {};
       Object.entries(nodeResults).forEach(([nodeId, nodeOutput]) => {
         const runtime = pickPrimaryRuntime(extractRuntimeHints(nodeOutput));
         if (runtime) {
@@ -186,9 +189,24 @@ export const executionStreamReducer = (
       );
       const snapshotPrimaryRuntime =
         normalizeRuntimeHint(
-          normalizedSnapshot?.primaryRuntime || normalizedSnapshot?.resultSummary?.primaryRuntime || ''
+          normalizedSnapshot?.primaryRuntime ||
+            normalizedSnapshot?.resultSummary?.primaryRuntime ||
+            ''
         ) || pickPrimaryRuntime(snapshotRuntimeHints);
       const mergedHints = mergeRuntimeHints(prev.runtimeHints || [], snapshotRuntimeHints);
+
+      const snapshotPreviewImageUrls = normalizeBoundedPreviewUrls(
+        normalizedSnapshot?.resultPreviewImageUrls,
+        PREVIEW_IMAGE_MAX_ENTRIES
+      );
+      const snapshotPreviewAudioUrls = normalizeBoundedPreviewUrls(
+        normalizedSnapshot?.resultPreviewAudioUrls,
+        12
+      );
+      const snapshotPreviewVideoUrls = normalizeBoundedPreviewUrls(
+        normalizedSnapshot?.resultPreviewVideoUrls,
+        12
+      );
 
       return {
         ...prev,
@@ -202,19 +220,20 @@ export const executionStreamReducer = (
           ...(normalizedSnapshot?.nodeRuntimes || {}),
         },
         runtimeHints: mergedHints,
-        finalRuntime: snapshotPrimaryRuntime || prev.finalRuntime || pickPrimaryRuntime(mergedHints),
-        resultPreviewImageUrls: normalizeBoundedPreviewUrls(
-          normalizedSnapshot?.resultPreviewImageUrls,
-          PREVIEW_IMAGE_MAX_ENTRIES
-        ).length > 0
-          ? normalizeBoundedPreviewUrls(normalizedSnapshot?.resultPreviewImageUrls, PREVIEW_IMAGE_MAX_ENTRIES)
-          : prev.resultPreviewImageUrls,
-        resultPreviewAudioUrls: normalizeBoundedPreviewUrls(normalizedSnapshot?.resultPreviewAudioUrls, 12).length > 0
-          ? normalizeBoundedPreviewUrls(normalizedSnapshot?.resultPreviewAudioUrls, 12)
-          : prev.resultPreviewAudioUrls,
-        resultPreviewVideoUrls: normalizeBoundedPreviewUrls(normalizedSnapshot?.resultPreviewVideoUrls, 12).length > 0
-          ? normalizeBoundedPreviewUrls(normalizedSnapshot?.resultPreviewVideoUrls, 12)
-          : prev.resultPreviewVideoUrls,
+        finalRuntime:
+          snapshotPrimaryRuntime || prev.finalRuntime || pickPrimaryRuntime(mergedHints),
+        resultPreviewImageUrls:
+          snapshotPreviewImageUrls.length > 0
+            ? snapshotPreviewImageUrls
+            : prev.resultPreviewImageUrls,
+        resultPreviewAudioUrls:
+          snapshotPreviewAudioUrls.length > 0
+            ? snapshotPreviewAudioUrls
+            : prev.resultPreviewAudioUrls,
+        resultPreviewVideoUrls:
+          snapshotPreviewVideoUrls.length > 0
+            ? snapshotPreviewVideoUrls
+            : prev.resultPreviewVideoUrls,
       };
     }
     case 'apply_completed': {
@@ -225,14 +244,22 @@ export const executionStreamReducer = (
       );
       const primaryRuntime =
         normalizeRuntimeHint(
-          normalizedPayload?.primaryRuntime || normalizedPayload?.resultSummary?.primaryRuntime || ''
+          normalizedPayload?.primaryRuntime ||
+            normalizedPayload?.resultSummary?.primaryRuntime ||
+            ''
         ) || pickPrimaryRuntime(runtimeHints);
       const previewImageUrls = normalizeBoundedPreviewUrls(
         normalizedPayload?.resultPreviewImageUrls,
         PREVIEW_IMAGE_MAX_ENTRIES
       );
-      const previewAudioUrls = normalizeBoundedPreviewUrls(normalizedPayload?.resultPreviewAudioUrls, 12);
-      const previewVideoUrls = normalizeBoundedPreviewUrls(normalizedPayload?.resultPreviewVideoUrls, 12);
+      const previewAudioUrls = normalizeBoundedPreviewUrls(
+        normalizedPayload?.resultPreviewAudioUrls,
+        12
+      );
+      const previewVideoUrls = normalizeBoundedPreviewUrls(
+        normalizedPayload?.resultPreviewVideoUrls,
+        12
+      );
 
       return {
         ...prev,
@@ -240,9 +267,12 @@ export const executionStreamReducer = (
         finalResult: normalizedPayload?.result,
         finalRuntime: primaryRuntime || prev.finalRuntime,
         runtimeHints: mergeRuntimeHints(prev.runtimeHints || [], runtimeHints),
-        resultPreviewImageUrls: previewImageUrls.length > 0 ? previewImageUrls : prev.resultPreviewImageUrls,
-        resultPreviewAudioUrls: previewAudioUrls.length > 0 ? previewAudioUrls : prev.resultPreviewAudioUrls,
-        resultPreviewVideoUrls: previewVideoUrls.length > 0 ? previewVideoUrls : prev.resultPreviewVideoUrls,
+        resultPreviewImageUrls:
+          previewImageUrls.length > 0 ? previewImageUrls : prev.resultPreviewImageUrls,
+        resultPreviewAudioUrls:
+          previewAudioUrls.length > 0 ? previewAudioUrls : prev.resultPreviewAudioUrls,
+        resultPreviewVideoUrls:
+          previewVideoUrls.length > 0 ? previewVideoUrls : prev.resultPreviewVideoUrls,
         finalError: undefined,
         completedAt: normalizedPayload?.completedAt || action.now,
         logs: [
@@ -250,7 +280,9 @@ export const executionStreamReducer = (
           {
             timestamp: action.now,
             nodeId: 'system',
-            message: primaryRuntime ? `工作流执行完成（runtime: ${primaryRuntime}）` : '工作流执行完成',
+            message: primaryRuntime
+              ? `工作流执行完成（runtime: ${primaryRuntime}）`
+              : '工作流执行完成',
             level: 'info',
           },
         ],

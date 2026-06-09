@@ -3,10 +3,23 @@
  * 支持 wan2.x-t2i / z-image-turbo / wan2.6-image 系列模型
  */
 import React, { useEffect, useMemo } from 'react';
-import { BrainCircuit, Palette, Ratio, Maximize2, ChevronUp, ChevronDown, Dices, Wand2, Layers } from 'lucide-react';
+import {
+  BrainCircuit,
+  Palette,
+  Ratio,
+  Maximize2,
+  ChevronUp,
+  ChevronDown,
+  Dices,
+  Wand2,
+  Layers,
+} from 'lucide-react';
 import { ControlsState } from '../../types';
 import { ModelConfig } from '../../../types/types';
-import { getPixelResolutionFromSchema, useModeControlsSchema } from '../../../hooks/useModeControlsSchema';
+import {
+  getPixelResolutionFromSchema,
+  useModeControlsSchema,
+} from '../../../hooks/useModeControlsSchema';
 import { useEnhancePromptModels } from '../../../hooks/useEnhancePromptModels';
 import PromptEnhanceControl from '../../shared/PromptEnhanceControl';
 import FeatureToggleControl from '../../shared/FeatureToggleControl';
@@ -84,7 +97,8 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = ({
   const supportsThinkingMode =
     !unsupportedParams.has('thinking_mode') && supportsBooleanParam(schema, 'thinking_mode');
   const supportsSequentialMode =
-    !unsupportedParams.has('enable_sequential') && supportsBooleanParam(schema, 'enable_sequential');
+    !unsupportedParams.has('enable_sequential') &&
+    supportsBooleanParam(schema, 'enable_sequential');
 
   const styleOptions = useMemo(
     () => (schema?.paramOptions?.style ?? []).filter((option) => typeof option.value === 'string'),
@@ -107,13 +121,18 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = ({
     (typeof defaults.number_of_images === 'number' ? defaults.number_of_images : undefined) ??
     imageCountOptions[0] ??
     1;
-  const defaultAspectRatio = typeof defaults.aspect_ratio === 'string' ? defaults.aspect_ratio : '1:1';
+  const defaultAspectRatio =
+    typeof defaults.aspect_ratio === 'string' ? defaults.aspect_ratio : '1:1';
   const defaultResolution = typeof defaults.resolution === 'string' ? defaults.resolution : '1.25K';
   const defaultSeed = typeof defaults.seed === 'number' ? defaults.seed : -1;
-  const defaultNegativePrompt = typeof defaults.negative_prompt === 'string' ? defaults.negative_prompt : '';
-  const defaultPromptExtend = typeof defaults.prompt_extend === 'boolean' ? defaults.prompt_extend : false;
-  const defaultEnhancePrompt = typeof defaults.enhance_prompt === 'boolean' ? defaults.enhance_prompt : false;
-  const defaultAddMagicSuffix = typeof defaults.add_magic_suffix === 'boolean' ? defaults.add_magic_suffix : true;
+  const defaultNegativePrompt =
+    typeof defaults.negative_prompt === 'string' ? defaults.negative_prompt : '';
+  const defaultPromptExtend =
+    typeof defaults.prompt_extend === 'boolean' ? defaults.prompt_extend : false;
+  const defaultEnhancePrompt =
+    typeof defaults.enhance_prompt === 'boolean' ? defaults.enhance_prompt : false;
+  const defaultAddMagicSuffix =
+    typeof defaults.add_magic_suffix === 'boolean' ? defaults.add_magic_suffix : true;
   const defaultThinkingMode = getBooleanDefault(schema, 'thinking_mode', true);
   const defaultEnableSequential = getBooleanDefault(schema, 'enable_sequential', false);
 
@@ -133,37 +152,43 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = ({
   const setNegativePrompt = controls?.setNegativePrompt ?? propSetNegativePrompt ?? (() => {});
   const promptExtend = controls?.promptExtend ?? propPromptExtend ?? defaultPromptExtend;
   const setPromptExtend = controls?.setPromptExtend ?? propSetPromptExtend ?? (() => {});
-  const enhancePrompt = controls?.enhancePrompt ?? propEnhancePrompt ?? promptExtend ?? defaultEnhancePrompt;
+  const enhancePrompt =
+    controls?.enhancePrompt ?? propEnhancePrompt ?? promptExtend ?? defaultEnhancePrompt;
   const setEnhancePrompt = controls?.setEnhancePrompt ?? propSetEnhancePrompt ?? setPromptExtend;
   const enhancePromptModel = controls?.enhancePromptModel ?? '';
   const setEnhancePromptModel = controls?.setEnhancePromptModel;
   const enhancePromptThinkingLevel = controls?.enhancePromptThinkingLevel ?? 'auto';
   const setEnhancePromptThinkingLevel = controls?.setEnhancePromptThinkingLevel;
-  const enhancePromptModels = useEnhancePromptModels(
-    providerId,
-    undefined,
-    { requiresVision: true, includeHidden: true }
-  );
+  const enhancePromptModels = useEnhancePromptModels(providerId, undefined, {
+    requiresVision: true,
+    includeHidden: true,
+  });
   const addMagicSuffix = controls?.addMagicSuffix ?? propAddMagicSuffix ?? defaultAddMagicSuffix;
   const setAddMagicSuffix = controls?.setAddMagicSuffix ?? propSetAddMagicSuffix ?? (() => {});
   const thinkingMode = controls?.thinkingMode ?? defaultThinkingMode;
   const setThinkingMode = controls?.setThinkingMode ?? (() => {});
-  const enableSequential = controls?.enableSequential ?? propEnableSequential ?? defaultEnableSequential;
-  const setEnableSequential = controls?.setEnableSequential ?? propSetEnableSequential ?? (() => {});
+  const enableSequential =
+    controls?.enableSequential ?? propEnableSequential ?? defaultEnableSequential;
+  const setEnableSequential =
+    controls?.setEnableSequential ?? propSetEnableSequential ?? (() => {});
 
   const maxImageCount =
-    (typeof schema?.constraints?.max_image_count === 'number' ? schema?.constraints?.max_image_count : undefined) ??
-    Math.max(...imageCountOptions, 1);
+    (typeof schema?.constraints?.max_image_count === 'number'
+      ? schema?.constraints?.max_image_count
+      : undefined) ?? Math.max(...imageCountOptions, 1);
   const minImageCount = imageCountOptions.length > 0 ? Math.min(...imageCountOptions) : 1;
   const standardMaxImageCount = supportsSequentialMode ? Math.min(maxImageCount, 4) : maxImageCount;
-  const effectiveMaxImageCount = supportsSequentialMode && enableSequential
-    ? maxImageCount
-    : standardMaxImageCount;
-  const maxSelectableImageCount = imageCountOptions.length > 0
-    ? Math.min(effectiveMaxImageCount, Math.max(...imageCountOptions))
-    : effectiveMaxImageCount;
+  const effectiveMaxImageCount =
+    supportsSequentialMode && enableSequential ? maxImageCount : standardMaxImageCount;
+  const maxSelectableImageCount =
+    imageCountOptions.length > 0
+      ? Math.min(effectiveMaxImageCount, Math.max(...imageCountOptions))
+      : effectiveMaxImageCount;
   const selectableImageCountOptions = useMemo(
-    () => imageCountOptions.filter((value) => value >= minImageCount && value <= maxSelectableImageCount),
+    () =>
+      imageCountOptions.filter(
+        (value) => value >= minImageCount && value <= maxSelectableImageCount
+      ),
     [imageCountOptions, maxSelectableImageCount, minImageCount]
   );
   const availableAspectRatios = useMemo(() => schema?.aspectRatios ?? [], [schema]);
@@ -205,7 +230,7 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = ({
 
   useEffect(() => {
     const validRatios = availableAspectRatios.map((r) => r.value);
-    if (!validRatios.includes(aspectRatio)) {
+    if (validRatios.length > 0 && !validRatios.includes(aspectRatio)) {
       setAspectRatio(validRatios[0] || defaultAspectRatio);
     }
   }, [availableAspectRatios, aspectRatio, defaultAspectRatio, setAspectRatio]);
@@ -237,23 +262,23 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = ({
         )}
 
       {supportsStyle && (
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <Palette size={12} className="text-pink-400" />
-          <span className="text-xs text-slate-300">风格</span>
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Palette size={12} className="text-pink-400" />
+            <span className="text-xs text-slate-300">风格</span>
+          </div>
+          <select
+            value={style}
+            onChange={(e) => setStyle(e.target.value)}
+            className="w-full px-3 py-2 text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-300 focus:outline-none focus:border-pink-500"
+          >
+            {styleOptions.map((s) => (
+              <option key={String(s.value)} value={String(s.value)}>
+                {s.label}
+              </option>
+            ))}
+          </select>
         </div>
-        <select
-          value={style}
-          onChange={(e) => setStyle(e.target.value)}
-          className="w-full px-3 py-2 text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-300 focus:outline-none focus:border-pink-500"
-        >
-          {styleOptions.map((s) => (
-            <option key={String(s.value)} value={String(s.value)}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      </div>
       )}
 
       {supportsSequentialMode && (
@@ -280,7 +305,9 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = ({
             <Ratio size={12} className="text-indigo-400" />
             <span className="text-xs text-slate-300">图片比例</span>
           </div>
-          {currentPixelResolution && <span className="text-[10px] text-indigo-400 font-mono">{currentPixelResolution}</span>}
+          {currentPixelResolution && (
+            <span className="text-[10px] text-indigo-400 font-mono">{currentPixelResolution}</span>
+          )}
         </div>
         <div className="grid grid-cols-2 gap-1.5">
           {availableAspectRatios.map((ratio) => (
@@ -362,56 +389,58 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = ({
             </div>
 
             {supportsNegativePrompt && (
-            <div className="space-y-2">
-              <span className="text-xs text-slate-300">负向提示词</span>
-              <textarea
-                value={negativePrompt}
-                onChange={(e) => setNegativePrompt(e.target.value)}
-                placeholder="不想出现的内容..."
-                className="w-full h-16 bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500/50"
-              />
-            </div>
+              <div className="space-y-2">
+                <span className="text-xs text-slate-300">负向提示词</span>
+                <textarea
+                  value={negativePrompt}
+                  onChange={(e) => setNegativePrompt(e.target.value)}
+                  placeholder="不想出现的内容..."
+                  className="w-full h-16 bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500/50"
+                />
+              </div>
             )}
 
             {supportsLocalPromptEnhance && (
-            <PromptEnhanceControl
-              enabled={enhancePrompt}
-              onEnabledChange={setEnhancePrompt}
-              modelId={enhancePromptModel}
-              onModelIdChange={setEnhancePromptModel}
-              modelOptions={enhancePromptModels}
-              allowAutoModel
-              thinkingLevel={enhancePromptThinkingLevel}
-              onThinkingLevelChange={setEnhancePromptThinkingLevel}
-            />
+              <PromptEnhanceControl
+                enabled={enhancePrompt}
+                onEnabledChange={setEnhancePrompt}
+                modelId={enhancePromptModel}
+                onModelIdChange={setEnhancePromptModel}
+                modelOptions={enhancePromptModels}
+                allowAutoModel
+                thinkingLevel={enhancePromptThinkingLevel}
+                onThinkingLevelChange={setEnhancePromptThinkingLevel}
+              />
             )}
 
             {supportsAddMagicSuffix && (
-            <>
-            <div className="flex items-center justify-between py-1">
-              <div className="flex items-center gap-2">
-                <Wand2 size={12} className="text-pink-400" />
-                <span className="text-xs text-slate-300">魔法词组</span>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={addMagicSuffix}
-                aria-label="魔法词组"
-                onClick={() => setAddMagicSuffix(!addMagicSuffix)}
-                className={`w-10 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-200 ${
-                  addMagicSuffix ? 'bg-pink-600' : 'bg-slate-600'
-                }`}
-              >
-                <span
-                  className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
-                    addMagicSuffix ? 'translate-x-4' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-            </div>
-            <p className="text-[10px] text-slate-500 mt-1">自动添加"超清，4K，电影级构图"等质量增强词</p>
-            </>
+              <>
+                <div className="flex items-center justify-between py-1">
+                  <div className="flex items-center gap-2">
+                    <Wand2 size={12} className="text-pink-400" />
+                    <span className="text-xs text-slate-300">魔法词组</span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={addMagicSuffix}
+                    aria-label="魔法词组"
+                    onClick={() => setAddMagicSuffix(!addMagicSuffix)}
+                    className={`w-10 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-200 ${
+                      addMagicSuffix ? 'bg-pink-600' : 'bg-slate-600'
+                    }`}
+                  >
+                    <span
+                      className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
+                        addMagicSuffix ? 'translate-x-4' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  自动添加"超清，4K，电影级构图"等质量增强词
+                </p>
+              </>
             )}
 
             {supportsThinkingMode && !enableSequential && (

@@ -1,6 +1,6 @@
 /**
  * Google 图像编辑控件（仅 Panel 模式）
- * 
+ *
  * 用于右侧参数面板，通过 ModeControlsCoordinator 分发
  */
 import React, { useEffect, useMemo } from 'react';
@@ -9,13 +9,15 @@ import { ImageEditControlsProps } from '../../types';
 import PromptEnhanceControl from '../../shared/PromptEnhanceControl';
 import ThinkingControl from '../../shared/ThinkingControl';
 import { useEnhancePromptModels } from '../../../hooks/useEnhancePromptModels';
-import { getPixelResolutionFromSchema, useModeControlsSchema } from '../../../hooks/useModeControlsSchema';
+import {
+  getPixelResolutionFromSchema,
+  useModeControlsSchema,
+} from '../../../hooks/useModeControlsSchema';
 
 export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   providerId = 'google',
   mode = 'image-edit',
   controls,
-  availableModels = [],
   maxImageCount: propMaxImageCount,
   // 单独 props（向后兼容）
   numberOfImages: propNumberOfImages,
@@ -37,10 +39,14 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
     [schema]
   );
   const outputMimeOptions = useMemo(
-    () => (schema?.paramOptions?.output_mime_type ?? []).filter((option) => typeof option.value === 'string'),
+    () =>
+      (schema?.paramOptions?.output_mime_type ?? []).filter(
+        (option) => typeof option.value === 'string'
+      ),
     [schema]
   );
-  const schemaMaxImageCountValue = schema?.constraints?.['max_image_count'] ?? schema?.constraints?.['maxImageCount'];
+  const schemaMaxImageCountValue =
+    schema?.constraints?.['max_image_count'] ?? schema?.constraints?.['maxImageCount'];
   const schemaMaxImageCount =
     typeof schemaMaxImageCountValue === 'number' ? schemaMaxImageCountValue : undefined;
   const maxImageCount = schemaMaxImageCount ?? propMaxImageCount ?? 4;
@@ -50,14 +56,16 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
     (typeof defaults.number_of_images === 'number' ? defaults.number_of_images : undefined) ??
     imageCountOptions[0] ??
     1;
-  const defaultAspectRatio = typeof defaults.aspect_ratio === 'string' ? defaults.aspect_ratio : '1:1';
+  const defaultAspectRatio =
+    typeof defaults.aspect_ratio === 'string' ? defaults.aspect_ratio : '1:1';
   const defaultResolution = typeof defaults.resolution === 'string' ? defaults.resolution : '1K';
   const validImageCountOptions = useMemo(
     () => imageCountOptions.filter((n) => n <= maxImageCount),
     [imageCountOptions, maxImageCount]
   );
   const minImageCount = validImageCountOptions[0] ?? 1;
-  const maxSelectableImageCount = validImageCountOptions[validImageCountOptions.length - 1] ?? maxImageCount;
+  const maxSelectableImageCount =
+    validImageCountOptions[validImageCountOptions.length - 1] ?? maxImageCount;
   const showRecontextCountHint = mode === 'image-recontext' || mode === 'product-recontext';
   const supportsOutputMimeControls = !showRecontextCountHint;
 
@@ -70,16 +78,12 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   const setResolution = controls?.setResolution ?? propSetResolution ?? (() => {});
   const showAdvanced = controls?.showAdvanced ?? propShowAdvanced ?? false;
   const setShowAdvanced = controls?.setShowAdvanced ?? propSetShowAdvanced ?? (() => {});
-  const availableRatios = useMemo(() => {
-    return schema?.aspectRatios ?? [];
-  }, [schema]);
-  const availableResolutionTiers = useMemo(() => {
-    return schema?.resolutionTiers ?? [];
-  }, [schema]);
+  const availableRatios = useMemo(() => schema?.aspectRatios ?? [], [schema]);
+  const availableResolutionTiers = useMemo(() => schema?.resolutionTiers ?? [], [schema]);
   const enhancePromptModels = useEnhancePromptModels(providerId);
   const enhancePromptModel = controls?.enhancePromptModel ?? '';
   const setEnhancePromptModel = controls?.setEnhancePromptModel;
-  
+
   // 计算当前像素分辨率
   const currentPixelResolution = useMemo(() => {
     const schemaPixelRes = getPixelResolutionFromSchema(schema, aspectRatio, resolution);
@@ -141,7 +145,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
           比例/分辨率配置加载失败，请检查后端 `mode_controls_catalog.json`。
         </div>
       )}
-      
+
       {/* 图片比例 + 分辨率联动 */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
@@ -205,7 +209,9 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
               <Layers size={12} className="text-blue-400 flex-shrink-0" />
               <span className="text-xs text-slate-300 flex-shrink-0">生成数量</span>
               {showRecontextCountHint && (
-                <span className="text-[10px] text-slate-500 truncate">模型可能不会返回需求数量的图片</span>
+                <span className="text-[10px] text-slate-500 truncate">
+                  模型可能不会返回需求数量的图片
+                </span>
               )}
             </div>
             <span className="text-xs text-blue-400 font-mono font-bold">{numberOfImages}</span>
@@ -250,7 +256,9 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                     {outputMimeOptions.map((opt) => (
                       <button
                         key={String(opt.value)}
-                        onClick={() => typeof opt.value === 'string' && controls.setOutputMimeType(opt.value)}
+                        onClick={() =>
+                          typeof opt.value === 'string' && controls.setOutputMimeType(opt.value)
+                        }
                         className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
                           controls.outputMimeType === opt.value
                             ? 'bg-cyan-600 text-white'
@@ -269,7 +277,9 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-slate-300">压缩质量</span>
-                    <span className="text-xs text-pink-400 font-mono">{controls.outputCompressionQuality}%</span>
+                    <span className="text-xs text-pink-400 font-mono">
+                      {controls.outputCompressionQuality}%
+                    </span>
                   </div>
                   <input
                     type="range"

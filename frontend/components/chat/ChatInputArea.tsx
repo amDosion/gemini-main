@@ -2,7 +2,16 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ChatOptions, ModelConfig, Attachment, AppMode, Persona } from '../../types/types';
 import { v4 as uuidv4 } from 'uuid';
 import { fileToBase64, isBlobUrl } from '../../hooks/handlers/attachmentUtils';
-import { Paperclip, StopCircle, Send, Youtube, Link as LinkIcon, X, Check, Upload } from 'lucide-react';
+import {
+  Paperclip,
+  StopCircle,
+  Send,
+  Youtube,
+  Link as LinkIcon,
+  X,
+  Check,
+  Upload,
+} from 'lucide-react';
 import { useDragDrop } from '../../hooks/useDragDrop';
 import { useClipboardAttachments } from '../../hooks/useClipboardAttachments';
 import { isThinkingCapableModel } from '../../utils/modelSuitability';
@@ -39,10 +48,17 @@ interface ChatInputAreaProps {
 }
 
 const ChatInputArea: React.FC<ChatInputAreaProps> = ({
-  onSend, isLoading, onStop, currentModel,
+  onSend,
+  isLoading,
+  onStop,
+  currentModel,
   visibleModels = [],
-  mode, initialPrompt, initialAttachments,
-  activeAttachments, onAttachmentsChange, hasActiveContext,
+  mode,
+  initialPrompt,
+  initialAttachments,
+  activeAttachments,
+  onAttachmentsChange,
+  hasActiveContext,
   personas = [],
   activePersonaId = '',
   onSelectPersona,
@@ -54,13 +70,14 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
 }) => {
   const [input, setInput] = useState('');
   const [localAttachments, setLocalAttachments] = useState<Attachment[]>([]);
-  const attachmentAccept = 'image/*,video/*,audio/*,application/pdf,text/plain,text/csv,text/html,application/json';
-  
+  const attachmentAccept =
+    'image/*,video/*,audio/*,application/pdf,text/plain,text/csv,text/html,application/json';
+
   // Refs for input components
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   // Link Input State
   const [showLinkInput, setShowLinkInput] = useState(false);
   const [linkValue, setLinkValue] = useState('');
@@ -107,7 +124,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     if (initialAttachments !== undefined) {
       updateAttachments(initialAttachments);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mount-only seed
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mount-only seed
   }, []);
 
   // File handling
@@ -128,7 +145,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     mode: 'chat',
     currentAttachmentCount: attachments.length,
     onFilesDropped: handleFilesDropped,
-    disabled: isLoading
+    disabled: isLoading,
   });
 
   // Auto-resize textarea
@@ -155,52 +172,57 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
   const renderHighlights = (text: string) => {
     const regex = /(\[.*?\])/g;
     const parts = text.split(regex);
-    
+
     return parts.map((part, i) => {
       if (part.match(regex)) {
-        return <span key={i} className="bg-indigo-500/30 text-indigo-300 font-medium rounded-sm shadow-[0_0_0_1px_rgba(99,102,241,0.4)]">{part}</span>;
+        return (
+          <span
+            key={i}
+            className="bg-indigo-500/30 text-indigo-300 font-medium rounded-sm shadow-[0_0_0_1px_rgba(99,102,241,0.4)]"
+          >
+            {part}
+          </span>
+        );
       }
       return <span key={i}>{part}</span>;
     });
   };
 
-  const handleLinkSubmit = () => {
-    if (linkValue && handleAddLink) {
-      handleAddLink(linkValue);
-      setLinkValue('');
-      setShowLinkInput(false);
+  const handleAddLink = (url: string) => {
+    if (!url) return;
+    const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
+    const newAttachment: Attachment = {
+      id: uuidv4(),
+      mimeType: isYouTube ? 'video/external' : 'text/link',
+      fileUri: url,
+      name: isYouTube ? 'YouTube Video' : 'Link',
+      url: url,
+    };
+    updateAttachments([...attachments, newAttachment]);
+
+    if (!isYouTube && !controls.enableUrlContext) {
+      controls.setEnableUrlContext(true);
     }
   };
 
-  const handleAddLink = (url: string) => {
-    if (url) {
-      const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
-      const newAttachment: Attachment = {
-        id: uuidv4(),
-        mimeType: isYouTube ? 'video/external' : 'text/link',
-        fileUri: url,
-        name: isYouTube ? 'YouTube Video' : 'Link',
-        url: url
-      };
-      updateAttachments([...attachments, newAttachment]);
-
-      if (!isYouTube && !controls.enableUrlContext) {
-        controls.setEnableUrlContext(true);
-      }
-    }
+  const handleLinkSubmit = () => {
+    if (!linkValue) return;
+    handleAddLink(linkValue);
+    setLinkValue('');
+    setShowLinkInput(false);
   };
 
   const removeAttachment = (id: string) => {
-    const attachmentToRemove = attachments.find(att => att.id === id);
+    const attachmentToRemove = attachments.find((att) => att.id === id);
     revokeAttachmentObjectUrls(attachmentToRemove);
-    updateAttachments(attachments.filter(att => att.id !== id));
+    updateAttachments(attachments.filter((att) => att.id !== id));
   };
 
   // Cleanup Blob URLs when component unmounts
   // Revoke blob URLs only on unmount, not on every attachment change
   useEffect(() => {
     return () => {
-      attachmentsRef.current.forEach(att => {
+      attachmentsRef.current.forEach((att) => {
         revokeAttachmentObjectUrls(att);
       });
     };
@@ -248,7 +270,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
       imageResolution: '1024x1024',
       numberOfImages: 1,
     };
-    
+
     onSend(input, chatOptions, processedAttachments, mode);
 
     setInput('');
@@ -260,46 +282,43 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
       {/* 工具栏 - 居中显示 */}
       <div className="flex justify-center">
         <ChatControls
-        currentModel={currentModel}
-        enableSearch={controls.enableSearch}
-        setEnableSearch={controls.setEnableSearch}
-        enableThinking={controls.enableThinking}
-        setEnableThinking={controls.setEnableThinking}
-        enableCodeExecution={controls.enableCodeExecution}
-        setEnableCodeExecution={controls.setEnableCodeExecution}
-        enableUrlContext={controls.enableUrlContext}
-        setEnableUrlContext={controls.setEnableUrlContext}
-        enableBrowser={controls.enableBrowser}
-        setEnableBrowser={controls.setEnableBrowser}
-        enableRAG={controls.enableRAG}
-        setEnableRAG={controls.setEnableRAG}
-        enableEnhancedRetrieval={controls.enableEnhancedRetrieval}
-        setEnableEnhancedRetrieval={controls.setEnableEnhancedRetrieval}
-        enableDeepResearch={controls.enableDeepResearch}
-        setEnableDeepResearch={controls.setEnableDeepResearch}
-        enableAutoDeepResearch={controls.enableAutoDeepResearch}
-        setEnableAutoDeepResearch={controls.setEnableAutoDeepResearch}
-        deepResearchAgentId={controls.deepResearchAgentId}
-        setDeepResearchAgentId={controls.setDeepResearchAgentId}
-        deepResearchModelCandidates={deepResearchModelCandidates}
-        googleCacheMode={controls.googleCacheMode}
-        setGoogleCacheMode={controls.setGoogleCacheMode}
-        personas={personas}
-        activePersonaId={activePersonaId}
-        onSelectPersona={onSelectPersona}
-        selectedMcpServerKey={controls.selectedMcpServerKey}
-        setSelectedMcpServerKey={controls.setSelectedMcpServerKey}
-      />
+          currentModel={currentModel}
+          enableSearch={controls.enableSearch}
+          setEnableSearch={controls.setEnableSearch}
+          enableThinking={controls.enableThinking}
+          setEnableThinking={controls.setEnableThinking}
+          enableCodeExecution={controls.enableCodeExecution}
+          setEnableCodeExecution={controls.setEnableCodeExecution}
+          enableUrlContext={controls.enableUrlContext}
+          setEnableUrlContext={controls.setEnableUrlContext}
+          enableBrowser={controls.enableBrowser}
+          setEnableBrowser={controls.setEnableBrowser}
+          enableRAG={controls.enableRAG}
+          setEnableRAG={controls.setEnableRAG}
+          enableEnhancedRetrieval={controls.enableEnhancedRetrieval}
+          setEnableEnhancedRetrieval={controls.setEnableEnhancedRetrieval}
+          enableDeepResearch={controls.enableDeepResearch}
+          setEnableDeepResearch={controls.setEnableDeepResearch}
+          enableAutoDeepResearch={controls.enableAutoDeepResearch}
+          setEnableAutoDeepResearch={controls.setEnableAutoDeepResearch}
+          deepResearchAgentId={controls.deepResearchAgentId}
+          setDeepResearchAgentId={controls.setDeepResearchAgentId}
+          deepResearchModelCandidates={deepResearchModelCandidates}
+          googleCacheMode={controls.googleCacheMode}
+          setGoogleCacheMode={controls.setGoogleCacheMode}
+          personas={personas}
+          activePersonaId={activePersonaId}
+          onSelectPersona={onSelectPersona}
+          selectedMcpServerKey={controls.selectedMcpServerKey}
+          setSelectedMcpServerKey={controls.setSelectedMcpServerKey}
+        />
       </div>
 
       {/* 附件预览 */}
-      <AttachmentPreview
-        attachments={attachments}
-        removeAttachment={removeAttachment}
-      />
+      <AttachmentPreview attachments={attachments} removeAttachment={removeAttachment} />
 
       {/* 输入框 - Chat 专用实现 */}
-      <div 
+      <div
         className={`relative flex items-end gap-2 bg-slate-800/80 backdrop-blur-xl border rounded-3xl p-2 shadow-2xl transition-all duration-300 ${
           dragDrop.isDragging
             ? dragDrop.isValidDrop
@@ -318,29 +337,31 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
         {dragDrop.isDragging && (
           <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm rounded-3xl z-30 pointer-events-none">
             <div className="flex flex-col items-center gap-2">
-              <Upload 
-                size={32} 
-                className={dragDrop.isValidDrop ? 'text-blue-400' : 'text-red-400'} 
+              <Upload
+                size={32}
+                className={dragDrop.isValidDrop ? 'text-blue-400' : 'text-red-400'}
               />
-              <p className={`text-sm font-medium ${dragDrop.isValidDrop ? 'text-blue-300' : 'text-red-300'}`}>
+              <p
+                className={`text-sm font-medium ${dragDrop.isValidDrop ? 'text-blue-300' : 'text-red-300'}`}
+              >
                 {dragDrop.isValidDrop ? '释放文件以上传' : dragDrop.errorMessage}
               </p>
             </div>
           </div>
         )}
 
-        <input 
-          type="file" 
+        <input
+          type="file"
           id="chat-file-input"
           name="chat-file-input"
-          ref={fileInputRef} 
-          onChange={handleFileSelect} 
-          className="hidden" 
+          ref={fileInputRef}
+          onChange={handleFileSelect}
+          className="hidden"
           multiple={true}
           accept={attachmentAccept}
         />
-        
-        <button 
+
+        <button
           onClick={() => fileInputRef.current?.click()}
           className="p-3 rounded-full transition-all duration-300 mb-0.5 text-slate-400 hover:text-white hover:bg-slate-700"
           title="Attach File (Image, Video, Audio, PDF, Text)"
@@ -352,9 +373,11 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
         <div className="relative flex items-center">
           {showLinkInput ? (
             <div className="absolute bottom-0 left-0 flex items-center gap-1 bg-slate-900 border border-slate-600 p-1 rounded-full shadow-xl animate-[fadeIn_0.2s_ease-out] z-20 w-64">
-              <div className="pl-3 pr-2 text-slate-400"><LinkIcon size={14} /></div>
-              <input 
-                type="text" 
+              <div className="pl-3 pr-2 text-slate-400">
+                <LinkIcon size={14} />
+              </div>
+              <input
+                type="text"
                 id="youtube-link-input"
                 name="youtube-link-input"
                 value={linkValue}
@@ -364,15 +387,21 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                 autoFocus
                 onKeyDown={(e) => e.key === 'Enter' && handleLinkSubmit()}
               />
-              <button onClick={handleLinkSubmit} className="p-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full">
+              <button
+                onClick={handleLinkSubmit}
+                className="p-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full"
+              >
                 <Check size={12} />
               </button>
-              <button onClick={() => setShowLinkInput(false)} className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-full">
+              <button
+                onClick={() => setShowLinkInput(false)}
+                className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-full"
+              >
                 <X size={12} />
               </button>
             </div>
           ) : (
-            <button 
+            <button
               onClick={() => setShowLinkInput(true)}
               className="p-3 rounded-full transition-all duration-300 mb-0.5 text-slate-400 hover:text-white hover:bg-slate-700"
               title="Add YouTube Link"
@@ -385,7 +414,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
         {/* Input Container */}
         <div className="relative flex-1 min-w-0">
           {/* Backdrop for Highlighting */}
-          <div 
+          <div
             ref={backdropRef}
             className="absolute inset-0 w-full h-full p-3 text-sm font-sans leading-relaxed whitespace-pre-wrap break-words overflow-hidden pointer-events-none text-slate-200"
             aria-hidden="true"
@@ -411,15 +440,15 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
             placeholder="Message Gemini... (Attach PDFs, Images, etc.)"
             className="relative z-10 w-full bg-transparent border-none resize-y min-h-[44px] max-h-[400px] p-3 text-sm font-sans leading-relaxed focus:ring-0 scrollbar-hide outline-none text-transparent caret-white selection:bg-indigo-500/30 selection:text-white placeholder:text-slate-500"
             rows={1}
-            style={{ 
-              color: input ? 'transparent' : undefined, 
+            style={{
+              color: input ? 'transparent' : undefined,
             }}
             spellCheck={false}
           />
         </div>
 
         {isLoading ? (
-          <button 
+          <button
             onClick={onStop}
             aria-label="Stop generation"
             className="p-3 rounded-full bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all hover:scale-105 active:scale-95 mb-0.5"
@@ -427,12 +456,12 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
             <StopCircle size={20} />
           </button>
         ) : (
-          <button 
+          <button
             onClick={handleSend}
             aria-label="Send message"
             disabled={!input.trim() && attachments.length === 0 && !hasActiveContext}
             className={`p-3 rounded-full transition-all duration-300 shadow-lg mb-0.5 ${
-              (!input.trim() && attachments.length === 0 && !hasActiveContext)
+              !input.trim() && attachments.length === 0 && !hasActiveContext
                 ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
                 : 'bg-indigo-600 hover:bg-indigo-500 text-white hover:shadow-indigo-500/25 hover:scale-105 active:scale-95'
             }`}

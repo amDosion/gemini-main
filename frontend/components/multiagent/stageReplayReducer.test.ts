@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  createInitialStageReplayState,
-  stageReplayReducer,
-} from './stageReplayReducer';
+import { createInitialStageReplayState, stageReplayReducer } from './stageReplayReducer';
 import type { StageReplayContext, StageReplayResult } from './stageReplayService';
 
 const buildContext = (overrides: Partial<StageReplayContext> = {}): StageReplayContext => ({
@@ -128,6 +125,10 @@ describe('stageReplayReducer', () => {
       type: 'select_anchor',
       anchorId: 'anchor-blocked',
     });
+
+    // 选中被阻止的锚点本身就应进入 failed(而非 ready),标签才不会与 blockedReason 矛盾。
+    expect(selectedBlocked.status).toBe('failed');
+    expect(selectedBlocked.errorMessage).toBe('blocked');
 
     const next = stageReplayReducer(selectedBlocked, { type: 'start_replay' });
 

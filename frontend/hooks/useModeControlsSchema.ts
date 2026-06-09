@@ -6,10 +6,7 @@ import {
   isPrivateCacheLifecycleSnapshotCurrent,
   registerPrivateCacheResetHandler,
 } from '../services/privateCacheInvalidation';
-import {
-  getPrivateCacheUserScope,
-  scopedPrivateCacheKey,
-} from '../services/privateCacheScope';
+import { getPrivateCacheUserScope, scopedPrivateCacheKey } from '../services/privateCacheScope';
 import { usePrivateCacheLifecycleRevision } from './usePrivateCacheScopeRevision';
 
 type ResolutionMap = Record<string, Record<string, string>>;
@@ -631,18 +628,23 @@ export function useModeControlsSchema(
   );
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  usePrivateCacheLifecycleRevision(() => {
-    setSchema(null);
-    setLoading(false);
-    setError(null);
-  }, { includeCacheReset: true });
+  usePrivateCacheLifecycleRevision(
+    () => {
+      setSchema(null);
+      setLoading(false);
+      setError(null);
+    },
+    { includeCacheReset: true }
+  );
 
   useEffect(() => {
     if (!providerId || !enabled) {
-      // 未配置 provider 或 调用方明确禁用 → 跳过 fetch（保留已 cache 的 schema 不变）
+      // 未配置 provider 或 调用方明确禁用 → 跳过 fetch。无论哪种情况都不再 loading,
+      // 否则 enabled 在 in-flight 期间翻转为 false 会让 loading 永久卡在 true。
+      // 仅在 !providerId 时清空 schema;!enabled 保留已 cache 的 schema 不变。
+      setLoading(false);
       if (!providerId) {
         setSchema(null);
-        setLoading(false);
         setError(null);
       }
       return;

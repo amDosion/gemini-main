@@ -149,10 +149,7 @@ export const ToolNodeConfigPanel: React.FC<ToolNodeConfigPanelProps> = ({
         const currentModelId = String(nodeData.toolModelId || '').trim();
 
         if (currentProviderId) {
-          const currentModel = toolModelSelection.findModelById(
-            currentProviderId,
-            currentModelId
-          );
+          const currentModel = toolModelSelection.findModelById(currentProviderId, currentModelId);
           if (!modelSupportsTask(currentModel, targetTask)) {
             const fallback = toolModelSelection.pickCompatibleModel(currentProviderId, targetTask);
             updates.toolModelId = fallback?.id || '';
@@ -200,30 +197,30 @@ export const ToolNodeConfigPanel: React.FC<ToolNodeConfigPanelProps> = ({
       updateNodeData({ toolArgsTemplate: JSON.stringify({ ...current, ...patch }) });
     };
 
-    const amazonArgs = parseToolArgs();
+    const toolArgs = parseToolArgs();
+    const amazonArgs = toolArgs;
     const amazonTargetAcosRaw = amazonArgs.targetAcos ?? '';
     const amazonTargetAcosValue =
       typeof amazonTargetAcosRaw === 'number'
         ? String(amazonTargetAcosRaw > 1 ? amazonTargetAcosRaw : amazonTargetAcosRaw * 100)
         : String(amazonTargetAcosRaw || '').replace('%', '');
-    const promptOptimizeArgs = parseToolArgs();
-    const promptOptimizePromptValue = String(promptOptimizeArgs.prompt ?? '');
-    const promptOptimizeGoalValue = String(promptOptimizeArgs.goal ?? '');
-    const promptOptimizeStyleValue = String(promptOptimizeArgs.style ?? '');
-    const promptOptimizeLanguageValue = String(promptOptimizeArgs.language ?? 'auto');
-    const promptOptimizeLengthValue = String(promptOptimizeArgs.length ?? 'medium');
-    const promptOptimizeMustKeepValue = Array.isArray(promptOptimizeArgs.must_keep)
-      ? promptOptimizeArgs.must_keep.join(', ')
-      : String(promptOptimizeArgs.must_keep ?? '');
-    const promptOptimizeAvoidValue = Array.isArray(promptOptimizeArgs.avoid)
-      ? promptOptimizeArgs.avoid.join(', ')
-      : String(promptOptimizeArgs.avoid ?? '');
-    const promptOptimizeRequirementsValue = String(promptOptimizeArgs.requirements ?? '');
-    const videoPromptValue = String(parseToolArgs().prompt ?? '');
-    const videoUnderstandOutputFormatValue = String(parseToolArgs().output_format ?? 'markdown');
-    const videoDeleteProviderFileNameValue = String(parseToolArgs().provider_file_name ?? '');
-    const videoDeleteProviderFileUriValue = String(parseToolArgs().provider_file_uri ?? '');
-    const videoDeleteGcsUriValue = String(parseToolArgs().gcs_uri ?? '');
+    const promptOptimizePromptValue = String(toolArgs.prompt ?? '');
+    const promptOptimizeGoalValue = String(toolArgs.goal ?? '');
+    const promptOptimizeStyleValue = String(toolArgs.style ?? '');
+    const promptOptimizeLanguageValue = String(toolArgs.language ?? 'auto');
+    const promptOptimizeLengthValue = String(toolArgs.length ?? 'medium');
+    const promptOptimizeMustKeepValue = Array.isArray(toolArgs.must_keep)
+      ? toolArgs.must_keep.join(', ')
+      : String(toolArgs.must_keep ?? '');
+    const promptOptimizeAvoidValue = Array.isArray(toolArgs.avoid)
+      ? toolArgs.avoid.join(', ')
+      : String(toolArgs.avoid ?? '');
+    const promptOptimizeRequirementsValue = String(toolArgs.requirements ?? '');
+    const videoPromptValue = String(toolArgs.prompt ?? '');
+    const videoUnderstandOutputFormatValue = String(toolArgs.output_format ?? 'markdown');
+    const videoDeleteProviderFileNameValue = String(toolArgs.provider_file_name ?? '');
+    const videoDeleteProviderFileUriValue = String(toolArgs.provider_file_uri ?? '');
+    const videoDeleteGcsUriValue = String(toolArgs.gcs_uri ?? '');
 
     return (
       <div className="space-y-4">

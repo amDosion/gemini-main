@@ -68,11 +68,7 @@ const mediaCacheKey = (
     userScope
   );
 
-const prunePrefix = (
-  prefix: string,
-  maxEntries: number,
-  protectedKeys: string[] = []
-): void => {
+const prunePrefix = (prefix: string, maxEntries: number, protectedKeys: string[] = []): void => {
   const protectedSet = new Set(protectedKeys.filter(Boolean));
   const entries = cacheManager.getEntriesByPrefix<{ updatedAt?: number }>(prefix);
   if (entries.length <= maxEntries) return;
@@ -93,8 +89,7 @@ const isWorkflowPreviewRequestCurrent = (
   generationAtStart: number,
   requestScope: string
 ): boolean =>
-  generationAtStart === cacheClearGeneration &&
-  getPrivateCacheUserScope() === requestScope;
+  generationAtStart === cacheClearGeneration && getPrivateCacheUserScope() === requestScope;
 
 const emptyWorkflowPreviewImagesMeta = (): WorkflowPreviewImagesMeta => ({
   imageUrls: [],
@@ -111,9 +106,7 @@ const emptyWorkflowPreviewMediaMeta = (
   count: 0,
 });
 
-const normalizeWorkflowPreviewMediaItems = (
-  items: unknown
-): WorkflowHistoryMediaPreviewItem[] => {
+const normalizeWorkflowPreviewMediaItems = (items: unknown): WorkflowHistoryMediaPreviewItem[] => {
   if (!Array.isArray(items)) return [];
   return items
     .map((item) => {
@@ -205,8 +198,10 @@ export const getWorkflowPreviewImagesWithCache = async (
   if (existing) return existing;
 
   const generationAtStart = cacheClearGeneration;
-  let promise: Promise<WorkflowPreviewImagesMeta>;
-  promise = fetchWorkflowPreviewImagesWithMeta(safeExecutionId, safeLimit)
+  const promise: Promise<WorkflowPreviewImagesMeta> = fetchWorkflowPreviewImagesWithMeta(
+    safeExecutionId,
+    safeLimit
+  )
     .then((result) => {
       if (!isWorkflowPreviewRequestCurrent(generationAtStart, requestScope)) {
         return emptyWorkflowPreviewImagesMeta();
@@ -238,7 +233,9 @@ export const readWorkflowPreviewMediaCacheEntry = (
 ): WorkflowPreviewMediaCacheEntry | null => {
   const safeExecutionId = normalizeId(executionId);
   if (!safeExecutionId) return null;
-  return cacheManager.get<WorkflowPreviewMediaCacheEntry>(mediaCacheKey(safeExecutionId, mediaKind));
+  return cacheManager.get<WorkflowPreviewMediaCacheEntry>(
+    mediaCacheKey(safeExecutionId, mediaKind)
+  );
 };
 
 export const writeWorkflowPreviewMediaCacheEntry = (
@@ -307,8 +304,11 @@ export const getWorkflowPreviewMediaWithCache = async (
   if (existing) return existing;
 
   const generationAtStart = cacheClearGeneration;
-  let promise: Promise<WorkflowHistoryMediaPreviewMeta>;
-  promise = fetchWorkflowPreviewMediaWithMeta(safeExecutionId, mediaKind, safeLimit)
+  const promise: Promise<WorkflowHistoryMediaPreviewMeta> = fetchWorkflowPreviewMediaWithMeta(
+    safeExecutionId,
+    mediaKind,
+    safeLimit
+  )
     .then((result) => {
       if (!isWorkflowPreviewRequestCurrent(generationAtStart, requestScope)) {
         return emptyWorkflowPreviewMediaMeta(mediaKind);

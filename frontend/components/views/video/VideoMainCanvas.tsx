@@ -128,6 +128,12 @@ const VideoMainCanvasComponent: React.FC<VideoMainCanvasProps> = ({
   initialPrompt,
   videoControlsStatusMessage,
 }) => {
+  const handleTogglePlaybackClick = React.useCallback(() => {
+    void toggleActiveVideoPlayback();
+  }, [toggleActiveVideoPlayback]);
+  const handleToggleFullscreenClick = React.useCallback(() => {
+    void handleToggleFullscreen();
+  }, [handleToggleFullscreen]);
   return (
     <div className="flex-1 flex flex-row h-full">
       <div className="flex-1 flex flex-col items-center justify-center p-8 overflow-hidden bg-slate-950 relative">
@@ -194,12 +200,8 @@ const VideoMainCanvasComponent: React.FC<VideoMainCanvasProps> = ({
                 playsInline
                 preload="metadata"
                 className="h-full w-full object-contain shadow-2xl"
-                onClick={() => {
-                  void toggleActiveVideoPlayback();
-                }}
-                onDoubleClick={() => {
-                  void handleToggleFullscreen();
-                }}
+                onClick={handleTogglePlaybackClick}
+                onDoubleClick={handleToggleFullscreenClick}
                 onPlay={() => setIsVideoPlaying(true)}
                 onPause={() => {
                   setIsVideoPlaying(false);
@@ -242,9 +244,7 @@ const VideoMainCanvasComponent: React.FC<VideoMainCanvasProps> = ({
 
               <button
                 type="button"
-                onClick={() => {
-                  void toggleActiveVideoPlayback();
-                }}
+                onClick={handleTogglePlaybackClick}
                 className="absolute inset-0 z-10 flex items-center justify-center"
                 aria-label={isVideoPlaying ? '暂停视频' : '播放视频'}
                 title={isVideoPlaying ? '暂停视频' : '播放视频'}
@@ -269,9 +269,7 @@ const VideoMainCanvasComponent: React.FC<VideoMainCanvasProps> = ({
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => {
-                    void toggleActiveVideoPlayback();
-                  }}
+                  onClick={handleTogglePlaybackClick}
                   className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-100 hover:border-slate-500 hover:bg-slate-800 transition-colors"
                   title={isVideoPlaying ? '暂停视频' : '播放视频'}
                   aria-label={isVideoPlaying ? '暂停视频' : '播放视频'}
@@ -341,9 +339,7 @@ const VideoMainCanvasComponent: React.FC<VideoMainCanvasProps> = ({
                 />
                 <button
                   type="button"
-                  onClick={() => {
-                    void handleToggleFullscreen();
-                  }}
+                  onClick={handleToggleFullscreenClick}
                   className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-100 hover:border-slate-500 hover:bg-slate-800 transition-colors"
                   title={isVideoFullscreen ? '退出全屏' : '全屏播放'}
                   aria-label={isVideoFullscreen ? '退出全屏' : '全屏播放'}

@@ -2,31 +2,13 @@
  * Properties Panel Component (Dark Theme)
  */
 
-import { reportError } from '../../utils/globalErrorHandler';
 import React from 'react';
 import { Node } from 'reactflow';
-import {
-  X,
-  RefreshCw,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Loader2,
-  Info,
-  Trash2,
-  Upload,
-  Image as ImageIcon,
-  FileSpreadsheet,
-  Video,
-  Mic,
-} from 'lucide-react';
+import { X, RefreshCw, CheckCircle2, XCircle, Clock, Loader2, Trash2 } from 'lucide-react';
 import { CustomNodeData } from './CustomNode';
 import { nodeTypeConfigs, NodeType } from './nodeTypeConfigs';
-import { AgentSelector } from './AgentSelector';
 import type { NodeStatus } from './types';
 import type { AgentDef } from './types';
-import { getAuthHeaders } from '../../services/apiClient';
-import { fileToBase64 } from '../../hooks/handlers/attachmentUtils';
 import {
   extractAudioUrls,
   extractImageUrls,
@@ -37,31 +19,16 @@ import {
   isDirectlyRenderableVideoUrl,
   normalizeImageValue,
 } from './workflowResultUtils';
-import { analyzeAgentNodeDefaultUsage, buildAgentNodeDefaultsFromAgent } from './agentNodeDefaults';
+import { analyzeAgentNodeDefaultUsage } from './agentNodeDefaults';
 import {
   isFixedPortLayoutNodeType,
   resolveNodePortLayout,
   type WorkflowNodePortSide,
 } from './workflowPorts';
 import { resolveNodeIconAppearance } from './workflowNodeAppearance';
-import { dispatchScopedWorkflowEvent } from './workflowEditorUtils';
-import {
-  WORKFLOW_RESOLUTION_MAP,
-  getResolutionLabel,
-  normalizeWorkflowVideoResolutionSelection,
-  normalizeWorkflowVideoSecondsSelection,
-  normalizeWorkflowVideoExtensionSelection,
-  getWorkflowVideoResolutionLabel,
-} from './workflowResolution';
 import { useProviderModels } from '../../hooks/useProviderModels';
-import {
-  INLINE_UPLOAD_MAX_BYTES_LABEL,
-  reportInlineUploadError,
-  readInlineFilesAsDataUrls,
-} from './uploadHandlers';
 import { PropertiesPanelResultSection } from './panels/ResultSection';
 import { PropertiesPanelSheetStageSection } from './panels/SheetStagePanel';
-import { classifyToolNode } from './toolClassification';
 import {
   ConditionNodePanel,
   RouterNodePanel,
@@ -75,14 +42,8 @@ import { ToolNodeConfigPanel } from './panels/ToolNodeConfigPanel';
 import { AgentNodeConfigPanel } from './panels/AgentNodeConfigPanel';
 import { StartInputNodeConfigPanel } from './panels/StartInputNodeConfigPanel';
 import { extractSheetStageProtocolState } from './sheetStageService';
-import {
-  getPixelResolutionFromSchema,
-  useModeControlsSchema,
-} from '../../hooks/useModeControlsSchema';
-import {
-  buildVideoControlContract,
-  getVideoExtensionOptions,
-} from '../../utils/videoControlSchema';
+import { useModeControlsSchema } from '../../hooks/useModeControlsSchema';
+import { buildVideoControlContract } from '../../utils/videoControlSchema';
 
 /**
  * 通用分辨率映射（工作流编辑器使用，不区分具体模型）

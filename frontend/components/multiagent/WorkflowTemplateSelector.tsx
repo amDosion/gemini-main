@@ -42,6 +42,22 @@ interface WorkflowTemplateSelectorProps {
   onLoadTemplate: (template: WorkflowTemplate) => void;
 }
 
+/**
+ * 从失败的模板 API 响应中解析错误消息：优先 JSON 的 detail/message，回退到响应正文文本。
+ */
+const resolveTemplateResponseError = async (
+  response: Response,
+  fallback: string
+): Promise<string> => {
+  try {
+    const payload = await response.json();
+    return payload?.detail || payload?.message || fallback;
+  } catch {
+    const raw = await response.text();
+    return raw || fallback;
+  }
+};
+
 export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> = ({
   isOpen,
   onClose,
@@ -169,17 +185,7 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
       });
 
       if (!templateResponse.ok) {
-        let message = '加载模板失败';
-        try {
-          const errorPayload = await templateResponse.json();
-          message = errorPayload?.detail || errorPayload?.message || message;
-        } catch {
-          const text = await templateResponse.text();
-          if (text) {
-            message = text;
-          }
-        }
-        throw new Error(message);
+        throw new Error(await resolveTemplateResponseError(templateResponse, '加载模板失败'));
       }
 
       const templatePayload = await templateResponse.json();
@@ -317,17 +323,7 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
       );
 
       if (!response.ok) {
-        let message = '复制模板失败';
-        try {
-          const payload = await response.json();
-          message = payload?.detail || payload?.message || message;
-        } catch {
-          const raw = await response.text();
-          if (raw) {
-            message = raw;
-          }
-        }
-        throw new Error(message);
+        throw new Error(await resolveTemplateResponseError(response, '复制模板失败'));
       }
 
       const copiedPayload = await response.json();
@@ -420,17 +416,7 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
       });
 
       if (!response.ok) {
-        let message = '更新模板标题失败';
-        try {
-          const payload = await response.json();
-          message = payload?.detail || payload?.message || message;
-        } catch {
-          const raw = await response.text();
-          if (raw) {
-            message = raw;
-          }
-        }
-        throw new Error(message);
+        throw new Error(await resolveTemplateResponseError(response, '更新模板标题失败'));
       }
 
       const payload = await response.json();
@@ -486,17 +472,7 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
         headers: getAuthHeaders(),
       });
       if (!response.ok) {
-        let message = '删除模板失败';
-        try {
-          const payload = await response.json();
-          message = payload?.detail || payload?.message || message;
-        } catch {
-          const raw = await response.text();
-          if (raw) {
-            message = raw;
-          }
-        }
-        throw new Error(message);
+        throw new Error(await resolveTemplateResponseError(response, '删除模板失败'));
       }
 
       const nextTemplates = templates.filter((item) => item.id !== templateId);
@@ -565,35 +541,35 @@ export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> =
     }
   };
 
+  const mergeSampleUrls = (
+    summaryUrls: string[] | undefined,
+    extracted: string[],
+    isRenderable: (url: string) => boolean
+  ): string[] =>
+    Array.from(new Set([...(Array.isArray(summaryUrls) ? summaryUrls : []), ...extracted])).filter(
+      isRenderable
+    );
+
   const selectedTemplateSampleImageUrls = selectedTemplate
-    ? Array.from(
-        new Set([
-          ...(Array.isArray(selectedTemplate.sampleResultSummary?.imageUrls)
-            ? selectedTemplate.sampleResultSummary.imageUrls
-            : []),
-          ...extractImageUrls(selectedTemplate.sampleResult),
-        ])
-      ).filter((url) => isDirectlyRenderableImageUrl(url))
+    ? mergeSampleUrls(
+        selectedTemplate.sampleResultSummary?.imageUrls,
+        extractImageUrls(selectedTemplate.sampleResult),
+        isDirectlyRenderableImageUrl
+      )
     : [];
   const selectedTemplateSampleAudioUrls = selectedTemplate
-    ? Array.from(
-        new Set([
-          ...(Array.isArray(selectedTemplate.sampleResultSummary?.audioUrls)
-            ? selectedTemplate.sampleResultSummary.audioUrls
-            : []),
-          ...extractAudioUrls(selectedTemplate.sampleResult),
-        ])
-      ).filter((url) => isDirectlyRenderableAudioUrl(url))
+    ? mergeSampleUrls(
+        selectedTemplate.sampleResultSummary?.audioUrls,
+        extractAudioUrls(selectedTemplate.sampleResult),
+        isDirectlyRenderableAudioUrl
+      )
     : [];
   const selectedTemplateSampleVideoUrls = selectedTemplate
-    ? Array.from(
-        new Set([
-          ...(Array.isArray(selectedTemplate.sampleResultSummary?.videoUrls)
-            ? selectedTemplate.sampleResultSummary.videoUrls
-            : []),
-          ...extractVideoUrls(selectedTemplate.sampleResult),
-        ])
-      ).filter((url) => isDirectlyRenderableVideoUrl(url))
+    ? mergeSampleUrls(
+        selectedTemplate.sampleResultSummary?.videoUrls,
+        extractVideoUrls(selectedTemplate.sampleResult),
+        isDirectlyRenderableVideoUrl
+      )
     : [];
   const selectedTemplateSampleTextPreview = selectedTemplate
     ? (
