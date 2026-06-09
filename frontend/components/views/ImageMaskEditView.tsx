@@ -665,7 +665,6 @@ export const ImageMaskEditView: React.FC<ImageMaskEditViewProps> = ({
         handleToggleMaskInvert={handleToggleMaskInvert}
         selectionRects={selectionRects}
         currentSelectionRect={currentSelectionRect}
-        isSelecting={isSelecting}
         handleSelectionStart={handleSelectionStart}
         handleSelectionMove={handleSelectionMove}
         handleSelectionEnd={handleSelectionEnd}
@@ -681,7 +680,6 @@ export const ImageMaskEditView: React.FC<ImageMaskEditViewProps> = ({
         maskCanvasUrl={maskCanvasUrl}
         brushCursorRef={brushCursorRef}
         handleBrushCursorMove={handleBrushCursorMove}
-        maskCanvasRef={maskCanvasRef}
         displayCanvasRef={displayCanvasRef}
         maskInputDisabledReason={maskInputDisabledReason}
       />
@@ -718,7 +716,6 @@ export const ImageMaskEditView: React.FC<ImageMaskEditViewProps> = ({
       handleToggleMaskInvert,
       selectionRects,
       currentSelectionRect,
-      isSelecting,
       handleSelectionStart,
       handleSelectionMove,
       handleSelectionEnd,

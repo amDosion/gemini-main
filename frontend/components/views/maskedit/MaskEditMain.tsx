@@ -57,7 +57,6 @@ export interface MaskEditMainProps {
   handleToggleMaskInvert: () => void;
   selectionRects: SelectionRect[];
   currentSelectionRect: SelectionRect | null;
-  isSelecting: boolean;
   handleSelectionStart: (e: React.MouseEvent) => void;
   handleSelectionMove: (e: React.MouseEvent) => void;
   handleSelectionEnd: () => void;
@@ -73,7 +72,6 @@ export interface MaskEditMainProps {
   maskCanvasUrl: string | null;
   brushCursorRef: React.RefObject<HTMLDivElement | null>;
   handleBrushCursorMove: (pos: { x: number; y: number } | null) => void;
-  maskCanvasRef: React.RefObject<HTMLCanvasElement | null>;
   displayCanvasRef: React.RefObject<HTMLCanvasElement | null>;
   maskInputDisabledReason: string | null;
 }
@@ -114,7 +112,6 @@ export const MaskEditMain: React.FC<MaskEditMainProps> = (props) => {
     handleToggleMaskInvert,
     selectionRects,
     currentSelectionRect,
-    isSelecting,
     handleSelectionStart,
     handleSelectionMove,
     handleSelectionEnd,
@@ -130,7 +127,6 @@ export const MaskEditMain: React.FC<MaskEditMainProps> = (props) => {
     maskCanvasUrl,
     brushCursorRef,
     handleBrushCursorMove,
-    maskCanvasRef,
     displayCanvasRef,
     maskInputDisabledReason,
   } = props;
@@ -169,7 +165,6 @@ export const MaskEditMain: React.FC<MaskEditMainProps> = (props) => {
         onToggleMaskInvert={handleToggleMaskInvert}
         selectionRects={selectionRects}
         currentSelectionRect={currentSelectionRect}
-        isSelecting={isSelecting}
         onSelectionStart={handleSelectionStart}
         onSelectionMove={handleSelectionMove}
         onSelectionEnd={handleSelectionEnd}
@@ -185,7 +180,6 @@ export const MaskEditMain: React.FC<MaskEditMainProps> = (props) => {
         maskCanvasUrl={maskCanvasUrl}
         brushCursorRef={brushCursorRef}
         onBrushCursorMove={handleBrushCursorMove}
-        maskCanvasRef={maskCanvasRef}
         displayCanvasRef={displayCanvasRef}
       />
 

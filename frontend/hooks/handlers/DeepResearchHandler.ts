@@ -378,6 +378,10 @@ export class DeepResearchHandler extends BaseHandler {
         if (isComplete || isRecovering) return;
 
         isRecovering = true;
+        // 标记是否已发起新的 SSE 连接:若已发起,isRecovering 必须保持到新连接的 onopen
+        // 触发(或 onerror 重置)为止 —— 不能在 connectSSE() 返回后同步清除,否则 watchdog
+        // 会在「已 connectSSE 但 onopen 尚未触发」的空档里再次误判为空闲并重复恢复。
+        let reconnectInitiated = false;
         recoveryAttempts += 1;
         emitProgress(
           'reconnecting',
@@ -447,6 +451,7 @@ export class DeepResearchHandler extends BaseHandler {
           }
 
           emitProgress('reconnecting', '状态检查完成，正在重新连接研究流...');
+          reconnectInitiated = true;
           connectSSE();
         } catch (error) {
           if (recoveryAttempts > deepResearchMaxRecoveryAttempts) {
@@ -455,9 +460,14 @@ export class DeepResearchHandler extends BaseHandler {
             return;
           }
           emitProgress('reconnecting', '状态检查失败，正在重连研究流...');
+          reconnectInitiated = true;
           connectSSE();
         } finally {
-          isRecovering = false;
+          // 仅在未发起新连接的退出路径(完成/取消/失败/等待动作/超限)清除;已发起连接时
+          // 交由 onopen 成功清除或 onerror 失败重置,避免空档期的重复恢复。
+          if (!reconnectInitiated) {
+            isRecovering = false;
+          }
         }
       };
 
@@ -583,6 +593,8 @@ export class DeepResearchHandler extends BaseHandler {
         eventSource.onopen = () => {
           touchActivity();
           recoveryAttempts = 0;
+          // 新连接真正建立 → 恢复流程结束,此时才解除 isRecovering(而非 connectSSE 后立即解除)。
+          isRecovering = false;
           onStreamUpdate?.({
             responseKind: 'deep-research',
             researchStatus: buildStatus('in_progress', '已连接研究流，正在执行...'),
@@ -743,6 +755,10 @@ export class DeepResearchHandler extends BaseHandler {
           }
 
           currentEventSource = null;
+          // 连接已确定失败(CLOSED/错误)。若这是上一次恢复发起的连接在 onopen 前就失败,
+          // isRecovering 仍为 true 会挡住重试;先解除再发起,使失败的重连能够继续重试。
+          // (programmatic close 不触发 onerror,故这里只对应真实连接失败。)
+          isRecovering = false;
           void reconnectWithStatusCheck(
             eventSource.readyState === EventSource.CLOSED ? 'SSE 已关闭' : 'SSE 发生错误'
           );

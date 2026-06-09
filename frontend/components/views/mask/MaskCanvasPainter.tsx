@@ -13,7 +13,7 @@
  *   状态徽章（loading / error / notice）
  * - 矩形选区可视化（普通模式 vs 反转模式 SVG mask）+ 撤销序号按钮
  * - 选区/画笔/橡皮擦交互层 + 自定义圆形光标（brushCursorRef DOM 直更新）
- * - 画笔实时绘制 canvas（displayCanvasRef）+ 持久化 mask canvas（maskCanvasRef）
+ * - 画笔实时绘制 canvas（displayCanvasRef）；持久化 mask canvas 由父组件管理
  * - 底部 MaskToolbar（Step 4 抽离）+ 右下浮动 ImageCanvasControls
  * - 右下角小窗 mask 预览缩略图
  *
@@ -71,7 +71,6 @@ export type MaskCanvasPainterProps = {
   // 选区和 Mask 预览支持（支持多个矩形）
   selectionRects: SelectionRect[];
   currentSelectionRect: SelectionRect | null;
-  isSelecting: boolean;
   onSelectionStart: (e: React.MouseEvent) => void;
   onSelectionMove: (e: React.MouseEvent) => void;
   onSelectionEnd: () => void;
@@ -90,8 +89,6 @@ export type MaskCanvasPainterProps = {
   // 画笔光标 ref（直接 DOM 更新，避免 React 重渲染）
   brushCursorRef: React.RefObject<HTMLDivElement | null>;
   onBrushCursorMove: (pos: { x: number; y: number } | null) => void;
-  // 实时绘制的 mask canvas 引用（用于绘制过程中实时显示）
-  maskCanvasRef: React.RefObject<HTMLCanvasElement | null>;
   // 显示用的 canvas ref（用于直接 DOM 更新，避免 React 重渲染）
   displayCanvasRef: React.RefObject<HTMLCanvasElement | null>;
 };

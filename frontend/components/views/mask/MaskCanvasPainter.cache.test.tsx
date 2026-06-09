@@ -67,7 +67,6 @@ describe('MaskCanvasPainter cache-safe images', () => {
         onToggleMaskInvert={vi.fn()}
         selectionRects={[]}
         currentSelectionRect={null}
-        isSelecting={false}
         onSelectionStart={vi.fn()}
         onSelectionMove={vi.fn()}
         onSelectionEnd={vi.fn()}
@@ -83,7 +82,6 @@ describe('MaskCanvasPainter cache-safe images', () => {
         maskCanvasUrl={null}
         brushCursorRef={React.createRef<HTMLDivElement>()}
         onBrushCursorMove={vi.fn()}
-        maskCanvasRef={React.createRef<HTMLCanvasElement>()}
         displayCanvasRef={React.createRef<HTMLCanvasElement>()}
         {...overrides}
       />
