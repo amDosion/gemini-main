@@ -34,10 +34,7 @@ import { ImageCanvasControls } from './ImageCanvasControls';
 import { ImageCarouselArrows, type CarouselMediaItem } from './ImageCarouselControls';
 import { ImageCompare } from './ImageCompare';
 import { CachedImage } from './CachedImage';
-import {
-  getPreferredAttachmentUrl,
-  isLocalBlobAttachmentUrl,
-} from '../../utils/attachmentUrl';
+import { getPreferredAttachmentUrl, isLocalBlobAttachmentUrl } from '../../utils/attachmentUrl';
 
 export type WorkspaceAccentColor = 'pink' | 'orange' | 'emerald' | 'indigo';
 
@@ -190,7 +187,7 @@ export const ImageWorkspaceCanvas = memo(
       currentAttachmentUrl || (currentCarouselAttachment ? null : activeImageUrlForDisplay);
     const canRenderCurrentImage = Boolean(
       currentDisplayUrl ||
-        (currentSourceAttachment?.file && currentSourceAttachment.mimeType.startsWith('image/'))
+      (currentSourceAttachment?.file && currentSourceAttachment.mimeType.startsWith('image/'))
     );
 
     const cursor = isCompareMode
@@ -220,12 +217,17 @@ export const ImageWorkspaceCanvas = memo(
       });
     }, [activeAttachments, carouselEnabled, carousel]);
 
+    // 仅当当前显示的就是第一张附件（来源图）时才显示来源预览标签。
+    // 注意：这里有意只与第 0 张附件比较——多附件场景下浏览非首张附件时不显示来源预览标签。
+    const isViewingFirstSourceAttachment =
+      activeAttachments.length > 0 && activeImageUrl === activeAttachments[0].url;
+
     // 计算头部 label
     const computedHeaderLabel = isCompareMode
       ? compareModeLabel
       : isMultiImageMode && multiImageLabelPrefix
         ? `${multiImageLabelPrefix} (${carousel!.carouselIndex + 1}/${activeAttachments.length})`
-        : activeAttachments.length > 0 && activeImageUrl === activeAttachments[0].url
+        : isViewingFirstSourceAttachment
           ? sourcePreviewLabel
           : headerLabel;
 

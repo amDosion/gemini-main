@@ -107,10 +107,6 @@ export const WorkflowTutorial: React.FC<WorkflowTutorialProps> = ({
     onClose();
   };
 
-  const handleSkip = () => {
-    onClose();
-  };
-
   if (!isOpen) return null;
 
   return (
@@ -125,10 +121,7 @@ export const WorkflowTutorial: React.FC<WorkflowTutorialProps> = ({
                 步骤 {currentStep + 1} / {tutorialSteps.length}
               </p>
             </div>
-            <button
-              onClick={handleSkip}
-              className="text-white hover:text-blue-100 transition-colors"
-            >
+            <button onClick={onClose} className="text-white hover:text-blue-100 transition-colors">
               <X size={24} />
             </button>
           </div>
@@ -180,7 +173,7 @@ export const WorkflowTutorial: React.FC<WorkflowTutorialProps> = ({
             </button>
 
             <button
-              onClick={handleSkip}
+              onClick={onClose}
               className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
             >
               跳过教程

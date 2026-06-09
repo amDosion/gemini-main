@@ -200,11 +200,13 @@ export class UnifiedProviderClient implements ILLMProvider {
     const upstreamAbortListener = () => {
       controller.abort(abortSignal?.reason ?? 'Stream aborted by user');
     };
+    let upstreamAbortListenerAdded = false;
     if (abortSignal) {
       if (abortSignal.aborted) {
         controller.abort(abortSignal.reason ?? 'Stream aborted by user');
       } else {
         abortSignal.addEventListener('abort', upstreamAbortListener, { once: true });
+        upstreamAbortListenerAdded = true;
       }
     }
 
@@ -362,8 +364,8 @@ export class UnifiedProviderClient implements ILLMProvider {
       }
       throw error;
     } finally {
-      if (abortSignal) {
-        abortSignal.removeEventListener('abort', upstreamAbortListener);
+      if (upstreamAbortListenerAdded) {
+        abortSignal?.removeEventListener('abort', upstreamAbortListener);
       }
     }
   }

@@ -457,6 +457,39 @@ export const useResultPanelPreviewState = ({
     resultPanelPreviewMediaCache,
   ]);
 
+  // 预览图片 / 媒体合并到 finalResult 与 end 节点 result 的共享逻辑：
+  // 两个 effect 仅 mergeIfMissing 闭包不同，setFinalResult / setNodes 更新模式完全一致。
+  const applyMergedResultToEndNodes = useCallback(
+    (mergeIfMissing: (payload: unknown) => unknown) => {
+      setFinalResult((prev: unknown) => {
+        const merged = mergeIfMissing(prev);
+        return merged === prev ? prev : merged;
+      });
+
+      setNodes((nds) =>
+        nds.map((node) => {
+          const nodeType = String(node?.data?.type || node?.type || '').toLowerCase();
+          if (nodeType !== 'end') {
+            return node;
+          }
+          const baseResult = node.data?.result ?? finalResult;
+          const mergedResult = mergeIfMissing(baseResult);
+          if (mergedResult === baseResult) {
+            return node;
+          }
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              result: mergedResult,
+            },
+          };
+        })
+      );
+    },
+    [finalResult, setFinalResult, setNodes]
+  );
+
   useEffect(() => {
     if (resultPanelPreviewImageUrls.length === 0) {
       return;
@@ -475,32 +508,8 @@ export const useResultPanelPreviewState = ({
       return mergePreviewImagesIntoResult(payload, resultPanelPreviewImageUrls);
     };
 
-    setFinalResult((prev: unknown) => {
-      const merged = mergeIfMissing(prev);
-      return merged === prev ? prev : merged;
-    });
-
-    setNodes((nds) =>
-      nds.map((node) => {
-        const nodeType = String(node?.data?.type || node?.type || '').toLowerCase();
-        if (nodeType !== 'end') {
-          return node;
-        }
-        const baseResult = node.data?.result ?? finalResult;
-        const mergedResult = mergeIfMissing(baseResult);
-        if (mergedResult === baseResult) {
-          return node;
-        }
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            result: mergedResult,
-          },
-        };
-      })
-    );
-  }, [finalResult, resultPanelPreviewImageUrls, setFinalResult, setNodes]);
+    applyMergedResultToEndNodes(mergeIfMissing);
+  }, [applyMergedResultToEndNodes, resultPanelPreviewImageUrls]);
 
   useEffect(() => {
     if (
@@ -537,32 +546,8 @@ export const useResultPanelPreviewState = ({
       return merged;
     };
 
-    setFinalResult((prev: unknown) => {
-      const merged = mergeIfMissing(prev);
-      return merged === prev ? prev : merged;
-    });
-
-    setNodes((nds) =>
-      nds.map((node) => {
-        const nodeType = String(node?.data?.type || node?.type || '').toLowerCase();
-        if (nodeType !== 'end') {
-          return node;
-        }
-        const baseResult = node.data?.result ?? finalResult;
-        const mergedResult = mergeIfMissing(baseResult);
-        if (mergedResult === baseResult) {
-          return node;
-        }
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            result: mergedResult,
-          },
-        };
-      })
-    );
-  }, [finalResult, resultPanelPreviewMedia, setFinalResult, setNodes]);
+    applyMergedResultToEndNodes(mergeIfMissing);
+  }, [applyMergedResultToEndNodes, resultPanelPreviewMedia]);
 
   const handleRetryResultPreview = useCallback(() => {
     if (!executionId) return;

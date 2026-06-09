@@ -120,8 +120,6 @@ export const useModels = (
   // 这样可以区分"首次从 false→true"和"true→true 期间的实际变更"
   const prevProviderIdRef = useRef<string | null>(null);
   const prevProfileCacheKeyRef = useRef<string | null>(null);
-  const prevModeProviderIdRef = useRef<string | null>(null);
-  const prevModeProfileCacheKeyRef = useRef<string | null>(null);
   const prevSavedModelsFingerprintRef = useRef<string>(savedModelsFingerprint);
   const modeRequestSeqRef = useRef(0);
   const allRequestSeqRef = useRef(0);
@@ -213,11 +211,9 @@ export const useModels = (
     const providerChanged = !isFirstActivation && prevProviderIdRef.current !== providerId;
     const profileChanged = !isFirstActivation && prevProfileCacheKeyRef.current !== profileCacheKey;
 
-    // 更新两组 prev ref(原本由两个 effect 各管一份,合并后一并更新)
+    // 更新 prev ref(合并后由单个 effect 统一更新)
     prevProviderIdRef.current = providerId;
     prevProfileCacheKeyRef.current = profileCacheKey;
-    prevModeProviderIdRef.current = providerId;
-    prevModeProfileCacheKeyRef.current = profileCacheKey;
 
     if (providerChanged) {
       userSelectedModelRef.current = false;

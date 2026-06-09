@@ -71,13 +71,13 @@ export const OpenAIImageControls: React.FC<OpenAIImageControlsProps> = ({
   const error = controlsSchemaError ?? (controlsSchema === undefined ? fetched.error : null);
   const availableRatios = useMemo(() => schema?.aspectRatios ?? [], [schema]);
   const availableResolutions = useMemo(() => schema?.resolutionTiers ?? [], [schema]);
-  const paramOptions = schema?.paramOptions ?? {};
+  const paramOptions = schema?.paramOptions;
   const imageCountOptions = useMemo(
     () =>
-      (paramOptions.number_of_images ?? [])
+      (paramOptions?.number_of_images ?? [])
         .map((option) => option.value)
         .filter((value): value is number => typeof value === 'number'),
-    [paramOptions.number_of_images]
+    [paramOptions?.number_of_images]
   );
   const defaults = schema?.defaults ?? {};
   const defaultAspectRatio =
@@ -90,16 +90,16 @@ export const OpenAIImageControls: React.FC<OpenAIImageControlsProps> = ({
     '1K';
   const defaultQuality =
     (typeof defaults.quality === 'string' ? defaults.quality : undefined) ??
-    String(paramOptions.quality?.[0]?.value ?? 'auto');
+    String(paramOptions?.quality?.[0]?.value ?? 'auto');
   const defaultBackground =
     (typeof defaults.background === 'string' ? defaults.background : undefined) ??
-    String(paramOptions.background?.[0]?.value ?? 'auto');
+    String(paramOptions?.background?.[0]?.value ?? 'auto');
   const defaultModeration =
     (typeof defaults.moderation === 'string' ? defaults.moderation : undefined) ??
-    String(paramOptions.moderation?.[0]?.value ?? 'auto');
+    String(paramOptions?.moderation?.[0]?.value ?? 'auto');
   const defaultOutputFormat =
     (typeof defaults.output_format === 'string' ? defaults.output_format : undefined) ??
-    String(paramOptions.output_format?.[0]?.value ?? 'png');
+    String(paramOptions?.output_format?.[0]?.value ?? 'png');
   const maxImageCount =
     typeof schema?.constraints?.max_image_count === 'number'
       ? schema.constraints.max_image_count
@@ -211,20 +211,20 @@ export const OpenAIImageControls: React.FC<OpenAIImageControlsProps> = ({
   }, [maxSelectableImageCount, minImageCount, numberOfImages, setNumberOfImages]);
 
   useEffect(() => {
-    syncStringOption(paramOptions.quality, quality, setQuality);
-  }, [paramOptions.quality, quality, setQuality]);
+    syncStringOption(paramOptions?.quality, quality, setQuality);
+  }, [paramOptions?.quality, quality, setQuality]);
 
   useEffect(() => {
-    syncStringOption(paramOptions.background, background, setBackground);
-  }, [paramOptions.background, background, setBackground]);
+    syncStringOption(paramOptions?.background, background, setBackground);
+  }, [paramOptions?.background, background, setBackground]);
 
   useEffect(() => {
-    syncStringOption(paramOptions.moderation, moderation, setModeration);
-  }, [paramOptions.moderation, moderation, setModeration]);
+    syncStringOption(paramOptions?.moderation, moderation, setModeration);
+  }, [paramOptions?.moderation, moderation, setModeration]);
 
   useEffect(() => {
-    syncStringOption(paramOptions.output_format, outputFormat, setOutputFormat);
-  }, [paramOptions.output_format, outputFormat, setOutputFormat]);
+    syncStringOption(paramOptions?.output_format, outputFormat, setOutputFormat);
+  }, [paramOptions?.output_format, outputFormat, setOutputFormat]);
 
   const currentPixelResolution = useMemo(() => {
     const schemaPixelRes = getPixelResolutionFromSchema(schema, aspectRatio, resolution);
@@ -335,7 +335,7 @@ export const OpenAIImageControls: React.FC<OpenAIImageControlsProps> = ({
         />
       ) : null}
 
-      {paramOptions.quality?.length ? (
+      {paramOptions?.quality?.length ? (
         <OptionGrid
           icon={<Gauge size={12} className="text-amber-400" />}
           label="图片质量"
@@ -345,7 +345,7 @@ export const OpenAIImageControls: React.FC<OpenAIImageControlsProps> = ({
         />
       ) : null}
 
-      {paramOptions.background?.length ? (
+      {paramOptions?.background?.length ? (
         <OptionGrid
           icon={<SlidersHorizontal size={12} className="text-cyan-400" />}
           label="背景"
@@ -355,7 +355,7 @@ export const OpenAIImageControls: React.FC<OpenAIImageControlsProps> = ({
         />
       ) : null}
 
-      {paramOptions.moderation?.length ? (
+      {paramOptions?.moderation?.length ? (
         <OptionGrid
           icon={<ShieldCheck size={12} className="text-violet-400" />}
           label="审核"
@@ -365,7 +365,7 @@ export const OpenAIImageControls: React.FC<OpenAIImageControlsProps> = ({
         />
       ) : null}
 
-      {paramOptions.output_format?.length ? (
+      {paramOptions?.output_format?.length ? (
         <OptionGrid
           icon={<FileImage size={12} className="text-fuchsia-400" />}
           label="输出格式"

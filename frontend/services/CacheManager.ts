@@ -1,6 +1,6 @@
 /**
  * 统一缓存管理器
- * 
+ *
  * 整合所有前端缓存到单一入口：
  * - 内存缓存（Map，热数据）
  * - IndexedDB 持久化（冷数据，可选）
@@ -167,22 +167,18 @@ class CacheManagerImpl {
 
   /** 返回以指定前缀开头的有效缓存条目数量 */
   countByPrefix(prefix: string): number {
-    let count = 0;
-    for (const [key, entry] of this.store.entries()) {
-      if (!key.startsWith(prefix)) continue;
-      if (Date.now() - entry.timestamp > entry.ttl) {
-        this.remove(key);
-        continue;
-      }
-      count++;
-    }
-    return count;
+    // 复用 getEntriesByPrefix 的前缀匹配 + TTL 过期淘汰逻辑，避免重复实现
+    return this.getEntriesByPrefix(prefix).length;
   }
 
   // ==================== 状态查询 ====================
 
   /** 获取某个 domain 的缓存状态 */
-  getCacheStatus(domain: string): { isCached: boolean; isStale: boolean; timestamp: number | null } {
+  getCacheStatus(domain: string): {
+    isCached: boolean;
+    isStale: boolean;
+    timestamp: number | null;
+  } {
     const entry = this.store.get(domain);
     if (!entry) {
       return { isCached: false, isStale: false, timestamp: null };

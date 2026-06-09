@@ -195,10 +195,6 @@ export class DeepResearchHandler extends BaseHandler {
         }
       };
 
-      const buildPartialContent = (_closeThinking = true): string => {
-        return accumulatedText;
-      };
-
       const buildThoughts = () => {
         if (!accumulatedThoughts) return undefined;
         return [{ type: 'text' as const, content: accumulatedThoughts }];
@@ -224,9 +220,9 @@ export class DeepResearchHandler extends BaseHandler {
         }
       };
 
-      const emitProgress = (status: DeepResearchStatus, progress: string, closeThinking = true) => {
+      const emitProgress = (status: DeepResearchStatus, progress: string) => {
         onStreamUpdate?.({
-          content: buildPartialContent(closeThinking),
+          content: accumulatedText,
           thoughts: buildThoughts(),
           textResponse: accumulatedText || undefined,
           groundingMetadata: lastGroundingMetadata,
@@ -284,16 +280,23 @@ export class DeepResearchHandler extends BaseHandler {
         accumulatedText = `${accumulatedText}\n\n${extracted}`;
       };
 
-      const finalizeCompleted = (progress = 'Deep Research 已完成') => {
-        if (isComplete) return;
+      // 三个 finalize 收尾函数共享的前置清理：去重守卫 + 停止 watchdog/SSE + 注销动作处理器。
+      // 返回 false 表示已收尾（调用方应直接 return）。
+      const finalizeCleanup = (): boolean => {
+        if (isComplete) return false;
         isComplete = true;
         clearWatchdog();
         closeEventSource();
+        context.registerResearchActionHandler?.(currentInteractionId, null);
+        return true;
+      };
+
+      const finalizeCompleted = (progress = 'Deep Research 已完成') => {
+        if (!finalizeCleanup()) return;
         lastRequiredAction = undefined;
 
         const finalContent = accumulatedText || '研究已完成。';
 
-        context.registerResearchActionHandler?.(currentInteractionId, null);
         resolve({
           content: finalContent,
           thoughts: buildThoughts(),
@@ -310,11 +313,7 @@ export class DeepResearchHandler extends BaseHandler {
       };
 
       const finalizeFailed = (errorMessage: string, progress: string) => {
-        if (isComplete) return;
-        isComplete = true;
-        clearWatchdog();
-        closeEventSource();
-        context.registerResearchActionHandler?.(currentInteractionId, null);
+        if (!finalizeCleanup()) return;
 
         if (accumulatedText || accumulatedThoughts) {
           const baseContent = accumulatedText || '研究未返回正文内容。';
@@ -339,13 +338,9 @@ export class DeepResearchHandler extends BaseHandler {
       };
 
       const finalizeCancelled = (progress = 'Deep Research 已停止') => {
-        if (isComplete) return;
-        isComplete = true;
-        clearWatchdog();
-        closeEventSource();
-        context.registerResearchActionHandler?.(currentInteractionId, null);
+        if (!finalizeCleanup()) return;
         resolve({
-          content: buildPartialContent(),
+          content: accumulatedText,
           thoughts: buildThoughts(),
           textResponse: accumulatedText || undefined,
           attachments: [],
@@ -560,7 +555,7 @@ export class DeepResearchHandler extends BaseHandler {
           registerResearchActionHandler(currentInteractionId);
 
           onStreamUpdate?.({
-            content: buildPartialContent(),
+            content: accumulatedText,
             thoughts: buildThoughts(),
             textResponse: accumulatedText || undefined,
             groundingMetadata: lastGroundingMetadata,
@@ -628,7 +623,7 @@ export class DeepResearchHandler extends BaseHandler {
                   accumulatedThoughts += (accumulatedThoughts ? '\n\n' : '') + thoughtText;
                 }
                 lastRequiredAction = undefined;
-                emitProgress('in_progress', '正在思考与分析...', false);
+                emitProgress('in_progress', '正在思考与分析...');
                 return;
               }
 

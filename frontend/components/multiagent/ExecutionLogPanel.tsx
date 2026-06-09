@@ -1,6 +1,6 @@
 /**
  * Execution Log Panel Component
- * 
+ *
  * Displays execution logs with filtering and export capabilities:
  * - Timestamp + Node ID + Message display
  * - Log level filtering (info/warn/error)
@@ -30,37 +30,36 @@ interface ExecutionLogPanelProps {
 }
 
 // Log level configuration
-const logLevelConfig: Record<LogLevel, {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  label: string;
-  color: string;
-  bgColor: string;
-}> = {
+const logLevelConfig: Record<
+  LogLevel,
+  {
+    icon: React.ComponentType<{ size?: number; className?: string }>;
+    label: string;
+    color: string;
+    bgColor: string;
+  }
+> = {
   info: {
     icon: Info,
     label: '信息',
     color: 'text-sky-300',
-    bgColor: 'bg-sky-500/10'
+    bgColor: 'bg-sky-500/10',
   },
   warn: {
     icon: AlertTriangle,
     label: '警告',
     color: 'text-amber-300',
-    bgColor: 'bg-amber-500/10'
+    bgColor: 'bg-amber-500/10',
   },
   error: {
     icon: XCircle,
     label: '错误',
     color: 'text-rose-300',
-    bgColor: 'bg-rose-500/10'
-  }
+    bgColor: 'bg-rose-500/10',
+  },
 };
 
-export const ExecutionLogPanel: React.FC<ExecutionLogPanelProps> = ({
-  logs,
-  isOpen,
-  onClose
-}) => {
+export const ExecutionLogPanel: React.FC<ExecutionLogPanelProps> = ({ logs, isOpen, onClose }) => {
   const [selectedLevels, setSelectedLevels] = useState<Set<LogLevel>>(
     new Set(['info', 'warn', 'error'])
   );
@@ -75,20 +74,22 @@ export const ExecutionLogPanel: React.FC<ExecutionLogPanelProps> = ({
   }, [logs]);
 
   const toggleLevel = (level: LogLevel) => {
-    const newLevels = new Set(selectedLevels);
-    if (newLevels.has(level)) {
-      newLevels.delete(level);
-    } else {
-      newLevels.add(level);
-    }
-    setSelectedLevels(newLevels);
+    setSelectedLevels((prev) => {
+      const next = new Set(prev);
+      if (next.has(level)) {
+        next.delete(level);
+      } else {
+        next.add(level);
+      }
+      return next;
+    });
   };
 
-  const filteredLogs = logs.filter(log => selectedLevels.has(log.level));
+  const filteredLogs = logs.filter((log) => selectedLevels.has(log.level));
 
   const handleExport = () => {
     const logText = filteredLogs
-      .map(log => {
+      .map((log) => {
         const timestamp = new Date(log.timestamp).toLocaleString();
         return `[${timestamp}] [${log.level.toUpperCase()}] [${log.nodeName}] ${log.message}`;
       })
@@ -151,11 +152,11 @@ export const ExecutionLogPanel: React.FC<ExecutionLogPanelProps> = ({
         <div className="px-4 py-2 bg-slate-950 border-b border-slate-700">
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-slate-400">日志级别:</span>
-            {(Object.keys(logLevelConfig) as LogLevel[]).map(level => {
+            {(Object.keys(logLevelConfig) as LogLevel[]).map((level) => {
               const config = logLevelConfig[level];
               const LevelIcon = config.icon;
               const isSelected = selectedLevels.has(level);
-              
+
               return (
                 <button
                   key={level}
@@ -185,28 +186,21 @@ export const ExecutionLogPanel: React.FC<ExecutionLogPanelProps> = ({
             {logs.length === 0 ? '暂无日志' : '没有符合筛选条件的日志'}
           </div>
         ) : (
-          filteredLogs.map(log => {
+          filteredLogs.map((log) => {
             const config = logLevelConfig[log.level];
             const LogIcon = config.icon;
-            
+
             return (
-              <div
-                key={log.id}
-                className={`flex items-start gap-2 p-2 rounded ${config.bgColor}`}
-              >
+              <div key={log.id} className={`flex items-start gap-2 p-2 rounded ${config.bgColor}`}>
                 <LogIcon size={14} className={`${config.color} mt-0.5 flex-shrink-0`} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-slate-500">
                       {new Date(log.timestamp).toLocaleTimeString()}
                     </span>
-                    <span className={`font-medium ${config.color}`}>
-                      [{log.nodeName}]
-                    </span>
+                    <span className={`font-medium ${config.color}`}>[{log.nodeName}]</span>
                   </div>
-                  <div className="text-slate-200 break-words">
-                    {log.message}
-                  </div>
+                  <div className="text-slate-200 break-words">{log.message}</div>
                 </div>
               </div>
             );

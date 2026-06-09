@@ -8,15 +8,7 @@
  * - 高级选项：输出格式、压缩质量、Seed、负向提示词、AI增强提示词
  */
 import React, { useEffect, useMemo } from 'react';
-import {
-  Palette,
-  Layers,
-  Ratio,
-  FileImage,
-  ChevronUp,
-  ChevronDown,
-  Dices,
-} from 'lucide-react';
+import { Palette, Layers, Ratio, FileImage, ChevronUp, ChevronDown, Dices } from 'lucide-react';
 import { ImageGenControlsProps } from '../../types';
 import PromptEnhanceControl from '../../shared/PromptEnhanceControl';
 import ThinkingControl from '../../shared/ThinkingControl';
@@ -25,6 +17,23 @@ import {
   getPixelResolutionFromSchema,
   useModeControlsSchema,
 } from '../../../hooks/useModeControlsSchema';
+
+/**
+ * 当 current 不在 schema 允许的取值集合内时回落到第一个合法值。
+ * 抽离 aspectRatio / resolution / style / outputMimeType 四处重复的「校验 + 夹取」逻辑。
+ * validValues 为空时不做任何操作（与原各 effect 的 `length > 0` 守卫一致）。
+ */
+function useSchemaConstrainedValue<T>(
+  current: T,
+  validValues: readonly T[],
+  setter: (value: T) => void
+): void {
+  useEffect(() => {
+    if (validValues.length > 0 && !validValues.includes(current)) {
+      setter(validValues[0]);
+    }
+  }, [current, validValues, setter]);
+}
 
 export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
   const {
@@ -151,28 +160,32 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
     return schema?.resolutionTiers ?? [];
   }, [schema]);
 
-  useEffect(() => {
-    const validRatios = availableRatios.map((r) => r.value);
-    if (validRatios.length > 0 && !validRatios.includes(aspectRatio)) {
-      setAspectRatio(validRatios[0]);
-    }
-  }, [availableRatios, aspectRatio, setAspectRatio]);
+  const validAspectRatios = useMemo(() => availableRatios.map((r) => r.value), [availableRatios]);
+  const validResolutionTiers = useMemo(
+    () => availableResolutionTiers.map((t) => t.value),
+    [availableResolutionTiers]
+  );
+  const validStyleValues = useMemo(
+    () =>
+      styleOptions
+        .map((option) => option.value)
+        .filter((value): value is string => typeof value === 'string'),
+    [styleOptions]
+  );
+  // outputMimeOptions 为空时 validOutputMimeTypes 也为空，hook 自然 no-op，
+  // 等价于原 effect 的 `if (!supportsOutputMimeControls) return` 守卫。
+  const validOutputMimeTypes = useMemo(
+    () =>
+      outputMimeOptions
+        .map((option) => option.value)
+        .filter((value): value is string => typeof value === 'string'),
+    [outputMimeOptions]
+  );
 
-  useEffect(() => {
-    const validTiers = availableResolutionTiers.map((t) => t.value);
-    if (validTiers.length > 0 && !validTiers.includes(resolution)) {
-      setResolution(validTiers[0]);
-    }
-  }, [availableResolutionTiers, resolution, setResolution]);
-
-  useEffect(() => {
-    const validStyles = styleOptions
-      .map((option) => option.value)
-      .filter((value): value is string => typeof value === 'string');
-    if (validStyles.length > 0 && !validStyles.includes(style)) {
-      setStyle(validStyles[0]);
-    }
-  }, [style, styleOptions, setStyle]);
+  useSchemaConstrainedValue(aspectRatio, validAspectRatios, setAspectRatio);
+  useSchemaConstrainedValue(resolution, validResolutionTiers, setResolution);
+  useSchemaConstrainedValue(style, validStyleValues, setStyle);
+  useSchemaConstrainedValue(outputMimeType, validOutputMimeTypes, setOutputMimeType);
 
   useEffect(() => {
     if (numberOfImages > maxImageCount) {
@@ -181,16 +194,6 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
       setNumberOfImages(1);
     }
   }, [numberOfImages, maxImageCount, setNumberOfImages]);
-
-  useEffect(() => {
-    if (!supportsOutputMimeControls) return;
-    const validMimeTypes = outputMimeOptions
-      .map((option) => option.value)
-      .filter((value): value is string => typeof value === 'string');
-    if (validMimeTypes.length > 0 && !validMimeTypes.includes(outputMimeType)) {
-      setOutputMimeType(validMimeTypes[0]);
-    }
-  }, [outputMimeType, outputMimeOptions, setOutputMimeType, supportsOutputMimeControls]);
 
   // 计算当前像素分辨率
   const currentPixelResolution = useMemo(() => {
@@ -423,10 +426,7 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
               onThinkingLevelChange={setEnhancePromptThinkingLevel}
             />
 
-            <ThinkingControl
-              enabled={enableThinking}
-              onEnabledChange={setEnableThinking}
-            />
+            <ThinkingControl enabled={enableThinking} onEnabledChange={setEnableThinking} />
           </div>
         )}
       </div>

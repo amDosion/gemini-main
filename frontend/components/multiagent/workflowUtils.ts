@@ -393,6 +393,7 @@ export const detectCycles = (nodes: Node<CustomNodeData>[], edges: Edge[]): stri
   const visited = new Set<string>();
   const recursionStack = new Set<string>();
 
+  // 共享同一条 path：进入时 push、退出时 pop，避免每条边都做 [...path] 的 O(V) 拷贝。
   const dfs = (nodeId: string, path: string[]): void => {
     visited.add(nodeId);
     recursionStack.add(nodeId);
@@ -404,7 +405,7 @@ export const detectCycles = (nodes: Node<CustomNodeData>[], edges: Edge[]): stri
       const targetId = edge.target;
 
       if (!visited.has(targetId)) {
-        dfs(targetId, [...path]);
+        dfs(targetId, path);
       } else if (recursionStack.has(targetId)) {
         // Found a cycle
         const cycleStart = path.indexOf(targetId);
@@ -413,6 +414,7 @@ export const detectCycles = (nodes: Node<CustomNodeData>[], edges: Edge[]): stri
     }
 
     recursionStack.delete(nodeId);
+    path.pop();
   };
 
   nodes.forEach((node) => {

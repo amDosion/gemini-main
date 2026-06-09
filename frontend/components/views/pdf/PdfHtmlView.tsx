@@ -99,20 +99,10 @@ export const PdfHtmlView: React.FC<PdfHtmlViewProps> = ({ data: rawData }) => {
       'text-base font-medium text-indigo-200 mt-3 mb-2',
     ][Math.min(level - 1, 2)];
 
-    switch (Math.min(level + 1, 6)) {
-      case 2:
-        return <h2 className={classes}>{text}</h2>;
-      case 3:
-        return <h3 className={classes}>{text}</h3>;
-      case 4:
-        return <h4 className={classes}>{text}</h4>;
-      case 5:
-        return <h5 className={classes}>{text}</h5>;
-      case 6:
-        return <h6 className={classes}>{text}</h6>;
-      default:
-        return <h2 className={classes}>{text}</h2>;
-    }
+    // level >= 1 always (renderObject starts at 1 and only increments), so the
+    // tag is always h2..h6 — no default/fallback branch is reachable.
+    const HeadingTag = `h${Math.min(level + 1, 6)}` as 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
+    return <HeadingTag className={classes}>{text}</HeadingTag>;
   };
 
   // 递归渲染对象

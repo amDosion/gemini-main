@@ -168,6 +168,8 @@ const setupLcpObserver = () => {
 
   return () => {
     observerCleanup();
+    // 监听器以 { once: true } 注册：触发后浏览器已自动注销，此处 removeEventListener
+    // 仅覆盖“尚未触发即被清理”的情况；已触发时为无副作用的空操作。
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', onVisibilityChange);
     }
@@ -218,6 +220,8 @@ const setupClsObserver = () => {
 
   return () => {
     observerCleanup();
+    // 监听器以 { once: true } 注册：触发后浏览器已自动注销，此处 removeEventListener
+    // 仅覆盖“尚未触发即被清理”的情况；已触发时为无副作用的空操作。
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', onVisibilityChange);
     }

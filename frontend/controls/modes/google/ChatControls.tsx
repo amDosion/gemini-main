@@ -133,6 +133,47 @@ const parseMcpServerOptions = (configJson: string): McpServerOption[] => {
   }
 };
 
+/**
+ * 弹出菜单的通用交互副作用：打开时定位、点击外部/Esc 关闭、resize/scroll 重定位。
+ * persona / MCP / auto-research 三个菜单结构一致，统一收敛到此 hook。
+ */
+const usePopoverMenu = <M extends HTMLElement, B extends HTMLElement>(
+  isOpen: boolean,
+  updatePosition: () => void,
+  menuRef: React.RefObject<M | null>,
+  buttonRef: React.RefObject<B | null>,
+  setOpen: (open: boolean) => void
+): void => {
+  useEffect(() => {
+    if (!isOpen) return;
+
+    updatePosition();
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target)) return;
+      if (buttonRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    const handleReposition = () => updatePosition();
+
+    document.addEventListener('mousedown', handleClickOutside, true);
+    window.addEventListener('keydown', handleEscape);
+    window.addEventListener('resize', handleReposition);
+    window.addEventListener('scroll', handleReposition, true);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside, true);
+      window.removeEventListener('keydown', handleEscape);
+      window.removeEventListener('resize', handleReposition);
+      window.removeEventListener('scroll', handleReposition, true);
+    };
+  }, [isOpen, updatePosition, menuRef, buttonRef, setOpen]);
+};
+
 export const ChatControls: React.FC<ChatControlsProps> = ({
   currentModel,
   personas = [],
@@ -347,92 +388,23 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
     setEnableAutoDeepResearch,
   ]);
 
-  useEffect(() => {
-    if (!isPersonaMenuOpen) return;
+  usePopoverMenu(
+    isPersonaMenuOpen,
+    updatePersonaMenuPosition,
+    personaMenuRef,
+    personaButtonRef,
+    setIsPersonaMenuOpen
+  );
 
-    updatePersonaMenuPosition();
+  usePopoverMenu(isMcpMenuOpen, updateMcpMenuPosition, mcpMenuRef, mcpButtonRef, setIsMcpMenuOpen);
 
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (personaMenuRef.current?.contains(target)) return;
-      if (personaButtonRef.current?.contains(target)) return;
-      setIsPersonaMenuOpen(false);
-    };
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsPersonaMenuOpen(false);
-    };
-    const handleReposition = () => updatePersonaMenuPosition();
-
-    document.addEventListener('mousedown', handleClickOutside, true);
-    window.addEventListener('keydown', handleEscape);
-    window.addEventListener('resize', handleReposition);
-    window.addEventListener('scroll', handleReposition, true);
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside, true);
-      window.removeEventListener('keydown', handleEscape);
-      window.removeEventListener('resize', handleReposition);
-      window.removeEventListener('scroll', handleReposition, true);
-    };
-  }, [isPersonaMenuOpen, updatePersonaMenuPosition]);
-
-  useEffect(() => {
-    if (!isMcpMenuOpen) return;
-
-    updateMcpMenuPosition();
-
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (mcpMenuRef.current?.contains(target)) return;
-      if (mcpButtonRef.current?.contains(target)) return;
-      setIsMcpMenuOpen(false);
-    };
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsMcpMenuOpen(false);
-    };
-    const handleReposition = () => updateMcpMenuPosition();
-
-    document.addEventListener('mousedown', handleClickOutside, true);
-    window.addEventListener('keydown', handleEscape);
-    window.addEventListener('resize', handleReposition);
-    window.addEventListener('scroll', handleReposition, true);
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside, true);
-      window.removeEventListener('keydown', handleEscape);
-      window.removeEventListener('resize', handleReposition);
-      window.removeEventListener('scroll', handleReposition, true);
-    };
-  }, [isMcpMenuOpen, updateMcpMenuPosition]);
-
-  useEffect(() => {
-    if (!isAutoResearchMenuOpen) return;
-
-    updateAutoResearchMenuPosition();
-
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (autoResearchMenuRef.current?.contains(target)) return;
-      if (autoResearchButtonRef.current?.contains(target)) return;
-      setIsAutoResearchMenuOpen(false);
-    };
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsAutoResearchMenuOpen(false);
-    };
-    const handleReposition = () => updateAutoResearchMenuPosition();
-
-    document.addEventListener('mousedown', handleClickOutside, true);
-    window.addEventListener('keydown', handleEscape);
-    window.addEventListener('resize', handleReposition);
-    window.addEventListener('scroll', handleReposition, true);
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside, true);
-      window.removeEventListener('keydown', handleEscape);
-      window.removeEventListener('resize', handleReposition);
-      window.removeEventListener('scroll', handleReposition, true);
-    };
-  }, [isAutoResearchMenuOpen, updateAutoResearchMenuPosition]);
+  usePopoverMenu(
+    isAutoResearchMenuOpen,
+    updateAutoResearchMenuPosition,
+    autoResearchMenuRef,
+    autoResearchButtonRef,
+    setIsAutoResearchMenuOpen
+  );
 
   return (
     <>

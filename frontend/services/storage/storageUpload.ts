@@ -10,17 +10,10 @@
  * - 阿里云 OSS
  */
 
-import {
-  StorageConfig,
-  StorageUploadResult,
-  LskyConfig,
-  AliyunOSSConfig,
-} from '../../types/storage';
+import { StorageConfig, StorageUploadResult } from '../../types/storage';
 import { fetchWithTimeout, parseHttpError, readJsonResponse, requestJson } from '../http';
 
 const API_BASE = '/api';
-
-const stripTrailingSlash = (value: string): string => value.replace(/\/+$/, '');
 
 /**
  * 云存储上传服务类
@@ -102,84 +95,6 @@ export class StorageUploadService {
       url: result.url,
       provider: result.provider,
     };
-  }
-
-  /**
-   * 直接上传到兰空图床
-   */
-  private async uploadToLskyDirect(file: File, config: LskyConfig): Promise<StorageUploadResult> {
-    try {
-      const formData = new FormData();
-      formData.append('file', file, file.name);
-
-      const uploadUrl = `${stripTrailingSlash(config.domain)}/api/v1/upload`;
-      const authToken = config.token.startsWith('Bearer ')
-        ? config.token
-        : `Bearer ${config.token}`;
-
-      const response = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: authToken,
-          Accept: 'application/json',
-        },
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`兰空图床上传失败: HTTP ${response.status}`);
-      }
-
-      const result = await response.json();
-
-      if (result.status && result.data?.links?.url) {
-        const imageUrl = result.data.links.url;
-
-        return {
-          success: true,
-          url: imageUrl,
-          provider: 'lsky',
-        };
-      } else {
-        const errorMsg = result.message || '未知错误';
-        throw new Error(`兰空图床上传失败: ${errorMsg}`);
-      }
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : '兰空图床上传失败',
-      };
-    }
-  }
-
-  /**
-   * 直接上传到阿里云 OSS（前端直连）
-   * 注意：需要配置 CORS 和签名
-   */
-  private async uploadToAliyunOSSDirect(
-    file: File,
-    config: AliyunOSSConfig
-  ): Promise<StorageUploadResult> {
-    return {
-      success: false,
-      error: '阿里云 OSS 前端直连需要配置 STS 临时凭证，请使用后端 API',
-    };
-  }
-
-  /**
-   * 前端直连上传（降级方案）
-   */
-  private async uploadDirect(file: File, config: StorageConfig): Promise<StorageUploadResult> {
-    if (config.provider === 'lsky') {
-      return this.uploadToLskyDirect(file, config.config as LskyConfig);
-    } else if (config.provider === 'aliyun-oss') {
-      return this.uploadToAliyunOSSDirect(file, config.config as AliyunOSSConfig);
-    } else {
-      return {
-        success: false,
-        error: `不支持的存储类型: ${config.provider}`,
-      };
-    }
   }
 
   /**
@@ -543,20 +458,3 @@ export class StorageUploadService {
 
 // 导出单例
 export const storageUpload = new StorageUploadService();
-
-// 添加 String.prototype.rstrip 扩展（如果不存在）
-declare global {
-  interface String {
-    rstrip(chars: string): string;
-  }
-}
-
-if (!String.prototype.rstrip) {
-  String.prototype.rstrip = function (chars: string): string {
-    let str = this.toString();
-    while (str.endsWith(chars)) {
-      str = str.slice(0, -chars.length);
-    }
-    return str;
-  };
-}

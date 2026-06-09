@@ -16,7 +16,11 @@ export interface WorkflowNodePortHandle {
 export const DEFAULT_HANDLE_KEY = '__default__';
 const MAX_PORTS_PER_SIDE = 12;
 
-const toNodeType = (value: unknown): string => String(value || '').trim().toLowerCase().replace(/-/g, '_');
+const toNodeType = (value: unknown): string =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, '_');
 
 const clampPortCount = (value: unknown, fallback: number): number => {
   const parsed = Number(value);
@@ -24,9 +28,8 @@ const clampPortCount = (value: unknown, fallback: number): number => {
   return Math.max(0, Math.min(MAX_PORTS_PER_SIDE, Math.floor(parsed)));
 };
 
-const isPortLayoutObject = (value: unknown): value is Partial<WorkflowNodePortLayout> => (
-  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-);
+const isPortLayoutObject = (value: unknown): value is Partial<WorkflowNodePortLayout> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
 export const isFixedPortLayoutNodeType = (nodeType: unknown): boolean => {
   const normalized = toNodeType(nodeType);
@@ -46,7 +49,7 @@ export const getDefaultNodePortLayout = (nodeType: unknown): WorkflowNodePortLay
 
 export const resolveNodePortLayout = (
   nodeType: unknown,
-  rawPortLayout?: Partial<WorkflowNodePortLayout> | null,
+  rawPortLayout?: Partial<WorkflowNodePortLayout> | null
 ): WorkflowNodePortLayout => {
   const defaults = getDefaultNodePortLayout(nodeType);
   if (isFixedPortLayoutNodeType(nodeType)) {
@@ -65,7 +68,7 @@ const getHandleIdForSide = (
   nodeType: string,
   side: WorkflowNodePortSide,
   index: number,
-  count: number,
+  count: number
 ): string | undefined => {
   if (count <= 0) return undefined;
 
@@ -105,7 +108,7 @@ export const toHandleKey = (handleId?: string | null): string => {
 export const buildHandlesForSide = (
   nodeType: unknown,
   side: WorkflowNodePortSide,
-  rawPortLayout?: Partial<WorkflowNodePortLayout> | null,
+  rawPortLayout?: Partial<WorkflowNodePortLayout> | null
 ): WorkflowNodePortHandle[] => {
   const normalizedType = toNodeType(nodeType);
   const layout = resolveNodePortLayout(normalizedType, rawPortLayout);
@@ -128,9 +131,10 @@ export const buildHandlesForSide = (
 export const getValidHandleKeysForDirection = (
   nodeType: unknown,
   rawPortLayout: Partial<WorkflowNodePortLayout> | null | undefined,
-  direction: WorkflowNodeHandleDirection,
+  direction: WorkflowNodeHandleDirection
 ): Set<string> => {
-  const sides = direction === 'source' ? (['right', 'bottom'] as const) : (['left', 'top'] as const);
+  const sides =
+    direction === 'source' ? (['right', 'bottom'] as const) : (['left', 'top'] as const);
   const keys = new Set<string>();
   sides.forEach((side) => {
     buildHandlesForSide(nodeType, side, rawPortLayout).forEach((handle) => {
@@ -140,7 +144,10 @@ export const getValidHandleKeysForDirection = (
   return keys;
 };
 
-const getEdgeHandleValue = (edge: Edge, field: 'sourceHandle' | 'targetHandle'): string | undefined => {
+const getEdgeHandleValue = (
+  edge: Edge,
+  field: 'sourceHandle' | 'targetHandle'
+): string | undefined => {
   const value = (edge as Record<string, unknown>)?.[field];
   if (value === undefined || value === null) return undefined;
   return String(value);
@@ -149,7 +156,7 @@ const getEdgeHandleValue = (edge: Edge, field: 'sourceHandle' | 'targetHandle'):
 const inferLayoutFromEdges = (
   nodeId: string,
   nodeType: unknown,
-  edges: Edge[],
+  edges: Edge[]
 ): WorkflowNodePortLayout => {
   const layout = getDefaultNodePortLayout(nodeType);
   if (isFixedPortLayoutNodeType(nodeType)) {
@@ -204,33 +211,24 @@ const inferLayoutFromEdges = (
   return resolveNodePortLayout(nodeType, layout);
 };
 
-const isSamePortLayout = (a: WorkflowNodePortLayout, b: WorkflowNodePortLayout): boolean => {
-  return a.left === b.left && a.right === b.right && a.top === b.top && a.bottom === b.bottom;
-};
-
 export const hydrateNodePortLayoutsFromEdges = (
   nodes: Node<WorkflowNodeData>[],
-  edges: Edge[],
+  edges: Edge[]
 ): Node<WorkflowNodeData>[] => {
   return nodes.map((node) => {
     const nodeType = node?.data?.type || node?.type || 'agent';
     const rawLayout = node?.data?.portLayout;
-    const resolvedLayout = isPortLayoutObject(rawLayout)
-      ? resolveNodePortLayout(nodeType, rawLayout)
-      : inferLayoutFromEdges(String(node.id), nodeType, edges);
-
+    // A node that already carries a port-layout object keeps its existing layout
+    // untouched (resolving it would yield an identical layout), so return as-is.
     if (isPortLayoutObject(rawLayout)) {
-      const currentLayout = resolveNodePortLayout(nodeType, rawLayout);
-      if (isSamePortLayout(currentLayout, resolvedLayout)) {
-        return node;
-      }
+      return node;
     }
 
     return {
       ...node,
       data: {
         ...node.data,
-        portLayout: resolvedLayout,
+        portLayout: inferLayoutFromEdges(String(node.id), nodeType, edges),
       },
     };
   });
@@ -238,9 +236,11 @@ export const hydrateNodePortLayoutsFromEdges = (
 
 export const filterEdgesByNodePortLayouts = (
   nodes: Node<WorkflowNodeData>[],
-  edges: Edge[],
+  edges: Edge[]
 ): Edge[] => {
-  const nodeMap = new Map<string, Node<WorkflowNodeData>>(nodes.map((node) => [String(node.id), node]));
+  const nodeMap = new Map<string, Node<WorkflowNodeData>>(
+    nodes.map((node) => [String(node.id), node])
+  );
   return edges.filter((edge) => {
     const sourceNode = nodeMap.get(String(edge.source));
     const targetNode = nodeMap.get(String(edge.target));
@@ -248,16 +248,24 @@ export const filterEdgesByNodePortLayouts = (
 
     const sourceType = sourceNode?.data?.type || sourceNode.type || 'agent';
     const targetType = targetNode?.data?.type || targetNode.type || 'agent';
-    const sourceKeys = getValidHandleKeysForDirection(sourceType, sourceNode.data?.portLayout, 'source');
-    const targetKeys = getValidHandleKeysForDirection(targetType, targetNode.data?.portLayout, 'target');
+    const sourceKeys = getValidHandleKeysForDirection(
+      sourceType,
+      sourceNode.data?.portLayout,
+      'source'
+    );
+    const targetKeys = getValidHandleKeysForDirection(
+      targetType,
+      targetNode.data?.portLayout,
+      'target'
+    );
 
     if (sourceKeys.size === 0 || targetKeys.size === 0) {
       return false;
     }
 
     return (
-      sourceKeys.has(toHandleKey(getEdgeHandleValue(edge, 'sourceHandle')))
-      && targetKeys.has(toHandleKey(getEdgeHandleValue(edge, 'targetHandle')))
+      sourceKeys.has(toHandleKey(getEdgeHandleValue(edge, 'sourceHandle'))) &&
+      targetKeys.has(toHandleKey(getEdgeHandleValue(edge, 'targetHandle')))
     );
   });
 };

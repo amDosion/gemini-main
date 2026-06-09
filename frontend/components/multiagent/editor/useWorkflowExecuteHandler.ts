@@ -35,6 +35,15 @@ type AddLog = (
   timestamp?: number
 ) => void;
 
+interface WorkflowInputPayload {
+  task: string;
+  imageUrl?: string;
+  imageUrls?: string[];
+  fileUrl?: string;
+  fileUrls?: string[];
+  [key: string]: unknown;
+}
+
 export interface UseWorkflowExecuteHandlerArgs {
   onExecute?: (workflow: {
     nodes: WorkflowNode[];
@@ -184,7 +193,7 @@ export const useWorkflowExecuteHandler = ({
 
       const effectivePrompt = String(startTask || inputTextNodeTask || workflowPrompt || '').trim();
       const rawPrompt = effectivePrompt;
-      let workflowInput: Record<string, any> = { task: effectivePrompt };
+      let workflowInput: WorkflowInputPayload = { task: effectivePrompt };
       if (rawPrompt.startsWith('{') && rawPrompt.endsWith('}')) {
         try {
           const parsed = JSON.parse(rawPrompt);
@@ -201,7 +210,7 @@ export const useWorkflowExecuteHandler = ({
 
       const promptImageInputs = mergeUniqueStringList(
         normalizeStringList(workflowInput.imageUrls),
-        normalizeStringList((workflowInput as any).image_urls),
+        normalizeStringList(workflowInput.image_urls),
         typeof workflowInput.imageUrl === 'string' ? [workflowInput.imageUrl.trim()] : []
       );
       const preferredImageInputs =
@@ -231,7 +240,7 @@ export const useWorkflowExecuteHandler = ({
       };
       const promptFileInputs = mergeUniqueStringList(
         normalizeStringList(workflowInput.fileUrls),
-        normalizeStringList((workflowInput as any).file_urls),
+        normalizeStringList(workflowInput.file_urls),
         typeof workflowInput.fileUrl === 'string' ? [workflowInput.fileUrl.trim()] : []
       );
       const preferredFileInputs =

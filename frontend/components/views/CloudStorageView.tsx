@@ -1,9 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Cloud } from 'lucide-react';
-import {
-  StorageBrowseItem,
-  StorageConfig
-} from '../../types/storage';
+import { StorageBrowseItem, StorageConfig } from '../../types/storage';
 import { useToastContext } from '../../contexts/ToastContext';
 import { GenViewLayout } from '../common/GenViewLayout';
 import { useCloudStorageActions } from './cloudStorage/useCloudStorageActions';
@@ -28,7 +25,7 @@ type ViewMode = 'list' | 'grid';
 export const CloudStorageView: React.FC<CloudStorageViewProps> = ({
   activeStorageId,
   storageConfigs,
-  onClose
+  onClose,
 }) => {
   const [isMobileHistoryOpen, setIsMobileHistoryOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
@@ -49,7 +46,7 @@ export const CloudStorageView: React.FC<CloudStorageViewProps> = ({
     confirmDelete,
     confirmBatchDelete,
     promptRename,
-    dialog: actionDialog
+    dialog: actionDialog,
   } = useCloudStorageDialogs();
 
   const {
@@ -83,7 +80,7 @@ export const CloudStorageView: React.FC<CloudStorageViewProps> = ({
     handleBatchDelete,
     handleDownloadItem,
     handleBatchDownload,
-    uploadFiles
+    uploadFiles,
   } = useCloudStorageActions({
     activeStorageId,
     storageConfigs,
@@ -91,7 +88,7 @@ export const CloudStorageView: React.FC<CloudStorageViewProps> = ({
     onActionNotice: showSuccess,
     confirmDelete,
     confirmBatchDelete,
-    promptRename
+    promptRename,
   });
 
   const selectedStorage = useMemo(
@@ -149,7 +146,8 @@ export const CloudStorageView: React.FC<CloudStorageViewProps> = ({
   );
 
   const loadedPages = useMemo(
-    () => Math.max(1, Math.ceil((isFilteringLocally ? filteredItems.length : items.length) / pageSize)),
+    () =>
+      Math.max(1, Math.ceil((isFilteringLocally ? filteredItems.length : items.length) / pageSize)),
     [filteredItems.length, isFilteringLocally, items.length, pageSize]
   );
 
@@ -174,14 +172,14 @@ export const CloudStorageView: React.FC<CloudStorageViewProps> = ({
     currentViewerImageExhausted,
     currentViewerVideoSrc,
     handleViewerImagePreviewError,
-    handleViewerPreviewError
+    handleViewerPreviewError,
   } = useCloudStorageViewer({
     items,
     selectedStorageId,
     currentPath,
     storageRevision,
     fileMetadataByUrl,
-    failedPreviewUrlsRef
+    failedPreviewUrlsRef,
   });
 
   useEffect(() => {
@@ -190,7 +188,8 @@ export const CloudStorageView: React.FC<CloudStorageViewProps> = ({
 
   const hasSelectableItems = filteredItems.length > 0;
   const visibleSelectedCount = useMemo(
-    () => filteredItems.reduce((count, item) => (selectedPaths.has(item.path) ? count + 1 : count), 0),
+    () =>
+      filteredItems.reduce((count, item) => (selectedPaths.has(item.path) ? count + 1 : count), 0),
     [filteredItems, selectedPaths]
   );
 
@@ -209,31 +208,40 @@ export const CloudStorageView: React.FC<CloudStorageViewProps> = ({
     failedPreviewUrlsRef.current.clear();
   }, [selectedStorageId, storageRevision]);
 
-  const handleBreadcrumbClick = useCallback((index: number) => {
-    if (!selectedStorageId) return;
-    if (index < 0) {
-      void loadPath(selectedStorageId, '');
-      return;
-    }
-    const targetPath = pathSegments.slice(0, index + 1).join('/');
-    void loadPath(selectedStorageId, targetPath);
-  }, [selectedStorageId, loadPath, pathSegments]);
-
-  const handleSelectStorage = useCallback((storageId: string) => {
-    setSelectedStorageId(storageId);
-  }, [setSelectedStorageId]);
-
-  const toggleSelectItem = useCallback((path: string) => {
-    setSelectedPaths((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
+  const handleBreadcrumbClick = useCallback(
+    (index: number) => {
+      if (!selectedStorageId) return;
+      if (index < 0) {
+        void loadPath(selectedStorageId, '');
+        return;
       }
-      return next;
-    });
-  }, [setSelectedPaths]);
+      const targetPath = pathSegments.slice(0, index + 1).join('/');
+      void loadPath(selectedStorageId, targetPath);
+    },
+    [selectedStorageId, loadPath, pathSegments]
+  );
+
+  const handleSelectStorage = useCallback(
+    (storageId: string) => {
+      setSelectedStorageId(storageId);
+    },
+    [setSelectedStorageId]
+  );
+
+  const toggleSelectItem = useCallback(
+    (path: string) => {
+      setSelectedPaths((prev) => {
+        const next = new Set(prev);
+        if (next.has(path)) {
+          next.delete(path);
+        } else {
+          next.add(path);
+        }
+        return next;
+      });
+    },
+    [setSelectedPaths]
+  );
 
   const handleBulkSelectAction = useCallback(() => {
     if (filteredItems.length === 0) return;
@@ -262,47 +270,56 @@ export const CloudStorageView: React.FC<CloudStorageViewProps> = ({
     });
   }, [filteredItems, setSelectedPaths]);
 
-  const handleCopyUrl = useCallback(async (item: StorageBrowseItem) => {
-    if (!item.url) {
-      setError('This file has no public URL.');
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(item.url);
-      showSuccess(`URL copied: ${item.name}`);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to copy URL');
-    }
-  }, [showSuccess, setError]);
+  const handleCopyUrl = useCallback(
+    async (item: StorageBrowseItem) => {
+      if (!item.url) {
+        setError('This file has no public URL.');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(item.url);
+        showSuccess(`URL copied: ${item.name}`);
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to copy URL');
+      }
+    },
+    [showSuccess, setError]
+  );
 
-  const handleViewItem = useCallback((item: StorageBrowseItem) => {
-    if (item.entryType === 'directory') {
-      openDirectory(item.path);
-      return;
-    }
-    const kind = getFileKind(item);
-    if (kind !== 'image' && kind !== 'video') {
-      setError('Carousel preview only supports image and video files.');
-      return;
-    }
-    if (buildStoragePreviewCandidates(item, storageRevision).length === 0) {
-      setError('This file has no preview source.');
-      return;
-    }
-    openViewer(item.path);
-  }, [openDirectory, openViewer, setError, storageRevision]);
+  const handleViewItem = useCallback(
+    (item: StorageBrowseItem) => {
+      if (item.entryType === 'directory') {
+        openDirectory(item.path);
+        return;
+      }
+      const kind = getFileKind(item);
+      if (kind !== 'image' && kind !== 'video') {
+        setError('Carousel preview only supports image and video files.');
+        return;
+      }
+      if (buildStoragePreviewCandidates(item, storageRevision).length === 0) {
+        setError('This file has no preview source.');
+        return;
+      }
+      openViewer(item.path);
+    },
+    [openDirectory, openViewer, setError, storageRevision]
+  );
 
   const openUploadPicker = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
 
-  const handleUploadFiles = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []);
-    event.target.value = '';
-    if (files.length === 0) return;
-    await uploadFiles(files);
-  }, [uploadFiles]);
+  const handleUploadFiles = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.target.files || []);
+      event.target.value = '';
+      if (files.length === 0) return;
+      await uploadFiles(files);
+    },
+    [uploadFiles]
+  );
 
   const handleSearchQueryChange = useCallback((query: string) => {
     setSearchQuery(query);
@@ -316,33 +333,39 @@ export const CloudStorageView: React.FC<CloudStorageViewProps> = ({
     setPageSize(nextPageSize);
   }, []);
 
-  const navigateToPage = useCallback(async (requestedPage: number) => {
-    const safePage = Math.min(totalPages, Math.max(1, requestedPage));
-    if (safePage === currentPage || pageNavigationLoading) {
-      return;
-    }
-
-    setPageNavigationLoading(true);
-    try {
-      let resolvedPage = safePage;
-      if (!isFilteringLocally) {
-        const loadedCount = await ensureItemsLoaded(safePage * pageSize);
-        const reachablePages = Math.max(1, Math.ceil(loadedCount / pageSize));
-        resolvedPage = Math.min(safePage, reachablePages);
+  const navigateToPage = useCallback(
+    async (requestedPage: number) => {
+      const safePage = Math.min(totalPages, Math.max(1, requestedPage));
+      if (safePage === currentPage || pageNavigationLoading) {
+        return;
       }
-      setCurrentPage(resolvedPage);
-    } finally {
-      setPageNavigationLoading(false);
-    }
-  }, [currentPage, ensureItemsLoaded, isFilteringLocally, pageNavigationLoading, pageSize, totalPages]);
+
+      setPageNavigationLoading(true);
+      try {
+        let resolvedPage = safePage;
+        if (!isFilteringLocally) {
+          const loadedCount = await ensureItemsLoaded(safePage * pageSize);
+          const reachablePages = Math.max(1, Math.ceil(loadedCount / pageSize));
+          resolvedPage = Math.min(safePage, reachablePages);
+        }
+        setCurrentPage(resolvedPage);
+      } finally {
+        setPageNavigationLoading(false);
+      }
+    },
+    [
+      currentPage,
+      ensureItemsLoaded,
+      isFilteringLocally,
+      pageNavigationLoading,
+      pageSize,
+      totalPages,
+    ]
+  );
 
   const handlePrevPage = useCallback(() => {
     void navigateToPage(currentPage - 1);
   }, [currentPage, navigateToPage]);
-
-  const handlePageChange = useCallback((page: number) => {
-    void navigateToPage(page);
-  }, [navigateToPage]);
 
   const handleNextPage = useCallback(() => {
     void navigateToPage(currentPage + 1);
@@ -361,9 +384,15 @@ export const CloudStorageView: React.FC<CloudStorageViewProps> = ({
   const showLoadingDirectory = canBrowse && loading && items.length === 0;
   const showBrowseError = canBrowse && !loading && !!browseError;
   const showUnsupportedHint = canBrowse && !loading && !browseError && !supported;
-  const showEmptyDirectoryHint = canBrowse && !loading && !browseError && supported && items.length === 0;
+  const showEmptyDirectoryHint =
+    canBrowse && !loading && !browseError && supported && items.length === 0;
   const showNoSearchResultHint =
-    canBrowse && !loading && !browseError && supported && items.length > 0 && filteredItems.length === 0;
+    canBrowse &&
+    !loading &&
+    !browseError &&
+    supported &&
+    items.length > 0 &&
+    filteredItems.length === 0;
   const showFileList = canBrowse && !browseError && supported && filteredItems.length > 0;
 
   const sidebarContent = (
@@ -456,7 +485,11 @@ export const CloudStorageView: React.FC<CloudStorageViewProps> = ({
         failedPreviewUrlsRef={failedPreviewUrlsRef}
         storageRevision={storageRevision}
         suspendPreviewLoading={isViewerOpen}
-        autoLoadCursor={!isFilteringLocally && currentPage === loadedPages && !pageNavigationLoading ? nextCursor : null}
+        autoLoadCursor={
+          !isFilteringLocally && currentPage === loadedPages && !pageNavigationLoading
+            ? nextCursor
+            : null
+        }
         loadingMore={loadingMore}
         onAutoLoadMore={handleLoadMore}
       />
@@ -473,7 +506,7 @@ export const CloudStorageView: React.FC<CloudStorageViewProps> = ({
           pageSize={pageSize}
           loading={loadingMore || pageNavigationLoading}
           onPageSizeChange={handlePageSizeChange}
-          onPageChange={handlePageChange}
+          onPageChange={navigateToPage}
           onPrevPage={handlePrevPage}
           onNextPage={handleNextPage}
         />

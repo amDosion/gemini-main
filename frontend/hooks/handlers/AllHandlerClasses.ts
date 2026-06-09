@@ -82,16 +82,14 @@ export class ImageOutpaintingHandler extends BaseHandler {
     const thoughts = firstResult?.thoughts || [];
     const textResponse = firstResult?.text;
 
-    // ✅ 后端已创建附件记录和上传任务（AI 返回的结果图片）
-    const uploadTask = async () => ({
-      dbAttachments: displayAttachments,
-      dbUserAttachments: context.attachments,
-    });
-
     return {
       content: context.text,
       attachments: displayAttachments,
-      uploadTask: uploadTask(),
+      // ✅ 后端已创建附件记录和上传任务（AI 返回的结果图片）
+      uploadTask: Promise.resolve({
+        dbAttachments: displayAttachments,
+        dbUserAttachments: context.attachments,
+      }),
       thoughts: thoughts.length > 0 ? thoughts : undefined,
       textResponse,
       enhancedPrompt,

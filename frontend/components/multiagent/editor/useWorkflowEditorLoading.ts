@@ -241,7 +241,7 @@ export const useWorkflowEditorLoading = ({
       addLog(log.nodeId || 'system', nodeName, log.level, log.message, log.timestamp);
     }
     importedExecutionLogCountRef.current = sourceLogs.length;
-  }, [executionStatus?.logs, nodes, addLog, importedExecutionLogCountRef, executionStatus]);
+  }, [nodes, addLog, importedExecutionLogCountRef, executionStatus]);
 
   useEffect(() => {
     const status = String(executionStatus?.finalStatus || '')
@@ -490,12 +490,6 @@ export const useWorkflowEditorLoading = ({
       cancelled = true;
     };
   }, [
-    loadedWorkflow?.token,
-    loadedWorkflow?.name,
-    loadedWorkflow?.prompt,
-    loadedWorkflow?.input,
-    loadedWorkflow?.nodes,
-    loadedWorkflow?.edges,
     setNodes,
     setEdges,
     addLog,

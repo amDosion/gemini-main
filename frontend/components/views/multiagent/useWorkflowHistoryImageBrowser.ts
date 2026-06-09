@@ -324,14 +324,11 @@ export const useWorkflowHistoryImageBrowser = ({
           );
         });
     });
-  }, [
-    enabled,
-    itemsSignature,
-    localPreviewCache,
-    missingPreviewRequests,
-    missingPreviewRequestsKey,
-    showError,
-  ]);
+    // localPreviewCache 不在依赖内：effect 体只通过 setLocalPreviewCache 的函数式
+    // updater 读取 prev，从不直接读闭包里的 localPreviewCache。缺失预览的触发完全由
+    // missingPreviewRequests / missingPreviewRequestsKey（由 localPreviewCache 派生）
+    // 表达，带上 localPreviewCache 只会在每次缓存写入后多触发一次无意义的 effect。
+  }, [enabled, itemsSignature, missingPreviewRequests, missingPreviewRequestsKey, showError]);
 
   useEffect(() => {
     mountedRef.current = true;

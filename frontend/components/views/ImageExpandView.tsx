@@ -394,7 +394,7 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
   useEffect(() => {
     canvas.resetView();
     setIsCompareMode(false);
-  }, [activeImageUrl, carouselIndex]);
+  }, [activeImageUrl, carouselIndex, canvas.resetView]);
 
   // 获取原图 URL（用于对比）
   const originalImageUrl = useMemo(() => {

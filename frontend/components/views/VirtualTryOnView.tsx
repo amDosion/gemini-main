@@ -218,36 +218,37 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
     }
   }, [numberOfImages, numberOfImageOptions, defaultNumberOfImages]);
 
-  // ✅ 人物图上传处理
-  const handlePersonUpload = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ✅ 通用图片上传处理：人物图 / 服装图结构一致，抽出公共逻辑
+  const uploadImage = useCallback(
+    async (
+      e: React.ChangeEvent<HTMLInputElement>,
+      setUrl: (url: string) => void,
+      errorMessage: string
+    ) => {
       const file = e.target.files?.[0];
       if (!file) return;
       try {
         const url = await fileToBase64(file);
-        setPersonImageUrl(url);
-      } catch (err) {
-        showError('人物图上传失败');
+        setUrl(url);
+      } catch {
+        showError(errorMessage);
       }
       e.target.value = '';
     },
     [showError]
   );
 
+  // ✅ 人物图上传处理
+  const handlePersonUpload = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => uploadImage(e, setPersonImageUrl, '人物图上传失败'),
+    [uploadImage]
+  );
+
   // ✅ 服装图上传处理
   const handleGarmentUpload = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      try {
-        const url = await fileToBase64(file);
-        setGarmentImageUrl(url);
-      } catch (err) {
-        showError('服装图上传失败');
-      }
-      e.target.value = '';
-    },
-    [showError]
+    (e: React.ChangeEvent<HTMLInputElement>) =>
+      uploadImage(e, setGarmentImageUrl, '服装图上传失败'),
+    [uploadImage]
   );
 
   // ✅ 右侧面板试穿按钮处理

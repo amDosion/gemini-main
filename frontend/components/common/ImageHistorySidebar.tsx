@@ -464,9 +464,15 @@ export function useImageHistorySidebar({
     selectedMessageId,
   ]);
 
-  useEffect(() => {
-    if (filteredItems.length === 0) return;
+  // 通过 ref 持有 filteredItems / selectedMessageId,避免每次选中项或历史变化都重挂
+  // window keydown listener;handler 始终读取最新值,与原先"每次变化重挂监听"行为一致,
+  // 但 deps 收敛后监听只在 mount/unmount 及回调 prop 变化时增删。
+  const filteredItemsRef = useRef(filteredItems);
+  filteredItemsRef.current = filteredItems;
+  const selectedMessageIdRef = useRef(selectedMessageId);
+  selectedMessageIdRef.current = selectedMessageId;
 
+  useEffect(() => {
     const handleHistoryNavigation = (event: KeyboardEvent) => {
       if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
 
@@ -481,17 +487,21 @@ export function useImageHistorySidebar({
         }
       }
 
+      const items = filteredItemsRef.current;
+      if (items.length === 0) return;
+
       event.preventDefault();
       closeHoverPreview();
 
-      const defaultIndex = fallbackSelection === 'first' ? 0 : filteredItems.length - 1;
-      const currentIndex = selectedMessageId
-        ? filteredItems.findIndex((message) => message.id === selectedMessageId)
+      const currentSelectedMessageId = selectedMessageIdRef.current;
+      const defaultIndex = fallbackSelection === 'first' ? 0 : items.length - 1;
+      const currentIndex = currentSelectedMessageId
+        ? items.findIndex((message) => message.id === currentSelectedMessageId)
         : defaultIndex;
       const safeCurrentIndex = currentIndex >= 0 ? currentIndex : defaultIndex;
       const delta = event.key === 'ArrowUp' ? -1 : 1;
-      const nextIndex = Math.max(0, Math.min(filteredItems.length - 1, safeCurrentIndex + delta));
-      const nextMessage = filteredItems[nextIndex];
+      const nextIndex = Math.max(0, Math.min(items.length - 1, safeCurrentIndex + delta));
+      const nextMessage = items[nextIndex];
       if (!nextMessage) return;
 
       const displayAttachments = getDisplayAttachments(nextMessage.attachments);
@@ -514,12 +524,10 @@ export function useImageHistorySidebar({
   }, [
     closeHoverPreview,
     fallbackSelection,
-    filteredItems,
     getDisplayAttachments,
     getPreviewAttachments,
     onSelectItem,
     onSelectedMessageIdChange,
-    selectedMessageId,
   ]);
 
   useEffect(() => {

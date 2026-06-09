@@ -286,12 +286,15 @@ export const useWorkflowHistoryController = ({
       setHistoryError(null);
     }
     try {
-      const payload = await requestJson<WorkflowHistoryListResponse>('/api/workflows/history?limit=100', {
-        withAuth: true,
-        signal: controller.signal,
-        timeoutMs: 0,
-        errorMessage: '加载工作流历史失败',
-      });
+      const payload = await requestJson<WorkflowHistoryListResponse>(
+        '/api/workflows/history?limit=100',
+        {
+          withAuth: true,
+          signal: controller.signal,
+          timeoutMs: 0,
+          errorMessage: '加载工作流历史失败',
+        }
+      );
       if (!isMountedRef.current || controller.signal.aborted || isStaleRequest()) return;
       const items = Array.isArray(payload?.executions)
         ? payload.executions.map(mapHistoryItem)
@@ -344,12 +347,15 @@ export const useWorkflowHistoryController = ({
         setLoadingHistoryId(executionId);
       }
       try {
-        const payload = await requestJson<WorkflowHistoryDetailResponse>(`/api/workflows/history/${executionId}`, {
-          withAuth: true,
-          signal: controller.signal,
-          timeoutMs: 0,
-          errorMessage: '加载历史详情失败',
-        });
+        const payload = await requestJson<WorkflowHistoryDetailResponse>(
+          `/api/workflows/history/${executionId}`,
+          {
+            withAuth: true,
+            signal: controller.signal,
+            timeoutMs: 0,
+            errorMessage: '加载历史详情失败',
+          }
+        );
         if (!isMountedRef.current || controller.signal.aborted || isStaleRequest()) return;
 
         const workflow = payload?.workflow || {};
@@ -541,6 +547,53 @@ export const useWorkflowHistoryController = ({
     ]
   );
 
+  // 媒体下载与分析下载结构一致（下载 blob → 推断文件名 → 触发浏览器下载），
+  // 仅 URL 后缀、回退文件名、错误文案与状态 setter 不同，统一到该泛型助手。
+  const handleDownloadWorkflowFile = useCallback(
+    async (
+      item: WorkflowHistoryItem,
+      config: {
+        urlSegment: string;
+        fallbackName: string;
+        errorMessage: string;
+        setDownloadingId: Dispatch<SetStateAction<string | null>>;
+        setProgress: Dispatch<SetStateAction<Record<string, number>>>;
+      }
+    ) => {
+      const { urlSegment, fallbackName, errorMessage, setDownloadingId, setProgress } = config;
+      if (isMountedRef.current) {
+        setDownloadingId(item.id);
+        setProgress((prev) => ({ ...prev, [item.id]: 0 }));
+      }
+      try {
+        const { blob, headers } = await downloadBlobWithXhr({
+          url: `/api/workflows/history/${item.id}/${urlSegment}/download`,
+          headers: getAuthHeaders(),
+          withCredentials: true,
+          timeoutMs: 180000,
+          onDownloadProgress: (progress) => {
+            if (!isMountedRef.current) return;
+            if (progress.percent === null) return;
+            setProgress((prev) => ({ ...prev, [item.id]: progress.percent || 0 }));
+          },
+        });
+        if (!isMountedRef.current) return;
+        const contentDisposition = headers['content-disposition'] || '';
+        const fileName = inferFileNameFromContentDisposition(contentDisposition, fallbackName);
+        downloadBlobInBrowser({ blob, fileName });
+      } catch (error) {
+        if (!isMountedRef.current) return;
+        const message = error instanceof Error ? error.message : errorMessage;
+        showError(message);
+      } finally {
+        if (!isMountedRef.current) return;
+        setDownloadingId(null);
+        setProgress((prev) => removeRecordKey(prev, item.id));
+      }
+    },
+    [showError]
+  );
+
   const handleDownloadWorkflowMedia = useCallback(
     async (item: WorkflowHistoryItem) => {
       if (!item?.id) return;
@@ -553,75 +606,29 @@ export const useWorkflowHistoryController = ({
               ? 'audio'
               : null;
       if (!mediaKind) return;
-      if (isMountedRef.current) {
-        setDownloadingHistoryId(item.id);
-        setDownloadMediaProgress((prev) => ({ ...prev, [item.id]: 0 }));
-      }
-      try {
-        const { blob, headers } = await downloadBlobWithXhr({
-          url: `/api/workflows/history/${item.id}/${mediaKind}/download`,
-          headers: getAuthHeaders(),
-          withCredentials: true,
-          timeoutMs: 180000,
-          onDownloadProgress: (progress) => {
-            if (!isMountedRef.current) return;
-            if (progress.percent === null) return;
-            setDownloadMediaProgress((prev) => ({ ...prev, [item.id]: progress.percent || 0 }));
-          },
-        });
-        if (!isMountedRef.current) return;
-        const contentDisposition = headers['content-disposition'] || '';
-        const fallbackName = `workflow-${item.id.slice(0, 8)}-${mediaKind}.zip`;
-        const fileName = inferFileNameFromContentDisposition(contentDisposition, fallbackName);
-        downloadBlobInBrowser({ blob, fileName });
-      } catch (error) {
-        if (!isMountedRef.current) return;
-        const message = error instanceof Error ? error.message : '下载结果媒体失败';
-        showError(message);
-      } finally {
-        if (!isMountedRef.current) return;
-        setDownloadingHistoryId(null);
-        setDownloadMediaProgress((prev) => removeRecordKey(prev, item.id));
-      }
+      await handleDownloadWorkflowFile(item, {
+        urlSegment: mediaKind,
+        fallbackName: `workflow-${item.id.slice(0, 8)}-${mediaKind}.zip`,
+        errorMessage: '下载结果媒体失败',
+        setDownloadingId: setDownloadingHistoryId,
+        setProgress: setDownloadMediaProgress,
+      });
     },
-    [showError]
+    [handleDownloadWorkflowFile]
   );
 
   const handleDownloadWorkflowAnalysis = useCallback(
     async (item: WorkflowHistoryItem) => {
       if (!item?.id) return;
-      if (isMountedRef.current) {
-        setDownloadingAnalysisId(item.id);
-        setDownloadAnalysisProgress((prev) => ({ ...prev, [item.id]: 0 }));
-      }
-      try {
-        const { blob, headers } = await downloadBlobWithXhr({
-          url: `/api/workflows/history/${item.id}/analysis/download`,
-          headers: getAuthHeaders(),
-          withCredentials: true,
-          timeoutMs: 180000,
-          onDownloadProgress: (progress) => {
-            if (!isMountedRef.current) return;
-            if (progress.percent === null) return;
-            setDownloadAnalysisProgress((prev) => ({ ...prev, [item.id]: progress.percent || 0 }));
-          },
-        });
-        if (!isMountedRef.current) return;
-        const contentDisposition = headers['content-disposition'] || '';
-        const fallbackName = `workflow-${item.id.slice(0, 8)}-analysis.xlsx`;
-        const fileName = inferFileNameFromContentDisposition(contentDisposition, fallbackName);
-        downloadBlobInBrowser({ blob, fileName });
-      } catch (error) {
-        if (!isMountedRef.current) return;
-        const message = error instanceof Error ? error.message : '下载分析结果失败';
-        showError(message);
-      } finally {
-        if (!isMountedRef.current) return;
-        setDownloadingAnalysisId(null);
-        setDownloadAnalysisProgress((prev) => removeRecordKey(prev, item.id));
-      }
+      await handleDownloadWorkflowFile(item, {
+        urlSegment: 'analysis',
+        fallbackName: `workflow-${item.id.slice(0, 8)}-analysis.xlsx`,
+        errorMessage: '下载分析结果失败',
+        setDownloadingId: setDownloadingAnalysisId,
+        setProgress: setDownloadAnalysisProgress,
+      });
     },
-    [showError]
+    [handleDownloadWorkflowFile]
   );
 
   useEffect(() => {

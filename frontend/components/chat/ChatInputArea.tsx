@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { ChatOptions, ModelConfig, Attachment, AppMode, Persona } from '../../types/types';
 import { v4 as uuidv4 } from 'uuid';
 import { fileToBase64, isBlobUrl } from '../../hooks/handlers/attachmentUtils';
@@ -84,13 +84,16 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
 
   // Controlled vs Local State for Attachments
   const attachments = activeAttachments !== undefined ? activeAttachments : localAttachments;
-  const updateAttachments = (newAtts: Attachment[]) => {
-    if (onAttachmentsChange) {
-      onAttachmentsChange(newAtts);
-    } else {
-      setLocalAttachments(newAtts);
-    }
-  };
+  const updateAttachments = useCallback(
+    (newAtts: Attachment[]) => {
+      if (onAttachmentsChange) {
+        onAttachmentsChange(newAtts);
+      } else {
+        setLocalAttachments(newAtts);
+      }
+    },
+    [onAttachmentsChange]
+  );
 
   const { handlePaste: handleAttachmentPaste, appendFiles } = useClipboardAttachments({
     mode,

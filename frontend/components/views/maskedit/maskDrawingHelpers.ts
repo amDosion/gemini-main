@@ -75,11 +75,13 @@ export const updateMaskCanvasUrl = ({
   const canvas = maskCanvasRef.current;
   if (!canvas) return;
 
+  // 两条路径都需要先释放并清空旧的 blob URL，统一在分支前处理一次。
+  if (maskPreviewBlobUrlRef.current) {
+    revokeManagedMediaObjectUrl(maskPreviewBlobUrlRef.current);
+    maskPreviewBlobUrlRef.current = null;
+  }
+
   if (hasBrushContentRef.current) {
-    if (maskPreviewBlobUrlRef.current) {
-      revokeManagedMediaObjectUrl(maskPreviewBlobUrlRef.current);
-      maskPreviewBlobUrlRef.current = null;
-    }
     canvas.toBlob((blob) => {
       if (blob) {
         const url = createManagedMediaObjectUrl(blob);
@@ -89,10 +91,6 @@ export const updateMaskCanvasUrl = ({
       }
     }, 'image/png');
   } else {
-    if (maskPreviewBlobUrlRef.current) {
-      revokeManagedMediaObjectUrl(maskPreviewBlobUrlRef.current);
-      maskPreviewBlobUrlRef.current = null;
-    }
     setMaskCanvasUrl(null);
   }
   onAfterUpdate();

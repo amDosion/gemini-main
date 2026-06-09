@@ -577,6 +577,10 @@ const isEnvelopeCandidateRecord = (record: UnknownRecord): boolean => {
 
 const collectEnvelopeCandidates = (snapshot: unknown): EnvelopeCandidate[] => {
   const candidates: EnvelopeCandidate[] = [];
+  // 仅按对象引用去重，防止同一个对象在图中被重复遍历。
+  // 注意：parseJsonValue 解析字符串时每次都产生新的对象引用，因此以不同字符串形式
+  // 多次出现的"语义重复"内容不会被此 guard 拦截——这是有意为之，最终候选项按 score 去重，
+  // 而非按引用去重。
   const visited = new Set<unknown>();
 
   const walk = (value: unknown, sourcePath: string, depth: number) => {

@@ -701,7 +701,6 @@ export const ImageMaskEditView: React.FC<ImageMaskEditViewProps> = ({
       providerId,
       resetParams,
       editMode,
-      activeModelConfig,
       onStop,
       messages,
       currentSessionId,

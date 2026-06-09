@@ -27,6 +27,37 @@ export interface StartInputNodeConfigPanelProps {
   updateNodeData: (patch: Partial<CustomNodeData>) => void;
 }
 
+// 无闭包依赖的纯工具函数，提到模块作用域避免每次渲染重复分配。
+const normalizeUrlList = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || '').trim()).filter(Boolean);
+};
+
+const dedupeUrlList = (...sources: string[][]): string[] => {
+  const deduped = new Set<string>();
+  const result: string[] = [];
+  sources.forEach((source) => {
+    source.forEach((item) => {
+      if (!deduped.has(item)) {
+        deduped.add(item);
+        result.push(item);
+      }
+    });
+  });
+  return result;
+};
+
+const parseUrlTextareaValue = (rawValue: string): string[] => {
+  return Array.from(
+    new Set(
+      String(rawValue || '')
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+  );
+};
+
 export const StartInputNodeConfigPanel: React.FC<StartInputNodeConfigPanelProps> = ({
   nodeData,
   nodeType,
@@ -44,33 +75,6 @@ export const StartInputNodeConfigPanel: React.FC<StartInputNodeConfigPanelProps>
     const isVideoInputNode = nodeType === 'input_video';
     const isAudioInputNode = nodeType === 'input_audio';
     const isFileInputNode = nodeType === 'input_file';
-    const normalizeUrlList = (value: unknown): string[] => {
-      if (!Array.isArray(value)) return [];
-      return value.map((item) => String(item || '').trim()).filter(Boolean);
-    };
-    const dedupeUrlList = (...sources: string[][]): string[] => {
-      const deduped = new Set<string>();
-      const result: string[] = [];
-      sources.forEach((source) => {
-        source.forEach((item) => {
-          if (!deduped.has(item)) {
-            deduped.add(item);
-            result.push(item);
-          }
-        });
-      });
-      return result;
-    };
-    const parseUrlTextareaValue = (rawValue: string): string[] => {
-      return Array.from(
-        new Set(
-          String(rawValue || '')
-            .split(/\r?\n/)
-            .map((item) => item.trim())
-            .filter(Boolean)
-        )
-      );
-    };
 
     const startImageValues = dedupeUrlList(
       normalizeUrlList(nodeData.startImageUrls),

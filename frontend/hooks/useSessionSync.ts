@@ -43,18 +43,12 @@ export const useSessionSync = ({
   // ✅ B-9: 最后一次成功 fetch 过 messages 的 sessionId,避免首帧抖动重复 fetch
   const lastFetchedSessionRef = useRef<string | null>(null);
 
-  // Sync sessions to ref
+  // 将 props 镜像到对应 ref，合并为单个 effect 减少每次渲染调度的 effect 数量。
   useEffect(() => {
     sessionsRef.current = sessions;
-  }, [sessions]);
-
-  useEffect(() => {
     currentSessionIdRef.current = currentSessionId;
-  }, [currentSessionId]);
-
-  useEffect(() => {
     activeModelConfigRef.current = activeModelConfig;
-  }, [activeModelConfig]);
+  }, [sessions, currentSessionId, activeModelConfig]);
 
   const cancelInFlightFetch = useCallback(() => {
     const controller = fetchAbortControllerRef.current;

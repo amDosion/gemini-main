@@ -210,15 +210,7 @@ export function useHoverPromptPreview<
       window.addEventListener('mousemove', onMouseMove);
       window.addEventListener('mouseup', onMouseUp);
     },
-    [
-      preview,
-      size?.width,
-      size?.height,
-      position?.left,
-      position?.top,
-      clearHideTimer,
-      detachResizeListeners,
-    ]
+    [preview, size, position?.left, position?.top, clearHideTimer, detachResizeListeners]
   );
 
   // Sync position with real panel rect via requestAnimationFrame

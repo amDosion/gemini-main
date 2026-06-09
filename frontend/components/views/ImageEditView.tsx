@@ -86,7 +86,7 @@ export const ImageEditView: React.FC<ImageEditViewProps> = ({
   const getStableCanvasUrlFromAttachment = useStableAttachmentImageUrl(activeAttachments, {
     createFileObjectUrls: false,
   });
-  const messagesMediaSignature = buildMessagesMediaSignature(messages);
+  const messagesMediaSignature = useMemo(() => buildMessagesMediaSignature(messages), [messages]);
 
   // 对比模式状态
   const [isCompareMode, setIsCompareMode] = useState(false);

@@ -13,7 +13,10 @@ import { useModeControlsSchema } from '../../../hooks/useModeControlsSchema';
 import { useEnhancePromptModels } from '../../../hooks/useEnhancePromptModels';
 import PromptEnhanceControl from '../../shared/PromptEnhanceControl';
 import VideoExtensionControl from '../../shared/VideoExtensionControl';
-import { buildVideoControlContract, getVideoExtensionOptions } from '../../../utils/videoControlSchema';
+import {
+  buildVideoControlContract,
+  getVideoExtensionOptions,
+} from '../../../utils/videoControlSchema';
 
 const GROK_SIZE_OPTIONS = [
   { label: '1:1 (1024\u00d71024)', value: '1024x1024' },
@@ -56,7 +59,11 @@ export const VideoGenControls: React.FC<VideoGenControlsProps> = (props) => {
     setStoryboardSegments: propSetStoryboardSegments,
   } = props;
 
-  const { schema, loading, error } = useModeControlsSchema(providerId, 'video-gen', currentModel?.id);
+  const { schema, loading, error } = useModeControlsSchema(
+    providerId,
+    'video-gen',
+    currentModel?.id
+  );
   const enhancePromptModels = useEnhancePromptModels(providerId);
   const videoControlContract = useMemo(() => buildVideoControlContract(schema), [schema]);
 
@@ -105,13 +112,17 @@ export const VideoGenControls: React.FC<VideoGenControlsProps> = (props) => {
   const enhancePrompt = controls?.enhancePrompt ?? propEnhancePrompt ?? false;
   const setEnhancePrompt = controls?.setEnhancePrompt ?? propSetEnhancePrompt ?? (() => {});
   const enhancePromptModel = controls?.enhancePromptModel ?? propEnhancePromptModel ?? '';
-  const setEnhancePromptModel = controls?.setEnhancePromptModel ?? propSetEnhancePromptModel ?? (() => {});
+  const setEnhancePromptModel =
+    controls?.setEnhancePromptModel ?? propSetEnhancePromptModel ?? (() => {});
   const videoExtensionCount =
-    controls?.videoExtensionCount ?? propVideoExtensionCount ?? videoControlContract.defaultVideoExtensionCount;
+    controls?.videoExtensionCount ??
+    propVideoExtensionCount ??
+    videoControlContract.defaultVideoExtensionCount;
   const setVideoExtensionCount =
     controls?.setVideoExtensionCount ?? propSetVideoExtensionCount ?? (() => {});
   const storyboardSegments = controls?.storyboardSegments ?? propStoryboardSegments ?? [];
-  const setStoryboardSegments = controls?.setStoryboardSegments ?? propSetStoryboardSegments ?? (() => {});
+  const setStoryboardSegments =
+    controls?.setStoryboardSegments ?? propSetStoryboardSegments ?? (() => {});
 
   // 校验当前尺寸
   useEffect(() => {
@@ -131,32 +142,35 @@ export const VideoGenControls: React.FC<VideoGenControlsProps> = (props) => {
 
   // 校验时长范围
   useEffect(() => {
-    const sec = parseInt(videoSeconds);
+    const sec = parseInt(videoSeconds, 10);
     if (!isNaN(sec)) {
       if (sec < minDuration) setVideoSeconds(String(minDuration));
       else if (sec > maxDuration) setVideoSeconds(String(maxDuration));
     }
   }, [videoSeconds, minDuration, maxDuration, setVideoSeconds]);
 
-  const currentDuration = parseInt(videoSeconds) || minDuration;
+  const currentDuration = parseInt(videoSeconds, 10) || minDuration;
   const extensionBaseDuration = useMemo(() => {
     const currentOptions = getVideoExtensionOptions(videoControlContract, String(currentDuration));
     if (currentOptions.some((option) => option.count > 0)) {
       return currentDuration;
     }
-    const fallback = Object.entries(videoControlContract.extensionOptionsBySeconds)
-      .find(([, options]) => options.some((option) => option.count > 0))?.[0];
+    const fallback = Object.entries(videoControlContract.extensionOptionsBySeconds).find(
+      ([, options]) => options.some((option) => option.count > 0)
+    )?.[0];
     const parsedFallback = parseInt(String(fallback || ''), 10);
     return Number.isFinite(parsedFallback) && parsedFallback > 0 ? parsedFallback : currentDuration;
   }, [currentDuration, videoControlContract]);
   const extensionOptions = useMemo(() => {
-    return getVideoExtensionOptions(videoControlContract, String(extensionBaseDuration)).map((option) => ({
-      ...option,
-      label:
-        option.count === 0
-          ? `${option.totalSeconds}s（原始）`
-          : `${option.totalSeconds}s（+${option.count} 次延长）`,
-    }));
+    return getVideoExtensionOptions(videoControlContract, String(extensionBaseDuration)).map(
+      (option) => ({
+        ...option,
+        label:
+          option.count === 0
+            ? `${option.totalSeconds}s（原始）`
+            : `${option.totalSeconds}s（+${option.count} 次延长）`,
+      })
+    );
   }, [extensionBaseDuration, videoControlContract]);
   const firstPositiveExtensionCount = useMemo(
     () => extensionOptions.find((option) => option.count > 0)?.count ?? 1,
@@ -167,9 +181,18 @@ export const VideoGenControls: React.FC<VideoGenControlsProps> = (props) => {
       if (enabled && extensionBaseDuration !== currentDuration) {
         setVideoSeconds(String(extensionBaseDuration));
       }
-      setVideoExtensionCount(enabled ? (videoExtensionCount > 0 ? videoExtensionCount : firstPositiveExtensionCount) : 0);
+      setVideoExtensionCount(
+        enabled ? (videoExtensionCount > 0 ? videoExtensionCount : firstPositiveExtensionCount) : 0
+      );
     },
-    [currentDuration, extensionBaseDuration, firstPositiveExtensionCount, setVideoExtensionCount, setVideoSeconds, videoExtensionCount]
+    [
+      currentDuration,
+      extensionBaseDuration,
+      firstPositiveExtensionCount,
+      setVideoExtensionCount,
+      setVideoSeconds,
+      videoExtensionCount,
+    ]
   );
 
   useEffect(() => {

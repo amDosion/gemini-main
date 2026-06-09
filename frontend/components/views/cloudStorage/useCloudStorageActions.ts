@@ -7,13 +7,9 @@ import {
   prepareCloudStorageDownload,
   renameCloudStorageItem,
   startPreparedCloudStorageDownload,
-  uploadCloudStorageFiles
+  uploadCloudStorageFiles,
 } from './cloudStorageActionService';
-import {
-  StorageBrowseItem,
-  StorageConfig,
-  StorageFileMetadataItem
-} from '../../../types/storage';
+import { StorageBrowseItem, StorageConfig, StorageFileMetadataItem } from '../../../types/storage';
 
 function normalizeTotalCount(value: unknown): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -74,7 +70,7 @@ export function useCloudStorageActions({
   onActionNotice,
   confirmDelete,
   confirmBatchDelete,
-  promptRename
+  promptRename,
 }: UseCloudStorageActionsOptions): UseCloudStorageActionsResult {
   const [selectedStorageId, setSelectedStorageId] = useState<string | null>(activeStorageId);
   const [currentPath, setCurrentPath] = useState('');
@@ -92,8 +88,12 @@ export function useCloudStorageActions({
   const [storageRevision, setStorageRevision] = useState<number | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [busyAction, setBusyAction] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
-  const [fileMetadataByUrl, setFileMetadataByUrl] = useState<Record<string, StorageFileMetadataItem>>({});
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(
+    null
+  );
+  const [fileMetadataByUrl, setFileMetadataByUrl] = useState<
+    Record<string, StorageFileMetadataItem>
+  >({});
   const requestedMetadataUrlsRef = useRef<Set<string>>(new Set());
   const itemsRef = useRef<StorageBrowseItem[]>([]);
   const nextCursorRef = useRef<string | null>(null);
@@ -106,24 +106,17 @@ export function useCloudStorageActions({
     [storageConfigs, selectedStorageId]
   );
 
+  // 将四个状态值镜像到对应 ref，合并为单个 effect 减少每次渲染调度的 effect 数量。
   useEffect(() => {
     itemsRef.current = items;
-  }, [items]);
-
-  useEffect(() => {
     nextCursorRef.current = nextCursor;
-  }, [nextCursor]);
-
-  useEffect(() => {
     currentPathRef.current = currentPath;
-  }, [currentPath]);
-
-  useEffect(() => {
     selectedStorageIdRef.current = selectedStorageId;
-  }, [selectedStorageId]);
+  }, [items, nextCursor, currentPath, selectedStorageId]);
 
   const applyStorageRevision = useCallback((nextRevision?: number | null) => {
-    if (typeof nextRevision !== 'number' || !Number.isFinite(nextRevision) || nextRevision < 0) return;
+    if (typeof nextRevision !== 'number' || !Number.isFinite(nextRevision) || nextRevision < 0)
+      return;
     setStorageRevision((prev) => {
       if (prev === null) return nextRevision;
       return nextRevision > prev ? nextRevision : prev;
@@ -134,9 +127,7 @@ export function useCloudStorageActions({
     if (removedItems.length === 0) return;
 
     const removedPaths = new Set(removedItems.map((item) => item.path));
-    const removedUrls = removedItems
-      .map((item) => String(item.url || '').trim())
-      .filter(Boolean);
+    const removedUrls = removedItems.map((item) => String(item.url || '').trim()).filter(Boolean);
 
     setItems((prev) => prev.filter((item) => !removedPaths.has(item.path)));
     setSelectedPaths((prev) => {
@@ -157,100 +148,100 @@ export function useCloudStorageActions({
     }
   }, []);
 
-  const loadPath = useCallback(async (
-    storageId: string,
-    path: string,
-    cursor?: string,
-    append: boolean = false
-  ) => {
-    if (append && appendLoadPromiseRef.current) {
-      await appendLoadPromiseRef.current;
-      return;
-    }
+  const loadPath = useCallback(
+    async (storageId: string, path: string, cursor?: string, append: boolean = false) => {
+      if (append && appendLoadPromiseRef.current) {
+        await appendLoadPromiseRef.current;
+        return;
+      }
 
-    const requestPromise = (async () => {
+      const requestPromise = (async () => {
+        if (append) {
+          setLoadingMore(true);
+        } else {
+          setLoading(true);
+          setBrowseError(null);
+          setError(null);
+          setMessage(null);
+          setSelectedPaths(new Set());
+          onBeforeLoadPath?.();
+        }
+
+        try {
+          const browseResult = await browseCloudStoragePath(storageId, path, cursor, 200);
+          if (browseResult.success === false) {
+            if (append) {
+              setError(browseResult.errorMessage);
+            } else {
+              itemsRef.current = [];
+              nextCursorRef.current = null;
+              currentPathRef.current = '';
+              setBrowseError(browseResult.errorMessage);
+              setItems([]);
+              setNextCursor(null);
+              setTotalItemCount(null);
+            }
+            return;
+          }
+
+          const { response, metadataPatch, metadataUrls } = browseResult;
+          applyStorageRevision(response.storageRevision);
+          setBrowseError(null);
+          setSupported(response.supported);
+          setMessage(response.message || null);
+          setStorageName(response.storageName || '');
+          setProvider(response.provider || '');
+          currentPathRef.current = response.path || '';
+          nextCursorRef.current = response.nextCursor || null;
+          setCurrentPath(currentPathRef.current);
+          setNextCursor(nextCursorRef.current);
+          setTotalItemCount((prev) => {
+            const nextTotalCount = normalizeTotalCount(response.totalCount);
+            if (nextTotalCount === null) {
+              return append ? prev : null;
+            }
+            return nextTotalCount;
+          });
+          const nextItems = append ? [...itemsRef.current, ...response.items] : response.items;
+          itemsRef.current = nextItems;
+          setItems(nextItems);
+
+          metadataUrls.forEach((url) => {
+            requestedMetadataUrlsRef.current.add(url);
+          });
+
+          if (metadataUrls.length > 0) {
+            setFileMetadataByUrl((prev) => ({ ...prev, ...metadataPatch }));
+          }
+        } finally {
+          setLoading(false);
+          setLoadingMore(false);
+        }
+      })();
+
       if (append) {
-        setLoadingMore(true);
-      } else {
-        setLoading(true);
-        setBrowseError(null);
-        setError(null);
-        setMessage(null);
-        setSelectedPaths(new Set());
-        onBeforeLoadPath?.();
+        appendLoadPromiseRef.current = requestPromise;
       }
 
       try {
-        const browseResult = await browseCloudStoragePath(storageId, path, cursor, 200);
-        if (browseResult.success === false) {
-          if (append) {
-            setError(browseResult.errorMessage);
-          } else {
-            itemsRef.current = [];
-            nextCursorRef.current = null;
-            currentPathRef.current = '';
-            setBrowseError(browseResult.errorMessage);
-            setItems([]);
-            setNextCursor(null);
-            setTotalItemCount(null);
-          }
-          return;
-        }
-
-        const { response, metadataPatch, metadataUrls } = browseResult;
-        applyStorageRevision(response.storageRevision);
-        setBrowseError(null);
-        setSupported(response.supported);
-        setMessage(response.message || null);
-        setStorageName(response.storageName || '');
-        setProvider(response.provider || '');
-        currentPathRef.current = response.path || '';
-        nextCursorRef.current = response.nextCursor || null;
-        setCurrentPath(currentPathRef.current);
-        setNextCursor(nextCursorRef.current);
-        setTotalItemCount((prev) => {
-          const nextTotalCount = normalizeTotalCount(response.totalCount);
-          if (nextTotalCount === null) {
-            return append ? prev : null;
-          }
-          return nextTotalCount;
-        });
-        const nextItems = append ? [...itemsRef.current, ...response.items] : response.items;
-        itemsRef.current = nextItems;
-        setItems(nextItems);
-
-        metadataUrls.forEach((url) => {
-          requestedMetadataUrlsRef.current.add(url);
-        });
-
-        if (metadataUrls.length > 0) {
-          setFileMetadataByUrl((prev) => ({ ...prev, ...metadataPatch }));
-        }
+        await requestPromise;
       } finally {
-        setLoading(false);
-        setLoadingMore(false);
+        if (append && appendLoadPromiseRef.current === requestPromise) {
+          appendLoadPromiseRef.current = null;
+        }
       }
-    })();
-
-    if (append) {
-      appendLoadPromiseRef.current = requestPromise;
-    }
-
-    try {
-      await requestPromise;
-    } finally {
-      if (append && appendLoadPromiseRef.current === requestPromise) {
-        appendLoadPromiseRef.current = null;
-      }
-    }
-  }, [applyStorageRevision, onBeforeLoadPath]);
+    },
+    [applyStorageRevision, onBeforeLoadPath]
+  );
 
   useEffect(() => {
     if (selectedStorageId && storageConfigs.some((config) => config.id === selectedStorageId)) {
       return;
     }
     const nextId =
-      (activeStorageId && storageConfigs.some((config) => config.id === activeStorageId) ? activeStorageId : null) ||
+      (activeStorageId && storageConfigs.some((config) => config.id === activeStorageId)
+        ? activeStorageId
+        : null) ||
       storageConfigs.find((config) => config.enabled)?.id ||
       storageConfigs[0]?.id ||
       null;
@@ -288,93 +279,114 @@ export function useCloudStorageActions({
     void loadPath(selectedStorageId, '');
   }, [selectedStorageId, selectedStorage, loadPath]);
 
-  const openDirectory = useCallback((path: string) => {
-    if (!selectedStorageId) return;
-    void loadPath(selectedStorageId, path);
-  }, [selectedStorageId, loadPath]);
+  const openDirectory = useCallback(
+    (path: string) => {
+      if (!selectedStorageId) return;
+      void loadPath(selectedStorageId, path);
+    },
+    [selectedStorageId, loadPath]
+  );
 
   const refreshCurrentPath = useCallback(() => {
     if (!selectedStorageId) return;
     void loadPath(selectedStorageId, currentPath);
   }, [selectedStorageId, currentPath, loadPath]);
 
-  const ensureItemsLoaded = useCallback(async (minimumItemCount: number) => {
-    const targetCount = Math.max(0, Math.trunc(minimumItemCount));
-    if (targetCount === 0) {
+  const ensureItemsLoaded = useCallback(
+    async (minimumItemCount: number) => {
+      const targetCount = Math.max(0, Math.trunc(minimumItemCount));
+      if (targetCount === 0) {
+        return itemsRef.current.length;
+      }
+
+      while (itemsRef.current.length < targetCount) {
+        const storageId = selectedStorageIdRef.current;
+        const cursor = nextCursorRef.current;
+        if (!storageId || !cursor) {
+          break;
+        }
+
+        const previousCount = itemsRef.current.length;
+        await loadPath(storageId, currentPathRef.current, cursor, true);
+
+        if (!nextCursorRef.current) {
+          break;
+        }
+        if (itemsRef.current.length <= previousCount && nextCursorRef.current === cursor) {
+          break;
+        }
+      }
       return itemsRef.current.length;
-    }
+    },
+    [loadPath]
+  );
 
-    while (itemsRef.current.length < targetCount) {
-      const storageId = selectedStorageIdRef.current;
-      const cursor = nextCursorRef.current;
-      if (!storageId || !cursor) {
-        break;
-      }
+  const handleDeleteItem = useCallback(
+    async (item: StorageBrowseItem) => {
+      if (!selectedStorageId) return;
+      const confirmed = await confirmDelete(item);
+      if (!confirmed) return;
 
-      const previousCount = itemsRef.current.length;
-      await loadPath(storageId, currentPathRef.current, cursor, true);
+      setBusyAction(true);
+      setError(null);
+      try {
+        const mutationResult = await deleteCloudStorageItem(selectedStorageId, item);
+        if (mutationResult.success === false) {
+          setError(mutationResult.errorMessage);
+          return;
+        }
+        applyStorageRevision(mutationResult.storageRevision);
+        if (mutationResult.noticeMessage) {
+          onActionNotice?.(mutationResult.noticeMessage);
+        }
+        if (nextCursor) {
+          await loadPath(selectedStorageId, currentPath);
+        } else {
+          removeItemsFromLocalState([item]);
+        }
+      } finally {
+        setBusyAction(false);
+      }
+    },
+    [
+      selectedStorageId,
+      currentPath,
+      nextCursor,
+      loadPath,
+      applyStorageRevision,
+      confirmDelete,
+      onActionNotice,
+      removeItemsFromLocalState,
+    ]
+  );
 
-      if (!nextCursorRef.current) {
-        break;
-      }
-      if (itemsRef.current.length <= previousCount && nextCursorRef.current === cursor) {
-        break;
-      }
-    }
-    return itemsRef.current.length;
-  }, [loadPath]);
+  const handleRenameItem = useCallback(
+    async (item: StorageBrowseItem) => {
+      if (!selectedStorageId) return;
+      const nextName = await promptRename(item);
+      if (nextName === null) return;
+      const newName = nextName.trim();
+      if (!newName || newName === item.name) return;
 
-  const handleDeleteItem = useCallback(async (item: StorageBrowseItem) => {
-    if (!selectedStorageId) return;
-    const confirmed = await confirmDelete(item);
-    if (!confirmed) return;
-
-    setBusyAction(true);
-    setError(null);
-    try {
-      const mutationResult = await deleteCloudStorageItem(selectedStorageId, item);
-      if (mutationResult.success === false) {
-        setError(mutationResult.errorMessage);
-        return;
-      }
-      applyStorageRevision(mutationResult.storageRevision);
-      if (mutationResult.noticeMessage) {
-        onActionNotice?.(mutationResult.noticeMessage);
-      }
-      if (nextCursor) {
+      setBusyAction(true);
+      setError(null);
+      try {
+        const mutationResult = await renameCloudStorageItem(selectedStorageId, item, newName);
+        if (mutationResult.success === false) {
+          setError(mutationResult.errorMessage);
+          return;
+        }
+        applyStorageRevision(mutationResult.storageRevision);
+        if (mutationResult.noticeMessage) {
+          onActionNotice?.(mutationResult.noticeMessage);
+        }
         await loadPath(selectedStorageId, currentPath);
-      } else {
-        removeItemsFromLocalState([item]);
+      } finally {
+        setBusyAction(false);
       }
-    } finally {
-      setBusyAction(false);
-    }
-  }, [selectedStorageId, currentPath, nextCursor, loadPath, applyStorageRevision, confirmDelete, onActionNotice, removeItemsFromLocalState]);
-
-  const handleRenameItem = useCallback(async (item: StorageBrowseItem) => {
-    if (!selectedStorageId) return;
-    const nextName = await promptRename(item);
-    if (nextName === null) return;
-    const newName = nextName.trim();
-    if (!newName || newName === item.name) return;
-
-    setBusyAction(true);
-    setError(null);
-    try {
-      const mutationResult = await renameCloudStorageItem(selectedStorageId, item, newName);
-      if (mutationResult.success === false) {
-        setError(mutationResult.errorMessage);
-        return;
-      }
-      applyStorageRevision(mutationResult.storageRevision);
-      if (mutationResult.noticeMessage) {
-        onActionNotice?.(mutationResult.noticeMessage);
-      }
-      await loadPath(selectedStorageId, currentPath);
-    } finally {
-      setBusyAction(false);
-    }
-  }, [selectedStorageId, currentPath, loadPath, applyStorageRevision, promptRename, onActionNotice]);
+    },
+    [selectedStorageId, currentPath, loadPath, applyStorageRevision, promptRename, onActionNotice]
+  );
 
   const handleBatchDelete = useCallback(async () => {
     if (!selectedStorageId || selectedPaths.size === 0) return;
@@ -408,32 +420,49 @@ export function useCloudStorageActions({
     } finally {
       setBusyAction(false);
     }
-  }, [selectedStorageId, selectedPaths, items, currentPath, nextCursor, loadPath, applyStorageRevision, confirmBatchDelete, onActionNotice, removeItemsFromLocalState]);
+  }, [
+    selectedStorageId,
+    selectedPaths,
+    items,
+    currentPath,
+    nextCursor,
+    loadPath,
+    applyStorageRevision,
+    confirmBatchDelete,
+    onActionNotice,
+    removeItemsFromLocalState,
+  ]);
 
-  const runDownload = useCallback(async (downloadItems: StorageBrowseItem[]) => {
-    if (!selectedStorageId || downloadItems.length === 0) return;
+  const runDownload = useCallback(
+    async (downloadItems: StorageBrowseItem[]) => {
+      if (!selectedStorageId || downloadItems.length === 0) return;
 
-    setBusyAction(true);
-    setError(null);
-    try {
-      const response = await prepareCloudStorageDownload(selectedStorageId, downloadItems);
-      await startPreparedCloudStorageDownload(response.downloadUrl, response.fileName);
+      setBusyAction(true);
+      setError(null);
+      try {
+        const response = await prepareCloudStorageDownload(selectedStorageId, downloadItems);
+        await startPreparedCloudStorageDownload(response.downloadUrl, response.fileName);
 
-      const noticeSegments = [`Download started: ${response.fileName}`];
-      if (response.skippedCount > 0) {
-        noticeSegments.push(`skipped ${response.skippedCount} item(s)`);
+        const noticeSegments = [`Download started: ${response.fileName}`];
+        if (response.skippedCount > 0) {
+          noticeSegments.push(`skipped ${response.skippedCount} item(s)`);
+        }
+        onActionNotice?.(noticeSegments.join(' · '));
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Failed to prepare download');
+      } finally {
+        setBusyAction(false);
       }
-      onActionNotice?.(noticeSegments.join(' · '));
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to prepare download');
-    } finally {
-      setBusyAction(false);
-    }
-  }, [selectedStorageId, onActionNotice]);
+    },
+    [selectedStorageId, onActionNotice]
+  );
 
-  const handleDownloadItem = useCallback(async (item: StorageBrowseItem) => {
-    await runDownload([item]);
-  }, [runDownload]);
+  const handleDownloadItem = useCallback(
+    async (item: StorageBrowseItem) => {
+      await runDownload([item]);
+    },
+    [runDownload]
+  );
 
   const handleBatchDownload = useCallback(async () => {
     if (selectedPaths.size === 0) return;
@@ -441,34 +470,37 @@ export function useCloudStorageActions({
     await runDownload(downloadItems);
   }, [items, runDownload, selectedPaths]);
 
-  const uploadFiles = useCallback(async (files: File[]) => {
-    const uploadList = Array.isArray(files) ? files : [];
-    if (!selectedStorageId || uploadList.length === 0) return;
+  const uploadFiles = useCallback(
+    async (files: File[]) => {
+      const uploadList = Array.isArray(files) ? files : [];
+      if (!selectedStorageId || uploadList.length === 0) return;
 
-    setBusyAction(true);
-    setError(null);
-    setUploadProgress({ done: 0, total: uploadList.length });
+      setBusyAction(true);
+      setError(null);
+      setUploadProgress({ done: 0, total: uploadList.length });
 
-    try {
-      const uploadResult = await uploadCloudStorageFiles({
-        files: uploadList,
-        storageId: selectedStorageId,
-        onProgress: setUploadProgress,
-        onStorageRevision: applyStorageRevision
-      });
+      try {
+        const uploadResult = await uploadCloudStorageFiles({
+          files: uploadList,
+          storageId: selectedStorageId,
+          onProgress: setUploadProgress,
+          onStorageRevision: applyStorageRevision,
+        });
 
-      if (uploadResult.errorMessage) {
-        setError(uploadResult.errorMessage);
-      } else if (uploadResult.noticeMessage) {
-        onActionNotice?.(uploadResult.noticeMessage);
+        if (uploadResult.errorMessage) {
+          setError(uploadResult.errorMessage);
+        } else if (uploadResult.noticeMessage) {
+          onActionNotice?.(uploadResult.noticeMessage);
+        }
+
+        await loadPath(selectedStorageId, currentPath);
+      } finally {
+        setUploadProgress(null);
+        setBusyAction(false);
       }
-
-      await loadPath(selectedStorageId, currentPath);
-    } finally {
-      setUploadProgress(null);
-      setBusyAction(false);
-    }
-  }, [selectedStorageId, currentPath, loadPath, applyStorageRevision, onActionNotice]);
+    },
+    [selectedStorageId, currentPath, loadPath, applyStorageRevision, onActionNotice]
+  );
 
   return {
     selectedStorageId,
@@ -502,6 +534,6 @@ export function useCloudStorageActions({
     handleBatchDelete,
     handleDownloadItem,
     handleBatchDownload,
-    uploadFiles
+    uploadFiles,
   };
 }
