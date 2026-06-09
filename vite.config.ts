@@ -60,9 +60,22 @@ function resolvePackageName(id: string): string | null {
   return parts[0];
 }
 
+// Dev-only: inject the standalone React DevTools agent (`npx react-devtools`,
+// listens on ws://localhost:8097) at the top of <head> so it loads before React.
+// `apply: 'serve'` keeps it out of the production build entirely.
+function reactDevtoolsPlugin() {
+  return {
+    name: 'react-devtools-standalone',
+    apply: 'serve' as const,
+    transformIndexHtml(html: string) {
+      return html.replace('<head>', '<head>\n    <script src="http://localhost:8097"></script>');
+    },
+  };
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [reactDevtoolsPlugin(), react()],
   // T3: a coverage gate now exists and is enforced. Thresholds are a conservative
   // floor below the measured baseline — ratchet them upward as coverage improves.
   test: {
