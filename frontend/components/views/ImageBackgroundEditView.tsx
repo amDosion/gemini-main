@@ -507,7 +507,6 @@ export const ImageBackgroundEditView: React.FC<ImageBackgroundEditViewProps> = (
       providerId,
       resetParams,
       editMode,
-      activeModelConfig,
       onStop,
       messages,
       currentSessionId,

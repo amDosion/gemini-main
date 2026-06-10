@@ -63,7 +63,11 @@ export const StageReplayPanel: React.FC<StageReplayPanelProps> = ({
   sessionSnapshot,
   onReplayCompleted,
 }) => {
-  const [state, dispatch] = React.useReducer(stageReplayReducer, undefined, createInitialStageReplayState);
+  const [state, dispatch] = React.useReducer(
+    stageReplayReducer,
+    undefined,
+    createInitialStageReplayState
+  );
   const replayAbortRef = React.useRef<AbortController | null>(null);
 
   React.useEffect(() => {
@@ -82,7 +86,7 @@ export const StageReplayPanel: React.FC<StageReplayPanelProps> = ({
   const handleReplay = React.useCallback(async () => {
     dispatch({ type: 'start_replay' });
 
-    if (!state.context?.valid || !selectedAnchor || !selectedAnchor.canReplay) {
+    if (!state.context?.valid || !selectedAnchor?.canReplay) {
       return;
     }
 
@@ -91,7 +95,11 @@ export const StageReplayPanel: React.FC<StageReplayPanelProps> = ({
     replayAbortRef.current = controller;
 
     try {
-      const result = await replayStageFromAnchor(state.context, selectedAnchor.id, controller.signal);
+      const result = await replayStageFromAnchor(
+        state.context,
+        selectedAnchor.id,
+        controller.signal
+      );
       dispatch({ type: 'replay_succeeded', result });
       onReplayCompleted?.();
     } catch (error) {
@@ -104,9 +112,9 @@ export const StageReplayPanel: React.FC<StageReplayPanelProps> = ({
   }, [state.context, selectedAnchor, onReplayCompleted]);
 
   const canRunReplay =
-    state.status !== 'replaying'
-    && Boolean(state.context?.valid)
-    && Boolean(selectedAnchor?.canReplay);
+    state.status !== 'replaying' &&
+    Boolean(state.context?.valid) &&
+    Boolean(selectedAnchor?.canReplay);
 
   return (
     <div className="p-3 rounded border border-slate-800 bg-slate-900/40 space-y-3">
@@ -145,9 +153,14 @@ export const StageReplayPanel: React.FC<StageReplayPanelProps> = ({
           <div className="text-[11px] text-slate-300 font-medium mb-1.5">历史阶段时间线</div>
           <ol className="space-y-1.5" aria-label="Stage replay timeline">
             {state.context.timeline.map((entry, index) => (
-              <li key={entry.id} className="rounded border border-slate-800 bg-slate-900/50 px-2 py-1.5 text-[10px] text-slate-300 space-y-0.5">
+              <li
+                key={entry.id}
+                className="rounded border border-slate-800 bg-slate-900/50 px-2 py-1.5 text-[10px] text-slate-300 space-y-0.5"
+              >
                 <div className="flex items-center justify-between gap-2">
-                  <span>{index + 1}. {entry.stage}</span>
+                  <span>
+                    {index + 1}. {entry.stage}
+                  </span>
                   <span className="text-slate-500">{entry.status}</span>
                 </div>
                 {entry.artifact && (
@@ -168,12 +181,15 @@ export const StageReplayPanel: React.FC<StageReplayPanelProps> = ({
             <select
               aria-label="Replay anchor"
               value={state.selectedAnchorId}
-              onChange={(event) => dispatch({ type: 'select_anchor', anchorId: event.target.value })}
+              onChange={(event) =>
+                dispatch({ type: 'select_anchor', anchorId: event.target.value })
+              }
               className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200"
             >
               {state.context.anchors.map((anchor) => (
                 <option key={anchor.id} value={anchor.id}>
-                  {anchor.stageLabel} · v{anchor.artifact.artifactVersion} · {anchor.timestampLabel}{anchor.canReplay ? '' : ' · 不可回放'}
+                  {anchor.stageLabel} · v{anchor.artifact.artifactVersion} · {anchor.timestampLabel}
+                  {anchor.canReplay ? '' : ' · 不可回放'}
                 </option>
               ))}
             </select>
@@ -181,13 +197,24 @@ export const StageReplayPanel: React.FC<StageReplayPanelProps> = ({
             {selectedAnchor && (
               <div className="rounded border border-slate-800 bg-slate-900/60 p-2 text-[11px] text-slate-300 space-y-1">
                 <div>阶段: {selectedAnchor.stageLabel}</div>
-                <div>Artifact: <span className="font-mono text-slate-400 break-all">{formatArtifact(selectedAnchor)}</span></div>
-                <div>Invocation: <span className="font-mono text-slate-400">{selectedAnchor.invocationId || '-'}</span></div>
+                <div>
+                  Artifact:{' '}
+                  <span className="font-mono text-slate-400 break-all">
+                    {formatArtifact(selectedAnchor)}
+                  </span>
+                </div>
+                <div>
+                  Invocation:{' '}
+                  <span className="font-mono text-slate-400">
+                    {selectedAnchor.invocationId || '-'}
+                  </span>
+                </div>
                 {selectedAnchor.inputArtifact && (
                   <div>
                     输入 Artifact:
                     <span className="ml-1 font-mono text-slate-400 break-all">
-                      {selectedAnchor.inputArtifact.artifactKey}@{selectedAnchor.inputArtifact.artifactVersion}
+                      {selectedAnchor.inputArtifact.artifactKey}@
+                      {selectedAnchor.inputArtifact.artifactVersion}
                     </span>
                   </div>
                 )}
@@ -211,16 +238,22 @@ export const StageReplayPanel: React.FC<StageReplayPanelProps> = ({
           disabled={!canRunReplay}
           className="w-full px-2.5 py-1.5 text-xs rounded border border-indigo-500/40 bg-indigo-500/15 text-indigo-200 hover:bg-indigo-500/25 disabled:opacity-50 inline-flex items-center justify-center gap-1"
         >
-          {state.status === 'replaying' ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+          {state.status === 'replaying' ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <RefreshCw size={12} />
+          )}
           {state.status === 'replaying' ? '回放中...' : '执行 Stage 回放'}
         </button>
 
         {state.errorMessage && state.status !== 'snapshot_invalid' && (
-          <div className={`text-[11px] rounded border px-2 py-1.5 ${
-            state.status === 'failed'
-              ? 'border-red-500/30 bg-red-500/10 text-red-200'
-              : 'border-amber-500/30 bg-amber-500/10 text-amber-200'
-          }`}>
+          <div
+            className={`text-[11px] rounded border px-2 py-1.5 ${
+              state.status === 'failed'
+                ? 'border-red-500/30 bg-red-500/10 text-red-200'
+                : 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+            }`}
+          >
             {state.errorMessage}
           </div>
         )}
@@ -239,7 +272,8 @@ export const StageReplayPanel: React.FC<StageReplayPanelProps> = ({
             </button>
           </div>
           <div className="text-[10px] text-emerald-100/90">
-            新 Artifact: {state.result.replayEnvelope.artifact
+            新 Artifact:{' '}
+            {state.result.replayEnvelope.artifact
               ? `${state.result.replayEnvelope.artifact.artifactKey}@${state.result.replayEnvelope.artifact.artifactVersion}`
               : '-'}
           </div>
@@ -251,10 +285,15 @@ export const StageReplayPanel: React.FC<StageReplayPanelProps> = ({
             ) : (
               <ul className="space-y-1" aria-label="Stage replay diff list">
                 {state.result.diff.slice(0, 20).map((entry) => (
-                  <li key={`${entry.path}-${entry.change}`} className="rounded border border-slate-800 bg-slate-900/50 p-1.5 space-y-0.5 text-[10px]">
+                  <li
+                    key={`${entry.path}-${entry.change}`}
+                    className="rounded border border-slate-800 bg-slate-900/50 p-1.5 space-y-0.5 text-[10px]"
+                  >
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-mono text-slate-300 break-all">{entry.path}</span>
-                      <span className={`inline-flex items-center rounded border px-1 py-0.5 ${getDiffTagClass(entry.change)}`}>
+                      <span
+                        className={`inline-flex items-center rounded border px-1 py-0.5 ${getDiffTagClass(entry.change)}`}
+                      >
                         {getDiffLabel(entry.change)}
                       </span>
                     </div>

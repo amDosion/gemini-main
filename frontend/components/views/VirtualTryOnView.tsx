@@ -20,7 +20,6 @@ import {
   Layers,
   Download,
   Maximize2,
-  Bot,
   AlertCircle,
   Upload,
   SlidersHorizontal,
@@ -30,11 +29,12 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 import { GenViewLayout } from '../common/GenViewLayout';
 import { CachedImage } from '../common/CachedImage';
+import { isLocalBlobAttachmentUrl } from '../../utils/attachmentUrl';
 import {
-  getPreferredImageAttachmentUrl,
-  isLocalBlobAttachmentUrl,
-} from '../../utils/attachmentUrl';
-import { getImageHistoryAttachmentPreviewUrl } from '../common/imageHistorySidebarHelpers';
+  getAttachmentStableKey,
+  mapDisplayImageAttachments,
+} from './virtualTryOn/tryOnAttachments';
+import { TryOnHistorySidebar } from './virtualTryOn/TryOnHistorySidebar';
 import { useToastContext } from '../../contexts/ToastContext';
 import { processUserAttachments, fileToBase64 } from '../../hooks/handlers/attachmentUtils';
 import { useModeControlsSchema } from '../../hooks/useModeControlsSchema';
@@ -56,32 +56,6 @@ interface VirtualTryOnViewProps {
   sessionId?: string | null;
   apiKey?: string;
 }
-
-const getAttachmentStableKey = (attachment: Attachment): string => {
-  const parts = [
-    attachment.id,
-    attachment.url,
-    attachment.fileUri,
-    attachment.name,
-    attachment.mimeType,
-  ].filter((part): part is string => Boolean(part && part.length > 0));
-
-  return parts.join('|');
-};
-
-const getDisplayImageAttachment = (
-  attachment: Attachment,
-  fallbackId: string
-): Attachment | null => {
-  const sourceAttachment = attachment.id ? attachment : { ...attachment, id: fallbackId };
-  const url = getImageHistoryAttachmentPreviewUrl(
-    sourceAttachment,
-    fallbackId,
-    getPreferredImageAttachmentUrl(sourceAttachment)
-  );
-  if (!url) return null;
-  return url === sourceAttachment.url ? sourceAttachment : { ...sourceAttachment, url };
-};
 
 export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
   messages,
@@ -160,13 +134,14 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
   }, [selectedMsgId, historyBatches]);
 
   // ✅ 当前批次的所有图片（支持多张）
-  const displayImages = useMemo(() => {
-    return (activeBatchMessage?.attachments || [])
-      .map((attachment, index) =>
-        getDisplayImageAttachment(attachment, `${activeBatchMessage?.id || 'tryon'}-${index}`)
-      )
-      .filter((attachment): attachment is Attachment => Boolean(attachment));
-  }, [activeBatchMessage?.attachments, activeBatchMessage?.id]);
+  const displayImages = useMemo(
+    () =>
+      mapDisplayImageAttachments(
+        activeBatchMessage?.attachments,
+        activeBatchMessage?.id || 'tryon'
+      ),
+    [activeBatchMessage?.attachments, activeBatchMessage?.id]
+  );
 
   const isBatchError = activeBatchMessage?.isError;
 
@@ -302,133 +277,6 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
     baseSteps,
     numberOfImages,
   ]);
-
-  // ✅ 侧边栏：显示所有消息
-  const sidebarContent = useMemo(
-    () => (
-      <div ref={scrollRef} className="flex-1 p-4 space-y-6 overflow-y-auto custom-scrollbar">
-        {messages.map((msg) => {
-          // 过滤空占位消息
-          const isPlaceholder =
-            !msg.content && (!msg.attachments || msg.attachments.length === 0) && !msg.isError;
-          if (isPlaceholder) return null;
-
-          const isSelected = msg.role === Role.MODEL && activeBatchMessage?.id === msg.id;
-
-          return (
-            <div
-              key={msg.id}
-              className={`flex flex-col gap-2 ${msg.role === Role.USER ? 'items-end' : 'items-start'}`}
-            >
-              <div className="flex items-center gap-2 text-xs text-slate-500 px-1">
-                {msg.role === Role.USER ? <User size={12} /> : <Bot size={12} />}
-                <span>{msg.role === Role.USER ? '输入' : activeModelConfig?.name || 'AI'}</span>
-              </div>
-              <div
-                className={`p-3 rounded-2xl max-w-full text-sm shadow-sm cursor-pointer transition-all ${
-                  msg.role === Role.USER
-                    ? 'bg-slate-800 text-slate-200 rounded-tr-sm'
-                    : `bg-slate-800/50 text-slate-300 border rounded-tl-sm ${
-                        isSelected
-                          ? 'ring-2 ring-rose-500 border-transparent'
-                          : 'border-slate-700/50 hover:border-slate-600'
-                      }`
-                }`}
-                onClick={() => {
-                  if (msg.role === Role.MODEL && msg.attachments?.length) {
-                    setSelectedMsgId(msg.id);
-                  }
-                }}
-              >
-                {msg.content && <p className="mb-2">{msg.content}</p>}
-
-                {/* 附件显示 */}
-                {msg.attachments
-                  ?.map((attachment, index) =>
-                    getDisplayImageAttachment(attachment, `${msg.id}-${index}`)
-                  )
-                  .filter((att): att is Attachment => Boolean(att))
-                  .map((att, idx) => (
-                    <div
-                      key={`${msg.id}:${getAttachmentStableKey(att)}`}
-                      className="relative group mt-1 rounded-lg overflow-hidden border border-slate-700 hover:border-slate-500"
-                    >
-                      <CachedImage
-                        source={{
-                          ...att,
-                          attachmentId: att.id,
-                          url: att.url,
-                        }}
-                        src={att.url}
-                        className="w-full h-24 object-cover bg-slate-900"
-                        alt={
-                          msg.role === Role.USER
-                            ? idx === 0
-                              ? '人物图'
-                              : '服装图'
-                            : `试衣结果 ${idx + 1}`
-                        }
-                      />
-                      {/* 标签 */}
-                      <div className="absolute bottom-1 left-1 bg-black/60 text-[10px] text-slate-300 px-1.5 py-0.5 rounded">
-                        {msg.role === Role.USER
-                          ? idx === 0
-                            ? '👤 人物'
-                            : '👕 服装'
-                          : `结果 ${idx + 1}`}
-                      </div>
-                    </div>
-                  ))}
-
-                {/* 多图标识 */}
-                {msg.role === Role.MODEL && (msg.attachments?.length || 0) > 1 && (
-                  <div className="mt-2 text-[10px] text-slate-500 flex items-center gap-1">
-                    <Layers size={10} />
-                    {msg.attachments?.length} 张图片
-                  </div>
-                )}
-
-                {msg.isError && (
-                  <div className="flex items-center gap-2 text-red-400 text-xs mt-1">
-                    <AlertCircle size={12} /> 生成失败
-                  </div>
-                )}
-              </div>
-              <div className="text-[10px] text-slate-500 px-1">
-                {new Date(msg.timestamp).toLocaleTimeString([], {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </div>
-            </div>
-          );
-        })}
-
-        {/* 加载状态 */}
-        {isLoading && (
-          <div className="flex items-start gap-2">
-            <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center flex-shrink-0">
-              <Shirt size={16} className="text-rose-400" />
-            </div>
-            <div className="bg-slate-800/50 rounded-xl p-3 text-xs text-slate-400 flex-1">
-              <div className="font-medium mb-1 animate-pulse">
-                {loadingState === 'uploading' ? '上传图片中...' : 'AI 正在生成试衣结果...'}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 空状态提示 */}
-        {messages.length === 0 && !isLoading && (
-          <div className="text-center py-10 text-slate-500 text-xs">
-            <p>上传人物图和服装图开始试衣</p>
-            <p className="mt-1 opacity-60">第一张图为人物，第二张图为服装</p>
-          </div>
-        )}
-      </div>
-    ),
-    [messages, activeBatchMessage?.id, activeModelConfig?.name, isLoading, loadingState]
-  );
 
   // ✅ 主区域：左侧结果显示 + 右侧上传控制面板
   const mainContent = useMemo(
@@ -767,7 +615,17 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
       setIsMobileHistoryOpen={setIsMobileHistoryOpen}
       sidebarTitle="试衣历史"
       sidebarHeaderIcon={<Layers size={14} />}
-      sidebar={sidebarContent}
+      sidebar={
+        <TryOnHistorySidebar
+          scrollRef={scrollRef}
+          messages={messages}
+          activeBatchId={activeBatchMessage?.id}
+          modelName={activeModelConfig?.name}
+          isLoading={isLoading}
+          loadingState={loadingState}
+          onSelectMessage={setSelectedMsgId}
+        />
+      }
       main={mainContent}
     />
   );

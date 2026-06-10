@@ -1,12 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import type { MutableRefObject } from 'react';
-import { CheckSquare, Copy, Download, Eye, MoreHorizontal, Pencil, Square, Trash2 } from 'lucide-react';
-import type { StorageBrowseItem, StorageFileMetadataItem } from '../../../types/storage';
 import {
-  formatBytes,
-  formatDate,
-  getFileExtension
-} from './filePresentation';
+  CheckSquare,
+  Copy,
+  Download,
+  Eye,
+  MoreHorizontal,
+  Pencil,
+  Square,
+  Trash2,
+} from 'lucide-react';
+import type { StorageBrowseItem, StorageFileMetadataItem } from '../../../types/storage';
+import { formatBytes, formatDate, getFileExtension } from './filePresentation';
 import { CloudStorageThumbnailCell } from './CloudStorageThumbnailCell';
 
 type ActionMenuDirection = 'down' | 'up';
@@ -41,7 +46,7 @@ export const CloudStorageFileListGrid: React.FC<CloudStorageFileListGridProps> =
   fileMetadataByUrl,
   failedPreviewUrlsRef,
   storageRevision,
-  suspendPreviewLoading = false
+  suspendPreviewLoading = false,
 }) => {
   const [openActionMenuPath, setOpenActionMenuPath] = useState<string | null>(null);
 
@@ -75,11 +80,59 @@ export const CloudStorageFileListGrid: React.FC<CloudStorageFileListGridProps> =
     const iconSize = compact ? 13 : 14;
     const actionButtonClass = 'p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800';
 
+    const menuItems: Array<{
+      key: string;
+      visible: boolean;
+      onSelect: () => void;
+      icon: React.ReactNode;
+      label: string;
+      danger?: boolean;
+    }> = [
+      {
+        key: 'view',
+        visible: true,
+        onSelect: () => onViewItem(item),
+        icon: <Eye size={13} />,
+        label: isDirectory ? 'Open Folder' : 'View',
+      },
+      {
+        key: 'download',
+        visible: true,
+        onSelect: () => void onDownloadItem(item),
+        icon: <Download size={13} />,
+        label: isDirectory ? 'Download Folder' : 'Download',
+      },
+      {
+        key: 'copy',
+        visible: !isDirectory && !!item.url,
+        onSelect: () => void onCopyUrl(item),
+        icon: <Copy size={13} />,
+        label: 'Copy URL',
+      },
+      {
+        key: 'rename',
+        visible: true,
+        onSelect: () => void onRenameItem(item),
+        icon: <Pencil size={13} />,
+        label: 'Rename',
+      },
+      {
+        key: 'delete',
+        visible: true,
+        onSelect: () => void onDeleteItem(item),
+        icon: <Trash2 size={13} />,
+        label: 'Delete',
+        danger: true,
+      },
+    ];
+
     return (
       <div
         data-cloud-item-actions
         className={`relative ${compact ? '' : 'shrink-0'} ${
-          isOpen ? 'opacity-100' : 'md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100'
+          isOpen
+            ? 'opacity-100'
+            : 'md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100'
         } transition-opacity`}
       >
         <button
@@ -97,83 +150,50 @@ export const CloudStorageFileListGrid: React.FC<CloudStorageFileListGridProps> =
               menuDirection === 'up' ? 'bottom-8' : 'top-8'
             }`}
           >
-            <button
-              type="button"
-              onClick={() => {
-                setOpenActionMenuPath(null);
-                onViewItem(item);
-              }}
-              className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-800 rounded"
-            >
-              <Eye size={13} />
-              <span>{isDirectory ? 'Open Folder' : 'View'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setOpenActionMenuPath(null);
-                void onDownloadItem(item);
-              }}
-              className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-800 rounded"
-            >
-              <Download size={13} />
-              <span>{isDirectory ? 'Download Folder' : 'Download'}</span>
-            </button>
-
-            {!isDirectory && item.url && (
-              <button
-                type="button"
-                onClick={() => {
-                  setOpenActionMenuPath(null);
-                  void onCopyUrl(item);
-                }}
-                className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-800 rounded"
-              >
-                <Copy size={13} />
-                <span>Copy URL</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => {
-                setOpenActionMenuPath(null);
-                void onRenameItem(item);
-              }}
-              className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-800 rounded"
-            >
-              <Pencil size={13} />
-              <span>Rename</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setOpenActionMenuPath(null);
-                void onDeleteItem(item);
-              }}
-              className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-red-300 hover:bg-red-900/30 rounded"
-            >
-              <Trash2 size={13} />
-              <span>Delete</span>
-            </button>
+            {menuItems
+              .filter((menuItem) => menuItem.visible)
+              .map((menuItem) => (
+                <button
+                  key={menuItem.key}
+                  type="button"
+                  onClick={() => {
+                    setOpenActionMenuPath(null);
+                    menuItem.onSelect();
+                  }}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded ${
+                    menuItem.danger
+                      ? 'text-red-300 hover:bg-red-900/30'
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  {menuItem.icon}
+                  <span>{menuItem.label}</span>
+                </button>
+              ))}
           </div>
         )}
       </div>
     );
   };
 
+  // 列表/网格两种视图对每个 item 做完全相同的派生计算,集中到一处避免漂移。
+  const getItemViewModel = (item: StorageBrowseItem) => ({
+    isDirectory: item.entryType === 'directory',
+    fileExt: getFileExtension(item.name),
+    isSelected: selectedPaths.has(item.path),
+    metadata: item.metadata || (item.url ? fileMetadataByUrl[item.url] : undefined),
+  });
+
   if (viewMode === 'list') {
     return (
       <div className="divide-y divide-slate-800/80">
         {pagedItems.map((item) => {
-          const isDirectory = item.entryType === 'directory';
-          const fileExt = getFileExtension(item.name);
-          const isSelected = selectedPaths.has(item.path);
-          const metadata = item.metadata || (item.url ? fileMetadataByUrl[item.url] : undefined);
+          const { isDirectory, fileExt, isSelected, metadata } = getItemViewModel(item);
           return (
-            <div key={`${item.entryType}:${item.path}`} className="group px-4 md:px-6 py-3 flex items-center gap-3 hover:bg-slate-900/60">
+            <div
+              key={`${item.entryType}:${item.path}`}
+              className="group px-4 md:px-6 py-3 flex items-center gap-3 hover:bg-slate-900/60"
+            >
               <button
                 type="button"
                 onClick={() => onToggleSelectItem(item.path)}
@@ -225,13 +245,12 @@ export const CloudStorageFileListGrid: React.FC<CloudStorageFileListGridProps> =
   return (
     <div
       className="p-2 grid gap-3 justify-center md:justify-start"
-      style={{ gridTemplateColumns: `repeat(auto-fit, minmax(${GRID_CARD_WIDTH}px, ${GRID_CARD_WIDTH}px))` }}
+      style={{
+        gridTemplateColumns: `repeat(auto-fit, minmax(${GRID_CARD_WIDTH}px, ${GRID_CARD_WIDTH}px))`,
+      }}
     >
       {pagedItems.map((item) => {
-        const isDirectory = item.entryType === 'directory';
-        const fileExt = getFileExtension(item.name);
-        const isSelected = selectedPaths.has(item.path);
-        const metadata = item.metadata || (item.url ? fileMetadataByUrl[item.url] : undefined);
+        const { isDirectory, fileExt, isSelected, metadata } = getItemViewModel(item);
         return (
           <div
             key={`${item.entryType}:${item.path}`}
@@ -260,7 +279,9 @@ export const CloudStorageFileListGrid: React.FC<CloudStorageFileListGridProps> =
                   onToggleSelectItem(item.path);
                 }}
                 className={`absolute left-2 top-2 text-slate-300 bg-slate-900/90 rounded-md p-0.5 border border-slate-700 transition-opacity ${
-                  isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+                  isSelected
+                    ? 'opacity-100'
+                    : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
                 }`}
                 title={isSelected ? 'Unselect' : 'Select'}
               >
@@ -274,7 +295,9 @@ export const CloudStorageFileListGrid: React.FC<CloudStorageFileListGridProps> =
               className="text-left"
               title={item.path}
             >
-              <p className={`text-sm truncate ${isDirectory ? 'text-slate-100 hover:text-indigo-300' : 'text-slate-200'}`}>
+              <p
+                className={`text-sm truncate ${isDirectory ? 'text-slate-100 hover:text-indigo-300' : 'text-slate-200'}`}
+              >
                 {item.name}
               </p>
             </button>

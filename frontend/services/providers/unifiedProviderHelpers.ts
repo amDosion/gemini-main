@@ -13,7 +13,56 @@
 
 import type { ChatOptions } from '../../types/types';
 
-export const MODE_OPTION_KEYS = new Set([
+// MODE_OPTION_KEYS 与 MODE_EXTRA_KEYS 历史上各自维护了一份允许键清单，二者重叠
+// 41 个键（提示词增强、局部重绘偏移、OpenAI 通用、视频/分镜等）。这里抽出共享键，
+// 再各自补充独有键，避免双份手维护时漏配/错配某个键（漏配会改变实际转发到 provider 的
+// 字段，属可观察行为变更）。两个集合仅通过 `pickAllowedEntries` 的 `.has()` 消费，
+// 从不被迭代/展开，故构造顺序不影响行为，只要成员集合一致即可。
+const SHARED_MODE_KEYS = [
+  'negativePrompt',
+  'promptExtend',
+  'addMagicSuffix',
+  'thinkingMode',
+  'enableSequential',
+  'enhancePrompt',
+  'enhancePromptModel',
+  'enhancePromptThinkingLevel',
+  'numberOfImages',
+  'maskDilation',
+  'guidanceScale',
+  'outputMimeType',
+  'outputCompressionQuality',
+  'baseSteps',
+  'maskMode',
+  'segmentationClasses',
+  'xScale',
+  'yScale',
+  'leftOffset',
+  'rightOffset',
+  'topOffset',
+  'bottomOffset',
+  'outputRatio',
+  'upscaleFactor',
+  'background',
+  'moderation',
+  'outputFormat',
+  'outputCompression',
+  'openaiPreviousResponseId',
+  'voice',
+  'videoExtensionCount',
+  'videoInputStrategy',
+  'storyboardShotSeconds',
+  'generateAudio',
+  'subtitleMode',
+  'subtitleLanguage',
+  'subtitleScript',
+  'storyboardPrompt',
+  'storyboardSegments',
+  'trackedFeature',
+  'trackingOverlayText',
+];
+
+const MODE_OPTION_ONLY_KEYS = [
   'baseUrl',
   'temperature',
   'maxTokens',
@@ -24,28 +73,10 @@ export const MODE_OPTION_KEYS = new Set([
   'enableCodeExecution',
   'enableBrowser',
   'enableGrounding',
-  'voice',
   'size',
   'quality',
   'style',
-  'background',
-  'moderation',
-  'outputFormat',
-  'outputCompression',
-  'openaiPreviousResponseId',
   'seconds',
-  'videoInputStrategy',
-  'videoExtensionCount',
-  'storyboardShotSeconds',
-  'generateAudio',
-  'subtitleMode',
-  'subtitleLanguage',
-  'subtitleScript',
-  'storyboardPrompt',
-  'storyboardSegments',
-  'trackedFeature',
-  'trackingOverlayText',
-  'numberOfImages',
   'aspectRatio',
   'resolution',
   'imageAspectRatio',
@@ -56,28 +87,8 @@ export const MODE_OPTION_KEYS = new Set([
   'sessionId',
   'messageId',
   'activeImageUrl',
-  'negativePrompt',
-  'guidanceScale',
-  'maskDilation',
   'seed',
-  'outputMimeType',
-  'outputCompressionQuality',
-  'enhancePrompt',
-  'enhancePromptModel',
-  'enhancePromptThinkingLevel',
-  'promptExtend',
-  'addMagicSuffix',
-  'thinkingMode',
-  'enableSequential',
   'outpaintMode',
-  'xScale',
-  'yScale',
-  'leftOffset',
-  'rightOffset',
-  'topOffset',
-  'bottomOffset',
-  'outputRatio',
-  'upscaleFactor',
   'layers',
   'canvasW',
   'canvasH',
@@ -90,14 +101,11 @@ export const MODE_OPTION_KEYS = new Set([
   'bezierSmoothness',
   'threshold',
   'blurRadius',
-  'baseSteps',
-  'maskMode',
-  'segmentationClasses',
   'pdfExtractTemplate',
   'pdfAdditionalInstructions',
-]);
+];
 
-export const MODE_EXTRA_KEYS = new Set([
+const MODE_EXTRA_ONLY_KEYS = [
   'workflow',
   'messages',
   'targetClothing',
@@ -107,55 +115,16 @@ export const MODE_EXTRA_KEYS = new Set([
   'pdfUrl',
   'n',
   'numImages',
-  'numberOfImages',
-  'negativePrompt',
-  'promptExtend',
-  'addMagicSuffix',
-  'thinkingMode',
-  'enableSequential',
-  'enhancePrompt',
-  'enhancePromptModel',
-  'enhancePromptThinkingLevel',
-  'maskDilation',
-  'guidanceScale',
-  'outputMimeType',
-  'outputCompressionQuality',
-  'xScale',
-  'yScale',
-  'leftOffset',
-  'rightOffset',
-  'topOffset',
-  'bottomOffset',
-  'outputRatio',
-  'upscaleFactor',
   'angle',
   'watermark',
   'responseFormat',
-  'background',
-  'moderation',
-  'outputFormat',
-  'outputCompression',
-  'openaiPreviousResponseId',
-  'voice',
-  'baseSteps',
-  'maskMode',
-  'segmentationClasses',
-  'videoExtensionCount',
-  'videoInputStrategy',
-  'storyboardShotSeconds',
-  'generateAudio',
-  'subtitleMode',
-  'subtitleLanguage',
-  'subtitleScript',
-  'storyboardPrompt',
-  'storyboardSegments',
-  'trackedFeature',
-  'trackingOverlayText',
-]);
+];
 
-export function pruneUndefinedEntries(
-  source: Record<string, unknown>
-): Record<string, unknown> {
+export const MODE_OPTION_KEYS = new Set([...SHARED_MODE_KEYS, ...MODE_OPTION_ONLY_KEYS]);
+
+export const MODE_EXTRA_KEYS = new Set([...SHARED_MODE_KEYS, ...MODE_EXTRA_ONLY_KEYS]);
+
+export function pruneUndefinedEntries(source: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(source).filter(([, value]) => value !== undefined && value !== null)
   );
@@ -176,7 +145,11 @@ export function normalizeLegacyModeOptions(
 ): Record<string, unknown> {
   const normalized = pruneUndefinedEntries({ ...(options || {}) });
 
-  if (mode === 'image-outpainting' && normalized.outPainting && typeof normalized.outPainting === 'object') {
+  if (
+    mode === 'image-outpainting' &&
+    normalized.outPainting &&
+    typeof normalized.outPainting === 'object'
+  ) {
     const legacyOutPainting = normalized.outPainting as Record<string, unknown>;
     if (normalized.outpaintMode === undefined && legacyOutPainting.mode !== undefined) {
       normalized.outpaintMode = legacyOutPainting.mode;

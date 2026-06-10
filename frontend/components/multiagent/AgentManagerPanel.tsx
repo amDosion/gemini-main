@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Ban, Loader2, RotateCcw, Trash2 } from 'lucide-react';
+import { Ban, RotateCcw, Trash2 } from 'lucide-react';
 import { getAuthHeaders } from '../../services/apiClient';
 import type { AgentDef } from './types';
 import {
@@ -21,6 +21,7 @@ import {
 } from './providerModelUtils';
 import { AgentManagerEditorForm } from './agentManager/AgentManagerEditorForm';
 import { AgentManagerListView } from './agentManager/AgentManagerListView';
+import { ConfirmActionDialog } from './agentManager/ConfirmActionDialog';
 import { AgentRuntimeSessionPanel } from './AgentRuntimeSessionPanel';
 
 interface AgentManagerPanelProps {
@@ -400,55 +401,33 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
       />
 
       {pendingDeleteAction && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm">
-          <div className="w-[430px] max-w-[92vw] rounded-xl border border-slate-700 bg-slate-900 shadow-2xl p-5">
-            <h3 className="text-base font-semibold text-slate-100 mb-2">
-              {pendingDeleteAction.hardDelete ? '确认永久删除 Agent' : '确认停用 Agent'}
-            </h3>
-            <p className="text-sm text-slate-300">
-              {pendingDeleteAction.hardDelete ? (
-                <>
-                  将永久删除「<span className="text-rose-200">{pendingDeleteAction.name}</span>
-                  」，此操作不可恢复。
-                </>
-              ) : (
-                <>
-                  将停用「<span className="text-amber-200">{pendingDeleteAction.name}</span>
-                  」，该操作不会删除数据，可稍后恢复。
-                </>
-              )}
-            </p>
-            <div className="mt-5 flex items-center justify-end gap-2">
-              <button
-                onClick={() => setPendingDeleteAction(null)}
-                disabled={deletingAction}
-                className="px-3 py-1.5 text-sm bg-slate-800 border border-slate-700 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => {
-                  void handleDelete(pendingDeleteAction.id, pendingDeleteAction.hardDelete);
-                }}
-                disabled={deletingAction}
-                className={`px-3 py-1.5 text-sm rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 ${
-                  pendingDeleteAction.hardDelete
-                    ? 'border border-rose-700/70 bg-rose-900/30 text-rose-200 hover:bg-rose-800/40'
-                    : 'border border-amber-700/60 bg-amber-900/30 text-amber-100 hover:bg-amber-800/40'
-                }`}
-              >
-                {deletingAction ? (
-                  <Loader2 size={13} className="animate-spin" />
-                ) : pendingDeleteAction.hardDelete ? (
-                  <Trash2 size={13} />
-                ) : (
-                  <Ban size={13} />
-                )}
-                {pendingDeleteAction.hardDelete ? '确认永久删除' : '确认停用'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmActionDialog
+          title={pendingDeleteAction.hardDelete ? '确认永久删除 Agent' : '确认停用 Agent'}
+          confirmLabel={pendingDeleteAction.hardDelete ? '确认永久删除' : '确认停用'}
+          confirmVariantClassName={
+            pendingDeleteAction.hardDelete
+              ? 'border border-rose-700/70 bg-rose-900/30 text-rose-200 hover:bg-rose-800/40'
+              : 'border border-amber-700/60 bg-amber-900/30 text-amber-100 hover:bg-amber-800/40'
+          }
+          confirmIcon={pendingDeleteAction.hardDelete ? <Trash2 size={13} /> : <Ban size={13} />}
+          busy={deletingAction}
+          onCancel={() => setPendingDeleteAction(null)}
+          onConfirm={() => {
+            void handleDelete(pendingDeleteAction.id, pendingDeleteAction.hardDelete);
+          }}
+        >
+          {pendingDeleteAction.hardDelete ? (
+            <>
+              将永久删除「<span className="text-rose-200">{pendingDeleteAction.name}</span>
+              」，此操作不可恢复。
+            </>
+          ) : (
+            <>
+              将停用「<span className="text-amber-200">{pendingDeleteAction.name}</span>
+              」，该操作不会删除数据，可稍后恢复。
+            </>
+          )}
+        </ConfirmActionDialog>
       )}
 
       {activeRuntimeAgent && (
@@ -459,38 +438,20 @@ export const AgentManagerPanel: React.FC<AgentManagerPanelProps> = ({
       )}
 
       {pendingRestoreAction && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm">
-          <div className="w-[430px] max-w-[92vw] rounded-xl border border-slate-700 bg-slate-900 shadow-2xl p-5">
-            <h3 className="text-base font-semibold text-slate-100 mb-2">确认恢复 Agent</h3>
-            <p className="text-sm text-slate-300">
-              将恢复「<span className="text-emerald-200">{pendingRestoreAction.name}</span>
-              」，并重新出现在 Active 列表中。
-            </p>
-            <div className="mt-5 flex items-center justify-end gap-2">
-              <button
-                onClick={() => setPendingRestoreAction(null)}
-                disabled={restoringAction}
-                className="px-3 py-1.5 text-sm bg-slate-800 border border-slate-700 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => {
-                  void handleRestore(pendingRestoreAction.id);
-                }}
-                disabled={restoringAction}
-                className="px-3 py-1.5 text-sm rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 border border-emerald-700/60 bg-emerald-900/30 text-emerald-100 hover:bg-emerald-800/40"
-              >
-                {restoringAction ? (
-                  <Loader2 size={13} className="animate-spin" />
-                ) : (
-                  <RotateCcw size={13} />
-                )}
-                确认恢复
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmActionDialog
+          title="确认恢复 Agent"
+          confirmLabel="确认恢复"
+          confirmVariantClassName="border border-emerald-700/60 bg-emerald-900/30 text-emerald-100 hover:bg-emerald-800/40"
+          confirmIcon={<RotateCcw size={13} />}
+          busy={restoringAction}
+          onCancel={() => setPendingRestoreAction(null)}
+          onConfirm={() => {
+            void handleRestore(pendingRestoreAction.id);
+          }}
+        >
+          将恢复「<span className="text-emerald-200">{pendingRestoreAction.name}</span>
+          」，并重新出现在 Active 列表中。
+        </ConfirmActionDialog>
       )}
     </div>
   );

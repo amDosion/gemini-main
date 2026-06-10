@@ -420,8 +420,19 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
 
   // ✅ 主区域：两栏布局（结果显示 + 控制面板）
   // 注意：GenViewLayout 的 main 容器已有 overflow-hidden，这里不需要重复
-  const mainContent = useMemo(
-    () => (
+  const mainContent = useMemo(() => {
+    const renderThinkingBlock = (wrapperClass: string, isComplete: boolean) =>
+      displayedThinkingContent && (
+        <div className={wrapperClass}>
+          <ThinkingBlock
+            content={displayedThinkingContent}
+            isOpen={isThinkingOpen}
+            onToggle={() => setIsThinkingOpen((prev) => !prev)}
+            isComplete={isComplete}
+          />
+        </div>
+      );
+    return (
       <div className="flex-1 flex flex-row h-full">
         {/* ========== 左侧：结果显示区 ========== */}
         <ImageResultCanvas
@@ -459,30 +470,11 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
           accentIconClass="text-emerald-400"
           carouselAccentTone="emerald"
           wheelTarget="carousel"
-          loadingExtraContent={
-            displayedThinkingContent && (
-              <div className="w-full mt-2">
-                <ThinkingBlock
-                  content={displayedThinkingContent}
-                  isOpen={isThinkingOpen}
-                  onToggle={() => setIsThinkingOpen((prev) => !prev)}
-                  isComplete={false}
-                />
-              </div>
-            )
-          }
-          floatingExtraContent={
-            displayedThinkingContent && (
-              <div className="absolute bottom-4 left-4 right-4 z-10 max-w-lg">
-                <ThinkingBlock
-                  content={displayedThinkingContent}
-                  isOpen={isThinkingOpen}
-                  onToggle={() => setIsThinkingOpen((prev) => !prev)}
-                  isComplete={true}
-                />
-              </div>
-            )
-          }
+          loadingExtraContent={renderThinkingBlock('w-full mt-2', false)}
+          floatingExtraContent={renderThinkingBlock(
+            'absolute bottom-4 left-4 right-4 z-10 max-w-lg',
+            true
+          )}
           emptyState={
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center text-slate-600 pointer-events-none flex flex-col items-center gap-4 max-w-md">
@@ -568,45 +560,44 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
           </div>
         </div>
       </div>
-    ),
-    [
-      isLoading,
-      isBatchError,
-      displayImages,
-      displayedThinkingContent,
-      isThinkingOpen,
-      activeBatchMessage,
-      activeAttachments,
-      onImageClick,
-      onEditImage,
-      onExpandImage,
-      prompt,
-      controls,
-      handleGenerate,
-      handleAttachmentPaste,
-      handleKeyDown,
-      removeReferenceAttachment,
-      maxImageCount,
-      resetParams,
-      providerId,
-      activeModelConfig,
-      carouselIndex,
-      carouselItems,
-      handleCarouselPrev,
-      handleCarouselNext,
-      handleCarouselSelect,
-      canvas.canvasStyle,
-      canvas.handleWheel,
-      canvas.handleMouseDown,
-      canvas.handleMouseMove,
-      canvas.handleMouseUp,
-      canvas.handleZoomIn,
-      canvas.handleZoomOut,
-      canvas.handleReset,
-      canvas.isDragging,
-      canvas.zoom,
-    ]
-  );
+    );
+  }, [
+    isLoading,
+    isBatchError,
+    displayImages,
+    displayedThinkingContent,
+    isThinkingOpen,
+    activeBatchMessage,
+    activeAttachments,
+    onImageClick,
+    onEditImage,
+    onExpandImage,
+    prompt,
+    controls,
+    handleGenerate,
+    handleAttachmentPaste,
+    handleKeyDown,
+    removeReferenceAttachment,
+    maxImageCount,
+    resetParams,
+    providerId,
+    activeModelConfig,
+    carouselIndex,
+    carouselItems,
+    handleCarouselPrev,
+    handleCarouselNext,
+    handleCarouselSelect,
+    canvas.canvasStyle,
+    canvas.handleWheel,
+    canvas.handleMouseDown,
+    canvas.handleMouseMove,
+    canvas.handleMouseUp,
+    canvas.handleZoomIn,
+    canvas.handleZoomOut,
+    canvas.handleReset,
+    canvas.isDragging,
+    canvas.zoom,
+  ]);
 
   return (
     <GenViewLayout

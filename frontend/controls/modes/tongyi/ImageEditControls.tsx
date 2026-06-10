@@ -26,6 +26,18 @@ import { getUnsupportedParams } from '../../shared/modeControlSchemaUtils';
 // 当这些 setter 出现在 useEffect 依赖数组里时会导致 effect 每渲染都重跑。
 const NOOP = (): void => {};
 
+// 把 schema 像素分辨率统一格式化为带 × 的字符串(无值时回退)。
+// currentPixelResolution 与分辨率档位按钮共用同一处逻辑,避免 `*`→`×` 替换重复。
+const formatSchemaPixelResolution = (
+  schema: Parameters<typeof getPixelResolutionFromSchema>[0],
+  aspectRatio: string,
+  resolutionTier: string,
+  fallback: string
+): string => {
+  const pixels = getPixelResolutionFromSchema(schema, aspectRatio, resolutionTier);
+  return pixels ? pixels.replace('*', '×') : fallback;
+};
+
 export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   providerId = 'tongyi',
   mode = 'image-edit',
@@ -114,10 +126,10 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   }, [schema]);
 
   // 计算当前像素分辨率
-  const currentPixelResolution = useMemo(() => {
-    const schemaPixelRes = getPixelResolutionFromSchema(schema, aspectRatio, resolution);
-    return schemaPixelRes ? schemaPixelRes.replace('*', '×') : '';
-  }, [schema, aspectRatio, resolution]);
+  const currentPixelResolution = useMemo(
+    () => formatSchemaPixelResolution(schema, aspectRatio, resolution, ''),
+    [schema, aspectRatio, resolution]
+  );
 
   useEffect(() => {
     if (imageCountOptions.length === 0) return;
@@ -201,8 +213,12 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
           <span className="text-xs text-slate-300">分辨率</span>
           <div className="flex gap-2">
             {availableResolutionTiers.map((tier) => {
-              const schemaPixelRes = getPixelResolutionFromSchema(schema, aspectRatio, tier.value);
-              const tierPixelRes = schemaPixelRes ? schemaPixelRes.replace('*', '×') : '--';
+              const tierPixelRes = formatSchemaPixelResolution(
+                schema,
+                aspectRatio,
+                tier.value,
+                '--'
+              );
               return (
                 <button
                   key={tier.value}

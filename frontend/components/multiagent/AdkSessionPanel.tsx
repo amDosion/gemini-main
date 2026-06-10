@@ -57,6 +57,9 @@ const formatJsonForEditor = (value: unknown): string => {
   }
 };
 
+const asResponseRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+
 const formatNonceExpiry = (value: string): string => {
   const normalized = String(value || '').trim();
   if (!normalized) return '-';
@@ -274,10 +277,7 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
         tenantId: confirmTenantId,
         candidateId: effectiveSelectedConfirmCandidateId,
       });
-      const respObj = (response && typeof response === 'object' ? response : {}) as Record<
-        string,
-        unknown
-      >;
+      const respObj = asResponseRecord(response);
       const invocation = String(respObj.invocationId || '').trim();
       const responseConfirmed =
         typeof respObj.confirmed === 'boolean' ? respObj.confirmed : effectiveConfirmed;
@@ -337,10 +337,7 @@ export const AdkSessionPanel: React.FC<AdkSessionPanelProps> = ({ agent, onClose
         selectedSessionId,
         rewindInvocationId
       );
-      const respObj = (response && typeof response === 'object' ? response : {}) as Record<
-        string,
-        unknown
-      >;
+      const respObj = asResponseRecord(response);
       const status = String(respObj.status || '').trim() || 'rewound';
       setNotice({ type: 'success', text: `会话回滚成功，status=${status}` });
       await loadSessionSnapshot();

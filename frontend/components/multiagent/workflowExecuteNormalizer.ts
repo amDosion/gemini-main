@@ -86,6 +86,38 @@ const normalizeOptionalString = (value: unknown, maxLength = 128): string | null
   return text.length > maxLength ? text.slice(0, maxLength) : text;
 };
 
+// Apply `normalize` to each present field: drop the field when normalization
+// yields null, otherwise overwrite with the normalized value. Mirrors the
+// per-field guard repeated throughout the execute normalizers. Every normalizer
+// used here returns `T | null` (clamp helpers can legitimately return 0, which
+// must be kept — hence the strict `=== null` check rather than a falsy check).
+const assignNormalizedFields = <T>(
+  data: Record<string, unknown>,
+  fieldNames: readonly string[],
+  normalize: (value: unknown) => T | null
+): void => {
+  for (const fieldName of fieldNames) {
+    if (data[fieldName] === undefined) continue;
+    const normalized = normalize(data[fieldName]);
+    if (normalized === null) {
+      delete data[fieldName];
+    } else {
+      data[fieldName] = normalized;
+    }
+  }
+};
+
+// Coerce each present field to a strict boolean in place.
+const coerceBooleanFields = (
+  data: Record<string, unknown>,
+  fieldNames: readonly string[]
+): void => {
+  for (const fieldName of fieldNames) {
+    if (data[fieldName] === undefined) continue;
+    data[fieldName] = Boolean(data[fieldName]);
+  }
+};
+
 const normalizeAgentTaskTypeForExecute = (value: unknown): string => {
   return normalizeWorkflowAgentTaskType(value, 'chat') || 'chat';
 };
@@ -192,20 +224,11 @@ export const normalizeWorkflowNodeDataForExecute = (
     }
   }
 
-  for (const fieldName of [
-    'agentNumberOfImages',
-    'toolNumberOfImages',
-    'numberOfImages',
-    'number_of_images',
-  ]) {
-    if (data[fieldName] === undefined) continue;
-    const normalized = clampOptionalInt(data[fieldName], 1, 8);
-    if (normalized === null) {
-      delete data[fieldName];
-    } else {
-      data[fieldName] = normalized;
-    }
-  }
+  assignNormalizedFields(
+    data,
+    ['agentNumberOfImages', 'toolNumberOfImages', 'numberOfImages', 'number_of_images'],
+    (value) => clampOptionalInt(value, 1, 8)
+  );
 
   if (data.agentImageEditMaxRetries !== undefined) {
     const retries = clampOptionalInt(data.agentImageEditMaxRetries, 0, 3);
@@ -225,38 +248,15 @@ export const normalizeWorkflowNodeDataForExecute = (
     data.agent_product_match_threshold = threshold === null ? 70 : threshold;
   }
 
-  for (const fieldName of ['agentOutputMimeType', 'toolOutputMimeType']) {
-    if (data[fieldName] === undefined) continue;
-    const normalized = normalizeOptionalChoice(
-      data[fieldName],
-      WORKFLOW_ALLOWED_IMAGE_OUTPUT_MIME_TYPES
-    );
-    if (!normalized) {
-      delete data[fieldName];
-    } else {
-      data[fieldName] = normalized;
-    }
-  }
+  assignNormalizedFields(data, ['agentOutputMimeType', 'toolOutputMimeType'], (value) =>
+    normalizeOptionalChoice(value, WORKFLOW_ALLOWED_IMAGE_OUTPUT_MIME_TYPES)
+  );
 
-  for (const fieldName of ['agentOutputFormat', 'outputFormat']) {
-    if (data[fieldName] === undefined) continue;
-    const normalized = normalizeOptionalChoice(data[fieldName], WORKFLOW_ALLOWED_OUTPUT_FORMATS);
-    if (!normalized) {
-      delete data[fieldName];
-    } else {
-      data[fieldName] = normalized;
-    }
-  }
+  assignNormalizedFields(data, ['agentOutputFormat', 'outputFormat'], (value) =>
+    normalizeOptionalChoice(value, WORKFLOW_ALLOWED_OUTPUT_FORMATS)
+  );
 
-  for (const fieldName of ['toolEditMode', 'agentEditMode']) {
-    if (data[fieldName] === undefined) continue;
-    const normalized = normalizeWorkflowImageEditMode(data[fieldName]);
-    if (!normalized) {
-      delete data[fieldName];
-    } else {
-      data[fieldName] = normalized;
-    }
-  }
+  assignNormalizedFields(data, ['toolEditMode', 'agentEditMode'], normalizeWorkflowImageEditMode);
 
   for (const [listField, singleField] of [
     ['startImageUrls', 'startImageUrl'],
@@ -279,64 +279,45 @@ export const normalizeWorkflowNodeDataForExecute = (
   }
 
   if (normalizedTaskType === 'video-gen') {
-    for (const fieldName of ['agentVideoDurationSeconds', 'agent_video_duration_seconds']) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = clampOptionalInt(data[fieldName], 1, 20);
-      if (normalized === null) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(
+      data,
+      ['agentVideoDurationSeconds', 'agent_video_duration_seconds'],
+      (value) => clampOptionalInt(value, 1, 20)
+    );
 
-    for (const fieldName of ['agentVideoExtensionCount', 'agent_video_extension_count']) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = clampOptionalInt(data[fieldName], 0, 20);
-      if (normalized === null) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(
+      data,
+      ['agentVideoExtensionCount', 'agent_video_extension_count'],
+      (value) => clampOptionalInt(value, 0, 20)
+    );
 
-    for (const fieldName of [
-      'agentVideoAspectRatio',
-      'agent_video_aspect_ratio',
-      'videoAspectRatio',
-      'video_aspect_ratio',
-      'agentAspectRatio',
-      'agent_aspect_ratio',
-    ]) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalChoice(
-        data[fieldName],
-        WORKFLOW_ALLOWED_VIDEO_ASPECT_RATIOS
-      );
-      if (!normalized) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(
+      data,
+      [
+        'agentVideoAspectRatio',
+        'agent_video_aspect_ratio',
+        'videoAspectRatio',
+        'video_aspect_ratio',
+        'agentAspectRatio',
+        'agent_aspect_ratio',
+      ],
+      (value) => normalizeOptionalChoice(value, WORKFLOW_ALLOWED_VIDEO_ASPECT_RATIOS)
+    );
 
-    for (const fieldName of [
-      'agentVideoResolution',
-      'agent_video_resolution',
-      'videoResolution',
-      'video_resolution',
-      'agentResolutionTier',
-      'agent_resolution_tier',
-    ]) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = normalizeWorkflowVideoResolution(data[fieldName]);
-      if (!normalized) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(
+      data,
+      [
+        'agentVideoResolution',
+        'agent_video_resolution',
+        'videoResolution',
+        'video_resolution',
+        'agentResolutionTier',
+        'agent_resolution_tier',
+      ],
+      normalizeWorkflowVideoResolution
+    );
 
-    for (const fieldName of [
+    coerceBooleanFields(data, [
       'agentContinueFromPreviousVideo',
       'agent_continue_from_previous_video',
       'agentContinueFromPreviousLastFrame',
@@ -345,90 +326,53 @@ export const normalizeWorkflowNodeDataForExecute = (
       'agent_generate_audio',
       'generateAudio',
       'generate_audio',
-    ]) {
-      if (data[fieldName] === undefined) continue;
-      data[fieldName] = Boolean(data[fieldName]);
-    }
+    ]);
 
-    for (const fieldName of ['agentSubtitleMode', 'agent_subtitle_mode']) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalChoice(
-        data[fieldName],
-        WORKFLOW_ALLOWED_VIDEO_SUBTITLE_MODES
-      );
-      if (!normalized) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(data, ['agentSubtitleMode', 'agent_subtitle_mode'], (value) =>
+      normalizeOptionalChoice(value, WORKFLOW_ALLOWED_VIDEO_SUBTITLE_MODES)
+    );
 
-    for (const fieldName of ['agentVideoInputStrategy', 'agent_video_input_strategy']) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalChoice(
-        data[fieldName],
-        WORKFLOW_ALLOWED_VIDEO_INPUT_STRATEGIES
-      );
-      if (!normalized) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(
+      data,
+      ['agentVideoInputStrategy', 'agent_video_input_strategy'],
+      (value) => normalizeOptionalChoice(value, WORKFLOW_ALLOWED_VIDEO_INPUT_STRATEGIES)
+    );
 
-    for (const fieldName of ['agentSubtitleLanguage', 'agent_subtitle_language']) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalString(data[fieldName], 32);
-      if (!normalized) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(data, ['agentSubtitleLanguage', 'agent_subtitle_language'], (value) =>
+      normalizeOptionalString(value, 32)
+    );
 
-    for (const fieldName of [
-      'agentSubtitleScript',
-      'agent_subtitle_script',
-      'agentStoryboardPrompt',
-      'agent_storyboard_prompt',
-    ]) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalString(data[fieldName], 4000);
-      if (!normalized) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(
+      data,
+      [
+        'agentSubtitleScript',
+        'agent_subtitle_script',
+        'agentStoryboardPrompt',
+        'agent_storyboard_prompt',
+      ],
+      (value) => normalizeOptionalString(value, 4000)
+    );
 
-    for (const fieldName of [
-      'agentSourceVideoUrl',
-      'agent_source_video_url',
-      'agentLastFrameImageUrl',
-      'agent_last_frame_image_url',
-      'agentVideoMaskImageUrl',
-      'agent_video_mask_image_url',
-      'agentAudioUrl',
-      'agent_audio_url',
-    ]) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalString(data[fieldName], 2048);
-      if (!normalized) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(
+      data,
+      [
+        'agentSourceVideoUrl',
+        'agent_source_video_url',
+        'agentLastFrameImageUrl',
+        'agent_last_frame_image_url',
+        'agentVideoMaskImageUrl',
+        'agent_video_mask_image_url',
+        'agentAudioUrl',
+        'agent_audio_url',
+      ],
+      (value) => normalizeOptionalString(value, 2048)
+    );
 
-    for (const fieldName of ['agentVideoMaskMode', 'agent_video_mask_mode']) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = normalizeWorkflowVideoMaskMode(data[fieldName]);
-      if (!normalized) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(
+      data,
+      ['agentVideoMaskMode', 'agent_video_mask_mode'],
+      normalizeWorkflowVideoMaskMode
+    );
   }
 
   const normalizedToolName = String(data.toolName || data.tool_name || '')
@@ -440,157 +384,83 @@ export const normalizeWorkflowNodeDataForExecute = (
     normalizedToolName === 'generate_video' ||
     normalizedToolName === 'video_gen'
   ) {
-    for (const fieldName of ['toolVideoDurationSeconds', 'tool_video_duration_seconds']) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = clampOptionalInt(data[fieldName], 1, 20);
-      if (normalized === null) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(
+      data,
+      ['toolVideoDurationSeconds', 'tool_video_duration_seconds'],
+      (value) => clampOptionalInt(value, 1, 20)
+    );
 
-    for (const fieldName of ['toolVideoExtensionCount', 'tool_video_extension_count']) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = clampOptionalInt(data[fieldName], 0, 20);
-      if (normalized === null) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(
+      data,
+      ['toolVideoExtensionCount', 'tool_video_extension_count'],
+      (value) => clampOptionalInt(value, 0, 20)
+    );
 
-    for (const fieldName of ['toolAspectRatio', 'tool_aspect_ratio']) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalChoice(
-        data[fieldName],
-        WORKFLOW_ALLOWED_VIDEO_ASPECT_RATIOS
-      );
-      if (!normalized) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(data, ['toolAspectRatio', 'tool_aspect_ratio'], (value) =>
+      normalizeOptionalChoice(value, WORKFLOW_ALLOWED_VIDEO_ASPECT_RATIOS)
+    );
 
-    for (const fieldName of [
-      'toolResolutionTier',
-      'tool_resolution_tier',
-      'toolVideoResolution',
-      'tool_video_resolution',
-    ]) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = normalizeWorkflowVideoResolution(data[fieldName]);
-      if (!normalized) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(
+      data,
+      [
+        'toolResolutionTier',
+        'tool_resolution_tier',
+        'toolVideoResolution',
+        'tool_video_resolution',
+      ],
+      normalizeWorkflowVideoResolution
+    );
 
-    for (const fieldName of ['toolGenerateAudio', 'tool_generate_audio']) {
-      if (data[fieldName] === undefined) continue;
-      data[fieldName] = Boolean(data[fieldName]);
-    }
+    coerceBooleanFields(data, ['toolGenerateAudio', 'tool_generate_audio']);
 
-    for (const fieldName of ['toolSubtitleMode', 'tool_subtitle_mode']) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalChoice(
-        data[fieldName],
-        WORKFLOW_ALLOWED_VIDEO_SUBTITLE_MODES
-      );
-      if (!normalized) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(data, ['toolSubtitleMode', 'tool_subtitle_mode'], (value) =>
+      normalizeOptionalChoice(value, WORKFLOW_ALLOWED_VIDEO_SUBTITLE_MODES)
+    );
 
-    for (const fieldName of ['toolSubtitleLanguage', 'tool_subtitle_language']) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalString(data[fieldName], 32);
-      if (!normalized) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(data, ['toolSubtitleLanguage', 'tool_subtitle_language'], (value) =>
+      normalizeOptionalString(value, 32)
+    );
 
-    for (const fieldName of [
-      'toolSubtitleScript',
-      'tool_subtitle_script',
-      'toolStoryboardPrompt',
-      'tool_storyboard_prompt',
-      'toolSourceVideoUrl',
-      'tool_source_video_url',
-      'toolLastFrameImageUrl',
-      'tool_last_frame_image_url',
-      'toolVideoMaskImageUrl',
-      'tool_video_mask_image_url',
-    ]) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalString(data[fieldName], 4000);
-      if (!normalized) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(
+      data,
+      [
+        'toolSubtitleScript',
+        'tool_subtitle_script',
+        'toolStoryboardPrompt',
+        'tool_storyboard_prompt',
+        'toolSourceVideoUrl',
+        'tool_source_video_url',
+        'toolLastFrameImageUrl',
+        'tool_last_frame_image_url',
+        'toolVideoMaskImageUrl',
+        'tool_video_mask_image_url',
+      ],
+      (value) => normalizeOptionalString(value, 4000)
+    );
 
-    for (const fieldName of ['toolVideoMaskMode', 'tool_video_mask_mode']) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = normalizeWorkflowVideoMaskMode(data[fieldName]);
-      if (!normalized) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(
+      data,
+      ['toolVideoMaskMode', 'tool_video_mask_mode'],
+      normalizeWorkflowVideoMaskMode
+    );
   }
 
   if (normalizedTaskType === 'audio-gen') {
-    for (const fieldName of [
-      'agentSpeechSpeed',
-      'agent_speech_speed',
-      'agentAudioSpeed',
-      'agent_audio_speed',
-    ]) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = clampOptionalFloat(data[fieldName], 0.25, 4.0);
-      if (normalized === null) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(
+      data,
+      ['agentSpeechSpeed', 'agent_speech_speed', 'agentAudioSpeed', 'agent_audio_speed'],
+      (value) => clampOptionalFloat(value, 0.25, 4.0)
+    );
 
-    for (const fieldName of [
-      'agentAudioFormat',
-      'agent_audio_format',
-      'agentSpeechFormat',
-      'agent_speech_format',
-    ]) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalChoice(
-        data[fieldName],
-        WORKFLOW_ALLOWED_AUDIO_OUTPUT_FORMATS
-      );
-      if (!normalized) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(
+      data,
+      ['agentAudioFormat', 'agent_audio_format', 'agentSpeechFormat', 'agent_speech_format'],
+      (value) => normalizeOptionalChoice(value, WORKFLOW_ALLOWED_AUDIO_OUTPUT_FORMATS)
+    );
 
-    for (const fieldName of ['agentVoice', 'agent_voice']) {
-      if (data[fieldName] === undefined) continue;
-      const normalized = normalizeOptionalString(data[fieldName], 64);
-      if (!normalized) {
-        delete data[fieldName];
-      } else {
-        data[fieldName] = normalized;
-      }
-    }
+    assignNormalizedFields(data, ['agentVoice', 'agent_voice'], (value) =>
+      normalizeOptionalString(value, 64)
+    );
   }
 
   const nodeWidth = normalizeNodeSizeForExecute(data.nodeWidth, 135, 720);

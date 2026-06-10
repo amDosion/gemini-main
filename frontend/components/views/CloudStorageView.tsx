@@ -363,14 +363,6 @@ export const CloudStorageView: React.FC<CloudStorageViewProps> = ({
     ]
   );
 
-  const handlePrevPage = useCallback(() => {
-    void navigateToPage(currentPage - 1);
-  }, [currentPage, navigateToPage]);
-
-  const handleNextPage = useCallback(() => {
-    void navigateToPage(currentPage + 1);
-  }, [currentPage, navigateToPage]);
-
   const handleLoadMore = useCallback(() => {
     if (!selectedStorageId || !nextCursor || pageNavigationLoading) return;
     void loadPath(selectedStorageId, currentPath, nextCursor, true);
@@ -507,8 +499,8 @@ export const CloudStorageView: React.FC<CloudStorageViewProps> = ({
           loading={loadingMore || pageNavigationLoading}
           onPageSizeChange={handlePageSizeChange}
           onPageChange={navigateToPage}
-          onPrevPage={handlePrevPage}
-          onNextPage={handleNextPage}
+          onPrevPage={() => void navigateToPage(currentPage - 1)}
+          onNextPage={() => void navigateToPage(currentPage + 1)}
         />
       )}
 

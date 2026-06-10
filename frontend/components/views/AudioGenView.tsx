@@ -78,6 +78,17 @@ const getPrecedingUserText = (messages: Message[], modelMsg: Message): string =>
   return '';
 };
 
+// Resolve the prompt text for the audio at `url`: locate the model message that
+// carries it, then return that message's preceding USER text. Returns '' when
+// the audio or its prompt cannot be resolved.
+const getAudioPromptText = (messages: Message[], url: string | null): string => {
+  if (!url) {
+    return '';
+  }
+  const modelMsg = messages.find((m) => m.attachments?.some((a) => a.url === url));
+  return modelMsg ? getPrecedingUserText(messages, modelMsg) : '';
+};
+
 // Component for true Karaoke-style lyrics display
 const KaraokeLyrics: React.FC<{ text: string; currentTime: number; duration: number }> = React.memo(
   ({ text, currentTime, duration }) => {
@@ -490,13 +501,10 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
   const handleAudioClick = useCallback(
     (url: string) => {
       setActiveAudioUrl(url);
-      // Find the message containing this audio
-      const modelMsg = messages.find((m) => m.attachments?.some((a) => a.url === url));
-      if (modelMsg) {
-        const userText = getPrecedingUserText(messages, modelMsg);
-        if (userText) {
-          setActiveAudioText(userText);
-        }
+      // Find the message containing this audio and reuse its prompt text.
+      const userText = getAudioPromptText(messages, url);
+      if (userText) {
+        setActiveAudioText(userText);
       }
     },
     [messages]
@@ -521,13 +529,12 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
     [onSend, audioMode]
   );
 
-  // Current audio text for lyrics display.
-  const activeAudioTextForDisplay = useMemo((): string => {
-    if (activeAudioText) return activeAudioText;
-    // Fallback: try to find from current active audio URL
-    const modelMsg = messages.find((m) => m.attachments?.some((a) => a.url === activeAudioUrl));
-    return modelMsg ? getPrecedingUserText(messages, modelMsg) : '';
-  }, [messages, activeAudioUrl, activeAudioText]);
+  // Current audio text for lyrics display. Falls back to the active audio's
+  // prompt text when no explicit text has been captured for it.
+  const activeAudioTextForDisplay = useMemo(
+    (): string => activeAudioText || getAudioPromptText(messages, activeAudioUrl),
+    [messages, activeAudioUrl, activeAudioText]
+  );
 
   // Mobile History Toggle
   const [isMobileHistoryOpen, setIsMobileHistoryOpen] = useState(false);

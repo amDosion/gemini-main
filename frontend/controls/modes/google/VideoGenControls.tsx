@@ -28,6 +28,24 @@ type VideoGenControlsBodyProps = VideoGenControlsProps & {
 
 const LOCAL_PROMPT_ENHANCE_VIDEO_PROVIDERS = new Set(['openai']);
 
+/**
+ * Resolve the value a constrained option control should snap to. Returns
+ * `undefined` when no change is needed (current value still valid, or no valid
+ * values); otherwise the preferred fallback when truthy, else the first valid
+ * value. Centralizes the snap-to-valid guard shared by the option effects below
+ * without altering any call site's per-effect deps or value mapping.
+ */
+const resolveConstrainedValue = <T,>(
+  current: T,
+  validValues: readonly T[],
+  preferred?: T
+): T | undefined => {
+  if (validValues.length === 0 || validValues.includes(current)) {
+    return undefined;
+  }
+  return preferred || validValues[0];
+};
+
 const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
   providerId = 'google',
   controls,
@@ -293,30 +311,43 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
     if (!showAspectRatioControl) {
       return;
     }
-    const validRatios = availableRatios.map((r) => r.value);
-    if (validRatios.length > 0 && !validRatios.includes(aspectRatio)) {
-      setAspectRatio(validRatios[0]);
+    const next = resolveConstrainedValue(
+      aspectRatio,
+      availableRatios.map((r) => r.value)
+    );
+    if (next !== undefined) {
+      setAspectRatio(next);
     }
   }, [aspectRatio, availableRatios, setAspectRatio, showAspectRatioControl]);
 
   useEffect(() => {
-    const validTiers = availableResolutionTiers.map((r) => r.value);
-    if (validTiers.length > 0 && !validTiers.includes(resolution)) {
-      setResolution(validTiers[0]);
+    const next = resolveConstrainedValue(
+      resolution,
+      availableResolutionTiers.map((r) => r.value)
+    );
+    if (next !== undefined) {
+      setResolution(next);
     }
   }, [resolution, availableResolutionTiers, setResolution]);
 
   useEffect(() => {
-    const validSeconds = availableSeconds.map((option) => String(option.value));
-    if (validSeconds.length > 0 && !validSeconds.includes(videoSeconds)) {
-      setVideoSeconds(validSeconds[0]);
+    const next = resolveConstrainedValue(
+      videoSeconds,
+      availableSeconds.map((option) => String(option.value))
+    );
+    if (next !== undefined) {
+      setVideoSeconds(next);
     }
   }, [availableSeconds, setVideoSeconds, videoSeconds]);
 
   useEffect(() => {
-    const validStrategies = availableInputStrategies.map((strategy) => strategy.id);
-    if (validStrategies.length > 0 && !validStrategies.includes(videoInputStrategy)) {
-      setVideoInputStrategy(defaultVideoInputStrategy || validStrategies[0]);
+    const next = resolveConstrainedValue(
+      videoInputStrategy,
+      availableInputStrategies.map((strategy) => strategy.id),
+      defaultVideoInputStrategy
+    );
+    if (next !== undefined) {
+      setVideoInputStrategy(next);
     }
   }, [
     availableInputStrategies,
@@ -332,11 +363,14 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
   }, [setVideoExtensionCount, showExtensionControls, videoExtensionCount]);
 
   useEffect(() => {
-    const validShotSeconds = availableStoryboardShotSeconds
-      .map((option) => Number(option.value))
-      .filter((value) => Number.isFinite(value));
-    if (validShotSeconds.length > 0 && !validShotSeconds.includes(storyboardShotSeconds)) {
-      setStoryboardShotSeconds(validShotSeconds[0]);
+    const next = resolveConstrainedValue(
+      storyboardShotSeconds,
+      availableStoryboardShotSeconds
+        .map((option) => Number(option.value))
+        .filter((value) => Number.isFinite(value))
+    );
+    if (next !== undefined) {
+      setStoryboardShotSeconds(next);
     }
   }, [availableStoryboardShotSeconds, setStoryboardShotSeconds, storyboardShotSeconds]);
 
@@ -385,9 +419,12 @@ const VideoGenControlsBody: React.FC<VideoGenControlsBodyProps> = ({
   );
 
   useEffect(() => {
-    const validCounts = derivedExtensionOptions.map((option) => option.count);
-    if (validCounts.length > 0 && !validCounts.includes(videoExtensionCount)) {
-      setVideoExtensionCount(validCounts[0]);
+    const next = resolveConstrainedValue(
+      videoExtensionCount,
+      derivedExtensionOptions.map((option) => option.count)
+    );
+    if (next !== undefined) {
+      setVideoExtensionCount(next);
     }
   }, [derivedExtensionOptions, setVideoExtensionCount, videoExtensionCount]);
 

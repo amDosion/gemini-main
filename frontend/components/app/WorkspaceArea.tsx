@@ -22,6 +22,15 @@ import {
 } from '../../lazyViews';
 import { isStudioAppMode } from '../../utils/appModes';
 
+/** GlobalErrorBoundary + Suspense 包裹层:多个惰性视图共用同一边界与 fallback。 */
+const LazyViewBoundary: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <GlobalErrorBoundary>
+    <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
+      {children}
+    </Suspense>
+  </GlobalErrorBoundary>
+);
+
 export interface WorkspaceAreaProps {
   // --- Workspace stack composition ---
   openWorkspaceModes: AppMode[];
@@ -196,16 +205,14 @@ export const WorkspaceArea: React.FC<WorkspaceAreaProps> = (props) => {
             key={`multi-agent-${workspaceReloadKeys['multi-agent'] || 0}`}
             style={{ display: appMode === 'multi-agent' ? 'contents' : 'none' }}
           >
-            <GlobalErrorBoundary>
-              <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
-                <MultiAgentView
-                  {...commonProps}
-                  {...chatLikeProps}
-                  messages={multiAgentViewMessages}
-                  appMode="multi-agent"
-                />
-              </Suspense>
-            </GlobalErrorBoundary>
+            <LazyViewBoundary>
+              <MultiAgentView
+                {...commonProps}
+                {...chatLikeProps}
+                messages={multiAgentViewMessages}
+                appMode="multi-agent"
+              />
+            </LazyViewBoundary>
           </div>
         )}
 
@@ -233,31 +240,27 @@ export const WorkspaceArea: React.FC<WorkspaceAreaProps> = (props) => {
       <>
         <div className="hidden">{renderWorkspaceViewStack()}</div>
         {isCloudStorageBrowserOpen && (
-          <GlobalErrorBoundary>
-            <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
-              <CloudStorageView
-                activeStorageId={activeStorageId}
-                storageConfigs={storageConfigs}
-                onClose={() => setIsCloudStorageBrowserOpen(false)}
-              />
-            </Suspense>
-          </GlobalErrorBoundary>
+          <LazyViewBoundary>
+            <CloudStorageView
+              activeStorageId={activeStorageId}
+              storageConfigs={storageConfigs}
+              onClose={() => setIsCloudStorageBrowserOpen(false)}
+            />
+          </LazyViewBoundary>
         )}
         {isPersonaViewOpen && (
-          <GlobalErrorBoundary>
-            <Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
-              <PersonaManagementView
-                personas={personas}
-                activePersonaId={activePersonaId}
-                onSelectPersona={handlePersonaSelect}
-                onCreatePersona={createPersona}
-                onUpdatePersona={updatePersona}
-                onDeletePersona={deletePersona}
-                onRefreshPersonas={refreshPersonas}
-                onClose={() => setIsPersonaViewOpen(false)}
-              />
-            </Suspense>
-          </GlobalErrorBoundary>
+          <LazyViewBoundary>
+            <PersonaManagementView
+              personas={personas}
+              activePersonaId={activePersonaId}
+              onSelectPersona={handlePersonaSelect}
+              onCreatePersona={createPersona}
+              onUpdatePersona={updatePersona}
+              onDeletePersona={deletePersona}
+              onRefreshPersonas={refreshPersonas}
+              onClose={() => setIsPersonaViewOpen(false)}
+            />
+          </LazyViewBoundary>
         )}
       </>
     );

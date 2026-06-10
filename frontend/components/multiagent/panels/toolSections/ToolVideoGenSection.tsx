@@ -55,8 +55,9 @@ export const ToolVideoGenSection: React.FC<ToolVideoGenSectionProps> = ({
     workflowVideoControlContract.validAspectRatios.length > 0
       ? workflowVideoControlContract.validAspectRatios
       : ['16:9', '9:16'];
-  const aspectRatio = aspectRatioOptions.includes(String(nodeData.toolAspectRatio || '').trim())
-    ? String(nodeData.toolAspectRatio || '').trim()
+  const trimmedAspectRatio = String(nodeData.toolAspectRatio || '').trim();
+  const aspectRatio = aspectRatioOptions.includes(trimmedAspectRatio)
+    ? trimmedAspectRatio
     : workflowVideoControlContract.defaultAspectRatio;
   const resolutionOptions = workflowVideoSchema?.resolutionTiers?.length
     ? workflowVideoSchema.resolutionTiers
@@ -84,6 +85,9 @@ export const ToolVideoGenSection: React.FC<ToolVideoGenSectionProps> = ({
     nodeData.toolVideoExtensionCount,
     extensionOptions.map((item) => item.count),
     workflowVideoControlContract.defaultVideoExtensionCount
+  );
+  const subtitleMode = String(
+    nodeData.toolSubtitleMode || workflowVideoControlContract.defaultSubtitleMode || 'none'
   );
   return (
     <div className="space-y-3 p-2.5 rounded-lg border border-fuchsia-500/20 bg-fuchsia-500/5">
@@ -231,11 +235,7 @@ export const ToolVideoGenSection: React.FC<ToolVideoGenSectionProps> = ({
             <div>
               <label className="block text-xs text-slate-500 mb-1">字幕模式</label>
               <select
-                value={String(
-                  nodeData.toolSubtitleMode ||
-                    workflowVideoControlContract.defaultSubtitleMode ||
-                    'none'
-                )}
+                value={subtitleMode}
                 onChange={(e) => updateNodeData({ toolSubtitleMode: e.target.value })}
                 data-field-key="toolSubtitleMode"
                 className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none focus:border-fuchsia-500/50"
@@ -248,11 +248,7 @@ export const ToolVideoGenSection: React.FC<ToolVideoGenSectionProps> = ({
               </select>
             </div>
             {workflowVideoControlContract.validSubtitleLanguages.length > 0 &&
-              String(
-                nodeData.toolSubtitleMode ||
-                  workflowVideoControlContract.defaultSubtitleMode ||
-                  'none'
-              ) !== 'none' && (
+              subtitleMode !== 'none' && (
                 <div>
                   <label className="block text-xs text-slate-500 mb-1">字幕语言</label>
                   <select
@@ -274,9 +270,7 @@ export const ToolVideoGenSection: React.FC<ToolVideoGenSectionProps> = ({
                 </div>
               )}
           </div>
-          {String(
-            nodeData.toolSubtitleMode || workflowVideoControlContract.defaultSubtitleMode || 'none'
-          ) !== 'none' && (
+          {subtitleMode !== 'none' && (
             <div>
               <label className="block text-xs text-slate-500 mb-1">字幕脚本（可选）</label>
               <textarea

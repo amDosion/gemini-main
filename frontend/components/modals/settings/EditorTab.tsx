@@ -11,6 +11,9 @@ import { useToastContext } from '../../../contexts/ToastContext';
 import { ModelSelectionPanel } from './ModelSelectionPanel';
 import { getErrorMessage } from '../../../utils/errorMessage';
 
+/** Sentinel prefix that marks an API key as Fernet-encrypted (vs. plaintext). */
+const ENCRYPTED_API_KEY_PREFIX = 'gAAAAA';
+
 interface EditorTabProps {
   initialData?: ConfigProfile | null;
   existingProfiles?: ConfigProfile[]; // 用于智能切换 Provider 时查找已有配置
@@ -75,7 +78,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
    */
   const resolveDecryptedProfile = async (profile: ConfigProfile): Promise<ConfigProfile> => {
     const apiKey = profile.apiKey || '';
-    if (!apiKey.startsWith('gAAAAA')) {
+    if (!apiKey.startsWith(ENCRYPTED_API_KEY_PREFIX)) {
       return profile;
     }
 
@@ -172,7 +175,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
     // formData.apiKey 在 EditorTab 中应该是解密的（通过 edit_mode=true 加载）
     // 如果仍然是加密的（以 gAAAAA 开头），验证会失败
     const apiKeyToVerify = formData.apiKey;
-    if (apiKeyToVerify && apiKeyToVerify.startsWith('gAAAAA')) {
+    if (apiKeyToVerify && apiKeyToVerify.startsWith(ENCRYPTED_API_KEY_PREFIX)) {
       setVerifyError('API Key is encrypted. Please reload the configuration.');
       setIsVerifying(false);
       return;

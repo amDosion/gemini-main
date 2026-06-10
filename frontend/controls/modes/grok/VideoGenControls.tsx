@@ -11,6 +11,7 @@ import { Clock3, Film, Maximize2 } from 'lucide-react';
 import { VideoGenControlsProps } from '../../types';
 import { useModeControlsSchema } from '../../../hooks/useModeControlsSchema';
 import { useEnhancePromptModels } from '../../../hooks/useEnhancePromptModels';
+import { useEnsureValidOption } from '../../../hooks/useEnsureValidOption';
 import PromptEnhanceControl from '../../shared/PromptEnhanceControl';
 import VideoExtensionControl from '../../shared/VideoExtensionControl';
 import {
@@ -125,20 +126,10 @@ export const VideoGenControls: React.FC<VideoGenControlsProps> = (props) => {
     controls?.setStoryboardSegments ?? propSetStoryboardSegments ?? (() => {});
 
   // 校验当前尺寸
-  useEffect(() => {
-    const validSizes = availableSizes.map((s) => s.value);
-    if (validSizes.length > 0 && !validSizes.includes(aspectRatio)) {
-      setAspectRatio(validSizes[0]);
-    }
-  }, [availableSizes, aspectRatio, setAspectRatio]);
+  useEnsureValidOption(aspectRatio, availableSizes, setAspectRatio);
 
   // 校验当前质量
-  useEffect(() => {
-    const validQualities = availableQualities.map((q) => q.value);
-    if (validQualities.length > 0 && !validQualities.includes(resolution)) {
-      setResolution(validQualities[0]);
-    }
-  }, [availableQualities, resolution, setResolution]);
+  useEnsureValidOption(resolution, availableQualities, setResolution);
 
   // 校验时长范围
   useEffect(() => {

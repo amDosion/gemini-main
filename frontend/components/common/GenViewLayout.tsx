@@ -170,10 +170,7 @@ export const GenViewLayout: React.FC<GenViewLayoutProps> = React.memo(
           setLeftSidebarWidth((current) => (current === committedWidth ? current : committedWidth));
         } else {
           pendingLeftSidebarWidthRef.current = leftSidebarWidth;
-          leftSidebarRef.current?.style.setProperty(
-            '--gen-left-sidebar-width',
-            `${leftSidebarWidth}px`
-          );
+          applyPendingLeftSidebarWidth();
         }
         isResizingLeftSidebarRef.current = false;
         if (typeof document !== 'undefined') {

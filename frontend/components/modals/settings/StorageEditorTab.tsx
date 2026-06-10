@@ -24,12 +24,16 @@ interface StorageEditorTabProps {
   footerNode?: HTMLDivElement | null;
 }
 
+const FIELD_INPUT_CLASS =
+  'w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono';
+const FIELD_LABEL_CLASS = 'block text-xs font-medium text-slate-300 mb-1.5';
+
 export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
   initialData,
   existingConfigs,
   onSave,
   onClose,
-  footerNode
+  footerNode,
 }) => {
   const [name, setName] = useState('');
   const [provider, setProvider] = useState<StorageProvider>('lsky');
@@ -134,9 +138,9 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
     // Check for duplicate configuration names
     const trimmedName = name.trim();
     const isDuplicate = existingConfigs.some(
-      config => config.name === trimmedName && config.id !== initialData?.id
+      (config) => config.name === trimmedName && config.id !== initialData?.id
     );
-    
+
     if (isDuplicate) {
       setError(`Configuration name "${trimmedName}" already exists. Please use a different name.`);
       return;
@@ -155,7 +159,12 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
         strategyId: lskyStrategyId ? parseInt(lskyStrategyId) : undefined,
       };
     } else if (provider === 'aliyun-oss') {
-      if (!ossAccessKeyId.trim() || !ossAccessKeySecret.trim() || !ossBucket.trim() || !ossEndpoint.trim()) {
+      if (
+        !ossAccessKeyId.trim() ||
+        !ossAccessKeySecret.trim() ||
+        !ossBucket.trim() ||
+        !ossEndpoint.trim()
+      ) {
         setError('Please fill in required fields for Aliyun OSS');
         return;
       }
@@ -168,7 +177,12 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
         secure: ossSecure,
       };
     } else if (provider === 'tencent-cos') {
-      if (!tencentSecretId.trim() || !tencentSecretKey.trim() || !tencentBucket.trim() || !tencentRegion.trim()) {
+      if (
+        !tencentSecretId.trim() ||
+        !tencentSecretKey.trim() ||
+        !tencentBucket.trim() ||
+        !tencentRegion.trim()
+      ) {
         setError('Please fill in required fields for Tencent COS');
         return;
       }
@@ -192,7 +206,12 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
         folderId: gdriveFolderId.trim() || undefined,
       };
     } else if (provider === 's3-compatible') {
-      if (!s3AccessKeyId.trim() || !s3SecretAccessKey.trim() || !s3Endpoint.trim() || !s3Bucket.trim()) {
+      if (
+        !s3AccessKeyId.trim() ||
+        !s3SecretAccessKey.trim() ||
+        !s3Endpoint.trim() ||
+        !s3Bucket.trim()
+      ) {
         setError('Please fill in required fields for S3 Compatible Storage');
         return;
       }
@@ -240,7 +259,9 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
               {initialData ? 'Edit Storage Config' : 'New Storage Config'}
             </h2>
           </div>
-          <p className="text-slate-400 text-xs md:text-sm">Configure cloud storage services for image uploads</p>
+          <p className="text-slate-400 text-xs md:text-sm">
+            Configure cloud storage services for image uploads
+          </p>
         </div>
 
         {/* Form Container */}
@@ -248,7 +269,7 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
           <div className="space-y-4 md:space-y-6">
             {/* Configuration Name */}
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
+              <label className={FIELD_LABEL_CLASS}>
                 Configuration Name <span className="text-red-400">*</span>
               </label>
               <input
@@ -262,7 +283,7 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
 
             {/* Storage Type */}
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
+              <label className={FIELD_LABEL_CLASS}>
                 Storage Type <span className="text-red-400">*</span>
               </label>
               <select
@@ -279,7 +300,9 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                 <option value="local">Local Storage</option>
               </select>
               {initialData && (
-                <p className="mt-1 text-[10px] text-slate-500">Storage type cannot be changed after creation</p>
+                <p className="mt-1 text-[10px] text-slate-500">
+                  Storage type cannot be changed after creation
+                </p>
               )}
             </div>
 
@@ -291,7 +314,7 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                 </h3>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  <label className={FIELD_LABEL_CLASS}>
                     Domain <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -299,12 +322,12 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                     value={lskyDomain}
                     onChange={(e) => setLskyDomain(e.target.value)}
                     placeholder="https://img.example.com"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  <label className={FIELD_LABEL_CLASS}>
                     API Token <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -312,20 +335,18 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                     value={lskyToken}
                     onChange={(e) => setLskyToken(e.target.value)}
                     placeholder="Enter API Token"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Strategy ID (Optional)
-                  </label>
+                  <label className={FIELD_LABEL_CLASS}>Strategy ID (Optional)</label>
                   <input
                     type="number"
                     value={lskyStrategyId}
                     onChange={(e) => setLskyStrategyId(e.target.value)}
                     placeholder="Leave empty for default strategy"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
               </div>
@@ -339,7 +360,7 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                 </h3>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  <label className={FIELD_LABEL_CLASS}>
                     Access Key ID <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -347,12 +368,12 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                     value={ossAccessKeyId}
                     onChange={(e) => setOssAccessKeyId(e.target.value)}
                     placeholder="LTAI..."
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  <label className={FIELD_LABEL_CLASS}>
                     Access Key Secret <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -360,12 +381,12 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                     value={ossAccessKeySecret}
                     onChange={(e) => setOssAccessKeySecret(e.target.value)}
                     placeholder="Enter Access Key Secret"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  <label className={FIELD_LABEL_CLASS}>
                     Bucket Name <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -373,12 +394,12 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                     value={ossBucket}
                     onChange={(e) => setOssBucket(e.target.value)}
                     placeholder="my-bucket"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  <label className={FIELD_LABEL_CLASS}>
                     Endpoint <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -386,7 +407,7 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                     value={ossEndpoint}
                     onChange={(e) => setOssEndpoint(e.target.value)}
                     placeholder="oss-cn-hangzhou.aliyuncs.com"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                   <p className="mt-1 text-[10px] text-slate-500">
                     OSS Endpoint, e.g., oss-cn-hangzhou.aliyuncs.com
@@ -394,15 +415,13 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Custom CDN Domain (Optional)
-                  </label>
+                  <label className={FIELD_LABEL_CLASS}>Custom CDN Domain (Optional)</label>
                   <input
                     type="url"
                     value={ossCustomDomain}
                     onChange={(e) => setOssCustomDomain(e.target.value)}
                     placeholder="https://cdn.example.com"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
 
@@ -429,7 +448,7 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                 </h3>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  <label className={FIELD_LABEL_CLASS}>
                     SecretId <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -437,12 +456,12 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                     value={tencentSecretId}
                     onChange={(e) => setTencentSecretId(e.target.value)}
                     placeholder="AKID..."
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  <label className={FIELD_LABEL_CLASS}>
                     SecretKey <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -450,12 +469,12 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                     value={tencentSecretKey}
                     onChange={(e) => setTencentSecretKey(e.target.value)}
                     placeholder="Enter SecretKey"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  <label className={FIELD_LABEL_CLASS}>
                     Bucket Name <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -463,12 +482,12 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                     value={tencentBucket}
                     onChange={(e) => setTencentBucket(e.target.value)}
                     placeholder="bucket-1250000000"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  <label className={FIELD_LABEL_CLASS}>
                     Region <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -476,33 +495,29 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                     value={tencentRegion}
                     onChange={(e) => setTencentRegion(e.target.value)}
                     placeholder="ap-guangzhou"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Custom Domain (Optional)
-                  </label>
+                  <label className={FIELD_LABEL_CLASS}>Custom Domain (Optional)</label>
                   <input
                     type="text"
                     value={tencentDomain}
                     onChange={(e) => setTencentDomain(e.target.value)}
                     placeholder="https://cdn.example.com"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Path Prefix (Optional)
-                  </label>
+                  <label className={FIELD_LABEL_CLASS}>Path Prefix (Optional)</label>
                   <input
                     type="text"
                     value={tencentPathPrefix}
                     onChange={(e) => setTencentPathPrefix(e.target.value)}
                     placeholder="e.g. uploads/"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
               </div>
@@ -516,7 +531,7 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                 </h3>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  <label className={FIELD_LABEL_CLASS}>
                     Client ID <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -524,12 +539,12 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                     value={gdriveClientId}
                     onChange={(e) => setGdriveClientId(e.target.value)}
                     placeholder="Enter Client ID"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  <label className={FIELD_LABEL_CLASS}>
                     Client Secret <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -537,12 +552,12 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                     value={gdriveClientSecret}
                     onChange={(e) => setGdriveClientSecret(e.target.value)}
                     placeholder="Enter Client Secret"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  <label className={FIELD_LABEL_CLASS}>
                     Refresh Token <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -550,20 +565,18 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                     value={gdriveRefreshToken}
                     onChange={(e) => setGdriveRefreshToken(e.target.value)}
                     placeholder="Enter Refresh Token"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Folder ID (Optional)
-                  </label>
+                  <label className={FIELD_LABEL_CLASS}>Folder ID (Optional)</label>
                   <input
                     type="text"
                     value={gdriveFolderId}
                     onChange={(e) => setGdriveFolderId(e.target.value)}
                     placeholder="Root folder if empty"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
               </div>
@@ -577,7 +590,7 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                 </h3>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  <label className={FIELD_LABEL_CLASS}>
                     Access Key ID <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -585,12 +598,12 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                     value={s3AccessKeyId}
                     onChange={(e) => setS3AccessKeyId(e.target.value)}
                     placeholder="Access Key ID"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  <label className={FIELD_LABEL_CLASS}>
                     Secret Access Key <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -598,12 +611,12 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                     value={s3SecretAccessKey}
                     onChange={(e) => setS3SecretAccessKey(e.target.value)}
                     placeholder="Secret Access Key"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  <label className={FIELD_LABEL_CLASS}>
                     Endpoint <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -611,12 +624,12 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                     value={s3Endpoint}
                     onChange={(e) => setS3Endpoint(e.target.value)}
                     placeholder="https://s3.example.com"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  <label className={FIELD_LABEL_CLASS}>
                     Bucket Name <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -624,47 +637,41 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
                     value={s3Bucket}
                     onChange={(e) => setS3Bucket(e.target.value)}
                     placeholder="my-bucket"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                      Region (Optional)
-                    </label>
+                    <label className={FIELD_LABEL_CLASS}>Region (Optional)</label>
                     <input
                       type="text"
                       value={s3Region}
                       onChange={(e) => setS3Region(e.target.value)}
                       placeholder="us-east-1"
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                      className={FIELD_INPUT_CLASS}
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                      Path Prefix (Optional)
-                    </label>
+                    <label className={FIELD_LABEL_CLASS}>Path Prefix (Optional)</label>
                     <input
                       type="text"
                       value={s3PathPrefix}
                       onChange={(e) => setS3PathPrefix(e.target.value)}
                       placeholder="uploads/"
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                      className={FIELD_INPUT_CLASS}
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Custom Domain (Optional)
-                  </label>
+                  <label className={FIELD_LABEL_CLASS}>Custom Domain (Optional)</label>
                   <input
                     type="text"
                     value={s3CustomDomain}
                     onChange={(e) => setS3CustomDomain(e.target.value)}
                     placeholder="https://cdn.example.com"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-xs font-mono"
+                    className={FIELD_INPUT_CLASS}
                   />
                 </div>
 
@@ -708,31 +715,31 @@ export const StorageEditorTab: React.FC<StorageEditorTabProps> = ({
             <div className="h-4"></div>
           </div>
         </div>
-
       </div>
 
       {/* Footer Portal */}
-      {footerNode && createPortal(
-        <>
-          <button
-            onClick={onClose}
-            disabled={isSaving}
-            className="px-4 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-900 transition-colors text-xs font-medium disabled:opacity-50 flex items-center gap-1"
-          >
-            <X size={16} />
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors text-sm shadow-lg shadow-indigo-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-          >
-            <Save size={16} />
-            {isSaving ? 'Saving...' : 'Save'}
-          </button>
-        </>,
-        footerNode
-      )}
+      {footerNode &&
+        createPortal(
+          <>
+            <button
+              onClick={onClose}
+              disabled={isSaving}
+              className="px-4 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-900 transition-colors text-xs font-medium disabled:opacity-50 flex items-center gap-1"
+            >
+              <X size={16} />
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors text-sm shadow-lg shadow-indigo-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+            >
+              <Save size={16} />
+              {isSaving ? 'Saving...' : 'Save'}
+            </button>
+          </>,
+          footerNode
+        )}
     </>
   );
 };
