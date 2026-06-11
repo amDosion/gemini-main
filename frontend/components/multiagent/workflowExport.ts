@@ -132,7 +132,7 @@ export const waitForClonedImages = async (
   container: HTMLElement,
   timeoutMs = 10000
 ): Promise<void> => {
-  const images = Array.from(container.querySelectorAll('img[src]')) as HTMLImageElement[];
+  const images = Array.from(container.querySelectorAll<HTMLImageElement>('img[src]'));
   if (images.length === 0) {
     return;
   }

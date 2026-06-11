@@ -10,7 +10,7 @@ export interface InlineReferenceImagePreviewProps {
 }
 
 const isPreviewableReferenceImageUrl = (value: string | null | undefined): value is string => {
-  const url = String(value || '').trim();
+  const url = (value || '').trim();
   return /^(data:image\/|blob:|https?:\/\/|\/api\/storage\/)/i.test(url);
 };
 

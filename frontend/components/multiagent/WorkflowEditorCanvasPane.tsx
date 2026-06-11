@@ -4,8 +4,10 @@ import ReactFlow, {
   Connection,
   Controls,
   Edge,
+  EdgeChange,
   MiniMap,
   Node,
+  NodeChange,
   ReactFlowInstance,
 } from 'reactflow';
 import { nodeTypeConfigs, NodeType } from './nodeTypeConfigs';
@@ -22,12 +24,19 @@ const FLOW_DEFAULT_EDGE_OPTIONS = {
   style: { stroke: '#14b8a6', strokeWidth: 2 },
 } as const;
 
+// Module-level so MiniMap receives a stable reference across renders.
+const resolveMiniMapNodeColor = (node: Node): string => {
+  const data = node.data as WorkflowNodeData;
+  const config = nodeTypeConfigs[data.type as NodeType] || nodeTypeConfigs.agent;
+  return resolveNodeMiniMapColor(data, config);
+};
+
 interface WorkflowEditorCanvasPaneProps {
   reactFlowWrapperRef: React.RefObject<HTMLDivElement | null>;
   nodes: Node<WorkflowNodeData>[];
   edges: Edge[];
-  onNodesChange: (changes: import('reactflow').NodeChange[]) => void;
-  onEdgesChange: (changes: import('reactflow').EdgeChange[]) => void;
+  onNodesChange: (changes: NodeChange[]) => void;
+  onEdgesChange: (changes: EdgeChange[]) => void;
   onConnect: (params: Connection) => void;
   onNodeClick: (_event: React.MouseEvent, node: Node) => void;
   onEdgeClick: (_event: React.MouseEvent, edge: Edge) => void;
@@ -112,11 +121,7 @@ export const WorkflowEditorCanvasPane: React.FC<WorkflowEditorCanvasPaneProps> =
           <MiniMap
             style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
             maskColor="rgba(0, 0, 0, 0.3)"
-            nodeColor={(node) => {
-              const data = node.data as WorkflowNodeData;
-              const config = nodeTypeConfigs[data.type as NodeType] || nodeTypeConfigs.agent;
-              return resolveNodeMiniMapColor(data, config);
-            }}
+            nodeColor={resolveMiniMapNodeColor}
           />
         </ReactFlow>
 

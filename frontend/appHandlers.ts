@@ -24,18 +24,16 @@ export const deleteMessageFromSession = (
 ): void => {
   if (!currentSessionId) return;
 
-  const msgToDelete = messages.find((m) => m.id === messageId);
-  if (!msgToDelete) return;
+  const msgIndex = messages.findIndex((m) => m.id === messageId);
+  if (msgIndex < 0) return;
+  const msgToDelete = messages[msgIndex];
 
   // 如果是 MODEL 消息，同时删除前一条 USER 消息（成对删除）
   const idsToDelete = [messageId];
-  if (msgToDelete.role === Role.MODEL) {
-    const msgIndex = messages.findIndex((m) => m.id === messageId);
-    if (msgIndex > 0) {
-      const prevMsg = messages[msgIndex - 1];
-      if (prevMsg.role === Role.USER && prevMsg.mode === msgToDelete.mode) {
-        idsToDelete.push(prevMsg.id);
-      }
+  if (msgToDelete.role === Role.MODEL && msgIndex > 0) {
+    const prevMsg = messages[msgIndex - 1];
+    if (prevMsg.role === Role.USER && prevMsg.mode === msgToDelete.mode) {
+      idsToDelete.push(prevMsg.id);
     }
   }
 

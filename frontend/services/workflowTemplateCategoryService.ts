@@ -28,11 +28,10 @@ export const listWorkflowTemplateCategories = async (
     ensureDefaults?: boolean;
   } = {}
 ): Promise<WorkflowTemplateCategoryItem[]> => {
-  const includePublic = options.includePublic !== false;
-  const ensureDefaults = options.ensureDefaults !== false;
-  const params = new URLSearchParams();
-  params.set('include_public', includePublic ? 'true' : 'false');
-  params.set('ensure_defaults', ensureDefaults ? 'true' : 'false');
+  const params = new URLSearchParams({
+    include_public: String(options.includePublic !== false),
+    ensure_defaults: String(options.ensureDefaults !== false),
+  });
   const response = await apiClient.get<WorkflowTemplateCategoryListResponse>(
     `/api/workflows/template-categories?${params.toString()}`
   );
@@ -40,15 +39,13 @@ export const listWorkflowTemplateCategories = async (
     ? response.categories.map(normalizeCategoryItem).filter((item) => item.name.length > 0)
     : [];
 
-  const deduped: WorkflowTemplateCategoryItem[] = [];
   const seen = new Set<string>();
-  categories.forEach((item) => {
+  return categories.filter((item) => {
     const key = item.name.toLowerCase();
-    if (seen.has(key)) return;
+    if (seen.has(key)) return false;
     seen.add(key);
-    deduped.push(item);
+    return true;
   });
-  return deduped;
 };
 
 export const createWorkflowTemplateCategory = async (

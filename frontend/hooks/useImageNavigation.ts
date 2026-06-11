@@ -1,4 +1,3 @@
-
 import { useState, useMemo, useCallback } from 'react';
 import { Message } from '../types/types';
 
@@ -24,15 +23,15 @@ export const useImageNavigation = (messages: Message[]): UseImageNavigationRetur
     if (!previewImage) return { allImages: [], currentImageIndex: -1 };
 
     // 扁平化所有图片附件
-    const images = messages.flatMap(m =>
+    const images = messages.flatMap((m) =>
       (m.attachments || [])
-        .filter(att => att.mimeType.startsWith('image/') && att.url)
-        .map(att => att.url!)
+        .filter((att) => att.mimeType.startsWith('image/') && att.url)
+        .map((att) => att.url!)
     );
 
     return {
       allImages: images,
-      currentImageIndex: images.indexOf(previewImage)
+      currentImageIndex: images.indexOf(previewImage),
     };
   }, [messages, previewImage]);
 
@@ -46,7 +45,8 @@ export const useImageNavigation = (messages: Message[]): UseImageNavigationRetur
   // 上一张图片（循环）
   const handlePrevImage = useCallback(() => {
     if (allImages.length <= 1) return;
-    const prevIndex = currentImageIndex === 0 ? allImages.length - 1 : currentImageIndex - 1;
+    // currentImageIndex 可能为 -1（预览图已从 allImages 移除，如消息被删除），此时回到最后一张
+    const prevIndex = currentImageIndex <= 0 ? allImages.length - 1 : currentImageIndex - 1;
     setPreviewImage(allImages[prevIndex]);
   }, [allImages, currentImageIndex]);
 
@@ -62,6 +62,6 @@ export const useImageNavigation = (messages: Message[]): UseImageNavigationRetur
     currentImageIndex,
     handleNextImage,
     handlePrevImage,
-    handleImageClick
+    handleImageClick,
   };
 };

@@ -1,17 +1,14 @@
 import type { Attachment } from '../types/types';
 import { revokeManagedMediaObjectUrl } from '../services/mediaCache';
 
-export type AttachmentUrlSource = Pick<
-  Attachment,
-  'cloudUrl' | 'url' | 'tempUrl' | 'fileUri'
-> & {
+export type AttachmentUrlSource = Pick<Attachment, 'cloudUrl' | 'url' | 'tempUrl' | 'fileUri'> & {
   cloud_url?: string | null;
   temp_url?: string | null;
   file_uri?: string | null;
   file?: Blob | File | null;
 };
 
-export const normalizeAttachmentUrl = (url: string | null | undefined): string | null => {
+const normalizeAttachmentUrl = (url: string | null | undefined): string | null => {
   const normalized = (url || '').trim();
   return normalized.length > 0 ? normalized : null;
 };
@@ -52,9 +49,11 @@ export const isHttpAttachmentUrl = (url: string | null | undefined): boolean => 
   return normalized.startsWith('http://') || normalized.startsWith('https://');
 };
 
-export const isLocalStorageAttachmentUrl = (url: string | null | undefined): boolean => {
+const isLocalStorageAttachmentUrl = (url: string | null | undefined): boolean => {
   const normalized = normalizeAttachmentUrl(url)?.toLowerCase() || '';
-  return normalized.startsWith('/api/storage/') || /^https?:\/\/[^/]+\/api\/storage\//.test(normalized);
+  return (
+    normalized.startsWith('/api/storage/') || /^https?:\/\/[^/]+\/api\/storage\//.test(normalized)
+  );
 };
 
 export const getPreferredAttachmentUrl = (

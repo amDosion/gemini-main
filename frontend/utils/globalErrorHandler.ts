@@ -1,6 +1,6 @@
 /**
  * 全局未处理异常兜底
- * 
+ *
  * 捕获所有未处理的 Promise rejection 和运行时错误，
  * 通过 Toast 统一展示给用户。
  */
@@ -29,7 +29,8 @@ function isIgnorable(error: unknown): boolean {
     msg.includes('aborted') ||
     msg.includes('cancelled') ||
     msg.includes('the user aborted') ||
-    msg.includes('signal') ||
+    // 只匹配 AbortSignal 的标准措辞，避免误吞包含 "signal" 字样的真实运行时错误
+    msg.includes('signal is aborted') ||
     msg.includes('network error') ||
     msg.includes('failed to fetch') ||
     msg.includes('load failed')
@@ -62,7 +63,6 @@ export function initGlobalErrorHandlers(): void {
 
 /** 统一错误上报（替代分散的 console.error/warn） */
 export function reportError(context: string, error: unknown): void {
-  const message = extractMessage(error);
   if (isIgnorable(error)) return;
-  _notifier?.(`${context}: ${message}`);
+  _notifier?.(`${context}: ${extractMessage(error)}`);
 }

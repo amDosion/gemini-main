@@ -19,9 +19,9 @@ export interface SkeletonLoaderProps {
 
 /**
  * 骨架屏加载组件
- * 
+ *
  * 显示占位内容，在数据加载时提供视觉反馈，提升用户体验。
- * 
+ *
  * @example
  * ```tsx
  * <SkeletonLoader type="list" rows={5} />
@@ -108,17 +108,10 @@ export const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
             </table>
           </div>
         );
-
-      default:
-        return null;
     }
   };
 
-  return (
-    <div className={`skeleton-loader ${className}`}>
-      {renderSkeleton()}
-    </div>
-  );
+  return <div className={`skeleton-loader ${className}`}>{renderSkeleton()}</div>;
 };
 
 export default SkeletonLoader;

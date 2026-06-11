@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Copy, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { safeCopyToClipboard } from '../../../utils/safeOps';
 
 interface PdfTableViewProps {
   data: Record<string, unknown>;
@@ -12,16 +13,34 @@ export const PdfTableView: React.FC<PdfTableViewProps> = ({ data }) => {
   const [copiedCell, setCopiedCell] = useState<string | null>(null);
   const [expandedCells, setExpandedCells] = useState<Set<string>>(new Set());
 
-  const copyToClipboard = (text: string, cellId: string) => {
-    navigator.clipboard.writeText(text);
+  const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copyResetTimerRef.current !== null) clearTimeout(copyResetTimerRef.current);
+    },
+    []
+  );
+
+  const copyToClipboard = async (text: string, cellId: string) => {
+    const copied = await safeCopyToClipboard(text);
+    if (!copied) return;
     setCopiedCell(cellId);
-    setTimeout(() => setCopiedCell(null), 2000);
+    if (copyResetTimerRef.current !== null) clearTimeout(copyResetTimerRef.current);
+    copyResetTimerRef.current = setTimeout(() => {
+      setCopiedCell(null);
+      copyResetTimerRef.current = null;
+    }, 2000);
   };
 
   const toggleExpand = (cellId: string) => {
-    setExpandedCells(prev => {
+    setExpandedCells((prev) => {
       const next = new Set(prev);
-      next.has(cellId) ? next.delete(cellId) : next.add(cellId);
+      if (next.has(cellId)) {
+        next.delete(cellId);
+      } else {
+        next.add(cellId);
+      }
       return next;
     });
   };
@@ -33,7 +52,12 @@ export const PdfTableView: React.FC<PdfTableViewProps> = ({ data }) => {
     const arrayFields: { key: string; items: Record<string, unknown>[] }[] = [];
 
     Object.entries(data).forEach(([key, value]) => {
-      if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
+      if (
+        Array.isArray(value) &&
+        value.length > 0 &&
+        value[0] !== null &&
+        typeof value[0] === 'object'
+      ) {
         arrayFields.push({ key, items: value });
       } else {
         simpleFields[key] = value;
@@ -70,7 +94,7 @@ export const PdfTableView: React.FC<PdfTableViewProps> = ({ data }) => {
             </button>
           )}
           <button
-            onClick={() => copyToClipboard(strValue, cellId)}
+            onClick={() => void copyToClipboard(strValue, cellId)}
             className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-700 rounded transition-all"
             title="复制"
           >
@@ -99,7 +123,7 @@ export const PdfTableView: React.FC<PdfTableViewProps> = ({ data }) => {
               <th className="px-3 py-2 text-left text-xs font-semibold text-slate-300 border border-slate-700 w-12">
                 #
               </th>
-              {columns.map(col => (
+              {columns.map((col) => (
                 <th
                   key={col}
                   className="px-3 py-2 text-left text-xs font-semibold text-slate-300 border border-slate-700 min-w-[120px]"
@@ -118,7 +142,7 @@ export const PdfTableView: React.FC<PdfTableViewProps> = ({ data }) => {
                 <td className="px-3 py-2 text-slate-500 border border-slate-700/50 text-center font-mono">
                   {rowIdx + 1}
                 </td>
-                {columns.map(col => (
+                {columns.map((col) => (
                   <td key={col} className="px-3 py-2 border border-slate-700/50 max-w-[300px]">
                     {renderCellValue(item[col], `${tableKey}-${rowIdx}-${col}`)}
                   </td>

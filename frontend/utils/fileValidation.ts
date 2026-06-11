@@ -4,9 +4,9 @@ import { AppMode } from '../types/types';
  * 文件验证结果
  */
 export interface FileValidationResult {
-  valid: File[];           // 有效文件
-  invalid: File[];         // 无效文件
-  errors: string[];        // 错误消息
+  valid: File[]; // 有效文件
+  invalid: File[]; // 无效文件
+  errors: string[]; // 错误消息
 }
 
 /**
@@ -28,10 +28,9 @@ export function getAcceptedTypes(mode: AppMode): string[] {
         'text/*',
         'text/csv',
         'text/html',
-        'application/json'
+        'application/json',
       ];
     case 'image-gen':
-      return ['image/*'];
     case 'image-chat-edit':
     case 'image-mask-edit':
     case 'image-inpainting':
@@ -39,17 +38,16 @@ export function getAcceptedTypes(mode: AppMode): string[] {
     case 'image-recontext':
     case 'image-outpainting':
     case 'virtual-try-on':
+    case 'image-upscale':
+    case 'image-segmentation':
+    case 'product-recontext':
       return ['image/*'];
     case 'video-gen':
       return ['image/*', 'video/*'];
     case 'pdf-extract':
       return ['.pdf', 'application/pdf'];
-    case 'image-upscale':
-    case 'image-segmentation':
-    case 'product-recontext':
-      return ['image/*'];
     case 'multi-agent':
-      // multi-agent mode drives text/tool workflows — attachments are not supported.
+    // multi-agent mode drives text/tool workflows — attachments are not supported.
     case 'audio-gen':
       // audio-gen generates audio from text prompts only — no file input accepted.
       return [];
@@ -65,8 +63,8 @@ export function isValidFileType(file: File, acceptedTypes: string[]): boolean {
   // An empty accepted-types list means the mode accepts no attachments — reject all.
   if (acceptedTypes.length === 0) return false;
   const filename = file.name.toLowerCase();
-  
-  return acceptedTypes.some(type => {
+
+  return acceptedTypes.some((type) => {
     const normalizedType = type.toLowerCase();
     if (normalizedType.startsWith('.')) {
       return filename.endsWith(normalizedType);
@@ -100,7 +98,7 @@ export function validateFiles(
   const invalid: File[] = [];
   const errors: string[] = [];
 
-  files.forEach(file => {
+  files.forEach((file) => {
     // 检查文件类型
     if (!isValidFileType(file, acceptedTypes)) {
       invalid.push(file);
@@ -132,7 +130,7 @@ export function validateFilesForMode(
   currentAttachmentCount: number = 0
 ): FileValidationResult {
   const acceptedTypes = getAcceptedTypes(mode);
-  
+
   // 特殊模式限制
   if (mode === 'image-outpainting') {
     // 扩图模式只允许一张图片
@@ -140,15 +138,17 @@ export function validateFilesForMode(
       return {
         valid: [],
         invalid: files,
-        errors: ['扩图模式只支持一张图片，请先移除现有图片']
+        errors: ['扩图模式只支持一张图片，请先移除现有图片'],
       };
     }
-    
+
     if (files.length > 1) {
+      // 第一张图片同样要通过类型/大小校验，不能因多选而绕过
+      const first = validateFiles([files[0]], acceptedTypes);
       return {
-        valid: [files[0]],
-        invalid: files.slice(1),
-        errors: ['扩图模式只支持一张图片，已自动选择第一张']
+        valid: first.valid,
+        invalid: [...first.invalid, ...files.slice(1)],
+        errors: ['扩图模式只支持一张图片，已自动选择第一张', ...first.errors],
       };
     }
   }

@@ -68,7 +68,7 @@ export const AppRoutes: React.FC<AppRoutesProps> = ({
       />
       <Route
         path="/*"
-        element={isAuthenticated ? <>{mainAppElement}</> : <Navigate to="/login" replace />}
+        element={isAuthenticated ? mainAppElement : <Navigate to="/login" replace />}
       />
     </Routes>
   );

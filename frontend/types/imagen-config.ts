@@ -1,9 +1,11 @@
 /**
  * Imagen API Configuration Types
- * 
+ *
  * Defines TypeScript interfaces for Imagen API configuration,
  * supporting both Gemini API and Vertex AI modes.
  */
+
+import type { ModelConfig } from './types';
 
 /**
  * API mode for image generation
@@ -16,10 +18,10 @@ export type ImagenAPIMode = 'gemini_api' | 'vertex_ai';
 export interface ImagenAPISettings {
   /** API mode to use for image generation */
   apiMode: ImagenAPIMode;
-  
+
   /** Gemini API key (required for gemini_api mode) */
   geminiApiKey?: string;
-  
+
   /** Vertex AI configuration (required for vertex_ai mode) */
   vertexAI?: {
     /** Google Cloud project ID */
@@ -44,8 +46,6 @@ export interface ImageGenerationCapabilities {
   /** Supported image sizes */
   imageSizes: string[];
 }
-
-import { ModelConfig } from './types';
 
 /**
  * Configuration response from backend

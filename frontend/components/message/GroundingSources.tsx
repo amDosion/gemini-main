@@ -6,11 +6,11 @@ interface GroundingSourcesProps {
   chunks?: GroundingChunk[];
 }
 
-/** Returns the URI only when its scheme is http or https; otherwise undefined. */
-function getSafeUri(uri: string): string | undefined {
+/** Returns the URI and hostname only when the scheme is http or https; otherwise undefined. */
+function getSafeLink(uri: string): { uri: string; hostname: string } | undefined {
   try {
-    const { protocol } = new URL(uri);
-    return protocol === 'http:' || protocol === 'https:' ? uri : undefined;
+    const { protocol, hostname } = new URL(uri);
+    return protocol === 'http:' || protocol === 'https:' ? { uri, hostname } : undefined;
   } catch {
     return undefined;
   }
@@ -28,12 +28,12 @@ export const GroundingSources: React.FC<GroundingSourcesProps> = ({ chunks }) =>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {chunks.map((chunk, idx) => {
           if (!chunk.web) return null;
-          const safeUri = getSafeUri(chunk.web.uri);
-          if (!safeUri) return null;
+          const link = getSafeLink(chunk.web.uri);
+          if (!link) return null;
           return (
             <a
               key={idx}
-              href={safeUri}
+              href={link.uri}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-700/50 transition-all border border-slate-800 hover:border-slate-600 group/link bg-slate-900/50"
@@ -45,9 +45,7 @@ export const GroundingSources: React.FC<GroundingSourcesProps> = ({ chunks }) =>
                 <div className="text-xs text-blue-300 truncate font-medium group-hover/link:text-blue-200">
                   {chunk.web.title}
                 </div>
-                <div className="text-[10px] text-slate-500 truncate">
-                  {new URL(safeUri).hostname}
-                </div>
+                <div className="text-[10px] text-slate-500 truncate">{link.hostname}</div>
               </div>
             </a>
           );

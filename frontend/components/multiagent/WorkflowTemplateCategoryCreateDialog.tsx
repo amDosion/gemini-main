@@ -13,7 +13,9 @@ interface WorkflowTemplateCategoryCreateDialogProps {
   error?: string | null;
 }
 
-export const WorkflowTemplateCategoryCreateDialog: React.FC<WorkflowTemplateCategoryCreateDialogProps> = ({
+export const WorkflowTemplateCategoryCreateDialog: React.FC<
+  WorkflowTemplateCategoryCreateDialogProps
+> = ({
   isOpen,
   title = '新增分类',
   confirmLabel = '创建',
@@ -38,12 +40,20 @@ export const WorkflowTemplateCategoryCreateDialog: React.FC<WorkflowTemplateCate
       return;
     }
     const onKeyDown = (event: KeyboardEvent) => {
+      // IME 组合输入（如拼音）按 Enter 上屏时也会触发 keydown，不能当作确认提交。
+      if (event.isComposing || event.keyCode === 229) {
+        return;
+      }
       if (event.key === 'Escape') {
         event.preventDefault();
         if (!loading) {
           onClose();
         }
       } else if (event.key === 'Enter') {
+        // 焦点在按钮（取消/关闭/创建）上时保留按钮原生 Enter 行为，避免误触确认。
+        if (event.target instanceof HTMLButtonElement) {
+          return;
+        }
         event.preventDefault();
         if (!loading) {
           onConfirm();
@@ -90,11 +100,7 @@ export const WorkflowTemplateCategoryCreateDialog: React.FC<WorkflowTemplateCate
           className="w-full px-3 py-2 text-sm border border-slate-700 rounded-lg bg-slate-800 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
         />
 
-        {error && (
-          <div className="mt-2 text-xs text-rose-300">
-            {error}
-          </div>
-        )}
+        {error && <div className="mt-2 text-xs text-rose-300">{error}</div>}
 
         <div className="mt-4 inline-flex items-stretch rounded-lg border border-slate-700 overflow-hidden bg-slate-900 float-right">
           <button

@@ -1,10 +1,5 @@
 import React, { memo, useState } from 'react';
-import {
-  BaseEdge,
-  EdgeLabelRenderer,
-  EdgeProps,
-  getBezierPath,
-} from 'reactflow';
+import { BaseEdge, EdgeLabelRenderer, EdgeProps, getBezierPath } from 'reactflow';
 import { dispatchScopedWorkflowEvent } from './workflowEditorUtils';
 
 const ButtonEdgeComponent: React.FC<EdgeProps> = ({
@@ -33,7 +28,7 @@ const ButtonEdgeComponent: React.FC<EdgeProps> = ({
     event.preventDefault();
     event.stopPropagation();
     dispatchScopedWorkflowEvent('workflow:remove-edge-request', event.currentTarget, {
-      edgeId: String(id),
+      edgeId: id,
     });
   };
 
@@ -59,8 +54,8 @@ const ButtonEdgeComponent: React.FC<EdgeProps> = ({
         markerEnd={markerEnd}
         style={{
           ...style,
-          stroke: selected ? '#22d3ee' : (style as any)?.stroke || '#14b8a6',
-          strokeWidth: selected ? 2.5 : (style as any)?.strokeWidth || 2,
+          stroke: selected ? '#22d3ee' : style.stroke || '#14b8a6',
+          strokeWidth: selected ? 2.5 : style.strokeWidth || 2,
         }}
       />
       <EdgeLabelRenderer>

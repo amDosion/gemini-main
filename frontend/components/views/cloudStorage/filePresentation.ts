@@ -12,11 +12,46 @@ export type FileKind =
   | 'archive'
   | 'other';
 
-const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'avif', 'heic', 'heif', 'tif', 'tiff']);
-const VIDEO_EXTENSIONS = new Set(['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v', 'wmv', 'flv', 'ts', 'm2ts']);
+const IMAGE_EXTENSIONS = new Set([
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'webp',
+  'bmp',
+  'svg',
+  'avif',
+  'heic',
+  'heif',
+  'tif',
+  'tiff',
+]);
+const VIDEO_EXTENSIONS = new Set([
+  'mp4',
+  'mov',
+  'avi',
+  'mkv',
+  'webm',
+  'm4v',
+  'wmv',
+  'flv',
+  'ts',
+  'm2ts',
+]);
 const SPREADSHEET_EXTENSIONS = new Set(['xls', 'xlsx', 'csv', 'tsv', 'ods']);
 const DOCUMENT_EXTENSIONS = new Set(['doc', 'docx', 'txt', 'rtf', 'odt', 'ppt', 'pptx', 'md']);
-const RAW_EXTENSIONS = new Set(['raw', 'arw', 'cr2', 'cr3', 'nef', 'dng', 'rw2', 'orf', 'raf', 'srw']);
+const RAW_EXTENSIONS = new Set([
+  'raw',
+  'arw',
+  'cr2',
+  'cr3',
+  'nef',
+  'dng',
+  'rw2',
+  'orf',
+  'raf',
+  'srw',
+]);
 const DESIGN_EXTENSIONS = new Set(['psd', 'psb', 'ai', 'sketch', 'xd']);
 const PDF_EXTENSIONS = new Set(['pdf']);
 const ARCHIVE_EXTENSIONS = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2']);
@@ -65,7 +100,11 @@ const getKindPalette = (kind: FileKind): { bg: string; fg: string } => {
 };
 
 export const createGeneratedThumb = (kind: FileKind, ext: string): string => {
-  const safeLabel = (ext || kind || 'file').replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 4) || 'FILE';
+  const safeLabel =
+    (ext || kind)
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .toUpperCase()
+      .slice(0, 4) || 'FILE';
   const palette = getKindPalette(kind);
   const svg = `
 <svg xmlns="http://www.w3.org/2000/svg" width="88" height="88" viewBox="0 0 88 88">

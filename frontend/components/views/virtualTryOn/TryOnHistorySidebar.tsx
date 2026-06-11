@@ -77,7 +77,6 @@ export const TryOnHistorySidebar = React.memo(function TryOnHistorySidebar({
                     source={{
                       ...att,
                       attachmentId: att.id,
-                      url: att.url,
                     }}
                     src={att.url}
                     className="w-full h-24 object-cover bg-slate-900"

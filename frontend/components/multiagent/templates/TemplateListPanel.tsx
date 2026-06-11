@@ -61,93 +61,96 @@ export const TemplateListPanel: React.FC<TemplateListPanelProps> = ({
         </div>
       ) : (
         <div className="p-4 space-y-4">
-          {filteredTemplates.map((template) => (
-            <button
-              key={template.id}
-              onClick={() => setSelectedTemplate(template)}
-              className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
-                selectedTemplate?.id === template.id
-                  ? 'border-teal-500 bg-teal-500/10'
-                  : 'border-slate-700 hover:border-slate-600 hover:bg-slate-800/60'
-              }`}
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <h3 className="font-semibold text-slate-100 mb-1">{template.name}</h3>
-                  <p className="text-sm text-slate-400 mb-2 line-clamp-2">
-                    {template.description}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs px-2 py-0.5 bg-slate-800 text-slate-300 rounded border border-slate-700">
-                      {template.category}
-                    </span>
-                    <span className="text-xs px-2 py-0.5 bg-slate-950/80 text-slate-300 rounded border border-slate-700">
-                      {resolveTemplateOriginLabel(template)}
-                    </span>
-                    {resolveTemplateRuntimeLabel(template) && (
-                      <span className="text-xs px-2 py-0.5 bg-amber-500/10 text-amber-200 rounded border border-amber-500/20">
-                        {resolveTemplateRuntimeLabel(template)}
+          {filteredTemplates.map((template) => {
+            const isSelected = selectedTemplate?.id === template.id;
+            const runtimeLabel = resolveTemplateRuntimeLabel(template);
+            const summary = template.sampleResultSummary;
+            const videoCount = summary?.videoCount || 0;
+            const videoExtensionCount =
+              summary?.videoExtensionApplied || summary?.videoExtensionCount || 0;
+            const totalDurationSeconds = summary?.totalDurationSeconds || 0;
+            const subtitleFileCount = summary?.subtitleFileCount || 0;
+            const hasSubtitle =
+              ((summary?.subtitleMode || '') !== '' && summary?.subtitleMode !== 'none') ||
+              subtitleFileCount > 0;
+            const audioCount = summary?.audioCount || 0;
+            return (
+              <button
+                key={template.id}
+                onClick={() => setSelectedTemplate(template)}
+                className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
+                  isSelected
+                    ? 'border-teal-500 bg-teal-500/10'
+                    : 'border-slate-700 hover:border-slate-600 hover:bg-slate-800/60'
+                }`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-slate-100 mb-1">{template.name}</h3>
+                    <p className="text-sm text-slate-400 mb-2 line-clamp-2">
+                      {template.description}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs px-2 py-0.5 bg-slate-800 text-slate-300 rounded border border-slate-700">
+                        {template.category}
                       </span>
-                    )}
-                    {template.isLegacyStarterCopy && (
-                      <span className="text-xs px-2 py-0.5 bg-amber-600/15 text-amber-100 rounded border border-amber-500/30">
-                        遗留 Starter 副本
+                      <span className="text-xs px-2 py-0.5 bg-slate-950/80 text-slate-300 rounded border border-slate-700">
+                        {resolveTemplateOriginLabel(template)}
                       </span>
-                    )}
-                    <span className="text-xs text-slate-500">
-                      {template.config.nodes.length || template.estimatedNodeCount || 0}{' '}
-                      个节点
-                    </span>
-                    {template.sampleResultSummary?.hasResult && (
-                      <span className="text-xs px-2 py-0.5 bg-emerald-500/20 text-emerald-200 rounded border border-emerald-500/30">
-                        有结果样例
+                      {runtimeLabel && (
+                        <span className="text-xs px-2 py-0.5 bg-amber-500/10 text-amber-200 rounded border border-amber-500/20">
+                          {runtimeLabel}
+                        </span>
+                      )}
+                      {template.isLegacyStarterCopy && (
+                        <span className="text-xs px-2 py-0.5 bg-amber-600/15 text-amber-100 rounded border border-amber-500/30">
+                          遗留 Starter 副本
+                        </span>
+                      )}
+                      <span className="text-xs text-slate-500">
+                        {template.config.nodes.length || template.estimatedNodeCount || 0} 个节点
                       </span>
-                    )}
-                    {(template.sampleResultSummary?.videoCount || 0) > 0 && (
-                      <span className="text-xs px-2 py-0.5 bg-sky-500/15 text-sky-200 rounded border border-sky-500/30">
-                        视频 {template.sampleResultSummary?.videoCount || 0}
-                      </span>
-                    )}
-                    {((template.sampleResultSummary?.videoExtensionApplied || 0) > 0 ||
-                      (template.sampleResultSummary?.videoExtensionCount || 0) > 0) && (
-                      <span className="text-xs px-2 py-0.5 bg-orange-500/15 text-orange-200 rounded border border-orange-500/30">
-                        延长{' '}
-                        {template.sampleResultSummary?.videoExtensionApplied ||
-                          template.sampleResultSummary?.videoExtensionCount ||
-                          0}
-                      </span>
-                    )}
-                    {(template.sampleResultSummary?.totalDurationSeconds || 0) > 0 && (
-                      <span className="text-xs px-2 py-0.5 bg-cyan-500/15 text-cyan-200 rounded border border-cyan-500/30">
-                        {template.sampleResultSummary?.totalDurationSeconds || 0}s
-                      </span>
-                    )}
-                    {(((template.sampleResultSummary?.subtitleMode || '') !== '' &&
-                      template.sampleResultSummary?.subtitleMode !== 'none') ||
-                      (template.sampleResultSummary?.subtitleFileCount || 0) > 0) && (
-                      <span className="text-xs px-2 py-0.5 bg-emerald-500/15 text-emerald-200 rounded border border-emerald-500/30">
-                        字幕
-                        {(template.sampleResultSummary?.subtitleFileCount || 0) > 0
-                          ? ` · ${template.sampleResultSummary?.subtitleFileCount}`
-                          : ''}
-                      </span>
-                    )}
-                    {(template.sampleResultSummary?.audioCount || 0) > 0 && (
-                      <span className="text-xs px-2 py-0.5 bg-cyan-500/15 text-cyan-200 rounded border border-cyan-500/30">
-                        音频 {template.sampleResultSummary?.audioCount || 0}
-                      </span>
-                    )}
+                      {summary?.hasResult && (
+                        <span className="text-xs px-2 py-0.5 bg-emerald-500/20 text-emerald-200 rounded border border-emerald-500/30">
+                          有结果样例
+                        </span>
+                      )}
+                      {videoCount > 0 && (
+                        <span className="text-xs px-2 py-0.5 bg-sky-500/15 text-sky-200 rounded border border-sky-500/30">
+                          视频 {videoCount}
+                        </span>
+                      )}
+                      {videoExtensionCount > 0 && (
+                        <span className="text-xs px-2 py-0.5 bg-orange-500/15 text-orange-200 rounded border border-orange-500/30">
+                          延长 {videoExtensionCount}
+                        </span>
+                      )}
+                      {totalDurationSeconds > 0 && (
+                        <span className="text-xs px-2 py-0.5 bg-cyan-500/15 text-cyan-200 rounded border border-cyan-500/30">
+                          {totalDurationSeconds}s
+                        </span>
+                      )}
+                      {hasSubtitle && (
+                        <span className="text-xs px-2 py-0.5 bg-emerald-500/15 text-emerald-200 rounded border border-emerald-500/30">
+                          字幕
+                          {subtitleFileCount > 0 ? ` · ${subtitleFileCount}` : ''}
+                        </span>
+                      )}
+                      {audioCount > 0 && (
+                        <span className="text-xs px-2 py-0.5 bg-cyan-500/15 text-cyan-200 rounded border border-cyan-500/30">
+                          音频 {audioCount}
+                        </span>
+                      )}
+                    </div>
                   </div>
+                  <ChevronRight
+                    size={20}
+                    className={`flex-shrink-0 ml-2 ${isSelected ? 'text-teal-400' : 'text-slate-500'}`}
+                  />
                 </div>
-                <ChevronRight
-                  size={20}
-                  className={`flex-shrink-0 ml-2 ${
-                    selectedTemplate?.id === template.id ? 'text-teal-400' : 'text-slate-500'
-                  }`}
-                />
-              </div>
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

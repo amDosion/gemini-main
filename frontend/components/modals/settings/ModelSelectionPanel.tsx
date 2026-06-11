@@ -1,4 +1,3 @@
-import React from 'react';
 import { Brain, Check, CheckCircle2, Code, Eye, Image as ImageIcon, Search } from 'lucide-react';
 import { getModelUsage, type ModelUsageSource } from '../../../utils/modelUsage';
 
@@ -25,9 +24,8 @@ export function ModelSelectionPanel<T extends SelectableModel>({
   helperText = 'Check models to include in the dropdown.',
   testIdPrefix = 'settings-model',
 }: ModelSelectionPanelProps<T>) {
-  const selectedIds = selectedModelIds instanceof Set
-    ? selectedModelIds
-    : new Set(selectedModelIds);
+  const selectedIds =
+    selectedModelIds instanceof Set ? selectedModelIds : new Set(selectedModelIds);
 
   return (
     <div className="bg-slate-900/30 rounded-xl border border-slate-800 flex flex-col mt-2">
@@ -68,9 +66,9 @@ export function ModelSelectionPanel<T extends SelectableModel>({
           {models.map((model) => {
             const isSelected = selectedIds.has(model.id);
             const usage = getModelUsage(model);
-            const isImageLike = model.id.toLowerCase().includes('image') ||
-              model.id.toLowerCase().includes('imagen') ||
-              model.id.toLowerCase().includes('veo');
+            const modelIdLower = model.id.toLowerCase();
+            // 'imagen' 已被 'image' 子串覆盖，无需单独判断
+            const isImageLike = modelIdLower.includes('image') || modelIdLower.includes('veo');
 
             return (
               <button
@@ -96,29 +94,33 @@ export function ModelSelectionPanel<T extends SelectableModel>({
                 </div>
 
                 <div className="min-w-0 flex-1 overflow-hidden">
-                  <div className={`text-xs md:text-[11px] font-medium truncate leading-tight flex items-center gap-1 ${
-                    isSelected ? 'text-indigo-50' : 'text-slate-200'
-                  }`}>
+                  <div
+                    className={`text-xs md:text-[11px] font-medium truncate leading-tight flex items-center gap-1 ${
+                      isSelected ? 'text-indigo-50' : 'text-slate-200'
+                    }`}
+                  >
                     {model.id}
-                    {isImageLike && (
-                      <ImageIcon size={10} className="text-indigo-400 shrink-0" />
-                    )}
+                    {isImageLike && <ImageIcon size={10} className="text-indigo-400 shrink-0" />}
                   </div>
 
                   <div
                     data-testid={`${testIdPrefix}-meta-${model.id}`}
                     className="mt-1 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap"
                   >
-                    <span className={`text-[10px] leading-none truncate ${
-                      isSelected ? 'text-indigo-200' : 'text-slate-400'
-                    }`}>
+                    <span
+                      className={`text-[10px] leading-none truncate ${
+                        isSelected ? 'text-indigo-200' : 'text-slate-400'
+                      }`}
+                    >
                       {usage}
                     </span>
-                    <span className={`text-[9px] leading-none px-1.5 py-0.5 rounded border shrink-0 ${
-                      isSelected
-                        ? 'border-indigo-500/45 text-indigo-100 bg-indigo-950/40'
-                        : 'border-slate-600/80 text-slate-300 bg-slate-950/50'
-                    }`}>
+                    <span
+                      className={`text-[9px] leading-none px-1.5 py-0.5 rounded border shrink-0 ${
+                        isSelected
+                          ? 'border-indigo-500/45 text-indigo-100 bg-indigo-950/40'
+                          : 'border-slate-600/80 text-slate-300 bg-slate-950/50'
+                      }`}
+                    >
                       {isSelected ? '已选择' : '未选择'}
                     </span>
                     {model.capabilities && (

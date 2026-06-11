@@ -14,7 +14,9 @@ export function usePrivateCacheLifecycleRevision(
 ): number {
   const { includeCacheReset = false } = options;
   const [revision, setRevision] = useState(0);
-  const onLifecycleChangeRef = useRef<PrivateCacheScopeChangeHandler | undefined>(onLifecycleChange);
+  const onLifecycleChangeRef = useRef<PrivateCacheScopeChangeHandler | undefined>(
+    onLifecycleChange
+  );
 
   useEffect(() => {
     onLifecycleChangeRef.current = onLifecycleChange;
@@ -25,11 +27,7 @@ export function usePrivateCacheLifecycleRevision(
     setRevision((current) => current + 1);
   };
 
-  useEffect(
-    () =>
-      subscribePrivateCacheUserScope(bumpRevision),
-    []
-  );
+  useEffect(() => subscribePrivateCacheUserScope(bumpRevision), []);
 
   useEffect(() => {
     if (!includeCacheReset) {

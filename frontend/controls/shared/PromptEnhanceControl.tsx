@@ -49,6 +49,11 @@ export const PromptEnhanceControl: React.FC<PromptEnhanceControlProps> = ({
       return;
     }
 
+    // 模型列表可能正在异步加载（瞬时为空），此时不要清空用户已持久化的选择
+    if (modelOptions.length === 0 && modelId) {
+      return;
+    }
+
     const selectedStillAvailable = modelOptions.some((model) => model.id === modelId);
     if (modelId && selectedStillAvailable) {
       return;

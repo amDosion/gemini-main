@@ -34,20 +34,17 @@ export interface UseCacheStatusReturn extends CacheStatusInfo {
 
 /**
  * 缓存状态 Hook
- * 
+ *
  * @param key - 缓存键
  * @param refreshFn - 可选的刷新函数，用于手动刷新时调用
  * @returns 缓存状态信息和操作方法
- * 
+ *
  * @example
  * ```tsx
  * const { isFromCache, isStale, isRefreshing, refresh } = useCacheStatus('sessions', refreshSessions);
  * ```
  */
-export function useCacheStatus(
-  key: string,
-  refreshFn?: () => Promise<any>
-): UseCacheStatusReturn {
+export function useCacheStatus(key: string, refreshFn?: () => Promise<any>): UseCacheStatusReturn {
   // 状态
   const [isFromCache, setIsFromCache] = useState(false);
   const [isStale, setIsStale] = useState(false);
@@ -62,6 +59,11 @@ export function useCacheStatus(
       setIsFromCache(true);
       setIsStale(status.isStale);
       setLastUpdated(status.timestamp);
+    } else {
+      // key 切换到未缓存分区时重置状态，避免沿用上一个 key 的缓存信息
+      setIsFromCache(false);
+      setIsStale(false);
+      setLastUpdated(null);
     }
   }, [key]);
 

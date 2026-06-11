@@ -3,8 +3,7 @@ import { useCachedImageSrc } from '../../hooks/useCachedImageSrc';
 import { useRetainedBlobObjectUrl } from '../../hooks/useRetainedBlobObjectUrl';
 import { type MediaCacheSource } from '../../services/mediaCache';
 
-export interface CachedImageProps
-  extends Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src'> {
+export interface CachedImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src'> {
   src?: string | null;
   source?: MediaCacheSource | null;
   cacheEnabled?: boolean;
@@ -64,15 +63,12 @@ export const CachedImage = forwardRef<HTMLImageElement, CachedImageProps>(
     const canUseDelayedRawFallback =
       cacheEnabled &&
       Boolean(cacheSource) &&
-      rawFallbackDelayMs !== null &&
-      rawFallbackDelayMs !== undefined &&
       Number.isFinite(rawFallbackDelayMs) &&
       Boolean(src) &&
       !isTemporaryImageSrc(src) &&
       !isAuthenticatedStorageSrc(src);
     const shouldUseImmediateRawFallback =
-      canUseDelayedRawFallback &&
-      Math.max(0, rawFallbackDelayMs || 0) === 0;
+      canUseDelayedRawFallback && Math.max(0, rawFallbackDelayMs || 0) === 0;
     const canUseStableRawFallback =
       Boolean(src) && !isTemporaryImageSrc(src) && !isAuthenticatedStorageSrc(src);
 
@@ -82,9 +78,12 @@ export const CachedImage = forwardRef<HTMLImageElement, CachedImageProps>(
 
       if (!canUseDelayedRawFallback || cached.src) return;
 
-      const timer = window.setTimeout(() => {
-        setShowRawFallback(true);
-      }, Math.max(0, rawFallbackDelayMs || 0));
+      const timer = window.setTimeout(
+        () => {
+          setShowRawFallback(true);
+        },
+        Math.max(0, rawFallbackDelayMs || 0)
+      );
 
       return () => {
         window.clearTimeout(timer);
@@ -103,12 +102,10 @@ export const CachedImage = forwardRef<HTMLImageElement, CachedImageProps>(
       !canUseStableRawFallback;
     const resolvedSrc = shouldSuppressFailedCachedSrc
       ? ''
-      : (
-          (shouldUseStableRawFallback ? src || '' : cached.src) ||
-          (shouldUseImmediateRawFallback ? src || '' : '') ||
-          (canUseDelayedRawFallback && showRawFallback ? src || '' : '') ||
-          (cacheEnabled && cacheSource ? '' : src || '')
-        );
+      : (shouldUseStableRawFallback ? src || '' : cached.src) ||
+        (shouldUseImmediateRawFallback ? src || '' : '') ||
+        (canUseDelayedRawFallback && showRawFallback ? src || '' : '') ||
+        (cacheEnabled && cacheSource ? '' : src || '');
 
     useRetainedBlobObjectUrl(resolvedSrc);
 

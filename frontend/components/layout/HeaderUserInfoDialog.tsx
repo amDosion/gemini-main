@@ -39,7 +39,10 @@ export const HeaderUserInfoDialog: React.FC<HeaderUserInfoDialogProps> = ({
   if (!isOpen || typeof document === 'undefined') return null;
   return createPortal(
     <>
-      <div className="fixed inset-0 z-[160] bg-black/60" onClick={closeUserInfoDialog} />
+      <div
+        className="fixed inset-0 z-[160] bg-black/60"
+        onClick={isSubmittingPassword ? undefined : closeUserInfoDialog}
+      />
       <div className="fixed inset-0 z-[161] flex items-center justify-center p-4">
         <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-xl shadow-2xl ring-1 ring-black/50">
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">

@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useRef, useMemo, useCallback } from 'react';
+import React, { lazy, Suspense, useRef } from 'react';
 import { Message, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { useViewMessages } from '../../hooks/useViewMessages';
@@ -160,8 +160,8 @@ const KeepAliveViewWrapper: React.FC<{
   (prevProps, nextProps) => {
     // Custom comparison: skip re-render for hidden views unless messages changed
     if (!nextProps.isActive && !prevProps.isActive) {
-      // Both hidden - skip re-render entirely
-      return true;
+      // Both hidden - skip re-render unless messages changed
+      return prevProps.messages === nextProps.messages;
     }
     // Active or becoming active - let React decide
     return false;

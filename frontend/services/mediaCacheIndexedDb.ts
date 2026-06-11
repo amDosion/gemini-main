@@ -34,6 +34,7 @@ const openMediaCacheDb = async (): Promise<IDBDatabase | null> => {
 
   dbPromise = new Promise((resolve) => {
     const request = window.indexedDB.open(DB_NAME, DB_VERSION);
+    let settled = false;
 
     request.onupgradeneeded = () => {
       const db = request.result;
@@ -53,9 +54,25 @@ const openMediaCacheDb = async (): Promise<IDBDatabase | null> => {
       }
     };
 
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => resolve(null);
-    request.onblocked = () => resolve(null);
+    request.onsuccess = () => {
+      if (settled) {
+        // onblocked 先行返回 null 后打开才成功：关闭这条迟到的连接，
+        // 避免悬挂的连接阻塞其他标签页的 versionchange 升级。
+        request.result.close();
+        return;
+      }
+      settled = true;
+      resolve(request.result);
+    };
+    const resolveFailureAndAllowRetry = () => {
+      if (settled) return;
+      settled = true;
+      // 重置缓存的 promise，瞬时失败（如被其他标签页 blocked）不应永久禁用媒体缓存。
+      dbPromise = null;
+      resolve(null);
+    };
+    request.onerror = resolveFailureAndAllowRetry;
+    request.onblocked = resolveFailureAndAllowRetry;
   });
 
   return dbPromise;
@@ -85,9 +102,7 @@ export const readMediaCacheMetadata = async (
   return await withStore<MediaCacheMetadata>('readonly', (store) => store.get(normalizedKey));
 };
 
-export const writeMediaCacheMetadata = async (
-  metadata: MediaCacheMetadata
-): Promise<void> => {
+export const writeMediaCacheMetadata = async (metadata: MediaCacheMetadata): Promise<void> => {
   if (!metadata.cacheKey) return;
   await withStore<IDBValidKey>('readwrite', (store) => store.put(metadata));
 };

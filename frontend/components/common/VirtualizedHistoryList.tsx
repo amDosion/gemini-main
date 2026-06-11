@@ -40,7 +40,11 @@ export interface VirtualizedHistoryListProps<T> {
   /** overscan 行数（默认 4）。 */
   overscan?: number;
   /** 渲染单行 — 必须将 `measureRef` 挂到行最外层 DOM 上以启用变高测量。 */
-  renderRow: (item: T, index: number, measureRef: (el: HTMLElement | null) => void) => React.ReactNode;
+  renderRow: (
+    item: T,
+    index: number,
+    measureRef: (el: HTMLElement | null) => void
+  ) => React.ReactNode;
   /** key extractor（默认假设 item 有 id）。 */
   getKey?: (item: T, index: number) => string | number;
   /** 列表外层 className（默认 overflow-y-auto 起来自己当 scroll container）。 */
@@ -117,9 +121,6 @@ function VirtualizedHistoryListInner<T>(
   // noop measureRef — 非虚拟分支不需要测量
   const noopMeasure = useCallback(() => {}, []);
 
-  const virtualItems = shouldVirtualize ? virtualizer.getVirtualItems() : [];
-  const totalSize = shouldVirtualize ? virtualizer.getTotalSize() : 0;
-
   // 非虚拟分支：直接 map 出全部 row（保持与原实现 1:1 行为）
   if (!shouldVirtualize) {
     return (
@@ -133,6 +134,9 @@ function VirtualizedHistoryListInner<T>(
       </div>
     );
   }
+
+  const virtualItems = virtualizer.getVirtualItems();
+  const totalSize = virtualizer.getTotalSize();
 
   // 虚拟分支
   // 注意：absolute 定位的 row 之间没有 margin/space-y 生效，必须靠 row 内部 paddingBottom
@@ -160,7 +164,7 @@ function VirtualizedHistoryListInner<T>(
                 paddingBottom: 10,
               }}
             >
-              {renderRow(item, virtualRow.index, () => {})}
+              {renderRow(item, virtualRow.index, noopMeasure)}
             </div>
           );
         })}

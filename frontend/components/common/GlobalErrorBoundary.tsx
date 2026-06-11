@@ -26,7 +26,7 @@ export class GlobalErrorBoundary extends React.Component<
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     captureFrontendError(error, {
       boundary: 'GlobalErrorBoundary',
-      componentStack: errorInfo?.componentStack || '',
+      componentStack: errorInfo.componentStack || '',
     });
   }
 

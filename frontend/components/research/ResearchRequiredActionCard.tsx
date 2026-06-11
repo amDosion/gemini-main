@@ -57,15 +57,17 @@ const ResearchRequiredActionCard: React.FC<ResearchRequiredActionCardProps> = ({
   const actionName = requiredAction.act?.name || '需要外部动作';
   const options = useMemo(() => extractInputOptions(requiredAction), [requiredAction]);
 
-  const submitValue = async (value: unknown, optionKey: string) => {
-    if (!onSubmitAction) return;
+  const submitValue = async (value: unknown, optionKey: string): Promise<boolean> => {
+    if (!onSubmitAction) return false;
     setSubmitError(null);
     setSubmittingOption(optionKey);
     try {
       await onSubmitAction(value);
+      return true;
     } catch (error) {
       const message = getErrorMessage(error);
       setSubmitError(message || '提交动作失败');
+      return false;
     } finally {
       setSubmittingOption(null);
     }
@@ -75,13 +77,14 @@ const ResearchRequiredActionCard: React.FC<ResearchRequiredActionCardProps> = ({
     const trimmed = customInput.trim();
     if (!trimmed) return;
 
+    let value: unknown = trimmed;
     try {
-      const parsed = JSON.parse(trimmed);
-      await submitValue(parsed, '__custom__');
-      setCustomInput('');
-      return;
+      value = JSON.parse(trimmed);
     } catch {
-      await submitValue(trimmed, '__custom__');
+      // 非 JSON 输入按纯文本提交
+    }
+    const succeeded = await submitValue(value, '__custom__');
+    if (succeeded) {
       setCustomInput('');
     }
   };
@@ -143,9 +146,7 @@ const ResearchRequiredActionCard: React.FC<ResearchRequiredActionCardProps> = ({
         <div className="mt-2 text-xs text-amber-200/80">当前会话未注册动作提交通道。</div>
       )}
 
-      {submitError && (
-        <div className="mt-2 text-xs text-red-300">{submitError}</div>
-      )}
+      {submitError && <div className="mt-2 text-xs text-red-300">{submitError}</div>}
 
       <details className="mt-2">
         <summary className="cursor-pointer text-xs text-amber-200/80">查看动作详情</summary>

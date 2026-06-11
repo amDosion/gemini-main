@@ -70,10 +70,14 @@ const TONGYI_SUBMODE_DEFINITIONS: TongyiSubmodeDefinition[] = [
 ];
 
 const isTongyiProvider = (providerId: string | undefined): boolean =>
-  String(providerId || '').trim().toLowerCase() === 'tongyi';
+  String(providerId || '')
+    .trim()
+    .toLowerCase() === 'tongyi';
 
 const normalizedStrategyId = (id: string | undefined): string =>
-  String(id || '').trim().toLowerCase();
+  String(id || '')
+    .trim()
+    .toLowerCase();
 
 export const isVideoExtensionStrategyId = (id: string | undefined): boolean =>
   VIDEO_EXTENSION_STRATEGY_IDS.has(normalizedStrategyId(id));
@@ -86,7 +90,9 @@ export const getVideoInputStrategyDisplayLabel = (
 };
 
 const modelId = (model: ModelConfig | undefined): string =>
-  String(model?.id || '').trim().toLowerCase();
+  String(model?.id || '')
+    .trim()
+    .toLowerCase();
 
 const getTongyiModelFamily = (id: string): TongyiVideoModelFamily | null => {
   if (!id) return null;
@@ -112,14 +118,13 @@ const getPreferredTongyiModel = (
   if (candidates.length === 0) return undefined;
 
   const currentId = modelId(currentModel);
-  const currentFamily = getTongyiModelFamily(currentId);
-  if (currentFamily === family) {
-    const currentCandidate = candidates.find((model) => modelId(model) === currentId);
-    if (currentCandidate) return currentCandidate;
-  }
+  const currentCandidate = candidates.find((model) => modelId(model) === currentId);
+  if (currentCandidate) return currentCandidate;
 
   const currentLine = getTongyiModelLine(currentId);
-  const lineCandidate = candidates.find((model) => getTongyiModelLine(modelId(model)) === currentLine);
+  const lineCandidate = candidates.find(
+    (model) => getTongyiModelLine(modelId(model)) === currentLine
+  );
   if (lineCandidate) return lineCandidate;
 
   return (
@@ -144,17 +149,18 @@ export function buildVideoInputStrategyOptions({
     return schemaStrategies;
   }
 
-  const modelCandidates = availableModels.length > 0
-    ? availableModels
-    : currentModel
-      ? [currentModel]
-      : [];
+  const modelCandidates =
+    availableModels.length > 0 ? availableModels : currentModel ? [currentModel] : [];
   if (modelCandidates.length === 0) {
     return schemaStrategies;
   }
 
   const options = TONGYI_SUBMODE_DEFINITIONS.flatMap((definition) => {
-    const targetModel = getPreferredTongyiModel(modelCandidates, currentModel, definition.modelFamily);
+    const targetModel = getPreferredTongyiModel(
+      modelCandidates,
+      currentModel,
+      definition.modelFamily
+    );
     if (!targetModel) return [];
     return [{ ...definition, targetModelId: targetModel.id }];
   });

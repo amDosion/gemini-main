@@ -37,6 +37,8 @@ export const resolveModelForModeSend = ({
     if (forcedFallback) {
       return { model: forcedFallback, reason: 'resolved' };
     }
+    // 指定模型缺失时不得静默替换为其他模型，交由调用方提示用户
+    return { reason: isLoadingModels ? 'loading' : 'unavailable' };
   }
 
   if (activeModelConfig && visibleModels.some((model) => model.id === activeModelConfig.id)) {

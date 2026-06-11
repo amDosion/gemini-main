@@ -1,9 +1,10 @@
-import { safeJsonParse } from '../utils/safeOps';
 /**
  * Browser Progress Service
  *
  * Handles real-time progress updates for browser operations using Server-Sent Events (SSE).
  */
+
+import { safeJsonParse } from '../utils/safeOps';
 
 export interface BrowseProgressUpdate {
   operationId: string;
@@ -79,7 +80,12 @@ export class BrowserProgressService {
       }
     };
 
-    eventSource.onerror = (error) => {
+    eventSource.onerror = () => {
+      // 浏览器自动重连（readyState 为 CONNECTING）时也会触发 onerror，
+      // 只有连接被永久关闭（CLOSED）才视为致命错误，否则交给浏览器内置重试
+      if (eventSource.readyState !== EventSource.CLOSED) {
+        return;
+      }
       onError?.('Connection error');
       this.unsubscribe(operationId);
     };

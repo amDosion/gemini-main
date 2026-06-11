@@ -7,9 +7,7 @@ import {
   isPrivateCacheLifecycleSnapshotCurrent,
   registerPrivateCacheResetHandler,
 } from '../services/privateCacheInvalidation';
-import {
-  scopedPrivateCacheKey,
-} from '../services/privateCacheScope';
+import { scopedPrivateCacheKey } from '../services/privateCacheScope';
 import type { EnhancePromptModelCandidateOptions } from '../utils/modelSuitability';
 import { getEnhancePromptModelCandidates } from '../utils/modelSuitability';
 import { usePrivateCacheLifecycleRevision } from './usePrivateCacheScopeRevision';
@@ -43,14 +41,16 @@ const buildModelsFingerprint = (models?: ModelConfig[]): string => {
     return '';
   }
   return models
-    .map((model) => [
-      model.id,
-      model.name,
-      model.capabilities?.vision ? 'v1' : 'v0',
-      model.capabilities?.reasoning ? 'r1' : 'r0',
-      model.traits?.multimodalUnderstanding ? 'm1' : 'm0',
-      model.traits?.thinking ? 't1' : 't0',
-    ].join(':'))
+    .map((model) =>
+      [
+        model.id,
+        model.name,
+        model.capabilities?.vision ? 'v1' : 'v0',
+        model.capabilities?.reasoning ? 'r1' : 'r0',
+        model.traits?.multimodalUnderstanding ? 'm1' : 'm0',
+        model.traits?.thinking ? 't1' : 't0',
+      ].join(':')
+    )
     .join('|');
 };
 
@@ -89,20 +89,19 @@ export function useEnhancePromptModels(
     if (!currentModels) {
       return null;
     }
-    return getEnhancePromptModelCandidates(
-      currentModels,
-      effectiveProviderId,
-      { requiresVision }
-    );
+    return getEnhancePromptModelCandidates(currentModels, effectiveProviderId, { requiresVision });
   }, [currentModels, currentModelsFingerprint, effectiveProviderId, requiresVision]);
 
   const cacheKey = buildCacheKey(effectiveProviderId, requiresVision, includeHidden);
   const [candidates, setCandidates] = useState<ModelConfig[]>(
     () => currentModelCandidates ?? cacheManager.get<ModelConfig[]>(cacheKey) ?? []
   );
-  usePrivateCacheLifecycleRevision(() => {
-    setCandidates([]);
-  }, { includeCacheReset: true });
+  usePrivateCacheLifecycleRevision(
+    () => {
+      setCandidates([]);
+    },
+    { includeCacheReset: true }
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -130,11 +129,9 @@ export function useEnhancePromptModels(
         .then((payload) => {
           const all = Array.isArray(payload.models) ? (payload.models as ModelConfig[]) : [];
           const payloadProviderId = providerId || payload.provider || llmService.getProviderId();
-          const filtered = getEnhancePromptModelCandidates(
-            all,
-            payloadProviderId,
-            { requiresVision }
-          );
+          const filtered = getEnhancePromptModelCandidates(all, payloadProviderId, {
+            requiresVision,
+          });
           if (
             generationAtStart === enhancePromptCacheGeneration &&
             isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)

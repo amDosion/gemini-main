@@ -19,6 +19,12 @@ interface BasePanelProps {
   updateNodeData: (patch: Partial<CustomNodeData>) => void;
 }
 
+const FIELD_BASE_CLASS =
+  'w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20';
+const CONTROL_CLASS = `${FIELD_BASE_CLASS} text-slate-200`;
+const TEXTAREA_CLASS = `${FIELD_BASE_CLASS} text-slate-300 resize-none`;
+const TEXTAREA_MONO_CLASS = `${FIELD_BASE_CLASS} text-slate-300 font-mono resize-none`;
+
 /** condition 节点：条件表达式 + True/False 出口提示 */
 export const ConditionNodePanel: React.FC<BasePanelProps> = ({ nodeData, updateNodeData }) => (
   <div className="space-y-4">
@@ -35,7 +41,7 @@ export const ConditionNodePanel: React.FC<BasePanelProps> = ({ nodeData, updateN
         onChange={(e) => updateNodeData({ expression: e.target.value })}
         rows={3}
         data-field-key="expression"
-        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-300 font-mono focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20 resize-none"
+        className={TEXTAREA_MONO_CLASS}
         placeholder="{{prev.output.text}}.includes('通过')"
       />
     </div>
@@ -58,7 +64,7 @@ export const RouterNodePanel: React.FC<BasePanelProps> = ({ nodeData, updateNode
           })
         }
         data-field-key="routerStrategy"
-        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20"
+        className={CONTROL_CLASS}
       >
         <option value="intent">Intent（推荐）</option>
         <option value="keyword">Keyword</option>
@@ -72,7 +78,7 @@ export const RouterNodePanel: React.FC<BasePanelProps> = ({ nodeData, updateNode
         onChange={(e) => updateNodeData({ routerPrompt: e.target.value })}
         rows={3}
         data-field-key="routerPrompt"
-        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-300 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20 resize-none"
+        className={TEXTAREA_CLASS}
         placeholder="根据任务意图将输入分发到最合适的分支..."
       />
     </div>
@@ -88,7 +94,7 @@ export const ParallelNodePanel: React.FC<BasePanelProps> = ({ nodeData, updateNo
         value={nodeData.joinMode || 'wait_all'}
         onChange={(e) => updateNodeData({ joinMode: e.target.value as CustomNodeData['joinMode'] })}
         data-field-key="joinMode"
-        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20"
+        className={CONTROL_CLASS}
       >
         <option value="wait_all">等待全部分支完成</option>
         <option value="race_first">任一分支先完成即返回</option>
@@ -104,7 +110,7 @@ export const ParallelNodePanel: React.FC<BasePanelProps> = ({ nodeData, updateNo
           updateNodeData({ timeoutSeconds: Math.max(5, Number(e.target.value) || 60) })
         }
         data-field-key="timeoutSeconds"
-        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20"
+        className={CONTROL_CLASS}
       />
     </div>
   </div>
@@ -121,7 +127,7 @@ export const MergeNodePanel: React.FC<BasePanelProps> = ({ nodeData, updateNodeD
           updateNodeData({ mergeStrategy: e.target.value as CustomNodeData['mergeStrategy'] })
         }
         data-field-key="mergeStrategy"
-        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20"
+        className={CONTROL_CLASS}
       >
         <option value="append">顺序拼接</option>
         <option value="json_merge">JSON 合并</option>
@@ -141,7 +147,7 @@ export const LoopNodePanel: React.FC<BasePanelProps> = ({ nodeData, updateNodeDa
         onChange={(e) => updateNodeData({ loopCondition: e.target.value })}
         rows={2}
         data-field-key="loopCondition"
-        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-300 font-mono focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20 resize-none"
+        className={TEXTAREA_MONO_CLASS}
         placeholder="{{prev.output.retry}} < 3"
       />
     </div>
@@ -155,7 +161,7 @@ export const LoopNodePanel: React.FC<BasePanelProps> = ({ nodeData, updateNodeDa
           updateNodeData({ maxIterations: Math.max(1, Number(e.target.value) || 1) })
         }
         data-field-key="maxIterations"
-        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20"
+        className={CONTROL_CLASS}
       />
     </div>
   </div>
@@ -171,7 +177,7 @@ export const HumanNodePanel: React.FC<BasePanelProps> = ({ nodeData, updateNodeD
         onChange={(e) => updateNodeData({ approvalPrompt: e.target.value })}
         rows={3}
         data-field-key="approvalPrompt"
-        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-300 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20 resize-none"
+        className={TEXTAREA_CLASS}
         placeholder="请确认输出是否满足业务规则..."
       />
     </div>
@@ -183,9 +189,7 @@ export const HumanNodePanel: React.FC<BasePanelProps> = ({ nodeData, updateNodeD
         data-field-key="autoApprove"
         className="mt-0.5 h-4 w-4 rounded border-amber-400/50 bg-slate-900 text-amber-500 focus:ring-amber-500/30"
       />
-      <span>
-        显式自动通过。当前还没有真实人工确认流程，未开启时该节点不能执行或保存为模板。
-      </span>
+      <span>显式自动通过。当前还没有真实人工确认流程，未开启时该节点不能执行或保存为模板。</span>
     </label>
   </div>
 );

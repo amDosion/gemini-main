@@ -92,37 +92,41 @@ export const isRootServerMap = (root: JsonObject): boolean => {
   return entries.every(([, value]) => isPlainObject(value));
 };
 
+const toPlainObjectMap = (source: JsonObject): Record<string, JsonObject> => {
+  const map: Record<string, JsonObject> = {};
+  Object.entries(source).forEach(([key, value]) => {
+    if (isPlainObject(value)) map[key] = value;
+  });
+  return map;
+};
+
 export const extractServerMap = (
   root: JsonObject
 ): { map: Record<string, JsonObject>; source: ServerMapSource } => {
   if (isPlainObject(root.mcpServers)) {
-    const map: Record<string, JsonObject> = {};
-    Object.entries(root.mcpServers).forEach(([key, value]) => {
-      if (isPlainObject(value)) map[key] = value;
-    });
-    return { map, source: 'mcpServers' };
+    return { map: toPlainObjectMap(root.mcpServers), source: 'mcpServers' };
   }
 
   if (isRootServerMap(root)) {
-    const map: Record<string, JsonObject> = {};
-    Object.entries(root).forEach(([key, value]) => {
-      if (isPlainObject(value)) map[key] = value;
-    });
-    return { map, source: 'root' };
+    return { map: toPlainObjectMap(root), source: 'root' };
   }
 
   return { map: {}, source: 'none' };
 };
 
 export const detectTransport = (config: JsonObject): TransportType => {
-  const explicit = String(
-    config.serverType ?? config.server_type ?? config.type ?? ''
-  ).trim().toLowerCase();
+  const explicit = String(config.serverType ?? config.server_type ?? config.type ?? '')
+    .trim()
+    .toLowerCase();
 
   if (explicit === 'stdio' || explicit === 'sse' || explicit === 'http') {
     return explicit;
   }
-  if (explicit === 'streamablehttp' || explicit === 'streamable_http' || explicit === 'streamable-http') {
+  if (
+    explicit === 'streamablehttp' ||
+    explicit === 'streamable_http' ||
+    explicit === 'streamable-http'
+  ) {
     return 'streamable-http';
   }
   if (config.command) return 'stdio';
@@ -154,18 +158,12 @@ export const validateServer = (transport: TransportType, config: JsonObject): bo
 
 export const extractServersFromDialogJson = (payload: JsonObject): Record<string, JsonObject> => {
   if (isPlainObject(payload.mcpServers)) {
-    const map: Record<string, JsonObject> = {};
-    Object.entries(payload.mcpServers).forEach(([key, value]) => {
-      if (isPlainObject(value)) map[key] = value;
-    });
+    const map = toPlainObjectMap(payload.mcpServers);
     if (Object.keys(map).length > 0) return map;
   }
 
   if (isRootServerMap(payload)) {
-    const map: Record<string, JsonObject> = {};
-    Object.entries(payload).forEach(([key, value]) => {
-      if (isPlainObject(value)) map[key] = value;
-    });
+    const map = toPlainObjectMap(payload);
     if (Object.keys(map).length > 0) return map;
   }
 

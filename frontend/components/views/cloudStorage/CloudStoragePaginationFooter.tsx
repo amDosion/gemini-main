@@ -30,10 +30,14 @@ const buildVisiblePageItems = (currentPage: number, totalPages: number): Array<n
   }
 
   if (currentPage >= totalPages - 3) {
-    [totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1].forEach((page) => pages.add(page));
+    [totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1].forEach((page) =>
+      pages.add(page)
+    );
   }
 
-  const sortedPages = [...pages].filter((page) => page >= 1 && page <= totalPages).sort((left, right) => left - right);
+  const sortedPages = [...pages]
+    .filter((page) => page >= 1 && page <= totalPages)
+    .sort((left, right) => left - right);
   const items: Array<number | string> = [];
 
   sortedPages.forEach((page, index) => {
@@ -60,7 +64,7 @@ export const CloudStoragePaginationFooter: React.FC<CloudStoragePaginationFooter
   onPageSizeChange,
   onPageChange,
   onPrevPage,
-  onNextPage
+  onNextPage,
 }) => {
   const [pageInput, setPageInput] = useState(String(currentPage));
 
@@ -73,9 +77,8 @@ export const CloudStoragePaginationFooter: React.FC<CloudStoragePaginationFooter
     [currentPage, totalPages]
   );
 
-  const activeTotal = displayTotalItemCount;
-  const rangeStart = activeTotal === 0 ? 0 : (currentPage - 1) * pageSize + 1;
-  const rangeEnd = Math.min(activeTotal, currentPage * pageSize);
+  const rangeStart = displayTotalItemCount === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const rangeEnd = Math.min(displayTotalItemCount, currentPage * pageSize);
   const summaryText = isFilteringLocally
     ? `Showing ${rangeStart}-${rangeEnd} of ${filteredItemCount} filtered item(s) · ${directoryTotalItemCount} total · ${loadedItemCount} loaded`
     : `Showing ${rangeStart}-${rangeEnd} of ${displayTotalItemCount} item(s) · ${loadedItemCount} loaded`;

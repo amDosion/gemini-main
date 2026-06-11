@@ -77,7 +77,7 @@ const mapInvokePayload = (raw: AnyObject): McpToolInvokeResult => {
     sessionId: toStringOrEmpty(raw.sessionId),
     latencyMs: toNumberOrZero(raw.latencyMs),
     timestamp: toNumberOrZero(raw.timestamp),
-    success: raw.success === undefined ? !Boolean(isError) : Boolean(raw.success),
+    success: raw.success === undefined ? !isError : Boolean(raw.success),
     isError: isError === undefined ? undefined : Boolean(isError),
     error: (raw.error ?? null) as string | null,
     result: raw.result,

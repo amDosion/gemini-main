@@ -2,10 +2,7 @@
  * API 客户端 - 带有自动 token 刷新和错误处理
  */
 import { authService } from './auth';
-import {
-  getAccessToken as getStoredAccessToken,
-  getAuthorizationHeader,
-} from './authTokenStore';
+import { getAccessToken as getStoredAccessToken, getAuthorizationHeader } from './authTokenStore';
 import { fetchWithTimeout, parseHttpError, readJsonResponse } from './http';
 
 // ============================================
@@ -41,7 +38,6 @@ export function getAuthHeaders(options: { includeBearer?: boolean } = {}): Recor
 class ApiClient {
   private baseUrl: string;
   private onUnauthorized?: () => void;
-  private isRefreshing = false;
   private refreshPromise: Promise<boolean> | null = null;
 
   constructor(options: ApiClientOptions = {}) {
@@ -75,7 +71,7 @@ class ApiClient {
       if (refreshed) {
         const retryHeaders = new Headers(fetchOptions.headers);
         retryHeaders.delete('Authorization');
-        
+
         // 重试原请求，仍然走 httpOnly Cookie，避免 stale bearer 覆盖新 Cookie。
         const retryResponse = await fetchWithTimeout(`${this.baseUrl}${url}`, {
           ...fetchOptions,
@@ -83,7 +79,7 @@ class ApiClient {
           withAuth: true,
           timeoutMs,
         });
-        
+
         if (!retryResponse.ok) {
           const parsedError = await parseHttpError(
             retryResponse,
@@ -119,14 +115,12 @@ class ApiClient {
    */
   private tryRefreshToken(): Promise<boolean> {
     // 如果已经在刷新中，直接返回同一个 promise，所有等待方共享结果
-    if (this.isRefreshing && this.refreshPromise) {
+    if (this.refreshPromise) {
       return this.refreshPromise;
     }
 
-    this.isRefreshing = true;
     // 将 .finally() 挂在共享 promise 上，确保状态在所有消费者 settle 后重置
     this.refreshPromise = authService.refreshToken().finally(() => {
-      this.isRefreshing = false;
       this.refreshPromise = null;
     });
 
@@ -141,15 +135,15 @@ class ApiClient {
   post<T>(url: string, data?: unknown, options?: RequestOptions): Promise<T> {
     // 如果 data 是 FormData，不设置 Content-Type，让浏览器自动设置
     const isFormData = data instanceof FormData;
-    const headers: HeadersInit = isFormData 
-      ? { ...options?.headers }  // FormData 时不设置 Content-Type
+    const headers: HeadersInit = isFormData
+      ? { ...options?.headers } // FormData 时不设置 Content-Type
       : { 'Content-Type': 'application/json', ...options?.headers };
-    
+
     return this.request<T>(url, {
       ...options,
       method: 'POST',
       headers,
-      body: isFormData ? data : (data ? JSON.stringify(data) : undefined),
+      body: isFormData ? data : data ? JSON.stringify(data) : undefined,
     });
   }
 

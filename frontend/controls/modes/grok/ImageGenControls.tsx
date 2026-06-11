@@ -5,7 +5,7 @@
  * - 尺寸选择：5 种固定尺寸（以像素格式传递，如 1024x1024）
  * - 图片数量：1-10 张（滑块）
  */
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect } from 'react';
 import { Ratio, Layers } from 'lucide-react';
 import { ImageGenControlsProps } from '../../types';
 import { useModeControlsSchema } from '../../../hooks/useModeControlsSchema';
@@ -22,6 +22,9 @@ const DEFAULT_SIZE = '1024x1024';
 const DEFAULT_IMAGE_COUNT = 1;
 const MAX_IMAGE_COUNT = 10;
 
+// 模块级稳定 no-op：避免每渲染新建箭头函数导致下方 useEffect 依赖抖动。
+const NOOP = () => {};
+
 export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
   const {
     providerId = 'grok',
@@ -34,13 +37,14 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
     setNumberOfImages: propSetNumberOfImages,
   } = props;
 
-  const { schema, loading, error } = useModeControlsSchema(providerId, 'image-gen', currentModel?.id);
+  const { schema, loading, error } = useModeControlsSchema(
+    providerId,
+    'image-gen',
+    currentModel?.id
+  );
 
-  const availableSizes = useMemo(() => {
-    const schemaRatios = schema?.aspectRatios;
-    if (schemaRatios && schemaRatios.length > 0) return schemaRatios;
-    return GROK_SIZE_OPTIONS;
-  }, [schema]);
+  const schemaRatios = schema?.aspectRatios;
+  const availableSizes = schemaRatios && schemaRatios.length > 0 ? schemaRatios : GROK_SIZE_OPTIONS;
 
   const defaults = schema?.defaults ?? {};
   const defaultSize =
@@ -49,30 +53,25 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
     availableSizes[0]?.value ??
     DEFAULT_SIZE;
 
-  const maxCount = useMemo(() => {
-    const range = schema?.numericRanges?.number_of_images;
-    return range?.max ?? MAX_IMAGE_COUNT;
-  }, [schema]);
+  const maxCount = schema?.numericRanges?.number_of_images?.max ?? MAX_IMAGE_COUNT;
 
-  const defaultImageCount = useMemo(() => {
-    const d = defaults.number_of_images;
-    if (typeof d === 'number') return d;
-    return DEFAULT_IMAGE_COUNT;
-  }, [defaults]);
+  const defaultImageCount =
+    typeof defaults.number_of_images === 'number' ? defaults.number_of_images : DEFAULT_IMAGE_COUNT;
 
   // 优先使用 controls 对象，fallback 到单独 props
   const aspectRatio = controls?.aspectRatio ?? propAspectRatio ?? defaultSize;
-  const setAspectRatio = controls?.setAspectRatio ?? propSetAspectRatio ?? (() => {});
+  const setAspectRatio = controls?.setAspectRatio ?? propSetAspectRatio ?? NOOP;
   const numberOfImages = controls?.numberOfImages ?? propNumberOfImages ?? defaultImageCount;
-  const setNumberOfImages = controls?.setNumberOfImages ?? propSetNumberOfImages ?? (() => {});
+  const setNumberOfImages = controls?.setNumberOfImages ?? propSetNumberOfImages ?? NOOP;
 
-  // 校验当前尺寸是否在可用选项中
+  // 校验当前尺寸是否在可用选项中（schema 加载完成前不校验，避免用 fallback 列表清掉已保存的尺寸）
   useEffect(() => {
+    if (loading) return;
     const validSizes = availableSizes.map((s) => s.value);
     if (validSizes.length > 0 && !validSizes.includes(aspectRatio)) {
       setAspectRatio(validSizes[0]);
     }
-  }, [availableSizes, aspectRatio, setAspectRatio]);
+  }, [loading, availableSizes, aspectRatio, setAspectRatio]);
 
   // 校验图片数量范围
   useEffect(() => {
@@ -139,9 +138,7 @@ export const ImageGenControls: React.FC<ImageGenControlsProps> = (props) => {
       </div>
 
       {/* Grok 信息提示 */}
-      <div className="text-[10px] text-slate-500 italic">
-        Grok：支持生成 1-{maxCount} 张图片
-      </div>
+      <div className="text-[10px] text-slate-500 italic">Grok：支持生成 1-{maxCount} 张图片</div>
     </div>
   );
 };

@@ -50,15 +50,18 @@ const PRIVATE_CACHE_EXACT_KEY_CANDIDATES = [
 export const getPrivateCacheClearTargets = (): {
   prefixes: string[];
   exactKeys: string[];
-} => ({
-  prefixes: uniqueStrings([
-    ...PRIVATE_CACHE_PREFIX_CANDIDATES,
-    `${CACHE_DOMAINS.MODELS}${getPrivateCacheScopeSegment()}:`,
-    `${CACHE_DOMAINS.MODE_MODELS}${getPrivateCacheScopeSegment()}:`,
-    `${CACHE_DOMAINS.MODEL_CATALOG}${getPrivateCacheScopeSegment()}:`,
-  ]),
-  exactKeys: uniqueStrings(PRIVATE_CACHE_EXACT_KEY_CANDIDATES),
-});
+} => {
+  const scopeSegment = getPrivateCacheScopeSegment();
+  return {
+    prefixes: uniqueStrings([
+      ...PRIVATE_CACHE_PREFIX_CANDIDATES,
+      `${CACHE_DOMAINS.MODELS}${scopeSegment}:`,
+      `${CACHE_DOMAINS.MODE_MODELS}${scopeSegment}:`,
+      `${CACHE_DOMAINS.MODEL_CATALOG}${scopeSegment}:`,
+    ]),
+    exactKeys: uniqueStrings(PRIVATE_CACHE_EXACT_KEY_CANDIDATES),
+  };
+};
 
 const clearPrivateCacheManagerEntries = (): void => {
   const { prefixes, exactKeys } = getPrivateCacheClearTargets();
@@ -81,8 +84,5 @@ export const clearPrivateMemoryCaches = (): void => {
 
 export const clearPrivateClientCaches = async (): Promise<void> => {
   clearPrivateMemoryCaches();
-  await Promise.allSettled([
-    clearMediaCacheForLogout(),
-    clearPreviewCacheForLogout(),
-  ]);
+  await Promise.allSettled([clearMediaCacheForLogout(), clearPreviewCacheForLogout()]);
 };

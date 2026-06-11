@@ -10,18 +10,13 @@ export const isSafeStoragePreviewCandidateUrl = (value: string): boolean => {
   if (!normalizedValue) return false;
   const lowered = normalizedValue.toLowerCase();
   const isPathRelative = normalizedValue.startsWith('/') && !normalizedValue.startsWith('//');
-  return (
-    isPathRelative ||
-    lowered.startsWith('https://') ||
-    lowered.startsWith('http://')
-  );
+  return isPathRelative || lowered.startsWith('https://') || lowered.startsWith('http://');
 };
 
-export const isStoragePreviewProxyUrl = (url: string): boolean => {
-  const value = String(url || '').trim();
-  if (!value) return false;
-  return value.startsWith(STORAGE_PREVIEW_PROXY_PATH) || value.includes(STORAGE_PREVIEW_PROXY_PATH);
-};
+export const isStoragePreviewProxyUrl = (url: string): boolean =>
+  String(url || '')
+    .trim()
+    .includes(STORAGE_PREVIEW_PROXY_PATH);
 
 export const injectStoragePreviewRevision = (
   url: string,
@@ -71,17 +66,6 @@ const findNextAvailablePreviewIndex = (
   return -1;
 };
 
-export const getInitialStoragePreviewIndex = (
-  candidates: string[],
-  failedPreviewUrls: Set<string>
-): { index: number; exhausted: boolean } => {
-  const nextIndex = findNextAvailablePreviewIndex(candidates, failedPreviewUrls, -1);
-  if (nextIndex >= 0) {
-    return { index: nextIndex, exhausted: false };
-  }
-  return { index: 0, exhausted: true };
-};
-
 export const getNextStoragePreviewIndex = (
   candidates: string[],
   currentIndex: number,
@@ -93,3 +77,9 @@ export const getNextStoragePreviewIndex = (
   }
   return { index: 0, exhausted: true };
 };
+
+export const getInitialStoragePreviewIndex = (
+  candidates: string[],
+  failedPreviewUrls: Set<string>
+): { index: number; exhausted: boolean } =>
+  getNextStoragePreviewIndex(candidates, -1, failedPreviewUrls);

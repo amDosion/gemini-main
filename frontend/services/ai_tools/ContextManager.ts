@@ -1,4 +1,3 @@
-
 interface MessageLike {
   role: string;
   content: string;
@@ -7,7 +6,7 @@ interface MessageLike {
 
 export class ContextManager {
   // Conservative estimate: 1 token ~= 4 characters for English, ~1-2 chars for CJK
-  private static CHARS_PER_TOKEN = 3.5;
+  private static readonly CHARS_PER_TOKEN = 3.5;
 
   /**
    * Estimates the token count for a list of messages.
@@ -15,11 +14,14 @@ export class ContextManager {
   public estimateTokens(messages: MessageLike[]): number {
     let total = 0;
     for (const msg of messages) {
-      const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+      // JSON.stringify(undefined) returns undefined at runtime; coalesce so malformed
+      // history messages (e.g. attachment-only, no text) contribute 0 instead of throwing.
+      const content =
+        typeof msg.content === 'string' ? msg.content : (JSON.stringify(msg.content) ?? '');
       total += content.length / ContextManager.CHARS_PER_TOKEN;
-      
+
       // Add overhead for role definitions
-      total += 4; 
+      total += 4;
     }
     return Math.ceil(total);
   }
@@ -32,31 +34,30 @@ export class ContextManager {
    * 3. Remove messages from the middle (oldest context) until it fits.
    */
   public optimizeContext(
-    messages: MessageLike[], 
-    maxContextTokens: number = 128000, 
+    messages: MessageLike[],
+    maxContextTokens: number = 128000,
     preserveRecentCount: number = 10
   ): MessageLike[] {
-    const estimatedTotal = this.estimateTokens(messages);
-    
+    const tokenBudget = maxContextTokens * 0.9;
+
     // If we are within limits (with 10% buffer), return original
-    if (estimatedTotal < maxContextTokens * 0.9) {
+    if (this.estimateTokens(messages) < tokenBudget) {
       return messages;
     }
 
-
     // Separate System Prompt
-    let systemMessage = null;
-    let chatMessages = [...messages];
-    
+    let systemMessage: MessageLike | undefined;
+    const chatMessages = [...messages];
+
     if (chatMessages.length > 0 && chatMessages[0].role === 'system') {
       systemMessage = chatMessages.shift();
     }
 
-    // If we have fewer messages than the preserve count, we can't delete anything meaningful 
+    // If we have fewer messages than the preserve count, we can't delete anything meaningful
     // without breaking the immediate flow. We might just have to cut the oldest or fail.
     if (chatMessages.length <= preserveRecentCount) {
-        // Fallback: Return as is, or maybe just last few.
-        return systemMessage ? [systemMessage, ...chatMessages] : chatMessages;
+      // Fallback: Return as is, or maybe just last few.
+      return systemMessage ? [systemMessage, ...chatMessages] : chatMessages;
     }
 
     // Keep the recent buffer
@@ -66,30 +67,29 @@ export class ContextManager {
     // Calculate tokens used by essential parts
     const systemTokens = systemMessage ? this.estimateTokens([systemMessage]) : 0;
     const recentTokens = this.estimateTokens(recentMessages);
-    let availableTokens = (maxContextTokens * 0.9) - systemTokens - recentTokens;
+    let availableTokens = tokenBudget - systemTokens - recentTokens;
 
     // Add older messages back as long as they fit
     const keptOlderMessages: MessageLike[] = [];
-    
+
     // We iterate from the END of older messages (newest of the old) to keep context closer to now
     for (let i = olderMessages.length - 1; i >= 0; i--) {
       const msg = olderMessages[i];
       const msgTokens = this.estimateTokens([msg]);
-      
+
       if (availableTokens - msgTokens > 0) {
         keptOlderMessages.unshift(msg);
         availableTokens -= msgTokens;
       } else {
         // Stop adding once we run out of space
-        break; 
+        break;
       }
     }
 
     // Reconstruct
-    const result = [];
+    const result: MessageLike[] = [];
     if (systemMessage) result.push(systemMessage);
-    result.push(...keptOlderMessages);
-    result.push(...recentMessages);
+    result.push(...keptOlderMessages, ...recentMessages);
 
     return result;
   }

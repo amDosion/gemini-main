@@ -1,11 +1,11 @@
 /**
  * Provider Templates API 服务
- * 
+ *
  * 职责：
  * - 从后端 API 获取 Provider Templates 配置
  * - 提供缓存机制减少 API 调用
  * - 提供辅助函数
- * 
+ *
  * 创建时间: 2026-01-05
  * 更新时间: 2026-01-11 (Task 3.1: Enhanced with capabilities, modes, platformRouting)
  */
@@ -66,18 +66,13 @@ export interface AIProviderConfig {
  * 从后端获取 Provider Templates
  */
 export async function fetchProviderTemplates(): Promise<AIProviderConfig[]> {
-  try {
-    const response = await fetch('/api/providers/templates');
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    
-    const templates = await response.json();
-    return templates;
-  } catch (error) {
-    throw error;
+  const response = await fetch('/api/providers/templates');
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
+
+  return response.json();
 }
 
 /**
@@ -90,7 +85,7 @@ export async function getProviderTemplates(forceRefresh = false): Promise<AIProv
       return cached;
     }
   }
-  
+
   const templates = await fetchProviderTemplates();
   cacheManager.set(CACHE_DOMAINS.PROVIDER_TEMPLATES, templates);
   return templates;
@@ -107,10 +102,10 @@ export function clearProviderTemplatesCache(): void {
  * 根据 ID 获取 Provider Template
  */
 export function getProviderTemplateById(
-  id: string, 
+  id: string,
   templates: AIProviderConfig[]
 ): AIProviderConfig | undefined {
-  return templates.find(t => t.id === id);
+  return templates.find((t) => t.id === id);
 }
 
 /**
@@ -126,10 +121,7 @@ export function hasCapability(
 /**
  * 检查 Provider 是否支持特定模式
  */
-export function hasMode(
-  provider: AIProviderConfig,
-  mode: string
-): boolean {
+export function hasMode(provider: AIProviderConfig, mode: string): boolean {
   return provider.modes?.includes(mode) === true;
 }
 
@@ -152,4 +144,3 @@ export function hasDualClient(provider: AIProviderConfig): boolean {
   }
   return provider.dualClient?.enabled === true;
 }
-

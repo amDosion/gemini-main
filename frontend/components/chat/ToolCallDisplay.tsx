@@ -24,34 +24,25 @@ interface ToolCallDisplayProps {
   isExecuting?: boolean;
 }
 
+const TOOL_ICON_LABELS: Record<string, string> = {
+  function_call: 'FC',
+  google_search: 'GS',
+  code_execution: 'CE',
+  url_context: 'UC',
+  mcp_server: 'MS',
+};
+
+const safeStringify = (obj: unknown): string => {
+  try {
+    return JSON.stringify(obj, null, 2);
+  } catch (error) {
+    return `[Unable to display: ${error instanceof Error ? error.message : 'Unknown error'}]`;
+  }
+};
+
 const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({ toolCall, toolResult, isExecuting }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const contentId = `tool-content-${toolCall.id}`;
-
-  const renderToolIcon = () => {
-    switch (toolCall.type) {
-      case 'function_call':
-        return 'FC';
-      case 'google_search':
-        return 'GS';
-      case 'code_execution':
-        return 'CE';
-      case 'url_context':
-        return 'UC';
-      case 'mcp_server':
-        return 'MS';
-      default:
-        return 'TL';
-    }
-  };
-
-  const safeStringify = (obj: unknown): string => {
-    try {
-      return JSON.stringify(obj, null, 2);
-    } catch (error) {
-      return `[Unable to display: ${error instanceof Error ? error.message : 'Unknown error'}]`;
-    }
-  };
 
   const renderResult = () => {
     if (isExecuting) {
@@ -63,13 +54,14 @@ const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({ toolCall, toolResult,
     }
 
     if (toolResult) {
-      const screenshotSrc = toolResult.screenshotUrl
-        ? toolResult.screenshotUrl
-        : (toolResult.screenshot
-            ? (toolResult.screenshot.startsWith('data:')
-                ? toolResult.screenshot
-                : `data:image/png;base64,${toolResult.screenshot}`)
-            : null);
+      const { screenshot } = toolResult;
+      const screenshotSrc =
+        toolResult.screenshotUrl ||
+        (screenshot
+          ? screenshot.startsWith('data:')
+            ? screenshot
+            : `data:image/png;base64,${screenshot}`
+          : null);
 
       return (
         <div className="space-y-2">
@@ -104,7 +96,7 @@ const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({ toolCall, toolResult,
       >
         <div className="flex items-center min-w-0">
           <div className="bg-indigo-600 text-white rounded-full w-6 h-6 flex-shrink-0 flex items-center justify-center text-xs font-bold mr-2">
-            {renderToolIcon()}
+            {TOOL_ICON_LABELS[toolCall.type] ?? 'TL'}
           </div>
           <span className="font-semibold text-gray-300 truncate">{toolCall.name}</span>
         </div>

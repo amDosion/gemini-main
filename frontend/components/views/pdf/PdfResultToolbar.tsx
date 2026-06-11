@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Copy, Check, Download, Table, Code, FileText, Globe } from 'lucide-react';
 import { PdfExtractionResult } from '../../../types/types';
 import { downloadBlobInBrowser } from '../../../services/downloadService';
+import { safeCopyToClipboard } from '../../../utils/safeOps';
 
 export type ViewMode = 'table' | 'json' | 'markdown' | 'html';
 
@@ -11,12 +12,29 @@ interface PdfResultToolbarProps {
   result: PdfExtractionResult;
 }
 
-export const PdfResultToolbar: React.FC<PdfResultToolbarProps> = ({ 
-  viewMode, 
-  setViewMode, 
-  result 
+const VIEW_MODE_TABS: { mode: ViewMode; icon: React.ReactNode; label: string }[] = [
+  { mode: 'table', icon: <Table size={14} />, label: '表格' },
+  { mode: 'json', icon: <Code size={14} />, label: 'JSON' },
+  { mode: 'markdown', icon: <FileText size={14} />, label: 'Markdown' },
+  { mode: 'html', icon: <Globe size={14} />, label: 'HTML' },
+];
+
+export const PdfResultToolbar: React.FC<PdfResultToolbarProps> = ({
+  viewMode,
+  setViewMode,
+  result,
 }) => {
   const [copied, setCopied] = useState(false);
+  const copiedResetTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copiedResetTimerRef.current !== null) {
+        window.clearTimeout(copiedResetTimerRef.current);
+      }
+    },
+    []
+  );
 
   const downloadAsJson = () => {
     if (!result.data) return;
@@ -28,33 +46,30 @@ export const PdfResultToolbar: React.FC<PdfResultToolbarProps> = ({
     });
   };
 
-  const copyJson = () => {
+  const copyJson = async () => {
     if (!result.data) return;
-    navigator.clipboard.writeText(JSON.stringify(result.data, null, 2));
+    const ok = await safeCopyToClipboard(JSON.stringify(result.data, null, 2));
+    if (!ok) return;
+    if (copiedResetTimerRef.current !== null) {
+      window.clearTimeout(copiedResetTimerRef.current);
+    }
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copiedResetTimerRef.current = window.setTimeout(() => setCopied(false), 2000);
   };
 
   if (!result.success) return null;
-
-  const tabs: { mode: ViewMode; icon: React.ReactNode; label: string }[] = [
-    { mode: 'table', icon: <Table size={14} />, label: '表格' },
-    { mode: 'json', icon: <Code size={14} />, label: 'JSON' },
-    { mode: 'markdown', icon: <FileText size={14} />, label: 'Markdown' },
-    { mode: 'html', icon: <Globe size={14} />, label: 'HTML' },
-  ];
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 p-2 px-4 bg-slate-900/30">
       {/* View Mode Tabs */}
       <div className="flex bg-slate-800/50 rounded-lg p-1">
-        {tabs.map(({ mode, icon, label }) => (
+        {VIEW_MODE_TABS.map(({ mode, icon, label }) => (
           <button
             key={mode}
             onClick={() => setViewMode(mode)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-              viewMode === mode 
-                ? 'bg-indigo-600 text-white shadow-sm' 
+              viewMode === mode
+                ? 'bg-indigo-600 text-white shadow-sm'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
             }`}
           >

@@ -15,6 +15,20 @@ interface ToastItemProps {
   onRemove: (id: string) => void;
 }
 
+const TOAST_ICONS = {
+  success: CheckCircle,
+  error: AlertCircle,
+  info: Info,
+  warning: AlertTriangle,
+} as const;
+
+const TOAST_COLORS: Record<ToastType, string> = {
+  success: 'bg-emerald-600 border-emerald-500 text-white',
+  error: 'bg-red-600 border-red-500 text-white',
+  info: 'bg-blue-600 border-blue-500 text-white',
+  warning: 'bg-orange-600 border-orange-500 text-white',
+};
+
 const ToastItem: React.FC<ToastItemProps> = ({ toast, onRemove }) => {
   const [isVisible, setIsVisible] = useState(false);
   const removeWithAnimation = useCallback(() => {
@@ -32,27 +46,13 @@ const ToastItem: React.FC<ToastItemProps> = ({ toast, onRemove }) => {
     return () => window.clearTimeout(timer);
   }, [removeWithAnimation, toast.duration]);
 
-  const icons = {
-    success: CheckCircle,
-    error: AlertCircle,
-    info: Info,
-    warning: AlertTriangle,
-  };
-
-  const colors = {
-    success: 'bg-emerald-600 border-emerald-500 text-white',
-    error: 'bg-red-600 border-red-500 text-white',
-    info: 'bg-blue-600 border-blue-500 text-white',
-    warning: 'bg-orange-600 border-orange-500 text-white',
-  };
-
-  const Icon = icons[toast.type];
+  const Icon = TOAST_ICONS[toast.type];
 
   return (
     <div
       className={`
         flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg
-        ${colors[toast.type]}
+        ${TOAST_COLORS[toast.type]}
         transition-all duration-300 ease-in-out
         ${isVisible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-full'}
       `}
@@ -81,7 +81,7 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onRemove
 
   return (
     <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
-      {toasts.map(toast => (
+      {toasts.map((toast) => (
         <div key={toast.id} className="pointer-events-auto">
           <ToastItem toast={toast} onRemove={onRemove} />
         </div>

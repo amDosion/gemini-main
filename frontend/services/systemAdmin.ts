@@ -70,7 +70,6 @@ export interface CleanupResult {
   freedBytes: number;
 }
 
-
 class SystemAdminService {
   private readonly baseUrl = '/api/system/admin';
 
@@ -94,7 +93,6 @@ class SystemAdminService {
   async getStatus(): Promise<SystemStatusPayload> {
     return apiClient.get<SystemStatusPayload>(`${this.baseUrl}/status`);
   }
-
 
   async cleanup(): Promise<CleanupResult> {
     return apiClient.post<CleanupResult>(`${this.baseUrl}/cleanup`);

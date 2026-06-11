@@ -61,7 +61,6 @@ export class MultiAgentHandler extends BaseHandler {
 
       const normalizedPrompt = text || '执行多智能体任务';
       const workflowPayload = this.buildWorkflowPayload(workflowConfig, normalizedPrompt);
-      let displayText = '';
       const modeResponse = await requestJson<MultiAgentResponse>(
         `/api/modes/${encodeURIComponent(providerId)}/multi-agent`,
         {
@@ -85,14 +84,12 @@ export class MultiAgentHandler extends BaseHandler {
           }),
         }
       );
-      const result: MultiAgentResponse | WorkflowResult = (modeResponse?.data ??
-        modeResponse) as MultiAgentResponse;
+      const result = modeResponse?.data ?? modeResponse;
       if (result?.status && result.status !== 'completed') {
-        throw new Error(result?.error || `工作流状态异常: ${result.status}`);
+        throw new Error(result.error || `工作流状态异常: ${result.status}`);
       }
-      const workflow: WorkflowResult =
-        (result as MultiAgentResponse)?.result ?? (result as WorkflowResult);
-      displayText = this.formatWorkflowResult(workflow);
+      const workflow: WorkflowResult = result?.result ?? (result as WorkflowResult);
+      const displayText = this.formatWorkflowResult(workflow);
 
       onStreamUpdate?.({
         content: `✅ 工作流执行完成\n\n${displayText}`,
@@ -178,11 +175,11 @@ export class MultiAgentHandler extends BaseHandler {
         continue;
       }
       if (output?.text) {
-        chunks.push(`${output.text}`);
+        chunks.push(output.text);
         continue;
       }
       if (output?.result?.text) {
-        chunks.push(`${output.result.text}`);
+        chunks.push(output.result.text);
       }
     }
 

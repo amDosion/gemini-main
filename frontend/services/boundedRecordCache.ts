@@ -11,7 +11,7 @@ const normalizeRecordKey = (key: string | null | undefined): string => {
 };
 
 const toEvictionProtectedSet = (
-  protectedKeys: Array<string | null | undefined> | undefined,
+  protectedKeys: Array<string | null | undefined> | undefined
 ): Set<string> => {
   const entries = Array.isArray(protectedKeys) ? protectedKeys : [];
   const normalized = entries
@@ -25,7 +25,7 @@ const normalizeMaxEntries = (rawMaxEntries: number): number => {
   return Math.max(0, Math.floor(rawMaxEntries));
 };
 
-export const upsertBoundedRecord = <T,>({
+export const upsertBoundedRecord = <T>({
   record,
   key,
   value,
@@ -48,19 +48,22 @@ export const upsertBoundedRecord = <T,>({
     return { [normalizedKey]: value };
   }
 
-  const evictionProtectedSet = toEvictionProtectedSet(protectedKeys);
-  while (Object.keys(next).length > normalizedMaxEntries) {
-    const evictionKey = Object.keys(next).find((candidateKey) => !evictionProtectedSet.has(candidateKey));
-    if (!evictionKey) {
-      break;
+  const keys = Object.keys(next);
+  let excess = keys.length - normalizedMaxEntries;
+  if (excess > 0) {
+    const evictionProtectedSet = toEvictionProtectedSet(protectedKeys);
+    for (const candidateKey of keys) {
+      if (excess <= 0) break;
+      if (evictionProtectedSet.has(candidateKey)) continue;
+      delete next[candidateKey];
+      excess -= 1;
     }
-    delete next[evictionKey];
   }
 
   return next;
 };
 
-export const removeRecordKey = <T,>(record: Record<string, T>, key: string): Record<string, T> => {
+export const removeRecordKey = <T>(record: Record<string, T>, key: string): Record<string, T> => {
   const normalizedKey = normalizeRecordKey(key);
   if (!normalizedKey || !Object.prototype.hasOwnProperty.call(record, normalizedKey)) {
     return record;

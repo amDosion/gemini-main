@@ -22,16 +22,5 @@ export const normalizeStringList = (value: unknown): string[] => {
 /**
  * 合并多个字符串数组，去重且保留首次出现的顺序。
  */
-export const mergeUniqueStringList = (...sources: string[][]): string[] => {
-  const deduped = new Set<string>();
-  const result: string[] = [];
-  sources.forEach((source) => {
-    source.forEach((item) => {
-      if (!deduped.has(item)) {
-        deduped.add(item);
-        result.push(item);
-      }
-    });
-  });
-  return result;
-};
+export const mergeUniqueStringList = (...sources: string[][]): string[] =>
+  Array.from(new Set(sources.flat()));

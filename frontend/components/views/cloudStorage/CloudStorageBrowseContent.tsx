@@ -63,7 +63,7 @@ export const CloudStorageBrowseContent: React.FC<CloudStorageBrowseContentProps>
   suspendPreviewLoading = false,
   autoLoadCursor = null,
   loadingMore = false,
-  onAutoLoadMore
+  onAutoLoadMore,
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const autoLoadSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -77,7 +77,7 @@ export const CloudStorageBrowseContent: React.FC<CloudStorageBrowseContentProps>
 
     const root = scrollContainerRef.current;
     const target = autoLoadSentinelRef.current;
-    if (!root || !target || !autoLoadCursor || loadingMore || !onAutoLoadMore) {
+    if (!root || !target || loadingMore || !onAutoLoadMore) {
       return;
     }
 
@@ -94,21 +94,15 @@ export const CloudStorageBrowseContent: React.FC<CloudStorageBrowseContentProps>
       return;
     }
 
-    let triggered = false;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (triggered) {
-          return;
+        if (entries.some((entry) => entry.isIntersecting || entry.intersectionRatio > 0)) {
+          triggerAutoLoad();
         }
-        if (!entries.some((entry) => entry.isIntersecting || entry.intersectionRatio > 0)) {
-          return;
-        }
-        triggered = true;
-        triggerAutoLoad();
       },
       {
         root,
-        rootMargin: '320px 0px'
+        rootMargin: '320px 0px',
       }
     );
 
@@ -144,9 +138,7 @@ export const CloudStorageBrowseContent: React.FC<CloudStorageBrowseContentProps>
         </div>
       )}
 
-      {showBrowseError && (
-        <div className="p-6 text-sm text-red-300">{error}</div>
-      )}
+      {showBrowseError && <div className="p-6 text-sm text-red-300">{error}</div>}
 
       {showUnsupportedHint && (
         <div className="p-6 text-sm text-slate-300">
@@ -185,7 +177,10 @@ export const CloudStorageBrowseContent: React.FC<CloudStorageBrowseContentProps>
       )}
 
       {showFileList && autoLoadCursor && (
-        <div ref={autoLoadSentinelRef} className="px-4 md:px-6 py-3 text-center text-xs text-slate-500">
+        <div
+          ref={autoLoadSentinelRef}
+          className="px-4 md:px-6 py-3 text-center text-xs text-slate-500"
+        >
           {loadingMore ? 'Loading more...' : 'Scroll to load more'}
         </div>
       )}

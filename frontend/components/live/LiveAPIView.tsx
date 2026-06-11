@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Square, Loader2, MessageSquare, Bot, User } from 'lucide-react';
+import { Send, Square, Loader2, MessageSquare } from 'lucide-react';
 import MessageItem from '../chat/MessageItem';
 import { Message, Role } from '../../types/types';
 
@@ -22,7 +22,7 @@ export const LiveAPIView: React.FC<LiveAPIViewProps> = ({
   isStreaming,
   agentId,
   availableAgents = [],
-  onAgentChange
+  onAgentChange,
 }) => {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -56,8 +56,10 @@ export const LiveAPIView: React.FC<LiveAPIViewProps> = ({
             className="px-2 py-1 text-xs bg-slate-700 border border-slate-600 rounded text-slate-200 focus:outline-none focus:border-teal-500"
           >
             <option value="">默认 Agent</option>
-            {availableAgents.map(agent => (
-              <option key={agent.id} value={agent.id}>{agent.name}</option>
+            {availableAgents.map((agent) => (
+              <option key={agent.id} value={agent.id}>
+                {agent.name}
+              </option>
             ))}
           </select>
         </div>
@@ -76,14 +78,9 @@ export const LiveAPIView: React.FC<LiveAPIViewProps> = ({
         ) : (
           <>
             {messages.map((msg, idx) => {
-              const isStreamingMsg = isStreaming && idx === messages.length - 1 && msg.role === Role.MODEL;
-              return (
-                <MessageItem
-                  key={msg.id}
-                  message={msg}
-                  isStreaming={isStreamingMsg}
-                />
-              );
+              const isStreamingMsg =
+                isStreaming && idx === messages.length - 1 && msg.role === Role.MODEL;
+              return <MessageItem key={msg.id} message={msg} isStreaming={isStreamingMsg} />;
             })}
             {isLoading && (
               <div className="flex justify-start">
@@ -113,7 +110,7 @@ export const LiveAPIView: React.FC<LiveAPIViewProps> = ({
               disabled={isLoading}
             />
           </div>
-          
+
           {isStreaming ? (
             <button
               onClick={onStop}

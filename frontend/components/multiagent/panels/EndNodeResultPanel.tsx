@@ -36,6 +36,15 @@ export const EndNodeResultPanel: React.FC<EndNodeResultPanelProps> = ({
 }) => {
   const hasInlineResult = nodeData.result !== undefined && nodeData.result !== null;
 
+  const openImageGallery = (target: HTMLElement, initialIndex: number) => {
+    dispatchScopedWorkflowEvent('workflow:image-gallery-request', target, {
+      nodeId: selectedNodeId,
+      imageUrls: resultPreviewUrls,
+      initialIndex,
+      title: '最终结果图片',
+    });
+  };
+
   return (
     <div className="space-y-4">
       <div className="p-2.5 rounded-lg border border-rose-500/20 bg-rose-500/5">
@@ -57,18 +66,7 @@ export const EndNodeResultPanel: React.FC<EndNodeResultPanelProps> = ({
                   <button
                     type="button"
                     key={`${selectedNodeId}-end-result-${index}`}
-                    onClick={(event) => {
-                      dispatchScopedWorkflowEvent(
-                        'workflow:image-gallery-request',
-                        event.currentTarget,
-                        {
-                          nodeId: selectedNodeId,
-                          imageUrls: resultPreviewUrls,
-                          initialIndex: index,
-                          title: '最终结果图片',
-                        }
-                      );
-                    }}
+                    onClick={(event) => openImageGallery(event.currentTarget, index)}
                     className="h-16 w-full rounded border border-slate-700 bg-slate-900 transition-colors hover:border-indigo-400/70"
                     aria-label={`打开第 ${index + 1} 张结束结果图片`}
                     title="查看大图"
@@ -142,14 +140,7 @@ export const EndNodeResultPanel: React.FC<EndNodeResultPanelProps> = ({
       {resultPreviewUrls.length > 1 && (
         <button
           type="button"
-          onClick={(event) => {
-            dispatchScopedWorkflowEvent('workflow:image-gallery-request', event.currentTarget, {
-              nodeId: selectedNodeId,
-              imageUrls: resultPreviewUrls,
-              initialIndex: 0,
-              title: '最终结果图片',
-            });
-          }}
+          onClick={(event) => openImageGallery(event.currentTarget, 0)}
           className="w-full px-3 py-2 text-xs rounded-lg border border-indigo-500/40 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 transition-colors"
         >
           查看全部图片

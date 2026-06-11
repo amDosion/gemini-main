@@ -7,7 +7,6 @@
 
 import type { AdkExportPrecheckIssue, AdkExportPrecheckIssueCode } from './adkSessionTypes';
 import {
-  toSafeString,
   isRecord,
   pickFirstString,
   pickFirstValue,
@@ -49,8 +48,7 @@ const normalizeExportPrecheckCode = (
 
 const buildExportPrecheckIssue = (
   record: UnknownRecord,
-  sourcePath: string,
-  fallbackIndex: number
+  sourcePath: string
 ): AdkExportPrecheckIssue | null => {
   const fields = EXPORT_PRECHECK_FIELDS_KEYS.flatMap((key) => collectStringList(record[key]));
   const detail = pickFirstString(record, EXPORT_PRECHECK_MESSAGE_KEYS);
@@ -79,7 +77,7 @@ const buildExportPrecheckIssue = (
         : '导出 precheck 未通过。');
 
   return {
-    id: `${sourcePath}:${rawCode || code || fallbackIndex}`,
+    id: `${sourcePath}:${rawCode || code}`,
     code,
     title,
     detail: resolvedDetail,
@@ -99,7 +97,7 @@ const collectExportPrecheckIssuesFromContainer = (
   if (Array.isArray(container)) {
     container.forEach((item, index) => {
       if (!isRecord(item)) return;
-      const issue = buildExportPrecheckIssue(item, `${sourcePath}[${index}]`, index);
+      const issue = buildExportPrecheckIssue(item, `${sourcePath}[${index}]`);
       if (!issue) return;
       collector.set(issue.id, issue);
     });
@@ -107,7 +105,7 @@ const collectExportPrecheckIssuesFromContainer = (
   }
 
   if (!isRecord(container)) return;
-  const directIssue = buildExportPrecheckIssue(container, sourcePath, 0);
+  const directIssue = buildExportPrecheckIssue(container, sourcePath);
   if (directIssue) {
     collector.set(directIssue.id, directIssue);
   }
@@ -117,7 +115,7 @@ const collectExportPrecheckIssuesFromContainer = (
     if (Array.isArray(nested)) {
       nested.forEach((item, index) => {
         if (!isRecord(item)) return;
-        const issue = buildExportPrecheckIssue(item, `${sourcePath}.${key}[${index}]`, index);
+        const issue = buildExportPrecheckIssue(item, `${sourcePath}.${key}[${index}]`);
         if (!issue) return;
         collector.set(issue.id, issue);
       });
@@ -125,7 +123,7 @@ const collectExportPrecheckIssuesFromContainer = (
     }
 
     if (isRecord(nested)) {
-      const issue = buildExportPrecheckIssue(nested, `${sourcePath}.${key}`, 0);
+      const issue = buildExportPrecheckIssue(nested, `${sourcePath}.${key}`);
       if (issue) {
         collector.set(issue.id, issue);
       }

@@ -13,15 +13,6 @@ export class ImageEditHandler extends BaseHandler {
     // 不再进行 Base64 转换，后端会处理所有 URL 类型（Base64、Blob URL、HTTP URL）
     const referenceImages: Record<string, Attachment | Attachment[]> = {};
 
-    // ✅ 格式化 URL 用于日志（避免输出完整 BASE64）
-    const formatUrlForLog = (url: string | undefined): string => {
-      if (!url) return 'N/A';
-      if (url.startsWith('data:')) {
-        return `Base64 Data URL (长度: ${url.length} 字符)`;
-      }
-      return url.length > 80 ? url.substring(0, 80) + '...' : url;
-    };
-
     // ✅ 直接传递附件元数据，后端会处理：
     // - HTTP URL → 后端自己下载
     // - Base64 URL → 后端创建临时代理 URL
@@ -32,8 +23,7 @@ export class ImageEditHandler extends BaseHandler {
     if (context.attachments.length > 0) {
       // ✅ image-mask-edit 模式：第一个附件是 raw，第二个是 mask
       if (context.mode === 'image-mask-edit') {
-        const rawAttachment = context.attachments[0];
-        referenceImages.raw = rawAttachment;
+        referenceImages.raw = context.attachments[0];
 
         if (context.attachments.length > 1) {
           referenceImages.mask = {
@@ -44,22 +34,13 @@ export class ImageEditHandler extends BaseHandler {
           };
         }
       }
-      // ✅ image-chat-edit 模式：支持多图编辑
-      else if (context.mode === 'image-chat-edit') {
-        if (context.attachments.length === 1) {
-          // 单图：保持向后兼容，raw 是单个附件
-          const rawAttachment = context.attachments[0];
-          referenceImages.raw = rawAttachment;
-        } else {
-          // ✅ 多图：raw 是附件数组
-          context.attachments.forEach((att, idx) => {});
-          referenceImages.raw = context.attachments; // ✅ 传递附件数组
-        }
+      // ✅ image-chat-edit 多图模式：raw 是附件数组
+      else if (context.mode === 'image-chat-edit' && context.attachments.length > 1) {
+        referenceImages.raw = context.attachments;
       }
-      // ✅ 其他模式：只使用第一个附件
+      // ✅ 单图（image-chat-edit 向后兼容）/其他模式：只使用第一个附件
       else {
-        const rawAttachment = context.attachments[0];
-        referenceImages.raw = rawAttachment;
+        referenceImages.raw = context.attachments[0];
       }
     }
 
@@ -92,8 +73,6 @@ export class ImageEditHandler extends BaseHandler {
     // ✅ 后端已处理图片（返回完整的附件元数据）
     // 直接使用后端返回的结果，不需要再次处理
     const displayAttachments: Attachment[] = results.map((res: ImageGenerationResult) => {
-      // ✅ 记录后端返回的完整元数据
-
       return {
         id: res.attachmentId || uuidv4(), // 使用后端返回的 attachmentId
         mimeType: res.mimeType || 'image/png',
@@ -112,15 +91,7 @@ export class ImageEditHandler extends BaseHandler {
       } as Attachment;
     });
 
-    // ✅ 构建显示内容：只保存原始提示词
-    // enhancedPrompt 作为单独字段存储，在前端单独显示
-    // thoughts 和 textResponse 通过 ThinkingBlock 单独显示
-    const content = context.text;
-
     const uploadTask = async () => {
-      // ✅ 后端已创建附件记录和上传任务（AI 返回的图片）
-      const dbAttachments = displayAttachments;
-
       // ✅ 处理用户上传的附件
       // 注意：用户上传的文件仍然需要前端通过 FormData 上传到后端
       // 但后端现在使用 AttachmentService.process_user_upload() 统一处理
@@ -168,7 +139,7 @@ export class ImageEditHandler extends BaseHandler {
                 uploadStatus: result.taskId ? 'pending' : 'failed',
                 uploadTaskId: result.taskId || undefined,
               } as Attachment;
-            } catch (error) {
+            } catch {
               return { ...att, uploadStatus: 'failed' as const };
             }
           }
@@ -179,17 +150,19 @@ export class ImageEditHandler extends BaseHandler {
         })
       );
 
-      return { dbAttachments, dbUserAttachments };
+      // ✅ 后端已创建附件记录和上传任务（AI 返回的图片），dbAttachments 直接复用 displayAttachments
+      return { dbAttachments: displayAttachments, dbUserAttachments };
     };
 
     return {
-      content: content,
+      // ✅ 显示内容只保存原始提示词；enhancedPrompt / thoughts / textResponse 单独存储显示
+      content: context.text,
       attachments: displayAttachments,
       uploadTask: uploadTask(),
       // 将 thoughts、textResponse、enhancedPrompt 存储在自定义字段中（用于前端显示和数据库持久化）
-      thoughts: thoughts,
-      textResponse: textResponse,
-      enhancedPrompt: enhancedPrompt,
+      thoughts,
+      textResponse,
+      enhancedPrompt,
     };
   }
 }

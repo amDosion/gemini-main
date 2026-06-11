@@ -6,9 +6,7 @@ import {
   capturePrivateCacheLifecycleSnapshot,
   isPrivateCacheLifecycleSnapshotCurrent,
 } from '../services/privateCacheInvalidation';
-import {
-  scopedPrivateSingletonCacheKey,
-} from '../services/privateCacheScope';
+import { scopedPrivateSingletonCacheKey } from '../services/privateCacheScope';
 import { useCacheSubscription, useCacheUpdater } from './useCacheSubscription';
 import { usePrivateCacheScopeRevision } from './usePrivateCacheScopeRevision';
 
@@ -56,15 +54,18 @@ export const useStorageConfigs = (initData?: InitData): UseStorageConfigsReturn 
   const activeStorageIdCacheKey = scopedPrivateSingletonCacheKey(CACHE_DOMAINS.ACTIVE_STORAGE_ID);
 
   // 订阅 CacheManager 中的数据
-  const storageConfigs = useCacheSubscription<StorageConfig[]>(storageConfigsCacheKey, EMPTY_STORAGE_CONFIGS);
+  const storageConfigs = useCacheSubscription<StorageConfig[]>(
+    storageConfigsCacheKey,
+    EMPTY_STORAGE_CONFIGS
+  );
   const activeStorageId = useCacheSubscription<string | null>(activeStorageIdCacheKey, null);
-  const {
-    set: setStorageConfigsCache,
-    update: updateStorageConfigsCache,
-  } = useCacheUpdater<StorageConfig[]>(storageConfigsCacheKey, EMPTY_STORAGE_CONFIGS);
-  const {
-    set: setActiveStorageIdCache,
-  } = useCacheUpdater<string | null>(activeStorageIdCacheKey, null);
+  const { set: setStorageConfigsCache, update: updateStorageConfigsCache } = useCacheUpdater<
+    StorageConfig[]
+  >(storageConfigsCacheKey, EMPTY_STORAGE_CONFIGS);
+  const { set: setActiveStorageIdCache } = useCacheUpdater<string | null>(
+    activeStorageIdCacheKey,
+    null
+  );
 
   const isStorageCacheScopeCurrent = useCallback(
     (lifecycleSnapshot?: ReturnType<typeof capturePrivateCacheLifecycleSnapshot>): boolean => {
@@ -72,9 +73,7 @@ export const useStorageConfigs = (initData?: InitData): UseStorageConfigsReturn 
         storageConfigsCacheKey === scopedPrivateSingletonCacheKey(CACHE_DOMAINS.STORAGE_CONFIGS) &&
         activeStorageIdCacheKey === scopedPrivateSingletonCacheKey(CACHE_DOMAINS.ACTIVE_STORAGE_ID);
       if (!cacheKeysCurrent) return false;
-      return lifecycleSnapshot
-        ? isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
-        : true;
+      return lifecycleSnapshot ? isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot) : true;
     },
     [activeStorageIdCacheKey, storageConfigsCacheKey]
   );
@@ -111,63 +110,74 @@ export const useStorageConfigs = (initData?: InitData): UseStorageConfigsReturn 
     setActiveStorageIdCache(initData.activeStorageId || null);
   }, [initData, initDataSignature, setActiveStorageIdCache, setStorageConfigsCache]);
 
-  const handleSaveStorage = useCallback(async (config: StorageConfig) => {
-    const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
-    assertStorageCacheScopeCurrent();
-    // 先写 DB
-    await db.saveStorageConfig(config);
-    if (!isStorageCacheScopeCurrent(lifecycleSnapshot)) {
-      return;
-    }
-    // 增量更新缓存
-    updateStorageConfigsCache(prev => {
-      const idx = prev.findIndex(c => c.id === config.id);
-      if (idx >= 0) {
-        return prev.map(c => c.id === config.id ? config : c);
+  const handleSaveStorage = useCallback(
+    async (config: StorageConfig) => {
+      const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
+      assertStorageCacheScopeCurrent();
+      // 先写 DB
+      await db.saveStorageConfig(config);
+      if (!isStorageCacheScopeCurrent(lifecycleSnapshot)) {
+        return;
       }
-      return [...prev, config];
-    });
-  }, [assertStorageCacheScopeCurrent, isStorageCacheScopeCurrent, updateStorageConfigsCache]);
+      // 增量更新缓存
+      updateStorageConfigsCache((prev) => {
+        const idx = prev.findIndex((c) => c.id === config.id);
+        if (idx < 0) return [...prev, config];
+        return prev.map((c, i) => (i === idx ? config : c));
+      });
+    },
+    [assertStorageCacheScopeCurrent, isStorageCacheScopeCurrent, updateStorageConfigsCache]
+  );
 
-  const handleDeleteStorage = useCallback(async (id: string) => {
-    const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
-    assertStorageCacheScopeCurrent();
-    // 先写 DB
-    await db.deleteStorageConfig(id);
-    if (!isStorageCacheScopeCurrent(lifecycleSnapshot)) {
-      return;
-    }
-    // 增量更新缓存
-    updateStorageConfigsCache(prev => prev.filter(c => c.id !== id));
-    if (activeStorageId === id) {
-      setActiveStorageIdCache(null);
-      await db.setActiveStorageId('');
-    }
-  }, [
-    activeStorageId,
-    assertStorageCacheScopeCurrent,
-    isStorageCacheScopeCurrent,
-    setActiveStorageIdCache,
-    updateStorageConfigsCache,
-  ]);
+  const handleDeleteStorage = useCallback(
+    async (id: string) => {
+      const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
+      assertStorageCacheScopeCurrent();
+      // 先写 DB
+      await db.deleteStorageConfig(id);
+      if (!isStorageCacheScopeCurrent(lifecycleSnapshot)) {
+        return;
+      }
+      // 增量更新缓存
+      updateStorageConfigsCache((prev) => prev.filter((c) => c.id !== id));
+      if (activeStorageId === id) {
+        // 与其他 handler 保持「先写 DB，scope 校验后再写缓存」的顺序
+        await db.setActiveStorageId('');
+        if (!isStorageCacheScopeCurrent(lifecycleSnapshot)) {
+          return;
+        }
+        setActiveStorageIdCache(null);
+      }
+    },
+    [
+      activeStorageId,
+      assertStorageCacheScopeCurrent,
+      isStorageCacheScopeCurrent,
+      setActiveStorageIdCache,
+      updateStorageConfigsCache,
+    ]
+  );
 
-  const handleActivateStorage = useCallback(async (id: string) => {
-    const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
-    assertStorageCacheScopeCurrent();
-    // 先写 DB
-    await db.setActiveStorageId(id);
-    if (!isStorageCacheScopeCurrent(lifecycleSnapshot)) {
-      return;
-    }
-    // 更新缓存
-    setActiveStorageIdCache(id);
-  }, [assertStorageCacheScopeCurrent, isStorageCacheScopeCurrent, setActiveStorageIdCache]);
+  const handleActivateStorage = useCallback(
+    async (id: string) => {
+      const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
+      assertStorageCacheScopeCurrent();
+      // 先写 DB
+      await db.setActiveStorageId(id);
+      if (!isStorageCacheScopeCurrent(lifecycleSnapshot)) {
+        return;
+      }
+      // 更新缓存
+      setActiveStorageIdCache(id);
+    },
+    [assertStorageCacheScopeCurrent, isStorageCacheScopeCurrent, setActiveStorageIdCache]
+  );
 
   return {
     storageConfigs,
     activeStorageId,
     handleSaveStorage,
     handleDeleteStorage,
-    handleActivateStorage
+    handleActivateStorage,
   };
 };

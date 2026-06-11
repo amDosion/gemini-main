@@ -132,5 +132,5 @@ export function getWorkflowVideoResolutionLabel(
   if (pixels) {
     return `${schemaLabel} (${pixels})`;
   }
-  return schemaLabel || getResolutionLabel(resolution, aspectRatio);
+  return schemaLabel;
 }

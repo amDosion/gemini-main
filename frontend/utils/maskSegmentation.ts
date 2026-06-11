@@ -112,7 +112,7 @@ export const fetchAutoMaskPreview = async (
       return { maskUrl, notice: null, error: null };
     }
 
-    const errorMsg = maskData?.error || result?.error || 'Unknown error';
+    const errorMsg = maskData.error || result.error || 'Unknown error';
     if (isMaskPreviewAccessDenied(errorMsg)) {
       return { maskUrl: null, notice: getMaskPreviewUnavailableMessage(mode), error: null };
     }

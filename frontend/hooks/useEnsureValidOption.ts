@@ -16,9 +16,8 @@ export const useEnsureValidOption = (
   onReset: (next: string) => void
 ): void => {
   useEffect(() => {
-    const validValues = options.map((option) => option.value);
-    if (validValues.length > 0 && !validValues.includes(selected)) {
-      onReset(validValues[0]);
+    if (options.length > 0 && !options.some((option) => option.value === selected)) {
+      onReset(options[0].value);
     }
   }, [options, selected, onReset]);
 };

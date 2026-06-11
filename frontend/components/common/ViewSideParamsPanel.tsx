@@ -5,8 +5,9 @@
  * 三处原本各自重复同一段 wrapper（w-72 + 标题 + RotateCcw 按钮 + 滚动 controls + 底部 input）。
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { safeLocalGet, safeLocalSet } from '../../utils/safeOps';
 
 export interface ViewSideParamsPanelProps {
   title: string;
@@ -30,10 +31,7 @@ const clampParamsPanelWidth = (value: number): number =>
   Math.max(MIN_PARAMS_PANEL_WIDTH, Math.min(MAX_PARAMS_PANEL_WIDTH, Math.round(value)));
 
 const getInitialParamsPanelWidth = (): number => {
-  if (typeof window === 'undefined') {
-    return DEFAULT_PARAMS_PANEL_WIDTH;
-  }
-  const storedWidth = Number(window.localStorage.getItem(PARAMS_PANEL_WIDTH_STORAGE_KEY));
+  const storedWidth = Number(safeLocalGet(PARAMS_PANEL_WIDTH_STORAGE_KEY));
   return Number.isFinite(storedWidth) && storedWidth > 0
     ? clampParamsPanelWidth(storedWidth)
     : DEFAULT_PARAMS_PANEL_WIDTH;
@@ -49,6 +47,15 @@ export const ViewSideParamsPanel: React.FC<ViewSideParamsPanelProps> = ({
   editAreaContent,
 }) => {
   const [panelWidth, setPanelWidth] = useState(getInitialParamsPanelWidth);
+  // 进行中拖拽的清理函数；组件在拖拽途中卸载时由 useEffect cleanup 调用。
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(
+    () => () => {
+      dragCleanupRef.current?.();
+    },
+    []
+  );
 
   const handleResizeStart = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
@@ -69,22 +76,28 @@ export const ViewSideParamsPanel: React.FC<ViewSideParamsPanelProps> = ({
         });
       };
 
-      const handleMouseUp = () => {
+      const stopDrag = () => {
         if (animationFrame !== null) {
           window.cancelAnimationFrame(animationFrame);
           animationFrame = null;
         }
-        window.localStorage.setItem(PARAMS_PANEL_WIDTH_STORAGE_KEY, String(nextWidth));
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseup', handleMouseUp);
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
+        dragCleanupRef.current = null;
+      };
+
+      const handleMouseUp = () => {
+        safeLocalSet(PARAMS_PANEL_WIDTH_STORAGE_KEY, String(nextWidth));
+        stopDrag();
       };
 
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
+      dragCleanupRef.current = stopDrag;
     },
     [panelWidth]
   );

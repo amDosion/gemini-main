@@ -48,6 +48,29 @@ export const isSkybridgeHostAvailable = (): boolean => getSkybridgeHostTypeUnsaf
 const normalizeArgs = (argsPayload: Record<string, unknown>): Record<string, unknown> | null =>
   argsPayload && Object.keys(argsPayload).length > 0 ? argsPayload : null;
 
+// postMessage 的 targetOrigin 必须匹配宿主 frame 的真实 origin，否则浏览器会静默丢弃消息
+// （跨域嵌入时用 window.location.origin 会导致请求永远到不了宿主，最终 10s 超时）。
+// 优先 ancestorOrigins（Chromium/Safari），退回 document.referrer（Firefox 首次加载时
+// 为嵌入页 URL），两者都拿不到时假定同源宿主。
+const getHostTargetOrigin = (): string => {
+  const ancestorOrigins = window.location.ancestorOrigins;
+  const ancestorOrigin = ancestorOrigins && ancestorOrigins.length > 0 ? ancestorOrigins[0] : '';
+  if (ancestorOrigin && ancestorOrigin !== 'null') {
+    return ancestorOrigin;
+  }
+  if (document.referrer) {
+    try {
+      const referrerOrigin = new URL(document.referrer).origin;
+      if (referrerOrigin !== 'null') {
+        return referrerOrigin;
+      }
+    } catch {
+      // referrer 不可解析时继续退回同源假设
+    }
+  }
+  return window.location.origin;
+};
+
 const callAppsSdkTool = async (
   toolName: string,
   argsPayload: Record<string, unknown>
@@ -139,14 +162,14 @@ const callMcpAppTool = async (
     }, MCP_REQUEST_TIMEOUT_MS);
 
     window.addEventListener('message', listener);
-    window.parent.postMessage(
+    hostWindow.postMessage(
       {
         jsonrpc: '2.0',
         id: requestId,
         method: 'tools/call',
         params,
       },
-      window.location.origin
+      getHostTargetOrigin()
     );
   });
 };

@@ -58,7 +58,6 @@ export const isTongyiPromptEnhancementModel = (model: ModelConfig): boolean => {
   if (
     lowerId.includes('qwen-image') ||
     lowerId.includes('wan') ||
-    lowerId.includes('wanx') ||
     lowerId.includes('happyhorse') ||
     lowerId.includes('z-image') ||
     lowerId.includes('video') ||

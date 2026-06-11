@@ -23,15 +23,15 @@ export interface ErrorViewProps {
 
 /**
  * 错误页面组件
- * 
+ *
  * 显示一个全屏错误页面，包含错误图标、标题、消息和重试按钮。
  * 用于应用初始化失败、网络错误等场景。
- * 
+ *
  * @example
  * ```tsx
- * <ErrorView 
- *   error={new Error('加载失败')} 
- *   onRetry={() => window.location.reload()} 
+ * <ErrorView
+ *   error={new Error('加载失败')}
+ *   onRetry={() => window.location.reload()}
  * />
  * ```
  */
@@ -42,34 +42,22 @@ export const ErrorView: React.FC<ErrorViewProps> = ({
   showDetails = true,
   className = '',
 }) => {
-  // 记录错误到控制台
-  React.useEffect(() => {
-  }, [error, title]);
-
   return (
     <div className={`fixed inset-0 bg-[#0f172a] flex items-center justify-center ${className}`}>
       <div className="flex flex-col items-center gap-4 max-w-md p-6">
         {/* 错误图标 */}
-        <div 
-          className="text-red-500 text-4xl"
-          role="img"
-          aria-label="错误"
-        >
+        <div className="text-red-500 text-4xl" role="img" aria-label="错误">
           ⚠️
         </div>
-        
+
         {/* 错误标题 */}
-        <h2 className="text-xl font-semibold text-white">
-          {title}
-        </h2>
-        
+        <h2 className="text-xl font-semibold text-white">{title}</h2>
+
         {/* 错误消息 */}
         {showDetails && (
-          <p className="text-gray-400 text-center">
-            {error.message || '发生未知错误'}
-          </p>
+          <p className="text-gray-400 text-center">{error.message || '发生未知错误'}</p>
         )}
-        
+
         {/* 重试按钮 */}
         {onRetry && (
           <button

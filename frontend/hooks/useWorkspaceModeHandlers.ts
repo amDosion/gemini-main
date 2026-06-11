@@ -82,7 +82,8 @@ export const useWorkspaceModeHandlers = (
 
       if (closeSet.has(appMode)) {
         const modeIndex = openWorkspaceModes.indexOf(appMode);
-        const previousOpenMode = [...openWorkspaceModes.slice(0, modeIndex)]
+        const previousOpenMode = openWorkspaceModes
+          .slice(0, modeIndex)
           .reverse()
           .find((item) => !closeSet.has(item));
         const nextOpenMode = openWorkspaceModes

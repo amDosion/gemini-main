@@ -40,14 +40,14 @@ export const VideoExtensionControl: React.FC<VideoExtensionControlProps> = ({
   }
   const enabled = enabledProp ?? extensionCount > 0;
   const selectedExtensionCount =
-    extensionCount > 0 ? extensionCount : positiveExtensionOptions[0]?.count ?? 0;
+    extensionCount > 0 ? extensionCount : (positiveExtensionOptions[0]?.count ?? 0);
   const handleEnabledChange = () => {
     const nextEnabled = !enabled;
     if (onEnabledChange) {
       onEnabledChange(nextEnabled);
       return;
     }
-    onExtensionCountChange(nextEnabled ? positiveExtensionOptions[0]?.count ?? 1 : 0);
+    onExtensionCountChange(nextEnabled ? (positiveExtensionOptions[0]?.count ?? 1) : 0);
   };
   const segmentSeconds =
     typeof addedSeconds === 'number' && addedSeconds > 0
@@ -73,7 +73,7 @@ export const VideoExtensionControl: React.FC<VideoExtensionControlProps> = ({
           <Clapperboard size={12} className="text-cyan-400" />
           <span className="text-xs text-slate-300">视频延长</span>
         </div>
-        {hasExtensionMatrix && addedSeconds && maxOutputVideoSeconds ? (
+        {addedSeconds && maxOutputVideoSeconds ? (
           <span className="text-[10px] text-cyan-300">
             每次 +{addedSeconds}s，最长 {maxOutputVideoSeconds}s
           </span>
@@ -143,7 +143,11 @@ export const VideoExtensionControl: React.FC<VideoExtensionControlProps> = ({
                   <label key={index} className="block space-y-1">
                     <span className="flex items-center justify-between gap-2">
                       <span className="text-[11px] text-slate-400">延长 {index + 1} 分镜</span>
-                      {segmentSeconds > 0 && <span className="text-[10px] text-cyan-300">{start}-{end}s</span>}
+                      {segmentSeconds > 0 && (
+                        <span className="text-[10px] text-cyan-300">
+                          {start}-{end}s
+                        </span>
+                      )}
                     </span>
                     <textarea
                       aria-label={`延长 ${index + 1} 分镜提示词`}

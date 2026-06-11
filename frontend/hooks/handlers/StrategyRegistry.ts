@@ -1,6 +1,6 @@
 /**
  * 策略注册表实现
- * 
+ *
  * 负责管理和选择 Handler，使用 Map 数据结构提供 O(1) 查找性能
  */
 
@@ -11,13 +11,9 @@ import { ModeHandler, HandlerErrorImpl, HandlerMode } from './types';
  * 单例模式，全局只有一个实例
  */
 export class StrategyRegistry {
-  private strategies: Map<HandlerMode, ModeHandler>;
-  private finalized: boolean = false;
-  
-  constructor() {
-    this.strategies = new Map();
-  }
-  
+  private strategies = new Map<HandlerMode, ModeHandler>();
+  private finalized = false;
+
   /**
    * 注册一个 Handler
    * @param mode 应用模式
@@ -30,7 +26,7 @@ export class StrategyRegistry {
     }
     this.strategies.set(mode, handler);
   }
-  
+
   /**
    * 锁定注册表，防止运行时动态注册
    * 应该在模块加载完成后调用
@@ -38,7 +34,7 @@ export class StrategyRegistry {
   finalize(): void {
     this.finalized = true;
   }
-  
+
   /**
    * 获取指定模式的 Handler
    * @param mode 应用模式
@@ -57,7 +53,7 @@ export class StrategyRegistry {
     }
     return handler;
   }
-  
+
   /**
    * 检查是否注册了指定模式的 Handler
    * @param mode 应用模式

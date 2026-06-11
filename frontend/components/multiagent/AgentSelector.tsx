@@ -16,12 +16,17 @@ interface AgentSelectorProps {
 
 const normalizeName = (value: string) => value.trim().toLowerCase();
 
-export const AgentSelector: React.FC<AgentSelectorProps> = ({ value, agentName = '', onChange, onResolvedAgent }) => {
+export const AgentSelector: React.FC<AgentSelectorProps> = ({
+  value,
+  agentName = '',
+  onChange,
+  onResolvedAgent,
+}) => {
   const { agents, loading, error } = useAgentRegistry();
-  const normalizedValue = String(value || '').trim();
+  const normalizedValue = (value || '').trim();
   const selected = agents.find((agent) => agent.id === normalizedValue);
   const hasInvalidBinding = !error && normalizedValue.length > 0 && !selected;
-  const fallbackName = String(agentName || '').trim();
+  const fallbackName = (agentName || '').trim();
   const selectValue = selected ? selected.id : '';
 
   useEffect(() => {
@@ -31,7 +36,8 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({ value, agentName =
     if (!fallbackName) return;
     if (agents.length === 0) return;
 
-    const matched = agents.find((agent) => normalizeName(String(agent?.name || '')) === normalizeName(fallbackName));
+    const target = normalizeName(fallbackName);
+    const matched = agents.find((agent) => normalizeName(agent.name || '') === target);
     if (!matched) return;
 
     onChange(matched.id, matched.name, matched);
@@ -62,21 +68,15 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({ value, agentName =
         className="w-full px-3 py-2 border border-slate-700 bg-slate-800 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50"
       >
         <option value="">请选择 Agent</option>
-        {agents.map(agent => (
+        {agents.map((agent) => (
           <option key={agent.id} value={agent.id}>
             {agent.icon} {agent.name} ({agent.providerId}/{agent.modelId})
           </option>
         ))}
       </select>
-      {error && (
-        <p className="text-xs text-rose-300">
-          Agent 列表加载失败：{error}
-        </p>
-      )}
+      {error && <p className="text-xs text-rose-300">Agent 列表加载失败：{error}</p>}
       {!error && agents.length === 0 && (
-        <p className="text-xs text-amber-400">
-          还没有创建 Agent，请先在 Agent 管理面板中创建。
-        </p>
+        <p className="text-xs text-amber-400">还没有创建 Agent，请先在 Agent 管理面板中创建。</p>
       )}
       {hasInvalidBinding && (
         <div className="p-2 bg-amber-500/10 rounded text-xs text-amber-200 border border-amber-500/30 space-y-1">
@@ -96,8 +96,12 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({ value, agentName =
       )}
       {selected && (
         <div className="p-2 bg-teal-500/10 rounded text-xs text-slate-300 border border-teal-500/30">
-          <div className="font-medium text-teal-300">{selected.icon} {selected.name}</div>
-          <div className="text-slate-500 mt-0.5">{selected.providerId} / {selected.modelId}</div>
+          <div className="font-medium text-teal-300">
+            {selected.icon} {selected.name}
+          </div>
+          <div className="text-slate-500 mt-0.5">
+            {selected.providerId} / {selected.modelId}
+          </div>
           {selected.description && <div className="mt-0.5">{selected.description}</div>}
         </div>
       )}

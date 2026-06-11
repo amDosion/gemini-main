@@ -23,14 +23,14 @@ export interface WelcomeScreenProps {
 
 /**
  * 欢迎屏幕组件
- * 
+ *
  * 显示一个全屏欢迎页面，引导用户进行初始配置。
  * 用于新用户首次使用或用户未配置 AI 提供商的场景。
- * 
+ *
  * @example
  * ```tsx
- * <WelcomeScreen 
- *   onOpenSettings={() => setIsSettingsOpen(true)} 
+ * <WelcomeScreen
+ *   onOpenSettings={() => setIsSettingsOpen(true)}
  * />
  * ```
  */
@@ -42,29 +42,24 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   className = '',
 }) => {
   return (
-    <div className={`fixed inset-0 z-40 bg-[#0f172a] flex items-center justify-center ${className}`}>
+    <div
+      className={`fixed inset-0 z-40 bg-[#0f172a] flex items-center justify-center ${className}`}
+    >
       <div className="flex flex-col items-center gap-6 max-w-md p-6">
         {/* 欢迎图标 */}
-        <div 
-          className="text-6xl"
-          role="img"
-          aria-label="欢迎"
-        >
+        <div className="text-6xl" role="img" aria-label="欢迎">
           👋
         </div>
-        
+
         {/* 欢迎标题 */}
-        <h2 className="text-2xl font-semibold text-white">
-          {title}
-        </h2>
-        
+        <h2 className="text-2xl font-semibold text-white">{title}</h2>
+
         {/* 欢迎消息 */}
-        <p className="text-gray-400 text-center">
-          {message}
-        </p>
-        
+        <p className="text-gray-400 text-center">{message}</p>
+
         {/* 打开设置按钮 */}
         <button
+          type="button"
           onClick={onOpenSettings}
           className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-medium"
         >

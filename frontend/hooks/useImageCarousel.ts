@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 export interface UseImageCarouselOptions {
   itemCount: number;
@@ -21,8 +21,7 @@ export interface UseImageCarouselReturn {
 
 const normalizeIndex = (index: number, itemCount: number): number => {
   if (itemCount <= 0) return 0;
-  const modulo = ((index % itemCount) + itemCount) % itemCount;
-  return modulo;
+  return ((index % itemCount) + itemCount) % itemCount;
 };
 
 const isTextEditingTarget = (target: EventTarget | null): boolean => {
@@ -37,20 +36,17 @@ const isTextEditingTarget = (target: EventTarget | null): boolean => {
 };
 
 export function useImageCarousel(options: UseImageCarouselOptions): UseImageCarouselReturn {
-  const {
-    itemCount,
-    initialIndex = 0,
-    resetKey,
-    keyboardEnabled = true,
-    onNavigate
-  } = options;
+  const { itemCount, initialIndex = 0, resetKey, keyboardEnabled = true, onNavigate } = options;
 
   const safeCount = Math.max(0, itemCount);
   const [index, setRawIndex] = useState(() => normalizeIndex(initialIndex, safeCount));
 
-  const setIndex = useCallback((nextIndex: number) => {
-    setRawIndex(normalizeIndex(nextIndex, safeCount));
-  }, [safeCount]);
+  const setIndex = useCallback(
+    (nextIndex: number) => {
+      setRawIndex(normalizeIndex(nextIndex, safeCount));
+    },
+    [safeCount]
+  );
 
   const goPrev = useCallback(() => {
     if (safeCount <= 1) return;
@@ -64,20 +60,27 @@ export function useImageCarousel(options: UseImageCarouselOptions): UseImageCaro
     onNavigate?.();
   }, [safeCount, onNavigate]);
 
-  const select = useCallback((nextIndex: number) => {
-    if (safeCount <= 0) return;
-    setRawIndex(normalizeIndex(nextIndex, safeCount));
-    onNavigate?.();
-  }, [safeCount, onNavigate]);
+  const select = useCallback(
+    (nextIndex: number) => {
+      if (safeCount <= 0) return;
+      setRawIndex(normalizeIndex(nextIndex, safeCount));
+      onNavigate?.();
+    },
+    [safeCount, onNavigate]
+  );
 
   useEffect(() => {
     setRawIndex((prev) => normalizeIndex(prev, safeCount));
   }, [safeCount]);
 
+  // 仅在 resetKey 本身变化时重置索引；itemCount/initialIndex 变化（如批次内新增图片）
+  // 不应把用户拉回初始位置，越界钳制由上面的 safeCount effect 负责
+  const prevResetKeyRef = useRef(resetKey);
   useEffect(() => {
-    if (resetKey === undefined) {
+    if (resetKey === undefined || prevResetKeyRef.current === resetKey) {
       return;
     }
+    prevResetKeyRef.current = resetKey;
     setRawIndex(normalizeIndex(initialIndex, safeCount));
   }, [resetKey, initialIndex, safeCount]);
 
@@ -105,16 +108,19 @@ export function useImageCarousel(options: UseImageCarouselOptions): UseImageCaro
     };
   }, [keyboardEnabled, safeCount, goPrev, goNext]);
 
-  const result = useMemo<UseImageCarouselReturn>(() => ({
-    index,
-    setIndex,
-    goPrev,
-    goNext,
-    select,
-    hasMultiple: safeCount > 1,
-    total: safeCount,
-    currentNumber: safeCount > 0 ? index + 1 : 0
-  }), [index, setIndex, goPrev, goNext, select, safeCount]);
+  const result = useMemo<UseImageCarouselReturn>(
+    () => ({
+      index,
+      setIndex,
+      goPrev,
+      goNext,
+      select,
+      hasMultiple: safeCount > 1,
+      total: safeCount,
+      currentNumber: safeCount > 0 ? index + 1 : 0,
+    }),
+    [index, setIndex, goPrev, goNext, select, safeCount]
+  );
 
   return result;
 }

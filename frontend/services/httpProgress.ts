@@ -98,7 +98,7 @@ const buildHttpErrorMessage = (status: number, responseText: string): string => 
   return trimmed;
 };
 
-export const uploadFormDataWithXhr = async <T = any>({
+export const uploadFormDataWithXhr = <T = any>({
   url,
   method = 'POST',
   headers,
@@ -141,7 +141,7 @@ export const uploadFormDataWithXhr = async <T = any>({
   });
 };
 
-export const downloadBlobWithXhr = async ({
+export const downloadBlobWithXhr = ({
   url,
   method = 'GET',
   headers,

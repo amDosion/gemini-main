@@ -130,7 +130,6 @@ export const MaskEditSidebar: React.FC<MaskEditSidebarProps> = ({
           const thoughts = lastMessage?.thoughts || [];
           const textResponse = lastMessage?.textResponse;
           const hasTextContent = lastMessage?.content && lastMessage.content.trim().length > 0;
-          const isThinkingComplete = loadingState === 'idle';
 
           return (
             <div className="flex items-start gap-2">
@@ -138,19 +137,16 @@ export const MaskEditSidebar: React.FC<MaskEditSidebarProps> = ({
                 {statusIcon}
               </div>
               <div className="bg-slate-800/50 rounded-xl p-3 text-xs text-slate-400 flex-1">
-                <div
-                  className={`font-medium mb-1 ${loadingState !== 'idle' ? 'animate-pulse' : ''}`}
-                >
-                  {statusText}
-                </div>
+                <div className="font-medium mb-1 animate-pulse">{statusText}</div>
 
                 {displayedThinkingContent && (
                   <div className="mt-2">
+                    {/* 该块仅在 loadingState !== 'idle' 时渲染，thinking 必然未完成 */}
                     <ThinkingBlock
                       content={displayedThinkingContent}
                       isOpen={isThinkingOpen}
                       onToggle={() => setIsThinkingOpen(!isThinkingOpen)}
-                      isComplete={isThinkingComplete}
+                      isComplete={false}
                     />
                   </div>
                 )}

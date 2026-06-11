@@ -48,7 +48,6 @@ export const usePerformanceOptimization = (
     fps: 60,
   });
 
-  const debounceTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const frameCount = useRef(0);
   const lastFrameTime = useRef(Date.now());
 
@@ -120,17 +119,6 @@ export const usePerformanceOptimization = (
       if (currentRafId !== null) cancelAnimationFrame(currentRafId);
     };
   }, [nodes.length, edges.length, enableMetrics]);
-
-  // Log performance warnings
-  useEffect(() => {
-    if (!enableMetrics) return;
-
-    if (nodes.length > 100) {
-    }
-
-    if (metrics.fps < 30) {
-    }
-  }, [nodes.length, metrics.fps, enableMetrics]);
 
   return {
     metrics,

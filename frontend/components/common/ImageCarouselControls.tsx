@@ -26,7 +26,7 @@ const ACCENT_CLASSES: Record<CarouselAccentTone, { ring: string; overlay: string
   orange: { ring: 'ring-orange-500', overlay: 'bg-orange-500/20' },
   pink: { ring: 'ring-pink-500', overlay: 'bg-pink-500/20' },
   indigo: { ring: 'ring-indigo-500', overlay: 'bg-indigo-500/20' },
-  slate: { ring: 'ring-slate-500', overlay: 'bg-slate-500/20' }
+  slate: { ring: 'ring-slate-500', overlay: 'bg-slate-500/20' },
 };
 
 export const ImageCarouselArrows: React.FC<ImageCarouselArrowsProps> = ({
@@ -34,7 +34,7 @@ export const ImageCarouselArrows: React.FC<ImageCarouselArrowsProps> = ({
   onPrev,
   onNext,
   prevTitle = '上一张',
-  nextTitle = '下一张'
+  nextTitle = '下一张',
 }) => {
   if (itemCount <= 1) {
     return null;
@@ -79,15 +79,18 @@ export const ImageCarouselThumbnails: React.FC<ImageCarouselThumbnailsProps> = (
   thumbnailSize = 64,
   panelClassName = 'flex items-center gap-3 py-4 px-4',
   counterClassName = 'ml-2 text-sm text-slate-400 font-mono',
-  showCounter = true
+  showCounter = true,
 }) => {
   const [failedThumbs, setFailedThumbs] = useState<Record<number, string>>({});
-  const accent = ACCENT_CLASSES[accentTone] || ACCENT_CLASSES.emerald;
+  const accent = ACCENT_CLASSES[accentTone];
 
-  const thumbStyle = useMemo<React.CSSProperties>(() => ({
-    width: `${thumbnailSize}px`,
-    height: `${thumbnailSize}px`
-  }), [thumbnailSize]);
+  const thumbStyle = useMemo<React.CSSProperties>(
+    () => ({
+      width: `${thumbnailSize}px`,
+      height: `${thumbnailSize}px`,
+    }),
+    [thumbnailSize]
+  );
 
   if (items.length <= 1) {
     return null;
@@ -109,7 +112,9 @@ export const ImageCarouselThumbnails: React.FC<ImageCarouselThumbnailsProps> = (
             key={key}
             onClick={() => onSelect(idx)}
             className={`relative rounded-lg overflow-hidden transition-all duration-200 ${
-              isCurrent ? `ring-2 ${accent.ring} scale-110` : 'opacity-60 hover:opacity-100 hover:scale-105'
+              isCurrent
+                ? `ring-2 ${accent.ring} scale-110`
+                : 'opacity-60 hover:opacity-100 hover:scale-105'
             }`}
             style={thumbStyle}
             title={`切换到第 ${idx + 1} 张`}
@@ -125,12 +130,13 @@ export const ImageCarouselThumbnails: React.FC<ImageCarouselThumbnailsProps> = (
             )}
             {showPlaceholder && (
               <div className="w-full h-full bg-slate-800 flex items-center justify-center">
-                <ImageIcon size={Math.max(16, Math.floor(thumbnailSize * 0.3))} className="text-slate-600" />
+                <ImageIcon
+                  size={Math.max(16, Math.floor(thumbnailSize * 0.3))}
+                  className="text-slate-600"
+                />
               </div>
             )}
-            {isCurrent && (
-              <div className={`absolute inset-0 ${accent.overlay}`} />
-            )}
+            {isCurrent && <div className={`absolute inset-0 ${accent.overlay}`} />}
           </button>
         );
       })}

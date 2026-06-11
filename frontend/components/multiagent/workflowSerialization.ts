@@ -51,6 +51,23 @@ export const exportWorkflow = (
   return JSON.stringify(workflow, null, 2);
 };
 
+/** 最小结构校验：节点必须有 string `id` 和数值 `position.x/y`，否则视为非法导入。 */
+const isValidWorkflowNode = (node: unknown): boolean => {
+  if (typeof node !== 'object' || node === null) {
+    return false;
+  }
+  const candidate = node as { id?: unknown; position?: unknown };
+  if (typeof candidate.id !== 'string') {
+    return false;
+  }
+  const position = candidate.position;
+  if (typeof position !== 'object' || position === null) {
+    return false;
+  }
+  const coords = position as { x?: unknown; y?: unknown };
+  return typeof coords.x === 'number' && typeof coords.y === 'number';
+};
+
 /** 从 JSON 字符串反序列化工作流。失败返回 null（不抛异常）。 */
 export const importWorkflow = (
   jsonString: string
@@ -66,7 +83,10 @@ export const importWorkflow = (
   try {
     const workflow = JSON.parse(jsonString);
 
-    if (!workflow.nodes || !workflow.edges) {
+    if (!Array.isArray(workflow.nodes) || !Array.isArray(workflow.edges)) {
+      throw new Error('Invalid workflow format');
+    }
+    if (!(workflow.nodes as unknown[]).every(isValidWorkflowNode)) {
       throw new Error('Invalid workflow format');
     }
 
@@ -79,7 +99,7 @@ export const importWorkflow = (
         version: workflow.version || '1.0.0',
       },
     };
-  } catch (_error) {
+  } catch {
     return null;
   }
 };

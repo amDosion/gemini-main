@@ -25,10 +25,10 @@ export interface CacheIndicatorProps {
  */
 function formatTimestamp(timestamp: number | null): string {
   if (!timestamp) return '未知';
-  
+
   const now = Date.now();
   const diff = now - timestamp;
-  
+
   // 小于 1 分钟
   if (diff < 60 * 1000) {
     return '刚刚';
@@ -55,7 +55,7 @@ function formatTimestamp(timestamp: number | null): string {
 
 /**
  * 缓存状态指示器组件
- * 
+ *
  * 显示缓存状态图标：
  * - 🔄 正在刷新
  * - ⚠️ 数据陈旧
@@ -100,19 +100,18 @@ export const CacheIndicator: React.FC<CacheIndicatorProps> = ({
   return (
     <div className={`inline-flex items-center gap-1 text-xs ${colorClass} ${className}`}>
       <span title={text}>{icon}</span>
-      
+
       {showTimestamp && lastUpdated && (
         <span className="text-gray-400" title={new Date(lastUpdated).toLocaleString('zh-CN')}>
           {formatTimestamp(lastUpdated)}
         </span>
       )}
-      
+
       {onRefresh && !isRefreshing && (
         <button
           onClick={onRefresh}
           className="ml-1 p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
           title="刷新数据"
-          disabled={isRefreshing}
         >
           🔃
         </button>

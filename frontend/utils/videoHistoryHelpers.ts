@@ -11,6 +11,13 @@
 
 import type { Message } from '../types/types';
 
+const STRATEGY_LABELS: Record<string, string | undefined> = {
+  video_extension_chain: '官方延长',
+  last_frame_bridge_chain: '末帧桥接延长',
+  video_extension: '视频续接',
+  last_frame_bridge: '末帧桥接',
+};
+
 /**
  * 从 video 历史 Message 中提取原始 prompt + 优化 prompt。
  * 支持多种历史格式：
@@ -34,23 +41,17 @@ export const extractHistoryPrompts = (
     originalPrompt = (legacyPromptMatch[1] || '').trim();
   }
 
+  // 该正则匹配所有以 📝 开头的内容（✨ 段可选），因此 else 分支只需处理 ✨ 单行格式
   const promptPairMatch = rawContent.match(/^📝\s*([\s\S]*?)(?:\n✨\s*([\s\S]*))?$/);
   if (promptPairMatch) {
     originalPrompt = (promptPairMatch[1] || '').trim();
     if (!optimizedPrompt && promptPairMatch[2]) {
       optimizedPrompt = promptPairMatch[2].trim();
     }
-  } else {
-    const originalOnlyMatch = rawContent.match(/^📝\s*([\s\S]*)$/);
-    if (originalOnlyMatch) {
-      originalPrompt = originalOnlyMatch[1].trim();
-    }
-
-    if (!optimizedPrompt) {
-      const optimizedOnlyMatch = rawContent.match(/^✨\s*([\s\S]*)$/);
-      if (optimizedOnlyMatch) {
-        optimizedPrompt = optimizedOnlyMatch[1].trim();
-      }
+  } else if (!optimizedPrompt) {
+    const optimizedOnlyMatch = rawContent.match(/^✨\s*([\s\S]*)$/);
+    if (optimizedOnlyMatch) {
+      optimizedPrompt = optimizedOnlyMatch[1].trim();
     }
   }
 
@@ -82,17 +83,7 @@ export const extractVideoHistoryMeta = (
     ? Number(msg.totalDurationSeconds)
     : null;
   const continuationStrategy = String(msg.continuationStrategy || '').trim();
-
-  let strategyLabel: string | null = null;
-  if (continuationStrategy === 'video_extension_chain') {
-    strategyLabel = '官方延长';
-  } else if (continuationStrategy === 'last_frame_bridge_chain') {
-    strategyLabel = '末帧桥接延长';
-  } else if (continuationStrategy === 'video_extension') {
-    strategyLabel = '视频续接';
-  } else if (continuationStrategy === 'last_frame_bridge') {
-    strategyLabel = '末帧桥接';
-  }
+  const strategyLabel = STRATEGY_LABELS[continuationStrategy] ?? null;
 
   const subtitleMode = String(msg.subtitleMode || '')
     .trim()

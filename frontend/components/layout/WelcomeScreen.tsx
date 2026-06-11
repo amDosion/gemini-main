@@ -19,6 +19,28 @@ interface WelcomeScreenProps {
   protocol: string | null;
 }
 
+const QUICK_PROMPTS: Array<{
+  text: string;
+  icon: typeof Globe;
+  requiredCap: keyof ModelConfig['capabilities'];
+  mode: AppMode;
+}> = [
+  { text: 'Find AI news', icon: Globe, requiredCap: 'search', mode: 'chat' },
+  { text: 'Solve logic puzzle', icon: Brain, requiredCap: 'reasoning', mode: 'chat' },
+  {
+    text: 'Generate city image',
+    icon: ImageIcon,
+    requiredCap: 'vision',
+    mode: 'image-gen',
+  },
+  {
+    text: 'Generate cool video',
+    icon: PlaySquare,
+    requiredCap: 'vision',
+    mode: 'video-gen',
+  },
+];
+
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   apiKey,
   isLoadingModels,
@@ -43,37 +65,15 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
         </p>
         {apiKey ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 w-full max-w-4xl mx-auto place-items-center">
-            {[
-              { text: 'Find AI news', icon: Globe, requiredCap: 'search', mode: 'chat' },
-              { text: 'Solve logic puzzle', icon: Brain, requiredCap: 'reasoning', mode: 'chat' },
-              {
-                text: 'Generate city image',
-                icon: ImageIcon,
-                requiredCap: 'vision',
-                mode: 'image-gen',
-              },
-              {
-                text: 'Generate cool video',
-                icon: PlaySquare,
-                requiredCap: 'vision',
-                mode: 'video-gen',
-              },
-            ].map((item) => {
-              const modelForTask = visibleModels.find(
-                (m) => m.capabilities[item.requiredCap as keyof typeof m.capabilities]
-              );
+            {QUICK_PROMPTS.map((item) => {
+              const modelForTask = visibleModels.find((m) => m.capabilities[item.requiredCap]);
               if (!modelForTask) return null;
 
               return (
                 <button
                   key={item.text}
                   onClick={() =>
-                    onPromptSelect(
-                      item.text,
-                      item.mode as AppMode,
-                      modelForTask.id,
-                      item.requiredCap
-                    )
+                    onPromptSelect(item.text, item.mode, modelForTask.id, item.requiredCap)
                   }
                   className="w-full p-4 bg-slate-800/40 hover:bg-slate-800 border border-slate-700/50 hover:border-indigo-500/50 rounded-xl text-sm text-slate-300 transition-all text-left flex items-center gap-3 group"
                 >

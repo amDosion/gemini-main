@@ -1,7 +1,4 @@
-import {
-  createManagedMediaObjectUrl,
-  revokeManagedMediaObjectUrl,
-} from './mediaCache';
+import { createManagedMediaObjectUrl, revokeManagedMediaObjectUrl } from './mediaCache';
 import { isLocalBlobAttachmentUrl } from '../utils/attachmentUrl';
 
 interface BrowserDownloadOptions {
@@ -59,7 +56,9 @@ export const inferFileNameFromContentDisposition = (
   const starMatch = CONTENT_DISPOSITION_FILENAME_STAR.exec(header);
   if (starMatch?.[1]) {
     const rawValue = trimWrappedQuotes(starMatch[1]);
-    const encodedPart = rawValue.includes("''") ? rawValue.split("''").slice(1).join("''") : rawValue;
+    const encodedPart = rawValue.includes("''")
+      ? rawValue.split("''").slice(1).join("''")
+      : rawValue;
     const decodedName = decodeMaybe(encodedPart);
     return sanitizeFileName(decodedName, fallbackFileName);
   }
@@ -94,9 +93,12 @@ export const downloadBlobInBrowser = ({
     throw new Error('Object URL API is not available for browser downloads');
   }
   triggerBrowserDownload({ href: objectUrl, fileName });
-  window.setTimeout(() => {
-    revokeManagedMediaObjectUrl(objectUrl);
-  }, Math.max(0, revokeDelayMs));
+  window.setTimeout(
+    () => {
+      revokeManagedMediaObjectUrl(objectUrl);
+    },
+    Math.max(0, revokeDelayMs)
+  );
 };
 
 const isBlobLikeSource = (sourceUrl: string): boolean =>
@@ -111,7 +113,9 @@ const toStorageProxyUrl = (sourceUrl: string): string =>
 export const downloadSourceUrlInBrowser = async ({
   sourceUrl,
   fileName,
-  blobRevokeDelayMs = 0,
+  // Revoking on the next tick can abort large downloads before the browser
+  // dereferences the object URL; keep the module-wide safety delay by default.
+  blobRevokeDelayMs = DEFAULT_OBJECT_URL_REVOKE_DELAY_MS,
 }: SourceUrlDownloadOptions): Promise<void> => {
   if (isLocalBlobAttachmentUrl(sourceUrl)) {
     return;

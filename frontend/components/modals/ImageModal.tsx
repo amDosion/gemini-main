@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef } from 'react';
 import { X, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
@@ -17,14 +16,14 @@ interface ImageModalProps {
 const FOCUSABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-const ImageModal: React.FC<ImageModalProps> = ({ 
-  isOpen, 
-  imageUrl, 
+const ImageModal: React.FC<ImageModalProps> = ({
+  isOpen,
+  imageUrl,
   onClose,
   onNext,
   onPrev,
   hasNext,
-  hasPrev
+  hasPrev,
 }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<Element | null>(null);
@@ -113,9 +112,8 @@ const ImageModal: React.FC<ImageModalProps> = ({
       aria-label="Image preview"
       onClick={onClose}
     >
-      
       {/* Close Button */}
-      <button 
+      <button
         type="button"
         onClick={onClose}
         aria-label="Close"
@@ -128,7 +126,10 @@ const ImageModal: React.FC<ImageModalProps> = ({
       {hasPrev && (
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); onPrev?.(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onPrev?.();
+          }}
           aria-label="Previous image"
           title="Previous Image (Left Arrow)"
           className="absolute left-4 top-1/2 -translate-y-1/2 p-3 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-all hover:scale-110 z-50"
@@ -140,7 +141,10 @@ const ImageModal: React.FC<ImageModalProps> = ({
       {hasNext && (
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); onNext?.(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onNext?.();
+          }}
           aria-label="Next image"
           title="Next Image (Right Arrow)"
           className="absolute right-4 top-1/2 -translate-y-1/2 p-3 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-all hover:scale-110 z-50"
@@ -150,7 +154,10 @@ const ImageModal: React.FC<ImageModalProps> = ({
       )}
 
       {/* Main Image Container */}
-      <div className="relative w-full h-full flex items-center justify-center p-4 md:p-12" onClick={e => e.stopPropagation()}>
+      <div
+        className="relative w-full h-full flex items-center justify-center p-4 md:p-12"
+        onClick={(e) => e.stopPropagation()}
+      >
         <CachedImage
           src={imageUrl}
           source={{
@@ -160,21 +167,21 @@ const ImageModal: React.FC<ImageModalProps> = ({
           alt="Full screen preview"
           className="max-w-full max-h-full object-contain rounded-sm shadow-2xl animate-[fadeIn_0.3s_ease-out]"
         />
-        
+
         {/* Footer Actions */}
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 px-6 py-3 bg-black/60 backdrop-blur-xl rounded-full border border-white/10 shadow-xl transition-opacity hover:opacity-100 opacity-0 md:opacity-100">
-           <button
-             type="button"
-             onClick={handleDownload}
-             className="flex items-center gap-2 text-sm font-medium text-white hover:text-indigo-300 transition-colors"
-           >
-             <Download size={18} />
-             Download
-           </button>
-           <div className="w-px h-4 bg-white/20" />
-           <span className="text-xs text-white/50 whitespace-nowrap">
-             {imageUrl.startsWith('data:') ? 'Generated Result' : 'Image Preview'}
-           </span>
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="flex items-center gap-2 text-sm font-medium text-white hover:text-indigo-300 transition-colors"
+          >
+            <Download size={18} />
+            Download
+          </button>
+          <div className="w-px h-4 bg-white/20" />
+          <span className="text-xs text-white/50 whitespace-nowrap">
+            {imageUrl.startsWith('data:') ? 'Generated Result' : 'Image Preview'}
+          </span>
         </div>
       </div>
     </div>

@@ -14,25 +14,27 @@ export const ComponentLibrary: React.FC<ComponentLibraryProps> = ({ onDragStart 
   const [searchQuery, setSearchQuery] = useState('');
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  const handleDragStart = (event: React.DragEvent, nodeType: NodeType, payload?: Record<string, any>) => {
+  const handleDragStart = (event: React.DragEvent, nodeType: NodeType) => {
     event.dataTransfer.setData('application/reactflow', nodeType);
-    if (payload) {
-      event.dataTransfer.setData('application/reactflow-node-payload', JSON.stringify(payload));
-    }
     event.dataTransfer.effectAllowed = 'move';
-    onDragStart?.(event, nodeType, payload);
+    onDragStart?.(event, nodeType);
   };
 
   const filteredNodeCategories = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
-    return nodeCategories.reduce((acc, category) => {
-      const filtered = category.items.filter((config) => {
-        if (!query) return true;
-        return config.label.toLowerCase().includes(query) || config.description.toLowerCase().includes(query);
-      });
-      if (filtered.length > 0) acc.push({ ...category, items: filtered });
-      return acc;
-    }, [] as typeof nodeCategories);
+    if (!query) return nodeCategories;
+    return nodeCategories.reduce(
+      (acc, category) => {
+        const filtered = category.items.filter(
+          (config) =>
+            config.label.toLowerCase().includes(query) ||
+            config.description.toLowerCase().includes(query)
+        );
+        if (filtered.length > 0) acc.push({ ...category, items: filtered });
+        return acc;
+      },
+      [] as typeof nodeCategories
+    );
   }, [searchQuery]);
 
   if (isCollapsed) {
@@ -92,7 +94,9 @@ export const ComponentLibrary: React.FC<ComponentLibraryProps> = ({ onDragStart 
       <div className="flex-1 overflow-y-auto p-2.5 space-y-4">
         {filteredNodeCategories.map((category) => (
           <div key={category.name}>
-            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5 px-1">{category.name}</div>
+            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5 px-1">
+              {category.name}
+            </div>
             <div className="space-y-1">
               {category.items.map((config) => {
                 const nodeType = config.type;
@@ -103,12 +107,18 @@ export const ComponentLibrary: React.FC<ComponentLibraryProps> = ({ onDragStart 
                     onDragStart={(e) => handleDragStart(e, nodeType)}
                     className="flex items-center gap-2.5 px-2.5 py-2 bg-slate-800/50 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 rounded-lg cursor-grab transition-all active:scale-95 active:cursor-grabbing"
                   >
-                    <div className={`w-7 h-7 ${config.iconColor} rounded-md flex items-center justify-center text-white text-sm flex-shrink-0`}>
+                    <div
+                      className={`w-7 h-7 ${config.iconColor} rounded-md flex items-center justify-center text-white text-sm flex-shrink-0`}
+                    >
                       {config.icon}
                     </div>
                     <div className="min-w-0">
-                      <div className="text-xs font-medium text-slate-300 truncate">{config.label}</div>
-                      <div className="text-[10px] text-slate-600 truncate">{config.description}</div>
+                      <div className="text-xs font-medium text-slate-300 truncate">
+                        {config.label}
+                      </div>
+                      <div className="text-[10px] text-slate-600 truncate">
+                        {config.description}
+                      </div>
                     </div>
                   </div>
                 );

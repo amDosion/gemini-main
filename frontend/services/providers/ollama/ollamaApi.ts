@@ -173,16 +173,16 @@ export function formatSize(bytes: number): string {
  * 格式化日期时间
  */
 export function formatDateTime(isoString: string): string {
-  try {
-    const date = new Date(isoString);
-    return date.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
+  // new Date 对非法输入不会抛错，而是产生 Invalid Date，需显式校验后回退原始字符串
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) {
     return isoString;
   }
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }

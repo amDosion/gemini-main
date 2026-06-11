@@ -39,7 +39,7 @@ export interface ExpandHistoryRowProps {
   openActionMenuBase: (anchor: ActionMenuAnchorBase) => void;
 }
 
-const ExpandHistoryRowComponent: React.FC<ExpandHistoryRowProps> = ({
+export const ExpandHistoryRow: React.FC<ExpandHistoryRowProps> = ({
   msg,
   firstImage,
   firstImageAttachment,
@@ -187,5 +187,3 @@ const ExpandHistoryRowComponent: React.FC<ExpandHistoryRowProps> = ({
     </div>
   );
 };
-
-export const ExpandHistoryRow = ExpandHistoryRowComponent;

@@ -1,6 +1,6 @@
 /**
  * Undo/Redo Hook
- * 
+ *
  * Provides undo/redo functionality for workflow editor
  * with configurable history size.
  */
@@ -27,16 +27,19 @@ interface UseUndoRedoResult {
   clear: () => void;
 }
 
-export const useUndoRedo = (
-  options: UseUndoRedoOptions = {}
-): UseUndoRedoResult => {
+export const useUndoRedo = (options: UseUndoRedoOptions = {}): UseUndoRedoResult => {
   const { maxHistorySize = 50 } = options;
 
   const [past, setPast] = useState<WorkflowState[]>([]);
   const [future, setFuture] = useState<WorkflowState[]>([]);
-  const currentState = useRef<WorkflowState | null>(null);
+  // Last state the hook knows to be live on the canvas. Snapshots are taken
+  // BEFORE each mutation, so right after takeSnapshot the live canvas diverges
+  // from anything the hook has seen and this ref is cleared; undo/redo
+  // re-synchronize it with the state they hand back to the caller.
+  const knownLiveState = useRef<WorkflowState | null>(null);
 
-  // Take a snapshot of current state
+  // Take a snapshot of the (pre-change) state; callers invoke this right
+  // before mutating the canvas.
   const takeSnapshot = useCallback(
     (nodes: Node<CustomNodeData>[], edges: Edge[]) => {
       // ✅ Wave 2 perf: structuredClone 比 JSON.parse(JSON.stringify(...)) 快 2-3x，
@@ -47,20 +50,17 @@ export const useUndoRedo = (
         edges: structuredClone(edges),
       };
 
-      // If there's a current state, push it to past
-      if (currentState.current) {
-        setPast((prev) => {
-          const newPast = [...prev, currentState.current!];
-          // Limit history size
-          if (newPast.length > maxHistorySize) {
-            return newPast.slice(newPast.length - maxHistorySize);
-          }
-          return newPast;
-        });
-      }
+      setPast((prev) => {
+        const newPast = [...prev, newState];
+        // Limit history size
+        if (newPast.length > maxHistorySize) {
+          return newPast.slice(newPast.length - maxHistorySize);
+        }
+        return newPast;
+      });
 
-      currentState.current = newState;
-      
+      knownLiveState.current = null;
+
       // Clear future when new action is taken
       setFuture([]);
     },
@@ -69,14 +69,18 @@ export const useUndoRedo = (
 
   // Undo last action
   const undo = useCallback(() => {
-    if (past.length === 0 || !currentState.current) return null;
+    if (past.length === 0) return null;
 
     const previous = past[past.length - 1];
-    const newPast = past.slice(0, -1);
+    // Capture eagerly: state updaters run during the next render, after refs
+    // may have been reassigned, so they must never read refs lazily.
+    const currentLive = knownLiveState.current;
 
-    setPast(newPast);
-    setFuture((prev) => [...prev, currentState.current!]);
-    currentState.current = previous;
+    setPast(past.slice(0, -1));
+    if (currentLive) {
+      setFuture((prev) => [...prev, currentLive]);
+    }
+    knownLiveState.current = previous;
 
     return previous;
   }, [past]);
@@ -86,13 +90,13 @@ export const useUndoRedo = (
     if (future.length === 0) return null;
 
     const next = future[future.length - 1];
-    const newFuture = future.slice(0, -1);
+    const currentLive = knownLiveState.current;
 
-    if (currentState.current) {
-      setPast((prev) => [...prev, currentState.current!]);
+    setFuture(future.slice(0, -1));
+    if (currentLive) {
+      setPast((prev) => [...prev, currentLive]);
     }
-    setFuture(newFuture);
-    currentState.current = next;
+    knownLiveState.current = next;
 
     return next;
   }, [future]);
@@ -101,7 +105,7 @@ export const useUndoRedo = (
   const clear = useCallback(() => {
     setPast([]);
     setFuture([]);
-    currentState.current = null;
+    knownLiveState.current = null;
   }, []);
 
   return {

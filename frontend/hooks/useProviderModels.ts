@@ -44,12 +44,11 @@ export function useProviderModels(
         });
         if (!res.ok || cancelled) return;
         const data = await res.json();
+        // res.json() 也是悬挂点：解析期间若已切换节点，丢弃在途响应，防止写脏 state。
+        if (cancelled) return;
         setProviders(normalizeProviderModels(data));
-      } catch (_error) {
+      } catch {
         // 1:1 保留原行为：失败时静默；错误处理改善留待后续 ticket
-        if (!cancelled) {
-          /* no-op */
-        }
       } finally {
         if (!cancelled) {
           setProvidersLoading(false);

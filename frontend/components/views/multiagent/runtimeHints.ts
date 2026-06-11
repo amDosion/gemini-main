@@ -5,19 +5,22 @@ const RUNTIME_PRIORITY: Record<string, number> = {
   adapter: 100,
 };
 
+const RUNTIME_HINT_ALIASES: Record<string, string> = {
+  'official-adk': 'adk-official',
+  'google-adk-official': 'adk-official',
+  adkofficial: 'adk-official',
+  'google-adk': 'adk',
+  'legacy-adapter': 'adapter',
+  'llm-adapter': 'adapter',
+};
+
+const RUNTIME_HINT_KEYS = new Set(['runtime', 'primaryruntime', 'runtimehints', 'runtimehint']);
+
 export const normalizeRuntimeHint = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
   const normalized = value.trim().toLowerCase().replace(/_/g, '-');
   if (!normalized) return undefined;
-  const aliases: Record<string, string> = {
-    'official-adk': 'adk-official',
-    'google-adk-official': 'adk-official',
-    adkofficial: 'adk-official',
-    'google-adk': 'adk',
-    'legacy-adapter': 'adapter',
-    'llm-adapter': 'adapter',
-  };
-  return aliases[normalized] || normalized;
+  return RUNTIME_HINT_ALIASES[normalized] || normalized;
 };
 
 export const mergeRuntimeHints = (left: string[] = [], right: string[] = []): string[] => {
@@ -33,16 +36,12 @@ export const mergeRuntimeHints = (left: string[] = [], right: string[] = []): st
 };
 
 export const pickPrimaryRuntime = (hints: string[] = []): string | undefined => {
-  if (!Array.isArray(hints) || hints.length === 0) return undefined;
+  if (hints.length === 0) return undefined;
   const normalized = hints
     .map((hint) => normalizeRuntimeHint(hint))
     .filter((hint): hint is string => Boolean(hint));
   if (normalized.length === 0) return undefined;
-  return normalized.sort((a, b) => {
-    const diff = (RUNTIME_PRIORITY[b] || 0) - (RUNTIME_PRIORITY[a] || 0);
-    if (diff !== 0) return diff;
-    return 0;
-  })[0];
+  return normalized.sort((a, b) => (RUNTIME_PRIORITY[b] || 0) - (RUNTIME_PRIORITY[a] || 0))[0];
 };
 
 export const extractRuntimeHints = (payload: unknown, depth = 0, allowScalar = false): string[] => {
@@ -52,7 +51,10 @@ export const extractRuntimeHints = (payload: unknown, depth = 0, allowScalar = f
     return normalized ? [normalized] : [];
   }
   if (Array.isArray(payload)) {
-    return payload.reduce<string[]>((acc, item) => mergeRuntimeHints(acc, extractRuntimeHints(item, depth + 1, allowScalar)), []);
+    return payload.reduce<string[]>(
+      (acc, item) => mergeRuntimeHints(acc, extractRuntimeHints(item, depth + 1, allowScalar)),
+      []
+    );
   }
   if (typeof payload !== 'object') {
     return [];
@@ -60,12 +62,8 @@ export const extractRuntimeHints = (payload: unknown, depth = 0, allowScalar = f
 
   const result: string[] = [];
   Object.entries(payload).forEach(([key, value]) => {
-    const normalizedKey = String(key || '').trim().toLowerCase().replace(/_/g, '');
-    if (['runtime', 'primaryruntime', 'runtimehints', 'runtimehint'].includes(normalizedKey)) {
-      result.push(...extractRuntimeHints(value, depth + 1, true));
-      return;
-    }
-    result.push(...extractRuntimeHints(value, depth + 1, false));
+    const normalizedKey = key.trim().toLowerCase().replace(/_/g, '');
+    result.push(...extractRuntimeHints(value, depth + 1, RUNTIME_HINT_KEYS.has(normalizedKey)));
   });
   return mergeRuntimeHints([], result);
 };

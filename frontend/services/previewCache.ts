@@ -83,20 +83,15 @@ const isPreviewCacheLifecycleCurrent = (
   snapshot: PrivateCacheLifecycleSnapshot,
   userScope: string
 ): boolean =>
-  getPreviewUserScope() === userScope &&
-  isPrivateCacheLifecycleSnapshotCurrent(snapshot);
+  getPreviewUserScope() === userScope && isPrivateCacheLifecycleSnapshotCurrent(snapshot);
 
 const getCachedPreviewObjectUrlSync = (url: string): string | null => {
   const normalizedUrl = String(url || '').trim();
-  if (!normalizedUrl) {
-    return null;
-  }
+  if (!normalizedUrl) return null;
 
   const mediaIdentity = getPreviewMediaIdentity(normalizedUrl);
-  if (mediaIdentity) {
-    return getCachedMediaObjectUrlSync(mediaIdentity, { allowStale: false });
-  }
-  return null;
+  if (!mediaIdentity) return null;
+  return getCachedMediaObjectUrlSync(mediaIdentity, { allowStale: false });
 };
 
 export const getCachedPreviewObjectUrl = async (
@@ -112,21 +107,17 @@ export const getCachedPreviewObjectUrl = async (
   }
 
   const mediaIdentity = getPreviewMediaIdentity(url, undefined, requestScope);
-  if (mediaIdentity) {
-    const readOptions = allowMemory
-      ? { allowStale: false }
-      : { allowStale: false, allowMemory: false };
-    const mediaObjectUrl = await getCachedMediaObjectUrl(mediaIdentity, readOptions);
-    if (!isPreviewCacheLifecycleCurrent(lifecycleSnapshot, requestScope)) return null;
-    if (mediaObjectUrl) return mediaObjectUrl;
-  }
-  return null;
+  if (!mediaIdentity) return null;
+
+  const readOptions = allowMemory
+    ? { allowStale: false }
+    : { allowStale: false, allowMemory: false };
+  const mediaObjectUrl = await getCachedMediaObjectUrl(mediaIdentity, readOptions);
+  if (!isPreviewCacheLifecycleCurrent(lifecycleSnapshot, requestScope)) return null;
+  return mediaObjectUrl || null;
 };
 
-export const evictCachedPreviewObjectUrl = (
-  url: string,
-  objectUrl?: string | null
-): boolean => {
+export const evictCachedPreviewObjectUrl = (url: string, objectUrl?: string | null): boolean => {
   const requestScope = getPreviewUserScope();
   const mediaIdentity = getPreviewMediaIdentity(url, undefined, requestScope);
   if (!mediaIdentity) return false;
@@ -141,17 +132,15 @@ export const savePreviewBlobToCache = async (
   const requestScope = getPreviewUserScope();
   const lifecycleSnapshot = capturePrivateCacheLifecycleSnapshot();
   const mediaIdentity = getPreviewMediaIdentity(url, contentType || blob.type, requestScope);
-  if (mediaIdentity) {
-    try {
-      const cached = await saveMediaBlobToCache(mediaIdentity, blob, { contentType });
-      if (!isPreviewCacheLifecycleCurrent(lifecycleSnapshot, requestScope)) return null;
-      return cached.objectUrl;
-    } catch {
-      return null;
-    }
-  }
+  if (!mediaIdentity) return null;
 
-  return null;
+  try {
+    const cached = await saveMediaBlobToCache(mediaIdentity, blob, { contentType });
+    if (!isPreviewCacheLifecycleCurrent(lifecycleSnapshot, requestScope)) return null;
+    return cached.objectUrl;
+  } catch {
+    return null;
+  }
 };
 
 export const clearPreviewCacheForLogout = async (): Promise<void> => {

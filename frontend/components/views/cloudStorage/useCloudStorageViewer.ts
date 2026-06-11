@@ -1,16 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
+import { useEscapeClose } from '../../../hooks/useEscapeClose';
 import { useImageCarousel } from '../../../hooks/useImageCarousel';
 import type { StorageBrowseItem, StorageFileMetadataItem } from '../../../types/storage';
 import {
   buildStoragePreviewCandidates,
   getInitialStoragePreviewIndex,
-  getNextStoragePreviewIndex
+  getNextStoragePreviewIndex,
 } from '../../../services/storagePreviewService';
-import {
-  getFileKind,
-  type FileKind
-} from './filePresentation';
+import { getFileKind, type FileKind } from './filePresentation';
 import { useXhrImagePreview } from './useXhrImagePreview';
 
 interface UseCloudStorageViewerOptions {
@@ -47,24 +45,29 @@ export function useCloudStorageViewer({
   currentPath,
   storageRevision,
   fileMetadataByUrl,
-  failedPreviewUrlsRef
+  failedPreviewUrlsRef,
 }: UseCloudStorageViewerOptions): UseCloudStorageViewerResult {
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [viewerStartPath, setViewerStartPath] = useState<string | null>(null);
+  // True once the start path has been resolved to an index for the current
+  // open session; background item/revision refreshes must not snap the
+  // carousel back to the originally opened file afterwards.
+  const viewerStartAppliedRef = useRef(false);
   const [viewerPreviewIndex, setViewerPreviewIndex] = useState(0);
   const [viewerPreviewExhausted, setViewerPreviewExhausted] = useState(false);
 
   const viewerFiles = useMemo(
-    () => items.filter((item) => {
-      if (item.entryType !== 'file') {
-        return false;
-      }
-      const kind = getFileKind(item);
-      if (kind !== 'image' && kind !== 'video') {
-        return false;
-      }
-      return buildStoragePreviewCandidates(item, storageRevision).length > 0;
-    }),
+    () =>
+      items.filter((item) => {
+        if (item.entryType !== 'file') {
+          return false;
+        }
+        const kind = getFileKind(item);
+        if (kind !== 'image' && kind !== 'video') {
+          return false;
+        }
+        return buildStoragePreviewCandidates(item, storageRevision).length > 0;
+      }),
     [items, storageRevision]
   );
 
@@ -73,25 +76,27 @@ export function useCloudStorageViewer({
     setIndex: setViewerIndex,
     goPrev: goViewerPrev,
     goNext: goViewerNext,
-    select: selectViewerIndex
+    select: selectViewerIndex,
   } = useImageCarousel({
     itemCount: viewerFiles.length,
+    // storageRevision is deliberately excluded: background refreshes while the
+    // viewer is open must not reset the user's navigation position.
     resetKey: isViewerOpen
-      ? `${selectedStorageId || ''}:${currentPath}:${viewerStartPath || ''}:${storageRevision ?? ''}`
+      ? `${selectedStorageId || ''}:${currentPath}:${viewerStartPath || ''}`
       : null,
-    keyboardEnabled: isViewerOpen
+    keyboardEnabled: isViewerOpen,
   });
 
   const currentViewerFile = isViewerOpen ? viewerFiles[viewerIndex] || null : null;
   const currentViewerKind = currentViewerFile ? getFileKind(currentViewerFile) : null;
-  const currentViewerMetadata = currentViewerFile?.metadata || (
-    currentViewerFile?.url ? fileMetadataByUrl[currentViewerFile.url] : undefined
-  );
+  const currentViewerMetadata =
+    currentViewerFile?.metadata ||
+    (currentViewerFile?.url ? fileMetadataByUrl[currentViewerFile.url] : undefined);
+  // viewerFiles is pre-filtered to image/video entries with at least one candidate.
   const currentViewerPreviewCandidates = useMemo(() => {
-    if (!currentViewerFile || !currentViewerKind) return [];
-    if (currentViewerKind !== 'image' && currentViewerKind !== 'video') return [];
+    if (!currentViewerFile) return [];
     return buildStoragePreviewCandidates(currentViewerFile, storageRevision);
-  }, [currentViewerFile, currentViewerKind, storageRevision]);
+  }, [currentViewerFile, storageRevision]);
   const currentViewerImageCandidates = useMemo(
     () => (currentViewerKind === 'image' ? currentViewerPreviewCandidates : []),
     [currentViewerKind, currentViewerPreviewCandidates]
@@ -104,7 +109,7 @@ export function useCloudStorageViewer({
   const {
     src: currentViewerImageSrc,
     exhausted: currentViewerImageExhausted,
-    recoverFromImageError: handleViewerImagePreviewError
+    recoverFromImageError: handleViewerImagePreviewError,
   } = currentViewerImagePreview;
 
   useEffect(() => {
@@ -113,14 +118,22 @@ export function useCloudStorageViewer({
       setViewerPreviewExhausted(false);
       return;
     }
-    const nextState = getInitialStoragePreviewIndex(currentViewerPreviewCandidates, failedPreviewUrlsRef.current);
+    const nextState = getInitialStoragePreviewIndex(
+      currentViewerPreviewCandidates,
+      failedPreviewUrlsRef.current
+    );
     setViewerPreviewIndex(nextState.index);
     setViewerPreviewExhausted(nextState.exhausted);
-  }, [currentViewerKind, currentViewerPreviewCandidates, currentViewerFile?.path, failedPreviewUrlsRef]);
+  }, [
+    currentViewerKind,
+    currentViewerPreviewCandidates,
+    currentViewerFile?.path,
+    failedPreviewUrlsRef,
+  ]);
 
   const currentViewerVideoSrc = viewerPreviewExhausted
     ? null
-    : (currentViewerPreviewCandidates[viewerPreviewIndex] || null);
+    : currentViewerPreviewCandidates[viewerPreviewIndex] || null;
 
   const handleViewerPreviewError = useCallback(() => {
     const currentSrc = currentViewerVideoSrc;
@@ -134,7 +147,12 @@ export function useCloudStorageViewer({
     );
     setViewerPreviewIndex(nextState.index);
     setViewerPreviewExhausted(nextState.exhausted);
-  }, [currentViewerPreviewCandidates, currentViewerVideoSrc, viewerPreviewIndex, failedPreviewUrlsRef]);
+  }, [
+    currentViewerPreviewCandidates,
+    currentViewerVideoSrc,
+    viewerPreviewIndex,
+    failedPreviewUrlsRef,
+  ]);
 
   const closeViewer = useCallback(() => {
     setIsViewerOpen(false);
@@ -142,29 +160,29 @@ export function useCloudStorageViewer({
   }, []);
 
   const openViewer = useCallback((path: string) => {
+    viewerStartAppliedRef.current = false;
     setViewerStartPath(path);
     setIsViewerOpen(true);
   }, []);
 
-  useEffect(() => {
-    if (!isViewerOpen) {
-      return;
-    }
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      closeViewer();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isViewerOpen, closeViewer]);
+  useEscapeClose(isViewerOpen, closeViewer);
 
   useEffect(() => {
     if (!isViewerOpen || !viewerStartPath) {
+      viewerStartAppliedRef.current = false;
+      return;
+    }
+    if (viewerStartAppliedRef.current) {
+      // Already positioned for this session: keep the user's navigation and
+      // only close when no previewable files remain after a refresh.
+      if (viewerFiles.length === 0) {
+        closeViewer();
+      }
       return;
     }
     const startIndex = viewerFiles.findIndex((file) => file.path === viewerStartPath);
     if (startIndex >= 0) {
+      viewerStartAppliedRef.current = true;
       setViewerIndex(startIndex);
     } else {
       closeViewer();
@@ -187,6 +205,6 @@ export function useCloudStorageViewer({
     currentViewerImageExhausted,
     currentViewerVideoSrc,
     handleViewerImagePreviewError,
-    handleViewerPreviewError
+    handleViewerPreviewError,
   };
 }

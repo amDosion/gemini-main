@@ -1,5 +1,8 @@
 import type { Attachment } from '../../../types/types';
-import type { ModeControlsSchema, VideoContractAttachmentSlot } from '../../../hooks/useModeControlsSchema';
+import type {
+  ModeControlsSchema,
+  VideoContractAttachmentSlot,
+} from '../../../hooks/useModeControlsSchema';
 
 export interface AttachmentRoleOption {
   value: string;
@@ -53,7 +56,7 @@ function getPrimaryRole(slot: VideoContractAttachmentSlot): string | null {
   if (preferred && (roles.length === 0 || roles.includes(preferred))) {
     return preferred;
   }
-  return roles[0] ?? slot.name ?? null;
+  return roles[0] ?? slot.name;
 }
 
 function getRoleLabel(slot: VideoContractAttachmentSlot): string {

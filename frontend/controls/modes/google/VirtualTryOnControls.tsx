@@ -8,13 +8,16 @@
  * - number_of_images: 生成数量 - 用户可选
  * - output_mime_type: 固定 image/jpeg（不提供 UI）
  * - output_compression_quality: 固定 100（不提供 UI）
- * 
+ *
  * 注意: 服装类型（上装/下装/全身）不是官方 API 支持的参数
  */
 import React, { useEffect, useMemo } from 'react';
 import { Sparkles, Layers } from 'lucide-react';
 import { VirtualTryOnControlsProps } from '../../types';
 import { useModeControlsSchema } from '../../../hooks/useModeControlsSchema';
+
+// 模块级 no-op，避免每次渲染创建新函数导致 clamp effect 的依赖失稳
+const noopSetter = (): void => {};
 
 export const VirtualTryOnControls: React.FC<VirtualTryOnControlsProps> = ({
   providerId = 'google',
@@ -46,9 +49,9 @@ export const VirtualTryOnControls: React.FC<VirtualTryOnControlsProps> = ({
     1;
 
   const baseSteps = controls?.baseSteps ?? propBaseSteps ?? defaultBaseSteps;
-  const setBaseSteps = controls?.setBaseSteps ?? propSetBaseSteps ?? (() => {});
+  const setBaseSteps = controls?.setBaseSteps ?? propSetBaseSteps ?? noopSetter;
   const numberOfImages = controls?.numberOfImages ?? propNumberOfImages ?? defaultImageCount;
-  const setNumberOfImages = controls?.setNumberOfImages ?? propSetNumberOfImages ?? (() => {});
+  const setNumberOfImages = controls?.setNumberOfImages ?? propSetNumberOfImages ?? noopSetter;
 
   useEffect(() => {
     if (baseSteps < minBaseSteps) {

@@ -1,4 +1,3 @@
-
 import { useMemo, useState, useEffect } from 'react';
 import { Message, Role } from '../types/types';
 
@@ -32,22 +31,18 @@ export const useMessageProcessor = (message: Message) => {
     if (isUser) {
       return { displayContent: message.content, thinkingContent: null };
     }
-    if (structuredThinkingContent) {
-      return {
-        displayContent: message.content || '',
-        thinkingContent: structuredThinkingContent,
-      };
-    }
     return {
       displayContent: message.content || '',
-      thinkingContent: null,
+      thinkingContent: structuredThinkingContent,
     };
   }, [message.content, isUser, structuredThinkingContent]);
 
   // Grounding / Search Logic
-  const hasGroundingChunks = message.groundingMetadata?.groundingChunks && message.groundingMetadata.groundingChunks.length > 0;
+  const hasGroundingChunks =
+    message.groundingMetadata?.groundingChunks &&
+    message.groundingMetadata.groundingChunks.length > 0;
   const hasUrlContext = !!message.urlContextMetadata;
-  
+
   const searchQueries = message.groundingMetadata?.webSearchQueries || [];
   const searchEntryPoint = message.groundingMetadata?.searchEntryPoint?.renderedContent;
   const showSearch = searchQueries.length > 0 || hasGroundingChunks || !!searchEntryPoint;
@@ -70,6 +65,6 @@ export const useMessageProcessor = (message: Message) => {
     hasGroundingChunks,
     groundingChunks: message.groundingMetadata?.groundingChunks,
     hasUrlContext,
-    urlContextMetadata: message.urlContextMetadata
+    urlContextMetadata: message.urlContextMetadata,
   };
 };
