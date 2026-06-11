@@ -69,8 +69,14 @@ export interface UseWorkflowCanvasActionsArgs {
   reactFlowInstance: ReactFlowInstance | null;
   editorRootRef: React.RefObject<HTMLDivElement | null>;
   takeSnapshot: (nodes: Node<WorkflowNodeData>[], edges: Edge[]) => void;
-  undo: () => { nodes: Node<WorkflowNodeData>[]; edges: Edge[] } | null;
-  redo: () => { nodes: Node<WorkflowNodeData>[]; edges: Edge[] } | null;
+  undo: (
+    currentNodes: Node<WorkflowNodeData>[],
+    currentEdges: Edge[]
+  ) => { nodes: Node<WorkflowNodeData>[]; edges: Edge[] } | null;
+  redo: (
+    currentNodes: Node<WorkflowNodeData>[],
+    currentEdges: Edge[]
+  ) => { nodes: Node<WorkflowNodeData>[]; edges: Edge[] } | null;
   addLog: AddLog;
   setPendingNodeFieldFocusRequest: React.Dispatch<
     React.SetStateAction<WorkflowNodeFieldFocusRequest | null>
@@ -190,16 +196,22 @@ export const useWorkflowCanvasActions = ({
   );
 
   const handleUndo = useCallback(() => {
-    const state = undo();
+    // 传入当前实时状态供 hook 压入 redo 栈;恢复后同步本地 ref,保证同一 tick 内
+    // 连续 undo/redo（提交前 props 尚未回流）也基于最新画布状态。
+    const state = undo(nodesRef.current, edgesRef.current);
     if (state) {
+      nodesRef.current = state.nodes;
+      edgesRef.current = state.edges;
       setNodes(state.nodes);
       setEdges(state.edges);
     }
   }, [undo, setNodes, setEdges]);
 
   const handleRedo = useCallback(() => {
-    const state = redo();
+    const state = redo(nodesRef.current, edgesRef.current);
     if (state) {
+      nodesRef.current = state.nodes;
+      edgesRef.current = state.edges;
       setNodes(state.nodes);
       setEdges(state.edges);
     }

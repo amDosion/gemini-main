@@ -3,6 +3,13 @@
  *
  * Provides undo/redo functionality for workflow editor
  * with configurable history size.
+ *
+ * 设计要点（Codex review 修复）:
+ * - 栈以 ref 为唯一真源,useState 仅存计数用于驱动 canUndo/canRedo 重渲染——
+ *   避免同一渲染周期内连续 undo/redo 重放闭包捕获的旧栈。
+ * - 快照在变更"前"拍下,hook 无从得知变更后的画布实时状态,因此 undo/redo
+ *   由调用方传入当前实时 nodes/edges:undo 把它压入 redo 栈(修复"首次 undo
+ *   后无法 redo"),redo 把它压回 undo 栈。
  */
 
 import { useState, useCallback, useRef } from 'react';
@@ -19,100 +26,86 @@ interface UseUndoRedoOptions {
 }
 
 interface UseUndoRedoResult {
-  undo: () => WorkflowState | null;
-  redo: () => WorkflowState | null;
+  undo: (currentNodes: Node<CustomNodeData>[], currentEdges: Edge[]) => WorkflowState | null;
+  redo: (currentNodes: Node<CustomNodeData>[], currentEdges: Edge[]) => WorkflowState | null;
   canUndo: boolean;
   canRedo: boolean;
   takeSnapshot: (nodes: Node<CustomNodeData>[], edges: Edge[]) => void;
   clear: () => void;
 }
 
+// ✅ structuredClone 比 JSON.parse(JSON.stringify(...)) 快 2-3x（原生 structured
+// clone algorithm）。WorkflowNodeData 全为基本类型，完全兼容。
+const cloneState = (nodes: Node<CustomNodeData>[], edges: Edge[]): WorkflowState => ({
+  nodes: structuredClone(nodes),
+  edges: structuredClone(edges),
+});
+
 export const useUndoRedo = (options: UseUndoRedoOptions = {}): UseUndoRedoResult => {
   const { maxHistorySize = 50 } = options;
 
-  const [past, setPast] = useState<WorkflowState[]>([]);
-  const [future, setFuture] = useState<WorkflowState[]>([]);
-  // Last state the hook knows to be live on the canvas. Snapshots are taken
-  // BEFORE each mutation, so right after takeSnapshot the live canvas diverges
-  // from anything the hook has seen and this ref is cleared; undo/redo
-  // re-synchronize it with the state they hand back to the caller.
-  const knownLiveState = useRef<WorkflowState | null>(null);
+  const pastRef = useRef<WorkflowState[]>([]);
+  const futureRef = useRef<WorkflowState[]>([]);
+  const [counts, setCounts] = useState({ past: 0, future: 0 });
+
+  const syncCounts = useCallback(() => {
+    setCounts({ past: pastRef.current.length, future: futureRef.current.length });
+  }, []);
 
   // Take a snapshot of the (pre-change) state; callers invoke this right
   // before mutating the canvas.
   const takeSnapshot = useCallback(
     (nodes: Node<CustomNodeData>[], edges: Edge[]) => {
-      // ✅ Wave 2 perf: structuredClone 比 JSON.parse(JSON.stringify(...)) 快 2-3x，
-      // 原生 API（structured clone algorithm），支持更多类型且不需序列化两次。
-      // WorkflowNodeData 全为基本类型（无 Function/Map/RegExp），完全兼容。
-      const newState: WorkflowState = {
-        nodes: structuredClone(nodes),
-        edges: structuredClone(edges),
-      };
-
-      setPast((prev) => {
-        const newPast = [...prev, newState];
-        // Limit history size
-        if (newPast.length > maxHistorySize) {
-          return newPast.slice(newPast.length - maxHistorySize);
-        }
-        return newPast;
-      });
-
-      knownLiveState.current = null;
-
+      pastRef.current.push(cloneState(nodes, edges));
+      if (pastRef.current.length > maxHistorySize) {
+        pastRef.current.splice(0, pastRef.current.length - maxHistorySize);
+      }
       // Clear future when new action is taken
-      setFuture([]);
+      futureRef.current = [];
+      syncCounts();
     },
-    [maxHistorySize]
+    [maxHistorySize, syncCounts]
   );
 
-  // Undo last action
-  const undo = useCallback(() => {
-    if (past.length === 0) return null;
+  // Undo last action. Callers pass the CURRENT live canvas state so it can be
+  // pushed onto the redo stack (snapshots only ever capture pre-change state).
+  const undo = useCallback(
+    (currentNodes: Node<CustomNodeData>[], currentEdges: Edge[]) => {
+      const previous = pastRef.current.pop();
+      if (!previous) return null;
 
-    const previous = past[past.length - 1];
-    // Capture eagerly: state updaters run during the next render, after refs
-    // may have been reassigned, so they must never read refs lazily.
-    const currentLive = knownLiveState.current;
+      futureRef.current.push(cloneState(currentNodes, currentEdges));
+      syncCounts();
+      return previous;
+    },
+    [syncCounts]
+  );
 
-    setPast(past.slice(0, -1));
-    if (currentLive) {
-      setFuture((prev) => [...prev, currentLive]);
-    }
-    knownLiveState.current = previous;
+  // Redo last undone action; the current live state goes back onto the undo stack.
+  const redo = useCallback(
+    (currentNodes: Node<CustomNodeData>[], currentEdges: Edge[]) => {
+      const next = futureRef.current.pop();
+      if (!next) return null;
 
-    return previous;
-  }, [past]);
-
-  // Redo last undone action
-  const redo = useCallback(() => {
-    if (future.length === 0) return null;
-
-    const next = future[future.length - 1];
-    const currentLive = knownLiveState.current;
-
-    setFuture(future.slice(0, -1));
-    if (currentLive) {
-      setPast((prev) => [...prev, currentLive]);
-    }
-    knownLiveState.current = next;
-
-    return next;
-  }, [future]);
+      pastRef.current.push(cloneState(currentNodes, currentEdges));
+      syncCounts();
+      return next;
+    },
+    [syncCounts]
+  );
 
   // Clear history
   const clear = useCallback(() => {
-    setPast([]);
-    setFuture([]);
-    knownLiveState.current = null;
-  }, []);
+    pastRef.current = [];
+    futureRef.current = [];
+    syncCounts();
+  }, [syncCounts]);
 
   return {
     undo,
     redo,
-    canUndo: past.length > 0,
-    canRedo: future.length > 0,
+    canUndo: counts.past > 0,
+    canRedo: counts.future > 0,
     takeSnapshot,
     clear,
   };

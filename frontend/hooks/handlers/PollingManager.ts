@@ -24,6 +24,13 @@ export class PollingManager implements IPollingManager {
    */
   startPolling(taskId: string, config: PollingConfig): Promise<void> {
     return new Promise((resolve, reject) => {
+      // 同 id 重复启动时先停掉旧生命周期:否则旧任务的 in-flight 轮询在身份校验失败后
+      // 直接 return,已占用的并发额度永远不归还,最终冻结所有新任务。
+      // (旧 Promise 与既有 stopPolling 语义一致地保持未决,由 GC 回收。)
+      if (this.tasks.has(taskId)) {
+        this.stopPolling(taskId);
+      }
+
       const task: PollingTask = {
         taskId,
         config,
